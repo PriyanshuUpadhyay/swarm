@@ -1,9 +1,84 @@
 use std::path::Path;
 
+use rusqlite::Connection;
+
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
-    let connection = rusqlite::Connection::open(path)?;
+    let mut connection = rusqlite::Connection::open(path)?;
 
     connection.execute_batch("PRAGMA journal_mode=WAL;")?;
+    connection.pragma_update(None, "foreign_keys", true)?;
+    migrate(&mut connection)?;
 
     Ok(connection)
+}
+
+const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001.sql")];
+
+fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
+    let tx = connection.transaction()?;
+
+    let mut version: usize = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    println!("User version: {}", version);
+
+    for (index, sql) in MIGRATIONS.iter().enumerate() {
+        if index < version {
+            continue;
+        }
+
+        if sql.is_empty() {
+            panic!("Sql empty")
+        }
+
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", index + 1)?;
+    }
+
+    tx.commit()?;
+
+    version = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+    println!("User version: {}", version);
+
+    Ok(())
+}
+
+pub fn claim_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE job SET state = 'running', attempts = attempts + 1
+         WHERE id = ?1 AND state = 'queued' AND run_after <= unixepoch()",
+        [job_id],
+    )?;
+    Ok(changed == 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seed(run_after: i64) -> Connection {
+        let connection = open(Path::new(":memory:")).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session VALUES ('s', 'lane');
+                 INSERT INTO agent VALUES ('a', 's', 'worker');
+                 INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, 'a', 'build', {run_after});"
+            ))
+            .unwrap();
+        connection
+    }
+
+    fn state_and_attempts(connection: &Connection) -> (String, i64) {
+        connection
+            .query_row("SELECT state, attempts FROM job WHERE id = 7", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn claims_due_queued_job() {
+        let connection = seed(0);
+        assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
+    }
 }
