@@ -105,6 +105,14 @@ pub fn send_message(
     Ok(seq)
 }
 
+#[derive(Debug)]
+pub struct Pending {
+    pub seq: i64,
+    pub sender_id: String,
+    pub kind: String,
+    pub body_path: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
