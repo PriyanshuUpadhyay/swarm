@@ -113,12 +113,18 @@ mod tests {
         let connection = open(Path::new(":memory:")).unwrap();
         connection
             .execute_batch(&format!(
-                "INSERT INTO session VALUES ('s', 'lane');
-                 INSERT INTO agent VALUES ('a', 's', 'worker');
+                "INSERT INTO session VALUES ('s', 'lane'), ('t', 'lane');
+                 INSERT INTO agent VALUES ('a', 's', 'worker'), ('b', 's', 'worker'), ('c', 't', 'worker');
                  INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, 'a', 'build', {run_after});"
             ))
             .unwrap();
         connection
+    }
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("swarm-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        root
     }
 
     fn state_and_attempts(connection: &Connection) -> (String, i64) {
