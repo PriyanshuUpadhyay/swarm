@@ -9,7 +9,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | session new <talk_mode> | send <recipient> <kind> | inbox | ack <seq>";
 
 fn identity() -> Result<(i64, String), String> {
     let read = |name: &str| env::var(name).map_err(|_| format!("swarm: {name} not set"));
@@ -21,9 +21,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
     }
-    let (session_id, agent_id) = identity()?;
     let root = swarm::paths::root_dir()?;
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    if let [cmd, sub, talk_mode] = args && cmd == "session" && sub == "new" {
+        println!("{}", swarm::store::create_session(&connection, talk_mode)?);
+        return Ok(());
+    }
+    let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
