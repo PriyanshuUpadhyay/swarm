@@ -24,20 +24,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Err(USAGE.into())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-
-    let Some(first_arg) = args.get(1) else {
-        eprintln!("usage: swarm init");
-        std::process::exit(1);
-    };
-
-    if first_arg != "init" {
-        eprintln!("Illegal usage of the tool. Only init is available");
+fn main() {
+    let args: Vec<String> = env::args().skip(1).collect();
+    if let Err(error) = run(&args) {
+        eprintln!("{error}");
         std::process::exit(1);
     }
-
-    init()?;
-
-    Ok(())
 }
