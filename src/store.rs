@@ -37,6 +37,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+pub fn enqueue_job(connection: &Connection, agent_id: &str, kind: &str) -> Result<i64, Box<dyn std::error::Error>> {
+    connection.execute("INSERT INTO job (agent_id, kind) VALUES (?1, ?2)", [agent_id, kind])?;
+    Ok(connection.last_insert_rowid())
+}
+
 pub fn claim_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
     let changed = connection.execute(
         "UPDATE job SET state = 'running', attempts = attempts + 1
