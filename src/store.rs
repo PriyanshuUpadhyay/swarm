@@ -81,4 +81,17 @@ mod tests {
         assert!(claim_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
     }
+
+    #[test]
+    fn rejects_missing_claimed_and_future_jobs() {
+        let connection = seed(0);
+        assert!(!claim_job(&connection, 8).unwrap());
+        assert!(claim_job(&connection, 7).unwrap());
+        assert!(!claim_job(&connection, 7).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
+
+        let future = seed(i64::MAX);
+        assert!(!claim_job(&future, 7).unwrap());
+        assert_eq!(state_and_attempts(&future), ("queued".into(), 0));
+    }
 }
