@@ -78,7 +78,7 @@ pub fn park_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn st
 pub fn send_message(
     connection: &mut Connection,
     root: &Path,
-    session_id: &str,
+    session_id: i64,
     sender_id: &str,
     recipient_id: &str,
     kind: &str,
@@ -88,7 +88,7 @@ pub fn send_message(
     tx.execute(
         "INSERT INTO message (session_id, sender_id, recipient_id, kind, body_path)
          VALUES (?1, ?2, ?3, ?4, '')",
-        [session_id, sender_id, recipient_id, kind],
+        (session_id, sender_id, recipient_id, kind),
     )?;
     let seq = tx.last_insert_rowid();
     let body_path = format!("runs/{session_id}/{seq}.txt");
@@ -110,7 +110,7 @@ pub struct Pending {
 
 pub fn inbox(
     connection: &Connection,
-    session_id: &str,
+    session_id: i64,
     agent_id: &str,
 ) -> Result<Vec<Pending>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
@@ -119,7 +119,7 @@ pub fn inbox(
            AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)
          ORDER BY seq",
     )?;
-    let rows = statement.query_map([session_id, agent_id], |r| {
+    let rows = statement.query_map((session_id, agent_id), |r| {
         Ok(Pending { seq: r.get(0)?, sender_id: r.get(1)?, kind: r.get(2)?, body_path: r.get(3)? })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -138,8 +138,8 @@ pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<
 mod tests {
     use super::*;
 
-    const SESSION: &str = "council";
-    const OTHER_SESSION: &str = "other";
+    const SESSION: i64 = 1;
+    const OTHER_SESSION: i64 = 2;
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
     const OUTSIDER: &str = "outsider";
@@ -148,8 +148,8 @@ mod tests {
         let connection = open(Path::new(":memory:")).unwrap();
         connection
             .execute_batch(&format!(
-                "INSERT INTO session VALUES ('{SESSION}', 'lane'), ('{OTHER_SESSION}', 'lane');
-                 INSERT INTO agent VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'), ('{CODER}', '{SESSION}', 'coder'), ('{OUTSIDER}', '{OTHER_SESSION}', 'coder');
+                "INSERT INTO session VALUES ({SESSION}, 'lane'), ({OTHER_SESSION}, 'lane');
+                 INSERT INTO agent VALUES ('{ORCHESTRATOR}', {SESSION}, 'orchestrator'), ('{CODER}', {SESSION}, 'coder'), ('{OUTSIDER}', {OTHER_SESSION}, 'coder');
                  INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, '{CODER}', 'build', {run_after});"
             ))
             .unwrap();
@@ -249,7 +249,7 @@ mod tests {
         let body_path: String = connection
             .query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(body_path, "runs/council/1.txt");
+        assert_eq!(body_path, "runs/1/1.txt");
         assert_eq!(std::fs::read_to_string(root.join(body_path)).unwrap(), "hello");
 
         assert!(send_message(&mut connection, &root, SESSION, ORCHESTRATOR, OUTSIDER, "note", "x").is_err());
@@ -257,7 +257,7 @@ mod tests {
             .query_row("SELECT count(*) FROM message", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
-        assert!(!root.join("runs/council/2.txt").exists());
+        assert!(!root.join("runs/1/2.txt").exists());
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod tests {
             .iter()
             .map(|m| (m.seq, m.sender_id.as_str(), m.kind.as_str(), m.body_path.as_str()))
             .collect();
-        assert_eq!(seen, [(1, ORCHESTRATOR, "note", "runs/council/1.txt"), (3, ORCHESTRATOR, "ask", "runs/council/3.txt")]);
+        assert_eq!(seen, [(1, ORCHESTRATOR, "note", "runs/1/1.txt"), (3, ORCHESTRATOR, "ask", "runs/1/3.txt")]);
         assert_eq!(inbox(&connection, SESSION, ORCHESTRATOR).unwrap().len(), 1);
         assert!(inbox(&connection, OTHER_SESSION, OUTSIDER).unwrap().is_empty());
     }

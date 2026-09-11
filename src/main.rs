@@ -11,9 +11,10 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
 
 const USAGE: &str = "usage: swarm init | send <recipient> <kind> | inbox | ack <seq>";
 
-fn identity() -> Result<(String, String), String> {
+fn identity() -> Result<(i64, String), String> {
     let read = |name: &str| env::var(name).map_err(|_| format!("swarm: {name} not set"));
-    Ok((read("SWARM_SESSION_ID")?, read("SWARM_AGENT_ID")?))
+    let session_id = read("SWARM_SESSION_ID")?.parse().map_err(|_| "swarm: bad SWARM_SESSION_ID")?;
+    Ok((session_id, read("SWARM_AGENT_ID")?))
 }
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -27,13 +28,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
             let seq = swarm::store::send_message(
-                &mut connection, &root, &session_id, &agent_id, recipient, kind, &body,
+                &mut connection, &root, session_id, &agent_id, recipient, kind, &body,
             )?;
             println!("{seq}");
             Ok(())
         }
         [cmd] if cmd == "inbox" => {
-            for m in swarm::store::inbox(&connection, &session_id, &agent_id)? {
+            for m in swarm::store::inbox(&connection, session_id, &agent_id)? {
                 println!("{} {} {} {}", m.seq, m.sender_id, m.kind, m.body_path);
             }
             Ok(())
