@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Adapter {
     pub spawn: String,
     pub ring: String,
@@ -17,4 +18,22 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
         return Err(format!("adapter {name}: unknown key {key}").into());
     }
     Ok(adapter)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FULL: &str = "# herdr\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\n";
+
+    #[test]
+    fn parses_four_verbs_and_rejects_missing_or_unknown() {
+        let adapter = parse("herdr", FULL).unwrap();
+        assert_eq!(adapter.ring, "herdr pane send-text");
+        let missing = parse("herdr", "spawn = a\nring = b\nlist = c\n").unwrap_err().to_string();
+        assert_eq!(missing, "adapter herdr: missing close");
+        let unknown = parse("herdr", &format!("{FULL}dance = d\n")).unwrap_err().to_string();
+        assert_eq!(unknown, "adapter herdr: unknown key dance");
+        assert!(parse("herdr", "spawn\n").is_err());
+    }
 }
