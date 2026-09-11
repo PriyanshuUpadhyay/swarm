@@ -133,4 +133,22 @@ mod tests {
         assert!(!finish_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("done".into(), 1));
     }
+
+    #[test]
+    fn releases_running_job_with_delay() {
+        let connection = seed(0);
+        assert!(!release_job(&connection, 7, 60).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("queued".into(), 0));
+
+        assert!(claim_job(&connection, 7).unwrap());
+        assert!(release_job(&connection, 7, 60).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("queued".into(), 1));
+        assert!(!claim_job(&connection, 7).unwrap());
+
+        let retry = seed(0);
+        assert!(claim_job(&retry, 7).unwrap());
+        assert!(release_job(&retry, 7, 0).unwrap());
+        assert!(claim_job(&retry, 7).unwrap());
+        assert_eq!(state_and_attempts(&retry), ("running".into(), 2));
+    }
 }
