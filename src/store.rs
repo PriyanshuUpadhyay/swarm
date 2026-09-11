@@ -301,4 +301,16 @@ mod tests {
         assert_eq!(marks, 1);
         assert_eq!(inbox(&connection, SESSION, CODER).unwrap()[0].seq, 2);
     }
+
+    #[test]
+    fn creates_sessions_with_increasing_ids() {
+        let connection = seed(0);
+        assert_eq!(create_session(&connection, "relay").unwrap(), 3);
+        assert_eq!(create_session(&connection, "open").unwrap(), 4);
+        assert!(create_session(&connection, "loud").is_err());
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM session", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 4);
+    }
 }
