@@ -51,6 +51,21 @@ pub fn claim_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn s
     Ok(changed == 1)
 }
 
+pub fn claim_next(connection: &Connection) -> Result<Option<i64>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    let claimed = connection
+        .query_row(
+            "UPDATE job SET state = 'running', attempts = attempts + 1
+             WHERE id = (SELECT id FROM job WHERE state = 'queued' AND run_after <= unixepoch()
+                         ORDER BY id LIMIT 1)
+             RETURNING id",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(claimed)
+}
+
 pub fn finish_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
     let changed = connection.execute(
         "UPDATE job SET state = 'done' WHERE id = ?1 AND state = 'running'",
