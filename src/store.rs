@@ -94,4 +94,10 @@ mod tests {
         assert!(!claim_job(&future, 7).unwrap());
         assert_eq!(state_and_attempts(&future), ("queued".into(), 0));
     }
+
+    #[test]
+    fn returns_error_without_job_table() {
+        let bare = Connection::open_in_memory().unwrap();
+        assert!(claim_job(&bare, 7).is_err());
+    }
 }
