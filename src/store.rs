@@ -371,4 +371,29 @@ mod tests {
             .unwrap();
         assert_eq!(count, 4);
     }
+
+    #[test]
+    fn two_drainers_claim_every_job_once() {
+        let db = temp_root("drain").join("swarm.db");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let connection = open(&db).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session VALUES ({SESSION}, 'lane');
+                 INSERT INTO agent VALUES ('{CODER}', {SESSION}, 'coder');"
+            ))
+            .unwrap();
+        for _ in 0..200 {
+            enqueue_job(&connection, CODER, "summarize").unwrap();
+        }
+        let (left, right) = (drain(db.clone()), drain(db.clone()));
+        let mut all = left.join().unwrap();
+        all.extend(right.join().unwrap());
+        all.sort();
+        assert_eq!(all, (1..=200).collect::<Vec<i64>>());
+        let (done, once): (i64, i64) = connection
+            .query_row("SELECT sum(state = 'done'), sum(attempts = 1) FROM job", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((done, once), (200, 200));
+    }
 }
