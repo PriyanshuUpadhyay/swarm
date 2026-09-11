@@ -9,12 +9,18 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | session new <talk_mode> | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | session new <talk_mode> | agent add <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
+
+fn env_var(name: &str) -> Result<String, String> {
+    env::var(name).map_err(|_| format!("swarm: {name} not set"))
+}
+
+fn session_id() -> Result<i64, String> {
+    env_var("SWARM_SESSION_ID")?.parse().map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())
+}
 
 fn identity() -> Result<(i64, String), String> {
-    let read = |name: &str| env::var(name).map_err(|_| format!("swarm: {name} not set"));
-    let session_id = read("SWARM_SESSION_ID")?.parse().map_err(|_| "swarm: bad SWARM_SESSION_ID")?;
-    Ok((session_id, read("SWARM_AGENT_ID")?))
+    Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
 }
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -26,6 +32,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, sub, talk_mode] = args && cmd == "session" && sub == "new" {
         println!("{}", swarm::store::create_session(&connection, talk_mode)?);
         return Ok(());
+    }
+    if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
+        return swarm::store::add_agent(&connection, session_id()?, agent_id, role);
     }
     let (session_id, agent_id) = identity()?;
     match args {
