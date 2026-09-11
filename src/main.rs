@@ -38,6 +38,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(())
         }
+        [cmd, seq] if cmd == "ack" => {
+            let seq: i64 = seq.parse().map_err(|_| format!("swarm: bad seq {seq}"))?;
+            swarm::store::ack(&connection, seq, &agent_id)
+        }
         _ => Err(USAGE.into()),
     }
 }
