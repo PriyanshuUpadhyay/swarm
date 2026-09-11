@@ -130,6 +130,15 @@ pub fn inbox(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "INSERT INTO read_mark (message_seq, agent_id) VALUES (?1, ?2)
+         ON CONFLICT (message_seq, agent_id) DO NOTHING",
+        (seq, agent_id),
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
