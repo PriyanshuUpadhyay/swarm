@@ -32,6 +32,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             println!("{seq}");
             Ok(())
         }
+        [cmd] if cmd == "inbox" => {
+            for m in swarm::store::inbox(&connection, &session_id, &agent_id)? {
+                println!("{} {} {} {}", m.seq, m.sender_id, m.kind, m.body_path);
+            }
+            Ok(())
+        }
         _ => Err(USAGE.into()),
     }
 }
