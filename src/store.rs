@@ -108,4 +108,16 @@ mod tests {
         let bare = Connection::open_in_memory().unwrap();
         assert!(claim_job(&bare, 7).is_err());
     }
+
+    #[test]
+    fn finishes_running_job_once() {
+        let connection = seed(0);
+        assert!(!finish_job(&connection, 7).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("queued".into(), 0));
+
+        assert!(claim_job(&connection, 7).unwrap());
+        assert!(finish_job(&connection, 7).unwrap());
+        assert!(!finish_job(&connection, 7).unwrap());
+        assert_eq!(state_and_attempts(&connection), ("done".into(), 1));
+    }
 }
