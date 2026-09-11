@@ -51,6 +51,14 @@ pub fn claim_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn s
     Ok(changed == 1)
 }
 
+pub fn finish_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE job SET state = 'done' WHERE id = ?1 AND state = 'running'",
+        [job_id],
+    )?;
+    Ok(changed == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
