@@ -276,4 +276,23 @@ mod tests {
         assert_eq!(inbox(&connection, "s", "a").unwrap().len(), 1);
         assert!(inbox(&connection, "t", "c").unwrap().is_empty());
     }
+
+    #[test]
+    fn ack_marks_once_and_only_for_recipient() {
+        let mut connection = seed(0);
+        let root = temp_root("ack");
+        send_message(&mut connection, &root, "s", "a", "b", "note", "one").unwrap();
+        send_message(&mut connection, &root, "s", "a", "b", "note", "two").unwrap();
+
+        assert!(ack(&connection, 1, "a").is_err());
+        assert_eq!(inbox(&connection, "s", "b").unwrap().len(), 2);
+
+        ack(&connection, 1, "b").unwrap();
+        ack(&connection, 1, "b").unwrap();
+        let marks: i64 = connection
+            .query_row("SELECT count(*) FROM read_mark", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(marks, 1);
+        assert_eq!(inbox(&connection, "s", "b").unwrap()[0].seq, 2);
+    }
 }
