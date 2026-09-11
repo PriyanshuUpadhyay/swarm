@@ -20,8 +20,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
     }
-    let (_session_id, _agent_id) = identity()?;
-    Err(USAGE.into())
+    let (session_id, agent_id) = identity()?;
+    let root = swarm::paths::root_dir()?;
+    let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    match args {
+        [cmd, recipient, kind] if cmd == "send" => {
+            let body = std::io::read_to_string(std::io::stdin())?;
+            let seq = swarm::store::send_message(
+                &mut connection, &root, &session_id, &agent_id, recipient, kind, &body,
+            )?;
+            println!("{seq}");
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
 }
 
 fn main() {
