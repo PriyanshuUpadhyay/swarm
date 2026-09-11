@@ -125,6 +125,11 @@ pub fn inbox(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+pub fn create_session(connection: &Connection, talk_mode: &str) -> Result<i64, Box<dyn std::error::Error>> {
+    connection.execute("INSERT INTO session (talk_mode) VALUES (?1)", [talk_mode])?;
+    Ok(connection.last_insert_rowid())
+}
+
 pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "INSERT INTO read_mark (message_seq, agent_id) VALUES (?1, ?2)
