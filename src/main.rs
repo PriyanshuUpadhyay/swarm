@@ -9,6 +9,21 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+const USAGE: &str = "usage: swarm init | send <recipient> <kind> | inbox | ack <seq>";
+
+fn identity() -> Result<(String, String), String> {
+    let read = |name: &str| env::var(name).map_err(|_| format!("swarm: {name} not set"));
+    Ok((read("SWARM_SESSION_ID")?, read("SWARM_AGENT_ID")?))
+}
+
+fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().map(String::as_str) == Some("init") {
+        return init();
+    }
+    let (_session_id, _agent_id) = identity()?;
+    Err(USAGE.into())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
