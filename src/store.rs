@@ -59,6 +59,19 @@ pub fn finish_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn 
     Ok(changed == 1)
 }
 
+pub fn release_job(
+    connection: &Connection,
+    job_id: i64,
+    delay_secs: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE job SET state = 'queued', run_after = unixepoch() + ?2
+         WHERE id = ?1 AND state = 'running'",
+        [job_id, delay_secs],
+    )?;
+    Ok(changed == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
