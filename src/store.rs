@@ -201,6 +201,18 @@ mod tests {
         root
     }
 
+    fn drain(db: std::path::PathBuf) -> std::thread::JoinHandle<Vec<i64>> {
+        std::thread::spawn(move || {
+            let connection = open(&db).unwrap();
+            let mut claimed = Vec::new();
+            while let Some(id) = claim_next(&connection).unwrap() {
+                assert!(finish_job(&connection, id).unwrap());
+                claimed.push(id);
+            }
+            claimed
+        })
+    }
+
     fn state_and_attempts(connection: &Connection) -> (String, i64) {
         connection
             .query_row("SELECT state, attempts FROM job WHERE id = 7", [], |r| {
