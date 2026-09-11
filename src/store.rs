@@ -80,6 +80,26 @@ pub fn park_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn st
     Ok(changed == 1)
 }
 
+pub fn send_message(
+    connection: &mut Connection,
+    session_id: &str,
+    sender_id: &str,
+    recipient_id: &str,
+    kind: &str,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    let tx = connection.transaction()?;
+    tx.execute(
+        "INSERT INTO message (session_id, sender_id, recipient_id, kind, body_path)
+         VALUES (?1, ?2, ?3, ?4, '')",
+        [session_id, sender_id, recipient_id, kind],
+    )?;
+    let seq = tx.last_insert_rowid();
+    let body_path = format!("runs/{session_id}/{seq}.txt");
+    tx.execute("UPDATE message SET body_path = ?1 WHERE seq = ?2", (body_path, seq))?;
+    tx.commit()?;
+    Ok(seq)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
