@@ -113,6 +113,23 @@ pub struct Pending {
     pub body_path: String,
 }
 
+pub fn inbox(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<Vec<Pending>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT seq, sender_id, kind, body_path FROM message
+         WHERE session_id = ?1 AND recipient_id = ?2
+           AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)
+         ORDER BY seq",
+    )?;
+    let rows = statement.query_map([session_id, agent_id], |r| {
+        Ok(Pending { seq: r.get(0)?, sender_id: r.get(1)?, kind: r.get(2)?, body_path: r.get(3)? })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
