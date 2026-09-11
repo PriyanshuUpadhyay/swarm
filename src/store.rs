@@ -130,6 +130,19 @@ pub fn create_session(connection: &Connection, talk_mode: &str) -> Result<i64, B
     Ok(connection.last_insert_rowid())
 }
 
+pub fn add_agent(
+    connection: &Connection,
+    session_id: i64,
+    agent_id: &str,
+    role: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "INSERT INTO agent (id, session_id, role) VALUES (?1, ?2, ?3)",
+        (agent_id, session_id, role),
+    )?;
+    Ok(())
+}
+
 pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "INSERT INTO read_mark (message_seq, agent_id) VALUES (?1, ?2)
