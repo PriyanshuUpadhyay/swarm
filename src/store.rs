@@ -82,10 +82,12 @@ pub fn park_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn st
 
 pub fn send_message(
     connection: &mut Connection,
+    root: &Path,
     session_id: &str,
     sender_id: &str,
     recipient_id: &str,
     kind: &str,
+    body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
     tx.execute(
@@ -95,7 +97,10 @@ pub fn send_message(
     )?;
     let seq = tx.last_insert_rowid();
     let body_path = format!("runs/{session_id}/{seq}.txt");
-    tx.execute("UPDATE message SET body_path = ?1 WHERE seq = ?2", (body_path, seq))?;
+    tx.execute("UPDATE message SET body_path = ?1 WHERE seq = ?2", (&body_path, seq))?;
+    let file = root.join(body_path);
+    std::fs::create_dir_all(file.parent().ok_or("body path has no parent")?)?;
+    std::fs::write(file, body)?;
     tx.commit()?;
     Ok(seq)
 }
