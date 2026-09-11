@@ -143,13 +143,19 @@ pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<
 mod tests {
     use super::*;
 
+    const SESSION: &str = "council";
+    const OTHER_SESSION: &str = "other";
+    const ORCHESTRATOR: &str = "orchestrator";
+    const CODER: &str = "coder";
+    const OUTSIDER: &str = "outsider";
+
     fn seed(run_after: i64) -> Connection {
         let connection = open(Path::new(":memory:")).unwrap();
         connection
             .execute_batch(&format!(
-                "INSERT INTO session VALUES ('s', 'lane'), ('t', 'lane');
-                 INSERT INTO agent VALUES ('a', 's', 'worker'), ('b', 's', 'worker'), ('c', 't', 'worker');
-                 INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, 'a', 'build', {run_after});"
+                "INSERT INTO session VALUES ('{SESSION}', 'lane'), ('{OTHER_SESSION}', 'lane');
+                 INSERT INTO agent VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'), ('{CODER}', '{SESSION}', 'coder'), ('{OUTSIDER}', '{OTHER_SESSION}', 'coder');
+                 INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, '{CODER}', 'build', {run_after});"
             ))
             .unwrap();
         connection
@@ -243,56 +249,56 @@ mod tests {
     fn sends_message_row_and_file() {
         let mut connection = seed(0);
         let root = temp_root("send");
-        let seq = send_message(&mut connection, &root, "s", "a", "b", "note", "hello").unwrap();
+        let seq = send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "hello").unwrap();
         assert_eq!(seq, 1);
         let body_path: String = connection
             .query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(body_path, "runs/s/1.txt");
+        assert_eq!(body_path, "runs/council/1.txt");
         assert_eq!(std::fs::read_to_string(root.join(body_path)).unwrap(), "hello");
 
-        assert!(send_message(&mut connection, &root, "s", "a", "c", "note", "x").is_err());
+        assert!(send_message(&mut connection, &root, SESSION, ORCHESTRATOR, OUTSIDER, "note", "x").is_err());
         let count: i64 = connection
             .query_row("SELECT count(*) FROM message", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
-        assert!(!root.join("runs/s/2.txt").exists());
+        assert!(!root.join("runs/council/2.txt").exists());
     }
 
     #[test]
     fn inbox_lists_pending_in_seq_order() {
         let mut connection = seed(0);
         let root = temp_root("inbox");
-        send_message(&mut connection, &root, "s", "a", "b", "note", "one").unwrap();
-        send_message(&mut connection, &root, "s", "b", "a", "note", "reply").unwrap();
-        send_message(&mut connection, &root, "s", "a", "b", "ask", "two").unwrap();
+        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "one").unwrap();
+        send_message(&mut connection, &root, SESSION, CODER, ORCHESTRATOR, "note", "reply").unwrap();
+        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "two").unwrap();
 
-        let pending = inbox(&connection, "s", "b").unwrap();
+        let pending = inbox(&connection, SESSION, CODER).unwrap();
         let seen: Vec<(i64, &str, &str, &str)> = pending
             .iter()
             .map(|m| (m.seq, m.sender_id.as_str(), m.kind.as_str(), m.body_path.as_str()))
             .collect();
-        assert_eq!(seen, [(1, "a", "note", "runs/s/1.txt"), (3, "a", "ask", "runs/s/3.txt")]);
-        assert_eq!(inbox(&connection, "s", "a").unwrap().len(), 1);
-        assert!(inbox(&connection, "t", "c").unwrap().is_empty());
+        assert_eq!(seen, [(1, ORCHESTRATOR, "note", "runs/council/1.txt"), (3, ORCHESTRATOR, "ask", "runs/council/3.txt")]);
+        assert_eq!(inbox(&connection, SESSION, ORCHESTRATOR).unwrap().len(), 1);
+        assert!(inbox(&connection, OTHER_SESSION, OUTSIDER).unwrap().is_empty());
     }
 
     #[test]
     fn ack_marks_once_and_only_for_recipient() {
         let mut connection = seed(0);
         let root = temp_root("ack");
-        send_message(&mut connection, &root, "s", "a", "b", "note", "one").unwrap();
-        send_message(&mut connection, &root, "s", "a", "b", "note", "two").unwrap();
+        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "one").unwrap();
+        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "two").unwrap();
 
-        assert!(ack(&connection, 1, "a").is_err());
-        assert_eq!(inbox(&connection, "s", "b").unwrap().len(), 2);
+        assert!(ack(&connection, 1, ORCHESTRATOR).is_err());
+        assert_eq!(inbox(&connection, SESSION, CODER).unwrap().len(), 2);
 
-        ack(&connection, 1, "b").unwrap();
-        ack(&connection, 1, "b").unwrap();
+        ack(&connection, 1, CODER).unwrap();
+        ack(&connection, 1, CODER).unwrap();
         let marks: i64 = connection
             .query_row("SELECT count(*) FROM read_mark", [], |r| r.get(0))
             .unwrap();
         assert_eq!(marks, 1);
-        assert_eq!(inbox(&connection, "s", "b").unwrap()[0].seq, 2);
+        assert_eq!(inbox(&connection, SESSION, CODER).unwrap()[0].seq, 2);
     }
 }
