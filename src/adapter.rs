@@ -20,6 +20,12 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
     Ok(adapter)
 }
 
+pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::error::Error>> {
+    let path = root.join("adapters").join(format!("{name}.conf"));
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("adapter {name}: {}: {e}", path.display()))?;
+    parse(name, &text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
