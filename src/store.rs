@@ -17,8 +17,7 @@ const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001.sql")];
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
 
-    let mut version: usize = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    println!("User version: {}", version);
+    let version: usize = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
     for (index, sql) in MIGRATIONS.iter().enumerate() {
         if index < version {
@@ -34,10 +33,6 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     }
 
     tx.commit()?;
-
-    version = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-
-    println!("User version: {}", version);
 
     Ok(())
 }
