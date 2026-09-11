@@ -7,6 +7,7 @@ pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Err
 
     connection.execute_batch("PRAGMA journal_mode=WAL;")?;
     connection.pragma_update(None, "foreign_keys", true)?;
+    connection.busy_timeout(std::time::Duration::from_secs(5))?;
     migrate(&mut connection)?;
 
     Ok(connection)
