@@ -326,4 +326,16 @@ mod tests {
             .unwrap();
         assert_eq!(count, 4);
     }
+
+    #[test]
+    fn adds_agent_once_per_known_session() {
+        let connection = seed(0);
+        add_agent(&connection, SESSION, "reviewer", "reviewer").unwrap();
+        assert!(add_agent(&connection, SESSION, "reviewer", "reviewer").is_err());
+        assert!(add_agent(&connection, 99, "ghost", "coder").is_err());
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM agent", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 4);
+    }
 }
