@@ -249,4 +249,22 @@ mod tests {
         assert_eq!(count, 1);
         assert!(!root.join("runs/s/2.txt").exists());
     }
+
+    #[test]
+    fn inbox_lists_pending_in_seq_order() {
+        let mut connection = seed(0);
+        let root = temp_root("inbox");
+        send_message(&mut connection, &root, "s", "a", "b", "note", "one").unwrap();
+        send_message(&mut connection, &root, "s", "b", "a", "note", "reply").unwrap();
+        send_message(&mut connection, &root, "s", "a", "b", "ask", "two").unwrap();
+
+        let pending = inbox(&connection, "s", "b").unwrap();
+        let seen: Vec<(i64, &str, &str, &str)> = pending
+            .iter()
+            .map(|m| (m.seq, m.sender_id.as_str(), m.kind.as_str(), m.body_path.as_str()))
+            .collect();
+        assert_eq!(seen, [(1, "a", "note", "runs/s/1.txt"), (3, "a", "ask", "runs/s/3.txt")]);
+        assert_eq!(inbox(&connection, "s", "a").unwrap().len(), 1);
+        assert!(inbox(&connection, "t", "c").unwrap().is_empty());
+    }
 }
