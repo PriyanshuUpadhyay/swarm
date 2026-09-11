@@ -204,4 +204,24 @@ mod tests {
         assert!(!park_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("parked".into(), 1));
     }
+
+    #[test]
+    fn sends_message_row_and_file() {
+        let mut connection = seed(0);
+        let root = temp_root("send");
+        let seq = send_message(&mut connection, &root, "s", "a", "b", "note", "hello").unwrap();
+        assert_eq!(seq, 1);
+        let body_path: String = connection
+            .query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(body_path, "runs/s/1.txt");
+        assert_eq!(std::fs::read_to_string(root.join(body_path)).unwrap(), "hello");
+
+        assert!(send_message(&mut connection, &root, "s", "a", "c", "note", "x").is_err());
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM message", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        assert!(!root.join("runs/s/2.txt").exists());
+    }
 }
