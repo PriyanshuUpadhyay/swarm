@@ -4,6 +4,15 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     let runs_dir = swarm::paths::runs_dir()?;
 
     std::fs::create_dir_all(runs_dir)?;
+    let adapters = swarm::paths::root_dir()?.join("adapters");
+    std::fs::create_dir_all(&adapters)?;
+    let shipped = [("tmux", include_str!("../adapters/tmux.conf")), ("herdr", include_str!("../adapters/herdr.conf"))];
+    for (name, text) in shipped {
+        let file = adapters.join(format!("{name}.conf"));
+        if !file.exists() {
+            std::fs::write(file, text)?;
+        }
+    }
     swarm::store::open(&swarm::paths::sqlite_db()?)?;
 
     Ok(())
