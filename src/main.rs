@@ -58,6 +58,23 @@ fn deliver(
     Ok(seq)
 }
 
+/// A child ended without `swarm finish`: send a fallback summary in its name and queue a
+/// summarize job, unless it already sent one (R19). Then forget its pane.
+fn report_dead(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    session_id: i64,
+    child: &str,
+    orchestrator: &str,
+    note: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !swarm::store::has_summary(connection, session_id, child)? {
+        deliver(connection, root, session_id, child, orchestrator, "summary", note)?;
+        swarm::store::enqueue_job(connection, child, "summarize")?;
+    }
+    swarm::store::clear_pane(connection, child)
+}
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
@@ -115,12 +132,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 if adapter.has_pane(&pane)? {
                     continue;
                 }
-                if !swarm::store::has_summary(&connection, session_id, &child)? {
-                    let note = format!("agent {child} died without a summary");
-                    deliver(&mut connection, &root, session_id, &child, &agent_id, "summary", &note)?;
-                    swarm::store::enqueue_job(&connection, &child, "summarize")?;
-                }
-                swarm::store::clear_pane(&connection, &child)?;
+                let note = format!("agent {child} died without a summary");
+                report_dead(&mut connection, &root, session_id, &child, &agent_id, &note)?;
                 println!("dead {child}");
             }
             Ok(())
