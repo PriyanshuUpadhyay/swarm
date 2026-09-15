@@ -31,3 +31,14 @@ until [ "$("$SWARM" inbox | grep -c ' summary ')" -eq 3 ]; do sleep 1; done
     echo "$sender ($kind): $(cat "$SWARM_HOME/.swarm/$body")"
     "$SWARM" ack "$seq"
 done
+
+# A child whose process dies without finish: the exited hook captures the pane, sends a fallback
+# summary, and queues a summarize job. Kill the sleep itself; C-c would abort the hook too.
+PANE=$("$SWARM" spawn sleeper worker -- sleep 300)
+until pkill -P "$(tmux display -p -t "$PANE" '#{pane_pid}')" -x sleep; do sleep 1; done
+until "$SWARM" inbox | grep -q ' sleeper summary '; do sleep 1; done
+"$SWARM" inbox | while read -r seq sender kind body; do
+    echo "$sender ($kind): $(cat "$SWARM_HOME/.swarm/$body")"
+    "$SWARM" ack "$seq"
+done
+SWARM_SUMMARIZER='head -c 120' "$SWARM" drain
