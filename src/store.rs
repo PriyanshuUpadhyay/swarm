@@ -25,10 +25,6 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
             continue;
         }
 
-        if sql.is_empty() {
-            panic!("Sql empty")
-        }
-
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", index + 1)?;
     }
