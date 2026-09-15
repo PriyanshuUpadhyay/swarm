@@ -19,6 +19,10 @@ fn session_id() -> Result<i64, String> {
     env_var("SWARM_SESSION_ID")?.parse().map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())
 }
 
+fn adapter_name() -> String {
+    env::var("SWARM_ADAPTER").unwrap_or("tmux".into())
+}
+
 fn identity() -> Result<(i64, String), String> {
     Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
 }
@@ -44,7 +48,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, agent_id, role] = args && cmd == "spawn" {
         let session_id = session_id()?;
         swarm::store::add_agent(&connection, session_id, agent_id, role)?;
-        let adapter = swarm::adapter::load(&root, &env::var("SWARM_ADAPTER").unwrap_or("tmux".into()))?;
+        let adapter = swarm::adapter::load(&root, &adapter_name())?;
         let session = session_id.to_string();
         let pane = adapter.run("spawn", &[("session_id", &session), ("agent_id", agent_id)])?;
         swarm::store::set_pane(&connection, agent_id, &pane)?;
@@ -59,6 +63,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 &mut connection, &root, session_id, &agent_id, recipient, kind, &body,
             )?;
             println!("{seq}");
+            if let Some(pane) = swarm::store::pane_of(&connection, recipient)? {
+                let ring = swarm::adapter::load(&root, &adapter_name())
+                    .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
+                if let Err(error) = ring {
+                    eprintln!("swarm: ring failed: {error}");
+                }
+            }
             Ok(())
         }
         [cmd] if cmd == "inbox" => {
