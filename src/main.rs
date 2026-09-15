@@ -76,6 +76,25 @@ fn report_dead(
     swarm::store::clear_pane(connection, child)
 }
 
+/// One sweep pass: report each child of `agent_id` whose pane is gone.
+fn sweep_once(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter: &swarm::adapter::Adapter,
+    session_id: i64,
+    agent_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
+        if adapter.has_pane(&pane)? {
+            continue;
+        }
+        let note = format!("agent {child} died without a summary");
+        report_dead(connection, root, session_id, &child, agent_id, &note)?;
+        println!("dead {child}");
+    }
+    Ok(())
+}
+
 /// Feed the agent's captured log to the summarizer shell command and return its output.
 /// The log is removed only after a successful run, so a retry still has its input.
 fn summarize_log(log: &std::path::Path, summarizer: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -192,15 +211,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "sweep" => {
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
-            for (child, pane) in swarm::store::live_children(&connection, session_id, &agent_id)? {
-                if adapter.has_pane(&pane)? {
-                    continue;
-                }
-                let note = format!("agent {child} died without a summary");
-                report_dead(&mut connection, &root, session_id, &child, &agent_id, &note)?;
-                println!("dead {child}");
-            }
-            Ok(())
+            sweep_once(&mut connection, &root, &adapter, session_id, &agent_id)
         }
         [cmd] if cmd == "inbox" => {
             for m in swarm::store::inbox(&connection, session_id, &agent_id)? {
