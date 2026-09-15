@@ -189,6 +189,15 @@ pub fn live_children(connection: &Connection, session_id: i64, except: &str) -> 
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+pub fn has_summary(connection: &Connection, session_id: i64, sender_id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let count: i64 = connection.query_row(
+        "SELECT count(*) FROM message WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'",
+        (session_id, sender_id),
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
         .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
@@ -443,5 +452,18 @@ mod tests {
         let connection = seed(0);
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
         assert_eq!(orchestrator_of(&connection, OTHER_SESSION).unwrap_err().to_string(), "session 2 has no orchestrator");
+    }
+
+    #[test]
+    fn lists_live_children_and_summaries() {
+        let mut connection = seed(0);
+        set_pane(&connection, CODER, "%2").unwrap();
+        set_pane(&connection, ORCHESTRATOR, "%1").unwrap();
+        assert_eq!(live_children(&connection, SESSION, ORCHESTRATOR).unwrap(), [(CODER.to_string(), "%2".to_string())]);
+        clear_pane(&connection, CODER).unwrap();
+        assert!(live_children(&connection, SESSION, ORCHESTRATOR).unwrap().is_empty());
+        assert!(!has_summary(&connection, SESSION, CODER).unwrap());
+        send_message(&mut connection, &temp_root("summary"), SESSION, CODER, ORCHESTRATOR, "summary", "done").unwrap();
+        assert!(has_summary(&connection, SESSION, CODER).unwrap());
     }
 }
