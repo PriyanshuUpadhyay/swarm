@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -209,9 +209,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let note = format!("agent {agent_id} exited without a summary");
             report_dead(&mut connection, &root, session_id, &agent_id, &orchestrator, &note)
         }
-        [cmd] if cmd == "sweep" => {
+        [cmd, rest @ ..] if cmd == "sweep" => {
+            let every = match rest {
+                [] => None,
+                [flag, secs] if flag == "--every" => Some(secs.parse::<u64>().ok().filter(|s| *s > 0).ok_or(USAGE)?),
+                _ => return Err(USAGE.into()),
+            };
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
-            sweep_once(&mut connection, &root, &adapter, session_id, &agent_id)
+            loop {
+                sweep_once(&mut connection, &root, &adapter, session_id, &agent_id)?;
+                let Some(secs) = every else { return Ok(()) };
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+            }
         }
         [cmd] if cmd == "inbox" => {
             for m in swarm::store::inbox(&connection, session_id, &agent_id)? {
