@@ -5,7 +5,8 @@ set -eu
 
 SWARM=$(command -v "${SWARM:-swarm}")
 case $SWARM in /*) ;; *) SWARM=$PWD/$SWARM ;; esac   # children run in their own panes
-export SWARM_HOME=$(mktemp -d)
+SWARM_HOME=$(mktemp -d)
+export SWARM_HOME
 export SWARM_ADAPTER=tmux
 "$SWARM" init
 SWARM_SESSION_ID=$("$SWARM" session new lane)
