@@ -76,6 +76,18 @@ fn report_dead(
     swarm::store::clear_pane(connection, child)
 }
 
+/// Feed the agent's captured log to the summarizer shell command and return its output.
+/// The log is removed only after a successful run, so a retry still has its input.
+fn summarize_log(log: &std::path::Path, summarizer: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let input = std::fs::File::open(log).map_err(|e| format!("{}: {e}", log.display()))?;
+    let output = std::process::Command::new("sh").arg("-c").arg(summarizer).stdin(input).output()?;
+    if !output.status.success() {
+        return Err(format!("summarizer failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+    }
+    std::fs::remove_file(log)?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
