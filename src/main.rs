@@ -217,7 +217,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             };
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
             loop {
-                sweep_once(&mut connection, &root, &adapter, session_id, &agent_id)?;
+                match sweep_once(&mut connection, &root, &adapter, session_id, &agent_id) {
+                    Ok(()) => {}
+                    Err(error) if every.is_some() => eprintln!("swarm: sweep skipped: {error}"),
+                    Err(error) => return Err(error),
+                }
                 let Some(secs) = every else { return Ok(()) };
                 std::thread::sleep(std::time::Duration::from_secs(secs));
             }
