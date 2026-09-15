@@ -1,16 +1,13 @@
 const SWARM_DIR: &str = ".swarm";
 const SWARM_DB: &str = "swarm.db";
 
+/// SWARM_HOME when set, else HOME.
+pub fn home() -> Result<String, Box<dyn std::error::Error>> {
+    Ok(std::env::var("SWARM_HOME").or_else(|_| std::env::var("HOME"))?)
+}
+
 pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let swarm_home = std::env::var("SWARM_HOME");
-    let home = std::env::var("HOME")?;
-
-    let mut root_path = std::path::PathBuf::new();
-
-    root_path.push(swarm_home.unwrap_or(home.to_string()));
-    root_path.push(SWARM_DIR);
-
-    Ok(root_path)
+    Ok(std::path::PathBuf::from(home()?).join(SWARM_DIR))
 }
 
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
