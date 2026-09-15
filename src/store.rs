@@ -67,6 +67,16 @@ pub fn claim_next(connection: &Connection) -> Result<Option<i64>, Box<dyn std::e
     Ok(claimed)
 }
 
+/// (agent_id, kind, attempts) of one job.
+pub fn job(connection: &Connection, job_id: i64) -> Result<(String, String, i64), Box<dyn std::error::Error>> {
+    let row = connection.query_row(
+        "SELECT agent_id, kind, attempts FROM job WHERE id = ?1",
+        [job_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    Ok(row)
+}
+
 pub fn finish_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
     let changed = connection.execute(
         "UPDATE job SET state = 'done' WHERE id = ?1 AND state = 'running'",
@@ -293,6 +303,7 @@ mod tests {
     fn claims_due_queued_job() {
         let connection = seed(0);
         assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(job(&connection, 7).unwrap(), (CODER.to_string(), "build".to_string(), 1));
         assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
     }
 
