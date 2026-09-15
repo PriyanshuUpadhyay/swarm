@@ -76,7 +76,7 @@ mod tests {
     const FULL: &str = "# herdr\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\ncapture = herdr pane read\n";
 
     #[test]
-    fn parses_four_verbs_and_rejects_missing_or_unknown() {
+    fn parses_verbs_and_rejects_missing_or_unknown() {
         let adapter = parse("herdr", FULL).unwrap();
         assert_eq!(adapter.ring, "herdr pane send-text");
         let missing = parse("herdr", "spawn = a\nring = b\nlist = c\nclose = d\n").unwrap_err().to_string();
