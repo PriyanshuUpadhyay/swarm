@@ -407,4 +407,13 @@ mod tests {
             .unwrap();
         assert_eq!((done, once), (200, 200));
     }
+
+    #[test]
+    fn sets_and_reads_pane() {
+        let connection = seed(0);
+        assert_eq!(pane_of(&connection, CODER).unwrap(), None);
+        set_pane(&connection, CODER, "w8A:p2").unwrap();
+        assert_eq!(pane_of(&connection, CODER).unwrap().as_deref(), Some("w8A:p2"));
+        assert!(pane_of(&connection, "ghost").is_err());
+    }
 }
