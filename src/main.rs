@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -54,13 +54,21 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
         return swarm::store::add_agent(&connection, session_id()?, agent_id, role);
     }
-    if let [cmd, agent_id, role] = args && cmd == "spawn" {
+    if let [cmd, agent_id, role, rest @ ..] = args && cmd == "spawn" {
+        let command = match rest {
+            [] => rest,
+            [dash, command @ ..] if dash == "--" => command,
+            _ => return Err(USAGE.into()),
+        };
         let session_id = session_id()?;
         swarm::store::add_agent(&connection, session_id, agent_id, role)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         let session = session_id.to_string();
         let pane = adapter.run("spawn", &[("session_id", &session), ("agent_id", agent_id)])?;
         swarm::store::set_pane(&connection, agent_id, &pane)?;
+        if !command.is_empty() {
+            adapter.run("ring", &[("pane", &pane), ("text", &swarm::adapter::shell_line(command))])?;
+        }
         println!("{pane}");
         return Ok(());
     }
