@@ -175,6 +175,20 @@ pub fn pane_of(connection: &Connection, agent_id: &str) -> Result<Option<String>
     Ok(pane)
 }
 
+pub fn clear_pane(connection: &Connection, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute("UPDATE agent SET pane_id = NULL WHERE id = ?1", [agent_id])?;
+    Ok(())
+}
+
+/// Session agents that have a pane, except the caller, as (agent_id, pane_id) by id.
+pub fn live_children(connection: &Connection, session_id: i64, except: &str) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT id, pane_id FROM agent WHERE session_id = ?1 AND pane_id IS NOT NULL AND id != ?2 ORDER BY id",
+    )?;
+    let rows = statement.query_map((session_id, except), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
         .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
