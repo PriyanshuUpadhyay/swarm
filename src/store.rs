@@ -198,6 +198,26 @@ pub fn has_summary(connection: &Connection, session_id: i64, sender_id: &str) ->
     Ok(count > 0)
 }
 
+/// Apply the session talk mode: open passes, lane blocks child-to-child, relay sends
+/// child-to-child to the orchestrator as `relay:<recipient>`. Returns (recipient, kind).
+pub fn route(
+    connection: &Connection,
+    session_id: i64,
+    sender: &str,
+    recipient: &str,
+    kind: &str,
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let mode: String = connection.query_row("SELECT talk_mode FROM session WHERE id = ?1", [session_id], |r| r.get(0))?;
+    let orchestrator = orchestrator_of(connection, session_id)?;
+    if mode == "open" || sender == orchestrator || recipient == orchestrator {
+        return Ok((recipient.to_string(), kind.to_string()));
+    }
+    if mode == "lane" {
+        return Err(format!("lane: {sender} cannot message {recipient}").into());
+    }
+    Ok((orchestrator, format!("relay:{recipient}")))
+}
+
 pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
         .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
