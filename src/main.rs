@@ -36,6 +36,28 @@ fn identity() -> Result<(i64, String), String> {
     Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
 }
 
+/// Store the message, then ring the recipient's pane when it has one. The bell is a hint (R9),
+/// so a ring failure only warns.
+fn deliver(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    session_id: i64,
+    sender: &str,
+    recipient: &str,
+    kind: &str,
+    body: &str,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    let seq = swarm::store::send_message(connection, root, session_id, sender, recipient, kind, body)?;
+    if let Some(pane) = swarm::store::pane_of(connection, recipient)? {
+        let ring = swarm::adapter::load(root, &adapter_name())
+            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
+        if let Err(error) = ring {
+            eprintln!("swarm: ring failed: {error}");
+        }
+    }
+    Ok(seq)
+}
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
@@ -76,17 +98,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
-            let seq = swarm::store::send_message(
-                &mut connection, &root, session_id, &agent_id, recipient, kind, &body,
-            )?;
+            let seq = deliver(&mut connection, &root, session_id, &agent_id, recipient, kind, &body)?;
             println!("{seq}");
-            if let Some(pane) = swarm::store::pane_of(&connection, recipient)? {
-                let ring = swarm::adapter::load(&root, &adapter_name())
-                    .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
-                if let Err(error) = ring {
-                    eprintln!("swarm: ring failed: {error}");
-                }
-            }
             Ok(())
         }
         [cmd] if cmd == "inbox" => {
