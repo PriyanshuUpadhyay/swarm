@@ -43,15 +43,6 @@ pub fn enqueue_job(connection: &Connection, agent_id: &str, kind: &str) -> Resul
     Ok(connection.last_insert_rowid())
 }
 
-pub fn claim_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
-    let changed = connection.execute(
-        "UPDATE job SET state = 'running', attempts = attempts + 1
-         WHERE id = ?1 AND state = 'queued' AND run_after <= unixepoch()",
-        [job_id],
-    )?;
-    Ok(changed == 1)
-}
-
 pub fn claim_next(connection: &Connection) -> Result<Option<i64>, Box<dyn std::error::Error>> {
     use rusqlite::OptionalExtension;
     let claimed = connection
@@ -302,28 +293,27 @@ mod tests {
     #[test]
     fn claims_due_queued_job() {
         let connection = seed(0);
-        assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), Some(7));
         assert_eq!(job(&connection, 7).unwrap(), (CODER.to_string(), "build".to_string(), 1));
         assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
     }
 
     #[test]
-    fn rejects_missing_claimed_and_future_jobs() {
+    fn skips_claimed_and_future_jobs() {
         let connection = seed(0);
-        assert!(!claim_job(&connection, 8).unwrap());
-        assert!(claim_job(&connection, 7).unwrap());
-        assert!(!claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), Some(7));
+        assert_eq!(claim_next(&connection).unwrap(), None);
         assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
 
         let future = seed(i64::MAX);
-        assert!(!claim_job(&future, 7).unwrap());
+        assert_eq!(claim_next(&future).unwrap(), None);
         assert_eq!(state_and_attempts(&future), ("queued".into(), 0));
     }
 
     #[test]
     fn returns_error_without_job_table() {
         let bare = Connection::open_in_memory().unwrap();
-        assert!(claim_job(&bare, 7).is_err());
+        assert!(claim_next(&bare).is_err());
     }
 
     #[test]
@@ -332,7 +322,7 @@ mod tests {
         assert!(!finish_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("queued".into(), 0));
 
-        assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), Some(7));
         assert!(finish_job(&connection, 7).unwrap());
         assert!(!finish_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("done".into(), 1));
@@ -344,15 +334,15 @@ mod tests {
         assert!(!release_job(&connection, 7, 60).unwrap());
         assert_eq!(state_and_attempts(&connection), ("queued".into(), 0));
 
-        assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), Some(7));
         assert!(release_job(&connection, 7, 60).unwrap());
         assert_eq!(state_and_attempts(&connection), ("queued".into(), 1));
-        assert!(!claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), None);
 
         let retry = seed(0);
-        assert!(claim_job(&retry, 7).unwrap());
+        assert_eq!(claim_next(&retry).unwrap(), Some(7));
         assert!(release_job(&retry, 7, 0).unwrap());
-        assert!(claim_job(&retry, 7).unwrap());
+        assert_eq!(claim_next(&retry).unwrap(), Some(7));
         assert_eq!(state_and_attempts(&retry), ("running".into(), 2));
     }
 
@@ -362,9 +352,9 @@ mod tests {
         assert!(!park_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("queued".into(), 0));
 
-        assert!(claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), Some(7));
         assert!(park_job(&connection, 7).unwrap());
-        assert!(!claim_job(&connection, 7).unwrap());
+        assert_eq!(claim_next(&connection).unwrap(), None);
         assert!(!release_job(&connection, 7, 0).unwrap());
         assert!(!park_job(&connection, 7).unwrap());
         assert_eq!(state_and_attempts(&connection), ("parked".into(), 1));
