@@ -4,6 +4,7 @@ pub struct Adapter {
     pub ring: String,
     pub list: String,
     pub close: String,
+    pub capture: String,
 }
 
 pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Error>> {
@@ -13,7 +14,13 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
         verbs.insert(key.trim(), value.trim().to_string());
     }
     let mut take = |verb: &str| verbs.remove(verb).ok_or(format!("adapter {name}: missing {verb}"));
-    let adapter = Adapter { spawn: take("spawn")?, ring: take("ring")?, list: take("list")?, close: take("close")? };
+    let adapter = Adapter {
+        spawn: take("spawn")?,
+        ring: take("ring")?,
+        list: take("list")?,
+        close: take("close")?,
+        capture: take("capture")?,
+    };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
     }
@@ -33,6 +40,7 @@ impl Adapter {
             "ring" => &self.ring,
             "list" => &self.list,
             "close" => &self.close,
+            "capture" => &self.capture,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         let mut command = std::process::Command::new("sh");
@@ -65,14 +73,14 @@ pub fn shell_line(args: &[String]) -> String {
 mod tests {
     use super::*;
 
-    const FULL: &str = "# herdr\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\n";
+    const FULL: &str = "# herdr\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\ncapture = herdr pane read\n";
 
     #[test]
     fn parses_four_verbs_and_rejects_missing_or_unknown() {
         let adapter = parse("herdr", FULL).unwrap();
         assert_eq!(adapter.ring, "herdr pane send-text");
-        let missing = parse("herdr", "spawn = a\nring = b\nlist = c\n").unwrap_err().to_string();
-        assert_eq!(missing, "adapter herdr: missing close");
+        let missing = parse("herdr", "spawn = a\nring = b\nlist = c\nclose = d\n").unwrap_err().to_string();
+        assert_eq!(missing, "adapter herdr: missing capture");
         let unknown = parse("herdr", &format!("{FULL}dance = d\n")).unwrap_err().to_string();
         assert_eq!(unknown, "adapter herdr: unknown key dance");
         assert!(parse("herdr", "spawn\n").is_err());
@@ -80,12 +88,13 @@ mod tests {
 
     #[test]
     fn runs_verb_with_env_vars_and_reports_failure() {
-        let fake = "spawn = echo spawned $SWARM_NAME\nring = printf '%s' \"$SWARM_TEXT\"\nlist = echo a b\nclose = echo boom >&2; exit 3\n";
+        let fake = "spawn = echo spawned $SWARM_NAME\nring = printf '%s' \"$SWARM_TEXT\"\nlist = echo a b\nclose = echo boom >&2; exit 3\ncapture = echo text of $SWARM_PANE\n";
         let adapter = parse("fake", fake).unwrap();
         assert_eq!(adapter.run("spawn", &[("name", "coder")]).unwrap(), "spawned coder");
         assert_eq!(adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(), "hi; rm -rf x");
         assert_eq!(adapter.run("close", &[]).unwrap_err().to_string(), "close failed: boom");
         assert!(adapter.run("dance", &[]).is_err());
+        assert_eq!(adapter.run("capture", &[("pane", "%3")]).unwrap(), "text of %3");
     }
 
     #[test]
@@ -96,7 +105,7 @@ mod tests {
 
     #[test]
     fn has_pane_matches_whole_tokens_only() {
-        let fake = "spawn = a\nring = b\nlist = echo '%1 zsh %12 zsh \"w8A:p2\"'\nclose = d\n";
+        let fake = "spawn = a\nring = b\nlist = echo '%1 zsh %12 zsh \"w8A:p2\"'\nclose = d\ncapture = e\n";
         let adapter = parse("fake", fake).unwrap();
         assert!(adapter.has_pane("%1").unwrap());
         assert!(adapter.has_pane("%12").unwrap());
