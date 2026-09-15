@@ -106,7 +106,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let pane = adapter.run("spawn", &[("session_id", &session), ("agent_id", agent_id)])?;
         swarm::store::set_pane(&connection, agent_id, &pane)?;
         if !command.is_empty() {
-            adapter.run("ring", &[("pane", &pane), ("text", &swarm::adapter::shell_line(command))])?;
+            let exe = env::current_exe()?.to_string_lossy().into_owned();
+            let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
+            let line = format!("{}; {hook}", swarm::adapter::shell_line(command));
+            adapter.run("ring", &[("pane", &pane), ("text", &line)])?;
         }
         println!("{pane}");
         return Ok(());
