@@ -41,6 +41,14 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
 
+## Agents
+
+Two skills tell an agent CLI how to take part. `.claude/skills/swarm-voice` is for a child that
+`swarm spawn` started, and `.claude/skills/swarm-orchestrator` is for the parent. Claude Code loads
+them from `.claude/skills`; Codex and AGY read `AGENTS.md`, which points at both. `demo/real.sh`
+runs one live voice: from a Herdr pane, `cargo install --path .` then
+`VOICE=claude|codex|agy sh demo/real.sh`.
+
 ## Walkthrough
 
 Run the orchestrator inside tmux, so `spawn` has a pane to split.
