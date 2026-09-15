@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | finish | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -99,6 +99,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
             let seq = deliver(&mut connection, &root, session_id, &agent_id, recipient, kind, &body)?;
+            println!("{seq}");
+            Ok(())
+        }
+        [cmd] if cmd == "finish" => {
+            let summary = std::io::read_to_string(std::io::stdin())?;
+            let orchestrator = swarm::store::orchestrator_of(&connection, session_id)?;
+            let seq = deliver(&mut connection, &root, session_id, &agent_id, &orchestrator, "summary", &summary)?;
             println!("{seq}");
             Ok(())
         }
