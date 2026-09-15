@@ -9,7 +9,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -40,6 +40,16 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
         return swarm::store::add_agent(&connection, session_id()?, agent_id, role);
+    }
+    if let [cmd, agent_id, role] = args && cmd == "spawn" {
+        let session_id = session_id()?;
+        swarm::store::add_agent(&connection, session_id, agent_id, role)?;
+        let adapter = swarm::adapter::load(&root, &env::var("SWARM_ADAPTER").unwrap_or("tmux".into()))?;
+        let session = session_id.to_string();
+        let pane = adapter.run("spawn", &[("session_id", &session), ("agent_id", agent_id)])?;
+        swarm::store::set_pane(&connection, agent_id, &pane)?;
+        println!("{pane}");
+        return Ok(());
     }
     let (session_id, agent_id) = identity()?;
     match args {
