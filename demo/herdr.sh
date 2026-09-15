@@ -1,6 +1,6 @@
 #!/bin/sh
 # S5 proof with a live agent: one agent CLI voice answers a question through swarm.
-# Run from a Herdr pane: cargo install --path . && VOICE=claude|codex|agy sh demo/real.sh
+# Run from a Herdr pane: cargo install --path . && VOICE=claude|codex|agy sh demo/herdr.sh
 set -eu
 
 command -v swarm >/dev/null || { echo "swarm is not on PATH; run: cargo install --path ." >&2; exit 1; }
@@ -11,7 +11,7 @@ case ${VOICE:=claude} in
     claude) set -- claude --allowedTools 'Bash(swarm:*)' 'Bash(printf:*)' 'Bash(echo:*)' ;;
     codex) set -- codex --model gpt-6-astra -c 'model_reasoning_effort="high"' --sandbox workspace-write --ask-for-approval never ;;
     agy) set -- agy --model gemini-3.8-flash-high --effort high ;;   # accept-edits: skip-permissions keeps Bash sandboxed
-    *) echo "usage: VOICE=claude|codex|agy sh demo/real.sh" >&2; exit 1 ;;
+    *) echo "usage: VOICE=claude|codex|agy sh demo/herdr.sh" >&2; exit 1 ;;
 esac
 if [ -n "${VOICE_CMD:-}" ]; then
     set -f

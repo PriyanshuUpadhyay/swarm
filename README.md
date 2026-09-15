@@ -46,9 +46,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that
 `swarm spawn` started, and `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code
 finds them through `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads
-`AGENTS.md`. `sh scripts/install-skills.sh` links them into every agent CLI on the machine. `demo/real.sh`
-runs one live voice: from a Herdr pane, `cargo install --path .` then
-`VOICE=claude|codex|agy sh demo/real.sh`.
+`AGENTS.md`. `sh scripts/install-skills.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
+`demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
+`VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 
 ## Walkthrough
 
