@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -127,6 +127,36 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             adapter.run("ring", &[("pane", &pane), ("text", &line)])?;
         }
         println!("{pane}");
+        return Ok(());
+    }
+    if let [cmd] = args && cmd == "drain" {
+        let summarizer = env_var("SWARM_SUMMARIZER")?;
+        while let Some(job_id) = swarm::store::claim_next(&connection)? {
+            let (agent, kind, attempts) = swarm::store::job(&connection, job_id)?;
+            if kind != "summarize" {
+                swarm::store::park_job(&connection, job_id)?;
+                println!("parked {job_id} unknown kind {kind}");
+                continue;
+            }
+            let session = swarm::store::session_of(&connection, &agent)?;
+            let log = root.join(format!("runs/{session}/{agent}.log"));
+            match summarize_log(&log, &summarizer) {
+                Ok(summary) => {
+                    let orchestrator = swarm::store::orchestrator_of(&connection, session)?;
+                    deliver(&mut connection, &root, session, &agent, &orchestrator, "summary", &summary)?;
+                    swarm::store::finish_job(&connection, job_id)?;
+                    println!("done {job_id}");
+                }
+                Err(error) if attempts < 3 => {
+                    swarm::store::release_job(&connection, job_id, 30)?;
+                    println!("retry {job_id}: {error}");
+                }
+                Err(error) => {
+                    swarm::store::park_job(&connection, job_id)?;
+                    println!("parked {job_id}: {error}");
+                }
+            }
+        }
         return Ok(());
     }
     if let [cmd, child] = args && cmd == "close" {
