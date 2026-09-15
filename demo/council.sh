@@ -24,3 +24,10 @@ done
 for voice in $VOICES; do
     echo "Is the parser ready to ship? Answer in one line." | "$SWARM" send "$voice" ask
 done
+
+# Wait for one summary per voice, print each body, and ack it.
+until [ "$("$SWARM" inbox | grep -c ' summary ')" -eq 3 ]; do sleep 1; done
+"$SWARM" inbox | while read -r seq sender kind body; do
+    echo "$sender ($kind): $(cat "$SWARM_HOME/.swarm/$body")"
+    "$SWARM" ack "$seq"
+done
