@@ -43,7 +43,7 @@ until herdr pane process-info --pane "$PANE" | grep -qi "\"cmdline\":\"[^\"]*$1"
     sleep 1; tries=$((tries + 1))
 done
 sleep 3   # let the TUI draw its input box before typing
-herdr pane run "$PANE" "You are agent reviewer. Read $PWD/.claude/skills/swarm-voice/SKILL.md and follow it. Answer from your own knowledge in one short line. Wait for the prompt 'swarm: new message'." >/dev/null
+herdr pane run "$PANE" "You are agent reviewer. Read $PWD/skills/swarm-voice/SKILL.md and follow it. Answer from your own knowledge in one short line. Wait for the prompt 'swarm: new message'." >/dev/null
 sleep 5
 
 echo "In one line: what does the swarm CLI do?" | swarm send reviewer ask

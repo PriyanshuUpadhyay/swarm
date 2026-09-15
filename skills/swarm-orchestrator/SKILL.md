@@ -24,9 +24,9 @@ swarm spawn <id> <role> -- <agent cli and its flags>   # prints the pane id
 
 `spawn` stamps `SWARM_HOME`, `SWARM_ADAPTER`, `SWARM_SESSION_ID`, and `SWARM_AGENT_ID` into the
 pane; never put ids into the command. The child must know the voice protocol in
-`.claude/skills/swarm-voice/SKILL.md`. Claude Code loads it when the pane's cwd is this repo, and
+`skills/swarm-voice/SKILL.md`. Claude Code loads it when the pane's cwd is this repo, and
 Codex and AGY find it through `AGENTS.md`; otherwise give it as the child's first prompt, for
-example "Read <repo>/.claude/skills/swarm-voice/SKILL.md and follow it".
+example "Read <repo>/skills/swarm-voice/SKILL.md and follow it".
 
 ## Work
 
