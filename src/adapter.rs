@@ -46,6 +46,13 @@ impl Adapter {
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
+
+    /// True when `pane` appears as a whole token in the list output, so %1 never matches %12.
+    pub fn has_pane(&self, pane: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        let listing = self.run("list", &[])?;
+        let is_id_char = |c: char| c.is_alphanumeric() || "%:_-".contains(c);
+        Ok(listing.split(|c: char| !is_id_char(c)).any(|token| token == pane))
+    }
 }
 
 /// One shell line with every argument single-quoted, so spaces and quotes stay data.
@@ -85,5 +92,15 @@ mod tests {
     fn shell_line_quotes_every_argument() {
         let args: Vec<String> = ["echo", "a b", "it's"].map(String::from).to_vec();
         assert_eq!(shell_line(&args), "'echo' 'a b' 'it'\\''s'");
+    }
+
+    #[test]
+    fn has_pane_matches_whole_tokens_only() {
+        let fake = "spawn = a\nring = b\nlist = echo '%1 zsh %12 zsh \"w8A:p2\"'\nclose = d\n";
+        let adapter = parse("fake", fake).unwrap();
+        assert!(adapter.has_pane("%1").unwrap());
+        assert!(adapter.has_pane("%12").unwrap());
+        assert!(adapter.has_pane("w8A:p2").unwrap());
+        assert!(!adapter.has_pane("%2").unwrap());
     }
 }
