@@ -40,3 +40,25 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `sweep` | agent | Report each child whose pane is gone, print `dead <id>`. |
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
+
+## Walkthrough
+
+Run the orchestrator inside tmux, so `spawn` has a pane to split.
+
+```sh
+export SWARM_SESSION_ID=$(swarm session new lane)   # lane: children talk only to the orchestrator
+export SWARM_AGENT_ID=orchestrator
+swarm agent add orchestrator orchestrator
+swarm spawn coder coder -- my-agent --task "write the parser"   # prints the pane id, e.g. %3
+
+# in the coder pane, SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
+echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 1
+
+# back in the orchestrator pane
+swarm inbox                                            # 1 coder summary runs/1/1.txt
+swarm ack 1
+swarm close coder
+
+# a child that exits without finish gets a fallback summary and a summarize job
+SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
+```
