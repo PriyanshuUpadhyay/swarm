@@ -26,6 +26,28 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
     parse(name, &text)
 }
 
+impl Adapter {
+    pub fn run(&self, verb: &str, vars: &[(&str, &str)]) -> Result<String, Box<dyn std::error::Error>> {
+        let line = match verb {
+            "spawn" => &self.spawn,
+            "ring" => &self.ring,
+            "list" => &self.list,
+            "close" => &self.close,
+            _ => return Err(format!("adapter: unknown verb {verb}").into()),
+        };
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(line);
+        for (key, value) in vars {
+            command.env(format!("SWARM_{}", key.to_uppercase()), value);
+        }
+        let output = command.output()?;
+        if !output.status.success() {
+            return Err(format!("{verb} failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
