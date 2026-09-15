@@ -47,8 +47,9 @@ fn deliver(
     kind: &str,
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
-    let seq = swarm::store::send_message(connection, root, session_id, sender, recipient, kind, body)?;
-    if let Some(pane) = swarm::store::pane_of(connection, recipient)? {
+    let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
+    let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
+    if let Some(pane) = swarm::store::pane_of(connection, &recipient)? {
         let ring = swarm::adapter::load(root, &adapter_name())
             .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
         if let Err(error) = ring {
