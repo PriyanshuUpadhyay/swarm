@@ -164,6 +164,17 @@ pub fn add_agent(
     Ok(())
 }
 
+pub fn set_pane(connection: &Connection, agent_id: &str, pane_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute("UPDATE agent SET pane_id = ?1 WHERE id = ?2", [pane_id, agent_id])?;
+    Ok(())
+}
+
+pub fn pane_of(connection: &Connection, agent_id: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let pane: Option<String> =
+        connection.query_row("SELECT pane_id FROM agent WHERE id = ?1", [agent_id], |r| r.get(0))?;
+    Ok(pane)
+}
+
 pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "INSERT INTO read_mark (message_seq, agent_id) VALUES (?1, ?2)
@@ -188,7 +199,7 @@ mod tests {
         connection
             .execute_batch(&format!(
                 "INSERT INTO session VALUES ({SESSION}, 'lane'), ({OTHER_SESSION}, 'lane');
-                 INSERT INTO agent VALUES ('{ORCHESTRATOR}', {SESSION}, 'orchestrator'), ('{CODER}', {SESSION}, 'coder'), ('{OUTSIDER}', {OTHER_SESSION}, 'coder');
+                 INSERT INTO agent (id, session_id, role) VALUES ('{ORCHESTRATOR}', {SESSION}, 'orchestrator'), ('{CODER}', {SESSION}, 'coder'), ('{OUTSIDER}', {OTHER_SESSION}, 'coder');
                  INSERT INTO job (id, agent_id, kind, run_after) VALUES (7, '{CODER}', 'build', {run_after});"
             ))
             .unwrap();
@@ -380,7 +391,7 @@ mod tests {
         connection
             .execute_batch(&format!(
                 "INSERT INTO session VALUES ({SESSION}, 'lane');
-                 INSERT INTO agent VALUES ('{CODER}', {SESSION}, 'coder');"
+                 INSERT INTO agent (id, session_id, role) VALUES ('{CODER}', {SESSION}, 'coder');"
             ))
             .unwrap();
         for _ in 0..200 {
