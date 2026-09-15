@@ -42,3 +42,12 @@ until "$SWARM" inbox | grep -q ' sleeper summary '; do sleep 1; done
     "$SWARM" ack "$seq"
 done
 SWARM_SUMMARIZER='head -c 120' "$SWARM" drain
+
+# A child whose pane is killed: no hook runs, so sweep reports it dead and sends the fallback.
+PANE=$("$SWARM" spawn ghost worker -- sleep 300)
+tmux kill-pane -t "$PANE"
+"$SWARM" sweep
+"$SWARM" inbox | while read -r seq sender kind body; do
+    echo "$sender ($kind): $(cat "$SWARM_HOME/.swarm/$body")"
+    "$SWARM" ack "$seq"
+done
