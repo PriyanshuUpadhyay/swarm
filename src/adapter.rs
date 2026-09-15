@@ -48,6 +48,12 @@ impl Adapter {
     }
 }
 
+/// One shell line with every argument single-quoted, so spaces and quotes stay data.
+pub fn shell_line(args: &[String]) -> String {
+    let quoted: Vec<String> = args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect();
+    quoted.join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +79,11 @@ mod tests {
         assert_eq!(adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(), "hi; rm -rf x");
         assert_eq!(adapter.run("close", &[]).unwrap_err().to_string(), "close failed: boom");
         assert!(adapter.run("dance", &[]).is_err());
+    }
+
+    #[test]
+    fn shell_line_quotes_every_argument() {
+        let args: Vec<String> = ["echo", "a b", "it's"].map(String::from).to_vec();
+        assert_eq!(shell_line(&args), "'echo' 'a b' 'it'\\''s'");
     }
 }
