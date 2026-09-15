@@ -8,6 +8,7 @@ CREATE TABLE agent (
       id TEXT PRIMARY KEY NOT NULL,
       session_id INTEGER NOT NULL REFERENCES session(id),
       role TEXT NOT NULL,
+      pane_id TEXT,
       UNIQUE (session_id, id)
   );
 
