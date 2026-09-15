@@ -64,4 +64,14 @@ mod tests {
         assert_eq!(unknown, "adapter herdr: unknown key dance");
         assert!(parse("herdr", "spawn\n").is_err());
     }
+
+    #[test]
+    fn runs_verb_with_env_vars_and_reports_failure() {
+        let fake = "spawn = echo spawned $SWARM_NAME\nring = printf '%s' \"$SWARM_TEXT\"\nlist = echo a b\nclose = echo boom >&2; exit 3\n";
+        let adapter = parse("fake", fake).unwrap();
+        assert_eq!(adapter.run("spawn", &[("name", "coder")]).unwrap(), "spawned coder");
+        assert_eq!(adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(), "hi; rm -rf x");
+        assert_eq!(adapter.run("close", &[]).unwrap_err().to_string(), "close failed: boom");
+        assert!(adapter.run("dance", &[]).is_err());
+    }
 }
