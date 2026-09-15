@@ -14,3 +14,13 @@ export SWARM_SESSION_ID
 export SWARM_AGENT_ID=orchestrator
 "$SWARM" agent add orchestrator orchestrator
 echo "session $SWARM_SESSION_ID in $SWARM_HOME"
+
+# Each voice waits for a message, then answers with finish. The pane has SWARM_SESSION_ID and
+# SWARM_AGENT_ID stamped by spawn; the binary path is baked in because PATH may not carry it.
+VOICES="reviewer tester architect"
+for voice in $VOICES; do
+    "$SWARM" spawn "$voice" voice -- sh -c "until $SWARM inbox | grep -q .; do sleep 1; done; echo \"$voice says: ship it\" | $SWARM finish"
+done
+for voice in $VOICES; do
+    echo "Is the parser ready to ship? Answer in one line." | "$SWARM" send "$voice" ask
+done
