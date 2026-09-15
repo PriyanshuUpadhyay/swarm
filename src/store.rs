@@ -175,6 +175,13 @@ pub fn pane_of(connection: &Connection, agent_id: &str) -> Result<Option<String>
     Ok(pane)
 }
 
+pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<String, Box<dyn std::error::Error>> {
+    let id = connection
+        .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
+        .map_err(|_| format!("session {session_id} has no orchestrator"))?;
+    Ok(id)
+}
+
 pub fn ack(connection: &Connection, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "INSERT INTO read_mark (message_seq, agent_id) VALUES (?1, ?2)
@@ -415,5 +422,12 @@ mod tests {
         set_pane(&connection, CODER, "w8A:p2").unwrap();
         assert_eq!(pane_of(&connection, CODER).unwrap().as_deref(), Some("w8A:p2"));
         assert!(pane_of(&connection, "ghost").is_err());
+    }
+
+    #[test]
+    fn finds_the_session_orchestrator() {
+        let connection = seed(0);
+        assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
+        assert_eq!(orchestrator_of(&connection, OTHER_SESSION).unwrap_err().to_string(), "session 2 has no orchestrator");
     }
 }
