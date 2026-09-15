@@ -103,7 +103,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         swarm::store::add_agent(&connection, session_id, agent_id, role)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         let session = session_id.to_string();
-        let pane = adapter.run("spawn", &[("session_id", &session), ("agent_id", agent_id)])?;
+        let home = env::var("SWARM_HOME").or_else(|_| env::var("HOME"))?;
+        let vars = [("session_id", session.as_str()), ("agent_id", agent_id), ("home", &home), ("adapter", &adapter_name())];
+        let pane = adapter.run("spawn", &vars)?;
         swarm::store::set_pane(&connection, agent_id, &pane)?;
         if !command.is_empty() {
             let exe = env::current_exe()?.to_string_lossy().into_owned();
