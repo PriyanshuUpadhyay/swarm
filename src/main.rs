@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | finish | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | finish | sweep | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -107,6 +107,22 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let orchestrator = swarm::store::orchestrator_of(&connection, session_id)?;
             let seq = deliver(&mut connection, &root, session_id, &agent_id, &orchestrator, "summary", &summary)?;
             println!("{seq}");
+            Ok(())
+        }
+        [cmd] if cmd == "sweep" => {
+            let adapter = swarm::adapter::load(&root, &adapter_name())?;
+            for (child, pane) in swarm::store::live_children(&connection, session_id, &agent_id)? {
+                if adapter.has_pane(&pane)? {
+                    continue;
+                }
+                if !swarm::store::has_summary(&connection, session_id, &child)? {
+                    let note = format!("agent {child} died without a summary");
+                    deliver(&mut connection, &root, session_id, &child, &agent_id, "summary", &note)?;
+                    swarm::store::enqueue_job(&connection, &child, "summarize")?;
+                }
+                swarm::store::clear_pane(&connection, &child)?;
+                println!("dead {child}");
+            }
             Ok(())
         }
         [cmd] if cmd == "inbox" => {
