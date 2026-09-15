@@ -18,7 +18,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | send <recipient> <kind> | finish | exited | sweep | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -116,6 +116,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         println!("{pane}");
         return Ok(());
+    }
+    if let [cmd, child] = args && cmd == "close" {
+        session_id()?;
+        let pane = swarm::store::pane_of(&connection, child)?.ok_or("swarm: no pane recorded")?;
+        swarm::adapter::load(&root, &adapter_name())?.run("close", &[("pane", &pane)])?;
+        return swarm::store::clear_pane(&connection, child);
     }
     let (session_id, agent_id) = identity()?;
     match args {
