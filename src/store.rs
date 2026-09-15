@@ -486,4 +486,17 @@ mod tests {
         send_message(&mut connection, &temp_root("summary"), SESSION, CODER, ORCHESTRATOR, "summary", "done").unwrap();
         assert!(has_summary(&connection, SESSION, CODER).unwrap());
     }
+
+    #[test]
+    fn routes_by_talk_mode() {
+        let connection = seed(0);
+        connection.execute_batch("INSERT INTO agent (id, session_id, role) VALUES ('reviewer', 1, 'reviewer')").unwrap();
+        let set_mode = |mode: &str| connection.execute("UPDATE session SET talk_mode = ?1 WHERE id = 1", [mode]).unwrap();
+        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap_err().to_string(), "lane: coder cannot message reviewer");
+        assert_eq!(route(&connection, SESSION, CODER, ORCHESTRATOR, "ask").unwrap(), (ORCHESTRATOR.into(), "ask".into()));
+        set_mode("relay");
+        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), (ORCHESTRATOR.into(), "relay:reviewer".into()));
+        set_mode("open");
+        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), ("reviewer".into(), "ask".into()));
+    }
 }
