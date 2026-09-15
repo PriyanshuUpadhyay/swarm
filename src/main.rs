@@ -9,7 +9,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | session new <talk_mode> | agent add <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | send <recipient> <kind> | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -28,6 +28,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return init();
     }
     let root = swarm::paths::root_dir()?;
+    if let [cmd, sub, name] = args && cmd == "adapter" && sub == "check" {
+        swarm::adapter::load(&root, name)?;
+        println!("ok {name}");
+        return Ok(());
+    }
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     if let [cmd, sub, talk_mode] = args && cmd == "session" && sub == "new" {
         println!("{}", swarm::store::create_session(&connection, talk_mode)?);
