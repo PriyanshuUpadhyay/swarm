@@ -47,8 +47,9 @@ while [ "$tries" -lt 30 ]; do
 done
 sleep 3   # let the TUI draw its input box before typing
 tmux send-keys -t "$PANE" -l "You are agent reviewer. Read $PWD/skills/swarm-voice/SKILL.md and follow it. Answer from your own knowledge in one short line. Wait for the prompt 'swarm: new message'."
+sleep 0.5   # an Enter sent inside the paste burst is a newline to Codex, not a submit
 tmux send-keys -t "$PANE" Enter
-sleep 5
+sleep 20   # the voice reads the skill file first; a ring that lands mid-turn is typed but not submitted
 
 echo "In one line: what does the swarm CLI do?" | swarm send reviewer ask
 waited=0
