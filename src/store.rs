@@ -218,6 +218,13 @@ pub fn route(
     Ok((orchestrator, format!("relay:{recipient}")))
 }
 
+pub fn session_of(connection: &Connection, agent_id: &str) -> Result<i64, Box<dyn std::error::Error>> {
+    let session_id = connection
+        .query_row("SELECT session_id FROM agent WHERE id = ?1", [agent_id], |r| r.get(0))
+        .map_err(|_| format!("unknown agent {agent_id}"))?;
+    Ok(session_id)
+}
+
 pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
         .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
@@ -498,5 +505,12 @@ mod tests {
         assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), (ORCHESTRATOR.into(), "relay:reviewer".into()));
         set_mode("open");
         assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), ("reviewer".into(), "ask".into()));
+    }
+
+    #[test]
+    fn finds_the_agent_session() {
+        let connection = seed(0);
+        assert_eq!(session_of(&connection, OUTSIDER).unwrap(), OTHER_SESSION);
+        assert_eq!(session_of(&connection, "ghost").unwrap_err().to_string(), "unknown agent ghost");
     }
 }
