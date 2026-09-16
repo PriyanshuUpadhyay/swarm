@@ -45,6 +45,15 @@ struct CreateWorkspaceView: View {
     /// Resolved from the same precedence chain a new session would use, so the window opens showing
     /// what would have happened anyway rather than a second set of defaults.
     @State private var controls = ComposerControls()
+    @State private var launchRoles: [SwarmRole] = []
+    @State private var selectedLaunchRoleID: String?
+    @State private var accountOptions: [SwarmAccountOption] = []
+    @State private var selectedAccount: SwarmAccountSelection?
+    @State private var swarmProfilesUnavailable = false
+    @State private var isLoadingLaunchAccounts = false
+    @State private var launchAccountCaption: String?
+    @State private var launchAccountRequest = 0
+    @State private var defaultLaunchControls = ComposerControls()
 
     @State private var baseBranch = ""
     @State private var branches: [String] = []
@@ -188,7 +197,12 @@ struct CreateWorkspaceView: View {
             hasCheckout: checkout != nil,
             isChatWorkspace: mode.runsAnAgent,
             isBusy: app.isCreatingWorkspace || isLoading
-        )
+        ) && launchSelectionIsReady
+    }
+
+    private var launchSelectionIsReady: Bool {
+        guard mode.runsAnAgent, selectedLaunchRoleID != nil else { return true }
+        return !isLoadingLaunchAccounts
     }
 
     /// Whether the name field is worth showing.
@@ -242,6 +256,7 @@ struct CreateWorkspaceView: View {
         // in flight when the project changed could land another project's branches on this one's
         // window. `.task(id:)` cancels the stale load; `load` checks before writing.
         .task(id: repoID) { await load() }
+        .task(id: launchAccountRequest) { await loadLaunchAccounts() }
         // Keyed on both lists that can change the answer: a workspace started or archived
         // elsewhere while this window is open, and an archive cleared out.
         .task(id: [app.workspaces.count, app.archivedRevision]) {
@@ -505,6 +520,10 @@ struct CreateWorkspaceView: View {
                 .font(Typo.title)
                 .foregroundStyle(Palette.textPrimary)
 
+            if mode.runsAnAgent {
+                launchPickers
+            }
+
             switch mode {
             case .chat, .claudeCLI, .codexCLI: chatBox
             // One box for both, because they ask the same question. What differs between a
@@ -530,6 +549,49 @@ struct CreateWorkspaceView: View {
         .help(defaultCLIMode == nil
               ? "CLI chat supports Claude and Codex. Choose either as your default agent to use it."
               : "Chat and CLI chat use your default agent configuration")
+    }
+
+    @ViewBuilder
+    private var launchPickers: some View {
+        if !swarmProfilesUnavailable, !launchRoles.isEmpty {
+            VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
+                HStack(spacing: Metrics.spacingWide) {
+                    Picker("Role", selection: Binding(
+                        get: { selectedLaunchRoleID },
+                        set: { chooseLaunchRole($0) }
+                    )) {
+                        Text(controls == defaultLaunchControls ? "Default" : "Custom")
+                            .tag(nil as String?)
+                        ForEach(launchRoles) { role in
+                            Text(role.launchDisabledReason.map { "\(role.role) (\($0))" }
+                                 ?? role.role)
+                                .tag(role.id as String?)
+                                .disabled(role.launchDisabledReason != nil)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    if !accountOptions.isEmpty {
+                        Picker("Account", selection: $selectedAccount) {
+                            ForEach(accountOptions) { option in
+                                Text(option.disabledReason.map { "\(option.label) (\($0))" }
+                                     ?? option.label)
+                                    .tag(option.selection as SwarmAccountSelection?)
+                                    .disabled(option.disabledReason != nil)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+
+                if let launchAccountCaption {
+                    Text(launchAccountCaption)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var defaultCLIMode: WorkspaceStartMode? {
@@ -582,7 +644,7 @@ struct CreateWorkspaceView: View {
         ) { actions in
             ComposerFooterView(
                 controls: controls,
-                onChange: { controls = $0 },
+                onChange: updateLaunchControls,
                 canSend: canCreate,
                 intent: .create,
                 // This window's width is fixed and was chosen for this row with its words on, so
@@ -982,12 +1044,112 @@ struct CreateWorkspaceView: View {
             outputStyle: appDefaults.outputStyle,
             codexContextWindow: appDefaults.codexContextWindow
         )
+        defaultLaunchControls = controls
+        await loadLaunchRoles()
 
         baseBranch = WorkspaceStartContext.resolvedBaseBranch(
             current: baseBranch,
             branches: branchOptions,
             defaultBranch: repo.defaultBranch
         )
+    }
+
+    private func loadLaunchRoles() async {
+        do {
+            let roles = try await app.swarmProfiles.roles()
+            guard !Task.isCancelled else { return }
+            swarmProfilesUnavailable = false
+            launchRoles = roles
+            selectedLaunchRoleID = SwarmRole.initialLaunchRole(
+                in: roles, controls: controls
+            )?.id
+            requestLaunchAccounts()
+        } catch SwarmProfileError.unavailable {
+            guard !Task.isCancelled else { return }
+            swarmProfilesUnavailable = true
+            launchRoles = []
+            selectedLaunchRoleID = nil
+            controls = defaultLaunchControls
+            resetLaunchAccounts()
+        } catch {
+            guard !Task.isCancelled else { return }
+            launchRoles = []
+            selectedLaunchRoleID = nil
+            controls = defaultLaunchControls
+            resetLaunchAccounts()
+        }
+    }
+
+    private func chooseLaunchRole(_ id: String?) {
+        guard let id else {
+            selectedLaunchRoleID = nil
+            controls = defaultLaunchControls
+            requestLaunchAccounts()
+            return
+        }
+        guard let role = launchRoles.first(where: { $0.id == id }),
+              let chosen = role.applyingToLaunchControls(controls) else { return }
+        selectedLaunchRoleID = id
+        requestLaunchAccounts()
+        controls = chosen
+    }
+
+    private func updateLaunchControls(_ updated: ComposerControls) {
+        controls = updated
+        guard let id = selectedLaunchRoleID,
+              let role = launchRoles.first(where: { $0.id == id }) else {
+            launchAccountCaption = nil
+            return
+        }
+        guard !role.matchesLaunchControls(updated) else { return }
+        selectedLaunchRoleID = nil
+        requestLaunchAccounts()
+    }
+
+    private func loadLaunchAccounts() async {
+        guard let id = selectedLaunchRoleID,
+              let role = launchRoles.first(where: { $0.id == id }),
+              role.launchAgentKind != nil else {
+            resetLaunchAccounts()
+            return
+        }
+        isLoadingLaunchAccounts = true
+        launchAccountCaption = nil
+        do {
+            let list = try await app.swarmProfiles.accounts(provider: role.provider)
+            guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
+            swarmProfilesUnavailable = false
+            apply(SwarmAccountLoadDecision.loaded(list))
+        } catch let error as SwarmProfileError {
+            guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
+            apply(SwarmAccountLoadDecision.failed(error))
+        } catch {
+            guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
+            apply(SwarmAccountLoadDecision.failed(message: error.localizedDescription))
+        }
+    }
+
+    private func apply(_ decision: SwarmAccountLoadDecision) {
+        accountOptions = decision.options
+        selectedAccount = decision.selection
+        isLoadingLaunchAccounts = false
+        launchAccountCaption = decision.fallbackCaption
+        if decision.usesDefault {
+            selectedLaunchRoleID = nil
+            controls = defaultLaunchControls
+        }
+    }
+
+    private func resetLaunchAccounts(loading: Bool = false) {
+        accountOptions = []
+        selectedAccount = nil
+        isLoadingLaunchAccounts = loading
+        launchAccountCaption = nil
+    }
+
+    private func requestLaunchAccounts() {
+        resetLaunchAccounts(loading: selectedLaunchRoleID != nil)
+        launchAccountRequest += 1
     }
 
     /// Brings the chosen base up to date ahead of Create. The answer is not used here: the cut
@@ -1178,6 +1340,9 @@ struct CreateWorkspaceView: View {
         let base = baseBranch.isEmpty ? repo.defaultBranch : baseBranch
         let source = checkout
         let chosenControls = controls
+        let chosenAccount = SwarmAccountOption.account(
+            for: selectedAccount, in: accountOptions
+        )
         let shouldRunSetup = runSetupScript
 
         // A file can be moved or deleted between being attached and Create being pressed, and
@@ -1212,6 +1377,7 @@ struct CreateWorkspaceView: View {
                 baseBranch: base,
                 opensWith: chosen,
                 controls: chosenControls,
+                launchAccount: chosenAccount,
                 staged: staged,
                 checkout: source,
                 runSetupScript: shouldRunSetup

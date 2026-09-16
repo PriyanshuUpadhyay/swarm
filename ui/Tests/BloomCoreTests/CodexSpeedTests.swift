@@ -75,4 +75,28 @@ import Testing
         #expect(!box.process.sentMethods.contains("config/value/write"))
         await client.stop()
     }
+
+    @Test func readsConfigurationWithTheChatsStoredCodexHome() async throws {
+        let box = ProcessBox()
+        box.reply(to: "config/read", with: .object([
+            "config": .object(["service_tier": .string("fast")]),
+        ]))
+        box.reply(to: "model/list", with: .object([
+            "data": .array([.object([
+                "id": .string("test-model"),
+                "displayName": .string("Test"),
+                "serviceTiers": .array([.object(["id": .string("priority")])]),
+            ])]),
+        ]))
+
+        _ = try await CodexSpeed.read(
+            cwd: "/tmp/project",
+            modelID: "test-model",
+            environment: ["CODEX_HOME": "/tmp/codex-work"]
+        ) { configuration in
+            CodexClient(configuration: configuration, makeProcess: box.factory)
+        }
+
+        #expect(box.process.launch.environment["CODEX_HOME"] == "/tmp/codex-work")
+    }
 }

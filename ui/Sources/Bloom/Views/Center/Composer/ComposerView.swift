@@ -148,6 +148,7 @@ struct ComposerView: View {
                 queues: transcript.queuesNextMessage,
                 canSend: canSend,
                 project: transcript.cwd,
+                sessionID: transcript.session.id,
                 onAttach: actions.attach,
                 onQuickPrompt: { fire($0, insert: actions.insert) },
                 // Read off the workspace model, which is where the Workspace menu reads its run

@@ -97,6 +97,9 @@ public actor AgentRunner {
     /// `session.<id>.outputStyle`. Nil rather than the word `default`, so "nothing chosen" and
     /// "chosen and then cleared" cannot drift apart on the way to argv.
     private var outputStyle: String?
+    /// The account chosen when this chat was created. Read before every process start so a
+    /// relaunched app resumes with the same provider home.
+    private var launchAccount: SwarmLaunchAccount?
     private var awaitingSideContextAcknowledgement = false
     /// Questions this process is currently blocked on, newest last.
     ///
@@ -315,7 +318,7 @@ public actor AgentRunner {
                 mcpConfigPath: mcpConfigPath
             ),
             cwd: workspacePath,
-            environment: Shell.environment()
+            environment: launchAccount?.merging(into: Shell.environment()) ?? Shell.environment()
         )
     }
 
@@ -402,6 +405,7 @@ public actor AgentRunner {
         await refreshFastMode()
         await refreshOutputStyle()
         await refreshExecutable()
+        launchAccount = await SwarmLaunchAccount.load(sessionID: sessionID, from: store)
         try await waitForCancelledRunToExit()
         start()
 

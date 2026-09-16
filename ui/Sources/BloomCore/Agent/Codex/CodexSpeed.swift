@@ -32,8 +32,23 @@ public struct CodexSpeed: Equatable, Sendable {
 
     /// Read through the server so profiles and project configuration use Codex's own precedence.
     /// No thread or model turn is started, and no configuration is written.
-    public static func read(cwd: String, modelID: String) async throws -> CodexSpeed {
-        let client = CodexClient(configuration: .init(cwd: cwd))
+    public static func read(
+        cwd: String,
+        modelID: String,
+        environment: [String: String] = Shell.environment()
+    ) async throws -> CodexSpeed {
+        try await read(cwd: cwd, modelID: modelID, environment: environment) {
+            CodexClient(configuration: $0)
+        }
+    }
+
+    static func read(
+        cwd: String,
+        modelID: String,
+        environment: [String: String],
+        makeClient: @Sendable (CodexClient.Configuration) -> CodexClient
+    ) async throws -> CodexSpeed {
+        let client = makeClient(.init(cwd: cwd, environment: environment))
         do {
             try await client.start()
             let config = try await client.readConfiguration(cwd: cwd)
