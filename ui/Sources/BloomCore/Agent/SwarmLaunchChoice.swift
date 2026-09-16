@@ -1,42 +1,35 @@
 import Foundation
 
-/// A role from swarm as a choice Bloom can launch.
-public struct SwarmLaunchRole: Identifiable, Sendable, Hashable {
-    public var id: String { role.id }
-    public var role: SwarmRole
-
-    public init(_ role: SwarmRole) {
-        self.role = role
-    }
-
-    public var agentKind: AgentKind? {
-        switch role.provider {
+public extension SwarmRole {
+    var launchAgentKind: AgentKind? {
+        switch provider {
         case "claude": .claudeCode
         case "codex": .codex
         default: nil
         }
     }
 
-    public var disabledReason: String? {
-        agentKind == nil ? "Bloom cannot run \(role.provider) roles" : nil
+    var launchDisabledReason: String? {
+        launchAgentKind == nil ? "Bloom cannot run \(provider) roles" : nil
     }
 
-    public func applying(to controls: ComposerControls) -> ComposerControls? {
-        guard let agentKind else { return nil }
+    func applyingToLaunchControls(_ controls: ComposerControls) -> ComposerControls? {
+        guard let launchAgentKind else { return nil }
         var chosen = controls
-        chosen.agentKind = agentKind
-        chosen.model = role.model
-        chosen.effort = role.effort ?? ""
+        chosen.agentKind = launchAgentKind
+        chosen.model = model
+        chosen.effort = effort ?? ""
         return chosen
     }
 
-    public static func initial(in roles: [SwarmRole], controls: ComposerControls) -> SwarmLaunchRole? {
-        let choices = roles.map(Self.init)
-        return choices.first {
-            $0.agentKind == controls.agentKind
-                && $0.role.model == controls.model
-                && ($0.role.effort ?? "") == controls.effort
-        } ?? choices.first { $0.agentKind != nil }
+    static func initialLaunchRole(
+        in roles: [SwarmRole], controls: ComposerControls
+    ) -> SwarmRole? {
+        roles.first {
+            $0.launchAgentKind == controls.agentKind
+                && $0.model == controls.model
+                && ($0.effort ?? "") == controls.effort
+        }
     }
 }
 
@@ -54,11 +47,15 @@ public enum SwarmAccountSelection: Sendable, Hashable, Identifiable {
 
 public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
     public var name: String
+    public var provider: String
     public var environment: [String: String]
 
-    public init(name: String, environment: [String: String]) {
+    public init?(name: String, provider: String, environment: [String: String]) {
+        guard let key = Self.environmentKey(for: provider),
+              let value = environment[key], !value.isEmpty else { return nil }
         self.name = name
-        self.environment = environment
+        self.provider = provider
+        self.environment = [key: value]
     }
 
     public static func resolve(
@@ -73,8 +70,9 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
         case .named(let chosen):
             name = chosen
         }
-        guard let account = list.accounts.first(where: { $0.name == name }) else { return nil }
-        return Self(name: account.name, environment: account.env)
+        guard let account = list.accounts.first(where: { $0.name == name }),
+              account.signedIn else { return nil }
+        return Self(name: account.name, provider: list.provider, environment: account.env)
     }
 
     public static func settingKey(sessionID: SessionID) -> String {
@@ -83,16 +81,32 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
 
     public func store(sessionID: SessionID, in store: Store) async {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        try? await store.setSetting(Self.settingKey(sessionID: sessionID), String(decoding: data, as: UTF8.self))
+        try? await store.setSetting(
+            Self.settingKey(sessionID: sessionID), String(decoding: data, as: UTF8.self)
+        )
     }
 
     public static func load(sessionID: SessionID, from store: Store) async -> Self? {
-        guard let stored = try? await store.setting(settingKey(sessionID: sessionID)) else { return nil }
-        return try? JSONDecoder().decode(Self.self, from: Data(stored.utf8))
+        guard let stored = try? await store.setting(settingKey(sessionID: sessionID)),
+              let decoded = try? JSONDecoder().decode(Self.self, from: Data(stored.utf8)) else {
+            return nil
+        }
+        return Self(name: decoded.name, provider: decoded.provider, environment: decoded.environment)
     }
 
     public func merging(into base: [String: String]) -> [String: String] {
-        base.merging(environment) { _, account in account }
+        guard let filtered = Self(
+            name: name, provider: provider, environment: environment
+        )?.environment else { return base }
+        return base.merging(filtered) { _, account in account }
+    }
+
+    private static func environmentKey(for provider: String) -> String? {
+        switch provider {
+        case "claude": "CLAUDE_CONFIG_DIR"
+        case "codex": "CODEX_HOME"
+        default: nil
+        }
     }
 }
 
@@ -101,28 +115,53 @@ public struct SwarmAccountOption: Identifiable, Sendable, Hashable {
     public var selection: SwarmAccountSelection
     public var label: String
     public var account: SwarmLaunchAccount?
+    public var disabledReason: String?
 
     public static func choices(from list: SwarmAccountList) -> [Self] {
         guard !list.accounts.isEmpty else { return [] }
-        let automatic = SwarmLaunchAccount.resolve(.auto, from: list)
-        let automaticSource = automatic.flatMap { chosen in
-            list.accounts.first { $0.name == chosen.name }
+        var result: [Self] = []
+        if let automatic = SwarmLaunchAccount.resolve(.auto, from: list),
+           let source = list.accounts.first(where: { $0.name == automatic.name }) {
+            result.append(Self(
+                selection: .auto,
+                label: "Auto (\(automatic.name))\(remainingLabel(source.remainingPct))",
+                account: automatic,
+                disabledReason: nil
+            ))
         }
-        var result = [Self(
-            selection: .auto,
-            label: automatic.map {
-                let left = automaticSource?.remainingPct.map { ", \($0)% left" } ?? ""
-                return "Auto (\($0.name))\(left)"
-            } ?? "Auto",
-            account: automatic
-        )]
         result += list.accounts.map { account in
-            Self(
+            let resolved = SwarmLaunchAccount.resolve(.named(account.name), from: list)
+            let disabledReason: String? = if !account.signedIn {
+                "Not signed in"
+            } else if resolved == nil {
+                "Account cannot launch in Bloom"
+            } else {
+                nil
+            }
+            return Self(
                 selection: .named(account.name),
-                label: account.remainingPct.map { "\(account.name), \($0)% left" } ?? account.name,
-                account: SwarmLaunchAccount(name: account.name, environment: account.env)
+                label: "\(account.name)\(remainingLabel(account.remainingPct))",
+                account: resolved,
+                disabledReason: disabledReason
             )
         }
         return result
+    }
+
+    public static func initialSelection(in choices: [Self]) -> SwarmAccountSelection? {
+        choices.first { $0.disabledReason == nil && $0.account != nil }?.selection
+    }
+
+    public static func account(
+        for selection: SwarmAccountSelection?, in choices: [Self]
+    ) -> SwarmLaunchAccount? {
+        guard let selection else { return nil }
+        return choices.first {
+            $0.selection == selection && $0.disabledReason == nil
+        }?.account
+    }
+
+    private static func remainingLabel(_ remaining: Int?) -> String {
+        remaining.map { ", \($0)% left" } ?? ""
     }
 }

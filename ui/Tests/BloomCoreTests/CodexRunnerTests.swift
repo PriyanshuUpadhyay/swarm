@@ -83,9 +83,11 @@ private func eventually(
     @Test func usesTheStoredAccountEnvironmentWhenTheServerStarts() async throws {
         let store = try makeTestStore("codex-account")
         let (session, _) = try await makeCodexSession(store)
-        await SwarmLaunchAccount(
-            name: "personal", environment: ["CODEX_HOME": "/tmp/codex-personal"]
-        ).store(sessionID: session.id, in: store)
+        let account = try #require(SwarmLaunchAccount(
+            name: "personal", provider: "codex",
+            environment: ["CODEX_HOME": "/tmp/codex-personal"]
+        ))
+        await account.store(sessionID: session.id, in: store)
         let box = scriptedBox()
         let runner = makeRunner(store: store, session: session, box: box)
 

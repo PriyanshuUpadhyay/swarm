@@ -8,6 +8,8 @@ import BloomCore
 /// sheet uses this same row before any session exists. Both callers hand over the choices and take
 /// back the changed set; where they keep them is their own business.
 struct ComposerFooterView: View {
+    @Environment(AppModel.self) private var app
+
     var controls: ComposerControls
     var onChange: @MainActor (ComposerControls) -> Void
     /// Nil until the session has run a turn, because that is the first moment the agent says
@@ -43,6 +45,8 @@ struct ComposerFooterView: View {
     /// where there is not one yet. A repository can carry its own `.claude/output-styles`, and in
     /// the create window the worktree does not exist, so the repository is the honest answer there.
     var project: String?
+    /// Nil in the create window, which has no persisted account yet.
+    var sessionID: SessionID? = nil
     var onAttach: @MainActor () -> Void
     /// What choosing a quick prompt does, or nil where there is nowhere to put one. Nil hides the
     /// button rather than disabling it: a control that can never do anything is not worth the room
@@ -75,7 +79,10 @@ struct ComposerFooterView: View {
     @State private var speedFailed = false
 
     private var speedRequest: [String] {
-        [project ?? "", controls.agentKind.rawValue, controls.model, String(showsAgentControls)]
+        [
+            project ?? "", sessionID?.rawValue ?? "", controls.agentKind.rawValue,
+            controls.model, String(showsAgentControls),
+        ]
     }
 
     private var codexSpeed: CodexSpeed? {
@@ -188,8 +195,15 @@ struct ComposerFooterView: View {
             speedFailed = false
             guard showsAgentControls, controls.agentKind == .codex else { return }
             do {
+                let account: SwarmLaunchAccount? = if let sessionID, let store = app.store {
+                    await SwarmLaunchAccount.load(sessionID: sessionID, from: store)
+                } else {
+                    nil
+                }
                 let speed = try await CodexSpeed.read(
-                    cwd: project ?? AgentScratchDirectory.current(), modelID: controls.model
+                    cwd: project ?? AgentScratchDirectory.current(),
+                    modelID: controls.model,
+                    environment: account?.merging(into: Shell.environment()) ?? Shell.environment()
                 )
                 guard !Task.isCancelled else { return }
                 loadedSpeed = speed

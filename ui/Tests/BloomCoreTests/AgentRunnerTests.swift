@@ -440,9 +440,11 @@ struct AgentRunnerArgvTests {
     func usesStoredAccount() async throws {
         let store = try makeTestStore("agent-account")
         let session = try await makeSession(store)
-        await SwarmLaunchAccount(
-            name: "work", environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude-work"]
-        ).store(sessionID: session.id, in: store)
+        let account = try #require(SwarmLaunchAccount(
+            name: "work", provider: "claude",
+            environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude-work"]
+        ))
+        await account.store(sessionID: session.id, in: store)
         let processes = ProcessRecorder()
         let runner = AgentRunner(
             workspacePath: "/tmp/worktree", session: session, store: store,
