@@ -57,6 +57,9 @@ final class AppModel {
     /// repository). One source for the launch picker and the menu bar meters, so the two cannot
     /// disagree. Outside observation, because the views observe what they read from it.
     @ObservationIgnored let swarmProfiles: any SwarmProfileSource = SwarmCLIProfileSource()
+    /// Where the swarm agents a workspace starts are launched, read and talked to (ADR 0003 and
+    /// 0007 in the swarm repository). One instance, so every agent tab reaches the same bus.
+    @ObservationIgnored let swarmBus: any SwarmBus = UnavailableSwarmBus()
 
     private(set) var repos: [Repo] = []
     private(set) var workspaces: [Workspace] = []

@@ -119,3 +119,19 @@ public struct SubagentID: Identifier {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
 }
+
+/// A workspace's session on the swarm bus, as `swarm session new` prints it.
+///
+/// swarm's, not Bloom's: an integer in swarm's own database, kept here as its decimal text. Stored
+/// per workspace, so the chats and panes of the agents it started come back after a relaunch.
+public struct SwarmSessionID: Identifier {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+}
+
+/// One agent inside a swarm session, such as `coder-1` or `orchestrator`. Unique only within its
+/// session, and chosen by whoever starts the agent, so `new()` is never called for one.
+public struct SwarmAgentID: Identifier {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+}
