@@ -81,6 +81,22 @@ struct SwarmUsageBoardTests {
         #expect(expanded.providers[1].accounts[0].meters.map(\.window) == ["5h", "7d"])
     }
 
+    @Test("a hidden window stays hidden when its percent is absent")
+    func hiddenUnmeasuredWindow() {
+        let hidden = UsageMetricID("claudeCode/seven_day")
+        var layout = UsageLayout()
+        layout.setHidden(true, for: hidden)
+
+        let board = SwarmUsageBoard.make(from: [
+            meter(
+                provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
+                window: "7d", usedPercent: nil, state: "stale"
+            ),
+        ], layout: layout)
+
+        #expect(board.isEmpty)
+    }
+
     @Test("status rows have one message and no bar values")
     func statusRow() throws {
         let board = SwarmUsageBoard.make(from: [
@@ -107,9 +123,13 @@ struct SwarmUsageBoardTests {
         let reading = try #require(board.providers.first?.accounts.first?.meters.first)
 
         #expect(reading.severity == .critical)
+        #expect(reading.severity?.word == "Nearly gone")
         #expect(reading.isStale)
         #expect(reading.statusText == "Stale")
-        #expect(board.accessibilityLabel == "Claude, ORCHESTRATOR, 7d, 3% left, Resets in 4d22h, Stale")
+        #expect(
+            board.accessibilityLabel
+                == "Claude, ORCHESTRATOR, 7d, 3% left, Nearly gone, Resets in 4d22h, Stale"
+        )
     }
 
     @Test("equal account titles use their stable keys")
@@ -133,7 +153,7 @@ struct SwarmUsageFailureStateTests {
         let second = failures.failed()
         #expect(!first)
         #expect(second)
-        failures.succeeded()
+        failures.reset()
         let afterSuccess = failures.failed()
         #expect(!afterSuccess)
     }

@@ -72,7 +72,7 @@ public struct SwarmUsageBoard: Sendable, Hashable {
                 account.meters.map { meter in
                     [
                         provider.title, account.title, meter.window, meter.usedText,
-                        meter.message, meter.resetText, meter.statusText,
+                        meter.severity?.word, meter.message, meter.resetText, meter.statusText,
                     ].compactMap { $0 }.joined(separator: ", ")
                 }
             }
@@ -85,6 +85,12 @@ public struct SwarmUsageBoard: Sendable, Hashable {
         options: UsageDisplayOptions = UsageDisplayOptions(),
         layout: UsageLayout = UsageLayout()
     ) -> SwarmUsageBoard {
+        let providerPositions = Dictionary(
+            uniqueKeysWithValues: layout.orderedProviders().enumerated().map { ($1, $0) }
+        )
+        let metricPositions = Dictionary(
+            uniqueKeysWithValues: layout.metricOrder.enumerated().map { ($1, $0) }
+        )
         let byProvider = Dictionary(grouping: meters, by: \.provider)
         let providers = byProvider.compactMap { provider, sourceMeters -> Provider? in
             let kind = providerKind(provider)
@@ -99,12 +105,12 @@ public struct SwarmUsageBoard: Sendable, Hashable {
                     key: key,
                     title: first.account ?? first.label,
                     meters: meters.map { Meter($0, style: options.meterStyle) }
-                        .sorted { meterComesFirst($0, $1, kind: kind, layout: layout) }
+                        .sorted { meterComesFirst($0, $1, kind: kind, positions: metricPositions) }
                 )
             }.sorted(by: accountComesFirst)
             guard !accounts.isEmpty else { return nil }
             return Provider(key: provider, title: providerTitle(provider), kind: kind, accounts: accounts)
-        }.sorted { providerComesFirst($0, $1, layout: layout) }
+        }.sorted { providerComesFirst($0, $1, positions: providerPositions) }
         return SwarmUsageBoard(providers: providers)
     }
 
@@ -129,15 +135,11 @@ public struct SwarmUsageBoard: Sendable, Hashable {
     }
 
     private static func metricID(for meter: SwarmUsageMeter, provider: AgentKind) -> UsageMetricID? {
-        metricID(window: meter.window, usedPercent: meter.usedPct, provider: provider)
+        metricID(window: meter.window, provider: provider)
     }
 
-    private static func metricID(
-        window: String?,
-        usedPercent: Int?,
-        provider: AgentKind
-    ) -> UsageMetricID? {
-        guard let window = window?.lowercased(), usedPercent != nil else { return nil }
+    private static func metricID(window: String?, provider: AgentKind) -> UsageMetricID? {
+        guard let window = window?.lowercased() else { return nil }
         let key: String
         switch (provider, window) {
         case (.claudeCode, "5h"): key = "five_hour"
@@ -166,10 +168,11 @@ public struct SwarmUsageBoard: Sendable, Hashable {
         }
     }
 
-    private static func providerComesFirst(_ lhs: Provider, _ rhs: Provider, layout: UsageLayout) -> Bool {
-        let positions = Dictionary(
-            uniqueKeysWithValues: layout.orderedProviders().enumerated().map { ($1, $0) }
-        )
+    private static func providerComesFirst(
+        _ lhs: Provider,
+        _ rhs: Provider,
+        positions: [AgentKind: Int]
+    ) -> Bool {
         switch (lhs.kind.flatMap { positions[$0] }, rhs.kind.flatMap { positions[$0] }) {
         case (let left?, let right?) where left != right: return left < right
         case (_?, nil): return true
@@ -189,13 +192,12 @@ public struct SwarmUsageBoard: Sendable, Hashable {
         _ lhs: Meter,
         _ rhs: Meter,
         kind: AgentKind?,
-        layout: UsageLayout
+        positions: [UsageMetricID: Int]
     ) -> Bool {
         if lhs.window == nil, rhs.window != nil { return true }
         if lhs.window != nil, rhs.window == nil { return false }
-        let positions = Dictionary(uniqueKeysWithValues: layout.metricOrder.enumerated().map { ($1, $0) })
-        let leftID = kind.flatMap { metricID(window: lhs.window, usedPercent: lhs.usedPercent, provider: $0) }
-        let rightID = kind.flatMap { metricID(window: rhs.window, usedPercent: rhs.usedPercent, provider: $0) }
+        let leftID = kind.flatMap { metricID(window: lhs.window, provider: $0) }
+        let rightID = kind.flatMap { metricID(window: rhs.window, provider: $0) }
         switch (leftID.flatMap { positions[$0] }, rightID.flatMap { positions[$0] }) {
         case (let left?, let right?) where left != right: return left < right
         case (_?, nil): return true

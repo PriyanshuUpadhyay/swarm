@@ -835,10 +835,10 @@ final class AppModel {
         defer { isAskingForSwarmUsage = false }
         do {
             let meters = try await swarmProfiles.usage()
-            swarmUsageFailures.succeeded()
+            swarmUsageFailures.reset()
             if swarmUsageMeters != meters { swarmUsageMeters = meters }
         } catch SwarmProfileError.unavailable {
-            swarmUsageFailures.succeeded()
+            swarmUsageFailures.reset()
             if !swarmUsageMeters.isEmpty { swarmUsageMeters = [] }
         } catch {
             guard swarmUsageFailures.failed() else { return }

@@ -3,7 +3,7 @@ public struct SwarmUsageFailureState: Sendable {
 
     public init() {}
 
-    public mutating func succeeded() {
+    public mutating func reset() {
         consecutiveFailures = 0
     }
 

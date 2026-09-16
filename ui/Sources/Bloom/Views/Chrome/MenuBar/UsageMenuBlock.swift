@@ -219,6 +219,10 @@ private struct SwarmUsageMenuRow: View {
                     Spacer(minLength: 8)
                     Text(usedText)
                         .foregroundStyle(MenuInk.primary)
+                    if let severity = meter.severity?.word {
+                        Text(severity)
+                            .foregroundStyle(MenuInk.secondary)
+                    }
                     if let status = meter.statusText {
                         Text(status)
                             .foregroundStyle(MenuInk.secondary)
