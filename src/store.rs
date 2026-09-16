@@ -14,7 +14,7 @@ pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Err
     Ok(connection)
 }
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001.sql")];
+const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001.sql"), include_str!("../migrations/0002.sql")];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
