@@ -49,7 +49,7 @@ printf '%s' '{"path":"/fixture/roles.json","config":{"routes":{"ORCHESTRATOR":["
   "profile pick --cli codex --json")
     printf '%s' '{"name":"codexWorkAccount","dir":"/profiles/codex work"}' ;;
   "usage show --json")
-    printf '%s' '[{"label":"cl·claude@example.com","provider":"claude","window":"7d","pct":48,"reset":"4d22h","state":"ok","asOf":1789576942},{"label":"cx","provider":"codex","state":"logged_out","reason":"logged out"},{"label":"cx·codexNoEmailAccount","provider":"codex","state":"missing","reason":"no data"}]' ;;
+    printf '%s' '[{"label":"cl·claude@example.com","provider":"claude","window":"7d","pct":48,"reset":"4d22h","state":"ok","asOf":1789576942},{"label":"cx","provider":"codex","state":"logged_out","reason":"logged out"},{"label":"cx·codexNoEmailAccount","provider":"codex","state":"missing","reason":"no data"},{"provider":"codex"}]' ;;
   *) echo "unexpected yelo call: $*" >&2; exit 9 ;;
 esac"#,
     );
@@ -126,6 +126,10 @@ fn json_commands_translate_fake_tool_output() {
         usage.status.success(),
         "{}",
         String::from_utf8_lossy(&usage.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&usage.stderr)
+            .starts_with("swarm: skipped usage row: missing field `label`\n")
     );
     let usage: Value = serde_json::from_slice(&usage.stdout).unwrap();
     assert_eq!(usage["meters"][0]["account"], "claudeWorkAccount");

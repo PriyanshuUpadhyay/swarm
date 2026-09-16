@@ -93,7 +93,7 @@ struct YeloAccount {
 
 #[derive(Deserialize)]
 struct YeloPick {
-    name: String,
+    name: Option<String>,
 }
 
 pub fn empty_accounts(provider: &str) -> AccountList {
@@ -135,7 +135,8 @@ pub fn translate_accounts(
     let auto = pick_json
         .map(|json| serde_json::from_str::<YeloPick>(json).map(|row| row.name))
         .transpose()
-        .map_err(|error| format!("yelo pick JSON: {error}"))?;
+        .map_err(|error| format!("yelo pick JSON: {error}"))?
+        .flatten();
     if let Some(name) = &auto
         && !accounts
             .iter()
@@ -182,12 +183,25 @@ struct YeloUsageMeter {
     as_of: Option<i64>,
 }
 
-pub fn translate_usage(json: &str, account_lists: &[AccountList]) -> Result<Usage, String> {
+pub fn translate_usage(
+    json: &str,
+    account_lists: &[AccountList],
+) -> Result<(Usage, Vec<String>), String> {
     let input: Vec<serde_json::Value> =
         serde_json::from_str(json).map_err(|error| format!("yelo usage JSON: {error}"))?;
-    let meters = input
+    let mut skipped = Vec::new();
+    let rows: Vec<YeloUsageMeter> = input
         .into_iter()
-        .filter_map(|row| serde_json::from_value::<YeloUsageMeter>(row).ok())
+        .filter_map(|row| match serde_json::from_value(row) {
+            Ok(row) => Some(row),
+            Err(error) => {
+                skipped.push(error.to_string().replace(['\r', '\n'], " "));
+                None
+            }
+        })
+        .collect();
+    let meters = rows
+        .into_iter()
         .map(|row| {
             let account = row.label.split_once('·').and_then(|(_, tail)| {
                 account_lists
@@ -214,7 +228,7 @@ pub fn translate_usage(json: &str, account_lists: &[AccountList]) -> Result<Usag
             }
         })
         .collect();
-    Ok(Usage { meters })
+    Ok((Usage { meters }, skipped))
 }
 
 pub fn resolve_account<'a>(
@@ -282,6 +296,24 @@ mod tests {
     }
 
     #[test]
+    fn a_nameless_pick_has_no_auto_account() {
+        let result = translate_accounts(
+            "codex",
+            ACCOUNT_LIST,
+            Some(
+                r#"{"name":null,"dir":"/profiles/nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}"#,
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(result.auto, None);
+        assert_eq!(
+            resolve_account(&result, "auto").unwrap_err(),
+            "no automatic account for codex"
+        );
+    }
+
+    #[test]
     fn translates_usage_status_rows_and_matches_email_then_name() {
         let accounts =
             translate_accounts("codex", ACCOUNT_LIST, Some(r#"{"name":"work"}"#)).unwrap();
@@ -293,7 +325,7 @@ mod tests {
             {"provider":"codex"}
         ]"#;
 
-        let result = translate_usage(json, &[accounts]).unwrap();
+        let (result, skipped) = translate_usage(json, &[accounts]).unwrap();
 
         assert_eq!(result.meters[0].account.as_deref(), Some("work"));
         assert_eq!(result.meters[1].account, None);
@@ -304,6 +336,7 @@ mod tests {
         assert_eq!(result.meters[2].reason.as_deref(), Some("logged out"));
         assert_eq!(result.meters[3].account.as_deref(), Some("away"));
         assert_eq!(result.meters.len(), 4);
+        assert_eq!(skipped, ["missing field `label`"]);
     }
 
     #[test]

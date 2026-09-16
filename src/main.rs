@@ -259,7 +259,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let command = yelo_command();
         let json = tool_stdout(&command, &["usage", "show", "--json"])?;
         let accounts = [load_accounts("claude", false)?, load_accounts("codex", false)?];
-        let usage = swarm::profiles::translate_usage(&json, &accounts).map_err(|error| format!("swarm: {error}"))?;
+        let (usage, skipped) =
+            swarm::profiles::translate_usage(&json, &accounts).map_err(|error| format!("swarm: {error}"))?;
+        for reason in skipped {
+            eprintln!("swarm: skipped usage row: {reason}");
+        }
         return print_json(&usage);
     }
     let root = swarm::paths::root_dir()?;
