@@ -1,11 +1,13 @@
 #[derive(Debug)]
 pub struct Adapter {
+    pub name: String,
     pub caller: String,
     pub spawn: String,
     pub ring: String,
     pub list: String,
     pub close: String,
     pub capture: String,
+    pub attach: Option<String>,
 }
 
 pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Error>> {
@@ -16,12 +18,14 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
     }
     let mut take = |verb: &str| verbs.remove(verb).ok_or(format!("adapter {name}: missing {verb}"));
     let adapter = Adapter {
+        name: name.to_string(),
         caller: take("self")?,
         spawn: take("spawn")?,
         ring: take("ring")?,
         list: take("list")?,
         close: take("close")?,
         capture: take("capture")?,
+        attach: verbs.remove("attach"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -58,12 +62,29 @@ impl Adapter {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    pub fn run_inherit(&self, verb: &str, vars: &[(&str, &str)]) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        let line = match verb {
+            "attach" => self.attach.as_ref().ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?,
+            _ => return Err(format!("adapter: unknown inherited verb {verb}").into()),
+        };
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(line);
+        for (key, value) in vars {
+            command.env(format!("SWARM_{}", key.to_uppercase()), value);
+        }
+        Ok(command.status()?)
+    }
+
     /// True when `pane` appears as a whole token in the list output, so %1 never matches %12.
     pub fn has_pane(&self, pane: &str) -> Result<bool, Box<dyn std::error::Error>> {
         let listing = self.run("list", &[])?;
-        let is_id_char = |c: char| c.is_alphanumeric() || "%:_-".contains(c);
-        Ok(listing.split(|c: char| !is_id_char(c)).any(|token| token == pane))
+        Ok(listing_has_pane(&listing, pane))
     }
+}
+
+pub fn listing_has_pane(listing: &str, pane: &str) -> bool {
+    let is_id_char = |c: char| c.is_alphanumeric() || "%:_-".contains(c);
+    listing.split(|c: char| !is_id_char(c)).any(|token| token == pane)
 }
 
 /// One shell line with every argument single-quoted, so spaces and quotes stay data.
@@ -82,11 +103,24 @@ mod tests {
     fn parses_verbs_and_rejects_missing_or_unknown() {
         let adapter = parse("herdr", FULL).unwrap();
         assert_eq!(adapter.ring, "herdr pane send-text");
+        assert_eq!(adapter.name, "herdr");
+        assert_eq!(adapter.attach, None);
         let missing = parse("herdr", "spawn = a\nring = b\nlist = c\nclose = d\ncapture = e\n").unwrap_err().to_string();
         assert_eq!(missing, "adapter herdr: missing self");
         let unknown = parse("herdr", &format!("{FULL}dance = d\n")).unwrap_err().to_string();
         assert_eq!(unknown, "adapter herdr: unknown key dance");
         assert!(parse("herdr", "spawn\n").is_err());
+    }
+
+    #[test]
+    fn parses_and_runs_optional_attach_with_inherited_status() {
+        let adapter = parse("fake", &format!("{FULL}attach = exit 7\n")).unwrap();
+        assert_eq!(adapter.attach.as_deref(), Some("exit 7"));
+        assert_eq!(adapter.run_inherit("attach", &[]).unwrap().code(), Some(7));
+        assert_eq!(
+            parse("fake", FULL).unwrap().run_inherit("attach", &[]).unwrap_err().to_string(),
+            "swarm: adapter fake has no attach"
+        );
     }
 
     #[test]

@@ -210,6 +210,62 @@ pub fn pane_of(
     Ok(pane)
 }
 
+#[derive(Debug)]
+pub struct AgentRow {
+    pub id: String,
+    pub role: String,
+    pub pane: Option<String>,
+}
+
+pub fn agents(connection: &Connection, session_id: i64) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT id, role, pane_id FROM agent WHERE session_id = ?1 ORDER BY id",
+    )?;
+    let rows = statement.query_map([session_id], |row| {
+        Ok(AgentRow { id: row.get(0)?, role: row.get(1)?, pane: row.get(2)? })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+#[derive(Debug)]
+pub struct MessageRow {
+    pub seq: i64,
+    pub sender: String,
+    pub recipient: String,
+    pub kind: String,
+    pub body_path: String,
+    pub created_at: i64,
+    pub read: bool,
+}
+
+pub fn messages(
+    connection: &Connection,
+    session_id: i64,
+    after: i64,
+) -> Result<Vec<MessageRow>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT message.seq, sender_id, recipient_id, kind, body_path, created_at,
+                EXISTS (SELECT 1 FROM read_mark
+                        WHERE message_seq = message.seq AND agent_id = message.recipient_id)
+         FROM message
+         WHERE session_id = ?1 AND seq > ?2
+         ORDER BY seq
+         LIMIT 500",
+    )?;
+    let rows = statement.query_map((session_id, after), |row| {
+        Ok(MessageRow {
+            seq: row.get(0)?,
+            sender: row.get(1)?,
+            recipient: row.get(2)?,
+            kind: row.get(3)?,
+            body_path: row.get(4)?,
+            created_at: row.get(5)?,
+            read: row.get(6)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn has_unread_older_than(
     connection: &Connection,
     session_id: i64,
