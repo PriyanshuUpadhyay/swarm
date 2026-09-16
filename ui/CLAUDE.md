@@ -46,15 +46,14 @@ Everything real is a script in `Tools/`; the `Makefile` is the index.
     make build      compile every target    make test       the BloomCore suite
     make swiftlint  Tools/swiftlint.sh
     make app        assemble a debug .app   make run        release .app, launched
-    make master     install /Applications/Bloom.app   (see the guard below)
-    make dev-fast   install current edits as Bloom Dev (debug)
-    make dev        install committed HEAD as Bloom Dev (release)
-    make dev-db     copy the real database into the dev copy
-    make release    sign, notarise and staple a zip and a disk image into dist/
-    make dmg        wrap the newest built .app in the beach disk image
 
-Anything that takes an argument is run directly: `./Tools/test-core.sh DiffParser`,
-`./Tools/master.sh v0.3.0`, `./Tools/dev-build.sh --no-launch`.
+Anything that takes an argument is run directly: `./Tools/test-core.sh DiffParser`.
+
+This copy of Bloom lives in `ui/` of the swarm repository as a git subtree. `make master`,
+`make dev`, `make dev-fast`, `make dev-db`, `make release` and `make dmg` belong to Spatie's own
+checkout: the dev and master scripts cut a git worktree of the whole repository and expect
+`Package.swift` at its root, so they do not work here. Build with `make app` and open the bundle
+it prints.
 
 `./Tools/test-core.sh` mirrors the core sources into a throwaway package with no app target, so one
 broken view cannot stop the core suite. Its head documents the environment it reads: `BLOOM_TEST_ID`
@@ -150,23 +149,13 @@ Xcode, open `Package.swift`.
 
 Run tests locally, and run the ones that cover what you touched:
 `./Tools/test-core.sh DiffParser` rather than `make test`, most of the time. **The full suite is
-not a thing to sit and repeat.** The owner is working at this Mac while you run, several agents
-build at once, and a day of that took the load average to 205. A sweep of everything on every edit
-is how his machine stalls, and the machine stalling costs more than the answer is worth.
+not a thing to sit and repeat.** The user is working at this Mac while you run, several agents
+build at once, and a sweep of everything on every edit is how the machine stalls.
 
-**The green that counts is CI on a pushed branch.** `.github/workflows/test.yml` builds the app
-target with `-warnings-as-errors`, runs the house rules, parses every script and runs the whole
-core suite on a macOS 26 runner, on hardware that is not his. Push, wait for it, and read what it
-says before calling anything done. `gh run watch` and `gh run list --branch <name>` are how you
-wait without polling the browser.
-
-One detail that has caught people out: that workflow runs on **push to `main` and on pull
-request**, and on nothing else. A branch pushed with no pull request open is not built at all, so
-opening the pull request is part of asking for the answer rather than a step after it.
-
-The nightly workflow is separate and gates nothing: Thread Sanitizer, coverage and dead code, on a
-schedule, because they are too slow to put in front of a push. Read it when you want those
-questions answered, and do not wait on it.
+The workflows under `ui/.github/` are Spatie's and do not run in the swarm repository, because
+GitHub reads workflows only from the root `.github/`. Until the swarm CI builds this target, the
+green that counts is `make build` with zero warnings, `make lint`, and the core tests that cover
+the change, all run locally.
 
 ## Persistence goes through `Store`
 
@@ -290,10 +279,10 @@ have to, and names the file and line.
 
 ## Do not take over the machine
 
-The owner is sitting at this Mac, working, while you run. Anything that takes focus, moves the
+The user is sitting at this Mac, working, while you run. Anything that takes focus, moves the
 pointer, opens or closes a window, launches or quits an application, or puts a window in front of
-what he is reading is an interruption to a person, not a step in a task. **Ask before doing any of
-it.**
+what they are reading is an interruption to a person, not a step in a task. **Ask before doing any
+of it.**
 
 Needs permission every time: launching an app in a way that activates it (`open -g` does not, and
 is the one to reach for), `NSApp.activate` or anything that makes a process frontmost, quitting or
@@ -304,57 +293,16 @@ browser or an editor.
 Needs no permission: offscreen rendering, anything headless, and capturing **your own** window by
 its window id after opening it with `open -g`.
 
-If a piece of work cannot be verified without one of these, say so and stop. An honest "I could
-not photograph this" is a better outcome than an interruption, and it is what several agents have
-correctly chosen. A capture that films the display shows whatever is in front of your window,
-which has twice turned out to be the owner's own screen.
+If a piece of work cannot be verified without one of these, say so and stop. A capture that films
+the display shows whatever is in front of your window, which can be the user's own screen.
 
-## The dev build, and the rules that keep the owner's data alive
+## Where a local build keeps its data
 
-Bloom is developed in Bloom. The app you are running inside is the owner's, holding his real
-projects, and he is using it right now.
+`make app` assembles `.build/arm64-apple-macosx/debug/Bloom.app` with bundle id `be.spatie.bloom`,
+so it uses `~/Library/Application Support/Bloom/`, the `be.spatie.bloom` defaults domain and the
+tmux socket derived from that database path. Open it with `open`, never by running its executable,
+because `LSEnvironment` is applied by LaunchServices. A binary in no bundle at all (`swift run` or
+`.build/debug/Bloom`) resolves to `Bloom (unbundled)` and starts empty.
 
-**Never touch any of these.** `/Applications/Bloom.app`. `~/Library/Application Support/Bloom/`.
-The `be.spatie.bloom` UserDefaults domain. Not to test something, not briefly.
-
-**Use `make dev-fast` for everyday local development.** It builds current files in debug mode,
-including uncommitted edits and untracked files Git does not ignore, with a persistent cache per
-checkout. Use `make dev` for committed HEAD in release mode, or `./Tools/dev-build.sh <ref>` for a
-specific committed revision. Both install the same `~/Applications/Bloom Dev.app`, keep its
-existing dev data, and restart only the dev copy. Fast mode cannot be combined with a revision.
-
-For agent verification without installation or launch, use
-`./Tools/dev-build.sh --fast --no-install`. To install without restarting, use
-`./Tools/dev-build.sh --fast --no-launch`. Restarting the dev app still needs authorisation.
-See `.claude/skills/bloom-dev-build/SKILL.md` for the full workflow.
-
-**Bloom Dev has its own identity:** bundle id `be.spatie.bloom.dev`, and with it its own
-preferences domain, its own saved window
-state and its own notifications; its own database under `~/Library/Application Support/Bloom Dev/`
-through `BLOOM_DB_PATH` in `LSEnvironment`, and therefore its own tmux socket; its own `bloomdev:`
-URL scheme, so it cannot swallow a `bloom://` link meant for the real copy. It is told apart by a
-rust and orange icon, by "Bloom Dev" in the Dock and the switcher, and by `[DEV] ` in front of every
-window title. Both copies run at once.
-
-**Open the dev copy with `open`, never by running its executable.** `LSEnvironment` is applied by
-LaunchServices, so `~/Applications/Bloom\ Dev.app/Contents/MacOS/Bloom` started by hand gets no
-`BLOOM_DB_PATH`. That used to mean it fell back to the real database and defeated every separation
-above. It does not any more: with no `BLOOM_DB_PATH`, `Store` derives the directory from
-`Bundle.main.bundleIdentifier`, and only `be.spatie.bloom` resolves to `Bloom`. The dev bundle id
-resolves to `Bloom Dev`, which is where `make dev` points it anyway; a binary in no bundle at all,
-which is `swift run` or `.build/debug/Bloom` and which nothing used to warn about, resolves to
-`Bloom (unbundled)` and starts empty. Open it properly all the same, because the check at the foot
-of `dev-build.sh` is worth having and because two agreeing mechanisms are the point.
-
-**`make dev-db`** copies the real database into the dev container so there is something real to look
-at. It never writes back. It copies the `-wal` and `-shm` as well as `bloom.sqlite`, because in WAL
-mode everything since the last checkpoint lives in the WAL and the main file alone is stale, and it
-never opens the real database at all, because opening a WAL database writes to it. It also points
-the copied workspace rows at a root that does not exist, so the dev copy can show every workspace
-and cannot delete a real worktree. `--keep-paths` opts out and says why you should not.
-
-**`make master` will refuse if you are inside the app it would replace**, because that script
-removes `/Applications/Bloom.app` and kills the process running from it. `Tools/guard.sh` finds the
-app either as a real ancestor of this shell or, for a terminal pane whose tmux server has reparented
-away, by the socket name derived from the database path. Do not work around it. Use the isolated
-dev build described above instead.
+A build without release version values is stamped `BloomBuildChannel=local`, which turns off the
+install ping, crash reports and software updates. Keep it that way for anything built here.
