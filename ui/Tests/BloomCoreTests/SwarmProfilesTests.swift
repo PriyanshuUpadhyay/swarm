@@ -68,19 +68,39 @@ struct SwarmProfilesTests {
         #expect(accounts == SwarmAccountList(provider: "agy", source: nil, accounts: [], auto: nil))
     }
 
-    @Test("decodes a usage meter with no matched account")
+    @Test("decodes every usage contract row")
     func decodesUsage() async throws {
         let source = source(
             expectedArguments: ["usage", "--json"],
-            stdout: #"{"meters":[{"provider":"claude","account":null,"label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","as_of":1789576942}]}"#
+            stdout: #"{"meters":[{"provider":"claude","account":"work","label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","reason":null,"as_of":1789576942},{"provider":"claude","account":"sid","label":"cl·sid","window":null,"used_pct":null,"resets_in":null,"state":"logged_out","reason":"logged out","as_of":null}]}"#
         )
 
         let meters = try await source.usage()
 
-        #expect(meters == [SwarmUsageMeter(
-            provider: "claude", account: nil, label: "cl·work@example.com", window: "7d",
-            usedPct: 10, resetsIn: "4d22h", state: "ok", asOf: 1_789_576_942
-        )])
+        #expect(meters == [
+            SwarmUsageMeter(
+                provider: "claude", account: "work", label: "cl·work@example.com",
+                window: "7d", usedPct: 10, resetsIn: "4d22h", state: "ok", reason: nil,
+                asOf: 1_789_576_942
+            ),
+            SwarmUsageMeter(
+                provider: "claude", account: "sid", label: "cl·sid", window: nil,
+                usedPct: nil, resetsIn: nil, state: "logged_out", reason: "logged out", asOf: nil
+            ),
+        ])
+    }
+
+    @Test("uses a fresh scratch directory when no working directory is injected")
+    func usesFreshScratchDirectory() async throws {
+        let source = SwarmCLIProfileSource(environment: [:]) { _, arguments, cwd in
+            #expect(arguments == ["roles", "--json"])
+            #expect(cwd == AgentScratchDirectory.current())
+            #expect(cwd != NSHomeDirectory())
+            #expect(FileManager.default.fileExists(atPath: cwd))
+            return ShellResult(status: 0, stdout: #"{"roles":[]}"#, stderr: "")
+        }
+
+        _ = try await source.roles()
     }
 
     @Test("uses SWARM_BIN and the contract arguments")
