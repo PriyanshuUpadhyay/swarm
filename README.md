@@ -20,6 +20,8 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and the shi
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
+| `SWARM_ROUTING_CMD` | Routing tool executable. Defaults to `$HOME/.claude/scripts/agent-routing.mjs`. |
+| `SWARM_YELO_CMD` | Account and usage tool executable. Defaults to `yelo`. |
 
 ## Commands
 
@@ -32,7 +34,10 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session new <lane\|relay\|open>` | any | Create a session, print its id. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent without a pane. |
-| `spawn <id> <role> [-- <cmd>...]` | session | Register, split a pane, run `<cmd>; swarm exited` in it, print the pane id. |
+| `roles --json` | any | Print the configured routes and their resolved runners as JSON. |
+| `accounts --provider <claude\|codex\|agy> --json` | any | Print the provider's accounts and automatic choice as JSON. |
+| `usage --json` | any | Print every account usage meter as JSON. |
+| `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register, split a pane, run the command under the selected account, and print the pane id. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |

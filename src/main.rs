@@ -20,7 +20,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | spawn <agent_id> <role> [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -38,8 +38,111 @@ fn identity() -> Result<(i64, String), String> {
     Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
 }
 
+fn run_tool(executable: &str, args: &[&str]) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+    std::process::Command::new(executable)
+        .args(args)
+        .output()
+        .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
+}
+
+fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+    let output = run_tool(executable, args)?;
+    if !output.status.success() {
+        return Err(format!("swarm: {executable} failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+    }
+    String::from_utf8(output.stdout).map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
+}
+
+fn routing_command() -> Result<String, Box<dyn std::error::Error>> {
+    if let Ok(command) = env::var("SWARM_ROUTING_CMD") {
+        return Ok(command);
+    }
+    Ok(std::path::Path::new(&env_var("HOME")?)
+        .join(".claude/scripts/agent-routing.mjs")
+        .to_string_lossy()
+        .into_owned())
+}
+
+fn yelo_command() -> String {
+    env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
+}
+
+fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>> {
+    let command = routing_command()?;
+    let json = tool_stdout(&command, &["web-state"])?;
+    swarm::profiles::translate_roles(&json).map_err(|error| format!("swarm: {error}").into())
+}
+
+fn load_account_rows(provider: &str) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
+    if provider == "agy" {
+        return Ok(swarm::profiles::empty_accounts(provider));
+    }
+    if !matches!(provider, "claude" | "codex") {
+        return Err(format!("swarm: unknown provider {provider}").into());
+    }
+    let command = yelo_command();
+    let list = tool_stdout(&command, &["profile", "list", "--cli", provider, "--usage", "--json"])?;
+    swarm::profiles::translate_accounts(provider, &list, None).map_err(|error| format!("swarm: {error}").into())
+}
+
+fn load_accounts(provider: &str) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
+    if provider == "agy" {
+        return Ok(swarm::profiles::empty_accounts(provider));
+    }
+    if !matches!(provider, "claude" | "codex") {
+        return Err(format!("swarm: unknown provider {provider}").into());
+    }
+    let command = yelo_command();
+    let list = tool_stdout(&command, &["profile", "list", "--cli", provider, "--usage", "--json"])?;
+    let accounts = swarm::profiles::translate_accounts(provider, &list, None)
+        .map_err(|error| format!("swarm: {error}"))?;
+    let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
+    let pick_json = if pick.status.success() {
+        Some(String::from_utf8(pick.stdout).map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?)
+    } else if accounts.accounts.iter().all(|account| !account.signed_in) {
+        None
+    } else {
+        return Err(format!("swarm: {command} failed: {}", String::from_utf8_lossy(&pick.stderr).trim()).into());
+    };
+    swarm::profiles::translate_accounts(provider, &list, pick_json.as_deref())
+        .map_err(|error| format!("swarm: {error}").into())
+}
+
+fn print_json(value: &impl serde::Serialize) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", serde_json::to_string(value)?);
+    Ok(())
+}
+
+struct SpawnOptions<'a> {
+    provider: Option<&'a str>,
+    account: Option<&'a str>,
+    command: &'a [String],
+}
+
+fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
+    let mut provider = None;
+    let mut account = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--" => return Ok(SpawnOptions { provider, account, command: &args[index + 1..] }),
+            "--provider" if provider.is_none() && index + 1 < args.len() => {
+                provider = Some(args[index + 1].as_str());
+                index += 2;
+            }
+            "--account" if account.is_none() && index + 1 < args.len() => {
+                account = Some(args[index + 1].as_str());
+                index += 2;
+            }
+            _ => return Err(USAGE.to_string()),
+        }
+    }
+    Ok(SpawnOptions { provider, account, command: &[] })
+}
+
 /// Store the message, then ring the recipient's pane when it has one. The bell is a hint (R9),
 /// so a ring failure only warns.
+#[allow(clippy::too_many_arguments)]
 fn deliver(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -77,10 +180,10 @@ fn add_agent(
         None
     };
     swarm::store::add_agent(connection, session_id, agent_id, role)?;
-    if let Some(pane) = pane {
-        if !pane.is_empty() {
-            swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
-        }
+    if let Some(pane) = pane
+        && !pane.is_empty()
+    {
+        swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
     }
     Ok(())
 }
@@ -149,6 +252,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.first().map(String::as_str) == Some("init") {
         return init();
     }
+    if let [cmd, json] = args && cmd == "roles" && json == "--json" {
+        return print_json(&load_roles()?);
+    }
+    if let [cmd, provider_flag, provider, json] = args
+        && cmd == "accounts"
+        && provider_flag == "--provider"
+        && json == "--json"
+    {
+        return print_json(&load_accounts(provider)?);
+    }
+    if let [cmd, json] = args && cmd == "usage" && json == "--json" {
+        let command = yelo_command();
+        let json = tool_stdout(&command, &["usage", "show", "--json"])?;
+        let accounts = [load_account_rows("claude")?, load_account_rows("codex")?];
+        let usage = swarm::profiles::translate_usage(&json, &accounts).map_err(|error| format!("swarm: {error}"))?;
+        return print_json(&usage);
+    }
     let root = swarm::paths::root_dir()?;
     if let [cmd, sub, name] = args && cmd == "adapter" && sub == "check" {
         swarm::adapter::load(&root, name)?;
@@ -164,10 +284,21 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return add_agent(&connection, &root, &adapter_name(), session_id()?, agent_id, role);
     }
     if let [cmd, agent_id, role, rest @ ..] = args && cmd == "spawn" {
-        let command = match rest {
-            [] => rest,
-            [dash, command @ ..] if dash == "--" => command,
-            _ => return Err(USAGE.into()),
+        let options = parse_spawn_options(rest)?;
+        let account = if let Some(requested) = options.account {
+            let provider = match options.provider {
+                Some(provider) => provider.to_string(),
+                None => load_roles()?
+                    .roles
+                    .into_iter()
+                    .find(|entry| entry.role == *role)
+                    .map(|entry| entry.provider)
+                    .ok_or_else(|| format!("swarm: unknown role {role}"))?,
+            };
+            let accounts = load_accounts(&provider)?;
+            Some(swarm::profiles::resolve_account(&accounts, requested).map_err(|error| format!("swarm: {error}"))?.clone())
+        } else {
+            None
         };
         let session_id = session_id()?;
         swarm::store::add_agent(&connection, session_id, agent_id, role)?;
@@ -177,13 +308,24 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let vars = [("session_id", session.as_str()), ("agent_id", agent_id), ("home", &home), ("adapter", &adapter_name())];
         let pane = adapter.run("spawn", &vars)?;
         swarm::store::set_pane(&connection, session_id, agent_id, &pane)?;
-        if !command.is_empty() {
+        if !options.command.is_empty() {
             let exe = env::current_exe()?.to_string_lossy().into_owned();
             let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
-            let line = format!("{}; {hook}", swarm::adapter::shell_line(command));
+            let child = if let Some(account) = &account {
+                let mut args = vec!["env".to_string(), "--".to_string()];
+                args.extend(account.env.iter().map(|(key, value)| format!("{key}={value}")));
+                args.extend_from_slice(options.command);
+                swarm::adapter::shell_line(&args)
+            } else {
+                swarm::adapter::shell_line(options.command)
+            };
+            let line = format!("{child}; {hook}");
             adapter.run("ring", &[("pane", &pane), ("text", &line)])?;
         }
         println!("{pane}");
+        if let Some(account) = account {
+            eprintln!("account {}", account.name);
+        }
         return Ok(());
     }
     if let [cmd] = args && cmd == "drain" {
