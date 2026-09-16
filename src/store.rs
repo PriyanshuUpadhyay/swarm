@@ -519,4 +519,12 @@ mod tests {
         assert_eq!(session_of(&connection, OUTSIDER).unwrap(), OTHER_SESSION);
         assert_eq!(session_of(&connection, "ghost").unwrap_err().to_string(), "unknown agent ghost");
     }
+
+    #[test]
+    fn session_ids_are_never_reused() {
+        let connection = open(Path::new(":memory:")).unwrap();
+        let first = create_session(&connection, "lane").unwrap();
+        connection.execute("DELETE FROM session WHERE id = ?1", [first]).unwrap();
+        assert_ne!(create_session(&connection, "lane").unwrap(), first);
+    }
 }
