@@ -73,7 +73,7 @@ fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>>
     swarm::profiles::translate_roles(&json).map_err(|error| format!("swarm: {error}").into())
 }
 
-fn load_account_rows(provider: &str) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
+fn load_accounts(provider: &str, with_pick: bool) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
     if provider == "agy" {
         return Ok(swarm::profiles::empty_accounts(provider));
     }
@@ -82,27 +82,15 @@ fn load_account_rows(provider: &str) -> Result<swarm::profiles::AccountList, Box
     }
     let command = yelo_command();
     let list = tool_stdout(&command, &["profile", "list", "--cli", provider, "--usage", "--json"])?;
-    swarm::profiles::translate_accounts(provider, &list, None).map_err(|error| format!("swarm: {error}").into())
-}
-
-fn load_accounts(provider: &str) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    if provider == "agy" {
-        return Ok(swarm::profiles::empty_accounts(provider));
-    }
-    if !matches!(provider, "claude" | "codex") {
-        return Err(format!("swarm: unknown provider {provider}").into());
-    }
-    let command = yelo_command();
-    let list = tool_stdout(&command, &["profile", "list", "--cli", provider, "--usage", "--json"])?;
-    let accounts = swarm::profiles::translate_accounts(provider, &list, None)
-        .map_err(|error| format!("swarm: {error}"))?;
-    let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
-    let pick_json = if pick.status.success() {
-        Some(String::from_utf8(pick.stdout).map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?)
-    } else if accounts.accounts.iter().all(|account| !account.signed_in) {
-        None
+    let pick_json = if with_pick {
+        let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
+        pick.status
+            .success()
+            .then(|| String::from_utf8(pick.stdout))
+            .transpose()
+            .map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?
     } else {
-        return Err(format!("swarm: {command} failed: {}", String::from_utf8_lossy(&pick.stderr).trim()).into());
+        None
     };
     swarm::profiles::translate_accounts(provider, &list, pick_json.as_deref())
         .map_err(|error| format!("swarm: {error}").into())
@@ -125,7 +113,9 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
-            "--" => return Ok(SpawnOptions { provider, account, command: &args[index + 1..] }),
+            "--" if provider.is_none() || account.is_some() => {
+                return Ok(SpawnOptions { provider, account, command: &args[index + 1..] });
+            }
             "--provider" if provider.is_none() && index + 1 < args.len() => {
                 provider = Some(args[index + 1].as_str());
                 index += 2;
@@ -136,6 +126,9 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
             }
             _ => return Err(USAGE.to_string()),
         }
+    }
+    if provider.is_some() && account.is_none() {
+        return Err(USAGE.to_string());
     }
     Ok(SpawnOptions { provider, account, command: &[] })
 }
@@ -260,12 +253,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && provider_flag == "--provider"
         && json == "--json"
     {
-        return print_json(&load_accounts(provider)?);
+        return print_json(&load_accounts(provider, true)?);
     }
     if let [cmd, json] = args && cmd == "usage" && json == "--json" {
         let command = yelo_command();
         let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = [load_account_rows("claude")?, load_account_rows("codex")?];
+        let accounts = [load_accounts("claude", false)?, load_accounts("codex", false)?];
         let usage = swarm::profiles::translate_usage(&json, &accounts).map_err(|error| format!("swarm: {error}"))?;
         return print_json(&usage);
     }
@@ -295,7 +288,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .map(|entry| entry.provider)
                     .ok_or_else(|| format!("swarm: unknown role {role}"))?,
             };
-            let accounts = load_accounts(&provider)?;
+            let accounts = load_accounts(&provider, true)?;
             Some(swarm::profiles::resolve_account(&accounts, requested).map_err(|error| format!("swarm: {error}"))?.clone())
         } else {
             None

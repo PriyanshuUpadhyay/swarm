@@ -43,13 +43,13 @@ printf '%s' '{"path":"/fixture/roles.json","config":{"routes":{"ORCHESTRATOR":["
   "profile list --cli claude --usage --json")
     printf '%s' '[{"name":"claudeWorkAccount","dir":"/profiles/claude","email":"claude@example.com","signed_in":true,"remaining":52,"usage":"7d 52% left"}]' ;;
   "profile pick --cli claude --json")
-    printf '%s' '{"name":"claudeWorkAccount","dir":"/profiles/claude"}' ;;
+    echo 'claude: no usage data to pick an account from' >&2; exit 1 ;;
   "profile list --cli codex --usage --json")
-    printf '%s' '[{"name":"codexWorkAccount","dir":"/profiles/codex work","email":"codex@example.com","signed_in":true,"remaining":80,"usage":"5h 80% left"}]' ;;
+    printf '%s' '[{"name":"codexWorkAccount","dir":"/profiles/codex work","email":"codex@example.com","signed_in":true,"remaining":80,"usage":"5h 80% left"},{"name":"codexNoEmailAccount","dir":"/profiles/codex-no-email","email":null,"signed_in":false,"remaining":null,"usage":null},{"name":null,"dir":"/profiles/codex-nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}]' ;;
   "profile pick --cli codex --json")
     printf '%s' '{"name":"codexWorkAccount","dir":"/profiles/codex work"}' ;;
   "usage show --json")
-    printf '%s' '[{"label":"cl·claude@example.com","provider":"claude","window":"7d","pct":48,"reset":"4d22h","state":"ok","asOf":1789576942},{"label":"cx·other@example.com","provider":"codex","window":"5h","pct":20,"reset":null,"state":"stale","asOf":null}]' ;;
+    printf '%s' '[{"label":"cl·claude@example.com","provider":"claude","window":"7d","pct":48,"reset":"4d22h","state":"ok","asOf":1789576942},{"label":"cx","provider":"codex","state":"logged_out","reason":"logged out"},{"label":"cx·codexNoEmailAccount","provider":"codex","state":"missing","reason":"no data"}]' ;;
   *) echo "unexpected yelo call: $*" >&2; exit 9 ;;
 esac"#,
     );
@@ -86,10 +86,25 @@ fn json_commands_translate_fake_tool_output() {
     );
     let accounts: Value = serde_json::from_slice(&accounts.stdout).unwrap();
     assert_eq!(accounts["auto"], "codexWorkAccount");
+    assert_eq!(accounts["accounts"].as_array().unwrap().len(), 2);
     assert_eq!(
         accounts["accounts"][0]["env"]["CODEX_HOME"],
         "/profiles/codex work"
     );
+
+    let failed_pick = run(
+        &["accounts", "--provider", "claude", "--json"],
+        &routing,
+        &yelo,
+    );
+    assert!(
+        failed_pick.status.success(),
+        "{}",
+        String::from_utf8_lossy(&failed_pick.stderr)
+    );
+    let failed_pick: Value = serde_json::from_slice(&failed_pick.stdout).unwrap();
+    assert_eq!(failed_pick["auto"], Value::Null);
+    assert_eq!(failed_pick["accounts"][0]["name"], "claudeWorkAccount");
 
     let agy = run(
         &["accounts", "--provider", "agy", "--json"],
@@ -115,6 +130,10 @@ fn json_commands_translate_fake_tool_output() {
     let usage: Value = serde_json::from_slice(&usage.stdout).unwrap();
     assert_eq!(usage["meters"][0]["account"], "claudeWorkAccount");
     assert_eq!(usage["meters"][1]["account"], Value::Null);
+    assert_eq!(usage["meters"][1]["window"], Value::Null);
+    assert_eq!(usage["meters"][1]["used_pct"], Value::Null);
+    assert_eq!(usage["meters"][1]["reason"], "logged out");
+    assert_eq!(usage["meters"][2]["account"], "codexNoEmailAccount");
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -229,8 +248,28 @@ fn spawn_quotes_selected_account_and_rejects_unknown_before_spawn() {
             .starts_with("'env' '--' 'CLAUDE_CONFIG_DIR=/profiles/claude' 'true'; ")
     );
 
+    let ignored_provider = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args([
+            "spawn",
+            "worker3",
+            "CODER",
+            "--provider",
+            "codex",
+            "--",
+            "true",
+        ])
+        .env("SWARM_HOME", &swarm_home)
+        .env("SWARM_SESSION_ID", session.trim())
+        .env("SWARM_ADAPTER", "fake")
+        .env("SWARM_ROUTING_CMD", &routing)
+        .env("SWARM_YELO_CMD", &yelo)
+        .output()
+        .unwrap();
+    assert!(!ignored_provider.status.success());
+    assert!(String::from_utf8_lossy(&ignored_provider.stderr).starts_with("usage: swarm"));
+
     let rejected = Command::new(env!("CARGO_BIN_EXE_swarm"))
-        .args(["spawn", "worker3", "CODER", "--account", "missing"])
+        .args(["spawn", "worker4", "CODER", "--account", "missing"])
         .env("SWARM_HOME", &swarm_home)
         .env("SWARM_SESSION_ID", session.trim())
         .env("SWARM_ADAPTER", "fake")

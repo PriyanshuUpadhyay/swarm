@@ -83,7 +83,7 @@ pub struct Account {
 
 #[derive(Deserialize)]
 struct YeloAccount {
-    name: String,
+    name: Option<String>,
     dir: String,
     email: Option<String>,
     signed_in: bool,
@@ -119,14 +119,17 @@ pub fn translate_accounts(
     };
     let accounts: Vec<Account> = input
         .into_iter()
-        .map(|row| Account {
-            name: row.name,
-            email: row.email,
-            env: BTreeMap::from([(env_name.to_string(), row.dir.clone())]),
-            home: row.dir,
-            signed_in: row.signed_in,
-            remaining_pct: row.remaining,
-            summary: row.usage,
+        .filter_map(|row| {
+            let name = row.name?;
+            Some(Account {
+                name,
+                email: row.email,
+                env: BTreeMap::from([(env_name.to_string(), row.dir.clone())]),
+                home: row.dir,
+                signed_in: row.signed_in,
+                remaining_pct: row.remaining,
+                summary: row.usage,
+            })
         })
         .collect();
     let auto = pick_json
@@ -158,10 +161,11 @@ pub struct UsageMeter {
     pub provider: String,
     pub account: Option<String>,
     pub label: String,
-    pub window: String,
-    pub used_pct: i64,
+    pub window: Option<String>,
+    pub used_pct: Option<i64>,
     pub resets_in: Option<String>,
     pub state: String,
+    pub reason: Option<String>,
     pub as_of: Option<i64>,
 }
 
@@ -169,30 +173,34 @@ pub struct UsageMeter {
 struct YeloUsageMeter {
     provider: String,
     label: String,
-    window: String,
-    pct: i64,
+    window: Option<String>,
+    pct: Option<i64>,
     reset: Option<String>,
     state: String,
+    reason: Option<String>,
     #[serde(rename = "asOf")]
     as_of: Option<i64>,
 }
 
 pub fn translate_usage(json: &str, account_lists: &[AccountList]) -> Result<Usage, String> {
-    let input: Vec<YeloUsageMeter> =
+    let input: Vec<serde_json::Value> =
         serde_json::from_str(json).map_err(|error| format!("yelo usage JSON: {error}"))?;
     let meters = input
         .into_iter()
+        .filter_map(|row| serde_json::from_value::<YeloUsageMeter>(row).ok())
         .map(|row| {
-            let email = row.label.split_once('·').map(|(_, email)| email);
-            let account = account_lists
-                .iter()
-                .find(|list| list.provider == row.provider)
-                .and_then(|list| {
-                    list.accounts
-                        .iter()
-                        .find(|account| account.email.as_deref() == email)
-                })
-                .map(|account| account.name.clone());
+            let account = row.label.split_once('·').and_then(|(_, tail)| {
+                account_lists
+                    .iter()
+                    .find(|list| list.provider == row.provider)
+                    .and_then(|list| {
+                        list.accounts
+                            .iter()
+                            .find(|account| account.email.as_deref() == Some(tail))
+                            .or_else(|| list.accounts.iter().find(|account| account.name == tail))
+                    })
+                    .map(|account| account.name.clone())
+            });
             UsageMeter {
                 provider: row.provider,
                 account,
@@ -201,6 +209,7 @@ pub fn translate_usage(json: &str, account_lists: &[AccountList]) -> Result<Usag
                 used_pct: row.pct,
                 resets_in: row.reset,
                 state: row.state,
+                reason: row.reason,
                 as_of: row.as_of,
             }
         })
@@ -233,7 +242,8 @@ mod tests {
 
     const ACCOUNT_LIST: &str = r#"[
         {"name":"work","dir":"/profiles/work","email":"work@example.com","signed_in":true,"remaining":52,"usage":"5h 98% left · 7d 52% left"},
-        {"name":"away","dir":"/profiles/away","email":null,"signed_in":false,"remaining":null,"usage":null}
+        {"name":"away","dir":"/profiles/away","email":null,"signed_in":false,"remaining":null,"usage":null},
+        {"name":null,"dir":"/profiles/nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}
     ]"#;
 
     #[test]
@@ -263,6 +273,7 @@ mod tests {
             "/profiles/work"
         );
         assert_eq!(result.accounts[0].remaining_pct, Some(52));
+        assert_eq!(result.accounts.len(), 2);
         assert_eq!(resolve_account(&result, "auto").unwrap().name, "work");
         assert_eq!(
             resolve_account(&result, "missing").unwrap_err(),
@@ -271,12 +282,15 @@ mod tests {
     }
 
     #[test]
-    fn translates_usage_and_matches_labels_by_email() {
+    fn translates_usage_status_rows_and_matches_email_then_name() {
         let accounts =
             translate_accounts("codex", ACCOUNT_LIST, Some(r#"{"name":"work"}"#)).unwrap();
         let json = r#"[
             {"label":"cx·work@example.com","provider":"codex","window":"7d","pct":10,"reset":"4d22h","state":"ok","asOf":1789576942},
-            {"label":"cx·unknown@example.com","provider":"codex","window":"5h","pct":20,"reset":null,"state":"stale","asOf":null}
+            {"label":"cx·unknown@example.com","provider":"codex","window":"5h","pct":20,"reset":null,"state":"stale","asOf":null},
+            {"label":"cx","provider":"codex","state":"logged_out","reason":"logged out"},
+            {"label":"cx·away","provider":"codex","state":"missing","reason":"no data"},
+            {"provider":"codex"}
         ]"#;
 
         let result = translate_usage(json, &[accounts]).unwrap();
@@ -284,6 +298,12 @@ mod tests {
         assert_eq!(result.meters[0].account.as_deref(), Some("work"));
         assert_eq!(result.meters[1].account, None);
         assert_eq!(result.meters[1].resets_in, None);
+        assert_eq!(result.meters[2].account, None);
+        assert_eq!(result.meters[2].window, None);
+        assert_eq!(result.meters[2].used_pct, None);
+        assert_eq!(result.meters[2].reason.as_deref(), Some("logged out"));
+        assert_eq!(result.meters[3].account.as_deref(), Some("away"));
+        assert_eq!(result.meters.len(), 4);
     }
 
     #[test]
