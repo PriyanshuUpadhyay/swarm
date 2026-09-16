@@ -4,9 +4,14 @@ import Testing
 
 @Suite("Swarm profiles", .tags(.agentProtocol))
 struct SwarmProfilesTests {
+    private enum RunnerFailure: Error { case lost }
+
     @Test("decodes the roles contract")
     func decodesRoles() async throws {
-        let source = source(stdout: #"{"roles":[{"role":"code.complex","runner":"codex-sol-high-agent","provider":"codex","model":"gpt-5.6-sol","effort":"high","sandbox":"workspace-write","fallbacks":[]}] }"#)
+        let source = source(
+            expectedArguments: ["roles", "--json"],
+            stdout: #"{"roles":[{"role":"code.complex","runner":"codex-sol-high-agent","provider":"codex","model":"gpt-5.6-sol","effort":"high","sandbox":"workspace-write","fallbacks":[]}] }"#
+        )
 
         let roles = try await source.roles()
 
@@ -16,9 +21,27 @@ struct SwarmProfilesTests {
         )])
     }
 
+    @Test("decodes nullable role fields and fallbacks")
+    func decodesRoleOptionals() async throws {
+        let source = source(
+            expectedArguments: ["roles", "--json"],
+            stdout: #"{"roles":[{"role":"code.fast","runner":"claude-fast","provider":"claude","model":"haiku","effort":null,"sandbox":null,"fallbacks":["codex-fast"]}]}"#
+        )
+
+        let roles = try await source.roles()
+
+        #expect(roles == [SwarmRole(
+            role: "code.fast", runner: "claude-fast", provider: "claude", model: "haiku",
+            effort: nil, sandbox: nil, fallbacks: ["codex-fast"]
+        )])
+    }
+
     @Test("decodes the Claude accounts contract")
     func decodesClaudeAccounts() async throws {
-        let source = source(stdout: #"{"provider":"claude","source":"yelo","accounts":[{"name":"sid","email":"someone@example.com","home":"/Users/me/.claude/.profiles/sid","env":{"CLAUDE_CONFIG_DIR":"/Users/me/.claude/.profiles/sid"},"signed_in":true,"remaining_pct":52,"summary":"5h 98% left · 7d 52% left"}],"auto":"sid"}"#)
+        let source = source(
+            expectedArguments: ["accounts", "--provider", "claude", "--json"],
+            stdout: #"{"provider":"claude","source":"yelo","accounts":[{"name":"sid","email":"someone@example.com","home":"/Users/me/.claude/.profiles/sid","env":{"CLAUDE_CONFIG_DIR":"/Users/me/.claude/.profiles/sid"},"signed_in":true,"remaining_pct":52,"summary":"5h 98% left · 7d 52% left"}],"auto":"sid"}"#
+        )
 
         let accounts = try await source.accounts(provider: "claude")
 
@@ -35,7 +58,10 @@ struct SwarmProfilesTests {
 
     @Test("decodes the empty AGY accounts contract")
     func decodesAGYAccounts() async throws {
-        let source = source(stdout: #"{"provider":"agy","source":null,"accounts":[],"auto":null}"#)
+        let source = source(
+            expectedArguments: ["accounts", "--provider", "agy", "--json"],
+            stdout: #"{"provider":"agy","source":null,"accounts":[],"auto":null}"#
+        )
 
         let accounts = try await source.accounts(provider: "agy")
 
@@ -44,7 +70,10 @@ struct SwarmProfilesTests {
 
     @Test("decodes a usage meter with no matched account")
     func decodesUsage() async throws {
-        let source = source(stdout: #"{"meters":[{"provider":"claude","account":null,"label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","as_of":1789576942}]}"#)
+        let source = source(
+            expectedArguments: ["usage", "--json"],
+            stdout: #"{"meters":[{"provider":"claude","account":null,"label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","as_of":1789576942}]}"#
+        )
 
         let meters = try await source.usage()
 
@@ -81,16 +110,62 @@ struct SwarmProfilesTests {
 
     @Test("maps a non-zero exit to the first stderr line")
     func mapsFailedExit() async {
-        let source = source(status: 2, stderr: "routing config is missing\nmore detail\n")
+        let source = source(
+            expectedArguments: ["usage", "--json"], status: 2,
+            stderr: "routing config is missing\nmore detail\n"
+        )
 
         await #expect(throws: SwarmProfileError.failed("routing config is missing")) {
             try await source.usage()
         }
     }
 
+    @Test("falls back to stdout when a failed command has no stderr")
+    func mapsFailedExitStdout() async {
+        let source = source(
+            expectedArguments: ["usage", "--json"], status: 137,
+            stdout: "process was killed\nmore detail\n"
+        )
+
+        await #expect(throws: SwarmProfileError.failed("process was killed")) {
+            try await source.usage()
+        }
+    }
+
+    @Test("gives an empty failed command a useful message")
+    func mapsEmptyFailedExit() async {
+        let source = source(expectedArguments: ["usage", "--json"], status: 137)
+
+        await #expect(throws: SwarmProfileError.failed("swarm exited 137")) {
+            try await source.usage()
+        }
+    }
+
+    @Test("preserves cancellation")
+    func preservesCancellation() async {
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+            throw CancellationError()
+        }
+
+        await #expect(throws: CancellationError.self) {
+            try await source.roles()
+        }
+    }
+
+    @Test("maps another runner error to failed")
+    func mapsRunnerError() async {
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+            throw RunnerFailure.lost
+        }
+
+        await #expect(throws: SwarmProfileError.failed("lost")) {
+            try await source.roles()
+        }
+    }
+
     @Test("maps undecodable output to failed")
     func mapsInvalidJSON() async {
-        let source = source(stdout: "not json")
+        let source = source(expectedArguments: ["roles", "--json"], stdout: "not json")
 
         await #expect(throws: SwarmProfileError.failed("swarm returned invalid JSON")) {
             try await source.roles()
@@ -98,10 +173,11 @@ struct SwarmProfilesTests {
     }
 
     private func source(
-        status: Int32 = 0, stdout: String = "", stderr: String = ""
+        expectedArguments: [String], status: Int32 = 0, stdout: String = "", stderr: String = ""
     ) -> SwarmCLIProfileSource {
-        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
-            ShellResult(status: status, stdout: stdout, stderr: stderr)
+        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+            #expect(arguments == expectedArguments)
+            return ShellResult(status: status, stdout: stdout, stderr: stderr)
         }
     }
 }
