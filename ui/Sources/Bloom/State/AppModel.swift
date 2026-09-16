@@ -56,7 +56,7 @@ final class AppModel {
     /// Where roles, accounts and usage come from: swarm, which owns them (ADR 0005 in the swarm
     /// repository). One source for the launch picker and the menu bar meters, so the two cannot
     /// disagree. Outside observation, because the views observe what they read from it.
-    @ObservationIgnored let swarmProfiles: any SwarmProfileSource = UnavailableSwarmProfileSource()
+    @ObservationIgnored let swarmProfiles: any SwarmProfileSource = SwarmCLIProfileSource()
 
     private(set) var repos: [Repo] = []
     private(set) var workspaces: [Workspace] = []
