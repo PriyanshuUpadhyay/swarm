@@ -374,6 +374,7 @@ mod tests {
             .unwrap();
         assert_eq!(body_path, "runs/1/1.txt");
         assert_eq!(std::fs::read_to_string(root.join(body_path)).unwrap(), "hello");
+        assert!(!root.join("runs/1/1.tmp").exists());
 
         assert!(send_message(&mut connection, &root, SESSION, ORCHESTRATOR, OUTSIDER, "note", "x").is_err());
         let count: i64 = connection
