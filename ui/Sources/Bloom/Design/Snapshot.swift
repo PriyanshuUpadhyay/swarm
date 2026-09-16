@@ -1317,6 +1317,26 @@ private struct LimitsStateGallery: View {
         ("Nothing reported at all", []),
     ]
 
+    private static let swarmUsage = [
+        SwarmUsageMeter(
+            provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
+            window: "5h", usedPct: 28, resetsIn: "3h12m", state: "ok", reason: nil, asOf: nil
+        ),
+        SwarmUsageMeter(
+            provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
+            window: "7d", usedPct: 91, resetsIn: "2d4h", state: "ok", reason: nil, asOf: nil
+        ),
+        SwarmUsageMeter(
+            provider: "codex", account: "CODER", label: "cx·coder",
+            window: "5h", usedPct: 52, resetsIn: "1h8m", state: "stale", reason: nil, asOf: nil
+        ),
+        SwarmUsageMeter(
+            provider: "codex", account: "REVIEWER", label: "cx·reviewer",
+            window: nil, usedPct: nil, resetsIn: nil, state: "logged_out",
+            reason: "Sign in to Codex", asOf: nil
+        ),
+    ]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(Self.scenes.enumerated()), id: \.offset) { _, scene in
@@ -1327,6 +1347,12 @@ private struct LimitsStateGallery: View {
                     .padding(.top, 20)
                 UsagePanelSnapshot(quotas: scene.1, now: Self.now)
             }
+            Text("Every swarm account")
+                .font(Font(NSFont.menuFont(ofSize: 0)).weight(.semibold))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .padding(.leading, 22)
+                .padding(.top, 20)
+            UsagePanelSnapshot(quotas: [], swarmUsage: Self.swarmUsage, now: Self.now)
         }
         .padding(.bottom, 20)
     }
@@ -1337,6 +1363,7 @@ private struct LimitsStateGallery: View {
 private struct UsagePanelSnapshot: View {
     let quotas: [AgentQuota]
     var accounts: [AgentAccount] = []
+    var swarmUsage: [SwarmUsageMeter] = []
     let now: Date
 
     var body: some View {
@@ -1346,7 +1373,12 @@ private struct UsagePanelSnapshot: View {
             metrics: UsageCatalogue.metrics(quotas: quotas, accounts: byProvider, at: now),
             accounts: byProvider,
             now: now,
-            canReorder: false
+            canReorder: false,
+            swarmUsage: SwarmUsageBoard.make(
+                from: swarmUsage,
+                options: UsageMenuModel.shared.options,
+                layout: UsageMenuModel.shared.layout
+            )
         )
         .background(Color(nsColor: .windowBackgroundColor))
     }

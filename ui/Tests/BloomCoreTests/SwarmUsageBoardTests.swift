@@ -1,26 +1,15 @@
 import Testing
 @testable import BloomCore
 
-private struct FakeSwarmProfileSource: SwarmProfileSource {
-    let meters: [SwarmUsageMeter]
-
-    func roles() async throws -> [SwarmRole] { [] }
-
-    func accounts(provider: String) async throws -> SwarmAccountList {
-        SwarmAccountList(provider: provider, source: nil, accounts: [], auto: nil)
-    }
-
-    func usage() async throws -> [SwarmUsageMeter] { meters }
-}
-
 private func meter(
     provider: String,
     account: String?,
     label: String,
-    window: String,
-    usedPercent: Int,
+    window: String?,
+    usedPercent: Int?,
     resetsIn: String? = nil,
-    state: String = "ok"
+    state: String = "ok",
+    reason: String? = nil
 ) -> SwarmUsageMeter {
     SwarmUsageMeter(
         provider: provider,
@@ -30,58 +19,122 @@ private func meter(
         usedPct: usedPercent,
         resetsIn: resetsIn,
         state: state,
+        reason: reason,
         asOf: nil
     )
 }
 
 @Suite("Swarm usage board")
 struct SwarmUsageBoardTests {
+    @Test("an empty report makes an empty board")
+    func emptyBoard() {
+        #expect(SwarmUsageBoard.make(from: []).isEmpty)
+    }
+
     @Test("groups providers and accounts in a stable order")
-    func groupingAndOrdering() async throws {
-        let source: any SwarmProfileSource = FakeSwarmProfileSource(meters: [
+    func groupingAndOrdering() {
+        let board = SwarmUsageBoard.make(from: [
             meter(provider: "codex", account: "CODER", label: "cx·coder", window: "7d", usedPercent: 30),
             meter(provider: "claude", account: nil, label: "cl·work@example.com", window: "7d", usedPercent: 10),
             meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "5h", usedPercent: 20),
         ])
-
-        let board = SwarmUsageBoard.make(from: try await source.usage())
 
         #expect(board.providers.map(\.key) == ["claude", "codex"])
         #expect(board.providers[0].accounts.map(\.title) == ["cl·work@example.com", "ORCHESTRATOR"])
         #expect(board.providers[1].accounts.map(\.title) == ["CODER"])
     }
 
-    @Test("orders known windows before unknown windows")
-    func windowOrdering() {
-        let board = SwarmUsageBoard.make(from: [
-            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "other", usedPercent: 40),
-            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "fb", usedPercent: 30),
-            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "7d", usedPercent: 20),
-            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "5h", usedPercent: 10),
-        ])
+    @Test("meter style changes the words and bar direction")
+    func meterStyle() throws {
+        let source = [
+            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "7d", usedPercent: 10),
+        ]
+        let left = try #require(SwarmUsageBoard.make(from: source).providers.first?.accounts.first?.meters.first)
+        let used = try #require(SwarmUsageBoard.make(
+            from: source,
+            options: UsageDisplayOptions(meterStyle: .used)
+        ).providers.first?.accounts.first?.meters.first)
 
-        #expect(board.providers[0].accounts[0].meters.map(\.window) == ["5h", "7d", "fb", "other"])
+        #expect(left.usedText == "90% left")
+        #expect(left.fill == 0.9)
+        #expect(used.usedText == "10% used")
+        #expect(used.fill == 0.1)
     }
 
-    @Test("formats use, reset and stale state")
-    func textFormatting() throws {
+    @Test("layout orders providers and hides on demand rows until expanded")
+    func layout() {
+        var layout = UsageLayout(providerOrder: [.codex, .claudeCode])
+        layout.setPlacement(.alwaysVisible, for: UsageMetricID("claudeCode/five_hour"))
+        layout.setPlacement(.onDemand, for: UsageMetricID("claudeCode/seven_day"))
+        let source = [
+            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "5h", usedPercent: 20),
+            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "7d", usedPercent: 30),
+            meter(provider: "codex", account: "CODER", label: "cx·coder", window: "7d", usedPercent: 40),
+        ]
+
+        let collapsed = SwarmUsageBoard.make(from: source, layout: layout)
+        #expect(collapsed.providers.map(\.key) == ["codex", "claude"])
+        #expect(collapsed.providers[1].accounts[0].meters.map(\.window) == ["5h"])
+
+        layout.expandedProviders.insert(.claudeCode)
+        let expanded = SwarmUsageBoard.make(from: source, layout: layout)
+        #expect(expanded.providers[1].accounts[0].meters.map(\.window) == ["5h", "7d"])
+    }
+
+    @Test("status rows have one message and no bar values")
+    func statusRow() throws {
         let board = SwarmUsageBoard.make(from: [
             meter(
-                provider: "claude",
-                account: "ORCHESTRATOR",
-                label: "cl·orchestrator",
-                window: "7d",
-                usedPercent: 10,
-                resetsIn: "4d22h",
-                state: "stale"
+                provider: "codex", account: "REVIEWER", label: "cx·reviewer",
+                window: nil, usedPercent: nil, state: "logged_out", reason: "Sign in to Codex"
             ),
         ])
         let reading = try #require(board.providers.first?.accounts.first?.meters.first)
 
-        #expect(reading.usedText == "10% used")
-        #expect(reading.resetText == "Resets in 4d22h")
+        #expect(reading.message == "Sign in to Codex")
+        #expect(reading.usedText == nil)
+        #expect(reading.fill == nil)
+    }
+
+    @Test("severity and stale state ignore meter style and letter case")
+    func severityAndState() throws {
+        let board = SwarmUsageBoard.make(from: [
+            meter(
+                provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
+                window: "7d", usedPercent: 97, resetsIn: "4d22h", state: "STALE"
+            ),
+        ])
+        let reading = try #require(board.providers.first?.accounts.first?.meters.first)
+
+        #expect(reading.severity == .critical)
+        #expect(reading.isStale)
         #expect(reading.statusText == "Stale")
-        #expect(reading.fill == 0.1)
-        #expect(board.accessibilityLabel == "Claude, ORCHESTRATOR, 7d, 10% used, Resets in 4d22h, Stale")
+        #expect(board.accessibilityLabel == "Claude, ORCHESTRATOR, 7d, 3% left, Resets in 4d22h, Stale")
+    }
+
+    @Test("equal account titles use their stable keys")
+    func accountTie() {
+        let board = SwarmUsageBoard.make(from: [
+            meter(provider: "claude", account: nil, label: "sid", window: "7d", usedPercent: 10),
+            meter(provider: "claude", account: "sid", label: "cl·sid", window: "5h", usedPercent: 20),
+        ])
+
+        #expect(board.providers[0].accounts.map(\.key) == ["account/sid", "label/sid"])
+    }
+}
+
+@Suite("Swarm usage failures")
+struct SwarmUsageFailureStateTests {
+    @Test("the second failed ask marks old readings stale")
+    func thresholdAndReset() {
+        var failures = SwarmUsageFailureState()
+
+        let first = failures.failed()
+        let second = failures.failed()
+        #expect(!first)
+        #expect(second)
+        failures.succeeded()
+        let afterSuccess = failures.failed()
+        #expect(!afterSuccess)
     }
 }

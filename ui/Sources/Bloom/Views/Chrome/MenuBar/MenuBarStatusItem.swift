@@ -447,7 +447,11 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         guard model.showsUsage, let app else { return nil }
         let metrics = model.metrics(quotas: app.quotas, accounts: app.accounts)
         let sections = model.layout.sections(for: metrics)
-        let swarmUsage = SwarmUsageBoard.make(from: app.swarmUsageMeters)
+        let swarmUsage = SwarmUsageBoard.make(
+            from: app.swarmUsageMeters,
+            options: model.options,
+            layout: model.layout
+        )
         guard !sections.isEmpty || !swarmUsage.isEmpty else { return nil }
 
         let host = NSHostingView(rootView: UsageMenuBlock(

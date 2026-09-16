@@ -4,6 +4,7 @@ public struct SwarmUsageBoard: Sendable, Hashable {
     public struct Provider: Sendable, Hashable {
         public var key: String
         public var title: String
+        public var kind: AgentKind?
         public var accounts: [Account]
     }
 
@@ -14,15 +15,47 @@ public struct SwarmUsageBoard: Sendable, Hashable {
     }
 
     public struct Meter: Sendable, Hashable {
-        public var window: String
-        public var usedPercent: Int
+        public var sourceLabel: String
+        public var window: String?
+        public var usedPercent: Int?
         public var resetsIn: String?
-        public var isStale: Bool
+        public var state: String
+        public var reason: String?
+        public var usedText: String?
+        public var fill: Double?
 
-        public var usedText: String { "\(usedPercent)% used" }
         public var resetText: String? { resetsIn.map { "Resets in \($0)" } }
-        public var statusText: String? { isStale ? "Stale" : nil }
-        public var fill: Double { min(max(Double(usedPercent) / 100, 0), 1) }
+        public var isStale: Bool { state.caseInsensitiveCompare("stale") == .orderedSame }
+        public var statusText: String? { window != nil && usedPercent != nil && isStale ? "Stale" : nil }
+        public var severity: QuotaSeverity? {
+            usedPercent.map { QuotaSeverity.of(Double($0) / 100) }
+        }
+        public var message: String? {
+            guard window == nil || usedPercent == nil else { return nil }
+            let detail = reason ?? Self.readable(state)
+            return window.map { "\($0) · \(detail)" } ?? detail
+        }
+
+        fileprivate init(_ meter: SwarmUsageMeter, style: UsageMeterStyle) {
+            sourceLabel = meter.label
+            window = meter.window
+            usedPercent = meter.usedPct
+            resetsIn = meter.resetsIn
+            state = meter.state
+            reason = meter.reason
+            if let used = meter.usedPct {
+                let clamped = min(max(used, 0), 100)
+                usedText = style == .left ? "\(100 - clamped)% left" : "\(clamped)% used"
+                fill = Double(style == .left ? 100 - clamped : clamped) / 100
+            } else {
+                usedText = nil
+                fill = nil
+            }
+        }
+
+        private static func readable(_ state: String) -> String {
+            state.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 
     public var providers: [Provider]
@@ -39,18 +72,25 @@ public struct SwarmUsageBoard: Sendable, Hashable {
                 account.meters.map { meter in
                     [
                         provider.title, account.title, meter.window, meter.usedText,
-                        meter.resetText, meter.statusText,
+                        meter.message, meter.resetText, meter.statusText,
                     ].compactMap { $0 }.joined(separator: ", ")
                 }
             }
         }.joined(separator: ". ")
     }
 
-    /// Groups meters by provider and account, with known providers and windows first.
-    public static func make(from meters: [SwarmUsageMeter]) -> SwarmUsageBoard {
+    /// Groups meters by provider and account, then applies the saved menu layout.
+    public static func make(
+        from meters: [SwarmUsageMeter],
+        options: UsageDisplayOptions = UsageDisplayOptions(),
+        layout: UsageLayout = UsageLayout()
+    ) -> SwarmUsageBoard {
         let byProvider = Dictionary(grouping: meters, by: \.provider)
-        let providers = byProvider.map { provider, meters in
-            let byAccount = Dictionary(grouping: meters) { meter in
+        let providers = byProvider.compactMap { provider, sourceMeters -> Provider? in
+            let kind = providerKind(provider)
+            guard kind.map(layout.isEnabled) ?? true else { return nil }
+            let visible = visibleMeters(sourceMeters, provider: kind, layout: layout)
+            let byAccount = Dictionary(grouping: visible) { meter in
                 meter.account.map { "account/\($0)" } ?? "label/\(meter.label)"
             }
             let accounts = byAccount.map { key, meters in
@@ -58,12 +98,63 @@ public struct SwarmUsageBoard: Sendable, Hashable {
                 return Account(
                     key: key,
                     title: first.account ?? first.label,
-                    meters: meters.map(Meter.init).sorted(by: meterComesFirst)
+                    meters: meters.map { Meter($0, style: options.meterStyle) }
+                        .sorted { meterComesFirst($0, $1, kind: kind, layout: layout) }
                 )
             }.sorted(by: accountComesFirst)
-            return Provider(key: provider, title: providerTitle(provider), accounts: accounts)
-        }.sorted(by: providerComesFirst)
+            guard !accounts.isEmpty else { return nil }
+            return Provider(key: provider, title: providerTitle(provider), kind: kind, accounts: accounts)
+        }.sorted { providerComesFirst($0, $1, layout: layout) }
         return SwarmUsageBoard(providers: providers)
+    }
+
+    private static func visibleMeters(
+        _ meters: [SwarmUsageMeter],
+        provider: AgentKind?,
+        layout: UsageLayout
+    ) -> [SwarmUsageMeter] {
+        guard let provider else { return meters }
+        let status = meters.filter { metricID(for: $0, provider: provider) == nil }
+        let measured = meters.compactMap { meter -> (meter: SwarmUsageMeter, id: UsageMetricID)? in
+            guard let id = metricID(for: meter, provider: provider), !layout.isHidden(id) else { return nil }
+            return (meter, id)
+        }
+        var always = measured.filter { layout.placement(of: $0.id) == .alwaysVisible }.map(\.meter)
+        var demand = measured.filter { layout.placement(of: $0.id) == .onDemand }.map(\.meter)
+        if always.isEmpty, !demand.isEmpty {
+            always = demand
+            demand = []
+        }
+        return status + always + (layout.expandedProviders.contains(provider) ? demand : [])
+    }
+
+    private static func metricID(for meter: SwarmUsageMeter, provider: AgentKind) -> UsageMetricID? {
+        metricID(window: meter.window, usedPercent: meter.usedPct, provider: provider)
+    }
+
+    private static func metricID(
+        window: String?,
+        usedPercent: Int?,
+        provider: AgentKind
+    ) -> UsageMetricID? {
+        guard let window = window?.lowercased(), usedPercent != nil else { return nil }
+        let key: String
+        switch (provider, window) {
+        case (.claudeCode, "5h"): key = "five_hour"
+        case (.claudeCode, "7d"): key = "seven_day"
+        case (.codex, "5h"): key = "session"
+        case (.codex, "7d"): key = "weekly"
+        default: key = window
+        }
+        return UsageMetricID("\(provider.rawValue)/\(key)")
+    }
+
+    private static func providerKind(_ provider: String) -> AgentKind? {
+        switch provider.lowercased() {
+        case "claude": .claudeCode
+        case "codex": .codex
+        default: nil
+        }
     }
 
     private static func providerTitle(_ provider: String) -> String {
@@ -75,38 +166,57 @@ public struct SwarmUsageBoard: Sendable, Hashable {
         }
     }
 
-    private static func providerComesFirst(_ lhs: Provider, _ rhs: Provider) -> Bool {
-        let order = ["claude": 0, "codex": 1, "agy": 2]
-        let left = order[lhs.key.lowercased()] ?? Int.max
-        let right = order[rhs.key.lowercased()] ?? Int.max
-        if left != right { return left < right }
-        return ordered(lhs.title, before: rhs.title)
+    private static func providerComesFirst(_ lhs: Provider, _ rhs: Provider, layout: UsageLayout) -> Bool {
+        let positions = Dictionary(
+            uniqueKeysWithValues: layout.orderedProviders().enumerated().map { ($1, $0) }
+        )
+        switch (lhs.kind.flatMap { positions[$0] }, rhs.kind.flatMap { positions[$0] }) {
+        case (let left?, let right?) where left != right: return left < right
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return ordered(lhs.title, before: rhs.title)
+        }
     }
 
     private static func accountComesFirst(_ lhs: Account, _ rhs: Account) -> Bool {
-        ordered(lhs.title, before: rhs.title)
+        if lhs.title.caseInsensitiveCompare(rhs.title) != .orderedSame {
+            return ordered(lhs.title, before: rhs.title)
+        }
+        return ordered(lhs.key, before: rhs.key)
     }
 
-    private static func meterComesFirst(_ lhs: Meter, _ rhs: Meter) -> Bool {
+    private static func meterComesFirst(
+        _ lhs: Meter,
+        _ rhs: Meter,
+        kind: AgentKind?,
+        layout: UsageLayout
+    ) -> Bool {
+        if lhs.window == nil, rhs.window != nil { return true }
+        if lhs.window != nil, rhs.window == nil { return false }
+        let positions = Dictionary(uniqueKeysWithValues: layout.metricOrder.enumerated().map { ($1, $0) })
+        let leftID = kind.flatMap { metricID(window: lhs.window, usedPercent: lhs.usedPercent, provider: $0) }
+        let rightID = kind.flatMap { metricID(window: rhs.window, usedPercent: rhs.usedPercent, provider: $0) }
+        switch (leftID.flatMap { positions[$0] }, rightID.flatMap { positions[$0] }) {
+        case (let left?, let right?) where left != right: return left < right
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: break
+        }
         let order = ["5h": 0, "7d": 1, "fb": 2]
-        let left = order[lhs.window.lowercased()] ?? Int.max
-        let right = order[rhs.window.lowercased()] ?? Int.max
+        let leftWindow = lhs.window ?? ""
+        let rightWindow = rhs.window ?? ""
+        let left = order[leftWindow.lowercased()] ?? Int.max
+        let right = order[rightWindow.lowercased()] ?? Int.max
         if left != right { return left < right }
-        return ordered(lhs.window, before: rhs.window)
+        if leftWindow.caseInsensitiveCompare(rightWindow) != .orderedSame {
+            return ordered(leftWindow, before: rightWindow)
+        }
+        return ordered(lhs.sourceLabel, before: rhs.sourceLabel)
     }
 
     private static func ordered(_ lhs: String, before rhs: String) -> Bool {
         let left = lhs.lowercased()
         let right = rhs.lowercased()
         return left == right ? lhs < rhs : left < right
-    }
-}
-
-private extension SwarmUsageBoard.Meter {
-    init(_ meter: SwarmUsageMeter) {
-        window = meter.window
-        usedPercent = meter.usedPct
-        resetsIn = meter.resetsIn
-        isStale = meter.state == "stale"
     }
 }

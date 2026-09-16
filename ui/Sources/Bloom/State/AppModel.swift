@@ -398,6 +398,7 @@ final class AppModel {
     private(set) var isAskingForQuotas = false
     @ObservationIgnored private var lastSwarmUsageAskAt: Date?
     @ObservationIgnored private var isAskingForSwarmUsage = false
+    @ObservationIgnored private var swarmUsageFailures = SwarmUsageFailureState()
     private var identityTask: Task<Void, Never>?
     /// The launch sweep for project icons. Not private, because the work it does is in
     /// `AppModel+ProjectIcons.swift`, and outside observation because nothing draws from it.
@@ -834,11 +835,20 @@ final class AppModel {
         defer { isAskingForSwarmUsage = false }
         do {
             let meters = try await swarmProfiles.usage()
+            swarmUsageFailures.succeeded()
             if swarmUsageMeters != meters { swarmUsageMeters = meters }
         } catch SwarmProfileError.unavailable {
+            swarmUsageFailures.succeeded()
             if !swarmUsageMeters.isEmpty { swarmUsageMeters = [] }
         } catch {
-            // Keep the last good answer for a transient CLI failure.
+            guard swarmUsageFailures.failed() else { return }
+            let stale = swarmUsageMeters.map { meter in
+                guard meter.window != nil, meter.usedPct != nil else { return meter }
+                var copy = meter
+                copy.state = "stale"
+                return copy
+            }
+            if swarmUsageMeters != stale { swarmUsageMeters = stale }
         }
     }
 
