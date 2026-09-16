@@ -1,5 +1,7 @@
 use std::env;
 
+const RERING_AFTER_SECS: i64 = 60;
+
 fn init() -> Result<(), Box<dyn std::error::Error>> {
     let runs_dir = swarm::paths::runs_dir()?;
 
@@ -41,6 +43,7 @@ fn identity() -> Result<(i64, String), String> {
 fn deliver(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
+    adapter_name: &str,
     session_id: i64,
     sender: &str,
     recipient: &str,
@@ -49,14 +52,37 @@ fn deliver(
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
     let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
-    if let Some(pane) = swarm::store::pane_of(connection, &recipient)? {
-        let ring = swarm::adapter::load(root, &adapter_name())
+    if let Some(pane) = swarm::store::pane_of(connection, session_id, &recipient)? {
+        connection.execute("UPDATE message SET rung_at = unixepoch() WHERE seq = ?1", [seq])?;
+        let ring = swarm::adapter::load(root, adapter_name)
             .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
         if let Err(error) = ring {
             eprintln!("swarm: ring failed: {error}");
         }
     }
     Ok(seq)
+}
+
+fn add_agent(
+    connection: &rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: i64,
+    agent_id: &str,
+    role: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pane = if role == "orchestrator" {
+        Some(swarm::adapter::load(root, adapter_name)?.run("self", &[])?)
+    } else {
+        None
+    };
+    swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    if let Some(pane) = pane {
+        if !pane.is_empty() {
+            swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
+        }
+    }
+    Ok(())
 }
 
 /// A child ended without `swarm finish`: send a fallback summary in its name and queue a
@@ -70,10 +96,10 @@ fn report_dead(
     note: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !swarm::store::has_summary(connection, session_id, child)? {
-        deliver(connection, root, session_id, child, orchestrator, "summary", note)?;
-        swarm::store::enqueue_job(connection, child, "summarize")?;
+        deliver(connection, root, &adapter_name(), session_id, child, orchestrator, "summary", note)?;
+        swarm::store::enqueue_job(connection, session_id, child, "summarize")?;
     }
-    swarm::store::clear_pane(connection, child)
+    swarm::store::clear_pane(connection, session_id, child)
 }
 
 /// One sweep pass: report each child of `agent_id` whose pane is gone.
@@ -86,6 +112,18 @@ fn sweep_once(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
+            if swarm::store::has_unread_older_than(connection, session_id, &child, RERING_AFTER_SECS)? {
+                connection.execute(
+                    "UPDATE message SET rung_at = unixepoch()
+                     WHERE session_id = ?1 AND recipient_id = ?2
+                       AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)",
+                    (session_id, &child, RERING_AFTER_SECS),
+                )?;
+                match adapter.run("ring", &[("pane", &pane), ("text", "swarm: new message")]) {
+                    Ok(_) => eprintln!("swarm: re-ringed {child}"),
+                    Err(error) => eprintln!("swarm: re-ring failed for {child}: {error}"),
+                }
+            }
             continue;
         }
         let note = format!("agent {child} died without a summary");
@@ -123,7 +161,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
-        return swarm::store::add_agent(&connection, session_id()?, agent_id, role);
+        return add_agent(&connection, &root, &adapter_name(), session_id()?, agent_id, role);
     }
     if let [cmd, agent_id, role, rest @ ..] = args && cmd == "spawn" {
         let command = match rest {
@@ -138,7 +176,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let home = swarm::paths::home()?;
         let vars = [("session_id", session.as_str()), ("agent_id", agent_id), ("home", &home), ("adapter", &adapter_name())];
         let pane = adapter.run("spawn", &vars)?;
-        swarm::store::set_pane(&connection, agent_id, &pane)?;
+        swarm::store::set_pane(&connection, session_id, agent_id, &pane)?;
         if !command.is_empty() {
             let exe = env::current_exe()?.to_string_lossy().into_owned();
             let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
@@ -151,18 +189,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd] = args && cmd == "drain" {
         let summarizer = env_var("SWARM_SUMMARIZER")?;
         while let Some(job_id) = swarm::store::claim_next(&connection)? {
-            let (agent, kind, attempts) = swarm::store::job(&connection, job_id)?;
+            let (session, agent, kind, attempts) = swarm::store::job(&connection, job_id)?;
             if kind != "summarize" {
                 swarm::store::park_job(&connection, job_id)?;
                 println!("parked {job_id} unknown kind {kind}");
                 continue;
             }
-            let session = swarm::store::session_of(&connection, &agent)?;
             let log = root.join(format!("runs/{session}/{agent}.log"));
             match summarize_log(&log, &summarizer) {
                 Ok(summary) => {
                     let orchestrator = swarm::store::orchestrator_of(&connection, session)?;
-                    deliver(&mut connection, &root, session, &agent, &orchestrator, "summary", &summary)?;
+                    deliver(&mut connection, &root, &adapter_name(), session, &agent, &orchestrator, "summary", &summary)?;
                     swarm::store::finish_job(&connection, job_id)?;
                     println!("done {job_id}");
                 }
@@ -179,28 +216,28 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let [cmd, child] = args && cmd == "close" {
-        session_id()?;
-        let pane = swarm::store::pane_of(&connection, child)?.ok_or("swarm: no pane recorded")?;
+        let session_id = session_id()?;
+        let pane = swarm::store::pane_of(&connection, session_id, child)?.ok_or("swarm: no pane recorded")?;
         swarm::adapter::load(&root, &adapter_name())?.run("close", &[("pane", &pane)])?;
-        return swarm::store::clear_pane(&connection, child);
+        return swarm::store::clear_pane(&connection, session_id, child);
     }
     let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
-            let seq = deliver(&mut connection, &root, session_id, &agent_id, recipient, kind, &body)?;
+            let seq = deliver(&mut connection, &root, &adapter_name(), session_id, &agent_id, recipient, kind, &body)?;
             println!("{seq}");
             Ok(())
         }
         [cmd] if cmd == "finish" => {
             let summary = std::io::read_to_string(std::io::stdin())?;
             let orchestrator = swarm::store::orchestrator_of(&connection, session_id)?;
-            let seq = deliver(&mut connection, &root, session_id, &agent_id, &orchestrator, "summary", &summary)?;
+            let seq = deliver(&mut connection, &root, &adapter_name(), session_id, &agent_id, &orchestrator, "summary", &summary)?;
             println!("{seq}");
             Ok(())
         }
         [cmd] if cmd == "exited" => {
-            let pane = swarm::store::pane_of(&connection, &agent_id)?.ok_or("swarm: no pane recorded")?;
+            let pane = swarm::store::pane_of(&connection, session_id, &agent_id)?.ok_or("swarm: no pane recorded")?;
             let text = swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
             std::fs::create_dir_all(&run_dir)?;
@@ -234,7 +271,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, seq] if cmd == "ack" => {
             let seq: i64 = seq.parse().map_err(|_| format!("swarm: bad seq {seq}"))?;
-            swarm::store::ack(&connection, seq, &agent_id)
+            swarm::store::ack(&connection, session_id, seq, &agent_id)
         }
         _ => Err(USAGE.into()),
     }
@@ -245,5 +282,63 @@ fn main() {
     if let Err(error) = run(&args) {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sweep_rerings_a_child_once_for_old_unread_messages() {
+        let root = std::env::temp_dir().join(format!("swarm-sweep-test-{}", std::process::id()));
+        let ring_log = root.join("rings");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane").unwrap();
+        swarm::store::add_agent(&connection, session, "orchestrator", "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, session, "child", "coder").unwrap();
+        swarm::store::set_pane(&connection, session, "child", "%2").unwrap();
+        swarm::store::send_message(&mut connection, &root, session, "orchestrator", "child", "ask", "one").unwrap();
+        swarm::store::send_message(&mut connection, &root, session, "orchestrator", "child", "ask", "two").unwrap();
+        connection.execute("UPDATE message SET created_at = unixepoch() - 61", []).unwrap();
+
+        let adapter = swarm::adapter::parse(
+            "fake",
+            &format!("self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE:$SWARM_TEXT\" >> '{}'\nlist = echo %2\nclose = true\ncapture = true\n", ring_log.display()),
+        )
+        .unwrap();
+        sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
+        sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%2:swarm: new message\n");
+        connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
+        sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
+
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "%2:swarm: new message\n%2:swarm: new message\n");
+    }
+
+    #[test]
+    fn orchestrator_agent_add_records_self_pane_and_child_finish_rings_it() {
+        let root = std::env::temp_dir().join(format!("swarm-chair-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        let ring_log = root.join("rings");
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            format!(
+                "self = printf '%s' '%9'\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE:$SWARM_TEXT\" >> '{}'\nlist = true\nclose = true\ncapture = true\n",
+                ring_log.display()
+            ),
+        )
+        .unwrap();
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane").unwrap();
+
+        add_agent(&connection, &root, "fake", session, "orchestrator", "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, session, "child", "coder").unwrap();
+        deliver(&mut connection, &root, "fake", session, "child", "orchestrator", "summary", "done").unwrap();
+
+        assert_eq!(swarm::store::pane_of(&connection, session, "orchestrator").unwrap().as_deref(), Some("%9"));
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "%9:swarm: new message\n");
     }
 }
