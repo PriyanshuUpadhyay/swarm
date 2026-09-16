@@ -22,14 +22,16 @@ public extension SwarmRole {
         return chosen
     }
 
+    func matchesLaunchControls(_ controls: ComposerControls) -> Bool {
+        launchAgentKind == controls.agentKind
+            && model == controls.model
+            && (effort ?? "") == controls.effort
+    }
+
     static func initialLaunchRole(
         in roles: [SwarmRole], controls: ComposerControls
     ) -> SwarmRole? {
-        roles.first {
-            $0.launchAgentKind == controls.agentKind
-                && $0.model == controls.model
-                && ($0.effort ?? "") == controls.effort
-        }
+        roles.first { $0.matchesLaunchControls(controls) }
     }
 }
 
@@ -95,10 +97,7 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
     }
 
     public func merging(into base: [String: String]) -> [String: String] {
-        guard let filtered = Self(
-            name: name, provider: provider, environment: environment
-        )?.environment else { return base }
-        return base.merging(filtered) { _, account in account }
+        base.merging(environment) { _, account in account }
     }
 
     private static func environmentKey(for provider: String) -> String? {
@@ -107,6 +106,42 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
         case "codex": "CODEX_HOME"
         default: nil
         }
+    }
+}
+
+public struct SwarmAccountLoadDecision: Sendable, Hashable {
+    public var options: [SwarmAccountOption]
+    public var selection: SwarmAccountSelection?
+    public var fallbackCaption: String?
+
+    public var usesDefault: Bool { selection == nil }
+
+    public static func loaded(_ list: SwarmAccountList) -> Self {
+        let options = SwarmAccountOption.choices(from: list)
+        guard let selection = SwarmAccountOption.initialSelection(in: options) else {
+            return fallback("No signed-in accounts")
+        }
+        return Self(options: options, selection: selection, fallbackCaption: nil)
+    }
+
+    public static func failed(_ error: SwarmProfileError) -> Self {
+        switch error {
+        case .unavailable(let message), .failed(let message):
+            fallback("Accounts unavailable: \(message)")
+        }
+    }
+
+    public static func failed(message: String) -> Self {
+        fallback("Accounts unavailable: \(message)")
+    }
+
+    private static func fallback(_ reason: String) -> Self {
+        let separator = reason.hasSuffix(".") ? "" : "."
+        return Self(
+            options: [],
+            selection: nil,
+            fallbackCaption: "\(reason)\(separator) Using this repository's settings."
+        )
     }
 }
 

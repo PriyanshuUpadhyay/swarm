@@ -56,6 +56,18 @@ struct SwarmLaunchChoiceTests {
         )?.id == CODER.id)
     }
 
+    @Test("a changed model no longer matches the selected role")
+    func customControlsDoNotMatchRole() {
+        var controls = ComposerControls(agentKind: .codex)
+        controls.model = CODER.model
+        controls.effort = CODER.effort ?? ""
+        #expect(CODER.matchesLaunchControls(controls))
+
+        controls.model = "gpt-5.6-luna"
+
+        #expect(!CODER.matchesLaunchControls(controls))
+    }
+
     @Test("Auto names its account and each account shows usage left")
     func accountChoices() throws {
         let list = accountList(auto: "personal")
@@ -86,6 +98,31 @@ struct SwarmLaunchChoiceTests {
         #expect(work?.disabledReason == "Not signed in")
         #expect(work?.account == nil)
         #expect(SwarmAccountOption.account(for: .named("work"), in: choices) == nil)
+    }
+
+    @Test("an account source failure falls back to repository settings")
+    func accountFailureFallback() {
+        let decision = SwarmAccountLoadDecision.failed(
+            SwarmProfileError.failed("yelo is not installed")
+        )
+
+        #expect(decision.usesDefault)
+        #expect(decision.options.isEmpty)
+        #expect(decision.fallbackCaption ==
+                "Accounts unavailable: yelo is not installed. Using this repository's settings.")
+    }
+
+    @Test("no enabled account falls back to repository settings")
+    func noEnabledAccountFallback() {
+        var list = accountList(auto: nil)
+        for index in list.accounts.indices { list.accounts[index].signedIn = false }
+
+        let decision = SwarmAccountLoadDecision.loaded(list)
+
+        #expect(decision.usesDefault)
+        #expect(decision.options.isEmpty)
+        #expect(decision.fallbackCaption ==
+                "No signed-in accounts. Using this repository's settings.")
     }
 
     @Test("only the provider contract key reaches the launch environment")

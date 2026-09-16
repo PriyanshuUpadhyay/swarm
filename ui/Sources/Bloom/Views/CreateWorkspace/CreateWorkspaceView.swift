@@ -51,8 +51,7 @@ struct CreateWorkspaceView: View {
     @State private var selectedAccount: SwarmAccountSelection?
     @State private var swarmProfilesUnavailable = false
     @State private var isLoadingLaunchAccounts = false
-    @State private var launchAccountRequired = false
-    @State private var launchAccountFailure: String?
+    @State private var launchAccountCaption: String?
     @State private var launchAccountRequest = 0
     @State private var defaultLaunchControls = ComposerControls()
 
@@ -203,9 +202,7 @@ struct CreateWorkspaceView: View {
 
     private var launchSelectionIsReady: Bool {
         guard mode.runsAnAgent, selectedLaunchRoleID != nil else { return true }
-        guard !isLoadingLaunchAccounts, launchAccountFailure == nil else { return false }
-        return !launchAccountRequired
-            || SwarmAccountOption.account(for: selectedAccount, in: accountOptions) != nil
+        return !isLoadingLaunchAccounts
     }
 
     /// Whether the name field is worth showing.
@@ -563,7 +560,8 @@ struct CreateWorkspaceView: View {
                         get: { selectedLaunchRoleID },
                         set: { chooseLaunchRole($0) }
                     )) {
-                        Text("Default").tag(nil as String?)
+                        Text(controls == defaultLaunchControls ? "Default" : "Custom")
+                            .tag(nil as String?)
                         ForEach(launchRoles) { role in
                             Text(role.launchDisabledReason.map { "\(role.role) (\($0))" }
                                  ?? role.role)
@@ -586,8 +584,8 @@ struct CreateWorkspaceView: View {
                     }
                 }
 
-                if let launchAccountFailure {
-                    Text(launchAccountFailure)
+                if let launchAccountCaption {
+                    Text(launchAccountCaption)
                         .font(Typo.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -646,7 +644,7 @@ struct CreateWorkspaceView: View {
         ) { actions in
             ComposerFooterView(
                 controls: controls,
-                onChange: { controls = $0 },
+                onChange: updateLaunchControls,
                 canSend: canCreate,
                 intent: .create,
                 // This window's width is fixed and was chosen for this row with its words on, so
@@ -1096,6 +1094,18 @@ struct CreateWorkspaceView: View {
         controls = chosen
     }
 
+    private func updateLaunchControls(_ updated: ComposerControls) {
+        controls = updated
+        guard let id = selectedLaunchRoleID,
+              let role = launchRoles.first(where: { $0.id == id }) else {
+            launchAccountCaption = nil
+            return
+        }
+        guard !role.matchesLaunchControls(updated) else { return }
+        selectedLaunchRoleID = nil
+        requestLaunchAccounts()
+    }
+
     private func loadLaunchAccounts() async {
         guard let id = selectedLaunchRoleID,
               let role = launchRoles.first(where: { $0.id == id }),
@@ -1104,38 +1114,37 @@ struct CreateWorkspaceView: View {
             return
         }
         isLoadingLaunchAccounts = true
-        launchAccountFailure = nil
+        launchAccountCaption = nil
         do {
             let list = try await app.swarmProfiles.accounts(provider: role.provider)
             guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
             swarmProfilesUnavailable = false
-            accountOptions = SwarmAccountOption.choices(from: list)
-            launchAccountRequired = !list.accounts.isEmpty
-            selectedAccount = SwarmAccountOption.initialSelection(in: accountOptions)
-            isLoadingLaunchAccounts = false
-        } catch SwarmProfileError.unavailable {
-            guard !Task.isCancelled else { return }
-            swarmProfilesUnavailable = true
-            launchRoles = []
-            selectedLaunchRoleID = nil
-            controls = defaultLaunchControls
-            resetLaunchAccounts()
+            apply(SwarmAccountLoadDecision.loaded(list))
+        } catch let error as SwarmProfileError {
+            guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
+            apply(SwarmAccountLoadDecision.failed(error))
         } catch {
             guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
-            accountOptions = []
-            selectedAccount = nil
-            launchAccountRequired = true
-            isLoadingLaunchAccounts = false
-            launchAccountFailure = "Accounts could not be loaded"
+            apply(SwarmAccountLoadDecision.failed(message: error.localizedDescription))
+        }
+    }
+
+    private func apply(_ decision: SwarmAccountLoadDecision) {
+        accountOptions = decision.options
+        selectedAccount = decision.selection
+        isLoadingLaunchAccounts = false
+        launchAccountCaption = decision.fallbackCaption
+        if decision.usesDefault {
+            selectedLaunchRoleID = nil
+            controls = defaultLaunchControls
         }
     }
 
     private func resetLaunchAccounts(loading: Bool = false) {
         accountOptions = []
         selectedAccount = nil
-        launchAccountRequired = false
         isLoadingLaunchAccounts = loading
-        launchAccountFailure = nil
+        launchAccountCaption = nil
     }
 
     private func requestLaunchAccounts() {
