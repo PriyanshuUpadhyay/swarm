@@ -93,6 +93,13 @@ pub fn park_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn st
     Ok(changed == 1)
 }
 
+/// Writes `<path>.tmp` then renames it, so a reader never sees a partial file.
+pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(tmp, path)
+}
+
 pub fn send_message(
     connection: &mut Connection,
     root: &Path,
@@ -113,7 +120,7 @@ pub fn send_message(
     tx.execute("UPDATE message SET body_path = ?1 WHERE seq = ?2", (&body_path, seq))?;
     let file = root.join(body_path);
     std::fs::create_dir_all(file.parent().ok_or("body path has no parent")?)?;
-    std::fs::write(file, body)?;
+    write_atomic(&file, body)?;
     tx.commit()?;
     Ok(seq)
 }
