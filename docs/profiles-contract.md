@@ -61,6 +61,11 @@ when the runner has none.
 }
 ```
 
+An account yelo reports with no valid `name` is left out, because the UI identifies accounts by
+name. When `yelo profile pick` fails because it has no usage data yet or every account is
+exhausted, `auto` is `null` and the list is still returned; only a pick that cannot run fails the
+command.
+
 `env` is exactly what a launcher sets to run the CLI on that account: `CLAUDE_CONFIG_DIR` for
 Claude, `CODEX_HOME` for Codex. `auto` is the account `yelo profile pick` chooses, the one with the
 most usage left (ADR 0004), or `null` when no account is signed in.
@@ -78,19 +83,36 @@ most usage left (ADR 0004), or `null` when no account is signed in.
       "used_pct": 10,
       "resets_in": "4d22h",
       "state": "ok",
+      "reason": null,
       "as_of": 1789576942
+    },
+    {
+      "provider": "claude",
+      "account": "sid",
+      "label": "cl·sid",
+      "window": null,
+      "used_pct": null,
+      "resets_in": null,
+      "state": "logged_out",
+      "reason": "logged out",
+      "as_of": null
     }
   ]
 }
 ```
 
-`account` is the account `name` from `swarm accounts`, matched by email, or `null` when no account
-matches. `window` is yelo's window name (`5h`, `7d`, `fb`). `state` is yelo's state (`ok`, `stale`).
+`account` is the account `name` from `swarm accounts`, matched by the label tail against the
+account's `email`, then its `name`, or `null` when nothing matches. A label with no `·` matches no
+account. `window` is yelo's window name (`5h`, `7d`, `fb`), or `null` for a status row that
+describes the whole account. `used_pct` is `null` when yelo has no value. `state` is yelo's state
+(`ok`, `stale`, `logged_out`, and any other state yelo adds), and `reason` is yelo's reason text or
+`null`. One bad row never fails the command.
 
 ## `swarm spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...]`
 
-Without `--account`, spawn is unchanged. With `--account`, swarm resolves the account for the
-provider (from `--provider`, else from the route named by `<role>`), sets that account's `env` on
-the child command, prints the pane id on stdout as before, and prints `account <name>` on stderr.
+Without `--account`, spawn is unchanged, and `--provider` without `--account` is a usage error.
+With `--account`, swarm resolves the account for the provider (from `--provider`, else from the
+route named by `<role>`), sets that account's `env` on the child command, prints the pane id on
+stdout as before, and prints `account <name>` on stderr.
 `auto` uses the `auto` account and fails when it is `null`. An unknown name fails before any pane
 opens.
