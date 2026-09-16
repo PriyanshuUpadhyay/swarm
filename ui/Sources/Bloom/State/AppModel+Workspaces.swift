@@ -44,6 +44,7 @@ extension AppModel {
         opensWith: WorkspaceStartMode = .chat,
         branch: String? = nil,
         controls: ComposerControls? = nil,
+        launchAccount: SwarmLaunchAccount? = nil,
         staged: StagedAttachments? = nil,
         checkout: WorkspaceCheckout? = nil,
         runSetupScript: Bool = true
@@ -51,7 +52,8 @@ extension AppModel {
         do {
             return try await startWorkspace(
                 in: repo, prompt: prompt, baseBranch: baseBranch, opensWith: opensWith,
-                branch: branch, controls: controls, staged: staged, checkout: checkout,
+                branch: branch, controls: controls, launchAccount: launchAccount,
+                staged: staged, checkout: checkout,
                 runSetupScript: runSetupScript
             )
         } catch {
@@ -85,6 +87,7 @@ extension AppModel {
         opensWith: WorkspaceStartMode = .chat,
         branch: String? = nil,
         controls: ComposerControls? = nil,
+        launchAccount: SwarmLaunchAccount? = nil,
         staged: StagedAttachments? = nil,
         select: Bool = true,
         /// Who asked. Defaulted to the owner because every caller but one is the owner, and
@@ -249,6 +252,7 @@ extension AppModel {
             name: suppliedName,
             checkout: checkout,
             controls: effectiveControls,
+            launchAccount: launchAccount,
             opensSession: opensWith.runsAnAgent,
             resuming: resuming,
             // The app runs setup itself, through `WorkspaceModel`, so the output streams into the

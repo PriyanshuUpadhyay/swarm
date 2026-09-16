@@ -436,6 +436,25 @@ struct AgentRunnerArgvTests {
         #expect(launch.environment["PATH"]?.contains("/usr/bin") == true)
     }
 
+    @Test("uses the stored account environment when the process starts")
+    func usesStoredAccount() async throws {
+        let store = try makeTestStore("agent-account")
+        let session = try await makeSession(store)
+        await SwarmLaunchAccount(
+            name: "work", environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude-work"]
+        ).store(sessionID: session.id, in: store)
+        let processes = ProcessRecorder()
+        let runner = AgentRunner(
+            workspacePath: "/tmp/worktree", session: session, store: store,
+            makeProcess: processes.factory
+        )
+
+        try await runner.send("hello")
+
+        #expect(processes.last?.launch.environment["CLAUDE_CONFIG_DIR"] == "/tmp/claude-work")
+        runner.cancelNow()
+    }
+
     @Test("encodes a user turn as one line of NDJSON")
     func encodesTurn() throws {
         let line = try AgentRunner.encodeTurn("write /tmp/out.txt \"now\"")

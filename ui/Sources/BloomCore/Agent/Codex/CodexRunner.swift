@@ -444,11 +444,13 @@ public actor CodexRunner: SessionRunner {
         if let client { return client }
 
         let stored = try? await store.setting(AgentCatalog.executablePathSettingKey(.codex))
+        let account = await SwarmLaunchAccount.load(sessionID: sessionID, from: store)
         let client = makeClient(CodexClient.Configuration(
             executable: AgentCatalog.executable(for: .codex, override: stored),
             cwd: workspacePath,
             clientName: "Bloom",
             clientVersion: Self.clientVersion,
+            environment: account?.merging(into: Shell.environment()) ?? Shell.environment(),
             bridge: bridge,
             contextWindow: contextWindow
         ))

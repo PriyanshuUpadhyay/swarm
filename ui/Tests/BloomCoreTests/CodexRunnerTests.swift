@@ -80,6 +80,20 @@ private func eventually(
 // MARK: - Tests
 
 @Suite(.scratchDirectory) struct CodexRunnerTests {
+    @Test func usesTheStoredAccountEnvironmentWhenTheServerStarts() async throws {
+        let store = try makeTestStore("codex-account")
+        let (session, _) = try await makeCodexSession(store)
+        await SwarmLaunchAccount(
+            name: "personal", environment: ["CODEX_HOME": "/tmp/codex-personal"]
+        ).store(sessionID: session.id, in: store)
+        let box = scriptedBox()
+        let runner = makeRunner(store: store, session: session, box: box)
+
+        try await runner.send("hello")
+
+        #expect(box.process.launch.environment["CODEX_HOME"] == "/tmp/codex-personal")
+    }
+
     @Test(arguments: [false, true])
     func lateStoppedCompletionCannotEndTheNextIntentionalTurn(delayStart: Bool) async throws {
         let store = try makeTestStore("codex-late-stop")

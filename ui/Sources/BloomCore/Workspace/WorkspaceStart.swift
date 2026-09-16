@@ -39,6 +39,9 @@ public struct WorkspaceStartRequest: Sendable {
     /// `WorkspaceCheckout`.
     public var checkout: WorkspaceCheckout?
     public var controls: ComposerControls?
+    /// The concrete account selected for this chat. Auto is resolved before the request arrives,
+    /// so later turns keep the same account even when swarm's preferred account changes.
+    public var launchAccount: SwarmLaunchAccount?
     /// Who asked. Stated by every caller, because the initialiser gives it no default: a route
     /// that an agent can reach and that forgot to say so would hand the workspace to the owner and
     /// leave the agent with no authority over what it just made.
@@ -77,6 +80,7 @@ public struct WorkspaceStartRequest: Sendable {
         name: String? = nil,
         checkout: WorkspaceCheckout? = nil,
         controls: ComposerControls? = nil,
+        launchAccount: SwarmLaunchAccount? = nil,
         opensSession: Bool = true,
         resuming: String? = nil,
         setupPolicy: WorkspaceSetupPolicy = .deferred
@@ -90,6 +94,7 @@ public struct WorkspaceStartRequest: Sendable {
         self.name = name
         self.checkout = checkout
         self.controls = controls
+        self.launchAccount = launchAccount
         self.opensSession = opensSession
         self.resuming = resuming
         self.setupPolicy = setupPolicy
@@ -230,6 +235,7 @@ extension WorkspaceManager {
             // session settled, which is what stops the composer's first-open defaults from
             // overruling any of the four the moment the workspace is opened.
             await controls?.store(sessionID: opened.id, in: store)
+            await request.launchAccount?.store(sessionID: opened.id, in: store)
             session = opened
         }
 

@@ -45,6 +45,11 @@ struct CreateWorkspaceView: View {
     /// Resolved from the same precedence chain a new session would use, so the window opens showing
     /// what would have happened anyway rather than a second set of defaults.
     @State private var controls = ComposerControls()
+    @State private var launchRoles: [SwarmLaunchRole] = []
+    @State private var selectedLaunchRoleID: String?
+    @State private var accountOptions: [SwarmAccountOption] = []
+    @State private var selectedAccount: SwarmAccountSelection = .auto
+    @State private var swarmProfilesUnavailable = false
 
     @State private var baseBranch = ""
     @State private var branches: [String] = []
@@ -242,6 +247,7 @@ struct CreateWorkspaceView: View {
         // in flight when the project changed could land another project's branches on this one's
         // window. `.task(id:)` cancels the stale load; `load` checks before writing.
         .task(id: repoID) { await load() }
+        .task(id: selectedLaunchRoleID) { await loadLaunchAccounts() }
         // Keyed on both lists that can change the answer: a workspace started or archived
         // elsewhere while this window is open, and an archive cleared out.
         .task(id: [app.workspaces.count, app.archivedRevision]) {
@@ -505,6 +511,10 @@ struct CreateWorkspaceView: View {
                 .font(Typo.title)
                 .foregroundStyle(Palette.textPrimary)
 
+            if mode.runsAnAgent {
+                launchPickers
+            }
+
             switch mode {
             case .chat, .claudeCLI, .codexCLI: chatBox
             // One box for both, because they ask the same question. What differs between a
@@ -530,6 +540,37 @@ struct CreateWorkspaceView: View {
         .help(defaultCLIMode == nil
               ? "CLI chat supports Claude and Codex. Choose either as your default agent to use it."
               : "Chat and CLI chat use your default agent configuration")
+    }
+
+    @ViewBuilder
+    private var launchPickers: some View {
+        if !swarmProfilesUnavailable, !launchRoles.isEmpty,
+           let selectedLaunchRoleID {
+            HStack(spacing: Metrics.spacingWide) {
+                Picker("Role", selection: Binding(
+                    get: { selectedLaunchRoleID },
+                    set: { chooseLaunchRole($0) }
+                )) {
+                    ForEach(launchRoles) { choice in
+                        Text(choice.disabledReason.map { "\(choice.role.role) (\($0))" }
+                             ?? choice.role.role)
+                            .tag(choice.id)
+                            .disabled(choice.disabledReason != nil)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if !accountOptions.isEmpty {
+                    Picker("Account", selection: $selectedAccount) {
+                        ForEach(accountOptions) { option in
+                            Text(option.label).tag(option.selection)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var defaultCLIMode: WorkspaceStartMode? {
@@ -982,12 +1023,70 @@ struct CreateWorkspaceView: View {
             outputStyle: appDefaults.outputStyle,
             codexContextWindow: appDefaults.codexContextWindow
         )
+        await loadLaunchRoles()
 
         baseBranch = WorkspaceStartContext.resolvedBaseBranch(
             current: baseBranch,
             branches: branchOptions,
             defaultBranch: repo.defaultBranch
         )
+    }
+
+    private func loadLaunchRoles() async {
+        do {
+            let roles = try await app.swarmProfiles.roles()
+            guard !Task.isCancelled else { return }
+            swarmProfilesUnavailable = false
+            launchRoles = roles.map(SwarmLaunchRole.init)
+            guard let initial = SwarmLaunchRole.initial(in: roles, controls: controls) else {
+                selectedLaunchRoleID = nil
+                accountOptions = []
+                return
+            }
+            selectedLaunchRoleID = initial.id
+            if let chosen = initial.applying(to: controls) { controls = chosen }
+        } catch SwarmProfileError.unavailable {
+            guard !Task.isCancelled else { return }
+            swarmProfilesUnavailable = true
+            launchRoles = []
+            accountOptions = []
+        } catch {
+            guard !Task.isCancelled else { return }
+            launchRoles = []
+            accountOptions = []
+        }
+    }
+
+    private func chooseLaunchRole(_ id: String) {
+        guard let role = launchRoles.first(where: { $0.id == id }),
+              let chosen = role.applying(to: controls) else { return }
+        selectedLaunchRoleID = id
+        selectedAccount = .auto
+        accountOptions = []
+        controls = chosen
+    }
+
+    private func loadLaunchAccounts() async {
+        guard let id = selectedLaunchRoleID,
+              let role = launchRoles.first(where: { $0.id == id }),
+              role.agentKind != nil else {
+            accountOptions = []
+            return
+        }
+        do {
+            let list = try await app.swarmProfiles.accounts(provider: role.role.provider)
+            guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
+            swarmProfilesUnavailable = false
+            accountOptions = SwarmAccountOption.choices(from: list)
+            selectedAccount = .auto
+        } catch SwarmProfileError.unavailable {
+            guard !Task.isCancelled else { return }
+            swarmProfilesUnavailable = true
+            accountOptions = []
+        } catch {
+            guard !Task.isCancelled else { return }
+            accountOptions = []
+        }
     }
 
     /// Brings the chosen base up to date ahead of Create. The answer is not used here: the cut
@@ -1178,6 +1277,7 @@ struct CreateWorkspaceView: View {
         let base = baseBranch.isEmpty ? repo.defaultBranch : baseBranch
         let source = checkout
         let chosenControls = controls
+        let chosenAccount = accountOptions.first { $0.selection == selectedAccount }?.account
         let shouldRunSetup = runSetupScript
 
         // A file can be moved or deleted between being attached and Create being pressed, and
@@ -1212,6 +1312,7 @@ struct CreateWorkspaceView: View {
                 baseBranch: base,
                 opensWith: chosen,
                 controls: chosenControls,
+                launchAccount: chosenAccount,
                 staged: staged,
                 checkout: source,
                 runSetupScript: shouldRunSetup
