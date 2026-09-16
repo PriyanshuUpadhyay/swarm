@@ -6,9 +6,10 @@ pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Err
     let mut connection = rusqlite::Connection::open(path)?;
 
     connection.execute_batch("PRAGMA journal_mode=WAL;")?;
-    connection.pragma_update(None, "foreign_keys", true)?;
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    // Migrate with foreign keys off: a table rebuild drops a table that other rows reference.
     migrate(&mut connection)?;
+    connection.pragma_update(None, "foreign_keys", true)?;
 
     Ok(connection)
 }
