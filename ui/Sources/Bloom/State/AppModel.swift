@@ -68,6 +68,8 @@ final class AppModel {
     /// from one clock reading. The menu is built at the moment it opens, so it takes that reading
     /// itself and this stays the durable half.
     private(set) var quotas: [AgentQuota] = []
+    /// Every account's latest usage from swarm. Empty keeps the existing single-account display.
+    private(set) var swarmUsageMeters: [SwarmUsageMeter] = []
     /// What each provider said about the account on the last ask: its plan and, for Codex, its
     /// balances. In memory rather than in the store, for the reason `AgentAccount` gives.
     private(set) var accounts: [AgentKind: AgentAccount] = [:]
@@ -394,6 +396,9 @@ final class AppModel {
     /// while one is out. Both change twice per ask, which is nothing to publish.
     private(set) var lastQuotaAskAt: Date?
     private(set) var isAskingForQuotas = false
+    @ObservationIgnored private var lastSwarmUsageAskAt: Date?
+    @ObservationIgnored private var isAskingForSwarmUsage = false
+    @ObservationIgnored private var swarmUsageFailures = SwarmUsageFailureState()
     private var identityTask: Task<Void, Never>?
     /// The launch sweep for project icons. Not private, because the work it does is in
     /// `AppModel+ProjectIcons.swift`, and outside observation because nothing draws from it.
@@ -809,13 +814,51 @@ final class AppModel {
         await recordQuotas(report.quotas)
     }
 
+    /// Refreshes both usage sources. swarm has its own one-minute gate because opening the menu
+    /// must never turn into a way to run the CLI repeatedly.
+    func refreshUsage(after quotaGap: TimeInterval = QuotaPollSchedule.interval) async {
+        async let quotas: Void = refreshQuotas(after: quotaGap)
+        async let swarm: Void = refreshSwarmUsage()
+        _ = await (quotas, swarm)
+    }
+
+    private func refreshSwarmUsage() async {
+        guard !isAskingForSwarmUsage,
+              QuotaPollSchedule.isDue(
+                lastAskedAt: lastSwarmUsageAskAt,
+                at: Date(),
+                after: QuotaPollSchedule.interval
+              )
+        else { return }
+        isAskingForSwarmUsage = true
+        lastSwarmUsageAskAt = Date()
+        defer { isAskingForSwarmUsage = false }
+        do {
+            let meters = try await swarmProfiles.usage()
+            swarmUsageFailures.reset()
+            if swarmUsageMeters != meters { swarmUsageMeters = meters }
+        } catch SwarmProfileError.unavailable {
+            swarmUsageFailures.reset()
+            if !swarmUsageMeters.isEmpty { swarmUsageMeters = [] }
+        } catch {
+            guard swarmUsageFailures.failed() else { return }
+            let stale = swarmUsageMeters.map { meter in
+                guard meter.window != nil, meter.usedPct != nil else { return meter }
+                var copy = meter
+                copy.state = "stale"
+                return copy
+            }
+            if swarmUsageMeters != stale { swarmUsageMeters = stale }
+        }
+    }
+
     /// The background poll, which is what keeps the menu bar's own severity honest for somebody
     /// who never opens the menu. `QuotaPollSchedule` holds the interval and the argument for it.
     private func startPollingQuotas() {
         quotaPollTask?.cancel()
         quotaPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refreshQuotas()
+                await self?.refreshUsage()
                 try? await Task.sleep(for: .seconds(QuotaPollSchedule.interval))
             }
         }

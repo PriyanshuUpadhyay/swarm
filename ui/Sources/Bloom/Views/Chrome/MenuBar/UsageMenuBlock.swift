@@ -14,13 +14,22 @@ struct UsageMenuBlock: View {
     let now: Date
     /// Off in the gallery, where nothing can be clicked anyway.
     var canReorder = true
+    var swarmUsage = SwarmUsageBoard()
 
     /// The menu sizes itself to its widest item, so this decides how wide the menu is.
     static let width: CGFloat = 320
 
     var body: some View {
+        if swarmUsage.isEmpty {
+            legacyUsage
+        } else {
+            SwarmUsageMenuBlock(board: swarmUsage, model: model, canReorder: canReorder)
+        }
+    }
+
+    private var legacyUsage: some View {
         let sections = model.layout.sections(for: metrics)
-        VStack(alignment: .leading, spacing: UsageScale.section) {
+        return VStack(alignment: .leading, spacing: UsageScale.section) {
             ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                 provider(
                     section,
@@ -59,7 +68,12 @@ struct UsageMenuBlock: View {
                 }
                 Spacer(minLength: 8)
                 if canMoveUp || canMoveDown {
-                    moveButtons(section.provider, above: canMoveUp ? neighbourAbove : nil, below: canMoveDown ? neighbourBelow : nil)
+                    UsageProviderMoveButtons(
+                        provider: section.provider,
+                        above: canMoveUp ? neighbourAbove : nil,
+                        below: canMoveDown ? neighbourBelow : nil,
+                        model: model
+                    )
                 }
             }
             .padding(.leading, 2)
@@ -84,18 +98,24 @@ struct UsageMenuBlock: View {
         .accessibilityLabel(section.provider.label)
     }
 
-    /// Click to move, because a menu cannot be dragged in: an open `NSMenu` runs its own tracking
-    /// loop and a drag session inside it is not something AppKit supports. Dragging is offered in
-    /// Settings ▸ Menu Bar, which is a window and can.
-    private func moveButtons(_ provider: AgentKind, above: AgentKind?, below: AgentKind?) -> some View {
+}
+
+/// Click to move, because an open `NSMenu` cannot host a drag session.
+private struct UsageProviderMoveButtons: View {
+    let provider: AgentKind
+    let above: AgentKind?
+    let below: AgentKind?
+    let model: UsageMenuModel
+
+    var body: some View {
         HStack(spacing: 2) {
-            moveButton("chevron.up", to: above, provider: provider, label: "Move \(provider.label) up")
-            moveButton("chevron.down", to: below, provider: provider, label: "Move \(provider.label) down")
+            button("chevron.up", to: above, label: "Move \(provider.label) up")
+            button("chevron.down", to: below, label: "Move \(provider.label) down")
         }
     }
 
     @ViewBuilder
-    private func moveButton(_ symbol: String, to target: AgentKind?, provider: AgentKind, label: String) -> some View {
+    private func button(_ symbol: String, to target: AgentKind?, label: String) -> some View {
         if let target {
             Button {
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
@@ -112,7 +132,145 @@ struct UsageMenuBlock: View {
             .accessibilityLabel(label)
         }
     }
+}
 
+private struct SwarmUsageMenuBlock: View {
+    let board: SwarmUsageBoard
+    let model: UsageMenuModel
+    let canReorder: Bool
+
+    private var orderedKinds: [AgentKind] { board.providers.compactMap(\.kind) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: UsageScale.section) {
+            ForEach(board.providers, id: \.key) { provider in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 5) {
+                        if let kind = provider.kind {
+                            ProviderMarkView(provider: kind)
+                                .foregroundStyle(MenuInk.secondary)
+                                .frame(width: 15, height: 15)
+                        }
+                        Text(provider.title)
+                            .font(UsageScale.header)
+                            .foregroundStyle(MenuInk.primary)
+                        Spacer(minLength: 8)
+                        if canReorder, let kind = provider.kind {
+                            UsageProviderMoveButtons(
+                                provider: kind,
+                                above: neighbour(of: kind, offset: -1),
+                                below: neighbour(of: kind, offset: 1),
+                                model: model
+                            )
+                        }
+                    }
+                    .padding(.leading, 2)
+                    ForEach(provider.accounts, id: \.key) { account in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(account.title)
+                                .font(UsageScale.label)
+                                .foregroundStyle(MenuInk.primary)
+                                .lineLimit(1)
+                            ForEach(account.meters, id: \.self) { meter in
+                                SwarmUsageMenuRow(meter: meter)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(MenuInk.card)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(provider.title)
+            }
+        }
+        .frame(width: UsageMenuBlock.width, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .fixedSize()
+    }
+
+    private func neighbour(of provider: AgentKind, offset: Int) -> AgentKind? {
+        guard let index = orderedKinds.firstIndex(of: provider) else { return nil }
+        let target = index + offset
+        return orderedKinds.indices.contains(target) ? orderedKinds[target] : nil
+    }
+}
+
+private struct SwarmUsageMenuRow: View {
+    let meter: SwarmUsageBoard.Meter
+
+    var body: some View {
+        if let message = meter.message {
+            Text(message)
+                .font(UsageScale.supporting)
+                .foregroundStyle(MenuInk.secondary)
+                .lineLimit(1)
+                .accessibilityElement(children: .combine)
+        } else if let window = meter.window, let usedText = meter.usedText, let fill = meter.fill {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(window)
+                        .font(UsageScale.supporting.weight(.semibold))
+                        .foregroundStyle(MenuInk.primary)
+                    Spacer(minLength: 8)
+                    Text(usedText)
+                        .foregroundStyle(MenuInk.primary)
+                    if let severity = meter.severity?.word {
+                        Text(severity)
+                            .foregroundStyle(MenuInk.secondary)
+                    }
+                    if let status = meter.statusText {
+                        Text(status)
+                            .foregroundStyle(MenuInk.secondary)
+                    }
+                }
+                .font(UsageScale.supporting)
+                .monospacedDigit()
+                .lineLimit(1)
+                SwarmUsageMeterBar(fill: fill, isStale: meter.isStale, severity: meter.severity ?? .calm)
+                if let reset = meter.resetText {
+                    Text(reset)
+                        .font(UsageScale.supporting)
+                        .foregroundStyle(MenuInk.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+private struct SwarmUsageMeterBar: View {
+    let fill: Double
+    let isStale: Bool
+    let severity: QuotaSeverity
+
+    private var colour: Color {
+        switch severity {
+        case .calm: MenuInk.normal
+        case .warning: MenuInk.warning
+        case .critical, .spent: MenuInk.critical
+        }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(MenuInk.track)
+                if fill > 0 {
+                    Capsule()
+                        .fill(colour.opacity(isStale ? 0.45 : 1))
+                        .frame(width: min(proxy.size.width, max(5, proxy.size.width * fill)))
+                }
+            }
+        }
+        .frame(height: 5)
+        .accessibilityHidden(true)
+    }
 }
 
 /// One metric: a meter for a window, a line of text for a balance.

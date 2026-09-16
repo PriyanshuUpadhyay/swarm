@@ -56,7 +56,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         self.app = app
         model.refresh = { [weak app] in
             guard let app else { return }
-            Task { await app.refreshQuotas(after: 0) }
+            Task { await app.refreshUsage(after: 0) }
         }
 
         guard isEnabled else {
@@ -291,10 +291,10 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         // Somebody is about to read the limits, so ask for fresher ones. Not awaited: a menu that
-        // waited on two subprocesses would open a second after it was clicked, and what this drops
+        // waited on usage subprocesses would open a second after it was clicked, and what this drops
         // in arrives on the store's own feed, ready the next time the menu opens.
         if let app {
-            Task { await app.refreshQuotas(after: QuotaPollSchedule.onDemandFloor) }
+            Task { await app.refreshUsage(after: QuotaPollSchedule.onDemandFloor) }
         }
 
         // Keep Awake first: it is the one thing in here people open the menu to change rather than
@@ -447,20 +447,28 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         guard model.showsUsage, let app else { return nil }
         let metrics = model.metrics(quotas: app.quotas, accounts: app.accounts)
         let sections = model.layout.sections(for: metrics)
-        guard !sections.isEmpty else { return nil }
+        let swarmUsage = SwarmUsageBoard.make(
+            from: app.swarmUsageMeters,
+            options: model.options,
+            layout: model.layout
+        )
+        guard !sections.isEmpty || !swarmUsage.isEmpty else { return nil }
 
         let host = NSHostingView(rootView: UsageMenuBlock(
             model: model,
             metrics: metrics,
             accounts: app.accounts,
-            now: Date()
+            now: Date(),
+            swarmUsage: swarmUsage
         ))
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
 
         let item = NSMenuItem()
         item.view = host
         item.isEnabled = false
-        item.setAccessibilityLabel(MenuBarSummary.limitSentence(for: QuotaBoard.make(from: app.quotas)))
+        item.setAccessibilityLabel(swarmUsage.isEmpty
+            ? MenuBarSummary.limitSentence(for: QuotaBoard.make(from: app.quotas))
+            : swarmUsage.accessibilityLabel)
         return item
     }
 

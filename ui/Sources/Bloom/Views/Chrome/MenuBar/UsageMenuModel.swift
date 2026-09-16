@@ -37,7 +37,7 @@ final class UsageMenuModel {
     }
 
     @ObservationIgnored private let defaults: UserDefaults
-    /// Set by the status item: ask both providers again now.
+    /// Set by the status item: ask every usage source again now.
     @ObservationIgnored var refresh: () -> Void = {}
 
     init(defaults: UserDefaults = .standard) {
