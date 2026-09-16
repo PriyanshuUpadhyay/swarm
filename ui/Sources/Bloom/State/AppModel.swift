@@ -53,6 +53,10 @@ final class AppModel {
     /// which leaves every chat exactly as it was before the bridge existed rather than refusing to
     /// start one.
     @ObservationIgnored private(set) var bridge: BridgeServer?
+    /// Where roles, accounts and usage come from: swarm, which owns them (ADR 0005 in the swarm
+    /// repository). One source for the launch picker and the menu bar meters, so the two cannot
+    /// disagree. Outside observation, because the views observe what they read from it.
+    @ObservationIgnored let swarmProfiles: any SwarmProfileSource = UnavailableSwarmProfileSource()
 
     private(set) var repos: [Repo] = []
     private(set) var workspaces: [Workspace] = []
