@@ -44,14 +44,12 @@ struct CreateWorkspaceView: View {
     /// The model, effort, permission mode and fast mode this workspace's first turn will run with.
     /// Resolved from the same precedence chain a new session would use, so the window opens showing
     /// what would have happened anyway rather than a second set of defaults.
-    @State private var controls = ComposerControls()
+    @State private var launchChoice = SwarmLaunchChoice()
     @State private var launchRoles: [SwarmRole] = []
-    @State private var selectedLaunchRoleID: String?
     @State private var accountOptions: [SwarmAccountOption] = []
     @State private var selectedAccount: SwarmAccountSelection?
     @State private var swarmProfilesUnavailable = false
     @State private var isLoadingLaunchAccounts = false
-    @State private var launchAccountCaption: String?
     @State private var launchAccountRequest = 0
     @State private var defaultLaunchControls = ComposerControls()
 
@@ -147,6 +145,10 @@ struct CreateWorkspaceView: View {
     private static let minEditorLines: CGFloat = 5
 
     private var repo: Repo? { app.repos.first { $0.id == repoID } }
+
+    private var controls: ComposerControls { launchChoice.controls }
+    private var selectedLaunchRoleID: String? { launchChoice.roleID }
+    private var launchAccountCaption: String? { launchChoice.accountCaption }
 
     private var trimmedPrompt: String {
         prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -560,7 +562,8 @@ struct CreateWorkspaceView: View {
                         get: { selectedLaunchRoleID },
                         set: { chooseLaunchRole($0) }
                     )) {
-                        Text(controls == defaultLaunchControls ? "Default" : "Custom")
+                        Text(launchChoice.controlsWithoutRole == defaultLaunchControls
+                             ? "Default" : "Custom")
                             .tag(nil as String?)
                         ForEach(launchRoles) { role in
                             Text(role.launchDisabledReason.map { "\(role.role) (\($0))" }
@@ -1031,7 +1034,7 @@ struct CreateWorkspaceView: View {
         hasSetupScript = !(context.settings.setupScript ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         isNamingAvailable = context.isNamingAvailable
-        controls = ComposerControls(
+        let resolvedControls = ComposerControls(
             // The Codex list only sharpens the effort here, and the sheet's own footer is what
             // fetches it: a window opened before that call returns still gets the backend the
             // Models screen recorded, because that is stored rather than looked up.
@@ -1044,7 +1047,8 @@ struct CreateWorkspaceView: View {
             outputStyle: appDefaults.outputStyle,
             codexContextWindow: appDefaults.codexContextWindow
         )
-        defaultLaunchControls = controls
+        launchChoice.reset(controls: resolvedControls)
+        defaultLaunchControls = resolvedControls
         await loadLaunchRoles()
 
         baseBranch = WorkspaceStartContext.resolvedBaseBranch(
@@ -1060,49 +1064,37 @@ struct CreateWorkspaceView: View {
             guard !Task.isCancelled else { return }
             swarmProfilesUnavailable = false
             launchRoles = roles
-            selectedLaunchRoleID = SwarmRole.initialLaunchRole(
+            launchChoice.selectInitialRole(SwarmRole.initialLaunchRole(
                 in: roles, controls: controls
-            )?.id
+            ))
             requestLaunchAccounts()
         } catch SwarmProfileError.unavailable {
             guard !Task.isCancelled else { return }
             swarmProfilesUnavailable = true
             launchRoles = []
-            selectedLaunchRoleID = nil
-            controls = defaultLaunchControls
+            launchChoice.reset(controls: defaultLaunchControls)
             resetLaunchAccounts()
         } catch {
             guard !Task.isCancelled else { return }
             launchRoles = []
-            selectedLaunchRoleID = nil
-            controls = defaultLaunchControls
+            launchChoice.reset(controls: defaultLaunchControls)
             resetLaunchAccounts()
         }
     }
 
     private func chooseLaunchRole(_ id: String?) {
         guard let id else {
-            selectedLaunchRoleID = nil
-            controls = defaultLaunchControls
+            launchChoice.selectRole(nil)
             requestLaunchAccounts()
             return
         }
         guard let role = launchRoles.first(where: { $0.id == id }),
-              let chosen = role.applyingToLaunchControls(controls) else { return }
-        selectedLaunchRoleID = id
+              launchChoice.selectRole(role) else { return }
         requestLaunchAccounts()
-        controls = chosen
     }
 
     private func updateLaunchControls(_ updated: ComposerControls) {
-        controls = updated
-        guard let id = selectedLaunchRoleID,
-              let role = launchRoles.first(where: { $0.id == id }) else {
-            launchAccountCaption = nil
-            return
-        }
-        guard !role.matchesLaunchControls(updated) else { return }
-        selectedLaunchRoleID = nil
+        guard launchChoice.updateControls(updated, roles: launchRoles) else { return }
         requestLaunchAccounts()
     }
 
@@ -1114,7 +1106,7 @@ struct CreateWorkspaceView: View {
             return
         }
         isLoadingLaunchAccounts = true
-        launchAccountCaption = nil
+        launchChoice.clearAccountCaption()
         do {
             let list = try await app.swarmProfiles.accounts(provider: role.provider)
             guard !Task.isCancelled, selectedLaunchRoleID == id else { return }
@@ -1133,18 +1125,14 @@ struct CreateWorkspaceView: View {
         accountOptions = decision.options
         selectedAccount = decision.selection
         isLoadingLaunchAccounts = false
-        launchAccountCaption = decision.fallbackCaption
-        if decision.usesDefault {
-            selectedLaunchRoleID = nil
-            controls = defaultLaunchControls
-        }
+        launchChoice.apply(decision)
     }
 
     private func resetLaunchAccounts(loading: Bool = false) {
         accountOptions = []
         selectedAccount = nil
         isLoadingLaunchAccounts = loading
-        launchAccountCaption = nil
+        launchChoice.clearAccountCaption()
     }
 
     private func requestLaunchAccounts() {

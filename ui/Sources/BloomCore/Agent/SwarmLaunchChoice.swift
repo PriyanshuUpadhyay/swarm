@@ -35,6 +35,68 @@ public extension SwarmRole {
     }
 }
 
+public struct SwarmLaunchChoice: Sendable, Equatable {
+    public private(set) var controls: ComposerControls
+    public private(set) var controlsWithoutRole: ComposerControls
+    public private(set) var roleID: String?
+    public private(set) var accountCaption: String?
+
+    public init(controls: ComposerControls = ComposerControls()) {
+        self.controls = controls
+        controlsWithoutRole = controls
+    }
+
+    public mutating func reset(controls: ComposerControls) {
+        self = Self(controls: controls)
+    }
+
+    public mutating func selectInitialRole(_ role: SwarmRole?) {
+        roleID = role?.id
+        controlsWithoutRole = controls
+        accountCaption = nil
+    }
+
+    @discardableResult
+    public mutating func selectRole(_ role: SwarmRole?) -> Bool {
+        accountCaption = nil
+        guard let role else {
+            roleID = nil
+            controls = controlsWithoutRole
+            return true
+        }
+        guard let chosen = role.applyingToLaunchControls(controls) else { return false }
+        if roleID == nil { controlsWithoutRole = controls }
+        roleID = role.id
+        controls = chosen
+        return true
+    }
+
+    @discardableResult
+    public mutating func updateControls(_ updated: ComposerControls, roles: [SwarmRole]) -> Bool {
+        controls = updated
+        guard let roleID,
+              let role = roles.first(where: { $0.id == roleID }) else {
+            controlsWithoutRole = updated
+            return false
+        }
+        guard !role.matchesLaunchControls(updated) else { return false }
+        self.roleID = nil
+        controlsWithoutRole = updated
+        return true
+    }
+
+    public mutating func apply(_ decision: SwarmAccountLoadDecision) {
+        accountCaption = decision.fallbackCaption
+        guard decision.usesDefault else { return }
+        roleID = nil
+        controls = controlsWithoutRole
+    }
+
+    public mutating func clearAccountCaption() {
+        accountCaption = nil
+    }
+}
+
 public enum SwarmAccountSelection: Sendable, Hashable, Identifiable {
     case auto
     case named(String)
@@ -114,10 +176,13 @@ public struct SwarmAccountLoadDecision: Sendable, Hashable {
     public var selection: SwarmAccountSelection?
     public var fallbackCaption: String?
 
-    public var usesDefault: Bool { selection == nil }
+    public var usesDefault: Bool { fallbackCaption != nil }
 
     public static func loaded(_ list: SwarmAccountList) -> Self {
         let options = SwarmAccountOption.choices(from: list)
+        guard !list.accounts.isEmpty else {
+            return Self(options: [], selection: nil, fallbackCaption: nil)
+        }
         guard let selection = SwarmAccountOption.initialSelection(in: options) else {
             return fallback("No signed-in accounts")
         }
