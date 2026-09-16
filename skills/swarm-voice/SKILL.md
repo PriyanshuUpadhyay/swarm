@@ -14,6 +14,7 @@ these on the command line. `swarm` is on PATH.
 1. Run `swarm inbox`. It prints one line per unread message: `seq sender kind body_path`.
 2. Read the body at `$SWARM_HOME/.swarm/<body_path>` (`SWARM_HOME` defaults to `$HOME`).
 3. Reply once per message.
+   - When the ask body starts with a line `round: N`, the reply body must start with the same line.
    - A final result goes to the orchestrator: `printf '%s' '<text>' | swarm finish`.
    - A question or note goes to a named agent: `printf '%s' '<text>' | swarm send <recipient> <kind>`.
      In lane mode a child can reach only the orchestrator; in relay mode the orchestrator forwards.
