@@ -1,0 +1,2651 @@
+import SwiftUI
+import Observation
+import Synchronization
+import BloomCore
+
+/// A git failure carried back across a task boundary. `any Error` is not `Sendable`, and the only
+/// part of it the UI shows is the message.
+struct GitFailure: Error, Sendable {
+    var message: String
+}
+
+/// Live state for one workspace: its sessions, its transcript, what git says changed, and the
+/// pull request if there is one. Created lazily by `AppModel.model(for:)` and kept for the
+/// lifetime of the launch so switching away and back is free.
+@MainActor
+@Observable
+final class WorkspaceModel {
+    var workspace: Workspace
+    private unowned let app: AppModel
+
+    var sessions: [Session] = []
+    var sideConversations: [SessionID: SideConversationState] = [:]
+
+    /// Whether the store has answered about this workspace's sessions at all, this launch.
+    ///
+    /// The same distinction `hasReadChanges` keeps below, and here it is not about what a pane is
+    /// allowed to say but about what gets deleted. An empty `sessions` means two different things,
+    /// "the store was asked and this workspace has none" and "nobody has asked yet", and
+    /// `WorkspaceTabsStore.reconcile` destroys every pane pointer no live session answers for. It
+    /// ran from the tab strip's `.task` while this model was still on the `Store` actor, read the
+    /// empty list as proof, and dissolved any tab holding a chat beside a terminal or a page on
+    /// the first visit of every launch. See `TabReconciliation`, which now refuses an answer
+    /// nobody has yet, and `TerminalPaneCensus`, where the same trap cost shells.
+    private(set) var hasReadSessions = false
+
+    /// Switching tab is the moment a transcript should come into existence, rather than the
+    /// moment a view body happens to ask for one. Preparing it here keeps model creation, which
+    /// is an observable write, out of the render pass.
+    var activeSessionID: SessionID? {
+        get { storedActiveSessionID }
+        set {
+            // Only when it moved, for the reason `reloadSessions` spells out: an identical value
+            // written back is still an invalidation, and this one reaches every pane.
+            if storedActiveSessionID != newValue { storedActiveSessionID = newValue }
+            prepareActiveTranscript()
+            // The sidebar draws the active chat's subagents, so switching tab changes which rows
+            // belong under this workspace even though no roster moved.
+            app.noteSubagentsChanged(workspaceID: workspace.id)
+        }
+    }
+
+    private var storedActiveSessionID: SessionID?
+
+    /// One transcript per session, built on demand.
+    private var transcripts: [SessionID: TranscriptModel] = [:]
+
+    // Inspector.
+    private var lastChangesScope: DiffScope = .all
+    private var lastHistoryCommit: BranchCommit?
+    /// The comparison and its file list are adopted together after a refresh. Resolving the
+    /// scope in a getter could label the last commit's files as all branch changes after a rebase.
+    private var storedDiffScope: DiffScope = .all
+
+    var diffScope: DiffScope { storedDiffScope }
+    private(set) var branchCommits = BranchCommitList()
+    private(set) var hasReadBranchCommits = false
+    private(set) var historyError: String?
+    private(set) var historyNotice: String?
+    private var historyLimit = BranchCommitList.limit
+    var selectedChangeLayer: ChangeLayer?
+
+    var selectedChangeID: String? {
+        selectedFilePath.flatMap { selectedChangedFile(path: $0)?.id }
+    }
+
+    func selectedChangedFile(path: String) -> ChangedFile? {
+        changedFiles.first { $0.path == path && $0.layer == selectedChangeLayer }
+            ?? changedFiles.first { $0.path == path }
+    }
+
+    func loadMoreCommits() {
+        historyLimit += BranchCommitList.limit
+        Task { await refreshChanges(.requested) }
+    }
+
+    /// What the reader last picked in the tab strip, which is not always what is on screen.
+    ///
+    /// Kept whole rather than clamped to what is currently on offer, because the Checks tab comes
+    /// and goes with the pull request under it. See `InspectorTab.resolve`.
+    private var chosenInspectorTab: InspectorTab = .changes
+
+    /// The tabs the strip may draw for this workspace, and the one it is showing.
+    var availableInspectorTabs: [InspectorTab] { InspectorTab.available(for: pullRequest) }
+
+    private var rememberedHistoryCommit: BranchCommit? {
+        guard let lastHistoryCommit, branchCommits.canOffer(.commit(lastHistoryCommit)) else { return nil }
+        return lastHistoryCommit
+    }
+
+    var inspectorTab: InspectorTab {
+        get { InspectorTab.resolve(chosenInspectorTab, available: availableInspectorTabs) }
+        set {
+            chosenInspectorTab = newValue
+            if newValue == .changes, case .commit = diffScope {
+                setDiffScope(lastChangesScope)
+            } else if newValue == .history,
+                      let commit = rememberedHistoryCommit ?? branchCommits.commits.first {
+                setDiffScope(.commit(commit))
+            }
+        }
+    }
+    var changedFiles: [ChangedFile] = [] {
+        didSet {
+            reviewFiles = changedFiles.contains { $0.layer != nil }
+                ? changedFiles : ChangedFileTree.orderedFiles(from: changedFiles)
+        }
+    }
+    /// Retain tree order across scroll updates; rebuild it only when the changed files change.
+    private(set) var reviewFiles: [ChangedFile] = []
+    var selectedFilePath: String?
+    var isLoadingChanges = false
+    /// Whether git has answered about this worktree at all, this launch.
+    ///
+    /// Separate from `isLoadingChanges`, and the difference is what a pane with nothing in it is
+    /// allowed to say. An empty `changedFiles` means two completely different things: "git looked
+    /// and there is nothing" and "nobody has looked yet". The inspector used to tell them apart by
+    /// the loading flag, which is raised by the refresh rather than by the arrival, so a workspace
+    /// being opened for the first time drew "No changes yet. Nothing in this worktree differs from
+    /// main" for as long as it took the refresh to start. That is a claim, it was made before
+    /// anything had been read, and on a large worktree it was on screen for most of a second.
+    private(set) var hasReadChanges = false
+    /// Counts refreshes that landed, whether or not the list moved. `changedFiles` is written
+    /// only when it differs, deliberately, so the six second poll cannot rerun the inspector for
+    /// nothing; but the diff open on one file needs to hear about the refreshes the list cannot
+    /// see. An agent rewording a line one for one leaves the file's counts, and with them the
+    /// whole `ChangedFile` value, exactly where they were, and the review bands must still
+    /// re-check their anchors against the worktree. Only that re-check reads this, so the tick
+    /// invalidates one small view and not the tree.
+    private(set) var changesGeneration = 0
+    /// Patches git has already produced for this worktree, so that returning to the review tab is
+    /// not another subprocess. Not observed: nothing draws it, and a write on every file opened
+    /// would invalidate every view watching this model. See `PatchCache`.
+    @ObservationIgnored private var patches = PatchCache()
+    /// The files the review pane has already prepared, held so that coming back to one draws it on
+    /// the first frame rather than going through the parse, the preparation pass and the read of
+    /// the worktree copy again. Ignored by observation for the same reason as the patches above:
+    /// filing one is not a fact any view is watching. See `DiffPresentationCache`.
+    @ObservationIgnored private var presentations = DiffPresentationCache()
+    /// Where each chat pane had got to in each conversation, so that coming back to a tab is not
+    /// the session being opened all over again.
+    ///
+    /// Here rather than in the list view because the list view is the thing that dies: a tab
+    /// switch destroys the whole subtree under `CenterPaneView.content`, which is exactly why the
+    /// unfolded rows re-folded and the history was laid out twice. `TranscriptResume` is the rule
+    /// and carries the measurements.
+    ///
+    /// Not observed, for the reason `patches` is not: a scroll writes this and nothing draws it,
+    /// so an observed write would invalidate every view watching this model once per gesture.
+    @ObservationIgnored private var panePositions: [TranscriptPaneState.Key: TranscriptPaneState] = [:]
+    /// Why the last refresh could not answer. Non-nil means `changedFiles` is the last list git was
+    /// able to produce, not what the worktree looks like now.
+    var changesError: String?
+    /// GitHub's opinion of this workspace's branch, held in `WorkspacePullRequests` and read
+    /// through it rather than stored here.
+    ///
+    /// It was a stored property, and that made two caches for one fact with different max ages:
+    /// 30 seconds here, 110 in the shared one. The sidebar glyph and the Home rail read that one,
+    /// the title bar strip, the pull request bar and `InspectorTab.available(for:)` read this one,
+    /// so for a single open workspace three surfaces could disagree for up to two minutes. Both
+    /// are `@MainActor`, so it was never a data race and TSan would never have seen it.
+    ///
+    /// A computed property rather than a migration of every call site: the shared store is
+    /// `@Observable` too, so reading through it registers the same dependency a stored property
+    /// did. Writing nil through it still reaches the shared cache, which is why
+    /// `refreshPullRequest` below no longer does: see the note there.
+    var pullRequest: PullRequest? {
+        get { WorkspacePullRequests.shared.pullRequest(for: workspace.id) }
+        set { WorkspacePullRequests.shared.set(newValue, for: workspace.id) }
+    }
+
+    var pullRequestRefreshFailure: GitHubReadFailure? {
+        WorkspacePullRequests.shared.failure(for: workspace.id)
+    }
+
+    func dismissPullRequestRefreshFailure() {
+        WorkspacePullRequests.shared.dismissFailure(for: workspace.id)
+    }
+
+    var isLoadingPullRequest = false
+    /// Whether any refresh has come back for this workspace this launch, whatever it said.
+    ///
+    /// Not the same question as `pullRequest != nil`, and that is the whole point: "this branch
+    /// has no pull request" is an answer, and reading it as "we have not looked yet" is what put
+    /// the spinner over the Create pull request button on every poll. See `PullRequestProgress`.
+    private(set) var hasReadPullRequest = false
+
+    /// How this project's branches land, which is what the band's split button promises.
+    ///
+    /// Kept here so the band can read it synchronously while it draws, and read back from the
+    /// store on every arrival, because the choice belongs to the PROJECT: two workspaces cut from
+    /// the same repository are two copies of this property and the store is the one answer between
+    /// them. See `MergeMethodChoice`, which holds the scope argument and the key.
+    private(set) var mergeMethod = MergeMethodChoice.fallback
+    /// What the last press on the pull request strip left to say, drawn at the top of the
+    /// inspector column.
+    ///
+    /// It lives on the model rather than in the strip because the two are no longer in the same
+    /// SwiftUI root, and it is drawn in the column rather than in the strip because the strip is
+    /// in the title bar now. A title bar accessory is laid out from a frame set by hand, one row
+    /// tall, so a notice added under the strip was drawn into a band with no room for it and cut
+    /// off mid sentence. See `TitleBarStrip` and `InspectorView`.
+    var pullRequestNotice: PullRequestNotice?
+    /// The branch this workspace was carried on to when its pull request merged, while the strip
+    /// is still drawing that branch and nothing has been committed to it.
+    ///
+    /// Set by `AppModel.continueAfterMerge` and never cleared, because it does not need to be:
+    /// `ContinuedBranch.line` checks the branch it names against the branch being drawn, so it
+    /// stops applying by itself the moment the worktree moves on. The reasoning for holding it in
+    /// memory rather than on the row is on the type.
+    var continued: ContinuedBranch?
+    /// Whether the turn now in flight was started by Create pull request, so that the refresh
+    /// after it is waited on rather than fired and forgotten. See `onTurnFinished`.
+    private var isExpectingPullRequest = false
+    /// What this worktree is holding that the remote has not got, refreshed alongside the changed
+    /// file list. Nil until the first refresh has answered, which is what stops the strip from
+    /// claiming a clean branch before it has looked.
+    var localWork: LocalWork?
+
+    // Setup.
+    /// Written here and nowhere else, which `private(set)` is what keeps true: the timeline below
+    /// is memoised against it, and a writer outside this class would leave the memo standing over
+    /// a log that had moved. See `timeline(isRunningSetup:)`.
+    private(set) var setupOutput: String = ""
+    var isRunningSetup = false
+    /// Things Bloom did to this workspace that are worth a line in the transcript: a merge, and
+    /// whatever follows it.
+    ///
+    /// In memory and deliberately so. These are notes about what just happened, shown where the
+    /// user is already looking, and they are not messages: nothing here is written to the
+    /// `messages` table, counted against the context window, or seen by anything that assembles a
+    /// prompt. Setup is not in this list because its state is already durable on the workspace
+    /// row; `timeline(isRunningSetup:)` derives that one and puts the two together.
+    var events: [WorkspaceEvent] = []
+
+    /// One line for a caller that has just done something to this workspace.
+    ///
+    ///     model.record(.merged(pullRequest: 42, branchDeleted: false, branch: workspace.branch))
+    func record(_ event: WorkspaceEvent) {
+        events.append(event)
+    }
+
+    /// What the transcript draws above its rows: the setup line, derived from the workspace's own
+    /// stored state, then everything Bloom has recorded since, in the order it happened.
+    ///
+    /// **Memoised, because this is asked from a view body rather than when the log moves.**
+    /// `WorkspaceEventsView` sits at the top of the transcript's own `LazyVStack`, so its body runs
+    /// on every pass of that list, which during a window or sidebar drag is once a frame. Building
+    /// the event is not cheap: `WorkspaceEvent.setup` counts the lines of a log that
+    /// `Workspace.setupLogLimit` allows to be two hundred thousand characters, and does it twice
+    /// for a run that succeeded, and for a run that failed `SetupDiagnosis.read` copies and splits
+    /// the whole of it on top of that.
+    ///
+    /// This partly undoes `dfe734b`, which moved the count into `WorkspaceEvent`'s initialiser so
+    /// it was "counted once at construction". That was true and it did not help, because
+    /// construction is what happens every pass: the count moved rather than went away. What makes
+    /// it go away is not constructing the event again when nothing it is built from has changed.
+    ///
+    /// Every field of the key is read on every call, and that is load-bearing rather than
+    /// wasteful: reading them is what registers this view's observation of them, so a memo that
+    /// answered without touching `setupOutput` would leave the transcript never hearing that the
+    /// log had moved. `utf8.count` is O(1) on a native Swift string.
+    func timeline(isRunningSetup running: Bool) -> [WorkspaceEvent] {
+        let key = TimelineKey(
+            isRunning: running,
+            setupState: workspace.setupState,
+            logBytes: setupOutput.utf8.count,
+            logWrites: setupLogWrites,
+            durationMS: setupDurationMS,
+            exitStatus: setupExitStatus,
+            recorded: events
+        )
+        if let timelineMemo, timelineMemo.key == key { return timelineMemo.events }
+
+        let setup = WorkspaceEvent.setup(
+            state: running ? .running : workspace.setupState,
+            log: setupOutput,
+            durationMS: setupDurationMS,
+            status: setupExitStatus
+        )
+        let built = [setup].compactMap { $0 } + events
+        timelineMemo = (key, built)
+        return built
+    }
+
+    /// Everything the timeline is derived from, in the cheapest form that can tell two of them
+    /// apart.
+    ///
+    /// The log is in here twice, and neither is the log. Its byte count is what registers the
+    /// observation and catches every ordinary flush; the write count is what catches the one case
+    /// a length cannot, which is a log already at `Workspace.setupLogLimit` having a batch appended
+    /// and the same number of characters dropped off its front.
+    ///
+    /// The recorded events are compared whole rather than counted, and that is not the expensive
+    /// option it looks: the two sides are the same array buffer on every pass that has not appended
+    /// to it, which `Array.==` answers on identity alone. None of these carries a log.
+    private struct TimelineKey: Equatable {
+        var isRunning: Bool
+        var setupState: SetupState
+        var logBytes: Int
+        var logWrites: Int
+        var durationMS: Int?
+        var exitStatus: Int?
+        var recorded: [WorkspaceEvent]
+    }
+
+    /// The last timeline built, and what it was built from. Not observed: nothing draws it, the
+    /// values it is derived from are all observed already, and a view body is where it is written.
+    @ObservationIgnored private var timelineMemo: (key: TimelineKey, events: [WorkspaceEvent])?
+
+    /// How many times `setupOutput` has been written this launch. See `TimelineKey`.
+    @ObservationIgnored private var setupLogWrites = 0
+
+    /// When the run now in flight started, and what the last finished one cost.
+    ///
+    /// Kept here rather than on the workspace row because it is about this launch's run: a
+    /// duration read back out of the database a week later would be answering a question nobody
+    /// asked. The transcript shows it on the line that says setup ended, and shows no duration at
+    /// all when it does not know one, which is a workspace reopened after the fact.
+    var setupStartedAt: Date?
+    var setupDurationMS: Int?
+
+    /// What the last setup script this launch watched exited with.
+    ///
+    /// Beside `setupDurationMS` and for the same reason: it is about this launch's run. A status
+    /// read back out of the database a week later would be answering a question nobody asked, and
+    /// a workspace reopened after the fact shows a row with no number in it rather than a number
+    /// that might be from a run somebody has since re-run.
+    var setupExitStatus: Int?
+
+    // Layout.
+
+    /// The workspace's port block, which is a column on the row rather than a fact about this
+    /// launch. See `Workspace.port` for why it has to survive a restart.
+    var port: Int { workspace.port }
+    /// The allocation in flight, so two callers arriving together get one block. See `ensurePort`.
+    @ObservationIgnored private var portTask: Task<Int, Never>?
+
+    /// The in-flight refreshes, so a newer one can cancel the one it replaces. Two overlapping
+    /// refreshes both claim `isLoadingChanges`, and the slower one finishing last would otherwise
+    /// write its stale answer over the fresh one.
+    /// Everything an arrival kicks off that the first frame does not wait for. Cancelled by the
+    /// next arrival, so a workspace left mid refresh stops rather than finishing into a model
+    /// nobody is looking at. See `onAppear`.
+    private var arrivalTask: Task<Void, Never>?
+
+    private var changesTask: Task<Result<ChangesAnswer, GitFailure>, Never>?
+    private var pullRequestTask: Task<PullRequestRead, Never>?
+    /// One repository settings read at a time. A request that arrives during a read is remembered,
+    /// so the burst ends with one fresh read rather than silently keeping the older answer.
+    @ObservationIgnored private var settingsRefresh = RefreshDemand()
+    @ObservationIgnored private var settingsTask: Task<Void, Never>?
+    /// A setup script can run for minutes (`composer install`, `npm ci`). Without a handle,
+    /// archiving mid-setup cannot stop it and it outlives the app.
+    private var setupTask: Task<Void, Never>?
+    var pendingCLILaunches: Set<SessionID> = []
+    private(set) var pendingCLIPrompts: [SessionID: String] = [:]
+    /// The script alone, where `setupTask` is the script and whatever follows it. Stop cancels
+    /// this one, so the queue behind the run still drains; archiving and quitting cancel the
+    /// outer task, which reaches this through `stream`'s cancellation handler.
+    @ObservationIgnored private var setupRunTask: Task<Bool, Never>?
+    /// Set by `stopSetup`, so a run the reader stopped is not announced as a failed setup.
+    @ObservationIgnored private var setupWasStopped = false
+
+    init(workspace: Workspace, app: AppModel) {
+        self.workspace = workspace
+        self.app = app
+        self.setupOutput = workspace.setupLog
+        refreshSettings()
+    }
+
+    /// What this workspace's repository asks for: the setup script, the run scripts, the rest of
+    /// the repository settings files.
+    ///
+    /// Held here rather than read where it is needed because the Workspace menu reads it, and a
+    /// `Commands` body is not a view: it cannot await a file, and it cannot carry a task. It is
+    /// re-read whenever the workspace is selected and after project settings are saved, so a new
+    /// run script appears in the menu without switching workspaces.
+    private(set) var settings = RepoSettings()
+
+    /// Off the main actor, because this parses up to six files and is called on every switch.
+    /// Nothing waits for it: the menu shows the previous answer until this one lands, and on the
+    /// first launch of a workspace that is an empty one for a few milliseconds.
+    func refreshSettings() {
+        guard settingsRefresh.request() else { return }
+        settingsTask = Task { [weak self] in await self?.drainSettingsRefreshes() }
+    }
+
+    /// The same read, awaited, for the one caller that cannot carry on without the answer.
+    ///
+    /// `MenuProbe` builds a workspace row's menu synchronously and photographs it, and the setup
+    /// item is not in that menu until the settings file has been read. Everything else wants the
+    /// call above, which returns immediately and lets the menu show the previous answer until this
+    /// one lands.
+    func reloadSettings() async {
+        refreshSettings()
+        await settingsTask?.value
+    }
+
+    private func drainSettingsRefreshes() async {
+        repeat {
+            if let path = repo?.path {
+                let loaded = await Task.detached(priority: .utility) {
+                    SettingsLoader.load(repo: path)
+                }.value
+                if settings != loaded { settings = loaded }
+            }
+        } while settingsRefresh.complete()
+        settingsTask = nil
+    }
+
+    var store: Store? { app.store }
+    var repo: Repo? { app.repo(for: workspace) }
+
+    // MARK: - Sessions
+
+    var activeSession: Session? {
+        guard let activeSessionID else { return sessions.first { $0.sideConversationParentID == nil } }
+        return sessions.first { $0.id == activeSessionID } ?? sessions.first { $0.sideConversationParentID == nil }
+    }
+
+    /// Reads the session list back from the store.
+    ///
+    /// Every write here is conditional, and that is the point rather than a tidiness. Assigning an
+    /// identical value is still a mutation as far as Observation is concerned, so an unconditional
+    /// `sessions = fresh` invalidated the tab strip, both panes and the transcript on every single
+    /// arrival at a workspace whose sessions had not moved since the last one. That is a second
+    /// full layout of the centre column, on the main thread, for a list that is the same list.
+    func reloadSessions() async {
+        CenterTabStore.shared.load(workspaceID: workspace.id)
+        guard let store else { return }
+        SwitchTrace.mark("sessions.query.start", workspace: workspace.id)
+        guard let fresh = try? await store.sessions(workspaceID: workspace.id) else { return }
+        SwitchTrace.mark("sessions.query.done", workspace: workspace.id)
+        if sessions != fresh { sessions = fresh }
+        // Conditional for the reason every write here is, and raised only once the answer is in
+        // hand: the guard above is the store not being there to ask, which is doubt rather than an
+        // empty workspace.
+        if !hasReadSessions { hasReadSessions = true }
+        let tabs = CenterTabStore.shared
+        tabs.load(workspaceID: workspace.id)
+        WorkspaceTabsStore.shared.updateOrder(
+            sessions: TabSet.tabbable(fresh),
+            tools: tabs.hasReadTabs(for: workspace.id) ? tabs.tabs(for: workspace.id).map(\.id) : nil,
+            workspaceID: workspace.id
+        )
+        SwitchTrace.mark("sessions.assigned", workspace: workspace.id)
+        if activeSessionID == nil || !sessions.contains(where: { $0.id == activeSessionID }) {
+            activeSessionID = sessions.first { $0.sideConversationParentID == nil }?.id
+        } else {
+            // The setter above prepares the transcript for us. This is the other branch, where the
+            // active session has not moved and the transcript may still be the one this launch has
+            // never built.
+            prepareActiveTranscript()
+        }
+        SwitchTrace.mark("sessions.prepared", workspace: workspace.id)
+    }
+
+    /// - Parameter title: what the chat is called. Nil, which is nearly every caller, takes the
+    ///   numbered name the strip gives a new tab: `Chat`, then `Chat 2`. A caller passes one only
+    ///   when the chat is being opened FOR something and the name says which, as the pull request
+    ///   and merge buttons do. See `PaneNaming` for why a chat is never named after its content.
+    /// - Parameter draft: words the new chat opens with, for the one caller that has some: a
+    ///   backend fork carries the half-written prompt across, because a picker press must never be
+    ///   a way to lose a sentence somebody is in the middle of. It is written **before** the row
+    ///   becomes the active session, which is the whole reason it is an argument here rather than
+    ///   a `saveDraft` at the call site: activating the session builds a transcript, and that
+    ///   transcript reads the draft column on its first pass. A write that lands after that read
+    ///   is a draft the composer never shows.
+    @discardableResult
+    func createSession(
+        title: String? = nil,
+        controls: ComposerControls? = nil,
+        draft: String = ""
+    ) async -> Session? {
+        guard !app.isArchiving(workspace.id), let store else { return nil }
+        // Quick prompts can submit before the composer appears. Settle defaults before exposing
+        // the session, otherwise its first turn can launch Claude despite a Codex default.
+        let openingControls: ComposerControls
+        if let controls {
+            openingControls = controls
+        } else {
+            guard let resolved = try? await app.resolvedControls(for: repo) else { return nil }
+            openingControls = resolved
+        }
+        guard !app.isArchiving(workspace.id) else { return nil }
+        var session = Session(
+            workspaceID: workspace.id,
+            title: title ?? PaneNaming.nextTitle(base: PaneNaming.chat, taken: sessions.map(\.title)),
+            sortOrder: sessions.count
+        )
+        session.model = openingControls.model
+        session.effort = openingControls.effort
+        session.agentKind = openingControls.agentKind
+        session.permissionMode = openingControls.permissionMode
+        session.interactionMode = openingControls.interactionMode
+        guard let stored = try? await store.upsert(session) else { return nil }
+        await openingControls.store(sessionID: stored.id, in: store)
+        if !draft.isEmpty { try? await store.saveDraft(sessionID: stored.id, body: draft) }
+        await reloadSessions()
+        activeSessionID = stored.id
+        return stored
+    }
+
+    func createChat(title: String? = nil) async -> PaneContent? {
+        guard let store, let repo = app.repo(for: workspace) else { return nil }
+        let defaults = await AppDefaults.loadForNewSessions(from: store)
+        let controls = ComposerControls(
+            defaults: ComposerDefaults.resolve(
+                repo: SettingsLoader.load(repo: workspace.path), app: defaults,
+                models: ComposerModelCatalog.shared.models
+            ),
+            isFastMode: defaults.fastMode, outputStyle: defaults.outputStyle,
+            codexContextWindow: defaults.codexContextWindow
+        )
+        guard let session = await createSession(title: title, controls: controls) else { return nil }
+        guard WorkspaceStartMode.chat(usesCLI: defaults.terminalChat, agent: controls.agentKind).cliAgentKind != nil
+        else { return .chat(session.id) }
+        CenterTabStore.shared.add(
+            kind: .terminal, workspaceID: workspace.id,
+            title: title ?? session.agentKind.label, agentSessionID: session.id
+        )
+        pendingCLILaunches.insert(session.id)
+        await launchCLI(session, prompt: "", repo: repo)
+        return .chat(session.id)
+    }
+
+    /// Retires the old runner only after its replacement has been saved successfully.
+    func clearConversation(_ previous: Session, controls: ComposerControls) async -> Session? {
+        guard !app.isArchiving(workspace.id), let store else { return nil }
+        do {
+            let next = try await store.replaceWorkspaceConversation(id: previous.id, controls: controls)
+            transcripts.removeValue(forKey: previous.id)?.teardown()
+            app.bridge?.retire(sessionID: previous.id)
+            WorkspaceTabsStore.shared.replaceConversation(previous.id, with: next.id, in: self)
+            if let index = sessions.firstIndex(where: { $0.id == previous.id }) { sessions[index] = next }
+            activeSessionID = next.id
+            return next
+        } catch {
+            app.notice = BloomNotice(message: "Could not clear the conversation: \(error.readableMessage)")
+            return nil
+        }
+    }
+
+    /// Puts the workspace's conversations in a given order, and writes it back.
+    ///
+    /// Ids rather than an offset, because the strip the user drags in is not the list this holds: a
+    /// chat absorbed into a pane of another tab keeps its place here while having dropped out of
+    /// the strip, so an offset read off the strip means nothing here. `TabReorder` is what turns
+    /// one into the other, and it is in the core because it is a decision with cases worth testing.
+    ///
+    /// **Not async, and that is the point.** The list is put on screen here and the write goes off
+    /// behind it, so the strip is showing the new order on the frame the drag is let go rather than
+    /// after a round trip through an actor. `AppModel.reorderWorkspaces` is the same shape for the
+    /// same reason: a drop is the end of a movement the strip has already made, and waiting for
+    /// SQLite to come back would put a frame of the old order between the settle and the answer.
+    ///
+    /// The write names the one column it changes. `AgentRunner` owns the state, the counters and
+    /// the agent session id on these rows and has been writing them all the while, so handing back
+    /// a whole `Session` the strip was holding would put those columns back to whatever they looked
+    /// like when it read them.
+    func reorderSessions(to ids: [SessionID]) {
+        guard let store else { return }
+        let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var ordered = ids.compactMap { byID[$0] }
+        // The whole run or nothing. `TabReorder` hands back a permutation of the list it was given,
+        // so a short answer means the caller worked from a stale reading, and writing it would drop
+        // every session it had forgotten about out of the strip.
+        guard ordered.count == sessions.count else { return }
+
+        for (order, item) in ordered.enumerated() { ordered[order] = item.with { $0.sortOrder = order } }
+        sessions = ordered
+        Task { try? await store.reorderSessions(ids: ordered.map(\.id)) }
+    }
+
+    /// Whether this session's agent is in the middle of a turn.
+    ///
+    /// The live transcript is the truth wherever one exists, and only existing ones are consulted:
+    /// asking for a transcript would build a model for every session the strip drew. That
+    /// precedence is `AgentTurns`'s now rather than this method's, so the strip, the workspace
+    /// and the sidebar's mirror cannot come to three different conclusions about one chat.
+    func isRunning(_ session: Session) -> Bool {
+        AgentTurns.session(.running, state: session.state, live: liveTurn(for: session.id))
+            || transcripts[session.id]?.subagents.isWorking == true
+    }
+
+    /// Persist the replacement before stopping the old agent so a failed write leaves it usable.
+    func replaceSession(_ session: Session, controls: ComposerControls) async -> Session? {
+        guard !app.isArchiving(workspace.id), let store else { return nil }
+        do {
+            let next = try await store.replaceWorkspaceConversation(id: session.id, controls: controls)
+            transcripts.removeValue(forKey: session.id)?.teardown()
+            app.bridge?.retire(sessionID: session.id)
+            await reloadSessions()
+            activeSessionID = next.id
+            return next
+        } catch {
+            app.alert = BloomAlert(title: "Could not start a fresh chat", message: error.readableMessage)
+            return nil
+        }
+    }
+
+    func closeSession(_ session: Session) async {
+        guard let store else { return }
+        do {
+            _ = try await store.update(sessionID: session.id) { $0.archivedAt = Date() }
+        } catch {
+            app.notice = BloomNotice(message: "Could not close the conversation: \(error.readableMessage)")
+            return
+        }
+        let tabs = WorkspaceTabsStore.shared
+        tabs.prepareToClose(.chat(session.id), in: self)
+        tabs.forget(.chat(session.id), workspaceID: workspace.id)
+        if let terminal = CenterTabStore.shared.terminal(for: session.id, in: workspace.id) {
+            await CenterTabStore.shared.close(terminal, in: self)
+            pendingCLILaunches.remove(session.id)
+            pendingCLIPrompts[session.id] = nil
+        }
+        transcripts[session.id]?.teardown()
+        transcripts[session.id] = nil
+        // Closing is one column. The strip's copy of this row can be a whole turn old, and the
+        // runner has been writing the state, the counters and the agent session id into it all
+        // the while.
+        // The chat is over, so its bridge token is a token nothing may use again and the config
+        // file carrying it is a dead letter. Nothing used to remove either, and the files are one
+        // per session rather than one per instance, so they only ever grew.
+        app.bridge?.retire(sessionID: session.id)
+        await reloadSessions()
+    }
+
+    /// The transcript for a session, wired to its own agent runner.
+    ///
+    /// Both branches are mutations, so this MUST NOT be called from a view body: creating the
+    /// model writes an observed dictionary and pushing the session down writes an observed
+    /// property, each of which invalidates, from inside its own body, every view that just read
+    /// them. Views read `activeTranscript`, which only looks.
+    @discardableResult
+    func transcript(for session: Session) -> TranscriptModel {
+        if let existing = transcripts[session.id] {
+            // Assigning an equal value still counts as a mutation to the Observation runtime.
+            if existing.session != session { existing.session = session }
+            return existing
+        }
+        let model = TranscriptModel(session: session, workspace: workspace, app: app)
+        transcripts[session.id] = model
+        Task { await model.load() }
+        return model
+    }
+
+    /// A pure lookup, safe from a view body. Nil until the active session has been prepared,
+    /// which happens on every path that can change which session is active.
+    var activeTranscript: TranscriptModel? {
+        activeSession.flatMap { transcripts[$0.id] }
+    }
+
+    /// The same pure lookup for any session, which is what a pane needs: with the column split,
+    /// the conversation on screen is not always the active one.
+    func existingTranscript(for sessionID: SessionID) -> TranscriptModel? {
+        transcripts[sessionID]
+    }
+
+    /// Builds a session's transcript if this launch has not seen it yet. Called from a task, never
+    /// from a body, for the reason `transcript(for:)` spells out.
+    func prepareTranscript(for sessionID: SessionID) {
+        guard CenterTabStore.shared.terminal(for: sessionID, in: workspace.id) == nil,
+              let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        transcript(for: session)
+    }
+
+    private func prepareActiveTranscript() {
+        guard let session = activeSession else { return }
+        prepareTranscript(for: session.id)
+    }
+
+    // MARK: - Crew
+
+    /// Starts a crew member in this worktree, for the chat that asked for one.
+    ///
+    /// A crew member is an ordinary `Session` row with `parentSessionID` set, and that one column
+    /// is the whole of what makes it one. It shares this workspace's worktree and its branch, so
+    /// everything an orchestrator and its crew do lands in a single diff. `Crew`'s head argues why
+    /// that is a different thing from `workspace_start`, which is what a caller expecting several
+    /// pull requests wants instead.
+    ///
+    /// **The name goes straight into `title`.** `PaneNaming.nextTitle` is what a chat the owner
+    /// opened gets, and it would turn "cascade-read" into "Chat 3": this name is the address the
+    /// other two crew tools take, so it has to be the one the orchestrator chose.
+    ///
+    /// **The nesting rule is checked here as well as in the tool, and only the nesting rule.**
+    /// This method is a second door into the same act, and a door that trusted its caller to have
+    /// checked would be one refactor away from a ring of agents in one worktree. The ceiling and
+    /// the name's uniqueness stay `AgentStartTool`'s alone, weighed there against the same rows a
+    /// moment earlier: which sessions count as running is `CrewCensus`, which the app target
+    /// cannot see, and a second opinion about that would be worse than one. The name goes back
+    /// through `Crew.normalisedName` because that is the same pure function the tool used, so the
+    /// two cannot come out with different strings.
+    func startCrewMember(
+        _ order: CrewOrder, reportingTo parentID: SessionID
+    ) async -> CrewStartOutcome {
+        guard let store else { return .refused(Self.crewWithoutStore) }
+        guard let parent = try? await store.session(id: parentID) else {
+            return .refused("The chat that asked for this subagent is not in Bloom any more.")
+        }
+        guard parent.parentSessionID == nil else {
+            return .refused(Crew.sentence(for: .notAnOrchestrator))
+        }
+        guard let name = Crew.normalisedName(order.name) else {
+            return .refused(Crew.sentence(for: .noName))
+        }
+
+        // Whatever the orchestrator is itself on, unless the order named otherwise, which is the
+        // same inheritance `startWorkspaceForBridge` spells out: an agent splitting up its own
+        // work wants help from the thing it already trusts. The backend and the permission mode
+        // come across for a second reason as well, that a crew member is meant to be able to do
+        // what the chat above it can do without a person being asked twice for the same grant.
+        let member = Session(
+            workspaceID: workspace.id,
+            parentSessionID: parentID,
+            title: name,
+            model: order.model ?? parent.model,
+            effort: order.effort ?? parent.effort,
+            agentKind: parent.agentKind,
+            permissionMode: parent.permissionMode,
+            sortOrder: sessions.count
+        )
+        // `upsert` is right here and nowhere else on this path: the row is being created, out of a
+        // value built three lines up, which is the one shape the head of `Store.upsert(_ session:)`
+        // allows it in.
+        guard let stored = try? await store.upsert(member) else {
+            return .refused("Bloom could not open a chat for that subagent.")
+        }
+
+        // The brief joins the queue rather than being sent, exactly as a workspace's opening
+        // prompt does, so there is one ordered route into every conversation in the app. See
+        // `enqueueOpening` and the head of `Delivery`.
+        //
+        // As a crew message rather than a plain body, so the first row of this agent's chat says
+        // who set the task rather than reading as though the owner typed it. `CrewMessage.brief`
+        // is the one that is deliberately not wrapped: it is the instruction this agent exists to
+        // follow, and fencing it off would leave it with no task at all.
+        _ = try? await store.enqueueDelivery(
+            Delivery(
+                targetSessionID: stored.id,
+                sourceWorkspaceID: workspace.id,
+                kind: .message,
+                crew: CrewMessage.brief(from: parent.title, task: order.task)
+            )
+        )
+
+        // `activeSessionID` is deliberately left alone, which is the rule `select: false` holds
+        // for a workspace the bridge starts: an agent appearing while somebody is typing in
+        // another chat must not take the centre column away from them.
+        await reloadSessions()
+
+        // The part that actually spawns a CLI. Without the drain the row and its queued brief
+        // would sit there until a person opened the chat and said something, which is a subagent
+        // that was started and never ran.
+        let transcript = transcript(for: stored)
+        await transcript.refreshQueue()
+        await transcript.drain()
+
+        return .started(
+            "Started subagent \"\(name)\" in this workspace. Talk to it with agent_say, and Bloom "
+                + "will tell you here when it stops, with the last thing it said."
+        )
+    }
+
+    /// Says something into another agent's chat, in whichever direction the caller is talking.
+    ///
+    /// `name` is a crew member when an orchestrator is talking down and nil when a crew member is
+    /// talking up, because a crew member has exactly one place to talk and naming it would be a
+    /// second way to say the same thing. See `CrewSaying`.
+    ///
+    /// **Both directions are wrapped, and each names who is speaking.** What a subagent says back
+    /// is a model reporting on files it has been reading, which is data; what an orchestrator says
+    /// down is another model's words too, and the agent reading them is entitled to know they came
+    /// from the chat above it rather than from the person it works for. Only the brief a subagent
+    /// is started with is unwrapped, because that one is its task. `CrewMessage.said` holds both
+    /// wordings and `BridgeUntrustedText` states the threat.
+    func sayToCrew(
+        _ text: String, to name: String?, from callerID: SessionID
+    ) async -> CrewSayOutcome {
+        guard let store else { return .refused(Self.crewWithoutStore) }
+        // Read once, at the top, because both directions need the caller's own row now: the
+        // message is headed with the name of the agent that sent it, whichever way it is going,
+        // so an agent is told which chat is talking to it rather than merely that one is.
+        guard let caller = try? await store.session(id: callerID) else {
+            return .refused("The chat that said that is not in Bloom any more.")
+        }
+
+        let target: Session
+        let message: CrewMessage
+        if let name {
+            // `crew(of:)` and not `crew(inWorkspace:)`, which is what keeps an orchestrator to its
+            // own crew: two chats in one worktree may each have a subagent, and neither of them
+            // may talk into the other's.
+            let crew = (try? await store.crew(of: callerID)) ?? []
+            switch CrewLookup.find(name, among: crew) {
+            case .found(let member): target = member
+            case .unknown: return .refused(Self.noCrewMember(name, among: crew.map(\.title)))
+            case .ambiguous: return .refused(Self.ambiguousCrewMember(name))
+            }
+            message = CrewMessage.said(from: caller.title, text: text, sender: .orchestrator)
+        } else {
+            guard let parentID = caller.parentSessionID,
+                  let parent = try? await store.session(id: parentID) else {
+                return .refused(
+                    "No agent started this chat, so there is nobody above it to talk to. Name the "
+                        + "subagent you meant to say that to."
+                )
+            }
+            // `session(id:)` answers for an archived row where `sessions(workspaceID:)` and
+            // `crew(of:)` do not, and `closeSession` archives a chat while leaving the crew it
+            // started running. Without this the message went into a chat the owner had closed:
+            // the drain below built that session a fresh transcript, minted it a bridge token and
+            // started a turn in a conversation that is in no tab strip, no session list and no
+            // sidebar row. An agent nobody can see, spending money.
+            guard parent.archivedAt == nil else {
+                return .refused(
+                    "The chat that started you has been closed, so there is nobody above you to "
+                        + "talk to any more. Finish what you can on your own and stop."
+                )
+            }
+            target = parent
+            message = CrewMessage.said(from: caller.title, text: text, sender: .subagent)
+        }
+
+        _ = try? await store.enqueueDelivery(
+            Delivery(
+                targetSessionID: target.id,
+                sourceWorkspaceID: workspace.id,
+                kind: .message,
+                crew: message
+            )
+        )
+
+        // Enqueued first and drained after, never sent: the chat being spoken to is very often mid
+        // turn, and `DeliveryHold` is what decides whether this goes into that turn, waits for it
+        // to end, or waits for something else.
+        let transcript = transcript(for: target)
+        await transcript.refreshQueue()
+        await transcript.drain()
+
+        // `Crew`'s words rather than this file's, because what happens to a message mid turn is
+        // the backend's answer and a sentence stating it here would be a second copy to drift.
+        let when = Crew.deliverySentence(to: target.agentKind)
+        if name == nil {
+            return .delivered("Passed that to the agent that started you. \(when)")
+        }
+        return .delivered(
+            "Passed that to subagent \"\(target.title)\". \(when) Bloom will tell you here when "
+                + "it stops."
+        )
+    }
+
+    // MARK: - Messages from other workspaces
+
+    /// Which chat a message from another workspace goes into.
+    ///
+    /// The chat it answers, when that chat is still open here, because "message me when it is
+    /// released" means the conversation that asked. Otherwise the active chat, and otherwise a new
+    /// one, which is the order a Merge press uses.
+    func chatForWorkspaceMessage(preferring preferred: SessionID?) async -> Session? {
+        await reloadSessions()
+        if let preferred, let chat = sessions.first(where: { $0.id == preferred }) {
+            return chat
+        }
+        return await sessionForPullRequest(titledIfNew: "Messages")
+    }
+
+    /// Starts the queue moving in a chat a message from another workspace has just joined. The
+    /// delivery and its record were written together by `Store.enqueueWorkspaceMessage`. Not
+    /// selected: a message arriving must not take the centre column from somebody typing.
+    func drainWorkspaceMessage(into chat: Session) async {
+        let transcript = transcript(for: chat)
+        await transcript.refreshQueue()
+        await transcript.drain()
+    }
+
+    /// Tells the chat that sent a message that the owner cancelled it before it went.
+    func tellWorkspaceMessageCancelled(_ message: WorkspaceMessage) async {
+        guard let store, let sessionID = message.source.sessionID,
+              let chat = try? await store.session(id: sessionID), chat.archivedAt == nil
+        else { return }
+        _ = try? await store.enqueueDelivery(
+            Delivery(
+                targetSessionID: chat.id,
+                sourceWorkspaceID: message.target.workspaceID,
+                kind: .report,
+                crew: CrewMessage.cancelled(to: message.target.workspace, text: message.text)
+            )
+        )
+        let transcript = transcript(for: chat)
+        await transcript.refreshQueue()
+        await transcript.drain()
+    }
+
+    /// Stops a crew member: the agent ends, its row leaves the sidebar, and its conversation
+    /// stays where it is.
+    ///
+    /// **Archived, never deleted.** agent_stop means "I am finished with this one", which is three
+    /// things at once: the process ends, the row goes out of the sidebar, and the bridge token it
+    /// was minted stops being a key into this app. What it must not mean is that the conversation
+    /// goes: an orchestrator's account of what its crew did is often the only record of an hour's
+    /// work, and the owner reads it after the fact. `closeSession` is exactly that act and it is
+    /// what the owner's own close button does, so a stopped subagent and a closed chat leave the
+    /// same shape behind rather than two.
+    ///
+    /// The name comes free again with the row, because `Store.crew(of:)` excludes an archived one
+    /// and that read is what `AgentStartTool` weighs a new name against. That is the point rather
+    /// than a side effect: an orchestrator that has finished with "tests" and wants a fresh one
+    /// should not have to invent "tests-2".
+    func stopCrewMember(named name: String, startedBy callerID: SessionID) async -> CrewStopOutcome {
+        guard let store else { return .refused(Self.crewWithoutStore) }
+        let crew = (try? await store.crew(of: callerID)) ?? []
+        let member: Session
+        switch CrewLookup.find(name, among: crew) {
+        case .found(let found): member = found
+        case .unknown: return .refused(Self.noCrewMember(name, among: crew.map(\.title)))
+        case .ambiguous: return .refused(Self.ambiguousCrewMember(name))
+        }
+
+        // `closeSession` and not a `terminateNow` beside an archive of our own. It tears the
+        // transcript down (which terminates the runner and stops the event pump), writes the one
+        // column, retires the bridge registration and reloads the strip, in that order. A member
+        // this launch never built a transcript for has no process to end and the rest still
+        // applies, which is why there is no early return for it.
+        await closeSession(member)
+
+        return .stopped(
+            "Stopped subagent \"\(member.title)\" and closed its chat. Its conversation is still "
+                + "here to read, and the name is free to use again."
+        )
+    }
+
+    /// The owner stopping a subagent from its row in the sidebar.
+    ///
+    /// **The orchestrator has to be told, and that is the whole reason this is not just
+    /// `closeSession`.** An agent that is waiting on a crew member it can no longer reach is the
+    /// failure this design exists to prevent, and the owner reaching into the sidebar is the one
+    /// way a member can vanish without the agent above it doing anything. The sentence says who
+    /// did it as well as what happened, because "the person you work for took it away" and "it
+    /// finished" call for different next moves. See `Crew.stoppedByOwnerSentence`.
+    ///
+    /// Told before it is closed, so the report is enqueued while the row is still whole, and
+    /// through the same queue everything else uses so a busy orchestrator reads it when its own
+    /// turn ends rather than mid sentence.
+    func closeCrewMember(_ member: Session) async {
+        guard let store else { return }
+
+        if let parentID = member.parentSessionID,
+           let parent = try? await store.session(id: parentID), parent.archivedAt == nil {
+            _ = try? await store.enqueueDelivery(
+                Delivery(
+                    targetSessionID: parent.id,
+                    sourceWorkspaceID: workspace.id,
+                    kind: .report,
+                    crew: CrewMessage.stoppedByOwner(name: member.title)
+                )
+            )
+
+            let transcript = transcript(for: parent)
+            await transcript.refreshQueue()
+            await transcript.drain()
+        }
+
+        await closeSession(member)
+    }
+
+    /// The one sentence every crew method says when the database never opened, so three refusals
+    /// cannot describe one absence three ways.
+    private static let crewWithoutStore =
+        "Bloom's database is not open, so it cannot run a subagent right now."
+
+    /// Two members whose names differ only in case. Refused rather than resolved to whichever was
+    /// started first, which is `CrewLookup`'s own rule: acting on the agent the caller did not name
+    /// is the one outcome these three methods must not have.
+    private static func ambiguousCrewMember(_ name: String) -> String {
+        "Two of your subagents are called \"\(name)\", differing only in case, so Bloom will not "
+            + "guess which you meant. Stop one of them, or say it again with the exact name "
+            + "agent_list prints."
+    }
+
+    /// A name that answers to nothing, said with what does answer, because a model told only "no"
+    /// tries the same name again.
+    private static func noCrewMember(_ name: String, among known: [String]) -> String {
+        guard !known.isEmpty else {
+            return "You have no subagents, so there is no \"\(name)\" here. Start one with "
+                + "agent_start."
+        }
+        let list = known.map { "\"\($0)\"" }.joined(separator: ", ")
+        return "You have no subagent called \"\(name)\". Yours are: \(list)."
+    }
+
+    /// Whether any chat here has an agent mid turn.
+    ///
+    /// The rule is `AgentTurns`, which is the same rule `isRunning(_ session:)` above answers
+    /// one session with and the same rule the sidebar's mirror is rebuilt from. It used to be a
+    /// walk of `transcripts` alone, and that is exactly one of the three different answers this
+    /// app had to the one question: a turn in a chat this launch had never built a transcript for
+    /// was not running as far as this property was concerned, however plainly the session row said
+    /// otherwise.
+    var isRunning: Bool {
+        TerminalSessionStore.shared.runningWorkspaceIDs.contains(workspace.id)
+            || AgentTurns.workspace(.running, sessions: sessions, live: liveTurns)
+    }
+
+    /// What this workspace's live transcripts say about their own sessions, for the rule above and
+    /// for `AppModel`'s mirrors. Only the transcripts that exist: asking for one would build a
+    /// model for every session in the strip.
+    var liveTurns: [AgentTurns.Live] {
+        let ids = Set(transcripts.keys).union(sessions.map(\.id))
+        return ids.compactMap(liveTurn(for:))
+    }
+
+    private func liveTurn(for sessionID: SessionID) -> AgentTurns.Live? {
+        if let terminal = TerminalSessionStore.shared.agentTurns[sessionID] { return terminal }
+        guard let transcript = transcripts[sessionID] else { return nil }
+        return AgentTurns.Live(
+            sessionID: sessionID,
+            workspaceID: workspace.id,
+            isRunning: transcript.isRunning || transcript.subagents.isWorking,
+            isAwaitingPermission: transcript.isAwaitingPermission
+        )
+    }
+
+    /// Backgrounded shell commands still running in any of this workspace's chats, oldest first.
+    /// Every chat rather than the active one, because archiving stops all of them.
+    var runningCommands: [Subagent] {
+        transcripts.values
+            .flatMap(\.subagents.runningCommands)
+            .sorted { $0.startedAt < $1.startedAt }
+    }
+
+    /// The ACTIVE chat's subagents, whole.
+    ///
+    /// A pure lookup over existing transcripts, safe from a view body, and deliberately not a
+    /// union over every session: see `AppModel.subagentRows` for why one workspace row must not
+    /// draw four chats' children at once. The roster rather than the rows, because which of them
+    /// still HAS a row depends on the clock and on what is selected, and both of those are the
+    /// app model's to know. See `SubagentRetention`.
+    var activeSubagentRoster: SubagentRoster? {
+        activeTranscript?.subagents
+    }
+
+    /// Every line this subagent has produced, as Bloom stored it off the parent's own stream.
+    ///
+    /// The nested rows the transcript already draws behind a hairline: a line from inside a
+    /// subagent carries that subagent's `tool_use_id` as its `parent_tool_use_id`. It is what the
+    /// output pane reads while the subagent is running, because the CLI names its file only on
+    /// the line that ends it. See `SubagentTranscript.live(streamLines:sessionID:)`.
+    ///
+    /// The payloads and not a parse of them: parsing is the core's, and it is done off the main
+    /// actor by the caller.
+    func subagentStreamLines(forToolUseID toolUseID: String) -> [Data] {
+        guard !toolUseID.isEmpty, let transcript = activeTranscript else { return [] }
+        return transcript.rows.filter { $0.parentToolUseID == toolUseID }.map(\.payload)
+    }
+
+    /// The shell line a backgrounded command was given, found by the tool call that started it.
+    ///
+    /// A `local_bash` task's own lines carry a description and no command, so the only account of
+    /// what actually ran is the parent's Bash call, which the transcript already holds under the
+    /// same `tool_use_id`. Decoding it is `SubagentPane.commandLine`; finding the row is this.
+    func commandLine(forToolUseID toolUseID: String) -> String? {
+        guard !toolUseID.isEmpty, let transcript = activeTranscript else { return nil }
+        guard let row = transcript.rows.last(where: { $0.refID == toolUseID }) else { return nil }
+        return SubagentPane.commandLine(inPayload: row.payload)
+    }
+
+    /// A subagent rebuilt from the Agent call that started it, for the pane opened from the chat
+    /// once the roster has forgotten it. The call's input goes through `TranscriptEventCache`, so
+    /// a pane redrawn once a second parses it once. See `SubagentRunLink`.
+    func recordedSubagent(forToolUseID toolUseID: String) -> Subagent? {
+        guard !toolUseID.isEmpty, let transcript = activeTranscript,
+              let row = transcript.rows.last(where: { $0.kind == .toolUse && $0.refID == toolUseID })
+        else { return nil }
+        var input: JSONValue?
+        if case .toolUse(let use)? = TranscriptEventCache.event(rowID: row.id, payload: row.payload) {
+            input = use.input
+        }
+        return SubagentRunLink.recordedSubagent(
+            toolUseID: toolUseID,
+            input: input,
+            startedAt: row.createdAt,
+            isSettled: row.resultPayload != nil,
+            failed: row.isError || row.refusal != nil,
+            durationMS: row.durationMS
+        )
+    }
+
+    /// Whether any session here has an agent stopped and waiting on a person.
+    var isAwaitingPermission: Bool {
+        AgentTurns.workspace(.awaitingPermission, sessions: sessions, live: liveTurns)
+    }
+
+    /// Both callers mean the same thing: this workspace, or the whole app, is going away. So the
+    /// agents are killed here rather than merely interrupted, and killed first, which is what lets
+    /// every SIGTERM escalation run at the same time instead of one after another.
+    func stopEverything() {
+        for state in sideConversations.values { state.task?.cancel() }
+        for transcript in transcripts.values { transcript.terminateNow() }
+        setupTask?.cancel()
+        setupTask = nil
+        arrivalTask?.cancel()
+        arrivalTask = nil
+        fileTreeTask?.cancel()
+        fileTreeTask = nil
+        // Nilled like the three above: a cancelled refresh returns through its
+        // `guard changesTask == task` without clearing the handle, and on the one path where
+        // the model survives its teardown (a failed archive restoring the row) a handle left
+        // behind made the quiet poll stand down until the workspace was next arrived at.
+        changesTask?.cancel()
+        changesTask = nil
+        pullRequestTask?.cancel()
+        pullRequestTask = nil
+        // A cancelled refresh returns before it clears its own flag, so the spinner would spin
+        // for the rest of the launch.
+        isLoadingChanges = false
+        isLoadingPullRequest = false
+        isRunningSetup = false
+    }
+
+    /// The workspace itself is going away, so the runners go too. `stopEverything` signals the
+    /// agents, and a transcript left holding a live runner would keep its pump for the rest of the
+    /// launch.
+    func teardown() {
+        stopEverything()
+        for transcript in transcripts.values { transcript.teardown() }
+        transcripts.removeAll()
+        sideConversations.removeAll()
+    }
+
+    /// The quit path: the same teardown, but it waits for the agents to actually be gone rather
+    /// than only asking them to leave.
+    func shutdown() async {
+        for state in sideConversations.values { state.task?.cancel() }
+        setupTask?.cancel()
+        setupTask = nil
+        // Nilled like the three above: a cancelled refresh returns through its
+        // `guard changesTask == task` without clearing the handle, and on the one path where
+        // the model survives its teardown (a failed archive restoring the row) a handle left
+        // behind made the quiet poll stand down until the workspace was next arrived at.
+        changesTask?.cancel()
+        changesTask = nil
+        pullRequestTask?.cancel()
+        pullRequestTask = nil
+        for transcript in transcripts.values {
+            await transcript.shutdown()
+        }
+    }
+
+    // MARK: - First run
+
+    /// Owns the setup run so archiving, or quitting, can stop a `composer install` that is only
+    /// halfway through. Cancellation reaches the script itself through `StreamingProcess.lines`.
+    /// `prompt` is optional because a terminal workspace has no opening message: it still runs
+    /// the setup script, it simply has nothing to say to an agent afterwards.
+    ///
+    /// **The opening prompt joins the queue here, before the script starts, and this method is
+    /// awaited so that nothing typed into the composer can get in front of it.** It used to be
+    /// held in a local and sent on the far side of the setup run, which put it on a different
+    /// route from anything typed while the script was going, and the two raced: the owner opened a
+    /// workspace with "list the technologies used", typed "test" a moment later, and got "test"
+    /// answered first. See `Delivery` and `TranscriptModel.submit`.
+    func startSetupThenSend(prompt: String?, repo: Repo) async {
+        let cliSession = activeSession.flatMap { session in
+            CenterTabStore.shared.terminal(for: session.id, in: workspace.id).map { _ in session }
+        }
+        if let cliSession { pendingCLIPrompts[cliSession.id] = prompt }
+        let cliDelivery: Delivery?
+        if let cliSession, let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            cliDelivery = try? await store?.enqueueDelivery(Delivery(targetSessionID: cliSession.id, body: prompt))
+            if let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
+               let command = prepareCLICommand(for: cliSession, prompt: prompt) {
+                try? await store?.setSetting(TerminalCommandMemory.key(paneID: terminal.id), command)
+            }
+        } else {
+            cliDelivery = nil
+        }
+        if cliSession == nil { await enqueueOpening(prompt) }
+
+        setupTask?.cancel()
+        setupGeneration += 1
+        let generation = setupGeneration
+        let workspaceID = workspace.id
+        setupTask = Task { [weak self, weak app = self.app] in
+            await self?.runSetupThenSend(repo: repo, cliSession: cliSession, cliPrompt: prompt)
+            if let self {
+                self.releaseStartHold(afterCLILaunch: cliSession != nil)
+            } else {
+                app?.endStart(workspaceID)
+            }
+            if let cliDelivery, let self, !Task.isCancelled,
+               !self.pendingCLILaunches.contains(cliDelivery.targetSessionID),
+               CenterTabStore.shared.terminal(for: cliDelivery.targetSessionID, in: self.workspace.id) != nil {
+                _ = try? await self.store?.markDelivered(id: cliDelivery.id)
+            }
+            // Only clear the handle if it is still this run's. A cancelled setup finishes after
+            // the one that replaced it has already been stored, and clearing unconditionally
+            // dropped the live handle, which left the new run with nothing able to cancel it.
+            guard let self, self.setupGeneration == generation else { return }
+            self.setupTask = nil
+        }
+    }
+
+    /// Gives up the start hold once setup and the first delivery are behind it.
+    ///
+    /// A chat turn has already set the running flag by the time `drain` returns, so the hold has
+    /// either been settled by it or there is no turn coming. A CLI agent in a terminal is only
+    /// seen running once its own status file says so, which is a poll away, so that one keeps
+    /// the hold a few seconds longer rather than dropping the row to Idle in between.
+    private func releaseStartHold(afterCLILaunch: Bool) {
+        let id = workspace.id
+        guard afterCLILaunch else {
+            app.endStart(id)
+            return
+        }
+        Task { [weak app = self.app] in
+            try? await Task.sleep(for: .seconds(10))
+            app?.endStart(id)
+        }
+    }
+
+    /// Which setup run the stored `setupTask` belongs to.
+    private var setupGeneration = 0
+
+    /// Puts the workspace's opening prompt at the front of its chat's queue.
+    ///
+    /// Nil for a terminal workspace, which runs its setup script and has nothing to say to an
+    /// agent afterwards. The session is already there: `AppModel.adopt` creates and loads it
+    /// before this is reached, which is the whole reason the enqueue can name a chat rather than
+    /// wait for one.
+    private func enqueueOpening(_ prompt: String?) async {
+        guard let prompt, let store, let session = activeSession else { return }
+        let body = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        _ = try? await store.enqueueDelivery(Delivery(targetSessionID: session.id, body: body))
+        // So the pending bubble is on screen from the first frame of the workspace rather than
+        // after the first read of the queue, which is what made the opening prompt invisible for
+        // the whole of a setup run.
+        await transcript(for: session).refreshQueue()
+    }
+
+    /// Runs the setup script, streaming into the transcript's setup row, then lets the chat's
+    /// queue move.
+    func runSetupThenSend(repo: Repo, cliSession: Session? = nil, cliPrompt: String? = nil) async {
+        guard let manager = app.manager else { return }
+
+        // Off the main actor: this reads and parses up to six files from disk, and it runs at the
+        // moment a workspace is created, which is exactly when the window must stay responsive.
+        let repoPath = repo.path
+        let settings = await Task.detached(priority: .userInitiated) {
+            SettingsLoader.load(repo: repoPath)
+        }.value
+
+        if workspace.setupState == .pending, settings.setupScript != nil || Git.hasSubmodules(in: workspace.path) {
+            let succeeded = await stream(setupIn: repo, through: manager)
+
+            // Archiving or quitting cancels this task. Starting an agent in a worktree that is on
+            // its way out is the one thing that must not happen here.
+            guard !Task.isCancelled else { return }
+
+            // The worktree is built, so the run scripts that asked to start with it can. Not
+            // awaited: a dev server starting has nothing to do with the opening prompt going out.
+            if succeeded {
+                Task { [weak self] in
+                    guard let self else { return }
+                    await RunScriptLauncher.shared.considerAutostart(in: self)
+                }
+            }
+
+            if !succeeded, !setupWasStopped {
+                // The one sentence every route says about a failed setup, rather than a second
+                // one written here that would drift from it. It names no tab, which is what makes
+                // it survive the tab it used to name. See `SetupFailure`.
+                app.alert = BloomAlert(
+                    title: "Setup failed for \(workspace.name)",
+                    message: SetupFailure.instruction
+                )
+                NotificationService.shared.setupFailed(workspace: workspace)
+                // And then on, rather than back: the agent starts and the opening prompt goes.
+                // This used to return, which left the workspace silent for good, because the
+                // queue moves on an event and a failed setup produces no further events. The
+                // argument for stopping was that dependencies might be missing; the answer is
+                // that the agent is the one thing in the worktree that can read the log and
+                // install them. See `DeliveryHold`, where the matching hold was taken out.
+            }
+        }
+
+        await reloadSessions()
+        guard !Task.isCancelled else { return }
+        if let cliSession {
+            await launchCLI(cliSession, prompt: cliPrompt ?? "", repo: repo)
+            return
+        }
+        guard let session = activeSession,
+              CenterTabStore.shared.terminal(for: session.id, in: workspace.id) == nil else { return }
+        // The worktree is built, so whatever was asked for while it was being built may go, oldest
+        // first. Nothing is passed in: the opening prompt is already in the queue, and so is
+        // anything typed into the composer since. See `enqueueOpening`.
+        await transcript(for: session).drain()
+    }
+
+    private func launchCLI(_ cliSession: Session, prompt: String, repo: Repo) async {
+        let port = await ensurePort()
+        guard !Task.isCancelled,
+              let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
+              sessions.contains(where: { $0.id == cliSession.id }),
+              let command = prepareCLICommand(for: cliSession, prompt: prompt) else { return }
+        try? FileManager.default.removeItem(at: AgentKind.interactiveStatusURL(sessionID: cliSession.id))
+        let terminals = TerminalSessionStore.shared
+        terminals.useStore(store)
+        terminals.run(command, inPaneID: terminal.id)
+        _ = terminals.terminal(
+            for: TerminalTab(id: TerminalTabID(terminal.id), workspaceID: workspace.id, title: terminal.title),
+            workspace: workspace, repo: repo, port: port, directory: terminal.directory
+        )
+        pendingCLILaunches.remove(cliSession.id)
+        pendingCLIPrompts[cliSession.id] = nil
+    }
+
+    private func prepareCLICommand(for session: Session, prompt: String) -> String? {
+        do {
+            return try session.agentKind.prepareInteractiveCommand(
+                directory: workspace.path, prompt: prompt, sessionID: session.id,
+                model: session.model, effort: session.effort, permissionMode: session.permissionMode
+            )
+        } catch {
+            app.alert = BloomAlert(title: "Could not launch the agent", message: error.readableMessage)
+            return nil
+        }
+    }
+
+    /// The workspace's own port block, allocated once however many callers ask at once.
+    ///
+    /// Setup, the terminal pane and the browser each used to run their own if-zero-allocate
+    /// dance, and two of them are reachable concurrently: opening a browser while a terminal
+    /// pane prepared had both see 0, allocate different blocks, and the last write won, so the
+    /// browser opened on one block while the shell exported the other's `BLOOM_PORT`. The task
+    /// held here is what stops the two of them probing sixty sockets each; the store is what
+    /// stops them disagreeing, because `WorkspaceManager.ensurePort` writes through `update` and
+    /// keeps whichever number reached the row first.
+    ///
+    /// The decision itself is in the core now rather than here. It has to read and write the row
+    /// to be worth anything after a relaunch, and the set of blocks already spoken for is every
+    /// active row rather than the workspaces somebody has opened this launch.
+    @discardableResult
+    func ensurePort() async -> Int {
+        if port != 0 { return port }
+        if let inFlight = portTask { return await inFlight.value }
+        guard let manager = app.manager else { return 0 }
+        let workspace = workspace
+        let task = Task { await manager.ensurePort(for: workspace) }
+        portTask = task
+        let allocated = await task.value
+        portTask = nil
+        // The row is the record; this keeps the model in step with it without waiting for the
+        // next refresh, so the terminal about to be forked reads the number rather than 0.
+        if self.workspace.port == 0 { self.workspace.port = allocated }
+        return self.workspace.port
+    }
+
+    /// Where a browser pane opened on this workspace should go.
+    ///
+    /// The port is allocated first because it is both the last-resort answer and a variable the
+    /// stated one may be written in terms of, and because a workspace nobody has opened a terminal
+    /// in yet holds no block at all. The decision itself is `WorkspaceBrowserURL`, which is where
+    /// the two ways a project can state an address, and the order between them, are written down.
+    ///
+    /// The settings are read again rather than taken from `settings`: this runs at the moment a
+    /// pane is opened, which is often the first thing that happens to a workspace, and an address
+    /// silently missing because the file had not been read yet is the sort of intermittent that
+    /// gets blamed on the script.
+    func browserAddress() async -> String {
+        let port = await ensurePort()
+        guard let repo, let store = app.store else {
+            return WorkspaceBrowserURL.resolve(
+                written: nil, stated: nil, environment: [:], port: port
+            )
+        }
+
+        let environment = WorkspaceManager(store: store).environment(
+            for: workspace, repo: repo, port: port
+        )
+        let worktree = workspace.path
+        let repoPath = repo.path
+        return await Task.detached(priority: .userInitiated) {
+            WorkspaceBrowserURL.read(
+                worktree: worktree,
+                settings: SettingsLoader.load(repo: repoPath),
+                environment: environment,
+                port: port
+            )
+        }.value
+    }
+
+    /// One setup run: the state it resets, the output it streams, and what it leaves behind.
+    ///
+    /// Shared by the run a workspace opens with and by the re-run below, which differ only in what
+    /// happens afterwards. It used to be written out twice, once here and once in the panel's
+    /// Setup tab, and the two had already drifted: only one of them cleared the exit status, so a
+    /// re-run after a failure drew a red cross over a log that was still being written.
+    @discardableResult
+    private func stream(
+        setupIn repo: Repo, through manager: WorkspaceManager, operationLease: WorkspaceOperationLease? = nil
+    ) async -> Bool {
+        guard let lease = operationLease ?? WorkspaceOperationLease.acquire(in: workspace.path),
+              lease.isValid(in: workspace.path) else {
+            operationLease?.release()
+            if operationLease != nil { isRunningSetup = false }
+            app.notice = BloomNotice(message: "Setup is already running in this workspace.")
+            return false
+        }
+        isRunningSetup = true
+        defer { isRunningSetup = false; lease.release() }
+        setupWasStopped = false
+        setupStartedAt = .now
+        setupDurationMS = nil
+        setupExitStatus = nil
+        setupOutput = ""
+        setupLogWrites += 1
+        // A machine with no free block left is not a reason to refuse to run setup. The script
+        // simply gets no port to bind, which it can decide for itself what to do about.
+        await ensurePort()
+
+        // Setup scripts are chatty: `composer install` and `bun install` together are thousands of
+        // lines. Hopping to the main actor once per line, each time appending to a string that
+        // keeps growing, is quadratic work on the main queue and it beachballs the whole window.
+        // Lines are collected off-actor and flushed a few times a second.
+        let buffer = LineBuffer()
+        let flusher = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard let self else { return }
+                self.appendSetupOutput(buffer.drain())
+            }
+        }
+
+        let workspace = workspace
+        let port = port
+        // A weak exit callback alone still lets the outer task retain the model.
+        let run = Task { [weak self] in
+            await manager.runSetup(
+                workspace: workspace, repo: repo, port: port, operationLease: lease,
+                onExit: { [weak self] status in
+                    Task { @MainActor in self?.setupExitStatus = status }
+                }
+            ) { line in
+                buffer.append(line)
+            }
+        }
+        setupRunTask = run
+        let succeeded = await withTaskCancellationHandler {
+            await run.value
+        } onCancel: {
+            run.cancel()
+        }
+        if setupRunTask == run { setupRunTask = nil }
+
+        flusher.cancel()
+        appendSetupOutput(buffer.drain())
+        isRunningSetup = false
+        setupDurationMS = setupStartedAt.map { Int(Date.now.timeIntervalSince($0) * 1000) }
+        await refreshSetupState()
+        return succeeded
+    }
+
+    /// The setup item this workspace's menus should draw, or nil when there should be none.
+    ///
+    /// The three facts are gathered here and the decision is taken in `SetupRunOffer`, in the
+    /// core, because three menus draw this item now and a menu is a place nothing can test.
+    ///
+    /// A workspace whose project has been removed has no repository to read a settings file from,
+    /// so `settings` was never loaded and there is nothing to offer. That is folded into the first
+    /// fact rather than given a case of its own: to this menu the two are one answer, which is
+    /// that there is no script here to run.
+    var setupRunOffer: SetupRunOffer? {
+        SetupRunOffer.offer(
+            hasSetupScript: repo != nil && (settings.setupScript != nil || Git.hasSubmodules(in: workspace.path)),
+            hasRunSetup: hasRunSetup,
+            isRunning: isRunningSetup
+        )
+    }
+
+    /// Whether there is a setup script to run in this worktree at all, which is what the two
+    /// controls that offer a re-run are enabled by.
+    ///
+    /// The same question `setupRunOffer` answers, asked by the one caller that draws no menu item:
+    /// the failed setup row's link in the transcript, which is either there or not. Written in
+    /// terms of the offer rather than beside it, so a rule added to one cannot go missing from the
+    /// other.
+    var canRunSetup: Bool {
+        setupRunOffer?.isEnabled == true
+    }
+
+    /// Whether setup has ever run here, so a control can say "again" only when there was a first
+    /// time. It read "Run setup again" on a workspace whose own header said setup had never run.
+    ///
+    /// `.pending` with something in the log is `Store.recoverInterruptedSetups` filing a run this
+    /// app was killed during, which did happen and is the case "again" is written for.
+    var hasRunSetup: Bool {
+        workspace.setupState != .pending || !setupOutput.isEmpty
+    }
+
+    /// Runs the setup script in this worktree again. Called only once the reader has said yes:
+    /// see `SetupRunAlert`.
+    ///
+    /// A recovery rather than a first run, which is why it sends no prompt and reloads no
+    /// sessions: the script failed, or it was edited, and it is being run once more. A workspace
+    /// that has been open for an hour must not be handed its opening message a second time.
+    ///
+    /// Through the same `setupTask` the first run uses, so archiving or quitting stops a
+    /// `composer install` started from here exactly as it stops one started at creation.
+    func runSetupAgain() {
+        guard !app.isArchiving(workspace.id), canRunSetup, let repo, let manager = app.manager,
+              let lease = WorkspaceOperationLease.acquire(in: workspace.path) else { return }
+        // The scheduled task has not run yet. Reserve now so a second run cannot start in the
+        // interval between this button action and the task's first instruction.
+        isRunningSetup = true
+        setupTask?.cancel()
+        setupGeneration += 1
+        let generation = setupGeneration
+        setupTask = Task { [weak self] in
+            guard let self else { lease.release(); return }
+            await self.stream(setupIn: repo, through: manager, operationLease: lease)
+            guard self.setupGeneration == generation else { return }
+            self.setupTask = nil
+        }
+    }
+
+    /// Stops the setup script that is running in this worktree.
+    ///
+    /// Only the script: whatever was waiting for setup to finish goes on as it would after a
+    /// failure, so a prompt queued behind a seeder that hangs reaches the agent rather than
+    /// sitting there until the workspace is archived. The run is filed as failed, which is what
+    /// puts "Run setup again" on its row. See `WorkspaceManager.setupStoppedNote`.
+    func stopSetup() {
+        guard isRunningSetup, let run = setupRunTask else { return }
+        setupWasStopped = true
+        run.cancel()
+    }
+
+    /// Re-reads what setup ended up as.
+    ///
+    /// `WorkspaceManager.runSetup` writes the outcome onto the workspace row, and the copy of that
+    /// row this model is holding is as old as the run that just finished. Without this the Setup
+    /// tab read its state out of a value that still said `pending`, so its header announced "Setup
+    /// has not run yet" directly above the output the script had printed a second earlier.
+    ///
+    /// Kept rather than left to the store's change feed, which does refresh this model's copy of
+    /// the row and would get here on its own a moment later. A moment is the whole problem. The
+    /// line above this call clears `isRunningSetup`, and the header reads both values: for as long
+    /// as one has moved and the other has not, it is the sentence in the paragraph above, back
+    /// again. One indexed read at the end of a run that took minutes is the cheaper side of that
+    /// trade by a long way.
+    ///
+    /// The whole row, not the one column. `setupState` is `internal(set)` in BloomCore now, so
+    /// there is no assigning it from here at all, and that is the right answer rather than an
+    /// obstacle: `WorkspaceManager.runSetup` writes the state and the log together, and a refresh
+    /// that took the state without the log would put this model back in the position the bug above
+    /// describes, showing one of the two halves of a run that has finished.
+    func refreshSetupState() async {
+        guard let store, let fresh = try? await store.workspace(id: workspace.id) else { return }
+        workspace = fresh
+    }
+
+    /// Appends a batch, keeping only the tail. Called from the flusher, never per line.
+    func appendSetupOutput(_ lines: [String]) {
+        guard !lines.isEmpty else { return }
+        setupOutput += lines.joined(separator: "\n") + "\n"
+        setupLogWrites += 1
+        // The same cap the row is written under, so the transcript and the stored log agree
+        // about how much of a long setup survives. See `Workspace.setupLogLimit`.
+        if setupOutput.count > Workspace.setupLogLimit {
+            setupOutput = String(setupOutput.suffix(Workspace.setupLogLimit))
+        }
+    }
+
+    // MARK: - Changes
+
+    /// Why a refresh of the changed file list was asked for, which is what decides how loud it is
+    /// allowed to be.
+    enum ChangesRefresh {
+        /// The reader did something that changed the worktree, or the pane has just opened.
+        /// Reports progress, and opens the first file when nothing is open.
+        case requested
+        /// The poll that keeps the list honest while an agent writes. It has to be invisible: a
+        /// spinner every six seconds says less than a list one tick out of date, and moving the
+        /// selection would reopen a diff the reader had just closed.
+        case quiet
+    }
+
+    func refreshChanges(_ reason: ChangesRefresh = .requested) async {
+        // A refresh already on its way is about to answer about this same worktree, so the poll
+        // stands down rather than cancelling work the reader asked for and starting again.
+        if reason == .quiet, changesTask != nil { return }
+
+        changesTask?.cancel()
+        let path = workspace.path
+        let base = workspace.baseBranch
+        // Read here rather than inside the task: the failure below names the workspace, because
+        // its worktree path is a directory inside Bloom's workspaces root that the reader neither
+        // chose nor can act on.
+        let name = workspace.name
+        let scope = diffScope
+        // Refresh history on quiet polls too: an agent can commit while its turn is still
+        // running. Only explicit refreshes need the manager's additional branch-name read.
+        let wantsCommits = reason == .requested
+        let historyLimit = historyLimit
+        let manager = app.manager
+        let observedWorkspace = workspace
+
+        let task = Task.detached(priority: .userInitiated) { () -> Result<ChangesAnswer, GitFailure> in
+            // Also on arrival and manual refresh, so returning to a renamed branch does not
+            // wait for the background poll. The Store feed updates the sidebar and this model.
+            // Quiet refreshes follow refreshDiffStat, which has already read HEAD this tick.
+            if wantsCommits { await manager?.refreshBranch(workspace: observedWorkspace) }
+            do {
+                // Resolve history first so an amended selection and the replacement file list
+                // arrive together. A history failure is separate from a failed diff read.
+                async let localRead = try? Git.localWork(worktree: path)
+                var commits: BranchCommitList?
+                var historyError: String?
+                do {
+                    commits = try await Git.branchCommits(worktree: path, base: base, limit: historyLimit)
+                } catch {
+                    historyError = "Could not read commit history. \(error.localizedDescription)"
+                }
+                var effectiveScope = scope
+                if let commits, case .commit(let commit) = scope,
+                   !commits.commits.contains(where: { $0.sha == commit.sha }) {
+                    let stillOnBranch = commits.isTruncated
+                        ? try await Git.containsCommit(commit, worktree: path) : false
+                    if !stillOnBranch { effectiveScope = .all }
+                }
+                let files = try await Git.changedFiles(worktree: path, base: base, scope: effectiveScope)
+                let local = await localRead
+                let revisions = ReviewedFileFingerprint.revisions(
+                    for: files, worktree: path, base: base, scope: effectiveScope
+                )
+                return .success(ChangesAnswer(
+                    files: files, local: local, commits: commits, revisions: revisions,
+                    scope: effectiveScope, historyError: historyError
+                ))
+            } catch {
+                // Diagnosed rather than reported, in the register `WorkspaceStartFailure` set. A
+                // worktree deleted underneath Bloom used to surface here as "`git rev-parse
+                // --verify main^{commit}` exited 128: fatal: not a git repository", which names
+                // neither the workspace nor anything the reader can do. See `WorkspaceTrouble`.
+                let trouble = await WorkspaceTrouble.readingChanges(
+                    error, workspace: name, path: path, baseBranch: base
+                )
+                return .failure(GitFailure(message: trouble.sentence))
+            }
+        }
+        changesTask = task
+        // Only when there is nothing to show. A workspace this launch has already opened still
+        // holds the list git gave it last time, and that list is right until git says otherwise:
+        // replacing it with a spinner on every arrival is a flash of nothing between one correct
+        // answer and the same correct answer. The spinner is for a workspace being opened for the
+        // first time, where there genuinely is nothing yet.
+        if reason == .requested, changedFiles.isEmpty { isLoadingChanges = true }
+        if reason == .requested { SwitchTrace.mark("changes.git.start", workspace: workspace.id) }
+
+        let outcome = await task.value
+        if reason == .requested { SwitchTrace.mark("changes.git.done", workspace: workspace.id) }
+
+        // A newer refresh started while this one was in git, or the workspace is going away. Either
+        // way this answer is the stale one, and writing it would undo the fresh one.
+        guard changesTask == task, !task.isCancelled else { return }
+        changesTask = nil
+        // Cleared whatever this refresh asked for, because a quiet one can be the last to land
+        // after a requested one raised the flag, and then only it can put the flag down again.
+        isLoadingChanges = false
+
+        switch outcome {
+        case .failure(let failure):
+            hasReadChanges = true
+            // Git failing says nothing about the worktree. Replacing the list with an empty one
+            // would show the user a clean workspace, which is the one answer that is certainly
+            // wrong, so the last known list stays and the failure is reported instead.
+            changesError = failure.message
+            if !hasReadBranchCommits { historyError = failure.message }
+
+        case .success(let answer):
+            if answer.scope != storedDiffScope {
+                storedDiffScope = answer.scope
+                selectedChangeLayer = nil
+                historyNotice = "The selected commit is no longer on this branch. Showing all branch changes."
+            }
+            historyError = answer.historyError
+            hasReadChanges = true
+            changesGeneration &+= 1
+            // Only when it actually moved. `AppModel`'s poll lands here every six seconds, and a
+            // write of an identical list is still a write as far as Observation is concerned,
+            // which would rerun the inspector's body and rebuild the tree for nothing.
+            if changesError != nil { changesError = nil }
+            if changedFiles != answer.files { changedFiles = answer.files }
+            if viewedRevisions != answer.revisions { viewedRevisions = answer.revisions }
+            // Only when git actually answered. A failed count leaves the last known one standing
+            // rather than replacing it with "nothing local", which is a claim.
+            if let local = answer.local, localWork != local { localWork = local }
+            if let commits = answer.commits {
+                if branchCommits != commits { branchCommits = commits }
+                hasReadBranchCommits = true
+            }
+            adoptSelection(among: answer.files, reason: reason)
+        }
+    }
+
+    /// What one refresh of the worktree came back with: the diff against the base, and what is
+    /// sitting here that the remote has not got. One value because they come from one task.
+    struct ChangesAnswer: Sendable {
+        var files: [ChangedFile]
+        var local: LocalWork?
+        /// Nil when Git could not answer, with the reason in historyError.
+        var commits: BranchCommitList?
+        var revisions: [String: String] = [:]
+        var scope: DiffScope = .all
+        var historyError: String?
+    }
+
+    /// Narrows or widens what the Changes tab is showing, and sends the pane back to git for it.
+    ///
+    /// The list has to be re-read rather than filtered: a scope is a revision the worktree is
+    /// compared against, so which files differ, and by how many lines, is a different question for
+    /// each one and only git can answer it.
+    func setDiffScope(_ scope: DiffScope) {
+        if case .commit(let commit) = scope {
+            lastHistoryCommit = commit
+        } else {
+            lastChangesScope = scope
+        }
+        guard scope != storedDiffScope else { return }
+        changesTask?.cancel()
+        storedDiffScope = scope
+        selectedChangeLayer = nil
+        historyNotice = nil
+        changedFiles = []
+        hasReadChanges = false
+        changesError = nil
+        changesGeneration &+= 1
+        Task { await refreshChanges(.requested) }
+    }
+
+    /// Review comments sitting on files the current scope leaves out.
+    ///
+    /// Nothing here is at risk: comments live in the store keyed by workspace and path, nothing
+    /// prunes them against the file list, and every one of them still goes with the next message.
+    /// What they lose while a scope is narrowed is the diff they are drawn on, and a comment the
+    /// reader cannot find reads as a comment that has been thrown away. So the band counts them
+    /// and says so.
+    var scopeNote: String? {
+        diffScope.strandedNote(reviewComments, among: changedFiles)
+    }
+
+    /// A refresh can drop the file the reader had open, and the first one arrives with nothing
+    /// open at all.
+    ///
+    /// The poll only ever takes a selection away, never hands one out. A reader who closed the
+    /// diff by clicking the open row would otherwise have it reopened under them a few seconds
+    /// later, and an agent adding a file would move them off the one they were reading.
+    private func adoptSelection(among files: [ChangedFile], reason: ChangesRefresh) {
+        if let selectedFilePath, !files.contains(where: { $0.path == selectedFilePath }) {
+            self.selectedFilePath = reason == .requested ? files.first?.path : nil
+        } else if selectedFilePath == nil, reason == .requested {
+            selectedFilePath = files.first?.path
+        }
+    }
+
+    // MARK: - Review comments
+
+    /// The pending review: every comment written on this workspace's diffs and not yet sent.
+    ///
+    /// On the workspace rather than on a session, because a comment is about the worktree and the
+    /// worktree is the workspace's; whichever conversation sends the review, the notes are about
+    /// the same files. And in the store rather than only here, because half a review is exactly
+    /// the kind of typed work that must survive switching workspace, closing the file, or
+    /// quitting: the chips come back when the workspace does.
+    private(set) var reviewComments: [ReviewComment] = []
+    private(set) var hasReadReviewComments = false
+
+    /// The comment being written on each file's diff, keyed by file path. Here rather than in
+    /// `DiffView`'s own state because `ReviewPaneView` keys that view by path, so walking to
+    /// another file, switching tab or the file leaving the changed list destroys it. The first
+    /// answer to that was committing whatever had been typed on disappear, and it minted
+    /// fragments: a reviewer four words into a sentence glanced at another file and came back to
+    /// find those four words already committed as a review comment. A draft only joins the
+    /// review through Return or the Comment button; until then it waits here, and the editor
+    /// reopens holding it when its file is opened again.
+    ///
+    /// Only where it will attach, not what is being typed into it. That is `reviewText`, because
+    /// `DiffView.body` reads this for every pass it makes over the diff and a keystroke must not
+    /// be a reason to make one.
+    var reviewDrafts: [String: ReviewDraft] = [:]
+
+    /// A browser review survives switching tabs, just like a half-written diff comment.
+    var browserReviews: [String: BrowserRegionCapture] = [:]
+
+    /// Which comments are open for editing in place. Here for the same reason `reviewDrafts` is,
+    /// and the reason is not hypothetical for an edit either: the band being edited sits in the
+    /// same lazy stack, so scrolling it out of sight destroys it, and `ReviewPaneView` keys the
+    /// whole diff by path, so glancing at another file destroys it again. An edit held as view
+    /// state would lose the rewritten sentence to either, without a keystroke from the person who
+    /// typed it.
+    ///
+    /// By id rather than by path because two comments on one file can be open at once, and closing
+    /// one must not take the other's text with it.
+    ///
+    /// Which ones are open, not what is in them: the text is `reviewText`, for the reason given on
+    /// `reviewDrafts` above. `DiffView.body` asks this question of every band it lays out.
+    var reviewEdits: Set<ReviewCommentID> = []
+
+    /// What is being typed into the draft and into every open edit. See `ReviewTextHost`.
+    ///
+    /// A `let`, so reading it registers no observation and only the editor row that reads a key
+    /// out of it is invalidated when that key changes.
+    let reviewText = ReviewTextHost()
+
+    func reloadReviewComments() async {
+        guard let store else { return }
+        let fresh = (try? await store.reviewComments(workspaceID: workspace.id)) ?? []
+        hasReadReviewComments = true
+        // Conditional for the reason every reload here is: an identical write still invalidates
+        // every view reading the list.
+        if reviewComments != fresh { reviewComments = fresh }
+    }
+
+    /// Writes one new comment. `upsert` is right here and only here: the value is built in this
+    /// call, so every column it writes is current, which is the one situation the store's
+    /// upsert-vs-update rule allows it.
+    func addReviewComment(
+        filePath: String,
+        selection: ReviewSelection,
+        anchor: ReviewCommentAnchor,
+        body: String
+    ) async {
+        guard let store else { return }
+        let comment = ReviewComment(
+            workspaceID: workspace.id,
+            filePath: filePath,
+            side: selection.side,
+            anchor: anchor,
+            body: body
+        )
+        guard let stored = try? await store.upsert(comment) else { return }
+        reviewComments = (reviewComments + [stored]).sortedForReview()
+    }
+
+    /// Rewrites one comment's text. `update` and not `upsert`, and the difference is not
+    /// tidiness: the value this call would have to hand `upsert` is a copy the view has been
+    /// holding while somebody typed, and its anchor is the one column here that another writer
+    /// moves. The comment's line is re-checked against the worktree every few seconds, so a
+    /// whole-value write would carry a stale anchor back over a fresh one and pin the note to a
+    /// line it has already left. The store's rule says the same in one sentence: an edit changes
+    /// the column it names and no others.
+    ///
+    /// The list moves only if the row did. It used to move either way, so a refused write changed
+    /// the text on screen and the next `reload` put the old text back with nothing said in
+    /// between. `addReviewComment` above always got this right; these three did not.
+    func editReviewComment(id: ReviewCommentID, body: String) async {
+        guard let store else { return }
+        do {
+            try await store.updateReviewCommentBody(id: id, body: body)
+        } catch {
+            report(refused: error)
+            return
+        }
+        guard let index = reviewComments.firstIndex(where: { $0.id == id }) else { return }
+        reviewComments[index].body = body
+    }
+
+    func removeReviewComment(id: ReviewCommentID) async {
+        guard let store else { return }
+        do {
+            try await store.deleteReviewComment(id: id)
+        } catch {
+            report(refused: error)
+            return
+        }
+        reviewComments.removeAll { $0.id == id }
+        // A comment that no longer exists cannot be being edited. Left behind, the buffer would
+        // be a dictionary that grows for the life of the workspace and, worse, would put the old
+        // text back into an editor if the same id were ever seen again.
+        reviewEdits.remove(id)
+        reviewText.edits[id] = nil
+    }
+
+    /// One alert however many rows were refused, because a database that will not take a delete
+    /// will not take the next one either and eight identical modals say nothing the first did not.
+    private func report(refused error: any Error) {
+        app.alert = BloomAlert(
+            title: "That comment was not saved",
+            message: WorkspaceTrouble.reviewCommentUnwritable(
+                complaint: WorkspaceTrouble.complaint(about: error)
+            ).sentence
+        )
+    }
+
+    /// Takes exactly the sent comments out, by id rather than by wiping the workspace, so a
+    /// comment written in the moment between composing and this call is not silently thrown away
+    /// with them.
+    func removeReviewComments(ids: [ReviewCommentID]) async {
+        guard let store, !ids.isEmpty else { return }
+        var removed: [ReviewCommentID] = []
+        var refusal: (any Error)?
+        for id in ids {
+            do {
+                try await store.deleteReviewComment(id: id)
+                removed.append(id)
+            } catch {
+                refusal = refusal ?? error
+            }
+        }
+        let sent = Set(removed)
+        reviewComments.removeAll { sent.contains($0.id) }
+        for id in removed {
+            reviewEdits.remove(id)
+            reviewText.edits[id] = nil
+        }
+        if let refusal { report(refused: refusal) }
+    }
+
+    // MARK: - Viewed files
+
+    /// Which files this workspace has been ticked as read, by path, holding the fingerprint of the
+    /// diff each tick was given for.
+    ///
+    /// The fingerprints rather than the rows, because every question the window asks is "is this
+    /// file, as it stands now, one I have read", and `ReviewedFiles` answers it from exactly this.
+    /// In the store rather than only here for the reason the review comments are: a pass through a
+    /// forty file diff is real work, and it has to survive switching workspace and quitting.
+    private(set) var viewedFiles: [String: String] = [:]
+    private(set) var viewedRevisions: [String: String] = [:]
+    private(set) var hasReadViewedFiles = false
+
+    /// What the changed file list says over itself, or nil before anything has been ticked. The
+    /// sentence is `ReviewedFiles.summary`, in the core, so the list and any other reader of it
+    /// cannot come to two counts.
+    var viewedSummary: String? {
+        ReviewedFiles.summary(among: changedFiles, marks: viewedFiles, revisions: viewedRevisions)
+    }
+
+    func isViewed(_ file: ChangedFile) -> Bool {
+        ReviewedFiles.isViewed(file, marks: viewedFiles, revisions: viewedRevisions)
+    }
+
+    func reloadViewedFiles() async {
+        guard let store else { return }
+        let fresh = (try? await store.reviewedFiles(workspaceID: workspace.id)) ?? []
+        hasReadViewedFiles = true
+        let marks = Dictionary(
+            fresh.map { ($0.path, $0.fingerprint) }, uniquingKeysWith: { _, latest in latest }
+        )
+        // Conditional for the reason every reload here is: an identical write still invalidates
+        // every view reading the list, and this one is read by every row of the changed files.
+        if viewedFiles != marks { viewedFiles = marks }
+    }
+
+    /// Ticks a file, or takes the tick off.
+    ///
+    /// The mark is written against the diff the file has at this moment, which is what makes it
+    /// go stale honestly when the agent edits the file afterwards. See `ReviewedFileFingerprint`.
+    func setViewed(_ isViewed: Bool, file: ChangedFile) async {
+        guard let store else { return }
+        let fingerprint = ReviewedFileFingerprint.of(file, revision: viewedRevisions[file.id] ?? "")
+        do {
+            if isViewed {
+                try await store.markReviewed(ReviewedFile(
+                    workspaceID: workspace.id, path: file.id, fingerprint: fingerprint
+                ))
+            } else {
+                try await store.clearReviewed(workspaceID: workspace.id, path: file.id)
+            }
+        } catch {
+            app.alert = BloomAlert(
+                title: "That file was not marked",
+                message: WorkspaceTrouble.complaint(about: error)
+            )
+            return
+        }
+        // The list moves only if the row did, which is the rule `editReviewComment` above had to
+        // learn: a refused write must not change what is on screen and then be put back by the
+        // next reload with nothing said in between.
+        if isViewed {
+            viewedFiles[file.id] = fingerprint
+        } else {
+            viewedFiles[file.id] = nil
+        }
+    }
+
+    /// Starts the pass again: every tick on this workspace goes.
+    func clearViewedFiles() async {
+        guard let store, !viewedFiles.isEmpty else { return }
+        do {
+            try await store.clearReviewed(workspaceID: workspace.id)
+        } catch {
+            app.alert = BloomAlert(
+                title: "Those marks were not cleared",
+                message: WorkspaceTrouble.complaint(about: error)
+            )
+            return
+        }
+        viewedFiles = [:]
+    }
+
+    // MARK: - Where a review is sent
+
+    /// The chat the review pane's composer sends to, when the reader has picked one.
+    ///
+    /// Nil means "wherever this workspace is pointed", which is the active session and is what
+    /// every review sent before this existed went to. Held for the launch rather than written
+    /// down, and `ReviewDestination` carries the argument for why: it is a fact about the pass
+    /// being made now, and a destination remembered across a relaunch sends a later review
+    /// somewhere the reader has forgotten choosing.
+    var reviewDestinationID: SessionID?
+
+    /// The chat a review actually goes to: the chosen one while it still exists, then the active
+    /// one, then the first. Nil only when the workspace has no chat at all.
+    var reviewDestination: Session? {
+        let id = ReviewDestination.resolved(
+            chosen: reviewDestinationID,
+            active: activeSession?.id,
+            sessions: sessions.map(\.id)
+        )
+        return sessions.first { $0.id == id }
+    }
+
+    // MARK: - The worktree listing
+
+    /// Every directory's children, for the All files tab, built once per workspace per launch.
+    ///
+    /// It lives here rather than in the view for two reasons, and the second one is a bug rather
+    /// than a cost. The cost: `git ls-files` on a large worktree is a subprocess and tens of
+    /// thousands of lines, and the tab re-ran it on every single arrival. The bug: the view's own
+    /// `@State` outlives a workspace switch, because the tab is the same view in the same place
+    /// with different contents, so between arriving at a workspace and git answering about it the
+    /// tree on screen was the PREVIOUS workspace's files, listed under the new workspace's name.
+    private(set) var fileTree: [String: [FileTreeNode]] = [:]
+    /// Whether the listing has been read at all, so the tab can tell "nothing tracked" apart from
+    /// "nobody has looked yet".
+    private(set) var hasReadFileTree = false
+    private var fileTreeTask: Task<Void, Never>?
+
+    /// - Parameter force: read it again even though it has been read. For a refresh the user asked
+    ///   for; an arrival never forces, which is the whole point.
+    func refreshFileTree(force: Bool = false) async {
+        if hasReadFileTree, !force { return }
+        if let fileTreeTask, !force { return await fileTreeTask.value }
+
+        fileTreeTask?.cancel()
+        let worktree = workspace.path
+        let task = Task { [weak self] in
+            let index = await Task.detached(priority: .userInitiated) {
+                () -> [String: [FileTreeNode]] in
+                let result = try? await Shell.run(
+                    "git",
+                    ["ls-files", "--cached", "--others", "--exclude-standard"],
+                    cwd: worktree,
+                    timeout: .seconds(30)
+                )
+                // Indexed off the main thread as well as read there. Forty thousand paths turned
+                // into a dictionary is not a subprocess, but it is not free either, and the main
+                // thread is what the switch is waiting on.
+                return FileTreeNode.index(result?.lines ?? [])
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            if fileTree != index { fileTree = index }
+            hasReadFileTree = true
+            fileTreeTask = nil
+        }
+        fileTreeTask = task
+        await task.value
+    }
+
+    // MARK: - Where a chat pane had got to
+
+    /// What this pane last wrote down about this conversation, if it has been here before.
+    func panePosition(pane: String, session: SessionID) -> TranscriptPaneState? {
+        panePositions[TranscriptPaneState.Key(pane: pane, session: session)]
+    }
+
+    /// Written by the transcript when the reader stops scrolling, when a row is folded or
+    /// unfolded, and when the pane goes away. Everything about when it is worth reading back is
+    /// `TranscriptResume`'s.
+    func rememberPanePosition(_ state: TranscriptPaneState, pane: String, session: SessionID) {
+        panePositions[TranscriptPaneState.Key(pane: pane, session: session)] = state
+    }
+
+    /// One file's diff, from the cache where the worktree has not been looked at since the last
+    /// one, and from git otherwise. See `PatchCache` for what makes an answer reusable and for the
+    /// bug this closes, which is that changing centre tab destroys the review pane and coming back
+    /// to it re-ran the same `git diff` on a worktree nothing had touched.
+    func patch(for file: ChangedFile) async -> String {
+        (try? await readPatch(for: file)) ?? ""
+    }
+
+    nonisolated static func reviewContents(worktree: String, file: ChangedFile, scope: DiffScope) async -> String? {
+        try? await Git.reviewContents(worktree: worktree, file: file, scope: scope)
+    }
+
+    func readPatch(for file: ChangedFile) async throws -> String {
+        let path = workspace.path
+        let base = workspace.baseBranch
+        // The same scope the list was built with, or the pane opens a file the list narrowed and
+        // shows it in full.
+        let scope = diffScope
+        let key = PatchCache.Key(
+            worktree: path, base: base, file: file, scope: scope, generation: changesGeneration
+        )
+        if let held = patches.patch(for: key) { return held }
+
+        let reading = Task.detached(priority: .userInitiated) {
+            try await Git.patch(worktree: path, base: base, file: file, scope: scope)
+        }
+        let patch = try await withTaskCancellationHandler {
+            try await reading.value
+        } onCancel: {
+            reading.cancel()
+        }
+        try Task.checkCancellation()
+
+        // An empty patch can mean the file changed again between the list and patch reads.
+        // Let the next request ask Git again rather than keeping that transient answer.
+        guard !patch.isEmpty else { return patch }
+        // Checked again on the way out, because a refresh can land while git is out. An answer
+        // measured before that refresh says nothing about the worktree after it, and filing it
+        // under the new generation would be a claim; filing it under the old one would sweep the
+        // new generation's entries out. So it is handed back and not kept.
+        guard changesGeneration == key.generation, diffScope == scope else { return patch }
+        patches.store(patch, for: key)
+        return patch
+    }
+
+    /// What the review pane last drew for this file, if it has drawn it.
+    ///
+    /// Handed back without asking git anything, so the pane can put a diff on screen on the frame
+    /// the tab was picked and then go and check. What makes that honest, and what the key holds,
+    /// is `DiffPresentationCache`.
+    func heldDiff(for file: ChangedFile, ignoringWhitespace: Bool) -> DiffPresentation? {
+        presentations.presentation(for: presentationKey(file, ignoringWhitespace: ignoringWhitespace))
+    }
+
+    /// Files what the pane has just drawn, so the next visit to this file is a lookup.
+    func holdDiff(
+        _ presentation: DiffPresentation, for file: ChangedFile, ignoringWhitespace: Bool
+    ) {
+        presentations.store(
+            presentation, for: presentationKey(file, ignoringWhitespace: ignoringWhitespace)
+        )
+    }
+
+    /// Drops what is held for one file, for the two presses that rewrite it under the reader: the
+    /// revert in the header bar and a save from the in-place editor. Both are followed by a fresh
+    /// read, and neither may show what the file said before the press for even one frame.
+    func forgetHeldDiff(for path: String) {
+        presentations.forget(file: path)
+    }
+
+    private func presentationKey(
+        _ file: ChangedFile, ignoringWhitespace: Bool
+    ) -> DiffPresentationCache.Key {
+        DiffPresentationCache.Key(
+            worktree: workspace.path,
+            base: workspace.baseBranch,
+            file: file,
+            scope: diffScope,
+            ignoresWhitespace: ignoringWhitespace
+        )
+    }
+
+    /// Full contents of a file in the worktree, for the All files tab.
+    func contents(of relativePath: String) -> String? {
+        Self.contents(of: relativePath, in: workspace.path)
+    }
+
+    /// The same read with the worktree named, for a caller that is off the main actor.
+    ///
+    /// `DiffView.present` does the first read of a clicked file beside `DiffDocument.prepare` in
+    /// the same detached task, and this is what lets it: everything else in that function had
+    /// already been moved off the main actor and the file read had been left behind on it.
+    nonisolated static func contents(of relativePath: String, in worktree: String) -> String? {
+        let full = (worktree as NSString).appendingPathComponent(relativePath)
+        return try? String(contentsOfFile: full, encoding: .utf8)
+    }
+
+    // MARK: - Pull request
+
+    /// How stale an answer about the pull request an arrival will settle for.
+    ///
+    /// Arriving at a workspace used to run `gh auth status` and `gh pr view` every single time,
+    /// which is two subprocesses and two round trips to GitHub for a fact that changes when
+    /// somebody pushes, reviews or merges. Measured on this machine: 640ms to 1.1s per arrival,
+    /// all of it after the window had finished drawing, and all of it repeated by flicking between
+    /// two workspaces.
+    ///
+    /// Only an arrival accepts a cached answer. Everything that has a reason to believe the answer
+    /// changed asks again with no age at all: a finished turn, the bar's own poll, and the button
+    /// that creates one.
+    static let pullRequestArrivalMaxAge = Duration.seconds(30)
+
+    /// Reads this project's merge method back, for the band that is about to draw it.
+    ///
+    /// Nothing here talks to GitHub or to git: it is one row of the store's key value table, so it
+    /// costs nothing to ask again every time a workspace is arrived at, and asking again is what
+    /// keeps two worktrees of one project from disagreeing about their project's convention.
+    func loadMergeMethod() async {
+        guard let store else { return }
+        mergeMethod = await MergeMethodChoice.load(repoID: workspace.repoID, from: store)
+    }
+
+    /// Changes the method in force, and merges nothing.
+    ///
+    /// The property moves first so the button's label changes with the press that changed it,
+    /// rather than a beat later when SQLite has answered. A write that fails leaves the choice
+    /// standing for this launch, which is the right way round: the alternative is a menu that
+    /// appears to ignore the tick.
+    func chooseMergeMethod(_ method: GitHub.MergeMethod) async {
+        mergeMethod = method
+        guard let store else { return }
+        await MergeMethodChoice.save(method, repoID: workspace.repoID, to: store)
+    }
+
+    /// - Parameter maxAge: how old a cached answer may be. Zero always asks GitHub.
+    func refreshPullRequest(maxAge: Duration = .zero) async {
+        pullRequestTask?.cancel()
+        let asked = workspace
+
+        let task = Task.detached(priority: .utility) {
+            await GitHubBridge.readPullRequest(for: asked, maxAge: maxAge)
+        }
+        pullRequestTask = task
+        // Only before there has been any answer at all, for the same reason the changed file list
+        // only spins when it has nothing: a refresh of something already on screen leaves it
+        // alone. The rule and what it cost to get wrong are `PullRequestProgress`.
+        if PullRequestProgress.announces(
+            hasAnswered: hasReadPullRequest, hasPullRequest: pullRequest != nil
+        ) {
+            isLoadingPullRequest = true
+        }
+
+        let read = await task.value
+
+        guard pullRequestTask == task, !task.isCancelled else { return }
+        pullRequestTask = nil
+        // Before the write below, and set whatever came back: a nil from gh is still this
+        // workspace having been looked at, and the next refresh has an answer on screen to leave
+        // alone. Only a superseded or cancelled refresh, which returns above, says nothing.
+        hasReadPullRequest = true
+        // Failed refreshes retain the last good content. An explicit no-PR answer can now
+        // clear it, because the read result distinguishes absence from an unavailable service.
+        WorkspacePullRequests.shared.record(read, for: workspace.id)
+        guard case .current(let current) = read else {
+            isLoadingPullRequest = false
+            return
+        }
+        let fresh = current
+        // The number, written where a deleted branch cannot take it. This is the path the band
+        // polls on, so it is the one that fills the column in for a workspace whose pull request
+        // an agent opened rather than the create sheet. See `Workspace.pullRequestNumber`.
+        await PullRequestNumber.record(fresh, for: asked, in: store)
+        isLoadingPullRequest = false
+        SwitchTrace.mark("pullRequest.loaded", workspace: workspace.id)
+    }
+
+    /// Asks the workspace's agent to open the pull request, instead of running `gh` from here.
+    ///
+    /// The agent already holds the things a pull request needs and Bloom does not: this project's
+    /// commit message conventions, its PR template, and the ability to answer a rejected push
+    /// rather than surfacing it as a failed shell command. So the button composes a turn and sends
+    /// it down exactly the path the composer uses, which is also why the request appears in the
+    /// transcript and streams back like anything else the user typed.
+    ///
+    /// **A press lands whatever the chat is doing**, and this is where all four of the strip's
+    /// buttons state that. Each of them used to open with `guard !isRunning else { return "…is
+    /// still working. Wait for the turn to finish, then ask again." }`, written when the composer
+    /// was the only way into a chat and a second message really would have interleaved with the
+    /// first. There is a queue now. Everything a person types goes into it and waits its turn, so
+    /// a button that refuses is the one route into a conversation that behaves differently from
+    /// every other, and what it produced was a press that looked like it had done nothing. The
+    /// request joins the queue like a typed message, is drawn as a pending bubble that says when
+    /// it goes, and can be cancelled there. See `Delivery` and `DeliveryHold`.
+    ///
+    /// Returns nil on success, or the sentence to put in front of the user.
+    func requestPullRequest(overrides: PromptOverrides = PromptOverrides()) async -> String? {
+        let template = overrides.template(for: .createPullRequest)
+        let wanted = Set(PromptTemplate.variableNames(in: template))
+
+        // Only what this template actually asks for. The built-in one names the target branch and
+        // nothing else, and reading every session's first turn back out of the store to fill a
+        // variable nobody used was a page of work per press.
+        if wanted.contains(PromptRegistry.CreatePullRequest.changes) {
+            await refreshChanges()
+        }
+
+        guard let session = await sessionForPullRequest() else {
+            return "Could not open a session in \(workspace.name) to send the request to."
+        }
+
+        let context = PullRequestPromptContext(
+            workspaceName: workspace.name,
+            branch: workspace.branch,
+            baseBranch: workspace.baseBranch,
+            task: wanted.contains(PromptRegistry.CreatePullRequest.task) ? await openingPrompt() : "",
+            changes: wanted.contains(PromptRegistry.CreatePullRequest.changes)
+                ? PullRequestPromptContext.changeSummary(changedFiles)
+                : ""
+        )
+        let render = context.render(template: template)
+
+        // Bring the session forward first: the turn is about to start streaming, and a user who
+        // pressed a button in the inspector should be looking at the answer to it.
+        activeSessionID = session.id
+        isExpectingPullRequest = true
+        await transcript(for: session).submit(await pullRequestTurn(text: render.text))
+        return nil
+    }
+
+    /// Asks this workspace's agent to commit what is outstanding and push the branch.
+    ///
+    /// The agent rather than Bloom, and the reasoning is the same one that put pull request
+    /// creation here: a commit needs a message, and Bloom knows only that a file changed. The
+    /// agent knows what it changed, how this project words a commit and what to do when the push
+    /// is rejected. A message this app invented would be in the repository's history forever.
+    ///
+    /// The same route as `requestPullRequest`, so both buttons in the strip behave identically:
+    /// the request joins the chat's queue whatever the chat is doing, and the session comes
+    /// forward so the reader is looking at the answer to the button they pressed.
+    ///
+    /// Returns nil on success, or the sentence to put in front of the user.
+    func requestPush(overrides: PromptOverrides = PromptOverrides()) async -> String? {
+        let template = overrides.template(for: .pushLocalWork)
+        let wanted = Set(PromptTemplate.variableNames(in: template))
+
+        if wanted.contains(PromptRegistry.PushLocalWork.changes) {
+            await refreshChanges()
+        }
+
+        guard let session = await sessionForPullRequest() else {
+            return "Could not open a session in \(workspace.name) to send the request to."
+        }
+
+        let render = PromptTemplate.render(template, values: [
+            PromptRegistry.PushLocalWork.workspace: workspace.name,
+            PromptRegistry.PushLocalWork.branch: workspace.branch,
+            PromptRegistry.PushLocalWork.baseBranch: workspace.baseBranch,
+            PromptRegistry.PushLocalWork.changes:
+                PullRequestPromptContext.changeSummary(changedFiles),
+        ])
+
+        activeSessionID = session.id
+        // No attachment. The pull request instructions are about opening a pull request, and
+        // there is already one open by the time this button exists.
+        await transcript(for: session).submit(render.text)
+        return nil
+    }
+
+    func markReadyForReview(_ pullRequest: PullRequest) async throws {
+        try await GitHubBridge.markReadyForReview(pullRequest, worktree: workspace.path)
+        await refreshPullRequest()
+    }
+
+    /// Asks the workspace's agent to merge the pull request, instead of running `gh` from here.
+    ///
+    /// The last of the three buttons in the strip to move, and the one with the most riding on it.
+    /// Bloom used to run `gh pr merge` and then `git push --delete` behind it, catch a `ShellError`
+    /// and put a sentence in a notice. That arrangement had no answer for the case that actually
+    /// happens: GitHub refuses, because a required check has not finished or a review is missing,
+    /// and what the person needed was a conversation rather than a red box. An agent gets the same
+    /// refusal in words, in the transcript, with the command it ran above it, and can say what to
+    /// do next.
+    ///
+    /// It also puts the merge behind the permission mode the person already chose. A button
+    /// running `gh pr merge` is outside all of that by construction; a turn is not.
+    ///
+    /// The same route as `requestPullRequest` and `requestPush`, so all three buttons in the
+    /// strip behave identically, queue included.
+    ///
+    /// Returns nil on success, or the sentence to put in front of the user.
+    func requestMerge(
+        _ pullRequest: PullRequest,
+        method: GitHub.MergeMethod,
+        overrides: PromptOverrides = PromptOverrides()
+    ) async -> String? {
+        guard let session = await sessionForPullRequest(titledIfNew: "Merge") else {
+            return "Could not open a session in \(workspace.name) to send the request to."
+        }
+
+        let context = MergePromptContext(
+            workspaceName: workspace.name,
+            number: pullRequest.number,
+            title: pullRequest.title,
+            branch: pullRequest.branch,
+            baseBranch: workspace.baseBranch,
+            method: method
+        )
+        let render = context.render(template: overrides.template(for: .mergePullRequest))
+
+        let text = await turn(render.text, for: .merge)
+        activeSessionID = session.id
+        await transcript(for: session).submit(text)
+        return nil
+    }
+
+    /// One of Bloom's own turns about landing a branch, with Bloom's rules under it and the
+    /// project's own instructions attached when it has any.
+    ///
+    /// Merge and Fix merge conflicts go through this same call, because the two differ only in
+    /// which subject they name. What each subject contributes is `ProjectInstructions`, in the
+    /// core, where what an agent is about to be told can be asserted without a worktree.
+    ///
+    /// The settings are re-read rather than taken from the copy this model holds. That copy is
+    /// refreshed when the workspace is selected, and the sequence that has to work is typing an
+    /// instruction in the project settings window and pressing Merge in the window behind it
+    /// without touching the sidebar in between.
+    private func turn(_ text: String, for subject: ProjectInstructions.Subject) async -> String {
+        await reloadSettings()
+        let stated = ProjectInstructions.stated(subject, in: settings)
+        let path = workspace.path
+        // Off the main actor: it reads a file in the worktree and may write one, and this runs on
+        // a button press with a sheet dismissing over it.
+        let extra = await Task.detached(priority: .userInitiated) {
+            ProjectInstructions.resolve(subject, in: path, stated: stated)
+        }.value
+        return ProjectInstructions.turn(text, for: subject, adding: extra)
+    }
+
+    /// Asks the workspace's agent to bring the base branch in and resolve the conflicts.
+    ///
+    /// The state this answers used to be offered a Merge button, which could not work: GitHub had
+    /// already said the branch does not apply to its base, so the only thing that press could
+    /// produce was the agent running `gh pr merge` and reading the refusal back out.
+    ///
+    /// The same route as the other three buttons in the strip, with one difference: there is no
+    /// confirmation in front of it, for the reason written out at
+    /// `PullRequestSummary.fixConflictsButton`.
+    ///
+    /// The turn is composed in two passes, and the order they run in is the order the agent reads
+    /// them in. `ConflictInstructions` puts Bloom's own steps in a file and names it, which is what
+    /// keeps this bubble to two sentences instead of the eight paragraphs it used to be; then
+    /// `turn(_:for:)` adds the project's own words after that and says they win. A project that has
+    /// nothing to say still gets Bloom's file, which is the difference from Merge, where Bloom's
+    /// words are in the message and only the project's are ever attached.
+    ///
+    /// Returns nil on success, or the sentence to put in front of the user.
+    func requestFixConflicts(
+        _ pullRequest: PullRequest,
+        overrides: PromptOverrides = PromptOverrides()
+    ) async -> String? {
+        guard let session = await sessionForPullRequest(titledIfNew: "Fix merge conflicts") else {
+            return "Could not open a session in \(workspace.name) to send the request to."
+        }
+
+        let context = FixConflictsPromptContext(
+            workspaceName: workspace.name,
+            number: pullRequest.number,
+            // The worktree's own branch rather than gh's `headRefName`. The sentence is about the
+            // branch the agent is standing on, and this is the one fact here Bloom holds itself.
+            branch: workspace.branch,
+            baseBranch: workspace.baseBranch
+        )
+        let render = context.render(template: overrides.template(for: .fixConflicts))
+
+        let path = workspace.path
+        let rendered = render.text
+        // Off the main actor: it writes a file into the worktree, and this runs on a button press.
+        let asked = await Task.detached(priority: .userInitiated) {
+            ConflictInstructions.asking(rendered, in: path)
+        }.value
+        let text = await turn(asked, for: .fixConflicts)
+        activeSessionID = session.id
+        await transcript(for: session).submit(text)
+        return nil
+    }
+
+    /// The turn that goes down the wire, with the instructions named in it.
+    ///
+    /// The path goes in the sentence that asks for it, which is where every other file Bloom sends
+    /// now goes: a pull request request is a user turn like any other, so it says what it wants in
+    /// words and names the file inside them, and the agent is handed a path inside its own working
+    /// directory. See `PullRequestInstructions.asking`.
+    ///
+    /// When the file cannot be written, the instructions go into the message itself. A read-only
+    /// checkout is a reason to say it differently, not a reason for the button to stop working.
+    private func pullRequestTurn(text: String) async -> String {
+        if let path = await PullRequestInstructions.ensure(in: workspace.path) {
+            return PullRequestInstructions.asking(text, toFollow: path)
+        }
+        return text + "\n\n" + PullRequestInstructions.defaultMarkdown
+    }
+
+    /// A workspace whose agent was never started still has a button to press. Rather than doing
+    /// nothing, it gets the session it would have got the first time somebody typed into it.
+    ///
+    /// - Parameter title: what a session created here is called. Named by the caller because the
+    ///   three buttons in the strip all land here and a merge that opens a chat called "Create
+    ///   pull request" is a lie in the sidebar for as long as that session lives.
+    private func sessionForPullRequest(titledIfNew title: String = "Create pull request") async -> Session? {
+        if let activeSession { return activeSession }
+        await reloadSessions()
+        if let activeSession { return activeSession }
+        return await createSession(title: title)
+    }
+
+    /// What this workspace was created to do, read back out of the oldest session's first user
+    /// turn. Sessions come back in sort order, so the first one that has a user turn is the one
+    /// the workspace opened with.
+    ///
+    /// Without the files named in it. This becomes the `task:` line of the prompt that writes the
+    /// pull request, and a scratch path under `.bloom/attachments` is invisible to git, means
+    /// nothing to a reviewer, and is exactly the sort of thing that ends up quoted in a
+    /// description. What the workspace was for is the sentence, not the screenshot.
+    ///
+    /// Both forms are taken off: turns sent before attachments moved into the sentence carry a
+    /// trailer at the end, and those are still in the database.
+    private func openingPrompt() async -> String {
+        guard let store else { return "" }
+        for session in sessions {
+            let messages = (try? await store.messages(sessionID: session.id, limit: 200)) ?? []
+            guard let first = messages.first(where: { $0.kind == .user }),
+                  let text = UserTurnPayload.text(from: first.payload) else { continue }
+            return AttachmentDraft.withoutAttachments(AttachmentTrailer.split(text).body)
+        }
+        return ""
+    }
+
+    // MARK: - Housekeeping
+
+    /// The window has arrived on this workspace.
+    ///
+    /// Two halves, and which half a piece of work is in is the whole of what makes a switch feel
+    /// immediate. Before this returns: nothing that is already in hand. After it, in a task of its
+    /// own: everything that needs SQLite, a subprocess or the network.
+    ///
+    /// The first visit of a launch is the one exception, and it is honest about itself. There are
+    /// no sessions yet, so there is no transcript to draw and nothing to be quick about; the read
+    /// is waited for because the alternative is an empty pane that fills in a beat later, which is
+    /// the flash this whole arrangement exists to avoid. Every arrival after that draws from the
+    /// sessions, the rows and the file list this model is already holding, and the refreshes
+    /// below only ever correct what is already on screen.
+    ///
+    /// This used to be four `await`s in a row, so a return to a workspace waited on a session
+    /// query, then on `git diff` against the worktree, then on a write to the workspace row,
+    /// before the last of them started asking GitHub. Measured on a forty thousand file worktree:
+    /// the file list landed 970ms after the click, and the row that says the workspace has been
+    /// read was written after that.
+    func onAppear() async {
+        SwitchTrace.mark("onAppear.start", workspace: workspace.id)
+        // Whether the store has answered, rather than whether the answer was empty. A workspace
+        // whose conversations have all been archived is not on its first visit forever.
+        let isFirstVisit = !hasReadSessions
+        if isFirstVisit { await reloadSessions() }
+        SwitchTrace.mark("sessions.loaded", workspace: workspace.id)
+
+        // One task per arrival, and the previous one is cancelled. Leaving a workspace while its
+        // git call is in flight is the ordinary case, not the exception: it is what switching
+        // quickly between two workspaces IS.
+        arrivalTask?.cancel()
+        arrivalTask = Task { [weak self] in
+            guard let self else { return }
+            if !isFirstVisit { await reloadSessions() }
+            guard !Task.isCancelled else { return }
+            // Once per launch: only this app writes review comments, so after the first read the
+            // in-memory list is the truth and re-reading it on every arrival buys nothing.
+            if !hasReadReviewComments { await reloadReviewComments() }
+            guard !Task.isCancelled else { return }
+            // The same, and for the same reason, for the ticks beside the changed files. Whether
+            // one still holds is decided against the file list below rather than here, so this
+            // read does not have to wait for git.
+            if !hasReadViewedFiles { await reloadViewedFiles() }
+            guard !Task.isCancelled else { return }
+            // Concurrently, because neither is waiting for anything the other knows. The read
+            // mark used to be written after `git` had finished walking the worktree.
+            async let changes: Void = refreshChanges()
+            async let read: Void = app.markRead(workspace)
+            _ = await (changes, read)
+            SwitchTrace.mark("changes.loaded", workspace: self.workspace.id)
+            SwitchTrace.markOnScreen("changes.loaded", workspace: self.workspace.id)
+            guard !Task.isCancelled else { return }
+            // Last, and allowed to answer from the cache. This is the only part of an arrival that
+            // goes to the network, so it is the only part that must never be waited on by
+            // anything else. See `refreshPullRequest`.
+            await refreshPullRequest(maxAge: Self.pullRequestArrivalMaxAge)
+        }
+    }
+
+    /// Called when an agent turn finishes, to refresh everything derived from the filesystem.
+    func onTurnFinished() async {
+        await refreshChanges()
+        if let manager = app.manager {
+            await manager.refreshDiffStat(workspace: workspace)
+        }
+
+        // The turn Create pull request sent is waited on rather than fired and forgotten, because
+        // what came of it is the answer to a button somebody pressed. Every other turn keeps the
+        // refresh it always had: a background poll nobody is standing over.
+        guard isExpectingPullRequest else {
+            Task { await refreshPullRequest() }
+            return
+        }
+        isExpectingPullRequest = false
+        await refreshPullRequest()
+    }
+}
+
+/// A thread-safe hand-off for streamed output.
+///
+/// The producer is a subprocess reader on some background thread and the consumer is the main
+/// actor. Batching between them is what keeps a chatty script from swamping the UI.
+///
+/// A `Mutex` rather than a lock next to an unprotected array: the buffer is then unreachable
+/// except through the lock, so the type is `Sendable` on the compiler's terms rather than on a
+/// promise, and `drain` cannot accidentally read outside it.
+final class LineBuffer: Sendable {
+    private let pending = Mutex<[String]>([])
+
+    func append(_ line: String) {
+        pending.withLock { $0.append(line) }
+    }
+
+    func drain() -> [String] {
+        pending.withLock { lines in
+            defer { lines.removeAll(keepingCapacity: true) }
+            return lines
+        }
+    }
+}
+
+/// A review comment mid-composition: where it will attach and the evidence captured when its
+/// editor opened. See `WorkspaceModel.reviewDrafts` for why it outlives the diff view that is
+/// editing it, and `ReviewTextHost` for why the text it is being given is not in here.
+struct ReviewDraft: Hashable {
+    /// Every line the note will cover, which is one line for a `+` pressed and several for a
+    /// drag down the gutter.
+    var selection: ReviewSelection
+    var anchor: ReviewCommentAnchor
+
+    /// Where the note anchors, which is also the row the editor opens under when the selection is
+    /// a single line.
+    var spot: ReviewSpot { selection.anchor }
+}

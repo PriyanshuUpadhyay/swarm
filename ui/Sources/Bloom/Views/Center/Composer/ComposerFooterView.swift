@@ -1,0 +1,468 @@
+import SwiftUI
+import BloomCore
+
+/// Everything the user can change about the next turn: the model, the effort, the output style,
+/// the permission mode, whether it runs fast, what it has attached, and whether it goes now.
+///
+/// It is written against `ComposerControls` rather than against a `Session`, because the create
+/// sheet uses this same row before any session exists. Both callers hand over the choices and take
+/// back the changed set; where they keep them is their own business.
+struct ComposerFooterView: View {
+    var controls: ComposerControls
+    var onChange: @MainActor (ComposerControls) -> Void
+    /// Nil until the session has run a turn, because that is the first moment the agent says
+    /// anything about the window. Absent rather than zero: a gauge reading 0% would be a claim.
+    /// Always nil in the create window, where there is not yet anything to report.
+    var context: ContextWindowUsage?
+    /// Whether a turn is running, which is what decides whether Stop is drawn.
+    var isRunning: Bool = false
+    /// Whether Send would queue the message rather than hand it over. Not the same question as
+    /// `isRunning` any more: see `ComposerSendButton.queues`.
+    var queues: Bool = false
+    var canSend: Bool
+    /// What the button at the end of the row does. See `ComposerIntent`.
+    var intent: ComposerIntent = .send
+    /// Whether the row is allowed to drop its words to fit the space it is given.
+    ///
+    /// True in the centre column, whose width the user owns: it can be dragged to 420 points and
+    /// split in two, and at that width something has to give. False in the create window, whose
+    /// width is fixed and was measured against this row with every word on.
+    ///
+    /// It is a parameter of its own rather than something read off `ComposerIntent`, because the
+    /// intent says what the primary button does and nothing about how much room there is. Welding
+    /// the two would mean that any other surface wanting the labels would have to claim it was
+    /// creating a workspace to get them.
+    ///
+    /// The reason it has to be said at all: the row grew a sixth labelled control, the quick
+    /// prompt button, after the create window's width was last measured, so the labelled row no
+    /// longer fitted and `ViewThatFits` quietly took every word off. Five unlabelled glyphs in a
+    /// window asking what you want to work on say nothing about what it is about to do, which is
+    /// what the owner reported after putting the two composers side by side.
+    var adaptsToWidth: Bool = true
+    /// The checkout the output style menu should look in for styles this project defines, or nil
+    /// where there is not one yet. A repository can carry its own `.claude/output-styles`, and in
+    /// the create window the worktree does not exist, so the repository is the honest answer there.
+    var project: String?
+    var onAttach: @MainActor () -> Void
+    /// What choosing a quick prompt does, or nil where there is nowhere to put one. Nil hides the
+    /// button rather than disabling it: a control that can never do anything is not worth the room
+    /// in a row that already loses its words at 420 points.
+    var onQuickPrompt: (@MainActor (QuickPromptPanelRow) -> Void)?
+    /// What the workspace's repository offers under the owner's own prompts. Empty in the create
+    /// window, which has no workspace model to have read a settings file.
+    var projectQuickPrompts: [ProjectQuickPrompt] = []
+    /// Called as the panel opens, so the settings file behind `projectQuickPrompts` can be read
+    /// again. Somebody who has just pulled a teammate's new prompt opens the panel to find it,
+    /// and until now nothing re-read that file short of switching workspace.
+    var onOpenQuickPrompts: (@MainActor () -> Void)?
+    var onSend: @MainActor () -> Void
+    var onStop: @MainActor () -> Void = {}
+    var onSideConversation: (@MainActor () -> Void)?
+    /// Whether the row carries the choices the agent runs on.
+    ///
+    /// False for a terminal workspace, which has no agent: the create window was offering a model,
+    /// a reasoning effort, a permission mode, fast mode and a paperclip for a workspace that opens
+    /// a shell and never sends any of them anywhere. What is left is the send button, which is the
+    /// one control on the row that still does something.
+    var showsAgentControls: Bool = true
+    var usesCLIChat: Binding<Bool>?
+    var supportsCLIChat: Bool = true
+
+    // Key the fetched value as well as the task, so changing projects cannot briefly show the
+    // previous project's speed before SwiftUI starts the replacement task.
+    @State private var loadedSpeed: CodexSpeed?
+    @State private var loadedSpeedRequest: [String]?
+    @State private var speedFailed = false
+
+    private var speedRequest: [String] {
+        [project ?? "", controls.agentKind.rawValue, controls.model, String(showsAgentControls)]
+    }
+
+    private var codexSpeed: CodexSpeed? {
+        loadedSpeedRequest == speedRequest ? loadedSpeed : nil
+    }
+
+    /// Model and effort ids this footer has been set to that are not on the built-in lists, kept
+    /// so the menu can offer the way back. See `ComposerOption.adding`.
+    ///
+    /// Held here rather than in `ComposerOptionMenu` because `ViewThatFits` below builds the row
+    /// three times, and three copies of the menu would be three separate pieces of state.
+    @State private var extraModels: [String] = []
+    @State private var extraEfforts: [String] = []
+
+    /// The output styles this checkout offers.
+    ///
+    /// Shared per checkout, and swapped for the shared one in the task below rather than owned:
+    /// a footer that owned it re-read the disk every time the centre column changed tab, because
+    /// the pane and everything in it is built again on the way back. `ViewThatFits` gets a single
+    /// copy either way, because the three rows it builds are three renders of this one view.
+    @State private var outputStyles = ComposerOutputStyleCatalog()
+
+    /// Shared, because `ViewThatFits` below builds this row three times and three copies would be
+    /// three fetches of the Codex model list.
+    private var catalog: ComposerModelCatalog { ComposerModelCatalog.shared }
+
+    /// Held here rather than in `ComposerContextGauge`, because two of the three candidates below
+    /// contain that control and `ViewThatFits` throws away the state of the ones it does not
+    /// pick. See the binding on that view.
+    @State private var isShowingContextDetail = false
+    /// Where the context gauge is, in this footer's own space, so the popover can point at it.
+    ///
+    /// The popover is presented on the whole row rather than on the gauge, because narrowing the
+    /// pane drops the gauge out of the `ViewThatFits` and would take the presenter with it while
+    /// the card was up. Presented on the row, its default anchor is the row's own bounds, so the
+    /// arrow came out under the middle of the footer pointing at nothing. This is the gauge's
+    /// frame, handed to `attachmentAnchor` so the card hangs off the control it describes.
+    @State private var gaugeFrame: CGRect?
+
+    /// Whether the quick prompt panel is up. Held here for the same reason the flag above it is:
+    /// the button is in all three candidates `ViewThatFits` builds, and state inside a candidate
+    /// belongs to the candidate.
+    @State private var isShowingQuickPrompts = false
+    /// Kept outside the transient popover so changing apps does not discard a half-written prompt.
+    @State private var quickPromptDraft: QuickPromptFormDraft?
+
+    var body: some View {
+        // Everything the row is built out of, worked out once.
+        //
+        // `ViewThatFits` builds each of its candidates in order to measure it, so `row` below runs
+        // three times per pass for the one row it draws. Left inside it, the model sections were
+        // assembled three times, the effort list three times, the output styles and their footnote
+        // three times, the permission modes three times, and the context reading formatted twice.
+        // None of that depends on the width, which is the only thing the three candidates differ
+        // in. This file had already hoisted three pieces of state out of the candidates for a
+        // related reason; the work they were doing stayed behind.
+        let choices = self.choices
+
+        // The footer is a fixed row of controls in a pane whose width the user owns: the centre
+        // column can be dragged to 420 points and then split in two, and at that width the full
+        // row does not fit. Left to overflow it clipped from both edges at once, which took the
+        // model picker off one end and the attach and send buttons off the other, so the composer
+        // had no way to send. Each step drops the least load-bearing thing left: first the words
+        // beside the picker glyphs, then the context reading, which is the one control here that
+        // reports rather than does.
+        //
+        // Only where the width is the user's to change. Where the caller owns it and has sized the
+        // window to this row, the full row is drawn outright: a candidate list is a set of ways to
+        // give up, and a window that cannot be resized has nothing to give up for. What a label too
+        // long for the room does there is truncate, which is what `lineLimit(1)` on the label and
+        // the horizontal give in `ComposerOptionMenu` already arrange, and one shortened word reads
+        // better than five missing ones.
+        return Group {
+            if adaptsToWidth {
+                ViewThatFits(in: .horizontal) {
+                    row(isCompact: false, showsContext: true, choices: choices)
+                    row(isCompact: true, showsContext: true, choices: choices)
+                    row(isCompact: true, showsContext: false, choices: choices)
+                }
+            } else {
+                row(isCompact: false, showsContext: true, choices: choices)
+            }
+        }
+        // Outside the `ViewThatFits`, so narrowing the pane cannot take the presenter out of the
+        // tree while the popover is up.
+        .coordinateSpace(.named(composerFooterSpace))
+        .popover(
+            isPresented: $isShowingContextDetail,
+            attachmentAnchor: gaugeFrame.map { .rect(.rect($0)) } ?? .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            if let context {
+                ContextWindowDetail(usage: context)
+                    .environment(\.fontScale, 1)
+            }
+        }
+        .onChange(of: controls.model, initial: true) { _, id in
+            remember(id, known: catalog.options(for: controls.agentKind), in: &extraModels)
+        }
+        .onChange(of: controls.effort, initial: true) { _, id in
+            remember(id, known: efforts, in: &extraEfforts)
+        }
+        // On appearance rather than on first use of the menu, so the Codex section is there when
+        // the menu is opened rather than a moment after. It fetches once.
+        .task { if showsAgentControls { catalog.load() } }
+        .task(id: speedRequest) {
+            let request = speedRequest
+            loadedSpeed = nil
+            loadedSpeedRequest = request
+            speedFailed = false
+            guard showsAgentControls, controls.agentKind == .codex else { return }
+            do {
+                let speed = try await CodexSpeed.read(
+                    cwd: project ?? AgentScratchDirectory.current(), modelID: controls.model
+                )
+                guard !Task.isCancelled else { return }
+                loadedSpeed = speed
+            } catch {
+                guard !Task.isCancelled else { return }
+                speedFailed = true
+            }
+        }
+        // Re-run when the composer moves to another checkout, because a project's own styles are
+        // that project's. The scan itself does nothing when the answer is already held and fresh.
+        .task(id: project) {
+            guard showsAgentControls else { return }
+            let catalog = ComposerOutputStyleCatalog.shared(for: project)
+            outputStyles = catalog
+            await catalog.refreshIfStale(project: project)
+        }
+    }
+
+    /// Files an id the built-in list has no entry for, once.
+    private func remember(_ id: String, known: [ComposerOption], in list: inout [String]) {
+        guard !id.isEmpty, !known.contains(where: { $0.id == id }), !list.contains(id) else { return }
+        list.append(id)
+    }
+
+    /// What the row's pickers offer, and what the gauge says. Built once above `ViewThatFits`,
+    /// because none of it depends on which candidate is being measured.
+    private struct Choices {
+        var models: [ComposerModelSection] = []
+        var efforts: [ComposerOption] = []
+        var outputStyles: [ComposerOption] = []
+        var permissionModes: [ComposerOption] = []
+        var context: ContextWindowUsage.Reading?
+    }
+
+    private var choices: Choices {
+        guard showsAgentControls else {
+            // A terminal workspace has no agent, so the only control left is the send button and
+            // none of these lists is asked for.
+            return Choices(context: context?.reading)
+        }
+        return Choices(
+            models: catalog.sections(includingCurrent: controls.model, on: controls.agentKind),
+            efforts: ComposerOption.adding(extraEfforts, to: efforts),
+            // Only when the picker is drawn at all. Codex has no output styles, and scanning the
+            // list to build rows nothing will show is the same waste one level down.
+            outputStyles: controls.offersOutputStyle
+                ? outputStyles.options(includingCurrent: controls.outputStyle)
+                : [],
+            // Labelled and described in the backend's own vocabulary, not Bloom's. A Codex chat's
+            // picker reads the way the Codex app reads and a Claude Code chat's reads the way that
+            // CLI does, which is the whole of `PermissionVocabulary`.
+            permissionModes: controls.permissionModeChoices.map {
+                ComposerOption(id: $0.mode.rawValue, label: $0.label, detail: $0.summary)
+            },
+            context: context?.reading
+        )
+    }
+
+    private func row(isCompact: Bool, showsContext: Bool, choices: Choices) -> some View {
+        HStack(spacing: Metrics.spacingTight) {
+            if showsAgentControls {
+                ComposerSettingsPicker(
+                    controls: controls,
+                    models: choices.models,
+                    efforts: choices.efforts,
+                    outputStyles: choices.outputStyles,
+                    permissionModes: choices.permissionModes,
+                    isCompact: isCompact,
+                    onPreset: selectPreset,
+                    onModel: selectModel,
+                    onEffort: { id in edit { $0.effort = id } },
+                    onOutputStyle: { id in edit { $0.outputStyle = id } },
+                    onPermissionMode: selectPermissionMode,
+                    onContextWindow: { tokens in edit { $0.codexContextWindow = tokens } },
+                    onInteractionMode: { mode in edit { $0.interactionMode = mode } }
+                )
+
+                ComposerFastModeToggle(
+                    controls: controls,
+                    codexSpeed: codexSpeed,
+                    codexSpeedFailed: loadedSpeedRequest == speedRequest && speedFailed,
+                    onChange: { value in edit { $0 = $0.settingFastMode(value) } }
+                )
+            }
+
+            if intent != .create {
+                Spacer(minLength: Metrics.spacing)
+            }
+
+            // On the far side of the spacer, away from the pickers. It is a reading rather than
+            // something to choose, and among the three menus it read as a fourth one.
+            if let reading = choices.context, showsContext {
+                ComposerContextGauge(
+                    reading: reading, isShowingDetail: $isShowingContextDetail
+                )
+                // In the footer's space rather than the window's, which is what
+                // `attachmentAnchor` wants. Only the gauge is measured, and only while it is
+                // drawn, so a compact row that has dropped it reads nothing.
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(composerFooterSpace)) } action: {
+                    gaugeFrame = $0
+                }
+            }
+
+            // Beside the paperclip, because those two are the only controls in this row that
+            // answer "what goes into the box" rather than "how should it think". `text.badge.plus`
+            // is literally what pressing it does, and not `sparkles`: every control to the left is
+            // already about an AI, so a sparkle would distinguish nothing.
+            if showsAgentControls, onQuickPrompt != nil {
+                Button {
+                    onOpenQuickPrompts?()
+                    isShowingQuickPrompts = true
+                } label: {
+                    ComposerControlLabel(
+                        systemImage: "text.badge.plus",
+                        text: nil,
+                        isActive: isShowingQuickPrompts
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("Insert a quick prompt")
+                .accessibilityLabel("Quick prompts")
+                // On the button, not on the row around it. It was hoisted outside the
+                // `ViewThatFits` alongside the context gauge's, and a popover anchors to the view
+                // it is attached to: from there it hung off the middle of the whole footer, with
+                // its arrow pointing at whichever control happened to be at the centre.
+                //
+                // The gauge's has to be out there, because `showsContext: false` takes the gauge
+                // out of the tree at narrow widths and would take an open popover with it. This
+                // button is in all three variants of the row, so it has nothing to be saved from.
+                .popover(isPresented: $isShowingQuickPrompts, arrowEdge: .top) {
+                    if let onQuickPrompt {
+                        QuickPromptMenu(
+                            catalog: QuickPromptCatalog.shared,
+                            projectPrompts: projectQuickPrompts,
+                            draft: $quickPromptDraft,
+                            onPick: onQuickPrompt,
+                            onClose: { isShowingQuickPrompts = false }
+                        )
+                        .environment(\.fontScale, 1)
+                    }
+                }
+            }
+
+            if let onSideConversation {
+                Button(action: onSideConversation) {
+                    ComposerControlLabel(text: nil) {
+                        Image(systemName: "arrow.turn.down.right")
+                            .imageScale(.medium)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Ask a side question (/btw)")
+                .accessibilityLabel("Ask a side question")
+                // The chat pane hangs the side conversation card off this frame. It is in all
+                // three variants of the row, and only the one `ViewThatFits` draws reports it.
+                .anchorPreference(key: SideConversationButtonAnchor.self, value: .bounds) { $0 }
+            }
+
+            // A paperclip, not the plus that used to sit here: a plus already means "new session"
+            // in the tab strip directly above, and it says nothing about what is being added.
+            // Gone with the rest when there is no agent: nothing reads an attachment into a shell.
+            if showsAgentControls {
+                Button(action: onAttach) {
+                    ComposerControlLabel(systemImage: "paperclip", text: nil)
+                }
+                .buttonStyle(.plain)
+                .help("Attach a file")
+                .accessibilityLabel("Attach a file")
+            }
+
+            if let usesCLIChat {
+                // Drawn like the paperclip beside it, not with `.toggleStyle(.button)`: that style
+                // puts a grey bezel under the glyph even while the toggle is off, so the last
+                // control in the row read as pressed. The fill now means "on" and nothing else.
+                Button {
+                    usesCLIChat.wrappedValue.toggle()
+                } label: {
+                    ComposerControlLabel(
+                        systemImage: "terminal",
+                        text: nil,
+                        isActive: usesCLIChat.wrappedValue
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!supportsCLIChat)
+                .accessibilityAddTraits(.isToggle)
+                .accessibilityValue(usesCLIChat.wrappedValue ? "On" : "Off")
+                .help(supportsCLIChat
+                      ? "Open this chat in the CLI"
+                      : "CLI chat supports Claude Code and Codex")
+                .accessibilityLabel("Open chat in CLI")
+            }
+
+            if intent == .create {
+                Spacer(minLength: Metrics.spacing)
+            }
+
+            // Stop before Send, and only while there is a turn to stop. The pair used to be one
+            // control; see `ComposerStopButton` for why it no longer can be, and why Send is the
+            // one that keeps the end of the row in every state.
+            HStack(spacing: Metrics.spacingWide) {
+                if isRunning {
+                    ComposerStopButton(onStop: onStop)
+                }
+
+                ComposerSendButton(
+                    intent: intent,
+                    queues: queues,
+                    canSend: canSend,
+                    onSend: onSend
+                )
+            }
+            .padding(.leading, Metrics.spacingWide)
+        }
+    }
+
+    // MARK: - Edits
+
+    private func edit(_ change: (inout ComposerControls) -> Void) {
+        var changed = controls
+        change(&changed)
+        guard changed != controls else { return }
+        onChange(changed)
+    }
+
+    private func selectPermissionMode(_ id: String) {
+        guard let mode = PermissionMode(rawValue: id) else { return }
+        edit { $0.permissionMode = mode }
+    }
+
+    /// The efforts the chosen model actually takes.
+    ///
+    /// Claude Code's five are the same for every model. Codex's differ per model, measured against
+    /// the real `model/list`: `gpt-5.6-sol` takes six levels up to `ultra`, `gpt-5.5` stops at
+    /// `xhigh`. Offering a level the model does not take is offering something the server refuses.
+    private var efforts: [ComposerOption] {
+        catalog.efforts(for: controls.agentKind, model: controls.model)
+    }
+
+    /// Every field the preset names, in one edit, so nothing the last model left behind survives.
+    /// The effort still goes through the catalogue, for the reason `selectModel` gives: a level the
+    /// model no longer takes is a level the server refuses.
+    private func selectPreset(_ preset: ModelPreset) {
+        edit {
+            $0 = $0.applying(preset)
+            $0.effort = catalog.resolvedEffort($0.effort, for: $0.agentKind, model: $0.model)
+        }
+    }
+
+    /// Choosing a model out of another backend's section is choosing that backend.
+    ///
+    /// Three things move together, which is why this is not three separate edits: the model, the
+    /// backend it belongs to, and the effort, which has to land on something the new model takes.
+    /// The caller decides what changing the backend means, because a chat that has already spoken
+    /// forks rather than changing. See `BackendChange`.
+    private func selectModel(_ id: String) {
+        let backend = catalog.backend(ofModel: id, current: controls.agentKind)
+        edit {
+            $0.model = id
+            $0.agentKind = backend
+            $0.effort = catalog.resolvedEffort($0.effort, for: backend, model: id)
+            // The permission mode moves itself. A mode the new backend does not have cannot
+            // survive the move (Codex has no Plan, Claude Code has no Approve for me), and that
+            // used to be arranged here, in a view, by one of the four places a backend changes.
+            // It is an invariant of `ComposerControls` now: see the property's own note.
+        }
+    }
+
+}
+
+/// The footer's own coordinate space, so the gauge can report where it is inside it.
+///
+/// A file-level constant rather than a static on the view: the geometry closure is `Sendable` and
+/// cannot reach a main-actor-isolated static, which is a warning and this project builds with
+/// warnings as errors.
+private let composerFooterSpace = "composer.footer"

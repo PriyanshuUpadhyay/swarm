@@ -1,0 +1,385 @@
+import BloomCore
+import Foundation
+import QuartzCore
+
+/// What a transcript's arrivals and reflows did, for a probe to read. See `TranscriptHoldView`.
+///
+/// Two questions a report has to answer and an impression cannot. **Did an arrival hold and
+/// reveal the pane**, which a count left behind says it did not. And **how many rows were
+/// measured**, which is the cost of an arrival and of every frame of a resize, and the one number
+/// to compare two builds on.
+///
+/// Counters, written where the holds are and read by nothing but a report.
+///
+/// **A counter added here is code on the app's own path, so where it is written matters as much as
+/// what it counts.** An increment is free; a walk over the visible rows is not, and this file has
+/// already reported a regression that was its own. See the head of `ProbeHarness`. Increment where
+/// the thing happens, and take anything that has to LOOK at the screen on the settle.
+///
+/// **And before adding one at all, run `sample`.** Three counters here were added to find why a
+/// transcript scrolled badly and all three acquitted their suspect, because a counter can only
+/// find what somebody already suspected. A profiler found it in eight seconds, in a shape none of
+/// them was written to notice. The order that works is profile first and count afterwards, to
+/// watch what the profile named. The argument is at the head of `ProbeHarness`.
+@MainActor
+enum TranscriptHoldCensus {
+    /// Panes blanked because they were pointed at another conversation, and panes faded back in.
+    /// A count that stays behind is a pane left waiting for rows that never came.
+    private(set) static var arrivals = 0
+    private(set) static var reveals = 0
+    /// **The number that says whether any of this worked.** Every `NSHostingView` built to measure
+    /// a row, wherever it was built from. A switch used to build one per row in the window because
+    /// the workspace changing counted as the environment changing; a resize used to build one per
+    /// row per drag.
+    private(set) static var measurements = 0
+    /// Rows the last reflow left holding an estimate rather than measuring.
+    private(set) static var estimatedRows = 0
+    /// **Rows expected to draw something that measured nothing.** See `silenced(_:)`, which
+    /// carries why one of these is a row the reader never sees again. `silences` is the log, up to
+    /// `mostSilences` of them, and `silencedRows` is the count of all of them.
+    private(set) static var silencedRows = 0
+    private(set) static var silences: [Silence] = []
+    /// **Heights reported from a pass that laid the row out at another width.** See
+    /// `reportedAtAnotherWidth`, which carries the two that emptied the owner's transcript.
+    private(set) static var widthMismatches = 0
+    private(set) static var mismatches: [Mismatch] = []
+    /// **The check that a row is the height it draws at.** Rows that reported the height they
+    /// drew at, and how many of those the table was still drawing at another height a turn after
+    /// it was told. See `TranscriptTable.Coordinator.checkCorrected`, which carries the bug.
+    private(set) static var correctedRows = 0
+    private(set) static var uncorrectedRows = 0
+    /// **What is on the screen, and how much of it is a guess.** Sampled when the view has stopped
+    /// moving: the most rows the reader could see at once that the table was drawing at a height
+    /// nobody has measured, and the most it was drawing at a height that disagrees with what was
+    /// measured. Either of them above nought is white space the reader can see.
+    ///
+    /// Sampled on the settle rather than on every frame, because the walk is over the visible rows
+    /// and a screenful is not a fixed number of them: see `censusOfTheScreen`.
+    private(set) static var screenEstimated = 0
+    private(set) static var screenWrong = 0
+    private(set) static var screensSeen = 0
+    /// The same two on the last screen sampled after the movement stopped, which is what tells a
+    /// guess that is being corrected as the reader flies past from one that is simply standing
+    /// there. See `TranscriptTable.Coordinator.scheduleSettle`.
+    private(set) static var screenEstimatedSettled = 0
+    private(set) static var screenWrongSettled = 0
+    /// **What a correction costs the table.** Every `noteHeightOfRows` call, the rows in them, and
+    /// every time a correction wrote the scroll offset to keep the reader where they were. A
+    /// scroll upwards draws rows nobody has drawn before, so all three climb with distance, which
+    /// is what "the higher I go the more stuttery it gets" is made of.
+    private(set) static var noteCalls = 0
+    private(set) static var notedRows = 0
+    private(set) static var placeWrites = 0
+    /// **How often the list built its entries, and how many it built.** One pass builds an entry
+    /// for every row in the window: a content key hashed from a dozen fields, two closures
+    /// allocated, and a payload sniffed. So this is the work that is proportional to the ROW COUNT
+    /// rather than to what is on screen, and the number that says whether a scroll is paying it.
+    ///
+    /// Counted per pass rather than per entry, which is the lesson at the head of `ProbeHarness`:
+    /// an increment and an add, whatever the window holds.
+    ///
+    /// **These two were predicted to be the stutter, and they are not. Written down because the
+    /// prediction was made in public and failed in public.** The reasoning was that an upward
+    /// scroll grows the window about eight times, that each grow costs a pass over every entry in
+    /// it, and that a pass of that size costs about fifty milliseconds: sixteen passes, 29,000
+    /// entries, 800ms of a three second sweep, 27 per cent of its frames. The run returned 13
+    /// passes and 13,410 entries, so the mechanism was real. It also returned a ceiling of 0.8ms
+    /// on every SwiftUI layout of the centre pane across a 22 second sweep, 3,512 of them totalling
+    /// 481ms, which is two per cent of the wall clock. The fifty milliseconds was invented and
+    /// never measured, and 27 per cent predicted against 27 per cent observed would have convinced
+    /// both readers of it if the count had not been falsifiable alongside.
+    ///
+    /// The cost is in the AppKit half, which nothing here timed. See `cellSeconds`.
+    private(set) static var entryPasses = 0
+    private(set) static var entriesBuilt = 0
+    /// **The AppKit half, which nothing measured until the SwiftUI half was proved innocent.**
+    ///
+    /// `PaneLayoutTiming` times the pane's own SwiftUI pass and says it never exceeds a
+    /// millisecond. What it cannot see is everything the table does around it: asking the delegate
+    /// for heights, building a row's `NSHostingView`, and relaying out when a height is corrected.
+    /// A row scrolled into view costs a whole SwiftUI graph, and none of that happens inside the
+    /// pane's layout.
+    ///
+    /// `cellsAsked` is every call of `viewFor`; `cellsBuilt` is the ones that actually replaced the
+    /// root view, because a recycled cell holding the content it already holds returns early. The
+    /// seconds are around that replacement.
+    ///
+    /// **And the seconds do not mean what they were added to mean. Measured: 0.0123 seconds over a
+    /// sweep that dropped 29 per cent of its frames, 0.007ms a cell.** Predicted 5 to 12 seconds,
+    /// from 2.1ms a cell, which is a figure this file records for `measure(_:at:)`: a hosting view
+    /// built, given a width constraint, laid out and asked for its `fittingSize`. Assigning
+    /// `rootView` is none of that. It hands SwiftUI a new tree and returns, and the layout it
+    /// causes happens later, in the hosting view's own pass, outside this bracket.
+    ///
+    /// So a small number here does not acquit building a row. It says the cost is not in the
+    /// statement this brackets, and a bracket around a statement whose work is deferred cannot say
+    /// where it went. The 2.1ms was borrowed from an operation that does the work synchronously
+    /// and carried into an argument about one that does not: a number is evidence for the thing it
+    /// measured and for nothing else.
+    private(set) static var cellsAsked = 0
+    private(set) static var cellsBuilt = 0
+    private(set) static var cellSeconds = 0.0
+    private(set) static var cellWorstMs = 0.0
+    /// Every time the table asked the delegate how tall a row is.
+    ///
+    /// **The one number that says whether a correction is O(the rows below it).** If AppKit re-asks
+    /// for every row of the table each time `noteHeightOfRows` names one, then 505 corrections over
+    /// a 2,981 row conversation is a million and a half delegate calls, each a hashed dictionary
+    /// lookup. If it asks only for what it was told about, this stays in the tens of thousands.
+    /// Two answers three orders of magnitude apart, from one increment.
+    private(set) static var heightAsks = 0
+    /// The time inside `noteHeightOfRows` itself, which is AppKit's relayout of the rows below a
+    /// correction.
+    private(set) static var noteSeconds = 0.0
+    private(set) static var noteWorstMs = 0.0
+
+    static func arrived() { arrivals += 1 }
+
+    static func revealed() { reveals += 1 }
+
+    /// One row measured, from anywhere. See `TranscriptTable.Coordinator.measure`.
+    static func measured() { measurements += 1 }
+
+    static func released(estimated: Int) { estimatedRows = estimated }
+
+    /// One screenful, as it was drawn. The worst of them is what is kept.
+    static func sawScreen(estimated: Int, wrong: Int, settled: Bool = false) {
+        screensSeen += 1
+        screenEstimated = max(screenEstimated, estimated)
+        screenWrong = max(screenWrong, wrong)
+        if settled {
+            screenEstimatedSettled = estimated
+            screenWrongSettled = wrong
+        }
+    }
+
+    /// One write of the scroll offset that actually moved it.
+    static func placed() { placeWrites += 1 }
+
+    /// One cell handed to the table, and whether its root view had to be replaced. See `cellsBuilt`.
+    static func askedCell(rebuilt: Bool, seconds: Double) {
+        cellsAsked += 1
+        guard rebuilt else { return }
+        cellsBuilt += 1
+        cellSeconds += seconds
+        cellWorstMs = max(cellWorstMs, seconds * 1000)
+    }
+
+    /// One height answered. See `heightAsks`: an increment and nothing else, on a path AppKit can
+    /// call a million times.
+    static func askedHeight() { heightAsks += 1 }
+
+    /// One `noteHeightOfRows`, and what it took. See `noteSeconds`.
+    static func noted(rows: Int, seconds: Double) {
+        noteCalls += 1
+        notedRows += rows
+        noteSeconds += seconds
+        noteWorstMs = max(noteWorstMs, seconds * 1000)
+    }
+
+    /// The clock, but only while a probe is measuring. Two reads of it per cell is nothing; the
+    /// point of the gate is that a shipping build takes neither.
+    static func clock() -> Double {
+        PaneLayoutTiming.isEnabled ? CACurrentMediaTime() : 0
+    }
+
+    static func since(_ started: Double) -> Double {
+        started > 0 ? CACurrentMediaTime() - started : 0
+    }
+
+    /// One pass over the list's entries. See `entryPasses`.
+    static func builtEntries(_ count: Int) {
+        entryPasses += 1
+        entriesBuilt += count
+    }
+
+    /// **A row that was expected to draw something turned out to measure nothing.**
+    ///
+    /// The blank transcript a composer drag leaves, watched rather than reasoned about. A height
+    /// of nought is remembered as an answer: `TranscriptRowHeights.measuredNothing` then refuses
+    /// the row a view for ever, `needsMeasuring` refuses to ask again, and `isGuessed` does not
+    /// even count it, because the cache and the table agree perfectly about nothing. A row
+    /// silenced by one bad measurement is gone until the pane changes width, which is the one
+    /// thing that marks every key stale.
+    ///
+    /// So this records each one WITH the geometry of the pass that took it, because the question
+    /// a report has to answer is not how many but which frame. `TranscriptRowInk` is what says
+    /// the row was expected to draw: a row that claims to draw nothing measuring nothing is the
+    /// design working and is not recorded here.
+    ///
+    /// **Every entry the first three probe runs produced has been explained, and none of them was
+    /// a fault.** Two were the entries that redraw themselves, which draw nothing between turns
+    /// and are measured on every pass; they are excluded now. The other five were `thinking` rows
+    /// whose thinking text is empty, a signature and nothing else, looked up by sequence number in
+    /// the database the run was driven against. `TranscriptRowInk` only answers for `system` rows,
+    /// so an empty thinking block is not CLAIMED to draw nothing, is estimated like any other row,
+    /// and then measures nothing when it is drawn. Recording nought for it and refusing it a view
+    /// is the design working.
+    ///
+    /// It stays because it is one comparison on a path that has just laid out a hosting view, and
+    /// because a real silence is invisible to everything else here: `isGuessed` does not count a
+    /// row the cache and the table agree about, even when what they agree on is nothing. Anything
+    /// it reports should be looked up before it is believed.
+    static func silenced(_ silence: Silence) {
+        silencedRows += 1
+        guard silences.count < mostSilences else { return }
+        silences.append(silence)
+    }
+
+    /// One row, and the pane it was measured against.
+    struct Silence: Sendable {
+        var row: Int
+        var source: String
+        var shape: String
+        var columnWidth: Double
+        var viewportWidth: Double
+        var viewportHeight: Double
+    }
+
+    /// A run that silences a thousand rows should not write a thousand of these into a report
+    /// nobody can read. `silencedRows` still counts them all.
+    private static let mostSilences = 200
+
+    /// **A drawn row reported its height from a pass that laid it out at another width.**
+    ///
+    /// The one instrument here that was written for a fault already found rather than for a
+    /// suspicion. Two rows in one probe run reported 1,972 points for a three line paragraph whose
+    /// height is 54, and 10,806 for a row whose height is 444, both only during a composer drag
+    /// and both correct again afterwards. Both ratios are a row wrapped into a column about
+    /// fifteen points wide, and the second settled an estimate at 6,025 points which was then
+    /// handed to every unmeasured row of its kind.
+    ///
+    /// `TranscriptRowHeights.isEvidence` refuses those reports now, and this counts them, because
+    /// **the refusal is not the explanation.** Nobody knows why a cell is laid out at a fraction
+    /// of its width for a pass. A count that is non-zero on every run is what says the fault is
+    /// ordinary rather than a once-in-four accident, and the widths recorded beside it are where
+    /// somebody picks the thread up.
+    ///
+    /// # What it is, which the runs answered in two goes
+    ///
+    /// **The harmless half is a reuse pool holding cells from before a width change.** Two reports
+    /// out of forty nine cells built, both at 747 against a table of 420, where 747 is the width
+    /// that pane had before the run pinned it. A cell comes out of the pool, is handed a new row,
+    /// and reports before the table has resized it.
+    ///
+    /// **The half that does the damage is a cell that has no frame yet**, and it was caught with
+    /// this watching: row 2593, an `answer`, reporting **2,568 points against a known 75** from a
+    /// layout **24 points wide**, with no view held for the row at all. That is the same shape as
+    /// the 1,972 and the 10,806 that emptied the owner's transcript.
+    ///
+    /// It is ours and it is in `viewFor`. A cell that misses the reuse pool is built by
+    /// `TranscriptTableCell(identifier:)`, which is `super.init(frame: .zero)`; `onMeasured` is
+    /// wired to it, and `apply` then installs the root view. All of that happens BEFORE `viewFor`
+    /// returns the cell, so the table has not framed it and is holding no view for the row, which
+    /// is the minus one. A SwiftUI graph laid out against a proposal of nought does not come out
+    /// nought wide: the content bottoms out at its own minimum, which is the 24, and a paragraph
+    /// wrapped into 24 points is 34 times taller than the same paragraph at 420.
+    ///
+    /// **So the sign is the whole difference in consequence.** A stale WIDER frame under-states a
+    /// height, 32 points against a true 54, and draws a row short. A frame with no width at all
+    /// over-states it by an order of magnitude, and that is what a blank transcript is made of.
+    ///
+    /// **The rate, measured rather than assumed: four in fifty one cells built, about eight per
+    /// cent, of which two were harmless for the reason above.** It is not rare and it is not the
+    /// probe's doing: the pane was 420 points wide at every step of every run in which it happened.
+    ///
+    /// **What this file does about it is refuse to believe the report, which is not the same as
+    /// fixing it.** The upstream fix is to give a cell the width it is about to be drawn at before
+    /// handing it content to measure, in `viewFor`, and it is not made here.
+    static func reportedAtAnotherWidth(_ mismatch: Mismatch) {
+        widthMismatches += 1
+        guard mismatches.count < mostMismatches else { return }
+        mismatches.append(mismatch)
+    }
+
+    /// One report, and the two widths that disagreed about it.
+    struct Mismatch: Sendable {
+        var row: Int
+        var shape: String
+        /// What the cell was laid out at when it reported.
+        var reportedWidth: Double
+        /// What the cache believes every height in it was taken at.
+        var cacheWidth: Double
+        /// The table's own width now, which is what the cache is told on the next pass.
+        var columnWidth: Double
+        /// **The cell's own frame width at the moment of the report, or minus one when the table
+        /// is holding no view for the row at all.**
+        ///
+        /// Those are different facts and the first spelling of this conflated them, which is how
+        /// the answer was nearly missed: a report arriving with no cell behind it reads as a cell
+        /// of no width, and it is neither. See `reportedAtAnotherWidth` for what minus one turned
+        /// out to mean.
+        var cellWidth: Double
+        var reportedHeight: Double
+        /// What was already known for this content, or -1 for nothing.
+        var knownHeight: Double
+    }
+
+    private static let mostMismatches = 200
+
+    /// One batch of corrections, and the ones that did not take.
+    static func corrected(rows: Int, uncorrected: Int) {
+        correctedRows += rows
+        uncorrectedRows += uncorrected
+    }
+
+    static func reset() {
+        arrivals = 0
+        reveals = 0
+        measurements = 0
+        estimatedRows = 0
+        correctedRows = 0
+        uncorrectedRows = 0
+        screenEstimated = 0
+        screenWrong = 0
+        screensSeen = 0
+        screenEstimatedSettled = 0
+        screenWrongSettled = 0
+        noteCalls = 0
+        notedRows = 0
+        placeWrites = 0
+        cellsAsked = 0
+        cellsBuilt = 0
+        cellSeconds = 0
+        cellWorstMs = 0
+        heightAsks = 0
+        noteSeconds = 0
+        noteWorstMs = 0
+        entryPasses = 0
+        entriesBuilt = 0
+        silencedRows = 0
+        silences = []
+        widthMismatches = 0
+        mismatches = []
+    }
+
+    static func summary() -> [String: Double] {
+        [
+            "arrivals": Double(arrivals),
+            "reveals": Double(reveals),
+            "measurements": Double(measurements),
+            "estimatedRows": Double(estimatedRows),
+            "correctedRows": Double(correctedRows),
+            "uncorrectedRows": Double(uncorrectedRows),
+            "screenEstimated": Double(screenEstimated),
+            "screenWrong": Double(screenWrong),
+            "screensSeen": Double(screensSeen),
+            "screenEstimatedSettled": Double(screenEstimatedSettled),
+            "screenWrongSettled": Double(screenWrongSettled),
+            "noteCalls": Double(noteCalls),
+            "notedRows": Double(notedRows),
+            "placeWrites": Double(placeWrites),
+            "cellsAsked": Double(cellsAsked),
+            "cellsBuilt": Double(cellsBuilt),
+            "cellSeconds": cellSeconds,
+            "cellWorstMs": cellWorstMs,
+            "heightAsks": Double(heightAsks),
+            "noteSeconds": noteSeconds,
+            "noteWorstMs": noteWorstMs,
+            "entryPasses": Double(entryPasses),
+            "entriesBuilt": Double(entriesBuilt),
+            "silencedRows": Double(silencedRows),
+            "widthMismatches": Double(widthMismatches),
+        ]
+    }
+}
