@@ -68,6 +68,86 @@ struct SwarmLaunchChoiceTests {
         #expect(!CODER.matchesLaunchControls(controls))
     }
 
+    @Test("removing a role restores the controls from before the role")
+    func removingRoleRestoresControls() {
+        var controls = ComposerControls(agentKind: .claudeCode)
+        controls.model = "sonnet"
+        var choice = SwarmLaunchChoice(controls: controls)
+
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        choice.selectRole(nil)
+
+        #expect(choice.roleID == nil)
+        #expect(choice.controls == controls)
+
+        choice.selectRole(CODER)
+        choice.apply(.failed(message: "account lookup failed"))
+
+        #expect(choice.roleID == nil)
+        #expect(choice.controls == controls)
+        #expect(choice.controlsWithoutRole == controls)
+    }
+
+    @Test("a footer edit without a role keeps the account caption")
+    func customControlsKeepAccountCaption() {
+        var choice = SwarmLaunchChoice()
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        choice.apply(.failed(message: "account lookup failed"))
+        let caption = choice.accountCaption
+        var controls = choice.controls
+        controls.model = "sonnet"
+
+        let removedRole = choice.updateControls(controls, roles: [CODER])
+
+        #expect(!removedRole)
+        #expect(choice.accountCaption == caption)
+    }
+
+    @Test("a role-neutral footer edit survives an account fallback")
+    func roleNeutralControlSurvivesFallback() {
+        var choice = SwarmLaunchChoice()
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        var controls = choice.controls
+        controls.permissionMode = .bypassPermissions
+
+        let removedRole = choice.updateControls(controls, roles: [CODER])
+        choice.apply(.failed(message: "account lookup failed"))
+
+        #expect(!removedRole)
+        #expect(choice.controls.permissionMode == .bypassPermissions)
+    }
+
+    @Test("a Codex Plan edit falls back to a valid Claude mode")
+    func codexPlanFallsBackToClaudeBuild() {
+        var choice = SwarmLaunchChoice(controls: ComposerControls(agentKind: .claudeCode))
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        var controls = choice.controls
+        controls.interactionMode = .plan
+
+        let removedRole = choice.updateControls(controls, roles: [CODER])
+        choice.apply(.failed(message: "account lookup failed"))
+
+        #expect(!removedRole)
+        #expect(choice.controls.agentKind == .claudeCode)
+        #expect(choice.controls.interactionMode == .build)
+    }
+
+    @Test("an unsupported role keeps the account caption")
+    func unsupportedRoleKeepsCaption() {
+        var choice = SwarmLaunchChoice()
+        choice.apply(.failed(message: "account lookup failed"))
+        let caption = choice.accountCaption
+
+        let selectedRole = choice.selectRole(RESEARCHER)
+
+        #expect(!selectedRole)
+        #expect(choice.accountCaption == caption)
+    }
+
     @Test("Auto names its account and each account shows usage left")
     func accountChoices() throws {
         let list = accountList(auto: "personal")
@@ -123,6 +203,23 @@ struct SwarmLaunchChoiceTests {
         #expect(decision.options.isEmpty)
         #expect(decision.fallbackCaption ==
                 "No signed-in accounts. Using this repository's settings.")
+    }
+
+    @Test("an empty account list keeps the role and uses the CLI home")
+    func emptyAccountList() {
+        let list = SwarmAccountList(provider: "claude", source: "yelo", accounts: [], auto: nil)
+        let decision = SwarmAccountLoadDecision.loaded(list)
+        var choice = SwarmLaunchChoice()
+        let selectedRole = choice.selectRole(ORCHESTRATOR)
+        #expect(selectedRole)
+
+        choice.apply(decision)
+
+        #expect(!decision.usesDefault)
+        #expect(decision.options.isEmpty)
+        #expect(decision.selection == nil)
+        #expect(decision.fallbackCaption == nil)
+        #expect(choice.roleID == ORCHESTRATOR.id)
     }
 
     @Test("only the provider contract key reaches the launch environment")
