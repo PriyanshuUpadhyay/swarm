@@ -1,0 +1,97 @@
+import Foundation
+
+/// How much air the conversation is given between its lines.
+///
+/// The ratios keep their stored meanings even when the default selection changes. The current
+/// default pairs 1.55 leading with larger prose; a saved choice still reads exactly as before.
+/// They are here rather than beside the picker for the reason the
+/// three-target split exists: a number chosen inside a view is a number nothing can test.
+///
+/// **Named steps rather than a slider or a raw ratio.** That is `ChatTextSize`'s argument and it
+/// holds again here. A ratio is not something a reader has in their hand: what they can judge is
+/// the paragraph in front of them, and 1.85 is not a figure anybody would be able to name again
+/// after closing the window. A fixed set of steps is also its own bounds and its own way back,
+/// which is what makes "Default" a place on the control rather than a number to remember.
+///
+/// **Five of them, fifteen hundredths apart, and that spacing is what makes the control do
+/// anything at all.** `TextLeading.overPointSize` rounds to a whole point, so two ratios that
+/// round to the same number of points are one step wearing two labels. Resolved against the body
+/// rung at each of the five chat text sizes, these five answer, in points added to the line box:
+///
+///     size / box   1.40  1.55  1.70  1.85  2.00
+///     12 / 15        2     4     5     7     9
+///     13 / 16        2     4     6     8    10
+///     15 / 18        3     5     8    10    12
+///     17 / 20        4     6     9    11    14
+///     20 / 23        5     8    11    14    17
+///
+/// Every step differs from its neighbour at every text size.
+/// A tenth apart would have collapsed rows of that table onto each other, which is a picker whose
+/// middle segments do nothing; a fifth apart would have put the ends outside the range worth
+/// offering. `ChatLineHeightTests` is that table, so a ratio cannot be nudged without the
+/// collapse being noticed.
+///
+/// **The ends are where they are because of what is either side of them.** 1.4 is a dense
+/// paragraph that fits more of a long answer on a screen, and it is under the 1.5 that WCAG 1.4.12
+/// names for body text: tighter than this is not a preference any more, it is a paragraph that is
+/// hard to read, and it is offered only because the reader has to ask for it by name. 2.0 is the
+/// loosest a column of a chat pane's measure still reads as one block of text; past it the lines
+/// stop belonging to each other.
+///
+/// **Deliberately not in the View menu.** Text size is there because Zoom In and Zoom Out are
+/// reached several times in a session and macOS has a standing pair of keys for them. A line
+/// height is set once, looked at, and left. Three more items in View, or a second pair of keys for
+/// `TextZoom` to route between a terminal and a chat, would be menu weight for something nobody
+/// opens a menu for twice.
+public enum ChatLineHeight: String, Codable, CaseIterable, Identifiable, Sendable {
+    case tightest
+    case tighter
+    case standard
+    case looser
+    case loosest
+
+    /// The same `UserDefaults` slot the settings picker binds to. See `current`.
+    public static let defaultsKey = "chat.lineHeight"
+
+    public static let defaultChoice: Self = .tighter
+
+    public var id: String { rawValue }
+
+    /// What a line of prose comes to, as a multiple of the size it is set at.
+    ///
+    /// Against the point size rather than against the line box, because that is how every
+    /// stylesheet states a line height and it is the number the page this was drawn from was set
+    /// with. See `TextLeading`, which holds both denominators and the reason there are two.
+    public var ratio: Double {
+        switch self {
+        case .tightest: 1.4
+        case .tighter: 1.55
+        case .standard: 1.7
+        case .looser: 1.85
+        case .loosest: 2
+        }
+    }
+
+    /// Lists are scanned item by item, so their wrapped lines use a tighter version of the
+    /// selected prose rhythm. The setting still moves them, but at half the distance.
+    public var listRatio: Double {
+        1.3 + (ratio - 1.4) / 2
+    }
+
+    /// The labels follow the density order, with the actual fallback marked as Default.
+    public var title: String {
+        switch self {
+        case .tightest: "Tight"
+        case .tighter: "Default"
+        case .standard: "Loose"
+        case .looser: "Looser"
+        case .loosest: "Loosest"
+        }
+    }
+}
+
+extension ChatLineHeight {
+    public static func read(from defaults: UserDefaults) -> Self {
+        defaults.string(forKey: defaultsKey).flatMap(Self.init(rawValue:)) ?? defaultChoice
+    }
+}

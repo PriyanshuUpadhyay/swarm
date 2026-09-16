@@ -1,0 +1,373 @@
+import Foundation
+
+/// What a drag inside one project's rows changes about the workspaces stored under it.
+///
+/// The list is a `List` and the drag is `onMove`, which is `NSOutlineView`'s own row reordering,
+/// so this is handed the two numbers that mechanism produces and nothing else: the offsets that
+/// moved and the offset they were dropped at, both in the order the rows are DRAWN in. Turning
+/// that into what the store should hold is the whole of this file, and it is here rather than in
+/// a view because the drawn order and the stored order are not the same list.
+///
+/// They differ twice over.
+///
+/// A filter can be hiding rows. `SidebarFilter` lets the user narrow the pane to unread work or
+/// to workspaces with changes, and a drop between two visible rows says nothing about the hidden
+/// rows between them, which have to keep the places they already had. So a move is anchored to
+/// the visible row it landed after, and the block is spliced in beside that row in the full
+/// order. Dropping at the very top has no row before it, so it anchors to the visible row after
+/// instead, which is the same rule read from the other end and is what keeps a drop at the top of
+/// a filtered pane from jumping over rows the user cannot see.
+///
+/// Pinned rows sort first. That is a second ordering laid over `sort_order`, so writing the drawn
+/// order straight back into `sort_order` is not enough: a pinned row dragged down among the
+/// unpinned ones would be written where it was dropped and then drawn back at the top on the next
+/// rebuild, which is a drop that undoes itself in front of the user. So a moved row ADOPTS the
+/// pin state of where it lands: pinned if the row it now sits above is pinned, and if it lands
+/// last, pinned if the row above it is. Dropping a row into the pinned block pins it, dragging it
+/// out of the block unpins it, and either way the row stays exactly where it was let go. The pin
+/// mark on the row is what says so, and it appears or disappears as part of the same settle.
+///
+/// The result is the smallest set of writes that produces the wanted order: a row whose
+/// `sort_order` and `pinned` are both already right is not in it. Every one of them names the two
+/// columns it changes, which is what `Store.reorderWorkspaces` writes, in one transaction.
+public enum SidebarReorder {
+    /// One row's new place. Never a whole `Workspace`: see `Store.reorderWorkspaces`.
+    public struct Change: Equatable, Sendable {
+        public var id: WorkspaceID
+        public var sortOrder: Int
+        public var pinned: Bool
+
+        public init(id: WorkspaceID, sortOrder: Int, pinned: Bool) {
+            self.id = id
+            self.sortOrder = sortOrder
+            self.pinned = pinned
+        }
+    }
+
+    /// The order rows are drawn in: pinned first, then the user's own order.
+    ///
+    /// The one place this rule is written down. `AppModel.workspaces(in:)` and
+    /// `SidebarRepoGroup.build` both sort by it, and a drag has to agree with them or it computes
+    /// a destination for a list nobody is looking at.
+    public static func drawn(_ workspaces: [Workspace]) -> [Workspace] {
+        workspaces.sorted { lhs, rhs in
+            if lhs.pinned != rhs.pinned { return lhs.pinned }
+            if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            return lhs.createdAt < rhs.createdAt
+        }
+    }
+
+    /// `onMove`'s own semantics, written out because `move(fromOffsets:toOffset:)` is SwiftUI's
+    /// and this target does not import it.
+    ///
+    /// The offsets index the list BEFORE anything is taken out of it, and `to` is the place the
+    /// block lands in that same numbering, which is why dropping a row on the place it already
+    /// occupies can arrive here as either its own offset or the one after it. Both are a move of
+    /// nothing, and both come out of here as the list unchanged.
+    public static func moving<Element>(
+        _ elements: [Element], from: IndexSet, to: Int
+    ) -> [Element] {
+        let block = from.sorted().map { elements[$0] }
+        let taken = from.filter { $0 < to }.count
+        var result = elements
+        for offset in from.sorted(by: >) { result.remove(at: offset) }
+        result.insert(contentsOf: block, at: max(0, min(to - taken, result.count)))
+        return result
+    }
+
+    /// - Parameters:
+    ///   - visible: the project's rows as they are drawn, which is what the filter is letting
+    ///     through, in the order `onMove`'s offsets index into.
+    ///   - all: every workspace in the project, filtered by nothing.
+    ///   - from: the offsets that moved, in `visible`.
+    ///   - to: the offset they were dropped at, in `visible`, before the moved rows are taken
+    ///     out. These are `onMove`'s own semantics, which are `Array.move(fromOffsets:toOffset:)`.
+    public static func move(
+        visible: [Workspace], all: [Workspace], from: IndexSet, to: Int
+    ) -> [Change] {
+        let drawnVisible = visible.map(\.id)
+        guard from.allSatisfy({ drawnVisible.indices.contains($0) }) else { return [] }
+
+        let afterMove = moving(drawnVisible, from: from, to: to)
+        let moved = from.map { drawnVisible[$0] }
+        let movedIDs = Set(moved)
+        guard !movedIDs.isEmpty else { return [] }
+
+        // `move(fromOffsets:toOffset:)` leaves the moved rows in one run, so the block is found by
+        // its first row and is as long as the number of rows that moved.
+        guard let head = afterMove.firstIndex(where: { movedIDs.contains($0) }) else { return [] }
+        let tail = head + moved.count - 1
+        let anchorBefore = head > 0 ? afterMove[head - 1] : nil
+        let anchorAfter = tail + 1 < afterMove.count ? afterMove[tail + 1] : nil
+
+        var order = drawn(all).map(\.id)
+        // A row the filter is hiding is not in `visible` and must not be treated as having moved.
+        let block = order.filter { movedIDs.contains($0) }
+        order.removeAll { movedIDs.contains($0) }
+
+        let insertion: Int
+        if let anchorBefore, let index = order.firstIndex(of: anchorBefore) {
+            insertion = index + 1
+        } else if let anchorAfter, let index = order.firstIndex(of: anchorAfter) {
+            insertion = index
+        } else {
+            // Nothing visible to anchor to, which is a project whose only visible rows are the
+            // ones being dragged. There is no order to change.
+            return []
+        }
+        order.insert(contentsOf: block, at: insertion)
+
+        let stored = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pinnedNow = pinned(after: order, moved: movedIDs, stored: stored)
+
+        return order.enumerated().compactMap { index, id in
+            guard let workspace = stored[id] else { return nil }
+            let wantsPinned = pinnedNow[id] ?? workspace.pinned
+            guard workspace.sortOrder != index || workspace.pinned != wantsPinned else { return nil }
+            return Change(id: id, sortOrder: index, pinned: wantsPinned)
+        }
+    }
+
+    /// What each moved row's pin state becomes.
+    ///
+    /// Read off the row below the block, because the pinned rows are the ones at the top: a block
+    /// that still has a pinned row under it is inside the pinned run, and one that does not is
+    /// below it. A block dropped at the very end has nothing under it and reads the row above
+    /// instead, which is the only case where the answer comes from the other side and is what
+    /// makes a project whose rows are all pinned behave.
+    ///
+    /// Every row in the block gets the same answer, so a multiple selection cannot be split
+    /// across the boundary and leave the two orders disagreeing.
+    private static func pinned(
+        after order: [WorkspaceID], moved: Set<WorkspaceID>, stored: [WorkspaceID: Workspace]
+    ) -> [WorkspaceID: Bool] {
+        guard let head = order.firstIndex(where: { moved.contains($0) }) else { return [:] }
+        let tail = order.lastIndex(where: { moved.contains($0) }) ?? head
+
+        let neighbour = tail + 1 < order.count ? order[tail + 1] : (head > 0 ? order[head - 1] : nil)
+        guard let neighbour, let workspace = stored[neighbour] else { return [:] }
+
+        var answer: [WorkspaceID: Bool] = [:]
+        for id in order where moved.contains(id) { answer[id] = workspace.pinned }
+        return answer
+    }
+}
+
+// MARK: - The flattened pane
+
+extension SidebarReorder {
+    /// One row of the sidebar, as the drag mechanism counts them.
+    ///
+    /// The pane is drawn as a single `ForEach` over every project header and every workspace row
+    /// under it, rather than as a `Section` per project. That is not a preference. `onMove` on a
+    /// `ForEach` of `Section`s does not crash and does not work either: a section header is not a
+    /// row the outline will pick up, so the projects could not be dragged at all while each one
+    /// was a section of its own, and there is no second `onMove` that reaches them. One flat run
+    /// of rows is the shape the mechanism can move.
+    ///
+    /// The price is that `onMove`'s two numbers stop saying which project they are about. Working
+    /// that out is what this is for, and it is the same job the rest of this file already does for
+    /// the filter and for the pinned rows: the numbers index the rows as they are DRAWN, and the
+    /// thing that has to change is a stored order that is not that list.
+    public enum Row: Equatable, Hashable, Sendable {
+        case project(RepoID)
+        case workspace(id: WorkspaceID, projectID: RepoID)
+        /// The sentence a project draws where its rows would be when it has none. It takes an
+        /// offset in the run like anything else, and it is never something to move.
+        case notice(projectID: RepoID)
+        /// One of the section headings the pane draws when it is grouped by status rather than by
+        /// project. It belongs to no project, which is the whole of why it carries nothing: with
+        /// the rows sorted by what each agent is doing there is no hand-chosen order to drop into,
+        /// and `SidebarGrouping.allowsReordering` refuses the drag before it reaches this type.
+        case heading
+        /// A subagent drawn under the workspace that spawned it. Like the notice it takes an
+        /// offset and never moves, but unlike the notice it appears BETWEEN workspace rows, which
+        /// is why `destination` counts ranks rather than subtracting a lower bound.
+        case subagent(projectID: RepoID)
+        /// A crew member drawn under the workspace it shares a worktree with. See `Crew`, and
+        /// `SidebarSelection.crew` for why it is not the case above.
+        ///
+        /// Counted exactly where `subagent` is counted, and that is the whole of what this case
+        /// has to do here: it is drawn BETWEEN workspace rows, so a pane that did not count it
+        /// would land a dragged row one place too high per crew member above it.
+        case crew(projectID: RepoID)
+        /// A workspace whose worktree is still being cut. See `PendingWorkspace`.
+        ///
+        /// It takes an offset and never moves, like the two above. It cannot be dragged, because
+        /// there is no stored row to write a `sort_order` onto, and nothing can be dropped past it
+        /// either: it is drawn at the end of its project's block, which is where the row it
+        /// becomes will land, so a drop below it is a drop at the end of the project and the run
+        /// has to reach over it exactly as it reaches over a subagent.
+        case pending(projectID: RepoID)
+
+        /// Whether this row hangs off the end of `projectID`'s workspace rows rather than being
+        /// one of them, so `workspaceRun` knows to reach over it.
+        ///
+        /// A project header, a notice or another project's row all stop the run; these three do
+        /// not, because they are drawn inside the block and a drop below them is still a drop in
+        /// this project.
+        func trails(_ projectID: RepoID) -> Bool {
+            switch self {
+            case .subagent(let owner), .crew(let owner), .pending(let owner): owner == projectID
+            case .project, .workspace, .notice, .heading: false
+            }
+        }
+    }
+
+    /// What a drag over the flattened pane turns out to have been.
+    public enum Destination: Equatable, Sendable {
+        /// A drag with nothing to write: a row dropped where it already was, an offset that is not
+        /// in the list, or a grab of something that does not move.
+        case nothing
+
+        /// A project header was dragged, and every workspace under it goes with it. `to` is an
+        /// offset into the project list in `move(fromOffsets:toOffset:)`'s own semantics, which is
+        /// to say it counts the dragged project as still being where it was.
+        case project(id: RepoID, to: Int)
+
+        /// A workspace was dragged inside its own project. `from` and `to` are offsets into that
+        /// project's own drawn rows, which is exactly what `move(visible:all:from:to:)` takes, so
+        /// the flattening changes nothing about the ordering rules underneath it.
+        ///
+        /// `landedOutside` is a drop the pane could not refuse. One `ForEach` means one insertion
+        /// line, drawn wherever the pointer is, including in a project the row cannot belong to,
+        /// and a drop there arrives here like any other. The row is brought back to the nearest
+        /// place inside its own project, which is the end it was dragged towards, so a drag that
+        /// aimed past the project's last row lands on its last row rather than nowhere.
+        case workspace(projectID: RepoID, from: IndexSet, to: Int, landedOutside: Bool)
+    }
+
+    /// One project's new place. Never a whole `Repo`: see `Store.reorderProjects`.
+    public struct ProjectChange: Equatable, Sendable {
+        public var id: RepoID
+        public var sortOrder: Int
+
+        public init(id: RepoID, sortOrder: Int) {
+            self.id = id
+            self.sortOrder = sortOrder
+        }
+    }
+
+    /// Which of the two things a flat drag was, and what it means in the terms that thing is
+    /// stored in.
+    ///
+    /// - Parameters:
+    ///   - rows: the pane's rows in the order they are drawn, which is the order `onMove`'s
+    ///     offsets index into. Only the rows of the one `ForEach` that carries the `onMove`: the
+    ///     Home and Search rows and the Projects heading are outside it and are not counted.
+    ///   - from: the offsets that moved.
+    ///   - to: the offset they were dropped at, before the moved rows are taken out.
+    public static func destination(rows: [Row], from: IndexSet, to: Int) -> Destination {
+        guard from.allSatisfy({ rows.indices.contains($0) }), (0...rows.count).contains(to) else {
+            return .nothing
+        }
+        guard let grabbed = from.min() else { return .nothing }
+
+        switch rows[grabbed] {
+        case .notice, .subagent, .crew, .pending, .heading:
+            return .nothing
+
+        case .project(let id):
+            // A header refuses selection, so the outline drags the single row that was grabbed and
+            // nothing travels with it. Anything else arriving here is not a project drag.
+            guard from.count == 1 else { return .nothing }
+            return .project(id: id, to: projectOffset(rows: rows, at: to))
+
+        case .workspace(_, let projectID):
+            let owned = workspaceOffsets(rows: rows, projectID: projectID)
+            guard let run = workspaceRun(rows: rows, projectID: projectID),
+                  from.allSatisfy({ owned.contains($0) }) else { return .nothing }
+            let landing = min(max(to, run.lowerBound), run.upperBound)
+            // Rank among this project's WORKSPACE rows, not distance from the run's start. The
+            // two were the same number until subagents started drawing between workspace rows,
+            // and subtracting a lower bound across them lands a dragged row one place per
+            // subagent above it. `move(visible:all:from:to:)` counts workspaces and nothing else,
+            // so what it is given has to be counted the same way.
+            return .workspace(
+                projectID: projectID,
+                from: IndexSet(from.compactMap { owned.firstIndex(of: $0) }),
+                to: owned.filter { $0 < landing }.count,
+                landedOutside: landing != to
+            )
+        }
+    }
+
+    /// The smallest set of writes that puts the projects in the order a header drag asked for.
+    ///
+    /// Ordered by `sort_order` and read back by the same, so a project whose number is already
+    /// right is not written. Every remaining project ends up holding its own index, which is what
+    /// keeps the numbers from drifting into ties over a long series of drags.
+    public static func move(projects: [Repo], id: RepoID, to: Int) -> [ProjectChange] {
+        move(projects: projects, visible: projects.map(\.id), id: id, to: to)
+    }
+
+    /// The drop offset counts visible projects only. Reorder their slots in the full list so
+    /// hidden projects keep their places when they are shown again.
+    public static func move(
+        projects: [Repo], visible: [RepoID], id: RepoID, to: Int
+    ) -> [ProjectChange] {
+        guard let index = visible.firstIndex(of: id), (0...visible.count).contains(to) else { return [] }
+        let moved = moving(visible, from: IndexSet(integer: index), to: to)
+
+        let visibleIDs = Set(visible)
+        let stored = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard visibleIDs.count == visible.count, visible.allSatisfy({ stored[$0] != nil }) else { return [] }
+        var replacements = moved.makeIterator()
+        let ordered = projects.map { repo in
+            guard visibleIDs.contains(repo.id), let next = replacements.next() else { return repo }
+            return stored[next] ?? repo
+        }
+        return ordered.enumerated().compactMap { offset, repo in
+            guard repo.sortOrder != offset else { return nil }
+            return ProjectChange(id: repo.id, sortOrder: offset)
+        }
+    }
+
+    /// Which project boundary a flat offset is nearest to.
+    ///
+    /// A project is a run of rows and the insertion line can be drawn anywhere inside one, so a
+    /// header dropped in the middle of another project has to be read as landing on one side of it
+    /// or the other. The nearest boundary is that reading, and it is the one that agrees with the
+    /// line the user was looking at: a line just under a header is closer to the top of that
+    /// project than to the bottom of it, and lands the dragged project above rather than below.
+    ///
+    /// Ties go to the earlier boundary, which only happens on a project with a single row.
+    private static func projectOffset(rows: [Row], at flat: Int) -> Int {
+        var boundaries: [Int] = []
+        for (offset, row) in rows.enumerated() {
+            if case .project = row { boundaries.append(offset) }
+        }
+        boundaries.append(rows.count)
+
+        var best = 0
+        var distance = Int.max
+        for (index, boundary) in boundaries.enumerated() where abs(boundary - flat) < distance {
+            distance = abs(boundary - flat)
+            best = index
+        }
+        return best
+    }
+
+    /// The flat offsets of one project's workspace rows, in order.
+    private static func workspaceOffsets(rows: [Row], projectID: RepoID) -> [Int] {
+        rows.indices.filter { offset in
+            if case .workspace(_, let owner) = rows[offset] { return owner == projectID }
+            return false
+        }
+    }
+
+    /// The flat offsets one project's block occupies, as a range whose bounds are the first and
+    /// last places a row of that project can be dropped at.
+    ///
+    /// The upper bound reaches past the last workspace row over any crew members and subagents
+    /// drawn under it, and over a pending row drawn after them. Those rows are part of the project's block, so a drop
+    /// below them is a drop at the end of the project rather than outside it, and clamping to the
+    /// workspace row itself would have reported `landedOutside` and shown the "Kept in" note for a
+    /// drag that landed exactly where the insertion line said it would.
+    private static func workspaceRun(rows: [Row], projectID: RepoID) -> Range<Int>? {
+        let offsets = workspaceOffsets(rows: rows, projectID: projectID)
+        guard let first = offsets.first, var last = offsets.last else { return nil }
+        while rows.indices.contains(last + 1), rows[last + 1].trails(projectID) { last += 1 }
+        return first..<(last + 1)
+    }
+}
