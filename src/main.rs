@@ -204,7 +204,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let text = swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
             std::fs::create_dir_all(&run_dir)?;
-            std::fs::write(run_dir.join(format!("{agent_id}.log")), text)?;
+            swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
             let orchestrator = swarm::store::orchestrator_of(&connection, session_id)?;
             let note = format!("agent {agent_id} exited without a summary");
             report_dead(&mut connection, &root, session_id, &agent_id, &orchestrator, &note)
