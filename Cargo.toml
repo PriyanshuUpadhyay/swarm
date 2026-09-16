@@ -3,6 +3,8 @@ name = "swarm"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
+description = "Message bus and pane control for a tree of agent CLIs"
+repository = "https://github.com/PriyanshuUpadhyay/swarm"
 
 [dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }
