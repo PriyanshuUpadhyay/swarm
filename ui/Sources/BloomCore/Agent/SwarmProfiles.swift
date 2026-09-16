@@ -83,20 +83,22 @@ public struct SwarmAccountList: Sendable, Hashable, Codable {
     }
 }
 
-/// One usage window for one account, such as Claude's seven day window.
+/// One usage window for one account, such as Claude's seven day window. A row with a nil `window`
+/// describes the whole account instead, such as one that is logged out, and `reason` says why.
 public struct SwarmUsageMeter: Sendable, Hashable, Codable {
     public var provider: String
     public var account: String?
     public var label: String
-    public var window: String
-    public var usedPct: Int
+    public var window: String?
+    public var usedPct: Int?
     public var resetsIn: String?
     public var state: String
+    public var reason: String?
     public var asOf: Int?
 
     public init(
-        provider: String, account: String?, label: String, window: String,
-        usedPct: Int, resetsIn: String?, state: String, asOf: Int?
+        provider: String, account: String?, label: String, window: String?,
+        usedPct: Int?, resetsIn: String?, state: String, reason: String?, asOf: Int?
     ) {
         self.provider = provider
         self.account = account
@@ -105,6 +107,7 @@ public struct SwarmUsageMeter: Sendable, Hashable, Codable {
         self.usedPct = usedPct
         self.resetsIn = resetsIn
         self.state = state
+        self.reason = reason
         self.asOf = asOf
     }
 }
