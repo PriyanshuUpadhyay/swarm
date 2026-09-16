@@ -230,6 +230,7 @@ private struct SwarmUsageMenuRow: View {
                 }
                 .font(UsageScale.supporting)
                 .monospacedDigit()
+                .lineLimit(1)
                 SwarmUsageMeterBar(fill: fill, isStale: meter.isStale, severity: meter.severity ?? .calm)
                 if let reset = meter.resetText {
                     Text(reset)

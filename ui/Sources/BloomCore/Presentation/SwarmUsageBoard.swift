@@ -86,10 +86,12 @@ public struct SwarmUsageBoard: Sendable, Hashable {
         layout: UsageLayout = UsageLayout()
     ) -> SwarmUsageBoard {
         let providerPositions = Dictionary(
-            uniqueKeysWithValues: layout.orderedProviders().enumerated().map { ($1, $0) }
+            layout.orderedProviders().enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         let metricPositions = Dictionary(
-            uniqueKeysWithValues: layout.metricOrder.enumerated().map { ($1, $0) }
+            layout.metricOrder.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         let byProvider = Dictionary(grouping: meters, by: \.provider)
         let providers = byProvider.compactMap { provider, sourceMeters -> Provider? in

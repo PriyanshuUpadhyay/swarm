@@ -97,6 +97,24 @@ struct SwarmUsageBoardTests {
         #expect(board.isEmpty)
     }
 
+    @Test("repeated layout ids keep their first position")
+    func repeatedLayoutIDs() {
+        let sevenDay = UsageMetricID("claudeCode/seven_day")
+        let fiveHour = UsageMetricID("claudeCode/five_hour")
+        let layout = UsageLayout(
+            providerOrder: [.codex, .claudeCode, .codex],
+            metricOrder: [sevenDay, fiveHour, sevenDay]
+        )
+        let board = SwarmUsageBoard.make(from: [
+            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "5h", usedPercent: 20),
+            meter(provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator", window: "7d", usedPercent: 30),
+            meter(provider: "codex", account: "CODER", label: "cx·coder", window: "7d", usedPercent: 40),
+        ], layout: layout)
+
+        #expect(board.providers.map(\.key) == ["codex", "claude"])
+        #expect(board.providers[1].accounts[0].meters.map(\.window) == ["7d", "5h"])
+    }
+
     @Test("status rows have one message and no bar values")
     func statusRow() throws {
         let board = SwarmUsageBoard.make(from: [
