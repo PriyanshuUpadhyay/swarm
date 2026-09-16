@@ -81,7 +81,9 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
         }
         guard !role.matchesLaunchControls(updated) else {
             controlsWithoutRole.permissionMode = updated.permissionMode
-            controlsWithoutRole.interactionMode = updated.interactionMode
+            controlsWithoutRole.interactionMode = updated.interactionMode.nearest(
+                on: controlsWithoutRole.agentKind
+            )
             controlsWithoutRole.isFastMode = updated.isFastMode
             controlsWithoutRole.codexFastMode = updated.codexFastMode
             controlsWithoutRole.outputStyle = updated.outputStyle

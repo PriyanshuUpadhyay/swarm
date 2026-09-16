@@ -120,6 +120,22 @@ struct SwarmLaunchChoiceTests {
         #expect(choice.controls.permissionMode == .bypassPermissions)
     }
 
+    @Test("a Codex Plan edit falls back to a valid Claude mode")
+    func codexPlanFallsBackToClaudeBuild() {
+        var choice = SwarmLaunchChoice(controls: ComposerControls(agentKind: .claudeCode))
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        var controls = choice.controls
+        controls.interactionMode = .plan
+
+        let removedRole = choice.updateControls(controls, roles: [CODER])
+        choice.apply(.failed(message: "account lookup failed"))
+
+        #expect(!removedRole)
+        #expect(choice.controls.agentKind == .claudeCode)
+        #expect(choice.controls.interactionMode == .build)
+    }
+
     @Test("an unsupported role keeps the account caption")
     func unsupportedRoleKeepsCaption() {
         var choice = SwarmLaunchChoice()
