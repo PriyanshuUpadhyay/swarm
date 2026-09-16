@@ -53,18 +53,18 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
     public mutating func selectInitialRole(_ role: SwarmRole?) {
         roleID = role?.id
         controlsWithoutRole = controls
-        accountCaption = nil
     }
 
     @discardableResult
     public mutating func selectRole(_ role: SwarmRole?) -> Bool {
-        accountCaption = nil
         guard let role else {
+            accountCaption = nil
             roleID = nil
             controls = controlsWithoutRole
             return true
         }
         guard let chosen = role.applyingToLaunchControls(controls) else { return false }
+        accountCaption = nil
         if roleID == nil { controlsWithoutRole = controls }
         roleID = role.id
         controls = chosen
@@ -79,7 +79,15 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
             controlsWithoutRole = updated
             return false
         }
-        guard !role.matchesLaunchControls(updated) else { return false }
+        guard !role.matchesLaunchControls(updated) else {
+            controlsWithoutRole.permissionMode = updated.permissionMode
+            controlsWithoutRole.interactionMode = updated.interactionMode
+            controlsWithoutRole.isFastMode = updated.isFastMode
+            controlsWithoutRole.codexFastMode = updated.codexFastMode
+            controlsWithoutRole.outputStyle = updated.outputStyle
+            controlsWithoutRole.codexContextWindow = updated.codexContextWindow
+            return false
+        }
         self.roleID = nil
         controlsWithoutRole = updated
         return true
@@ -179,10 +187,10 @@ public struct SwarmAccountLoadDecision: Sendable, Hashable {
     public var usesDefault: Bool { fallbackCaption != nil }
 
     public static func loaded(_ list: SwarmAccountList) -> Self {
-        let options = SwarmAccountOption.choices(from: list)
         guard !list.accounts.isEmpty else {
             return Self(options: [], selection: nil, fallbackCaption: nil)
         }
+        let options = SwarmAccountOption.choices(from: list)
         guard let selection = SwarmAccountOption.initialSelection(in: options) else {
             return fallback("No signed-in accounts")
         }

@@ -105,6 +105,33 @@ struct SwarmLaunchChoiceTests {
         #expect(choice.accountCaption == caption)
     }
 
+    @Test("a role-neutral footer edit survives an account fallback")
+    func roleNeutralControlSurvivesFallback() {
+        var choice = SwarmLaunchChoice()
+        let selectedRole = choice.selectRole(CODER)
+        #expect(selectedRole)
+        var controls = choice.controls
+        controls.permissionMode = .bypassPermissions
+
+        let removedRole = choice.updateControls(controls, roles: [CODER])
+        choice.apply(.failed(message: "account lookup failed"))
+
+        #expect(!removedRole)
+        #expect(choice.controls.permissionMode == .bypassPermissions)
+    }
+
+    @Test("an unsupported role keeps the account caption")
+    func unsupportedRoleKeepsCaption() {
+        var choice = SwarmLaunchChoice()
+        choice.apply(.failed(message: "account lookup failed"))
+        let caption = choice.accountCaption
+
+        let selectedRole = choice.selectRole(RESEARCHER)
+
+        #expect(!selectedRole)
+        #expect(choice.accountCaption == caption)
+    }
+
     @Test("Auto names its account and each account shows usage left")
     func accountChoices() throws {
         let list = accountList(auto: "personal")
