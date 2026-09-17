@@ -1,7 +1,8 @@
-# Working on Bloom
+# Working on Swarm's UI
 
-Read [CLAUDE.md](CLAUDE.md) for the shared architecture, coding, testing and app isolation rules.
-Those rules apply to every agent, including Codex.
+This is Swarm's macOS UI, based on Bloom by Spatie and kept under the MIT licence. Read
+[CLAUDE.md](CLAUDE.md) for the shared architecture, coding, testing and app isolation rules. Those
+rules apply to every agent, including Codex.
 
 ## Project skills
 

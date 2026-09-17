@@ -59,7 +59,7 @@ struct WorkspaceHoverCardGallery: View {
         PullRequest(
             number: number,
             title: "Add a hover card to the sidebar",
-            url: "https://github.com/spatie/bloom/pull/\(number)",
+            url: "https://github.com/example/project/pull/\(number)",
             state: state,
             isDraft: isDraft,
             checks: checks,

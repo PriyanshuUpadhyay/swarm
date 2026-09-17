@@ -52,7 +52,7 @@ struct SearchPanelCommandsTests {
 
     @Test("a menu with nothing in it is not a heading over nothing")
     func emptyMenusAreDropped() {
-        let sections = SearchPanelCommands.sections(SearchPanelCommands.rank("postcard"))
+        let sections = SearchPanelCommands.sections(SearchPanelCommands.rank("feedback"))
         #expect(sections.map(\.title) == ["Help"])
     }
 

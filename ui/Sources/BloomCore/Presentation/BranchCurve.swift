@@ -3,15 +3,14 @@ import Foundation
 
 /// One branch leaving a spine and rejoining it, as a polyline.
 ///
-/// The runbloom.app hero draws a git history: a horizontal `main` with worktrees curving away
-/// from it, running for a while, and curving back. `BrandBranching` on the welcome window draws
-/// the same figure, and this is the shape of it, here rather than in the view because
+/// `BrandBranching` draws a horizontal `main` with worktrees curving away from it, running for a
+/// while and curving back. This is the shape of it, here rather than in the view because
 /// `Tests/BloomCoreTests` cannot reach a view and a curve that comes back to the wrong height is
 /// exactly the sort of arithmetic that goes wrong silently. What the view owns is colour, timing
 /// and the render server; what this owns is where the line goes.
 ///
-/// The site samples its cubics with `sampleCubic` at a fixed step and then measures the polyline
-/// to place things along it. The same two jobs are `shape` and `paced` below, and they are
+/// The curve is sampled at a fixed step and then measured to place things along it. Those two jobs
+/// are `shape` and `paced` below, and they are
 /// separate because they answer different questions: `shape` is the line, `paced` is how fast a
 /// light travelling it should be at any moment. A keyframe animation interpolates its values on
 /// even key times, so a light handed the raw samples would race through the tight curves at the

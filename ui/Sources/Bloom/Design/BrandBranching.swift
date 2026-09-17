@@ -4,22 +4,16 @@ import SwiftUI
 
 /// Branches leaving a line and coming back to it, with the light travelling rather than the line.
 ///
-/// The runbloom.app hero draws a git history and nothing else: a horizontal `main` across the
-/// middle, worktrees curving away from it and rejoining, a bloom of light around each. It is the
-/// one picture on the site that is the app rather than a decoration of it, and it reads as water
-/// at the same time, because a branch leaving a spine and returning is the shape of a swell. This
-/// is that figure on the welcome window.
+/// A horizontal `main` runs across the middle, with worktrees curving away from it and rejoining
+/// through a bloom of light. It reads as a git history and as water at the same time, because a
+/// branch leaving a spine and returning is the shape of a swell.
 ///
-/// What came over from the site: the geometry, which is `BranchCurve` in the core; the spine
-/// under the mark; the tracing, so what moves is a length of light along a curve rather than the
-/// curve itself; the soft wide stroke under the sharp one, which is what makes a line look like
-/// light in water rather than like a line; and the drift of light along `main` between branches.
+/// The geometry is `BranchCurve` in the core. This view adds the spine under the mark, the
+/// tracing, the soft wide stroke under the sharp one and the drift of light along `main`.
 ///
-/// What did not: every label, the agent names, the branch names, the commit dots and the `+3`
-/// counts. The site's version is a diagram and wants reading. This is the first screen anybody
-/// sees and wants only to be felt, and a screen with `feat/app-intents` written on it is a screen
-/// somebody stops to parse. What is left says parallel work on one repository without naming any
-/// of it.
+/// Labels, agent names, branch names, commit dots and counts are absent because this first screen
+/// should be read as a picture. What is left says parallel work on one repository without naming
+/// any of it.
 ///
 /// It replaced three concentric rings going out from the mark. The rings were a sounding, which
 /// tied the greeting to the checks screen's sounding line, and they were readable because they

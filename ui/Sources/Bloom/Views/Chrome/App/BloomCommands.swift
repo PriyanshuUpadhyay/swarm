@@ -603,10 +603,6 @@ struct BloomCommands: Commands {
         }
 
         CommandGroup(replacing: .help) {
-            MenuCommand(.help) {
-                NSWorkspace.shared.open(AppSite.helpURL)
-            }
-
             // Replay the wizard from its greeting, not the cached screen from the last visit.
             MenuCommand(.welcome) {
                 WelcomeWindow.show(trigger: .firstRun, restarting: true)
@@ -632,14 +628,6 @@ struct BloomCommands: Commands {
                 FeedbackPresenter.shared.open(.prompt)
             }
 
-            // The third way, and the only one that goes on paper. Below the divider with the other
-            // two rather than above it with Help, because this is the same question they
-            // answer, how do I reach these people, and a row about an address filed next to the
-            // manual would read as documentation about a feature. It is also where somebody looks
-            // after meeting the word once in the welcome sequence and wanting the address again.
-            MenuCommand(.postcardware) {
-                PostcardWindow.show()
-            }
         }
     }
 
