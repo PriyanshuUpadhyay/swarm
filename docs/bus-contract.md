@@ -15,9 +15,16 @@ Every call Swarm makes sets `SWARM_ADAPTER=tmux-solo`. Every call after `session
 panes (`launch`) runs with its working directory, and `PWD`, set to the workspace's worktree.
 
 One Swarm workspace has at most one swarm session. Swarm creates it the first time the workspace
-starts an agent, with `swarm init`, `swarm session new lane`, and `swarm agent add orchestrator
-orchestrator`, and keeps the id. While a session has an agent with a pane, Swarm runs `swarm sweep`
-every 30 seconds, which re-rings an unread ask and reports an agent that died.
+starts an agent, with `swarm init`, `swarm session new lane --chair <claude|codex>:<id>`, and
+`swarm agent add orchestrator orchestrator`, and keeps the id. It can instead run `swarm session
+chair <claude|codex>:<id>` after the chair starts and reports its id. Both commands accept ids that
+match `^[A-Za-z0-9-]{1,64}$`; an invalid id records no chair and is not an error. `session chair`
+uses `SWARM_SESSION_ID` and prints nothing.
+
+Without `--chair`, `session new` records `claude:$CLAUDE_CODE_SESSION_ID` when that variable is
+set, else `codex:$CODEX_THREAD_ID` when that variable is set, else no chair. While a session has an
+agent with a pane, Swarm runs `swarm sweep` every 30 seconds, which re-rings an unread ask and
+reports an agent that died.
 
 The agent CLI answers only if the `swarm-voice` skill is installed for it
 (`scripts/install-skills.sh`). This contract does not check that.
@@ -123,6 +130,8 @@ Caller none: it needs no `SWARM_SESSION_ID` or `SWARM_AGENT_ID`. Every session t
 `cwd`, newest first (`created_at` descending, then `id` descending). A session made before
 migration 0007 has no `cwd` and is left out.
 
+Migration 0009 adds nullable `chair_provider TEXT` and `chair_id TEXT` columns to `session`.
+
 ```json
 {
   "sessions": [
@@ -132,6 +141,8 @@ migration 0007 has no `cwd` and is left out.
       "adapter": "herdr",
       "cwd": "/Users/me/work/swarm/wt/main",
       "created_at": 1789600000,
+      "chair_provider": "claude",
+      "chair_id": "cc272e02-a473-4131-991a-d2c42f340438",
       "chair_log": "/Users/me/.claude/projects/-Users-me-work-swarm-wt-main/cc272e02-a473-4131-991a-d2c42f340438.jsonl",
       "agents": 11,
       "messages": 96,
@@ -148,10 +159,13 @@ migration 0007 has no `cwd` and is left out.
   `SWARM_ADAPTER` to it, never to its own adapter.
 - `cwd` is the absolute working directory of `swarm session new`.
 - `created_at` is Unix seconds at `session new`.
-- `chair_log` is the chair's Claude Code transcript, or `null`. When `CLAUDE_CODE_SESSION_ID` is set
-  and matches `^[A-Za-z0-9-]{1,64}$`, swarm takes the first file that matches
-  `<CLAUDE_CONFIG_DIR>/projects/*/<CLAUDE_CODE_SESSION_ID>.jsonl`, and `CLAUDE_CONFIG_DIR` defaults
-  to `$HOME/.claude`. With no match, or with any other chair, it is `null`. Swarm never writes to it.
+- `chair_provider` and `chair_id` identify the chair CLI, or are both `null`.
+- `chair_log` is the chair's transcript, or `null`. When its stored path is absent or missing and a
+  chair is recorded, swarm searches for it at read time. Claude uses
+  `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<id>.jsonl`. Codex uses
+  `<CODEX_HOME or ~/.codex>/sessions/YYYY/MM/DD/rollout-*-<id>.jsonl` and checks only the UTC day
+  of `created_at` and one day on each side. A found path is stored for later reads. Swarm never
+  writes to the transcript.
 - `agents` counts the session's agents, the chair included. `messages` counts its messages.
   `last_message_at` is the newest message's `created_at`, or `null` when it has none.
 

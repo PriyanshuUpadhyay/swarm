@@ -21,7 +21,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] | session chair <claude|codex>:<id> | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -118,13 +118,31 @@ fn print_json(value: &impl serde::Serialize) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn chair_log() -> Option<std::path::PathBuf> {
-    let id = env::var("CLAUDE_CODE_SESSION_ID").ok()?;
-    if !(1..=64).contains(&id.len())
-        || !id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
-        return None;
+fn valid_chair_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+fn parse_chair(value: &str) -> Result<Option<(&str, &str)>, String> {
+    let (provider, id) = value.split_once(':').ok_or_else(|| USAGE.to_string())?;
+    if !matches!(provider, "claude" | "codex") {
+        return Err(USAGE.to_string());
     }
+    Ok(valid_chair_id(id).then_some((provider, id)))
+}
+
+fn env_chair() -> Option<(String, String)> {
+    for (provider, variable) in [("claude", "CLAUDE_CODE_SESSION_ID"), ("codex", "CODEX_THREAD_ID")] {
+        if let Ok(id) = env::var(variable) {
+            return valid_chair_id(&id).then(|| (provider.to_string(), id));
+        }
+    }
+    None
+}
+
+fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
     let config = env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".claude")))?;
@@ -133,6 +151,40 @@ fn chair_log() -> Option<std::path::PathBuf> {
         .filter_map(Result::ok)
         .map(|entry| entry.path().join(format!("{id}.jsonl")))
         .find(|path| path.is_file())
+}
+
+fn codex_chair_log(id: &str, days: &[String; 3]) -> Option<std::path::PathBuf> {
+    let home = env::var_os("CODEX_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex")))?;
+    let suffix = format!("-{id}.jsonl");
+    days.iter()
+        .filter_map(|day| std::fs::read_dir(home.join("sessions").join(day)).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(&suffix))
+        })
+}
+
+fn resolved_chair_log(row: &swarm::store::SessionRow) -> Option<std::path::PathBuf> {
+    if let Some(path) = row.chair_log.as_deref().map(std::path::PathBuf::from)
+        && path.is_file()
+    {
+        return Some(path);
+    }
+    let provider = row.chair_provider.as_deref()?;
+    let id = row.chair_id.as_deref().filter(|id| valid_chair_id(id))?;
+    match provider {
+        "claude" => claude_chair_log(id),
+        "codex" => codex_chair_log(id, &row.chair_days),
+        _ => None,
+    }
 }
 
 struct SpawnOptions<'a> {
@@ -359,7 +411,21 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-    if let [cmd, sub, talk_mode] = args && cmd == "session" && sub == "new" {
+    let session_new = match args {
+        [cmd, sub, talk_mode] if cmd == "session" && sub == "new" => {
+            Some((talk_mode.as_str(), env_chair()))
+        }
+        [cmd, sub, talk_mode, flag, value]
+            if cmd == "session" && sub == "new" && flag == "--chair" =>
+        {
+            Some((
+                talk_mode.as_str(),
+                parse_chair(value)?.map(|(provider, id)| (provider.to_string(), id.to_string())),
+            ))
+        }
+        _ => None,
+    };
+    if let Some((talk_mode, chair)) = session_new {
         let adapter = adapter_name();
         println!(
             "{}",
@@ -367,27 +433,40 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 &connection,
                 talk_mode,
                 &env::current_dir()?,
-                chair_log().as_deref(),
+                chair.as_ref().map(|(provider, id)| (provider.as_str(), id.as_str())),
                 Some(&adapter),
             )?
         );
         return Ok(());
     }
+    if let [cmd, sub, value] = args && cmd == "session" && sub == "chair" {
+        swarm::store::set_chair(&connection, session_id()?, parse_chair(value)?)?;
+        return Ok(());
+    }
     if let [cmd, json] = args && cmd == "sessions" && json == "--json" {
-        let sessions = swarm::store::sessions(&connection)?
-            .into_iter()
-            .map(|row| swarm::bus::Session {
+        let mut sessions = Vec::new();
+        for row in swarm::store::sessions(&connection)? {
+            let chair_log = resolved_chair_log(&row);
+            if let Some(path) = &chair_log {
+                let path_text = path.to_string_lossy();
+                if row.chair_log.as_deref() != Some(path_text.as_ref()) {
+                    swarm::store::set_chair_log(&connection, row.id, path)?;
+                }
+            }
+            sessions.push(swarm::bus::Session {
                 id: row.id,
                 talk_mode: row.talk_mode,
                 adapter: row.adapter,
                 cwd: row.cwd,
                 created_at: row.created_at,
-                chair_log: row.chair_log,
+                chair_provider: row.chair_provider,
+                chair_id: row.chair_id,
+                chair_log: chair_log.map(|path| path.to_string_lossy().into_owned()),
                 agents: row.agents,
                 messages: row.messages,
                 last_message_at: row.last_message_at,
-            })
-            .collect();
+            });
+        }
         return print_json(&swarm::bus::SessionList { sessions });
     }
     if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
