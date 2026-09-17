@@ -53,7 +53,7 @@ public enum MenuBarCatalogue {
     public static let commands: [MenuBarItem] = [
         // MARK: Bloom
 
-        MenuBarItem(.about, in: .bloom, "About Bloom"),
+        MenuBarItem(.about, in: .bloom, "About Swarm"),
 
         // MARK: File
 
@@ -68,7 +68,7 @@ public enum MenuBarCatalogue {
         // No key equivalent. Cmd+N is New Workspace and this is the rarer of the two, so it takes
         // the item without the shortcut, which is the same call `newWorkspaceFromPullRequest`
         // makes directly above it.
-        MenuBarItem(.newAskConversation, in: .file, "New Ask Bloom Conversation", availability: .always),
+        MenuBarItem(.newAskConversation, in: .file, "New Ask Swarm Conversation", availability: .always),
         MenuBarItem(.projectSettings, in: .file, "Project Settings…", key: .init("comma", .command, .shift), availability: .needsProject),
         MenuBarItem(.searchFiles, in: .file, "Search Files…", key: .command("p"), availability: .needsWorkspace),
         MenuBarItem(.newSession, in: .file, "New Session", key: .command("t"), availability: .needsConversationArea),
@@ -142,7 +142,7 @@ public enum MenuBarCatalogue {
         // Command-J opens and closes the Ask Bloom panel. It had no key while Ask was a place in the
         // sidebar, because a destination is a click away; a panel in front of the window is the
         // kind of thing a key is for, and J was free. See `AskPanelModel`.
-        MenuBarItem(.goToAsk, in: .view, "Ask Bloom", key: .command("j"), availability: .sometimes),
+        MenuBarItem(.goToAsk, in: .view, "Ask Swarm", key: .command("j"), availability: .sometimes),
         MenuBarItem(.zoomIn, in: .view, "Zoom In", key: .command("+"), availability: .sometimes),
         MenuBarItem(.zoomOut, in: .view, "Zoom Out", key: .command("-"), availability: .sometimes),
         MenuBarItem(.actualSize, in: .view, "Actual Size", key: .command("0"), availability: .sometimes),
@@ -181,7 +181,7 @@ public enum MenuBarCatalogue {
 
         // MARK: Help
 
-        MenuBarItem(.welcome, in: .help, "Welcome to Bloom…"),
+        MenuBarItem(.welcome, in: .help, "Welcome to Swarm…"),
     ]
 }
 

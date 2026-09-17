@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import BloomCore
 
-/// The window behind "About Bloom".
+/// The window behind "About Swarm".
 ///
 /// It replaces the standard AppKit panel so the app can keep its own mark, colours and build
 /// identity. One instance is retained because an AppKit window made in code is released when it
@@ -29,7 +29,7 @@ enum AboutWindow {
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.title = "About Bloom"
+        window.title = "About Swarm"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -73,7 +73,7 @@ private struct AboutView: View {
                 .shadow(color: .black.opacity(0.55), radius: 16, y: 9)
                 .accessibilityHidden(true)
 
-            Text(verbatim: "Bloom")
+            Text(verbatim: "Swarm")
                 .font(Typo.display)
                 .tracking(Typo.displayTracking)
                 .foregroundStyle(Brand.foam)

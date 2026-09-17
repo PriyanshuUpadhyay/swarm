@@ -289,11 +289,11 @@ the display shows whatever is in front of your window, which can be the user's o
 
 ## Where a local build keeps its data
 
-`make app` assembles `.build/arm64-apple-macosx/debug/Bloom.app` with bundle id `be.spatie.bloom`,
-so it uses `~/Library/Application Support/Bloom/`, the `be.spatie.bloom` defaults domain and the
+`make app` assembles `.build/arm64-apple-macosx/debug/Swarm.app` with bundle id
+`io.github.priyanshuupadhyay.swarm`, so it uses `~/Library/Application Support/Swarm/`, the
+`io.github.priyanshuupadhyay.swarm` defaults domain and the
 tmux socket derived from that database path. Open it with `open`, never by running its executable,
 because `LSEnvironment` is applied by LaunchServices. A binary in no bundle at all (`swift run` or
-`.build/debug/Bloom`) resolves to `Bloom (unbundled)` and starts empty.
+`.build/debug/Bloom`) resolves to `Swarm (unbundled)` and starts empty.
 
-A build without release version values is stamped `BloomBuildChannel=local`, which turns off the
-install ping, crash reports and software updates. Keep it that way for anything built here.
+A build without release version values is stamped `BloomBuildChannel=local`.

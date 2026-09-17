@@ -183,7 +183,7 @@ struct WelcomeView: View {
                 .shadow(color: .black.opacity(0.55), radius: 14, y: 8)
                 .accessibilityHidden(true)
 
-            Text(verbatim: "Welcome to Bloom")
+            Text(verbatim: "Welcome to Swarm")
                 .font(Typo.display)
                 .tracking(Typo.displayTracking)
                 .foregroundStyle(Brand.foam)

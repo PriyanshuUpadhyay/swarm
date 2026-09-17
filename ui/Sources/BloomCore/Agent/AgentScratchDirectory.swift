@@ -26,7 +26,7 @@ import Foundation
 ///
 /// **Under the temporary directory rather than beside the database, and that is the load bearing
 /// part.** Both are empty, so what separates them is what is above them. A CLI that walks upwards
-/// looking for configuration walks `~/Library/Application Support/Bloom`, `~/Library` and then `~`
+/// looking for configuration walks `~/Library/Application Support/Swarm`, `~/Library` and then `~`
 /// out of the one, and `/var/folders/…/T/` out of the other, which passes through nothing of the
 /// user's at all.
 public enum AgentScratchDirectory {

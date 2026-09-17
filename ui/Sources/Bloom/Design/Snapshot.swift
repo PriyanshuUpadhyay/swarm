@@ -148,14 +148,14 @@ enum Snapshot {
     // worth photographing, for a capture that is happening from outside this process, and they
     // landed under the window capture's MARK one at a time until it named none of them.
 
-    /// Opens a `bloom://` URL in THIS process, a few seconds after launch.
+    /// Opens a `swarm-ui://` URL in THIS process, a few seconds after launch.
     ///
-    /// `open bloom://...` from a shell goes through LaunchServices, which picks whichever copy of
+    /// `open swarm-ui://...` from a shell goes through LaunchServices, which picks whichever copy of
     /// the app it feels like and does not carry `BLOOM_DB_PATH`, so a test that drives a deep link
     /// that way can silently exercise a different instance against a different database. This
     /// posts the URL straight into the running process instead, so a repro is deterministic.
     ///
-    ///     Bloom --open-url "bloom://prompt=...&path=..."
+    ///     Bloom --open-url "swarm-ui://prompt=...&path=..."
     static func scheduleURLIfRequested() {
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: "--open-url"), index + 1 < arguments.count else {
@@ -243,7 +243,7 @@ enum Snapshot {
 
     /// Raises the corner notice, so it can be filmed.
     ///
-    ///     Bloom --notice 4 "Bloom named this workspace X. Its branch is still `y`, because ..."
+    ///     Bloom --notice 4 "Swarm named this workspace X. Its branch is still `y`, because ..."
     ///
     /// The banner is a countdown with a draining bar in it, which is three things a still frame
     /// cannot show: that it goes on its own, how long it has left, and that the pointer stops it.
@@ -261,7 +261,7 @@ enum Snapshot {
               let delay = Double(arguments[index + 1]) else { return }
         let message = index + 2 < arguments.count && !arguments[index + 2].hasPrefix("--")
             ? arguments[index + 2]
-            : "Bloom named this workspace Describe fade-in animation feel. Its branch is still "
+            : "Swarm named this workspace Describe fade-in animation feel. Its branch is still "
                 + "`freekmurze/iyo-sea`, because `freekmurze/fade-animation-feel` is already taken "
                 + "by another branch."
 

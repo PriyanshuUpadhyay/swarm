@@ -69,11 +69,11 @@ public enum BridgeRegistration {
     /// last piece of it still shared.
     ///
     /// The derivation is `Store.databaseDirectoryName`, slugified, and reusing that table is the
-    /// point rather than a shortcut: it is already the one rule that decides which copy of Bloom a
+    /// point rather than a shortcut: it is already the one rule that decides which copy of Swarm a
     /// process is, so two builds can only collide on a name here if they were already sharing a
     /// database, and copies sharing a database share the token beside it and have nothing to
-    /// evict. The owner's copy gets `bloom`, which is also the plain name the pane is asked to
-    /// show; the dev copy gets `bloom-dev`; anything else gets a name that says what it is instead
+    /// evict. The owner's copy gets `swarm`, which is also the plain name the pane is asked to
+    /// show; the dev copy gets `swarm-dev`; anything else gets a name that says what it is instead
     /// of impersonating one of those two.
     public static var ownerServerName: String {
         ownerServerName(forBundleIdentifier: Bundle.main.bundleIdentifier)
@@ -85,7 +85,7 @@ public enum BridgeRegistration {
         let slug = slugified(Store.databaseDirectoryName(forBundleIdentifier: identifier))
         // A directory name that slugified to nothing would be handed to `claude mcp add` as an
         // empty argument, which makes it read the shim path as the server name. No identifier
-        // reaches that today, since every arm of the table above begins with "Bloom"; this is the
+        // reaches that today, since every arm of the table above begins with "Swarm"; this is the
         // answer for the day one does.
         return slug.isEmpty ? "swarm" : slug
     }

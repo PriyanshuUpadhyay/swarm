@@ -1,25 +1,27 @@
 import Foundation
 
-/// The one thing Bloom cannot do for itself: turn the system's sleep switch off while a Keep Awake
+/// The one thing Swarm cannot do for itself: turn the system's sleep switch off while a Keep Awake
 /// session runs, so a closing lid does not take the Mac down with it.
 ///
 /// **A closing lid is not idle sleep.** No `IOPMAssertion` an application can take will hold it;
 /// `pmset -a disablesleep 1` is the only lever, and it is root's. Amphetamine, which people reach
 /// for because it does beat the lid, is a sandboxed App Store app and gets there by writing a
-/// sudoers rule granting every admin account passwordless `pmset`. Bloom is not sandboxed, so it
+/// sudoers rule granting every admin account passwordless `pmset`. Swarm is not sandboxed, so it
 /// can use the door Apple opened instead: a `LaunchDaemon` registered with `SMAppService`, approved
-/// once, which changes nothing outside Bloom and leaves nothing behind when Bloom is deleted.
+/// once, which changes nothing outside Swarm and leaves nothing behind when Swarm is deleted.
 ///
 /// It does exactly two things, and it is deliberately this small: it flips the switch, and it
-/// watches the process that asked. If Bloom dies with sleep disabled, the watchdog puts it back.
+/// watches the process that asked. If Swarm dies with sleep disabled, the watchdog puts it back.
 /// That is the failure Amphetamine's own alert says it cannot cover ("your Mac may be unable to
 /// return to normal sleeping behavior until you relaunch Amphetamine").
 let machServiceName = "io.github.priyanshuupadhyay.swarm.sleep"
 
-/// Only Bloom may ask. Checked by the system rather than by us: `setConnectionCodeSigningRequirement`
-/// refuses the connection before a byte of it reaches this process.
-let clientRequirement = """
-anchor apple generic and certificate leaf[subject.OU] = "97KRXCRMAY" \
+/// The owner's signing team is not published yet. Until it is set, the helper accepts no
+/// connection, so Keep Awake stays unavailable. After it is set, the system checks the requirement
+/// before a byte reaches this process.
+let ownerSigningTeam = "not set"
+let clientRequirement: String? = ownerSigningTeam == "not set" ? nil : """
+anchor apple generic and certificate leaf[subject.OU] = "\(ownerSigningTeam)" \
 and (identifier "io.github.priyanshuupadhyay.swarm" \
 or identifier "io.github.priyanshuupadhyay.swarm.dev")
 """
@@ -35,6 +37,7 @@ final class SleepHelper: NSObject, NSXPCListenerDelegate, SleepControl {
     private var watchdog: DispatchSourceProcess?
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        guard clientRequirement != nil else { return false }
         connection.exportedInterface = NSXPCInterface(with: SleepControl.self)
         connection.exportedObject = self
         connection.resume()
@@ -95,6 +98,8 @@ final class SleepHelper: NSObject, NSXPCListenerDelegate, SleepControl {
 let helper = SleepHelper()
 let listener = NSXPCListener(machServiceName: machServiceName)
 listener.delegate = helper
-listener.setConnectionCodeSigningRequirement(clientRequirement)
+if let clientRequirement {
+    listener.setConnectionCodeSigningRequirement(clientRequirement)
+}
 listener.resume()
 RunLoop.main.run()

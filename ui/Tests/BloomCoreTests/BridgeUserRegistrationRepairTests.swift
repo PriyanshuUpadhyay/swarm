@@ -146,10 +146,10 @@ struct BridgeUserRegistrationRepairTests {
     }
 
     @Test("The release copy does not touch the dev copy's entry, and the dev copy cannot take ours")
-    func theThreeIdentities() throws {
+    func theBundleIdentities() throws {
         // Two separate defences, and the test checks both. The name is derived per copy through
-        // `Store.databaseDirectoryName`, so the three identities in Tools/guard.sh are not looking
-        // at the same entry at all; and underneath that, the socket and token pair belongs to one
+        // `Store.databaseDirectoryName`, so different bundle identities are not looking at the
+        // same entry at all; and underneath that, the socket and token pair belongs to one
         // database, so a copy that somehow did look at the other's entry could not claim it.
         let devShim = "/Users/freek/Applications/Swarm Dev.app/Contents/MacOS/bloom-bridge"
         let dev: [String: Any] = [

@@ -492,7 +492,7 @@ public struct WorkspaceManager: Sendable {
     }
 
     /// What the setup log says when a run was stopped before the script exited.
-    public static let setupStoppedNote = "[bloom] Setup was stopped before it finished. "
+    public static let setupStoppedNote = "[swarm] Setup was stopped before it finished. "
         + "Run setup again to finish it."
 
     /// How long a stopped setup script has to exit after SIGTERM before it is killed.

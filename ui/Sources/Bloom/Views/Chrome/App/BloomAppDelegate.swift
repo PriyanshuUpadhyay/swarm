@@ -4,7 +4,7 @@ import UserNotifications
 import BloomCore
 
 extension Notification.Name {
-    /// Carries a `bloom://` URL from the Apple Event handler to whichever window is open.
+    /// Carries a `swarm-ui://` URL from the Apple Event handler to whichever window is open.
     static let bloomHandleURL = Notification.Name("bloomHandleURL")
 }
 
@@ -53,7 +53,7 @@ final class BloomAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     }
 
     /// Claiming the URL Apple Event has to happen before launching finishes. If SwiftUI's own
-    /// `onOpenURL` path handles a `bloom://` link instead, a WindowGroup opens a SECOND window
+    /// `onOpenURL` path handles a `swarm-ui://` link instead, a WindowGroup opens a SECOND window
     /// for it, which is not what anyone wants from a deep link that is meant to add a workspace
     /// to the window already on screen.
     func applicationWillFinishLaunching(_ notification: Notification) {

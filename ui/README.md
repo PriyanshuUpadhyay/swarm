@@ -209,16 +209,16 @@ starting and renaming workspaces, and reading the projects and workspaces Bloom 
 carries its own gate, and which caller may reach which is the subject of `docs/BRIDGE.md`. A
 workspace agent is scoped to its own worktree implicitly, so nothing it calls takes a workspace id.
 
-You can register the same bridge in a client of your own, from Settings, and ask Bloom about your
+You can register the same bridge in a client of your own, from Settings, and ask Swarm about your
 projects from a terminal.
 
 ### Deep links
 
 ```bash
-open "bloom://prompt=<urlencoded>&path=<urlencoded repo root>"
+open "swarm-ui://prompt=<urlencoded>&path=<urlencoded repo root>"
 ```
 
-The path has to be a repository Bloom already has as a project. The link creates a workspace there
+The path has to be a repository Swarm already has as a project. The link creates a workspace there
 and starts an agent on the prompt.
 
 ## Documentation

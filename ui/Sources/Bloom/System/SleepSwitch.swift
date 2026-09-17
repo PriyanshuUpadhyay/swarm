@@ -33,9 +33,9 @@ final class SleepSwitch {
 
     private init() {
         refreshStanding()
-        // Approving happens in System Settings, so the answer changes while Bloom is in the
+        // Approving happens in System Settings, so the answer changes while Swarm is in the
         // background and nothing here would ever hear about it. Without this the pane goes on
-        // saying "Allow Bloom's helper" after somebody already has.
+        // saying "Allow Swarm's helper" after somebody already has.
         // swiftlint:disable:next discarded_notification_center_observer
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main

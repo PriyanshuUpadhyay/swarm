@@ -36,8 +36,7 @@ public actor Store {
     /// The bundle identifier of the copy the owner actually uses, and the one the dev build gets.
     ///
     /// Written down here because these two strings are the difference between a process that may
-    /// open the real database and one that may not. `Tools/dev-build.sh` sets the second, and
-    /// `Tools/guard.sh` names the directory that goes with it.
+    /// open the real database and one that may not.
     public static let primaryBundleIdentifier = "io.github.priyanshuupadhyay.swarm"
     public static let devBundleIdentifier = "io.github.priyanshuupadhyay.swarm.dev"
 

@@ -30,7 +30,7 @@ struct SettingsView: View {
         // A fixed sidebar avoids the split view's collapsible toolbar and its reserved top inset.
         HStack(spacing: 0) {
             List(selection: $tab) {
-                Section("Bloom") {
+                Section("Swarm") {
                     navigationRows([.general, .appearance, .menuBar, .notifications])
                 }
                 Section("Agents") {

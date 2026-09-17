@@ -18,12 +18,12 @@ import Foundation
 /// ## Why the working directory is the test
 ///
 /// The same measurement showed how to tell them apart. A CLI starts its stdio MCP servers in its
-/// own working directory, and Bloom starts a workspace agent in the worktree, so an owner shim run
-/// by a workspace agent has a worktree as its working directory. Ask Bloom's shim, which really is
-/// the owner, runs in `Application Support/Bloom/Ask`, and a terminal the owner opened anywhere
+/// own working directory, and Swarm starts a workspace agent in the worktree, so an owner shim run
+/// by a workspace agent has a worktree as its working directory. Ask Swarm's shim, which really is
+/// the owner, runs in `Application Support/Swarm/Ask`, and a terminal the owner opened anywhere
 /// else is anywhere else. The environment would have been the obvious signal and is the wrong
 /// one: Codex hands an MCP server a short allow list of variables rather than its own environment,
-/// so a marker Bloom set on the agent would never reach the shim.
+/// so a marker Swarm set on the agent would never reach the shim.
 ///
 /// This is not a security boundary and must not be commented as one. The token is readable by
 /// anything running as the user, as `BridgeProtocol.tokenVariable` says, and an agent that wants

@@ -802,7 +802,7 @@ def systemshots(name, groups, sizes):
                 '"-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/'
                 'PropertyList-1.0.dtd"><plist version="1.0"><dict>'
                 '<key>CFBundleExecutable</key><string>S</string>'
-                '<key>CFBundleIdentifier</key><string>be.spatie.bloom.shine.%s</string>'
+                '<key>CFBundleIdentifier</key><string>io.github.priyanshuupadhyay.swarm.shine.%s</string>'
                 '<key>CFBundleName</key><string>S</string>'
                 '<key>CFBundlePackageType</key><string>APPL</string>'
                 '<key>CFBundleIconName</key><string>S</string>'

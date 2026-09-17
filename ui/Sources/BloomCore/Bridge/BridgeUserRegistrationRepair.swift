@@ -1,6 +1,6 @@
 import Foundation
 
-/// Re-points the owner's durable user scope entry when Bloom's bundle has moved, and refuses to
+/// Re-points the owner's durable user scope entry when Swarm's bundle has moved, and refuses to
 /// touch anything else in the file it finds it in.
 ///
 /// ## The bug this exists for
@@ -8,29 +8,28 @@ import Foundation
 /// `claude mcp add --scope user` writes an absolute path into `~/.claude.json`, once, and nothing
 /// ever looks at it again:
 ///
-///     "command": "/Users/freek/Applications/Bloom.app/Contents/MacOS/bloom-bridge"
+///     "command": "/Users/freek/Applications/Swarm.app/Contents/MacOS/bloom-bridge"
 ///
-/// The owner then dragged Bloom from `~/Applications` to `/Applications`. Every agent started from
+/// The owner then dragged Swarm from `~/Applications` to `/Applications`. Every agent started from
 /// his own terminal failed from that moment on, saying the bridge was down and naming a path that
 /// no longer exists, and it stayed broken until somebody edited the file by hand. Nothing else was
 /// wrong: `BridgeRegistration.shimPath` derives the shim from the running executable, so every
-/// per-session registration Bloom writes for a workspace agent was correct throughout. The fault
+/// per-session registration Swarm writes for a workspace agent was correct throughout. The fault
 /// is only in the one entry that is written once and then never re-derived.
 ///
 /// ## What counts as ours, and stale
 ///
-/// Re-pointing an entry Bloom did not write, or one deliberately aimed at another copy of Bloom,
+/// Re-pointing an entry Swarm did not write, or one deliberately aimed at another copy of Swarm,
 /// would be a worse bug than the one being fixed, so the test is deliberately narrow. All of these
 /// have to hold:
 ///
 /// - The entry is under **this copy's own** `BridgeRegistration.ownerServerName`. That name is
-///   derived from `Store.databaseDirectoryName`, so the release copy only ever looks at `bloom`,
-///   the dev copy at `bloom-dev` and the subagents copy at `bloom-subagents`. The three identities
-///   in `Tools/guard.sh` therefore cannot fight over one entry: they are not looking at the same
-///   one.
+///   derived from `Store.databaseDirectoryName`, so the release copy only ever looks at `swarm`,
+///   the dev copy at `swarm-dev`, and any other bundle gets a name from its own directory. They
+///   cannot fight over one entry because they are not looking at the same one.
 /// - Its `BLOOM_BRIDGE_SOCKET` and `BLOOM_BRIDGE_TOKEN` are **exactly what this instance would
 ///   hand out today**. The socket is derived from the database path through
-///   `TmuxSessions.fingerprint`, which is the one rule that says which copy of Bloom a process is,
+///   `TmuxSessions.fingerprint`, which is the one rule that says which copy of Swarm a process is,
 ///   and the token is a random value minted beside that database. Nothing but this instance can
 ///   produce that pair, so the pair is the proof of authorship. The role is not compared, for the
 ///   reason `BridgeUserRegistration.matches` gives.
@@ -54,12 +53,12 @@ import Foundation
 /// so the welcome step and the Command Line pane go on offering the command that fixes them, with
 /// one paste. This repair changes one string, and it is the one the move broke.
 ///
-/// ## Why this may write a file `BridgeUserRegistration` says Bloom does not write
+/// ## Why this may write a file `BridgeUserRegistration` says Swarm does not write
 ///
-/// That file's rule is that Bloom does not compose a person's configuration for them, which is why
+/// That file's rule is that Swarm does not compose a person's configuration for them, which is why
 /// the feature is a command to copy rather than a write, and it still stands. Correcting a path
-/// inside an entry Bloom itself minted, which it can prove it minted, and which currently names
-/// nothing at all, is repairing Bloom's own record rather than editing somebody's setup.
+/// inside an entry Swarm itself minted, which it can prove it minted, and which currently names
+/// nothing at all, is repairing Swarm's own record rather than editing somebody's setup.
 public enum BridgeUserRegistrationRepair {
     /// Why nothing was written. Every one of these is an ordinary outcome, and the first is by far
     /// the most common: the entry is already right.

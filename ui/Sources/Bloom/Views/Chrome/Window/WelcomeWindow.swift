@@ -205,7 +205,7 @@ enum WelcomeWindow {
         // is what lets the plinth run up behind the title bar, the alternative being a strip of
         // flat window background above the gradient.
         window.isReleasedWhenClosed = false
-        window.title = "Welcome to Bloom"
+        window.title = "Welcome to Swarm"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
