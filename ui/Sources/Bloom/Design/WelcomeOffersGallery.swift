@@ -17,7 +17,7 @@ import BloomCore
 /// The hairlines are here because they are what the band is bounded by, and a band drawn without
 /// them reads as more space than it has.
 ///
-///     Bloom --snapshot-gallery /tmp/shots --gallery welcome-offers
+///     Bloom --snapshot-gallery /tmp/shots --gallery welcome-command-line-offer
 struct WelcomeOffersGallery: View {
     /// A command of the real shape, built the way the window builds it, so the box is the width it
     /// will actually be. Not a token from this machine: nothing in a capture run should be able to
@@ -66,7 +66,7 @@ struct WelcomeOffersGallery: View {
 extension Gallery {
     /// The registry entry for this page. See `Gallery`.
     static let welcomeOffers = Gallery(
-        name: "welcome-offers",
+        name: "welcome-command-line-offer",
         title: "The welcome window's command-line offer",
         size: CGSize(width: 584, height: 560),
         needsFocus: false,
