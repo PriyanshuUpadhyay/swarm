@@ -11,12 +11,11 @@ struct SwarmAgentPaneView: View {
     let isAlive: Bool?
 
     @Environment(AppModel.self) private var app
-    @State private var terminals = TerminalSessionStore.shared
 
     var body: some View {
         let state = SwarmAgentPaneState(
             isAlive: isAlive,
-            attachment: terminals.swarmAgentAttachment(for: agent, in: session)
+            attachment: TerminalSessionStore.shared.swarmAgentAttachment(for: agent, in: session)
         )
 
         switch state {
@@ -32,30 +31,26 @@ struct SwarmAgentPaneView: View {
                 systemImage: "checkmark.circle",
                 description: Text("\(agent.rawValue) has ended.")
             )
-        case .startTerminal:
-            terminal(startsProcess: true)
-        case .terminal:
-            terminal(startsProcess: false)
+        case .startTerminal, .terminal:
+            terminal()
         case .reattach:
             VStack(spacing: 0) {
                 SwarmAgentPaneReattachStrip {
-                    terminals.reattach(
-                        agent: agent,
-                        session: session,
-                        command: app.swarmBus.attachCommand(for: agent, in: session)
+                    TerminalSessionStore.shared.reattach(
+                        agent: agent, session: session, bus: app.swarmBus
                     )
                 }
-                terminal(startsProcess: false)
+                terminal()
             }
         }
     }
 
-    private func terminal(startsProcess: Bool) -> some View {
+    private func terminal() -> some View {
         SwarmAgentPaneTerminalView(
             agent: agent,
             session: session,
-            command: app.swarmBus.attachCommand(for: agent, in: session),
-            startsProcess: startsProcess
+            workspaceID: app.selectedWorkspace?.id,
+            bus: app.swarmBus
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.surfaceSunken)

@@ -41,7 +41,7 @@ struct TerminalLaunch: Sendable, Hashable {
         )
 
         return TerminalLaunch(
-            executable: command.executable,
+            executable: Shell.which(command.executable) ?? command.executable,
             execName: URL(fileURLWithPath: command.executable).lastPathComponent,
             arguments: command.arguments,
             environment: variables.map { "\($0.key)=\($0.value)" }.sorted(),
