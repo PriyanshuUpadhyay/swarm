@@ -55,7 +55,7 @@ private struct AboutView: View {
             Rectangle()
                 .fill(Palette.border)
                 .frame(height: Metrics.hairline)
-            Text(verbatim: "Based on Bloom by Spatie, MIT licence.")
+            Text(verbatim: creditLine)
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: .infinity)
@@ -99,5 +99,10 @@ private struct AboutView: View {
 
     private var versionLine: String {
         BuildIdentity.read(from: .main).line(built: BuildTimestamp.read(from: .main))
+    }
+
+    private var creditLine: String {
+        Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
+            ?? "Swarm UI. Based on Bloom by Spatie, MIT licence."
     }
 }

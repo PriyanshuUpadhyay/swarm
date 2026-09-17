@@ -16,11 +16,12 @@ import Foundation
 /// return to normal sleeping behavior until you relaunch Amphetamine").
 let machServiceName = "io.github.priyanshuupadhyay.swarm.sleep"
 
-/// The owner's signing team is not published yet. Until it is set, the helper accepts no
-/// connection, so Keep Awake stays unavailable. After it is set, the system checks the requirement
-/// before a byte reaches this process.
+/// The owner's signing team is not published yet. Until it is set, the system's `never`
+/// requirement and the delegate guard both refuse every connection, so Keep Awake stays
+/// unavailable. After it is set, the system checks the app identity before a byte reaches this
+/// process.
 let ownerSigningTeam = "not set"
-let clientRequirement: String? = ownerSigningTeam == "not set" ? nil : """
+let clientRequirement = ownerSigningTeam == "not set" ? "never" : """
 anchor apple generic and certificate leaf[subject.OU] = "\(ownerSigningTeam)" \
 and (identifier "io.github.priyanshuupadhyay.swarm" \
 or identifier "io.github.priyanshuupadhyay.swarm.dev")
@@ -37,7 +38,7 @@ final class SleepHelper: NSObject, NSXPCListenerDelegate, SleepControl {
     private var watchdog: DispatchSourceProcess?
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard clientRequirement != nil else { return false }
+        guard ownerSigningTeam != "not set" else { return false }
         connection.exportedInterface = NSXPCInterface(with: SleepControl.self)
         connection.exportedObject = self
         connection.resume()
@@ -98,8 +99,6 @@ final class SleepHelper: NSObject, NSXPCListenerDelegate, SleepControl {
 let helper = SleepHelper()
 let listener = NSXPCListener(machServiceName: machServiceName)
 listener.delegate = helper
-if let clientRequirement {
-    listener.setConnectionCodeSigningRequirement(clientRequirement)
-}
+listener.setConnectionCodeSigningRequirement(clientRequirement)
 listener.resume()
 RunLoop.main.run()
