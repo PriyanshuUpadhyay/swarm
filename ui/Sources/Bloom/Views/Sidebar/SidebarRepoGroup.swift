@@ -16,13 +16,6 @@ struct SidebarRepoGroup: Identifiable {
     /// the filter is letting through, and a filter that hides the unread one would otherwise make
     /// the project claim there is nothing waiting, which is the opposite of what the mark is for.
     var hasUnreadWork: Bool
-    /// How many workspaces the project has before the filter is applied.
-    ///
-    /// What tells a project with nothing in it from one whose rows are all filtered out, which is
-    /// the difference between a project the pane leaves out and a project that says "Nothing
-    /// matches the filter". A filter is a question you ask for a moment, and a project vanishing
-    /// while you ask it is the pane answering a different question. See `SidebarPaneRow.rows`.
-    var totalWorkspaces: Int
 
     var id: RepoID { repo.id }
 
@@ -52,8 +45,7 @@ struct SidebarRepoGroup: Identifiable {
             return SidebarRepoGroup(
                 repo: repo,
                 workspaces: rows,
-                hasUnreadWork: all.contains(where: \.unread),
-                totalWorkspaces: all.count
+                hasUnreadWork: all.contains(where: \.unread)
             )
         }
     }
@@ -168,16 +160,7 @@ enum SidebarPaneRow: Identifiable {
         var rows: [SidebarPaneRow] = []
         for group in groups {
             let waiting = pending(group.id)
-            // **A project with nothing in it is not drawn at all.** It used to take two rows, its
-            // header and a sentence saying there was nothing under it, neither of which is work and
-            // both of which are in the way of the rows that are. It is still one press away: the
-            // projects button at the foot of the pane lists every project, empty ones included,
-            // each with its own `+`.
-            //
-            // A project whose rows the FILTER is hiding keeps its header and says so, which is the
-            // difference `totalWorkspaces` is for: a filter is a question asked for a moment, and a
-            // project disappearing while it is asked would be the pane answering a different one.
-            guard group.totalWorkspaces > 0 || !waiting.isEmpty else { continue }
+            // A project with no workspaces keeps its header, so a project just added shows at once.
             rows.append(.project(group))
             guard !group.repo.collapsed else { continue }
             // A project whose only row is one being cut is not a project with no workspaces, so
