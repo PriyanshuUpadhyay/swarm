@@ -396,6 +396,18 @@ struct SwarmBusTests {
         )
     }
 
+    @Test("a Codex chair's new folder is marked trusted once, after the existing config")
+    func codexTrustIsAddedOnce() throws {
+        let workspace = "/Users/owner/swarm/workspaces.noindex/thine/new-chat"
+        let existing = "model = \"gpt-5.5\"\n\n[projects.\"/Users/owner/other\"]\ntrust_level = \"trusted\""
+
+        let trusted = try #require(CodexProjectTrust.config(existing, trusting: workspace))
+
+        #expect(trusted.hasPrefix(existing + "\n"))
+        #expect(trusted.hasSuffix("[projects.\"\(workspace)\"]\ntrust_level = \"trusted\"\n"))
+        #expect(CodexProjectTrust.config(trusted, trusting: workspace) == nil)
+    }
+
     private func expectFailure(
         _ outcome: ScriptedRunner.Outcome, _ expected: SwarmProfileError
     ) async {

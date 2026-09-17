@@ -546,6 +546,18 @@ final class TerminalSessionStore {
         guard let persistence else {
             throw SwarmProfileError.unavailable("tmux is required to start a chat")
         }
+        if let directory = plan.codexTrustDirectory {
+            let home = plan.environment["CODEX_HOME"]
+                ?? NSHomeDirectory() + "/.codex"
+            let file = URL(fileURLWithPath: home).appendingPathComponent("config.toml")
+            let current = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            if let trusted = CodexProjectTrust.config(current, trusting: directory) {
+                try FileManager.default.createDirectory(
+                    atPath: home, withIntermediateDirectories: true
+                )
+                try trusted.write(to: file, atomically: true, encoding: .utf8)
+            }
+        }
         try await persistence.launch(plan)
         paneOwner[plan.paneID.rawValue] = plan.workspaceID
         paneSession[plan.paneID.rawValue] = plan.tmuxSession

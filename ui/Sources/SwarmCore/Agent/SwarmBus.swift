@@ -172,11 +172,13 @@ public struct SwarmChairLaunchPlan: Sendable, Equatable {
     public var executable: String
     public var arguments: [String]
     public var environment: [String: String]
+    /// Set for a Codex chair, whose folder must be trusted before it starts. See `CodexProjectTrust`.
+    public var codexTrustDirectory: String?
 
     public init(
         workspaceID: WorkspaceID, sessionID: SessionID, paneID: TerminalTabID,
         tmuxSession: String, directory: String, executable: String,
-        arguments: [String], environment: [String: String]
+        arguments: [String], environment: [String: String], codexTrustDirectory: String? = nil
     ) {
         self.workspaceID = workspaceID
         self.sessionID = sessionID
@@ -186,6 +188,22 @@ public struct SwarmChairLaunchPlan: Sendable, Equatable {
         self.executable = executable
         self.arguments = arguments
         self.environment = environment
+        self.codexTrustDirectory = codexTrustDirectory
+    }
+}
+
+/// Codex stops at "Do you trust the contents of this directory?" in a folder it has not seen, and a
+/// chat started in a new workspace waited there with nobody looking at its pane.
+public enum CodexProjectTrust {
+    /// The config with the folder marked trusted, or nil when it already has an entry for it.
+    public static func config(_ config: String, trusting path: String) -> String? {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let header = "[projects.\"\(escaped)\"]"
+        guard !config.contains(header) else { return nil }
+        let separator = config.isEmpty || config.hasSuffix("\n") ? "" : "\n"
+        return config + separator + "\n\(header)\ntrust_level = \"trusted\"\n"
     }
 }
 
@@ -236,7 +254,8 @@ public enum SwarmChairLaunch {
             directory: directory,
             executable: "/usr/bin/env",
             arguments: arguments,
-            environment: workspaceEnvironment.merging(chairEnvironment) { _, chair in chair }
+            environment: workspaceEnvironment.merging(chairEnvironment) { _, chair in chair },
+            codexTrustDirectory: session.agentKind == .codex ? directory : nil
         )
     }
 
