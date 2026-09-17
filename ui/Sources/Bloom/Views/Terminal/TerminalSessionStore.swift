@@ -18,6 +18,16 @@ final class TerminalSessionStore {
     static let shared = TerminalSessionStore()
 
     private var terminals: [String: BloomTerminalView] = [:]
+    // These are written while an NSViewRepresentable is configuring. Only process exit is a
+    // presentation change, so observing either dictionary would mutate view state during update.
+    @ObservationIgnored private var swarmAgentTerminals: [SwarmAgentPaneKey: BloomTerminalView] = [:]
+    @ObservationIgnored private var swarmAgentOwners: [SwarmAgentPaneKey: WorkspaceID] = [:]
+    private var swarmAgentAttachments: [SwarmAgentPaneKey: SwarmAgentPaneState.Attachment] = [:]
+
+    private struct SwarmAgentPaneKey: Hashable {
+        var agent: SwarmAgentID
+        var session: SwarmSessionID
+    }
 
     /// A command waiting for its pane's shell to exist, which is how a run script opens: a terminal
     /// tab named after the script, with the script's own command typed into it.
@@ -169,6 +179,73 @@ final class TerminalSessionStore {
     /// listing start half a dozen shells in a worktree nobody had opened.
     func hasShell(paneID: String) -> Bool {
         terminals[paneID] != nil
+    }
+
+    /// The attach process state used by `SwarmAgentPaneState`. Reading it never starts a process.
+    func swarmAgentAttachment(
+        for agent: SwarmAgentID, in session: SwarmSessionID
+    ) -> SwarmAgentPaneState.Attachment {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        if let attachment = swarmAgentAttachments[key] { return attachment }
+        guard let terminal = swarmAgentTerminals[key], terminal.hasStarted else {
+            return .notStarted
+        }
+        return .running
+    }
+
+    /// The terminal for one swarm agent, retained independently of the SwiftUI view that hosts it.
+    func swarmAgentTerminal(
+        for agent: SwarmAgentID,
+        in session: SwarmSessionID,
+        workspaceID: WorkspaceID?,
+        bus: any SwarmBus
+    ) -> BloomTerminalView {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        if let terminal = swarmAgentTerminals[key] {
+            if swarmAgentOwners[key] == nil { swarmAgentOwners[key] = workspaceID }
+            if !terminal.hasStarted { startSwarmAgentTerminal(terminal, key: key, bus: bus) }
+            return terminal
+        }
+
+        let terminal = BloomTerminalView(frame: CGRect(x: 0, y: 0, width: 640, height: 320))
+        terminal.onExit = { [weak self, weak terminal] _ in
+            guard let self, let terminal, self.swarmAgentTerminals[key] === terminal else { return }
+            self.swarmAgentAttachments[key] = .exited
+        }
+        swarmAgentTerminals[key] = terminal
+        swarmAgentOwners[key] = workspaceID
+        startSwarmAgentTerminal(terminal, key: key, bus: bus)
+        return terminal
+    }
+
+    /// Starts a fresh attach process after the previous one ended. The terminal and its scrollback
+    /// stay in place while SwiftTerm replaces only the pty child.
+    func reattach(
+        agent: SwarmAgentID, session: SwarmSessionID, bus: any SwarmBus
+    ) {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        guard swarmAgentAttachments[key] == .exited,
+              let terminal = swarmAgentTerminals[key] else { return }
+        swarmAgentAttachments[key] = nil
+        startSwarmAgentTerminal(terminal, key: key, bus: bus)
+    }
+
+    /// Releases the retained terminal and stops its attach process when the agent tab goes away.
+    func release(agent: SwarmAgentID, session: SwarmSessionID) {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        swarmAgentAttachments[key] = nil
+        swarmAgentOwners[key] = nil
+        guard let terminal = swarmAgentTerminals.removeValue(forKey: key) else { return }
+        Task { await stop([terminal]) }
+    }
+
+    private func startSwarmAgentTerminal(
+        _ terminal: BloomTerminalView,
+        key: SwarmAgentPaneKey,
+        bus: any SwarmBus
+    ) {
+        guard terminal.process?.running != true else { return }
+        terminal.start(.swarmAttach(bus.attachCommand(for: key.agent, in: key.session)))
     }
 
     /// Recent rendered output, with soft-wrapped screen rows joined back into logical lines.
@@ -663,6 +740,14 @@ final class TerminalSessionStore {
         ensurePersistence()
 
         let tabs = CenterTabStore.shared.terminalTabIDs(for: workspaceID)
+        let swarmKeys = swarmAgentOwners.compactMap { key, owner in
+            owner == workspaceID ? key : nil
+        }
+        var views = swarmKeys.compactMap { swarmAgentTerminals.removeValue(forKey: $0) }
+        for key in swarmKeys {
+            swarmAgentOwners[key] = nil
+            swarmAgentAttachments[key] = nil
+        }
 
         // Every shell of this workspace is told first that Bloom is the one ending it, because the
         // kill below reaches them without this app signalling anything: a tmux client whose server
@@ -677,7 +762,6 @@ final class TerminalSessionStore {
 
         await persistence?.killEverything(workspaceID: workspaceID)
 
-        var views: [BloomTerminalView] = []
         for tab in tabs {
             // Every pane of the tab, which for a tab nobody split is the tab's own shell.
             let panes = TerminalSplitStore.shared.panes(of: tab)
@@ -711,8 +795,11 @@ final class TerminalSessionStore {
         activity.stop()
         await recordCommands()
 
-        let views = Array(terminals.values)
+        let views = Array(terminals.values) + Array(swarmAgentTerminals.values)
         terminals.removeAll()
+        swarmAgentTerminals.removeAll()
+        swarmAgentOwners.removeAll()
+        swarmAgentAttachments.removeAll()
         paneOwner.removeAll()
         paneSession.removeAll()
         pendingCommands.removeAll()

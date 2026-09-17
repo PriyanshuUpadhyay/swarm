@@ -33,6 +33,22 @@ struct TerminalLaunch: Sendable, Hashable {
         )
     }
 
+    /// A direct pty child for `swarm attach`. It must not use Bloom's tmux persistence, because
+    /// the agent already lives in the private tmux session that this command attaches to.
+    static func swarmAttach(_ command: SwarmAttachCommand) -> TerminalLaunch {
+        let variables = Shell.terminalEnvironment(
+            inheriting: Shell.environment(), extra: command.environment
+        )
+
+        return TerminalLaunch(
+            executable: Shell.which(command.executable) ?? command.executable,
+            execName: URL(fileURLWithPath: command.executable).lastPathComponent,
+            arguments: command.arguments,
+            environment: variables.map { "\($0.key)=\($0.value)" }.sorted(),
+            directory: AgentScratchDirectory.current()
+        )
+    }
+
     /// The same shell, but held by a tmux session instead of by this app, so it survives a quit.
     ///
     /// The pty child is a tmux *client*. Killing it, which is what quitting does, detaches rather
