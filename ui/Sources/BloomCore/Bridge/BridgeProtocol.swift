@@ -11,15 +11,15 @@ import Foundation
 /// transport is stdio, and the socket sits behind it.
 ///
 /// The shim is a line relay and deliberately not an MCP implementation. Every behaviour that
-/// lives in the shim is a behaviour that can skew against the app, because Sparkle replaces the
-/// bundle underneath a running Bloom and the CLI launches whatever binary is at the path its
-/// config names. A relay changes almost never; the tool surface changes every phase. `initialize`,
+/// lives in the shim is a behaviour that can skew against the app, because the bundle can be
+/// replaced while Bloom is running and the CLI launches whatever binary is at the path its config
+/// names. A relay changes almost never; the tool surface changes every phase. `initialize`,
 /// `tools/list` and `tools/call` are all answered in the app, where they can reach the store.
 public enum BridgeProtocol {
     /// The version of the socket conversation, compared for **equality** and never as a range.
     ///
-    /// The skew to design for is a NEW shim meeting an OLDER running Bloom: Sparkle swaps the
-    /// bundle mid-session, the CLI is relaunched, and the config file written this morning names a
+    /// The skew to design for is a NEW shim meeting an OLDER running Bloom: the bundle is replaced
+    /// mid-session, the CLI is relaunched, and the config file written this morning names a
     /// binary that has since been replaced. The mirror case is an old shim meeting a new app. Both
     /// have to fail with a sentence rather than hang, because a hanging tool call is a hung turn
     /// and the model has no way to tell one from the other.

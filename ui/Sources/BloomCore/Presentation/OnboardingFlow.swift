@@ -2,7 +2,7 @@ import Foundation
 
 /// The steps the welcome window walks through, and the rules for moving between them.
 ///
-/// There are five, and the third one is not always there. The window used to be one screen that
+/// There are five, and two of them are not always there. The window used to be one screen that
 /// opened straight onto four probes, which meant the first thing a new Bloom ever said to anybody
 /// was a list of what their Mac might be missing. That reads as a form. A greeting first, then the
 /// checks, is what turns the same two facts into a welcome, and it costs one press.
@@ -31,15 +31,6 @@ public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiab
     /// The one command that couples the owner's own Claude Code to this Bloom. Optional, and
     /// omitted entirely when there is nothing to offer. See `OnboardingFlow.steps`.
     case commandLine
-    /// The prompt anybody can send back to the people who build Bloom, which is the same sheet
-    /// Help's Submit a Prompt raises and the same endpoint it posts to.
-    ///
-    /// Never left out, unlike the offer above it, because nothing about this Mac can make it
-    /// empty: every build may send, the address is a constant, and there is no configuration to
-    /// have already been done. So `isOptional` is false here and stays a statement about the
-    /// list rather than about whether a reader has to do anything.
-    case promptSubmission
-
     /// What Bloom asks for in return, which is a postcard, and the address to send it to.
     ///
     /// **Last, and the position is the argument.** Every screen before it wants something: a
@@ -48,13 +39,9 @@ public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiab
     /// sequence that ends on a form ends on the reader still owing something, and a sequence that
     /// ends here ends on the one screen they might remember a week later.
     ///
-    /// It also has to be last because of what it costs to be anywhere else. Put before the prompt
-    /// step it is an interruption between two screens that are both about reaching us, and it
-    /// would leave the sequence closing on a form again.
-    ///
-    /// Never left out, for the same reason the prompt step is not: nothing about this Mac can make
-    /// an address empty. The screen after it does not exist, so the footer's button says "Start
-    /// using Bloom" here and does exactly that.
+    /// Never left out because nothing about this Mac can make an address empty. The screen after
+    /// it does not exist, so the footer's button says "Start using Bloom" here and does exactly
+    /// that.
     case postcard
 
     public var id: String { rawValue }
@@ -62,7 +49,7 @@ public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiab
     /// Reading order. Which of these a given window actually walks is `OnboardingFlow.steps`,
     /// which is the same list with the optional step taken out when it has nothing to say.
     public static let order: [OnboardingStep] = [
-        .greeting, .checks, .keepAwake, .commandLine, .promptSubmission, .postcard,
+        .greeting, .checks, .keepAwake, .commandLine, .postcard,
     ]
 
     /// True of a step the sequence may leave out. Nothing is lost by leaving it out: the offer is

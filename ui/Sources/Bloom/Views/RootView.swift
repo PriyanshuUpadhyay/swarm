@@ -23,8 +23,6 @@ struct RootView: View {
     @Bindable private var closeSession = CloseSessionAlert.shared
     @Bindable private var closeSwarmAgent = SwarmAgentCloseAlert.shared
     @Bindable private var setupRun = SetupRunAlert.shared
-    /// The two Help menu sheets, and the drafts typed into them. See `FeedbackPresenter`.
-    @Bindable private var feedback = FeedbackPresenter.shared
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -171,40 +169,9 @@ struct RootView: View {
             .animation(reduceMotion ? nil : Motion.pane, value: app.notice)
 
             .task { await app.bootstrap() }
-            // The install ping. Started from here because this is the first moment there is a window
-            // and a model, and it keeps a loop of its own from then on rather than living inside this
-            // task: Bloom goes on running with its window closed, and a view's task does not. It waits
-            // a minute before it does anything at all, so nothing about it is part of a launch. See
-            // `InstallPingService`.
-            .task { InstallPingService.shared.start(app: app) }
-            // Debug builds only, and only when asked for on the command line: raises one of the two
-            // Help menu sheets so a capture run can look at it. See `FeedbackPresenter`.
-            .task { FeedbackPresenter.shared.presentIfRequested() }
-            // The same, for the search panel, which is otherwise reachable only by a key
-            // equivalent and a glyph. See `SearchPanelModel.presentIfRequested`.
+            // Debug builds can raise the search panel from a capture flag. The panel is otherwise
+            // reachable only by a key equivalent and a glyph. See `SearchPanelModel.presentIfRequested`.
             .task { presentSearchPanelIfRequested() }
-            // Send Feedback and Submit a Prompt, raised from the Help menu. Here rather than at the
-            // menu item, because a `Commands` body is not a view and cannot present anything, and
-            // because what was typed into either of them belongs to the app rather than to the sheet:
-            // see `FeedbackPresenter` for why a draft that dies with its sheet is the wrong shape.
-            .sheet(item: $feedback.sheet) { sheet in
-                switch sheet {
-                case .report: FeedbackSheet()
-                case .prompt: PromptSubmissionSheet()
-                case .reportSent:
-                    FeedbackSentCard(
-                        title: Feedback.Copy.reportSent,
-                        detail: Feedback.Copy.reportSentDetail,
-                        onDismiss: feedback.close
-                    )
-                case .promptSent:
-                    FeedbackSentCard(
-                        title: Feedback.Copy.promptSent,
-                        detail: Feedback.Copy.promptSentDetail,
-                        onDismiss: feedback.close
-                    )
-                }
-            }
             // The offer to turn a folder into a repository. Presented here rather than at each of the
             // controls that can raise it, because there are five of them across two windows and they
             // all reach it through `AppModel.addRepository`.

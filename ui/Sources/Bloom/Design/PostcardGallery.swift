@@ -3,7 +3,7 @@ import BloomCore
 
 /// The two places the postcard is drawn, side by side, at the widths they are drawn at.
 ///
-/// It exists for the reason `WelcomeOffersGallery` exists. Both of these are behind a menu item or
+/// It exists for the reason `WelcomeOffersGallery` exists. Both are behind a menu item or
 /// four presses of a wizard, so the only way to look at either used to be to open the real window
 /// on somebody's real desktop, and the owner is working at that desktop. A page rendered offscreen
 /// costs nobody their focus.
@@ -30,7 +30,7 @@ struct PostcardGallery: View {
 
             column("The welcome window's last step") {
                 // The reading band alone, bounded by the two hairlines it sits between, which is
-                // how `WelcomeOffersGallery` draws its two. The plinth and the footer above and
+                // how `WelcomeOffersGallery` draws its offer. The plinth and the footer above and
                 // below it are `WelcomeView`'s, are private to it, and are identical on every step
                 // of that window.
                 VStack(spacing: 0) {

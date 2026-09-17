@@ -5,8 +5,8 @@ import Synchronization
 ///
 /// It speaks no MCP. After a hello it copies lines from stdin to the socket and from the socket to
 /// stdout, and Bloom answers `initialize`, `tools/list` and `tools/call` at the other end. That
-/// division is the point: Sparkle replaces the bundle underneath a running app, so anything the
-/// shim knows is something that can skew against the app that is actually running, while the
+/// division is the point: the bundle can be replaced underneath a running app, so anything the
+/// shim knows can skew against the app that is actually running, while the
 /// phases after this one add five tools and no shim work at all.
 ///
 /// It lives in BloomCore rather than in the executable target because `Tools/test-core.sh` mirrors

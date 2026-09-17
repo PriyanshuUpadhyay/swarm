@@ -98,7 +98,6 @@ baton_allowed=(
   'Tests/BloomCoreTests/AgentEventTests.swift'      # sample paths and recorded payloads
   'Tests/BloomCoreTests/FilePathGuessTests.swift'   # sample paths
   'Tests/BloomCoreTests/HomeListTests.swift'        # a sample repository name
-  'Tests/BloomCoreTests/InstallPingTests.swift'     # a sample path
   'Tests/BloomCoreTests/LegacyMigrationTests.swift' # tests the migration off the old name
   'Tests/BloomCoreTests/RepositoryStartPlanTests.swift' # sample folder names
   'Tools/icon/lib9.py'                              # a sample path
