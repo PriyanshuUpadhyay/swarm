@@ -93,6 +93,23 @@ public struct SubagentTranscript: Sendable, Equatable {
     ///   carried because a `Message` has one and for no other reason: nothing drawn from these
     ///   rows reads it.
     public static func parse(_ text: String, sessionID: SessionID) -> SubagentTranscript {
+        parse(text, sessionID: sessionID, userText: .brief)
+    }
+
+    /// Reads a chair transcript through the same Claude Code NDJSON parser, while keeping every
+    /// user turn as a transcript row instead of lifting the one subagent brief out of the list.
+    public static func parseChair(_ text: String, sessionID: SessionID) -> SubagentTranscript {
+        parse(text, sessionID: sessionID, userText: .row)
+    }
+
+    private enum UserTextReading: Equatable {
+        case brief
+        case row
+    }
+
+    private static func parse(
+        _ text: String, sessionID: SessionID, userText: UserTextReading
+    ) -> SubagentTranscript {
         var messages: [Message] = []
         var prompt = ""
         var used = Set<Int64>()
@@ -100,7 +117,7 @@ public struct SubagentTranscript: Sendable, Equatable {
         for source in text.split(whereSeparator: \.isNewline) {
             let raw = Data(source.utf8)
             guard let json = JSONValue.parse(raw) else { continue }
-            for reading in read(json, raw: raw) {
+            for reading in read(json, raw: raw, userText: userText) {
                 switch reading {
                 case .brief(let brief):
                     // The last one wins. A file holds exactly one; a run of stored stream lines
@@ -203,7 +220,9 @@ public struct SubagentTranscript: Sendable, Equatable {
         case row(kind: MessageKind, payload: Data, refID: String?)
     }
 
-    private static func read(_ json: JSONValue, raw: Data) -> [Reading] {
+    private static func read(
+        _ json: JSONValue, raw: Data, userText: UserTextReading
+    ) -> [Reading] {
         guard let type = json["type"]?.stringValue else { return [] }
         guard type == "user" || type == "assistant" else { return [] }
         guard let message = json["message"] else { return [] }
@@ -214,7 +233,11 @@ public struct SubagentTranscript: Sendable, Equatable {
         if let content = message["content"]?.stringValue {
             let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { return [] }
-            guard !isUser else { return [.brief(body)] }
+            if isUser {
+                return userText == .brief
+                    ? [.brief(body)]
+                    : [.row(kind: .user, payload: raw, refID: nil)]
+            }
             guard let payload = oneBlockLine(json, holding: .object([
                 "type": .string("text"), "text": .string(body),
             ])) else { return [] }
@@ -223,12 +246,16 @@ public struct SubagentTranscript: Sendable, Equatable {
 
         let blocks = message["content"]?.arrayValue ?? []
         return blocks.compactMap { block in
-            read(block: block, in: json, raw: raw, isOnlyBlock: blocks.count == 1, isUser: isUser)
+            read(
+                block: block, in: json, raw: raw, isOnlyBlock: blocks.count == 1,
+                isUser: isUser, userText: userText
+            )
         }
     }
 
     private static func read(
-        block: JSONValue, in json: JSONValue, raw: Data, isOnlyBlock: Bool, isUser: Bool
+        block: JSONValue, in json: JSONValue, raw: Data, isOnlyBlock: Bool,
+        isUser: Bool, userText: UserTextReading
     ) -> Reading? {
         // The bytes of the line itself wherever the line holds one block, which is every line in
         // every capture measured. It is the payload every renderer downstream wants: the uuid,
@@ -245,7 +272,11 @@ public struct SubagentTranscript: Sendable, Equatable {
             guard !body.isEmpty else { return nil }
             // A text block on a USER line is the brief, not an answer. See the type's header:
             // reading it as an answer is what drew the prompt under both headings.
-            guard !isUser else { return .brief(body) }
+            if isUser {
+                guard userText == .row else { return .brief(body) }
+                guard let payload = payload() else { return nil }
+                return .row(kind: .user, payload: payload, refID: nil)
+            }
             guard let payload = payload() else { return nil }
             return .row(kind: .assistantText, payload: payload, refID: nil)
 
@@ -283,6 +314,44 @@ public struct SubagentTranscript: Sendable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
         return try? encoder.encode(JSONValue.object(top))
+    }
+}
+
+/// Bounded reads of a chair's Claude Code transcript.
+public enum ChairTranscriptOutput: Sendable {
+    /// Reads the tail that can be shown while a session is open.
+    public static func read(
+        path: String?, sessionID: SessionID
+    ) -> Result<SubagentTranscript, SubagentOutput.Failure> {
+        guard let path, !path.isEmpty else { return .failure(.noFile) }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else { return .failure(.missing) }
+        do {
+            return .success(SubagentTranscript.parseChair(
+                try SubagentOutput.tail(of: url), sessionID: sessionID
+            ))
+        } catch {
+            return .failure(.unreadable(error.localizedDescription))
+        }
+    }
+
+    /// Reads only the bounded head needed to name a session from its first user prompt.
+    public static func firstUserPrompt(path: String) -> String? {
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path),
+              let handle = try? FileHandle(forReadingFrom: url)
+        else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: SubagentOutput.tailBytes) else { return nil }
+        let transcript = SubagentTranscript.parseChair(
+            String(decoding: data, as: UTF8.self), sessionID: SessionID("chair")
+        )
+        guard let first = transcript.messages.first(where: { $0.kind == .user }) else {
+            return nil
+        }
+        let text = UserTurnPrompt.text(in: first.payload)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 }
 

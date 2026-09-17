@@ -81,6 +81,10 @@ public struct SwarmCLIBus: SwarmBus {
         ).messages
     }
 
+    public func sessions() async throws -> [SwarmSession] {
+        try await read(["sessions", "--json"], as: SwarmSessionList.self).sessions
+    }
+
     public func send(
         _ body: String, to agent: SwarmAgentID, in session: SwarmSessionID
     ) async throws -> Int {
@@ -113,7 +117,7 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     private func read<Value: Decodable>(
-        _ arguments: [String], in session: SwarmSessionID, as type: Value.Type
+        _ arguments: [String], in session: SwarmSessionID? = nil, as type: Value.Type
     ) async throws -> Value {
         let result = try await call(arguments, in: session)
         do {

@@ -65,6 +65,80 @@ public struct SwarmMessageList: Sendable, Hashable, Codable {
     }
 }
 
+/// One swarm session discovered outside Swarm's own workspace records.
+///
+/// The bus writes its integer id as a JSON number. Swarm keeps bus ids as typed decimal text, so
+/// the custom coding below is the one boundary where the two forms meet.
+public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
+    public var id: SwarmSessionID
+    public var talkMode: String
+    public var cwd: String
+    public var createdAt: Int
+    public var chairLog: String?
+    public var agents: Int
+    public var messages: Int
+    public var lastMessageAt: Int?
+
+    public init(
+        id: SwarmSessionID, talkMode: String, cwd: String, createdAt: Int,
+        chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?
+    ) {
+        self.id = id
+        self.talkMode = talkMode
+        self.cwd = cwd
+        self.createdAt = createdAt
+        self.chairLog = chairLog
+        self.agents = agents
+        self.messages = messages
+        self.lastMessageAt = lastMessageAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, talkMode, cwd, createdAt, chairLog, agents, messages, lastMessageAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = SwarmSessionID(String(try values.decode(Int.self, forKey: .id)))
+        talkMode = try values.decode(String.self, forKey: .talkMode)
+        cwd = try values.decode(String.self, forKey: .cwd)
+        createdAt = try values.decode(Int.self, forKey: .createdAt)
+        chairLog = try values.decodeIfPresent(String.self, forKey: .chairLog)
+        agents = try values.decode(Int.self, forKey: .agents)
+        messages = try values.decode(Int.self, forKey: .messages)
+        lastMessageAt = try values.decodeIfPresent(Int.self, forKey: .lastMessageAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        guard let numericID = Int(id.rawValue) else {
+            throw EncodingError.invalidValue(
+                id.rawValue,
+                EncodingError.Context(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "A swarm session id must be decimal text."
+                )
+            )
+        }
+        try values.encode(numericID, forKey: .id)
+        try values.encode(talkMode, forKey: .talkMode)
+        try values.encode(cwd, forKey: .cwd)
+        try values.encode(createdAt, forKey: .createdAt)
+        try values.encodeIfPresent(chairLog, forKey: .chairLog)
+        try values.encode(agents, forKey: .agents)
+        try values.encode(messages, forKey: .messages)
+        try values.encodeIfPresent(lastMessageAt, forKey: .lastMessageAt)
+    }
+}
+
+public struct SwarmSessionList: Sendable, Hashable, Codable {
+    public var sessions: [SwarmSession]
+
+    public init(sessions: [SwarmSession]) {
+        self.sessions = sessions
+    }
+}
+
 /// What `swarm launch` reported: the new pane, and the account it runs on when one was asked for.
 public struct SwarmLaunch: Sendable, Hashable {
     public var pane: String
@@ -104,6 +178,8 @@ public protocol SwarmBus: Sendable {
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID) async throws -> [SwarmAgent]
     func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage]
+    /// `swarm sessions --json`, with no session selected in the environment.
+    func sessions() async throws -> [SwarmSession]
     /// `swarm send <agent> ask` with `body` on stdin. Returns the new message's seq.
     func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int
     func ack(_ seq: Int, in session: SwarmSessionID) async throws
@@ -133,6 +209,8 @@ public struct UnavailableSwarmBus: SwarmBus {
     public func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage] {
         throw notConnected
     }
+
+    public func sessions() async throws -> [SwarmSession] { throw notConnected }
 
     public func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int {
         throw notConnected

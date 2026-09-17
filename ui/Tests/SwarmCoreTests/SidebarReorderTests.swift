@@ -512,6 +512,18 @@ struct SidebarReorderTests {
             == .project(id: RepoID("beta"), to: 0))
     }
 
+    @Test("A swarm session cannot move and a drop past it stays inside its project")
+    func swarmSessionDoesNotMoveOrEndTheProject() {
+        var rows = paneWithPending
+        rows[3] = .swarmSession(projectID: RepoID("alpha"))
+
+        #expect(SidebarReorder.destination(rows: rows, from: [3], to: 1) == .nothing)
+        #expect(SidebarReorder.destination(rows: rows, from: [1], to: 4) == .workspace(
+            projectID: RepoID("alpha"), from: IndexSet(integer: 0), to: 2,
+            landedOutside: false
+        ))
+    }
+
     /// A project whose only row is one being cut. There is nothing to reorder, and nothing may be
     /// dropped into it, but it must not throw the offsets of the projects below it out.
     @Test("A project with nothing but a workspace being cut moves nothing")

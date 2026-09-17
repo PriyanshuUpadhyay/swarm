@@ -132,7 +132,7 @@ A reader gets one session's agents and messages with the calls above, with `SWAR
 to that session's `id`.
 
 Example. A Claude Code chat in `~/work/swarm/wt/main` runs `swarm session new lane` and gets 10.
-Swarm has the project `~/work/swarm/wt/ui-bloom`, which shares that git repository, so it lists
+Swarm has the project `~/work/swarm/wt/feature`, which shares that git repository, so it lists
 session 10 under that project. Opening it draws the chat from `chair_log` and each agent's
 `summary` messages from `swarm messages --json`.
 

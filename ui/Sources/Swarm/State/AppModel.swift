@@ -61,6 +61,11 @@ final class AppModel {
     /// 0007 in the swarm repository). One instance, so every agent tab reaches the same bus.
     @ObservationIgnored let swarmBus: any SwarmBus = SwarmCLIBus()
 
+    /// CLI and app-created swarm sessions assigned to each project, minus sessions already owned
+    /// by a workspace row. The sidebar is the only drawer; the detail column reads one by id.
+    var swarmSessionsByRepo: [RepoID: [SwarmProjectSession]] = [:]
+    @ObservationIgnored let swarmSessionDiscovery = SwarmSessionDiscovery()
+
     private(set) var repos: [Repo] = []
     private(set) var workspaces: [Workspace] = []
     private(set) var isLoaded = false

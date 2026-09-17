@@ -10,6 +10,7 @@ import SwarmCore
 struct SidebarRepoGroup: Identifiable {
     var repo: Repo
     var workspaces: [Workspace]
+    var sessions: [SwarmProjectSession]
     /// Whether any workspace in this project has finished a turn nobody has read yet.
     ///
     /// Computed over every workspace the project has, not over `workspaces`. The rows are what
@@ -31,6 +32,7 @@ struct SidebarRepoGroup: Identifiable {
     static func build(
         repos: [Repo],
         workspaces: [Workspace],
+        sessionsByRepo: [RepoID: [SwarmProjectSession]] = [:],
         filter: SidebarFilter,
         showingHidden: Bool
     ) -> [SidebarRepoGroup] {
@@ -45,6 +47,7 @@ struct SidebarRepoGroup: Identifiable {
             return SidebarRepoGroup(
                 repo: repo,
                 workspaces: rows,
+                sessions: sessionsByRepo[repo.id] ?? [],
                 hasUnreadWork: all.contains(where: \.unread)
             )
         }
@@ -73,6 +76,8 @@ enum SidebarPaneRow: Identifiable {
     /// One subagent of the turn running in the workspace above it. Carries its workspace so the
     /// row knows what selecting it selects, and its project so the reordering can count it.
     case subagent(SubagentRow, workspaceID: WorkspaceID, repoID: RepoID)
+    /// A read-only swarm session discovered for this project.
+    case swarmSession(SwarmProjectSession, repoID: RepoID)
     /// A workspace whose worktree is still being cut. See `PendingWorkspace`.
     case pending(PendingWorkspace)
     /// One of the pane's section headings when it is grouped by status. Carries its count, because
@@ -93,6 +98,7 @@ enum SidebarPaneRow: Identifiable {
         // are two CLIs with two id spaces.
         case .subagent(let row, let workspaceID, _):
             "subagent:" + workspaceID.rawValue + ":" + row.id.rawValue
+        case .swarmSession(let session, _): "swarm-session:" + session.id.rawValue
         // The same prefix a workspace row uses, deliberately: the pending row and the stored row
         // it becomes carry one id, so giving them one identity is what makes the swap a row
         // changing rather than one row leaving and another arriving in its place.
@@ -109,7 +115,7 @@ enum SidebarPaneRow: Identifiable {
     var childKey: String? {
         switch self {
         case .crew, .subagent: id
-        case .project, .workspace, .pending, .notice, .statusHeading: nil
+        case .project, .workspace, .swarmSession, .pending, .notice, .statusHeading: nil
         }
     }
 
@@ -120,6 +126,7 @@ enum SidebarPaneRow: Identifiable {
         case .workspace(let workspace, _): .workspace(id: workspace.id, projectID: workspace.repoID)
         case .crew(_, _, let repoID): .crew(projectID: repoID)
         case .subagent(_, _, let repoID): .subagent(projectID: repoID)
+        case .swarmSession(_, let repoID): .swarmSession(projectID: repoID)
         case .pending(let pending): .pending(projectID: pending.repoID)
         case .notice(let repoID): .notice(projectID: repoID)
         case .statusHeading: .heading
@@ -166,7 +173,7 @@ enum SidebarPaneRow: Identifiable {
             // A project whose only row is one being cut is not a project with no workspaces, so
             // the notice stays away: "No workspaces yet" printed directly above the workspace
             // being made is the sentence answering itself.
-            if group.workspaces.isEmpty, waiting.isEmpty {
+            if group.workspaces.isEmpty, waiting.isEmpty, group.sessions.isEmpty {
                 rows.append(.notice(repoID: group.id))
             } else {
                 for workspace in group.workspaces {
@@ -190,6 +197,9 @@ enum SidebarPaneRow: Identifiable {
                     }
                 }
                 rows.append(contentsOf: waiting.map { .pending($0) })
+                rows.append(contentsOf: group.sessions.map {
+                    .swarmSession($0, repoID: group.id)
+                })
             }
         }
         return rows

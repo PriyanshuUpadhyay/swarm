@@ -283,6 +283,7 @@ struct SidebarView: View {
         }
         .onChange(of: app.repos, initial: true) { _, _ in regroup() }
         .onChange(of: app.workspaces) { _, _ in regroup() }
+        .onChange(of: app.swarmSessionsByRepo) { _, _ in regroup() }
         // The whole run changes shape, and nothing in it counts as having arrived: every row was
         // already on screen a moment ago, in another order. See the filter's own change below.
         .onChange(of: storedGrouping) { _, _ in
@@ -378,6 +379,12 @@ struct SidebarView: View {
         // Not observed state, so this write invalidates nothing and is safe from an update.
         .onChange(of: undoManager, initial: true) { _, manager in
             app.undoManager = manager
+        }
+        // The task exists only while this window is active. A key-window change cancels the old
+        // loop before a new one can start, so inactive windows run no swarm polling process.
+        .task(id: app.isLoaded && windowIsKey) {
+            guard app.isLoaded, windowIsKey else { return }
+            await app.followSwarmSessions()
         }
     }
 
@@ -482,6 +489,11 @@ struct SidebarView: View {
                 .moveDisabled(true)
                 .tag(SidebarSelection.subagent(workspaceID, subagent.id))
                 .sidebarSelection(selectionStyle(for: .subagent(workspaceID, subagent.id)))
+        case .swarmSession(let session, _):
+            SwarmSessionSidebarRow(session: session)
+                .moveDisabled(true)
+                .tag(SidebarSelection.swarmSession(session.id))
+                .sidebarSelection(selectionStyle(for: .swarmSession(session.id)))
         case .pending(let pending):
             // A workspace that does not exist yet, so there is nothing to select, nothing
             // to open and nothing to write a `sort_order` onto. Refused here and again in
@@ -595,6 +607,7 @@ struct SidebarView: View {
         groups = SidebarRepoGroup.build(
             repos: app.repos,
             workspaces: app.workspaces,
+            sessionsByRepo: app.swarmSessionsByRepo,
             filter: filter,
             showingHidden: showsHiddenProjects
         )
