@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds ~/Desktop/bloom-icon-02-piece.html: 02-piece at several amounts of
+"""Builds ~/Desktop/swarm-icon-02-piece.html: 02-piece at several amounts of
 upper dark on the leaving edge. Nothing here is shipped and nothing outside
 Tools/icon/.build and the one Desktop file is written."""
 import base64
@@ -227,7 +227,7 @@ def main():
 
 
 def page(rows):
-    out = os.path.expanduser("~/Desktop/bloom-icon-02-piece.html")
+    out = os.path.expanduser("~/Desktop/swarm-icon-02-piece.html")
     h = [HEAD]
     for r in rows:
         u, d = r["meas"]
@@ -270,7 +270,7 @@ def page(rows):
 
 HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bloom 02-piece, the leaving edge</title><style>
+<title>Swarm 02-piece, the leaving edge</title><style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; background: #0B0D10; color: #D9E2E8;

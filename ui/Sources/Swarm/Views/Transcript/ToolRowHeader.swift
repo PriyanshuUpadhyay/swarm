@@ -1,0 +1,462 @@
+import SwiftUI
+import SwarmCore
+
+/// The single line a tool call occupies while it is closed: what it did, to what, and how long it
+/// took, on the columns every other row uses.
+struct ToolRowHeader: View {
+    var presentation: ToolPresentation
+    /// Which worktree the row's paths are relative to, and which review a file chip opens into.
+    var home: TranscriptHome
+    var isError: Bool
+    /// Set when the call never ran, which the protocol reports with the same `is_error` a real
+    /// failure carries. See `ToolRefusal`.
+    var refusal: ToolRefusal?
+    /// The sentence the CLI gave for the refusal, in one line.
+    var refusalReason: String = ""
+    var durationMS: Int?
+    /// How many actions the subagent this call started has taken, drawn after the description as
+    /// "· 42 actions". The chat takes a subagent's rows out of the list and this is what stands
+    /// for them, so it is the one place the reader sees the work is happening. See
+    /// `TranscriptFold`.
+    var subagentActions: Int?
+    /// Said in the count's place when an Agent call's run was not kept. See `SubagentRunLink`.
+    var runUnavailable = false
+    /// Set for an Agent call with a run to open. The glyph, title, description and count become
+    /// the button that opens it, and the chevron becomes a button of its own that calls
+    /// `onToggle`, so opening the run and reading the brief are two targets rather than one click
+    /// that has to guess.
+    var onOpenRun: (() -> Void)?
+    /// The chevron's action, used only beside `onOpenRun`. Everywhere else the whole row is the
+    /// toggle, through `ExpandableRowHeader`.
+    var onToggle: (() -> Void)?
+    var isExpanded: Bool
+    var isHovered: Bool
+    /// Whether there is anything behind the chevron. False for the rows that cannot open: a merge
+    /// event has no log, and `WorkspaceEventsView` already refuses to wrap those in an
+    /// `ExpandableRowHeader`. Drawn unconditionally, the chevron appeared on hover over a row that
+    /// does not answer it, which is the case that row's own doc calls worse than no chevron.
+    var showsDisclosure = true
+
+    /// The model is looked up rather than passed down, exactly as `UserTurnRowView` does it: the
+    /// transcript is handed a session, not a workspace model, and this only ever reads. Nothing in
+    /// `body` touches it, so no row observes it and no row is invalidated when it changes.
+    @Environment(AppModel.self) private var app
+
+    /// Where a hovered chip or row says it is, so the transcript can draw the card over the
+    /// scroll view. Nil in any context that is not drawing one.
+    @Environment(\.transcriptHoverHost) private var hoverHost
+
+    /// Whether each half of the line is being cut off, answered by `TruncationProbe` and only
+    /// while this row is the hovered one. Both start false, which is what every row that is not
+    /// under the pointer stays.
+    @State private var titleIsCut = false
+    @State private var detailIsCut = false
+    /// Where this row is, read once the pointer is on it. See `frameProbe`.
+    @State private var frameInWindow: CGRect = .zero
+    @State private var hoverTask: Task<Void, Never>?
+    /// The card this row put up, if it is still up. Recorded rather than recomputed, because what
+    /// has to be taken down is what was PUT up: a row that is opened while its card is showing
+    /// would compute a different one and leave the old card standing over a row that has already
+    /// answered the question.
+    @State private var published: TranscriptHoverCard?
+
+    /// How long the pointer has to rest on a row before its card opens. The same wait
+    /// `AttachmentChip` makes for the file card, so the two cards in this pane answer at the same
+    /// speed rather than at two speeds a reader would have to learn. It is `Motion.hoverCardDelay`
+    /// rather than a number of its own, because the sidebar's card and the composer's ask the
+    /// identical question and four answers to it would be four windows.
+    private static var hoverDelay: Duration { Motion.hoverCardDelay }
+
+    /// A chip that repeats the detail replaces it: `Read [notes.txt]` rather than
+    /// `Read notes.txt [notes.txt]`.
+    ///
+    /// And an open row replaces it too. Every expanded body states the target in full, in the face
+    /// it deserves: a command as a code block, a path as a path, an edit as a before and after. The
+    /// header's copy is the same string truncated to one line, so an open Bash row printed its
+    /// command twice, once directly above the other. The full one is the one worth keeping.
+    private var showsDetail: Bool {
+        !isExpanded
+            && !presentation.detail.isEmpty
+            && !presentation.chips.contains { $0.text == presentation.detail }
+    }
+
+    /// The detail, in one or two inks.
+    ///
+    /// A shell row whose command opened with `cd <worktree>` has had that prefix taken off by
+    /// `CommandDisplay`, because the sidebar and the title bar already say which workspace this
+    /// is. What is left in front is a directory below the worktree, or the `cd` that left the
+    /// worktree altogether, and those are the two the reader has to see: one `Text` for it, one
+    /// for the command, concatenated so the pair still truncates as a single line.
+    private var detailText: Text {
+        let lead = presentation.detailLead
+        guard !lead.text.isEmpty else { return Text(presentation.detail) }
+        // Interpolated rather than concatenated: `Text.+` is deprecated in macOS 26 and the app
+        // target builds with -warnings-as-errors.
+        let tinted = Text(lead.text).foregroundStyle(lead.tint.colour)
+        return Text("\(tinted)\(lead.joiner)\(presentation.detail)")
+    }
+
+    /// The face the detail is set in.
+    ///
+    /// A shell command was set in the proportional face while the permission panel four points
+    /// below it set the same command in mono, and the panel is the one that was right: a command is
+    /// read character by character, and `-rf` beside `-r f` is exactly the difference a
+    /// proportional face hides. So anything `ToolLiteral` calls a literal is code here, and
+    /// anything it does not (the sentence a subagent was given, a phrase somebody would say out
+    /// loud, a count of todos) stays proportional, because English set in mono reads as data.
+    ///
+    /// A rung DOWN from the label beside it, not the same rung, and the difference is characters on
+    /// the row. Mono is the wider face at a given size, so the preview shows fewer of them however
+    /// this is done. Measured on the 154 character `gh api ... --jq` command from the screenshot
+    /// that prompted this, at a 480 point detail column: 81 characters in the proportional face it
+    /// used to be set in, 70 at `codeSmall`, 64 at `code`. Losing a fifth of the line to make it
+    /// legible is a bad trade; losing an eighth is not, and what is left is a line whose characters
+    /// can be told apart, which is the whole reason for the change. `codeTiny` fits 77, near enough
+    /// to break even, and is refused: ten points is the floor of the scale and is documented for a
+    /// count or a duration read off the thing beside it, not for the longest string on the row.
+    ///
+    /// It is also exactly the pairing `ToolRowCard` already used, so the row and the card that puts
+    /// the cut line back are now set the same way rather than two ways.
+    private var detailFont: ScaledFont {
+        presentation.detailIsCode ? Typo.codeSmall : Typo.label
+    }
+
+    /// What the row says happened, in the slot where a failure says "error".
+    ///
+    /// A refusal is drawn in the caution colour rather than the alarm one, and it keeps the
+    /// detail beside it: the command that was declined is the thing the user needs to see, so the
+    /// CLI's sentence goes in the tooltip and into the accessible label rather than displacing it.
+    /// Every one of these rows opens onto the full sentence and what to do about it.
+    private var outcome: (text: String, tint: Color, help: String)? {
+        if let refusal {
+            var sentence = refusalReason.isEmpty ? refusal.summary : refusalReason
+            // The CLI's sentences are not all punctuated: "This command requires approval" has no
+            // full stop, and running the remedy straight onto it read as one run-on line.
+            if let last = sentence.last, !".!?:".contains(last) { sentence += "." }
+            return (
+                refusal.label,
+                Palette.warning,
+                [sentence, refusal.remedy].compactMap { $0 }.joined(separator: " ")
+            )
+        }
+        if isError {
+            return ("error", Palette.negative, "The tool reported an error. Open the row for what it said.")
+        }
+        return nil
+    }
+
+    var body: some View {
+        // Read once for the pass. Working it out punctuates a sentence and joins two more, and the
+        // glyph's tint at the top of this stack and the word near the bottom of it both need it.
+        let outcome = outcome
+
+        return HStack(spacing: TranscriptLayout.glyphGap) {
+            if let onOpenRun {
+                // The title and the count are what open the run: they are the part of the row
+                // that names the agent and says how much it did. Return opens it as well as
+                // Space, for a reader who reached the row with the keyboard.
+                Button(action: onOpenRun) {
+                    HStack(spacing: TranscriptLayout.glyphGap) {
+                        summary(outcome: outcome)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(SubagentRunLink.openHelp)
+                .accessibilityHint(SubagentRunLink.openHelp)
+                .onKeyPress(keys: [.return]) { _ in
+                    onOpenRun()
+                    return .handled
+                }
+            } else {
+                summary(outcome: outcome)
+            }
+
+            Spacer(minLength: TranscriptLayout.tight)
+
+            // Both of these are last in a row whose detail carries `layoutPriority`, so
+            // without `fixedSize` the detail takes the slack and the outcome word wraps to "e"
+            // over "r" inside a row that is one line tall by construction.
+            //
+            // The outcome is set in medium, which it was not before the coloured rule down the
+            // left of the row was taken away. That word and the glyph's tint are now the whole of
+            // what says a call failed or was declined, so the word carries a little more weight
+            // than the duration it sits next to.
+            if let outcome {
+                Text(outcome.text)
+                    .font(Typo.captionEmphasis)
+                    .foregroundStyle(outcome.tint)
+                    .fixedSize()
+                    .help(outcome.help)
+                    .accessibilityLabel(outcome.help)
+            }
+
+            if let durationMS, durationMS > 0 {
+                Text(TurnDuration.short(durationMS))
+                    .font(Typo.micro)
+                    .foregroundStyle(Palette.textTertiary)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+
+            if let onToggle, onOpenRun != nil {
+                // Its own target, because the rest of the row now opens the run. The label says
+                // what it shows, since "expand" on a row that also opens something is ambiguous.
+                let title = isExpanded ? "Hide the brief and result" : "Show the brief and result"
+                Button(action: onToggle) {
+                    TranscriptDisclosure(isExpanded: isExpanded, isVisible: isHovered)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(title)
+                .accessibilityLabel(title)
+            } else if showsDisclosure {
+                TranscriptDisclosure(isExpanded: isExpanded, isVisible: isHovered)
+            }
+        }
+        .transcriptRowFrame()
+        .background { frameProbe }
+        .onChange(of: showsCard) { _, wants in
+            hoverTask?.cancel()
+            guard wants else {
+                withdraw()
+                return
+            }
+            let wanted = card
+            hoverTask = Task {
+                try? await Task.sleep(for: Self.hoverDelay)
+                // Zero only if the probe has not been laid out yet, which would put the card in
+                // the pane's top left corner. Saying nothing beats saying it in the wrong place.
+                guard !Task.isCancelled, frameInWindow != .zero else { return }
+                published = wanted
+                hoverHost?.request = TranscriptHoverRequest(card: wanted, frame: frameInWindow)
+            }
+        }
+        .onDisappear {
+            hoverTask?.cancel()
+            withdraw()
+        }
+    }
+
+    /// What the call was: the glyph, the label, the detail, the count and the chips. A builder of
+    /// its own so an Agent call can make exactly this the button that opens its run, leaving the
+    /// outcome, the duration and the chevron outside it.
+    @ViewBuilder
+    private func summary(outcome: (text: String, tint: Color, help: String)?) -> some View {
+        TranscriptGlyph(
+            symbol: presentation.glyph,
+            // The outcome's colour wins where there is one, and the presentation's role
+            // becomes one here. See `ToolTint`: which role a tool row carries is a decision
+            // in the core, and this is where it stops being one.
+            tint: outcome?.tint ?? presentation.tint.colour
+        )
+
+        // A rung below the prose beside it, and in the secondary colour, because that is the
+        // whole hierarchy of this pane: what the agent wrote is the content, and what it ran
+        // is the receipt. Set in medium at reading size it was the loudest thing in the
+        // window, and forty of them in a row buried the answer underneath. Quieter, not
+        // smaller: it is still the label column of a row that has to be scannable, and the
+        // size it drops to is the one every other label in the window is set at.
+        Text(presentation.label)
+            .font(Typo.label)
+            .foregroundStyle(Palette.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .transcriptLabelColumn(presentation.label, font: Typo.label)
+            .reportsTruncation(
+                of: presentation.label,
+                font: Typo.label,
+                isActive: wantsMeasuring,
+                into: $titleIsCut
+            )
+
+        if showsDetail {
+            detailText
+                .font(detailFont)
+                .foregroundStyle(Palette.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+                .reportsTruncation(
+                    of: presentation.detailLine,
+                    font: detailFont,
+                    isActive: wantsMeasuring,
+                    into: $detailIsCut
+                )
+        }
+
+        // Fixed rather than truncating with the description: the description is the part a
+        // reader can do without at a narrow width, and the count is the part that moves.
+        if let subagentActions {
+            meta(Counted.of(subagentActions, "action"))
+        } else if runUnavailable {
+            // Said before anybody clicks, rather than opening a pane with nothing in it.
+            meta(SubagentRunLink.unavailableLabel)
+                .help(SubagentRunLink.unavailableHelp)
+        }
+
+        // Deliberately not `fixedSize`: a row is one line tall and clips, so a chip that
+        // refuses to give ground is cut in half at a narrow pane width rather than
+        // truncated. `Chip` already holds itself to one line, and the detail beside it
+        // carries the higher layout priority, so the chip only gives ground last.
+        ForEach(presentation.chips.indices, id: \.self) { index in
+            switch presentation.chips[index] {
+            case .code(let text):
+                Chip(text: text, monospaced: true)
+            case .file(let path):
+                fileChip(path)
+            }
+        }
+    }
+
+    /// A fact after the detail, joined to it with the window's meta separator.
+    private func meta(_ text: String) -> some View {
+        Text(showsDetail ? "· \(text)" : text)
+            .font(Typo.label)
+            .foregroundStyle(Palette.textTertiary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    // MARK: The row's own card
+
+    /// Whether the truncation probes should be measuring, which is while the pointer is on a
+    /// closed row and somewhere there is a card to draw.
+    ///
+    /// An open row is excluded rather than merely uninteresting. Every expanded body states the
+    /// target in full, in the face it deserves, so there is nothing a card could add, and the
+    /// header of an open row has already dropped its detail for exactly that reason.
+    private var wantsMeasuring: Bool {
+        hoverHost != nil && isHovered && !isExpanded
+    }
+
+    /// And whether there is something worth showing: a card that repeated a line the row was
+    /// already showing whole would be a card for nothing.
+    private var showsCard: Bool {
+        wantsMeasuring && (titleIsCut || detailIsCut)
+    }
+
+    private var card: TranscriptHoverCard {
+        .row(
+            title: presentation.label,
+            detail: showsDetail ? presentation.detailLine : "",
+            isCode: presentation.detailIsCode
+        )
+    }
+
+    /// Takes the card down, and only this row's own.
+    ///
+    /// The comparison is what makes the hide immediate AND safe. The pointer crossing from one row
+    /// to the next raises the new row before the old one has been told it was left, so a bare
+    /// `request = nil` would sometimes clear the card the row below had just put up.
+    private func withdraw() {
+        defer { published = nil }
+        guard let published, hoverHost?.request?.card == published else { return }
+        hoverHost?.request = nil
+    }
+
+    /// Where the row is, measured only while the pointer is on it.
+    ///
+    /// Reading a frame behind every row of a transcript would be a read per row per layout pass,
+    /// on the list that re-lays out on every frame of a sidebar drag. Behind the hovered row alone
+    /// it is one row's worth of reads, for the one row that is about to be asked where it is.
+    ///
+    /// The whole row rather than the label inside it: the row is what the pointer is on, what the
+    /// hover plate lights, and the thing the card is about. AppKit centres the popover under the
+    /// anchor and flips it above when there is no room below, which is what a row in the last turn
+    /// always needs.
+    @ViewBuilder
+    private var frameProbe: some View {
+        if wantsMeasuring {
+            Color.clear
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    frameInWindow = $0
+                }
+        }
+    }
+
+    /// A file the call was about, drawn as the chip the composer draws and the sent turn repeats.
+    ///
+    /// The one thing this has to work out is where the chip goes when it is clicked. An agent
+    /// writes absolute paths, because Claude Code requires one on every read, and the review
+    /// resolves a path against the worktree, so the two are reconciled here. A file in another
+    /// checkout, in the home directory or in a temporary folder has nowhere to open: it is still
+    /// drawn, because it is still a file, and it simply does not answer to the pointer.
+    ///
+    /// `AttachmentChip` truncates its own name in the middle at 150 points, so `fixedSize` here
+    /// asks for the width of the name and no more rather than letting the chip stretch into the
+    /// slack the row's `Spacer` would otherwise have taken.
+    ///
+    /// The chip's own tap gesture rather than a `Button` around it, which is not the house habit
+    /// and is deliberate. The whole header is already a `Button`, and a nested one is folded into
+    /// its label: with the chip wrapped, the row read to VoiceOver as "Read, 420ms" and the file
+    /// it was about disappeared from the tree entirely. Unwrapped, the name lands in the row's
+    /// combined label exactly the way the monospace chips beside it already do, which is the
+    /// behaviour this change should not have altered.
+    private func fileChip(_ path: String) -> some View {
+        // The rule is `FileChipTarget` in the core, shared with the pills a sent turn draws inside
+        // its own sentence: two copies of it would be two answers to "can this chip be opened",
+        // four lines apart in the same transcript.
+        let target = FileChipTarget.resolve(path, in: home.worktree)
+        let attachment = PromptAttachment.sent(path: target.path)
+        let worktree = target.worktree
+        // Spelled out rather than mapped over the optional, so the closure's actor is written down
+        // rather than inferred through two layers of optional.
+        let onOpen: (@MainActor () -> Void)?
+        let onOpenInNewTab: (@MainActor () -> Void)?
+        if let opens = target.opens {
+            onOpen = { open(opens) }
+            // The second gesture, and it asks the file system where the single click does not: a
+            // tab kept open on a file that is not there would be a tab saying nothing, whereas
+            // repointing the shared review at a missing file is a state that pane already draws.
+            // One `stat` on a double click is nothing; the row draws hundreds of these chips and
+            // asks nothing of the disk for any of them. See `AttachmentChip.verifiesOnDisk`.
+            onOpenInNewTab = {
+                openInNewTab(opens, at: (worktree as NSString).appendingPathComponent(opens))
+            }
+        } else {
+            onOpen = nil
+            onOpenInNewTab = nil
+        }
+
+        // The two things a transcript wants turned off: no close control to reveal, since a row is
+        // a record of what happened rather than a draft, and nothing asked of the file system,
+        // since there are hundreds of these in a turn. See `AttachmentChip.verifiesOnDisk`.
+        return AttachmentChip(
+            attachment: attachment,
+            worktree: worktree,
+            onOpen: onOpen,
+            onOpenInNewTab: onOpenInNewTab,
+            onPreview: { frame in
+                let file = TranscriptHoverCard.file(attachment: attachment, worktree: worktree)
+                guard let frame else {
+                    if hoverHost?.request?.card == file { hoverHost?.request = nil }
+                    return
+                }
+                hoverHost?.request = TranscriptHoverRequest(card: file, frame: frame)
+            },
+            verifiesOnDisk: false
+        )
+        .fixedSize()
+    }
+
+    /// A tab of its own for this file, which is what a double click means. Nothing happens for a
+    /// file that is not on disk: see the note at the call site.
+    /// - Parameter absolute: what to ask the file system about. `FileChipTarget.opens` is
+    ///   worktree relative, which is what the review takes and what `FileManager` would resolve
+    ///   against the process's own directory, so it is joined back onto the worktree here.
+    private func openInNewTab(_ path: String, at absolute: String) {
+        guard let id = home.workspaceID, let model = app.existingModel(for: id) else { return }
+        guard FileManager.default.fileExists(atPath: absolute) else { return }
+        FileReview.openInNewTab(path: path, in: model)
+    }
+
+    /// The same door the composer's chips and a sent turn's chips use.
+    private func open(_ path: String) {
+        // No workspace is Ask Swarm, which has no review pane for a file to open into. The chip
+        // still draws and still previews: what a path in that conversation is for is reading.
+        guard let id = home.workspaceID, let model = app.existingModel(for: id) else { return }
+        FileReview.open(path: path, in: model)
+    }
+}

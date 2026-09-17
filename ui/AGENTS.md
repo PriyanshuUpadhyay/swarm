@@ -1,6 +1,6 @@
 # Working on Swarm's UI
 
-This is Swarm's macOS UI, based on Bloom by Spatie and kept under the MIT licence. Read
+This is Swarm's macOS UI, based on Swarm by Spatie and kept under the MIT licence. Read
 [CLAUDE.md](CLAUDE.md) for the shared architecture, coding, testing and app isolation rules. Those
 rules apply to every agent, including Codex.
 
@@ -11,9 +11,9 @@ references only when relevant to the task.
 
 | Skill | Use for |
 | --- | --- |
-| [swiftui-pro](.claude/skills/swiftui-pro/SKILL.md) | Write or review Bloom's macOS SwiftUI views. |
+| [swiftui-pro](.claude/skills/swiftui-pro/SKILL.md) | Write or review Swarm's macOS SwiftUI views. |
 | [swift-concurrency-pro](.claude/skills/swift-concurrency-pro/SKILL.md) | Write or review async code, actor isolation, cancellation and streams. |
-| [swift-testing-pro](.claude/skills/swift-testing-pro/SKILL.md) | Write or review Swift Testing tests in BloomCoreTests. |
+| [swift-testing-pro](.claude/skills/swift-testing-pro/SKILL.md) | Write or review Swift Testing tests in SwarmCoreTests. |
 
 The maintained files live in `.claude/skills/`. Each entry under `.agents/skills/` is a relative
 symlink to the same folder, so Claude and Codex use identical instructions. Add a matching symlink

@@ -120,7 +120,7 @@ def axial(colour, x0, y0, x1, y1, t0, t1):
     return "url(#%s)" % fid
 
 
-def bloomdisc(cx, cy, r, colour, alpha):
+def swarmdisc(cx, cy, r, colour, alpha):
     """A soft round spill, for the light that leaks out of a crossing."""
     if lib.SMALL:
         return ""
@@ -319,7 +319,7 @@ def v03_extrude(small=False):
 def v04_spill(small=False):
     """Light spilling from where the lanes pass under the bar.
 
-    Two soft Bloom discs, one on each crossing, drawn into the Bleed group so
+    Two soft Swarm discs, one on each crossing, drawn into the Bleed group so
     they sit under the bar and over the lanes. The bar reads as lit from
     beneath at exactly the two points where something passes below it, which is
     the only place in the drawing where one piece is demonstrably behind
@@ -335,7 +335,7 @@ def v04_spill(small=False):
 
     def spill(k):
         return clipped("".join(
-            bloomdisc(x, y, 210 * S, "bloom", 0.34 * k) for x, y in xs),
+            swarmdisc(x, y, 210 * S, "swarm", 0.34 * k) for x, y in xs),
             sp["panel"])
     return base_layers(sp, bleed_extra=spill(1.25)), \
         base_flat(sp, after_lanes=spill(1.0))
@@ -344,7 +344,7 @@ def v04_spill(small=False):
 def v05_filament(small=False):
     """The pale bar carries light along its whole length.
 
-    A wide Bloom haze hugging the bar, clipped to the panel so the spill stays
+    A wide Swarm haze hugging the bar, clipped to the panel so the spill stays
     on the Deep field and never touches the Foam margin, plus a tighter, hotter
     one along the spur where the bar crosses out. The bar stops being the
     lightest piece of paper in the picture and becomes the source everything
@@ -358,7 +358,7 @@ def v05_filament(small=False):
     sp = shapes(small)
 
     def glow(k):
-        return (haze(sp["c"], "bloom", 34 * S, 0.42 * k, window=sp["panel"])
+        return (haze(sp["c"], "swarm", 34 * S, 0.42 * k, window=sp["panel"])
                 + haze(sp["c"], "shallow", 12 * S, 0.34 * k, window=sp["panel"]))
     return base_layers(sp, panel_extra=glow(0.5)), \
         base_flat(sp, after_panel=glow(1.0))
@@ -509,7 +509,7 @@ VARIANTS = [
     ("02-crown", "a specular along the bar's upper edge", "baked", v02_crown),
     ("03-extrude", "the bar given a side along its whole length", "baked",
      v03_extrude),
-    ("04-spill", "Bloom light leaking from the two crossings", "baked",
+    ("04-spill", "Swarm light leaking from the two crossings", "baked",
      v04_spill),
     ("05-filament", "the bar as the source the panel is lit by", "baked",
      v05_filament),
@@ -670,10 +670,10 @@ NOTE = {
                    "clipped to the panel so it follows the spur out. Depth "
                    "lives in the paint and is the same in both, because a side "
                    "is material and not lighting."),
-    "04-spill": ("Two Bloom discs on the crossings, in the Bleed group under "
+    "04-spill": ("Two Swarm discs on the crossings, in the Bleed group under "
                  "the bar. Depth lives in the paint; the layered dose is raised "
                  "because the system's Mark shadow eats a third of it."),
-    "05-filament": ("A wide Bloom haze on the bar, clipped to the panel, with a "
+    "05-filament": ("A wide Swarm haze on the bar, clipped to the panel, with a "
                     "tighter one along the spur. Depth lives in the paint, "
                     "halved in the layered document."),
     "06-recess": ("An inner shadow inside the panel and no contact under it. "
@@ -815,9 +815,9 @@ def sheet(outdir):
 
     grid = grids(seen)
 
-    html = ("<!doctype html><meta charset=utf-8><title>Bloom icon, ten depth "
+    html = ("<!doctype html><meta charset=utf-8><title>Swarm icon, ten depth "
             "studies</title><style>%s\n%s</style>"
-            "<header><h1>Bloom, ten depth studies</h1>"
+            "<header><h1>Swarm, ten depth studies</h1>"
             "<p>The design does not change. Foam ground, Deep panel with its "
             "spur, two lanes, the pale bar riding inside the spur. What changes "
             "in each row is where the depth comes from, and every row says "

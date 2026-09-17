@@ -1,6 +1,6 @@
 # Swarm UI
 
-Swarm's native macOS UI is based on Bloom by Spatie. It remains available under the MIT licence.
+Swarm's native macOS UI is based on Swarm by Spatie. It remains available under the MIT licence.
 
 ![Swarm UI](art/overview.png)
 
@@ -20,9 +20,9 @@ installed on your Mac.
 
 ## Build
 
-Bloom needs macOS 26 or later.
+Swarm needs macOS 26 or later.
 
-Bloom ships no agent of its own. It runs the CLIs you have installed:
+Swarm ships no agent of its own. It runs the CLIs you have installed:
 
 - `claude` ([Claude Code](https://claude.com/claude-code)) or `codex`
   ([Codex](https://developers.openai.com/codex/cli)), at least one of the two on your `PATH`. Each
@@ -31,7 +31,7 @@ Bloom ships no agent of its own. It runs the CLIs you have installed:
 - `gh` ([GitHub CLI](https://cli.github.com)), for the pull request and checks features.
 
 Cursor (`cursor-agent`) and OpenCode (`opencode`) are detected and reported on the Agents settings
-screen, but neither has a backend in Bloom, so neither is offered where a chat is started.
+screen, but neither has a backend in Swarm, so neither is offered where a chat is started.
 
 You need Xcode 26, or a Swift 6.2 toolchain.
 
@@ -51,7 +51,7 @@ project file would and would not add.
 ## Usage
 
 **Projects and workspaces.** Add a git repository as a project. Each task you describe becomes a
-workspace: a branch, a worktree cut under `~/bloom/workspaces.noindex`, and an agent started in it.
+workspace: a branch, a worktree cut under `~/swarm/workspaces.noindex`, and an agent started in it.
 The `.noindex` suffix keeps Spotlight out of them, which is what a dozen worktrees of one project
 need once each of them holds its own copy of `vendor` and `.build`. A workspace can also be started
 on an existing branch, or on a GitHub pull request, to review one rather than write one.
@@ -62,8 +62,8 @@ create the workspace. Commits go onto that branch. Choose **Terminal** under **S
 you want to open it without starting an agent. The branch selector also offers this under its
 **Existing branch** tab.
 
-If the branch is already checked out in a Bloom workspace, selecting it opens that workspace.
-If another worktree holds it, Bloom shows its location so you can free the branch there first.
+If the branch is already checked out in a Swarm workspace, selecting it opens that workspace.
+If another worktree holds it, Swarm shows its location so you can free the branch there first.
 
 The project field suggests folders as you type, searching beside your existing projects or inside
 a typed path. Use the arrow keys and Return to choose a suggestion, or Tab to complete the first
@@ -83,7 +83,7 @@ file. Choose **Review all files** to scroll through every file's changes togethe
 to **Selected file** to focus on one. When `gh` is installed it also carries the pull request: open
 it, watch its checks, merge it.
 
-**Ask Bloom.** Conversations that belong to no workspace, for questions about your projects.
+**Ask Swarm.** Conversations that belong to no workspace, for questions about your projects.
 Start another conversation with the toolbar button or Cmd+T. The tab bar appears when a second
 conversation is open, and switching tabs keeps agents running. Closing a tab archives its chat.
 Choose the working directory for new conversations in Settings, General; existing chats retain
@@ -96,8 +96,8 @@ task, message it and stop it again. Both show in the sidebar under the workspace
 
 ### Per-repository settings
 
-A repository configures itself through `.bloom/settings.toml`, layered under
-`~/.bloom/settings.toml` and over it by `.bloom/settings.local.toml`, with the later file winning.
+A repository configures itself through `.swarm/settings.toml`, layered under
+`~/.swarm/settings.toml` and over it by `.swarm/settings.local.toml`, with the later file winning.
 Everything in there is also editable from the repository's settings screen, which writes back to
 the file the value came from.
 
@@ -107,47 +107,47 @@ scripts with a `command`), `scripts.run_mode`, `file_include_globs` (`[".env*"]`
 `models.default` and `models.claude.default_thinking_level`. A key ending in `_file` (`scripts.setup_file`,
 `scripts.archive_file`) names an executable file in the repository instead of an inline command.
 
-Every script Bloom runs is handed these variables on top of your own shell environment:
+Every script Swarm runs is handed these variables on top of your own shell environment:
 
 | Variable | Meaning |
 | --- | --- |
-| `BLOOM_IS_LOCAL` | Always `1`. There is no cloud mode |
-| `BLOOM_WORKSPACE_NAME` | The branch name with slashes replaced by dashes |
-| `BLOOM_WORKSPACE_ID` | The workspace's internal id |
-| `BLOOM_WORKSPACE_PATH` | The worktree directory |
-| `BLOOM_PROJECT_NAME` | The project's folder name, cleaned down to letters, digits and underscores |
-| `BLOOM_ROOT_PATH` | The main checkout |
-| `BLOOM_DEFAULT_BRANCH` | The repository's default branch |
-| `BLOOM_PORT` | The first of ten ports allocated to this workspace |
-| `BLOOM_URL_FILE` | A file to write the address a browser pane should open on. Git cannot see it |
+| `SWARM_UI_IS_LOCAL` | Always `1`. There is no cloud mode |
+| `SWARM_UI_WORKSPACE_NAME` | The branch name with slashes replaced by dashes |
+| `SWARM_UI_WORKSPACE_ID` | The workspace's internal id |
+| `SWARM_UI_WORKSPACE_PATH` | The worktree directory |
+| `SWARM_UI_PROJECT_NAME` | The project's folder name, cleaned down to letters, digits and underscores |
+| `SWARM_UI_ROOT_PATH` | The main checkout |
+| `SWARM_UI_DEFAULT_BRANCH` | The repository's default branch |
+| `SWARM_UI_PORT` | The first of ten ports allocated to this workspace |
+| `SWARM_UI_URL_FILE` | A file to write the address a browser pane should open on. Git cannot see it |
 
 #### A database per worktree
 
 `scripts.setup` and `scripts.archive` are a pair, and together they are the whole answer to what a
 worktree does about its database. Setup makes one, archive drops it. Nothing else has to reap
-anything, because Bloom will not remove the worktree unless the archive script succeeded.
+anything, because Swarm will not remove the worktree unless the archive script succeeded.
 
 ```toml
 [scripts]
-setup_file = ".bloom/setup.sh"
-archive_file = ".bloom/archive.sh"
+setup_file = ".swarm/setup.sh"
+archive_file = ".swarm/archive.sh"
 ```
 
 ```bash
 #!/usr/bin/env bash
-# .bloom/setup.sh, committed and chmod +x. Without the shebang and the executable bit, the file's
+# .swarm/setup.sh, committed and chmod +x. Without the shebang and the executable bit, the file's
 # contents are run through zsh instead, which is fine too.
 set -euo pipefail
 
 # Both halves: the project, because a branch called main exists in every repository you own, and
 # the branch, because you want one database per worktree. Underscores because MySQL will take
 # hyphens only in backticks, and 64 characters because that is where it stops taking anything.
-database="${BLOOM_PROJECT_NAME}_${BLOOM_WORKSPACE_NAME//-/_}"
+database="${SWARM_UI_PROJECT_NAME}_${SWARM_UI_WORKSPACE_NAME//-/_}"
 database="${database:0:64}"
 
-cp "$BLOOM_ROOT_PATH/.env" .env
+cp "$SWARM_UI_ROOT_PATH/.env" .env
 sed -i '' "s/^DB_DATABASE=.*/DB_DATABASE=$database/" .env
-sed -i '' "s#^APP_URL=.*#APP_URL=http://localhost:$BLOOM_PORT#" .env
+sed -i '' "s#^APP_URL=.*#APP_URL=http://localhost:$SWARM_UI_PORT#" .env
 
 mysql -u root -e "CREATE DATABASE IF NOT EXISTS \`$database\`"
 
@@ -159,10 +159,10 @@ php artisan db:seed --force
 
 ```bash
 #!/usr/bin/env bash
-# .bloom/archive.sh
+# .swarm/archive.sh
 set -euo pipefail
 
-database="${BLOOM_PROJECT_NAME}_${BLOOM_WORKSPACE_NAME//-/_}"
+database="${SWARM_UI_PROJECT_NAME}_${SWARM_UI_WORKSPACE_NAME//-/_}"
 database="${database:0:64}"
 
 # IF EXISTS, because a failing archive script stops the archive, and a workspace whose setup never
@@ -170,42 +170,42 @@ database="${database:0:64}"
 mysql -u root -e "DROP DATABASE IF EXISTS \`$database\`"
 ```
 
-`$BLOOM_PORT` is the same number in both, and it is the same number after a restart, so the archive
+`$SWARM_UI_PORT` is the same number in both, and it is the same number after a restart, so the archive
 script can also bring down whatever the setup script started on it (`docker compose down -v`, or
 killing what is listening). It gets ten minutes to do so.
 
 #### Where a browser pane opens
 
-A browser pane opens on `http://localhost:$BLOOM_PORT`, which is right for a project whose dev
-server binds the port Bloom allocated and wrong for every project that does not. Two ways to say
+A browser pane opens on `http://localhost:$SWARM_UI_PORT`, which is right for a project whose dev
+server binds the port Swarm allocated and wrong for every project that does not. Two ways to say
 otherwise, and the first of them wins:
 
 ```bash
-# .bloom/setup.sh, for an address only the script knows: a Herd or Valet site named after a slug it
+# .swarm/setup.sh, for an address only the script knows: a Herd or Valet site named after a slug it
 # just computed, a tunnel that printed its hostname, a sign-in link carrying a fresh token.
-site="$(printf '%s' "$BLOOM_PROJECT_NAME-$BLOOM_WORKSPACE_ID" | tr '_' '-' | cut -c1-30)"
+site="$(printf '%s' "$SWARM_UI_PROJECT_NAME-$SWARM_UI_WORKSPACE_ID" | tr '_' '-' | cut -c1-30)"
 herd link "$site"
 herd secure "$site"
-echo "https://$site.test" > "$BLOOM_URL_FILE"
+echo "https://$site.test" > "$SWARM_UI_URL_FILE"
 ```
 
 ```toml
-# .bloom/settings.toml, for an address the whole project shares. The script variables above are
+# .swarm/settings.toml, for an address the whole project shares. The script variables above are
 # expanded, so one line covers every workspace.
 [browser]
-url = "http://localhost:$BLOOM_PORT/admin"
+url = "http://localhost:$SWARM_UI_PORT/admin"
 ```
 
-`$BLOOM_URL_FILE` is inside the worktree and covered by an ignore rule of Bloom's own, so it never
+`$SWARM_UI_URL_FILE` is inside the worktree and covered by an ignore rule of Swarm's own, so it never
 reaches a commit. Write it whenever you like: it is read each time a pane is opened, so an archive
 script that tears the site down can empty it and a run script can rewrite it.
 
 ### The bridge
 
 An agent working in a workspace can call back into the app over MCP, through a stdio shim shipped
-inside Bloom's own bundle. Thirty-six tools: opening and closing panes, driving a browser pane,
+inside Swarm's own bundle. Thirty-six tools: opening and closing panes, driving a browser pane,
 running and reading a terminal, showing an image in the chat, starting and messaging subagents,
-starting and renaming workspaces, and reading the projects and workspaces Bloom holds. Each tool
+starting and renaming workspaces, and reading the projects and workspaces Swarm holds. Each tool
 carries its own gate, and which caller may reach which is the subject of `docs/BRIDGE.md`. A
 workspace agent is scoped to its own worktree implicitly, so nothing it calls takes a workspace id.
 
@@ -232,7 +232,7 @@ it, so they answer "has this already been worked out" rather than touring the co
   that shaped the Codex backend and the work still outstanding on it.
 - [`docs/AGENTS-INTEGRATION.md`](docs/AGENTS-INTEGRATION.md) is what the four agent CLIs put on
   disk, read off a real machine, and the rule that none of it may be rendered.
-- [`docs/BRIDGE.md`](docs/BRIDGE.md) is the bridge the other way round: what an agent can ask Bloom
+- [`docs/BRIDGE.md`](docs/BRIDGE.md) is the bridge the other way round: what an agent can ask Swarm
   to do, and which callers may ask for what.
 - [`docs/MENUS.md`](docs/MENUS.md) is the menu bar and the keyboard shortcuts.
 - [`docs/PLAN.md`](docs/PLAN.md) is the build order this was written to, kept for the bug reports
@@ -243,7 +243,7 @@ in a view, and why the linters say what they say.
 
 ## Testing
 
-`Sources/BloomCore` holds everything that is not a view, and the suite runs against that alone, in
+`Sources/SwarmCore` holds everything that is not a view, and the suite runs against that alone, in
 a mirrored package with no app target:
 
 ```bash
@@ -276,12 +276,12 @@ with tool use, session resume across two runner instances, and cancellation. The
 they are opt-in:
 
 ```bash
-BLOOM_LIVE=1 ./Tools/test-core.sh LiveAgent
+SWARM_UI_LIVE=1 ./Tools/test-core.sh LiveAgent
 ```
 
 ## Credits
 
-Swarm's UI is based on Bloom by Spatie. The original copyright notice stays in
+Swarm's UI is based on Swarm by Spatie. The original copyright notice stays in
 [LICENSE.md](LICENSE.md).
 
 - [Freek Van der Herten](https://github.com/freekmurze)

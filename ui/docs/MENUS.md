@@ -1,6 +1,6 @@
 # Menus and keys
 
-Every action Bloom can perform, where it is reachable from, and which key it carries. Read off the
+Every action Swarm can perform, where it is reachable from, and which key it carries. Read off the
 source on 2026-08-27 rather than remembered.
 
 ## The rule this document exists to hold
@@ -13,7 +13,7 @@ button, or only as a keystroke nobody wrote down is an action most users will ne
 Three corollaries, and each of them is a decision the code has already taken somewhere:
 
 - **Greyed rather than absent, in the menu bar.** The opposite of what the context menus do.
-  `BloomCommands` already greys Split Right on a Notes tab rather than dropping it, and the
+  `SwarmCommands` already greys Split Right on a Notes tab rather than dropping it, and the
   Workspace menu greys every item when nothing is selected. A row that vanishes teaches nothing.
 - **One action, one name.** A menu item and the context menu offering the same thing say the same
   words. `PaneKind.title`, `PaneNaming`, `BrowserToolbar.Control.name` and `SetupRunOffer.title`
@@ -24,15 +24,15 @@ Three corollaries, and each of them is a decision the code has already taken som
 
 ## The menu bar today
 
-`Sources/Bloom/Views/Chrome/App/BloomCommands.swift`, plus `RepoSettingsCommands` in
-`Sources/Bloom/Views/RepoSettings/RepoSettingsWindow.swift`, plus what SwiftUI and AppKit
+`Sources/Swarm/Views/Chrome/App/SwarmCommands.swift`, plus `RepoSettingsCommands` in
+`Sources/Swarm/Views/RepoSettings/RepoSettingsWindow.swift`, plus what SwiftUI and AppKit
 contribute for free.
 
-### Bloom
+### Swarm
 
 | Item | Key | Source |
 | --- | --- | --- |
-| About Bloom | | ours, replacing `.appInfo` |
+| About Swarm | | ours, replacing `.appInfo` |
 | Check for Updates… | | ours, Sparkle |
 | Settings… | `⌘,` | SwiftUI's `Settings` scene |
 | Services, Hide, Hide Others, Show All, Quit | `⌘H` `⌥⌘H` `⌘Q` | AppKit |
@@ -83,7 +83,7 @@ contribute for free.
 | Next / Previous Workspace | `⌥⌘↓` `⌥⌘↑` | any workspace exists |
 | Next Unread | `⇧⌘U` | something is unread |
 | Go to Home | `⇧⌘H` | not already on Home |
-| Ask Bloom | `⌘J` | Ask Bloom is not open as the full pane |
+| Ask Swarm | `⌘J` | Ask Swarm is not open as the full pane |
 | Zoom In / Zoom Out / Actual Size | `⌘+` `⌘-` `⌘0` | the focused text can zoom |
 | Enter Full Screen | `⌃⌘F` | AppKit |
 
@@ -107,20 +107,20 @@ contribute for free.
 
 ### Window
 
-Entirely SwiftUI's and AppKit's: Minimise `⌘M`, Zoom, Fill and Arrange, Bloom, Discovered Seas,
+Entirely SwiftUI's and AppKit's: Minimise `⌘M`, Zoom, Fill and Arrange, Swarm, Discovered Seas,
 Bring All to Front, then the window list. `⇧⌘W` closes the window, forced onto the item by
 `WindowCloseShortcut` because `⌘W` belongs to the tab.
 
 **Nothing was added to it, and that is the answer rather than an omission.** Each `Window` scene
 contributes its own item, which both opens the window when it is closed and raises it when it is
-not, so Bloom and Discovered Seas are already there and a command of our own would print either
+not, so Swarm and Discovered Seas are already there and a command of our own would print either
 name twice. The project settings windows are a `WindowGroup(id:for:)`, which contributes no item
 of its own and is opened from File instead, where a project is already dealt with. What is left is
 the standard set, and it is complete.
 
 ### Help
 
-Bloom Help `⌘?`, Welcome to Bloom…, Send Feedback… `⌥⌘F`, Submit a Prompt…
+Swarm Help `⌘?`, Welcome to Swarm…, Send Feedback… `⌥⌘F`, Submit a Prompt…
 
 ## Every other surface, and what it holds
 
@@ -150,7 +150,7 @@ carries no key equivalents, for the reason written at the head of `CenterPaneMen
 
 | Action | In the menu bar | Key | Who claims the key |
 | --- | --- | --- | --- |
-| Split Right > Chat / Terminal / Browser | **no** | `⌘D` on Terminal | `BloomTerminalView.performKeyEquivalent` |
+| Split Right > Chat / Terminal / Browser | **no** | `⌘D` on Terminal | `SwarmTerminalView.performKeyEquivalent` |
 | Split Down > Chat / Terminal / Browser | **no** | `⇧⌘D` on Terminal | same |
 | Zoom Pane / Zoom Out | **no** | `⇧⌘↩` | same |
 | Close Pane | yes | `⌘W` | same, and it means the pane rather than the tab |

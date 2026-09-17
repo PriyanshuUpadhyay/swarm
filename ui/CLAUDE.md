@@ -1,6 +1,6 @@
 # Swarm UI
 
-This directory contains Swarm's macOS UI, based on Bloom by Spatie and kept under the MIT licence.
+This directory contains Swarm's macOS UI, based on Swarm by Spatie and kept under the MIT licence.
 
 Project skills for Swift work are indexed in [AGENTS.md](AGENTS.md).
 Claude and Codex share the same skill files; load only the skill and references relevant to the task.
@@ -18,13 +18,13 @@ is the design note for the create sheet's source picker and is a page to open in
 
 ## Three targets, and the line between them
 
-`Sources/BloomCore` is everything that is not a view: `Store`, `Git`, `Shell`, `WorkspaceManager`,
+`Sources/SwarmCore` is everything that is not a view: `Store`, `Git`, `Shell`, `WorkspaceManager`,
 the agent protocols, the parsers, the models. **It never imports a UI framework.**
 
-`Sources/Bloom` is the SwiftUI app and the only target allowed to import SwiftUI, AppKit, SwiftTerm
+`Sources/Swarm` is the SwiftUI app and the only target allowed to import SwiftUI, AppKit, SwiftTerm
 or Sparkle.
 
-`Sources/bloom-bridge` is the MCP stdio shim an agent CLI launches as a child process, which
+`Sources/swarm-bridge` is the MCP stdio shim an agent CLI launches as a child process, which
 relays lines to the running app over a unix socket. Three lines of `main.swift`; everything worth
 testing is `BridgeShim` in the core. It is a relay with nothing to draw, so it is held to the same
 line as the core.
@@ -34,9 +34,9 @@ because `import Cocoa` re-exports the whole of AppKit and `import class AppKit.N
 AppKit without containing the words next to each other. SwiftTerm and Sparkle need no rule: only
 the app target declares them in `Package.swift`, so importing either anywhere else does not link.
 
-`Tests/BloomCoreTests` depends on `BloomCore` alone. Read `Package.swift`: the test target has one
+`Tests/SwarmCoreTests` depends on `SwarmCore` alone. Read `Package.swift`: the test target has one
 dependency and it is not the app. **So a decision taken inside a view is a decision nothing can
-test.** When behaviour needs a test, and most does, it belongs in BloomCore as a pure function or a
+test.** When behaviour needs a test, and most does, it belongs in SwarmCore as a pure function or a
 type, with the view calling it. That is the whole reason the split exists.
 
 ## Build and test
@@ -44,22 +44,22 @@ type, with the view calling it. That is the whole reason the split exists.
 Everything real is a script in `Tools/`; the `Makefile` is the index.
 
     make            list the targets        make lint       Tools/house-rules.sh
-    make build      compile every target    make test       the BloomCore suite
+    make build      compile every target    make test       the SwarmCore suite
     make swiftlint  Tools/swiftlint.sh
     make app        assemble a debug .app   make run        release .app, launched
 
 Anything that takes an argument is run directly: `./Tools/test-core.sh DiffParser`.
 
-This copy of Bloom lives in `ui/` of the swarm repository as a git subtree. Build it with
+This copy of Swarm lives in `ui/` of the swarm repository as a git subtree. Build it with
 `make app`.
 
 `./Tools/test-core.sh` mirrors the core sources into a throwaway package with no app target, so one
-broken view cannot stop the core suite. Its head documents the environment it reads: `BLOOM_TEST_ID`
-for a stable work and build directory, `BLOOM_TEST_RUNS` to run the suite repeatedly and shake out
-flakes, `BLOOM_LOCAL_AGENTS=1`, `BLOOM_LOCAL_SETTINGS=1` and `BLOOM_LOCAL_SKILLS=1` to assert
-against this machine, with `BLOOM_LOCAL_PROJECT` naming the checkout the last of those reads,
-`BLOOM_LIVE=1` to drive the real `claude` binary (**this costs money**), and
-`BLOOM_TEST_SWIFT_ARGS` for flags like `--sanitize=thread`.
+broken view cannot stop the core suite. Its head documents the environment it reads: `SWARM_UI_TEST_ID`
+for a stable work and build directory, `SWARM_UI_TEST_RUNS` to run the suite repeatedly and shake out
+flakes, `SWARM_UI_LOCAL_AGENTS=1`, `SWARM_UI_LOCAL_SETTINGS=1` and `SWARM_UI_LOCAL_SKILLS=1` to assert
+against this machine, with `SWARM_UI_LOCAL_PROJECT` naming the checkout the last of those reads,
+`SWARM_UI_LIVE=1` to drive the real `claude` binary (**this costs money**), and
+`SWARM_UI_TEST_SWIFT_ARGS` for flags like `--sanitize=thread`.
 
 **A mutating call cannot go inside `#expect`.** The macro rewrites its argument into a closure
 taking the value immutably, so `#expect(flow.advance())` fails to compile with "cannot use mutating
@@ -69,7 +69,7 @@ rather than against the line you wrote. Lift it: `let moved = flow.advance()` an
 `OnboardingFlow`, and it is the sort of thing nobody deduces twice.
 
 **A green `make test` does not mean the app compiles.** The mirror has no app target, so the
-core suite has stayed green while `Sources/Bloom` was broken, four times, every one of them a
+core suite has stayed green while `Sources/Swarm` was broken, four times, every one of them a
 widened enum leaving a switch in a view non-exhaustive. Run `make build` before committing
 anything that adds a case to an enum.
 
@@ -98,7 +98,7 @@ question keeps coming back, so the answer is written down here.
 
 **Xcode already has the targets and the schemes.** Open `Package.swift` in Xcode and it builds,
 runs, debugs, profiles and previews. `xcodebuild -list` in this directory, with no `.xcodeproj`
-anywhere, answers with four schemes: `Bloom`, `bloom-bridge`, `BloomCore` and `Bloom-Package`.
+anywhere, answers with four schemes: `Swarm`, `swarm-bridge`, `SwarmCore` and `Swarm-Package`.
 Apple's own position is in the tooling: `swift package generate-xcodeproj` was removed years ago,
 and `swift build --build-system xcode` is labelled "discouraged" in its own help text.
 
@@ -160,7 +160,7 @@ the change and write, with no suspension in between.
 This is not tidiness. A workspace row has a diff stat refresh writing every six seconds, an archive
 that takes seconds of disk work, a panel somebody sits in for a minute, and an agent turn that runs
 for ten. Whole-value writes rolled each other back, and the worst of it was a row that said a
-workspace was live after its worktree had been deleted. `Tests/BloomCoreTests/WorkspaceWriteIsolationTests.swift`
+workspace was live after its worktree had been deleted. `Tests/SwarmCoreTests/WorkspaceWriteIsolationTests.swift`
 is that bug written down: a write changes the columns it names and no others. Add a column and
 `update` picks it up; reach for `upsert` on an existing row and the bug is back.
 
@@ -169,7 +169,7 @@ is that bug written down: a write changes the columns it names and no others. Ad
 A type conforming to `View` does not run a subprocess. `Shell` and `Git` are reached from a store,
 a model or a helper type beside the view (`FileRevert`, `FileIndex`, `TerminalPersistence`, or
 `WorkspaceModel` over in `State/`), never from a `body` or a button action. `make lint` holds this
-one too, by looking for `await Git.` and `await Shell.` under `Sources/Bloom/Views/`: the subprocess
+one too, by looking for `await Git.` and `await Shell.` under `Sources/Swarm/Views/`: the subprocess
 calls are all async and the pure helpers on the same types are not, so the test costs no exception
 list of its own. The three of those that live under `Views/` are named in the allow-list because
 they are what a view calls **instead** of reaching for a process itself; `WorkspaceModel` is outside
@@ -180,7 +180,7 @@ in `Tools/house-rules.sh` is back to the three helper types it was meant to hold
 
 ## Where a file goes
 
-`Sources/BloomCore` is grouped by subject, one directory deep and no deeper:
+`Sources/SwarmCore` is grouped by subject, one directory deep and no deeper:
 
     Agent/          running one, its events, its quotas, its turns; Codex/ is its own protocol
     Bridge/         the unix socket, the MCP tools an agent calls back in with
@@ -205,7 +205,7 @@ two colours are far enough apart. They are here rather than beside the views for
 whole three-target split exists, and they are in their own directory rather than mixed into the
 subjects so that "this is a view's decision, moved" stays visible.
 
-`Sources/Bloom` is grouped the same way, by **pane rather than by kind**. `Views/` holds one
+`Sources/Swarm` is grouped the same way, by **pane rather than by kind**. `Views/` holds one
 directory per region of the window (`Sidebar`, `Center`, `Inspector`, `Home`, `Transcript`,
 `Terminal`, `Chrome`, `Tabs`) and one per thing that gets a window or a sheet of its own
 (`Archive`, `Code`, `CreateWorkspace`, `Markdown`, `Oceans`, `OpenIn`, `RepoSettings`), and the
@@ -257,16 +257,15 @@ rather than a longer one.
 Comments say **why**, never what, and the good ones name the bug that forced the design. Read the
 head of `Tools/build.sh`, `Store`, or `WindowChrome` for the register: a paragraph that explains
 what was tried, what broke, and what the measurement was, which in `WindowChrome` is the hex value
-the title bar came out at. A comment restating the line under it is noise; the note in `BloomApp`
+the title bar came out at. A comment restating the line under it is noise; the note in `SwarmApp`
 saying "not `.hiddenTitleBar`, because that left the traffic lights floating" survives the next
 person who thinks they have a tidier idea.
 
 ## Prose
 
 **No em dashes and no en dashes anywhere.** Use a comma, a full stop or brackets. **British
-spelling.** The app is called Bloom, and it had another name before it was renamed, which still
-arrives from stale memory. `make lint` checks all three, knows the old name so this file does not
-have to, and names the file and line.
+spelling.** The app is called Swarm. `make lint` checks all three rules, rejects earlier app names,
+and names the file and line.
 
 ## Do not take over the machine
 
@@ -294,6 +293,6 @@ the display shows whatever is in front of your window, which can be the user's o
 `io.github.priyanshuupadhyay.swarm` defaults domain and the
 tmux socket derived from that database path. Open it with `open`, never by running its executable,
 because `LSEnvironment` is applied by LaunchServices. A binary in no bundle at all (`swift run` or
-`.build/debug/Bloom`) resolves to `Swarm (unbundled)` and starts empty.
+`.build/debug/Swarm`) resolves to `Swarm (unbundled)` and starts empty.
 
-A build without release version values is stamped `BloomBuildChannel=local`.
+A build without release version values is stamped `SwarmBuildChannel=local`.

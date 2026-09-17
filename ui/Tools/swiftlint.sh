@@ -4,7 +4,7 @@
 #
 #   ./Tools/swiftlint.sh              lint everything, which is also `make swiftlint`
 #   ./Tools/swiftlint.sh --fix        apply the corrections SwiftLint can make itself
-#   ./Tools/swiftlint.sh Sources/Bloom/Views   lint one path
+#   ./Tools/swiftlint.sh Sources/Swarm/Views   lint one path
 #
 # `make lint` is the other linter and they are not the same thing. `Tools/house-rules.sh` holds
 # the conventions no off the shelf tool knows about: no em dashes, British spelling, typed ids, a

@@ -1,53 +1,53 @@
-# The Bloom bridge
+# The Swarm bridge
 
-What an agent can ask Bloom to do, and which callers may ask for what. The other direction from
-`AGENTS-INTEGRATION.md`, which is about Bloom reading what the CLIs put on disk; this is the CLIs
+What an agent can ask Swarm to do, and which callers may ask for what. The other direction from
+`AGENTS-INTEGRATION.md`, which is about Swarm reading what the CLIs put on disk; this is the CLIs
 calling back in.
 
-Everything here is read off `Sources/BloomCore/Bridge/`, which is where all of it lives. The heads
+Everything here is read off `Sources/SwarmCore/Bridge/`, which is where all of it lives. The heads
 of the files named below carry the reasoning at length, and this is the map over them.
 
-Related: `AGENTS-INTEGRATION.md` (registering Bloom in a client the owner runs themselves),
+Related: `AGENTS-INTEGRATION.md` (registering Swarm in a client the owner runs themselves),
 `PROTOCOL.md` (Claude Code's stream-json), `CODEX.md` (Codex's app-server).
 
 ---
 
 ## 1. Why there is a shim at all
 
-Bloom serves MCP over a unix domain socket. Neither CLI can speak to one: Claude Code registers an
+Swarm serves MCP over a unix domain socket. Neither CLI can speak to one: Claude Code registers an
 MCP server as a stdio command or an HTTP URL, Codex as a stdio `command` or a streamable HTTP
 `--url`, and that is the whole list on both. HTTP on localhost was refused for a different reason,
 which is that it would be one port for the whole machine, reachable by every local process, and
-impossible to share between Bloom and Bloom Dev, a pair that is a documented permanent arrangement
+impossible to share between Swarm and Swarm Dev, a pair that is a documented permanent arrangement
 rather than a test setup.
 
-So the registered transport is stdio and the socket sits behind it. `bloom-bridge` is the stdio
-process the CLI launches, shipped inside Bloom's own bundle, and it is a line relay and
+So the registered transport is stdio and the socket sits behind it. `swarm-bridge` is the stdio
+process the CLI launches, shipped inside Swarm's own bundle, and it is a line relay and
 deliberately not an MCP implementation:
 
 ```
-agent CLI  ──stdio──▶  bloom-bridge  ──unix socket──▶  Bloom
+agent CLI  ──stdio──▶  swarm-bridge  ──unix socket──▶  Swarm
 ```
 
 **Every behaviour that lives in the shim is a behaviour that can skew against the app.** Sparkle
-replaces the bundle underneath a running Bloom and the CLI launches whatever binary the path in its
+replaces the bundle underneath a running Swarm and the CLI launches whatever binary the path in its
 config names, so a shim that knew anything about tools could be a version behind the app it is
 talking to. A relay changes almost never; the tool surface changes every time a tool is added. So
 `initialize`, `tools/list` and `tools/call` are all answered in the app, in `BridgeDispatch`, where
 the store is reachable.
 
 The shim sends one hello line before any MCP byte crosses, carrying a protocol version, the token
-and the claimed role, and Bloom answers with one welcome line that accepts or refuses. The version
+and the claimed role, and Swarm answers with one welcome line that accepts or refuses. The version
 is compared for **equality and never as a range**, because the skew to design for is a new shim
-meeting an older running Bloom after Sparkle swapped the bundle mid-session. Both directions have
+meeting an older running Swarm after Sparkle swapped the bundle mid-session. Both directions have
 to fail with a sentence rather than hang: a hung tool call is a hung turn, and a model cannot tell
 one from the other. See `BridgeProtocol` and `BridgeShim`.
 
 The shim exits with distinct statuses because the CLI prints them, and "exited 1" says nothing that
-"Bloom is not running" does not say better: `64` nothing to connect to, `69` could not reach Bloom
-or Bloom went away mid-answer, `70` refused at the handshake.
+"Swarm is not running" does not say better: `64` nothing to connect to, `69` could not reach Swarm
+or Swarm went away mid-answer, `70` refused at the handshake.
 
-## 2. Who is calling, and how Bloom knows
+## 2. Who is calling, and how Swarm knows
 
 Two roles, in `BridgeIdentity.swift`.
 
@@ -56,7 +56,7 @@ Two roles, in `BridgeIdentity.swift`.
 | `workspace` | An agent running in a workspace, whoever created that workspace | Its own worktree, implicitly |
 | `owner` | The owner, through a client of their own, sitting in no workspace | Nothing implicitly. Everything is named out loud |
 
-**The role is decided by Bloom at mint time, never read from the shim's environment.** The
+**The role is decided by Swarm at mint time, never read from the shim's environment.** The
 environment carries a claimed role, and it is carried for diagnostics only: anything running as the
 user can launch the shim by hand with any role it likes, so a claim that disagrees with the
 token is worth a log line and nothing else. A session token is always `workspace`; the standalone
@@ -85,14 +85,14 @@ workspace agent has is implicitly scoped to the worktree it is sitting in and th
 sitting in none.
 
 **Two clients come in on it, and neither is a special case of the other.** One is the owner's own
-terminal, holding the token the welcome window's command line step or Settings > Command Line handed them. The other is Ask Bloom, the
+terminal, holding the token the welcome window's command line step or Settings > Command Line handed them. The other is Ask Swarm, the
 conversation inside the app that belongs to no workspace: `BridgeServer.register(askSession:)`
 attaches it to the same standalone token rather than minting one, because the definition above is
 exactly what that chat is, and a fourth role or an invented workspace would have been the only
 other ways to say so. It follows that regenerating the token from Settings cuts both off, which is
 what a revocation should do.
 
-Identity is minted by Bloom and handed to the CLI through the shim's environment, never claimed by
+Identity is minted by Swarm and handed to the CLI through the shim's environment, never claimed by
 the agent. That is what lets a tool be implicitly scoped: **nothing a workspace agent calls takes a
 workspace id as a parameter**, so there is nothing for a model to forge, mistype or hold on to after
 it has gone stale. The owner's own client is the exception and has to be, because it is sitting in
@@ -111,7 +111,7 @@ database, git's own safety reports, and counts.
 ### The owner's token inside a worktree
 
 **The owner's standalone token is refused at the handshake when the shim is running inside a live
-workspace.** The owner registers Bloom in `~/.claude.json` at user scope, and Claude Code applies
+workspace.** The owner registers Swarm in `~/.claude.json` at user scope, and Claude Code applies
 user scope to every session on the machine, Swarm's own included. Measured with `lsof` on 15
 September 2026: every Swarm-launched `claude` was running two shims, its own on its session token
 and the owner's on the standalone one, and an agent penned in as a child called
@@ -123,9 +123,9 @@ its stdio MCP servers where it is running, and Swarm runs a workspace agent in i
 owner shim started by a workspace agent is sitting in a worktree. Ask Swarm's shim runs in
 `Application Support/Swarm/Ask`, and a terminal the owner opened anywhere else is anywhere else.
 An environment marker was the obvious signal and the wrong one: Codex hands an MCP server a short
-allow list of variables rather than its own environment, so nothing Bloom set on the agent would
+allow list of variables rather than its own environment, so nothing Swarm set on the agent would
 reach the shim. The owner running their own `claude` inside a worktree is refused too, with a
-sentence saying to run it from outside Bloom's workspaces, because that client is standing in a
+sentence saying to run it from outside Swarm's workspaces, because that client is standing in a
 workspace just as surely. A directory that cannot be read lets the connection through, because
 failing to see where a caller is is not evidence that it is somewhere it should not be.
 
@@ -137,31 +137,31 @@ memory only, so a quit retires them; the owner's standalone token is the one exc
 a coupling.
 
 The socket path is derived from the database path through the same fingerprint the tmux socket name
-uses, so Bloom and Bloom Dev can never land on one. The landmine there is `sockaddr_un.sun_path`,
+uses, so Swarm and Swarm Dev can never land on one. The landmine there is `sockaddr_un.sun_path`,
 104 bytes on macOS, which **truncates in silence**: two instances whose paths agree for the first
 103 bytes quietly share one socket, which is the exact failure the fingerprint exists to prevent.
 `BridgeSocketPath` asserts the length rather than trusting that it fits.
 
 ## 3. The tools
 
-Forty, each a type of its own in `Sources/BloomCore/Bridge/`, each carrying its own role
+Forty, each a type of its own in `Sources/SwarmCore/Bridge/`, each carrying its own role
 gate. A list of handlers rather than a switch, because a switch would put every tool in three
 places: the listing, the dispatch and the gate.
 
 | Tool | What it does | workspace | owner |
 | --- | --- | :---: | :---: |
-| `whoami` | What this connection is: the workspace and its branch, the worktree path, the project, and whether the workspace was created by the owner or by another agent. From the owner's own client, which copy of Bloom was reached and how much it is holding | ✓ | ✓ |
-| `project_list` | Every project in the sidebar: name, path, default branch, how many workspaces it has, how many of those have an agent mid turn and how many have one stopped on a question, whether it is still where Bloom recorded it, whether it is hidden | ✓ | ✓ |
+| `whoami` | What this connection is: the workspace and its branch, the worktree path, the project, and whether the workspace was created by the owner or by another agent. From the owner's own client, which copy of Swarm was reached and how much it is holding | ✓ | ✓ |
+| `project_list` | Every project in the sidebar: name, path, default branch, how many workspaces it has, how many of those have an agent mid turn and how many have one stopped on a question, whether it is still where Swarm recorded it, whether it is hidden | ✓ | ✓ |
 | `project_add` | Register a git repository that **already exists** as a project | | ✓ |
 | `project_hide` | Take a project out of the sidebar. A view preference and nothing more | | ✓ |
 | `project_unhide` | Put it back, in the place it already had | | ✓ |
 | `workspace_list` | Every workspace, its state, its worktree path, its chats and their cost, what an agent is stopped on, what is queued and why | | ✓ |
-| `workspace_start` | Cut a worktree and put an agent in it with a task, on a new branch, existing branch or GitHub pull request. A workspace agent starts it in its own project, or in another one it names With `notify_when_done`, Bloom tells the calling chat once when the new agent's first turn finishes, fails or blocks on the owner | ✓ | ✓ |
+| `workspace_start` | Cut a worktree and put an agent in it with a task, on a new branch, existing branch or GitHub pull request. A workspace agent starts it in its own project, or in another one it names With `notify_when_done`, Swarm tells the calling chat once when the new agent's first turn finishes, fails or blocks on the owner | ✓ | ✓ |
 | `workspace_rename` | Give a workspace the name the work in it turned out to be about. Its own, or one it started (by name or id), for a workspace agent; any of them, named out loud, for the owner | ✓ | ✓ |
 | `workspace_archive` | Archive a workspace through normal safety checks, keeping its branch and history. For a workspace agent, its own once the turn asking for it has ended, or one it started, by id and at once; any of them, named out loud and at once, for the owner | ✓ | ✓ |
 | `workspace_merge` | Ask a workspace's own agent to merge its pull request | | ✓ |
-| `workspace_say` | Put a message in another workspace's chat, with the owner's authority, headed with the workspace, project and chat it came from. The owner can delete it from the receiving chat while it is queued. With `notify_when_done`, Bloom tells the calling chat once when the turn it caused finishes, fails or blocks on the owner. Refused past six messages to one workspace in ten minutes, or for the same words twice in that window, except from the owner's own client | ✓ | ✓ |
-| `reveal` | Point Bloom's window at one workspace, or at Home narrowed by project, scope and search. Navigation and nothing else: it creates nothing and archives nothing | | ✓ |
+| `workspace_say` | Put a message in another workspace's chat, with the owner's authority, headed with the workspace, project and chat it came from. The owner can delete it from the receiving chat while it is queued. With `notify_when_done`, Swarm tells the calling chat once when the turn it caused finishes, fails or blocks on the owner. Refused past six messages to one workspace in ten minutes, or for the same words twice in that window, except from the owner's own client | ✓ | ✓ |
+| `reveal` | Point Swarm's window at one workspace, or at Home narrowed by project, scope and search. Navigation and nothing else: it creates nothing and archives nothing | | ✓ |
 | `pane_open` | Open a chat, a terminal or a browser in a new tab of the caller's own workspace | ✓ | |
 | `pane_split` | Add a pane inside the calling chat's tab, defaulting to a new chat on its right | ✓ | |
 | `pane_close` | Take one back off the screen | ✓ | |
@@ -183,7 +183,7 @@ places: the listing, the dispatch and the gate.
 | `browser_fill` | Replace what is in a field, or choose an option of a menu | ✓ | |
 | `browser_press` | Press a key on the focused element or on a referenced one | ✓ | |
 | `browser_wait` | Wait for the page to load, an element, some text or an address | ✓ | |
-| `browser_console` | What the page has logged and thrown since Bloom started listening, wrapped as untrusted content | ✓ | |
+| `browser_console` | What the page has logged and thrown since Swarm started listening, wrapped as untrusted content | ✓ | |
 | `browser_network` | What the page has fetched, from the browser's Resource Timing record | ✓ | |
 | `terminal_start` | Open a terminal tab and run a command visibly inside it | ✓ | |
 | `terminal_read` | Read recent rendered output from a terminal tab | ✓ | |
@@ -247,7 +247,7 @@ came from the pane tools' gate, which is there because those tools act on the wi
 standing in. A read acts on nothing. What the scope cost was an agent asked "what did the other
 workspace decide" with no way to find out except to be handed a worktree path and run git or
 `sqlite3` there through `Bash`, which is further out than this and passes through no gate of
-Bloom's at all. Every agent here works for the same owner, and `workspace_say` already lets a
+Swarm's at all. Every agent here works for the same owner, and `workspace_say` already lets a
 workspace agent put a turn in another workspace's chat, which weighs far more than reading one.
 
 So both take an optional `workspace`, resolved by `BridgeReadTarget` over `BridgeWorkspaceLookup`,
@@ -368,7 +368,7 @@ sidebar re-reads on the `workspaces` domain already, because that is how it find
 rename typed into the row itself. The write goes through `Store.update(workspaceID:)` and never
 `upsert`: a diff stat refresh writes to that row every six seconds and an agent turn writes to it
 for ten minutes, and a whole-value write would put both back to whatever the rename had read. See
-`Tests/BloomCoreTests/WorkspaceWriteIsolationTests.swift`, which is that bug written down.
+`Tests/SwarmCoreTests/WorkspaceWriteIsolationTests.swift`, which is that bug written down.
 
 **The four crew tools split three to one, and the line runs where it always does.** `agent_list`
 reads a crew, which is rows in `sessions` joined by `parent_session_id`, so it is in
@@ -425,7 +425,7 @@ and a turn still running over there refuses it, which is right, because that age
 An agent's call on its own workspace is a **request rather than an archive**, and its answer says so in those words.
 The agent is standing in the worktree that would be removed, and `AppModel.performArchive` stops a
 workspace's agents before git touches a file, so archiving there and then would kill the turn that
-is waiting for the answer. Bloom books it instead and runs it when that turn ends, whether the turn
+is waiting for the answer. Swarm books it instead and runs it when that turn ends, whether the turn
 ended with a result or with the agent dying. The safety check is then made again from scratch, with
 nothing excused: another agent still running in the workspace or a message still queued refuses it,
 and the refusal reaches the owner as a notice, because by then there is no agent left to tell. The
@@ -437,7 +437,7 @@ the worktree, the pull request and the directory keep the names they have. That 
 loud in the tool's own description as well, because a model asked to "rename this workspace" that
 believed the branch moved with it would report something to the owner that never happened.
 
-Nothing merges. `workspace_merge` **does not merge**: it composes the request Bloom's own Merge
+Nothing merges. `workspace_merge` **does not merge**: it composes the request Swarm's own Merge
 button composes and sends it into that workspace's chat as an ordinary message, so the agent runs
 `gh pr merge` there, in front of the owner, under whatever permission mode they set. Its
 description tells the caller not to run `gh pr merge` itself when the tool refuses.
@@ -452,7 +452,7 @@ A workspace agent may leave `project` out of `workspace_start`, and the new work
 project it is already in. It may also name another project, which is how work found in one
 repository is handed to a workspace in another: an agent in the site's project that finds the fix
 belongs in the app starts it there. The owner's client must name one, because nothing else says
-which. Either way the name goes through `BridgeProjectLookup`, so both may only name a project Bloom
+which. Either way the name goes through `BridgeProjectLookup`, so both may only name a project Swarm
 already has and both are refused in the same words when it matches nothing or matches more than
 one. `project_list` is offered to a workspace agent for this reason and no other; `project_add` and
 the two hiding tools stay with the owner, because they change the owner's sidebar.
@@ -541,7 +541,7 @@ so that a model does not call it expecting a revert.
 
 **Nothing sweeps a finished subagent away, and that is the decision rather than the thing nobody
 got round to.** A timer that clears a row can always clear the agent the orchestrator was about to
-send more work to, and there is no length of wait that is right for both cases, so Bloom sweeps
+send more work to, and there is no length of wait that is right for both cases, so Swarm sweeps
 nothing and the tools say what to do instead. `Crew.tidyHint` is that sentence, written once and
 carried into the three places a model reads: the line put in an orchestrator's chat when one of its
 subagents stops, `agent_start`'s description, and `agent_list`'s answer, which prefaces it with the
@@ -560,7 +560,7 @@ working for. See `Crew.message(from:saying:)`.
 agent could say to the workspace it started. "Fix this bug in the other repository, release it and
 tell me the version" had no way to follow up. Claude Code's own cross-session messaging delivers the
 text, and the agent receiving it rightly treats an unverified relay as one and will not merge or
-tag on its say-so. `workspace_say` is Bloom delivering the message itself.
+tag on its say-so. `workspace_say` is Swarm delivering the message itself.
 
 **It carries the owner's authority, and that is the owner's decision.** An approval step was built
 first: the message waited, a card showed the owner the text, and only an approved message arrived as
@@ -597,10 +597,10 @@ narrowed to the workspace that started it and to one whose message had reached i
 narrowing went with the child role, for the reasons in section 2. The brake on two agents answering each other for ever is the throttle below, and it
 applies to every workspace agent alike.
 
-**"Tell me when you are done" is Bloom's job, not the other agent's.** Written into a message, it
+**"Tell me when you are done" is Swarm's job, not the other agent's.** Written into a message, it
 was forgotten often enough, and an agent that failed or sat on a permission prompt could not say
 so at all, which from the calling side looks exactly like one still working. So `workspace_say`
-and `workspace_start` take `notify_when_done`, and Bloom puts one fact in the calling chat when the
+and `workspace_start` take `notify_when_done`, and Swarm puts one fact in the calling chat when the
 turn that call caused comes to rest: finished, with the other agent's last message fenced and cut
 at 4,000 characters; failed, with the reason; stopped by the owner; blocked on a permission prompt
 or a question for the owner; or the workspace archived first. It is the same delivery
@@ -624,7 +624,7 @@ tells the model not to retry and to wait for the answer or tell the owner. The o
 is exempt, because a person is typing there. See `WorkspaceSayThrottle`.
 
 **One thing on the bridge can now be destroyed, and it is a few lines of the owner's own writing.**
-`quick_prompt_update` overwrites a prompt and `quick_prompt_delete` removes one, and Bloom keeps no
+`quick_prompt_update` overwrites a prompt and `quick_prompt_delete` removes one, and Swarm keeps no
 copy of what was there before. Three things hold that in: both are owner only, so the caller is a
 client the owner is typing into rather than an agent running for ten minutes unattended; neither is
 self-approved, so the call stops and asks a person who is sitting there; and the delete's answer
@@ -638,20 +638,20 @@ turn back on. That last one is what a worktree does not have and
 is why archiving is still not here.
 
 A quick prompt deleted over the bridge is deleted exactly as one deleted in the panel is, because
-it is the same call. **A built-in stays deleted.** Bloom seeds its built-ins once and records the
+it is the same call. **A built-in stays deleted.** Swarm seeds its built-ins once and records the
 seed version it reached, rather than reconciling a list against the table, so a prompt the owner
 threw away is not read back as one that is missing. Nothing in the four tools writes that recorded
 version, so no tool can reseed and none of them can resurrect what it deleted. The one write the
-listing can make is the seeding itself, on a copy of Bloom whose panel has never been opened, which
+listing can make is the seeding itself, on a copy of Swarm whose panel has never been opened, which
 is exactly what opening the panel would have done: the tools and the panel have to describe the
-same library, or an agent asked to add "Explain changes" writes a second copy of the prompt Bloom
+same library, or an agent asked to add "Explain changes" writes a second copy of the prompt Swarm
 is about to insert. See `QuickPromptSeed` and `QuickPromptCall`.
 
 The library is **global**, which is why the two that change it are shaped differently from every
 workspace scoped tool. The pane tools came off `.owner` because they act on the worktree the caller
 is standing in and that role stands in none; a quick prompt belongs to no worktree, so there is
 nothing for the owner's client to be missing and the argument runs the other way. `.workspace` keeps
-the two that cannot lose anything, because the owner mostly talks to Bloom from inside Bloom and
+the two that cannot lose anything, because the owner mostly talks to Swarm from inside Swarm and
 "save that as a quick prompt" is a sentence typed into a workspace chat. It does not get the two
 that overwrite and delete: a workspace agent runs unattended, and a change to a global library decided in
 the middle of one of those turns up weeks later in a project that workspace had nothing to do with.
@@ -680,7 +680,7 @@ element a line, each with a reference such as `e3`; `browser_click`, `browser_fi
 `browser_press` take a reference; `browser_wait` waits for the page to answer; the next snapshot
 reads it again. agent-browser itself could not be used, because it drives Chrome over the Chrome
 DevTools Protocol and this pane is a `WKWebView`, which speaks no such protocol and whose own
-inspector protocol is not open to an app. So each verb is a script of Bloom's own.
+inspector protocol is not open to an app. So each verb is a script of Swarm's own.
 
 **It cannot run script.** `evaluateJavaScript` with a caller's source would be the whole of
 browser automation in one call, and it is not here. The pane is the owner's own browser with his
@@ -697,14 +697,14 @@ the prompt, and it is a change to make with the owner asked first.
 `BrowserPageScript` holds the text and scroll scripts and has no case that carries a string.
 `BrowserAgentScript` holds the rest as function bodies for `callAsyncJavaScript`, so a reference,
 a key or a line to type arrives as a JavaScript value and never as source. They run in a content
-world of Bloom's own, which shares the DOM with the page and nothing else, so the page cannot
+world of Swarm's own, which shares the DOM with the page and nothing else, so the page cannot
 replace the functions a click goes through or read and move the references a snapshot handed out.
 Events are dispatched by script, so a page that checks `isTrusted` ignores them, and the three
 defaults a model most expects from a real key (Enter submits, Tab moves focus, a letter types) are
 performed by hand.
 
 **The console is the one piece that runs in the page's own world, and it starts late on
-purpose.** A content world has its own `console`, so Bloom's would hear nothing; the page's has to
+purpose.** A content world has its own `console`, so Swarm's would hear nothing; the page's has to
 be wrapped. Wrapping it moves where Web Inspector says a message came from, so it is installed the
 first time `browser_console` is called on a pane rather than when the pane opens, and that first
 call says it cannot show what was logged before. The network list needs nothing installed: it is
@@ -758,7 +758,7 @@ window furniture a caller mostly does not need, so it is reported and kept small
 what it has absorbed, kind and name, and nothing else. Ratios, axes, which half has the keyboard
 and the pane ids themselves are all left out, because there is no tool that takes any of them.
 
-What each kind says is what Bloom is already holding:
+What each kind says is what Swarm is already holding:
 
 | Kind | What the tab reports |
 | --- | --- |
@@ -827,11 +827,11 @@ The branch is found in the project before anything is cut, and both ways of not 
 sentence rather than a failed start. A name that is not there is answered with the names that are,
 which is the list the picker would have shown somebody who could see one. A branch something else
 is already sitting on is refused with what has it, git's own worktrees included rather than only
-Bloom's rows, because git allows one worktree per branch and the alternative is git exiting 128 in
+Swarm's rows, because git allows one worktree per branch and the alternative is git exiting 128 in
 the middle of a start. Both refusals end by offering `base_branch` on the same name, which is a
-different intention and Bloom does not take it on a caller's behalf.
+different intention and Swarm does not take it on a caller's behalf.
 
-A pull request can be named by number, `#number` or GitHub URL. Bloom resolves it through `gh` and
+A pull request can be named by number, `#number` or GitHub URL. Swarm resolves it through `gh` and
 hands the resulting `WorkspaceCheckout.pullRequest` to the same path as the create sheet. This is
 different from naming its head branch. The pull request checkout records the PR number and base,
 which lets the inspector show the existing checks and merge controls instead of offering to create
@@ -862,18 +862,18 @@ Every start is deduplicated by a digest of the call, because a model retries and
 cuts a second worktree. A repeat answers with the workspace that already exists and a note saying
 so, rather than with a second one.
 
-## 5. Which questions Bloom answers for itself
+## 5. Which questions Swarm answers for itself
 
 **A bridge call raises a permission question like any other tool call.** Measured: on claude
 2.1.238 under `acceptEdits`, calling `whoami` produced an ask for
-`mcp__bloom-workspace-bridge__whoami` and the turn stopped until it was answered. Being an MCP tool
+`mcp__swarm-workspace-bridge__whoami` and the turn stopped until it was answered. Being an MCP tool
 does not exempt a call from the permission machinery, which was half the reason the bridge is MCP
 rather than a CLI the agent shells out to. The first `workspace_start` in a project stopped a
 workspace agent's turn on an ask, and with nobody watching that workspace the turn sat waiting and died
 `cancelled` when the app quit, having started nothing. **A feature whose first use hangs unless
 somebody happens to be looking is a feature that does not work.**
 
-So `BridgeToolApproval` names the tools Bloom answers for itself:
+So `BridgeToolApproval` names the tools Swarm answers for itself:
 
 | Self-approved | Not |
 | --- | --- |
@@ -882,13 +882,13 @@ So `BridgeToolApproval` names the tools Bloom answers for itself:
 It is a list rather than "anything with our prefix", so a tool added later is opted in by somebody
 thinking about it rather than by inheriting a decision made before it existed.
 
-Answering is not a shortcut round consent, because **Bloom is on both ends of this question**. It
+Answering is not a shortcut round consent, because **Swarm is on both ends of this question**. It
 wrote the tool, it minted the token, it knows which workspace is asking, and it enforces every
 limit itself: the handler refuses `workspace_start` to a caller whose workspace was itself
 agent-started, and eight is the ceiling. There is nothing for a person to weigh that
-Bloom has not already decided, and the ask carries no information a person could act on beyond "an
-agent would like to use Bloom". None of that is true of the tools the agent brings with it: `Bash`,
-`Write` and `Edit` reach outside anything Bloom knows about, and nothing here touches them.
+Swarm has not already decided, and the ask carries no information a person could act on beyond "an
+agent would like to use Swarm". None of that is true of the tools the agent brings with it: `Bash`,
+`Write` and `Edit` reach outside anything Swarm knows about, and nothing here touches them.
 
 The four pane tools are on the list because each adds or changes something the reader can see and
 undo, in the workspace whose agent is asking and nowhere else. `pane_close` refuses the two cases
@@ -897,7 +897,7 @@ the notes, which hold the reader's own work.
 
 `workspace_rename` is on it, and it is the entry that had to be argued against the quick prompt
 paragraph below rather than against the pane one above, because it overwrites something and keeps
-no copy. Three things settle it. What it overwrites is one column of one row, and a label Bloom
+no copy. Three things settle it. What it overwrites is one column of one row, and a label Swarm
 proposed most of the time, rather than a paragraph the owner wrote by hand. The change is in the
 sidebar row the reader is looking at as it lands, which is the same visibility a pane's name has,
 and typing over it is a double click away. And the answer carries the name the workspace had, so
@@ -925,7 +925,7 @@ two groups. `browser_reload`, `browser_go`, `browser_scroll`, `browser_click`, `
 a reload can lose what they had half typed into a form, a navigation is a request made from their
 browser with whatever they are logged into, and a scroll moves the page under somebody who is
 reading it. `browser_screenshot`, `browser_text`, `browser_snapshot`, `browser_console` and
-`browser_network` carry the page itself into a model's context, which is to say off this machine, and a page he is signed into is his own data. Bloom cannot tell a
+`browser_network` carry the page itself into a model's context, which is to say off this machine, and a page he is signed into is his own data. Swarm cannot tell a
 dev server's front page from an administration screen, so it does not try: it asks, and the person
 who can tell answers.
 
@@ -970,8 +970,8 @@ the chat they typed it in, which its description says out loud. `quick_prompt_up
 
 `workspace_merge` draws the line one step further out. It destroys nothing, it sends a turn. But
 what that turn leads to is a call to a server other people share, and unlike a worktree there is
-nothing on the far side to restore. **Bloom answering its own permission question there would be
-Bloom deciding to publish, which is the one decision it has never had.**
+nothing on the far side to restore. **Swarm answering its own permission question there would be
+Swarm deciding to publish, which is the one decision it has never had.**
 
 A self-approved ask still leaves a settled row in the transcript, saying what happened and who let
 it through. "Allowed automatically" with no reason is the thing that makes people distrust an app's
@@ -988,20 +988,20 @@ visible in `ps` and an agent runs `ps` through its own Bash tool as ordinary beh
 `--strict-mcp-config` beside it: that flag shuts every other MCP configuration out, which is right
 for `WorkspaceNamer` and wrong for a chat, where the user's own servers have to survive. Measured
 on 2.1.238 by running a live turn, because `claude mcp list` rejects `--mcp-config` outright and
-nothing short of a turn exercises it: `system/init` listed the user's own servers alongside Bloom's,
-all connected, and the tool reached the model as `mcp__bloom-workspace-bridge__whoami`, hyphens
+nothing short of a turn exercises it: `system/init` listed the user's own servers alongside Swarm's,
+all connected, and the tool reached the model as `mcp__swarm-workspace-bridge__whoami`, hyphens
 carried through.
 
-**Codex** takes `-c mcp_servers.<name>.…` overrides carrying the same values inline. Bloom already
+**Codex** takes `-c mcp_servers.<name>.…` overrides carrying the same values inline. Swarm already
 runs one app-server process per chat, so a per-process override is a per-session registration, the
 same as Claude Code's per-start argv. Never `--strict-config` beside it: a different flag from
 Claude Code's, the same trap, and it makes Codex refuse to start on a user config holding anything
 the build does not recognise.
 
-The server name is `bloom-workspace-bridge`, and it is **a correctness requirement with a test
+The server name is `swarm-workspace-bridge`, and it is **a correctness requirement with a test
 behind it** rather than a convention. Codex `-c` overrides do not shadow a colliding
 `mcp_servers.<name>` entry, they deep-merge it leaf by leaf: against a config holding a user's own
-server called `bloom`, overriding `command` and `env` produced Bloom's binary launched with the
+server called `swarm`, overriding `command` and `env` produced Swarm's binary launched with the
 user's `args` and the user's `env` key still present, and `codex mcp list` reported that chimera as
 one healthy server with no warning at all. There is no `-c` form that replaces a whole entry. So
 the only defence is a name nobody would type, and the failure it prevents does not look like a
@@ -1010,4 +1010,4 @@ naming problem when it happens.
 The owner's own standalone registration is a third thing, under a **different** name derived per
 copy of the app, and `AGENTS-INTEGRATION.md` is where that half is written down: what
 `claude mcp add` accepts, why the scope is `user`, and why the name is neither `serverName` nor one
-constant for every copy of Bloom.
+constant for every copy of Swarm.

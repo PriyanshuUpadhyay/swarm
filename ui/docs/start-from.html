@@ -245,7 +245,7 @@ footer{padding:44px 0 76px;color:var(--ink3);font-family:var(--mono);font-size:1
 
 <header>
   <div class="wrap">
-    <div class="eyebrow">Bloom &middot; new workspace &middot; start from</div>
+    <div class="eyebrow">Swarm &middot; new workspace &middot; start from</div>
     <h1>Every workspace answers two questions.</h1>
     <p class="lede">
       Where does the work start, and what is it measured against? One control answers both,
@@ -391,7 +391,7 @@ footer{padding:44px 0 76px;color:var(--ink3);font-family:var(--mono);font-size:1
         <div class="callout">
           <span class="k">in use</span>
           <p><strong>A branch already open stays on the list.</strong> Git will not put one branch in two
-            worktrees, so today Bloom quietly drops it, and the branch you are hunting for is simply
+            worktrees, so today Swarm quietly drops it, and the branch you are hunting for is simply
             not there. Better to show it, name the workspace holding it, and let the row take you
             straight to that workspace.</p>
         </div>
@@ -459,7 +459,7 @@ footer{padding:44px 0 76px;color:var(--ink3);font-family:var(--mono);font-size:1
     <div class="decision">
       <h3>A target branch picker of its own</h3>
       <p>Conductor puts the merge target in a second control, defaulting to <span class="ref plain">origin/main</span>.
-        Bloom ties the target to the source instead, and that is worth keeping. Cut a branch from a
+        Swarm ties the target to the source instead, and that is worth keeping. Cut a branch from a
         colleague's work and your pull request should land back on their branch, not on main.
         A separate target defaulting to main would fill that diff with commits you never wrote,
         which is the exact mess a review workspace exists to avoid.</p>
@@ -470,7 +470,7 @@ footer{padding:44px 0 76px;color:var(--ink3);font-family:var(--mono);font-size:1
   </div>
 </section>
 
-<footer><div class="wrap">Bloom &middot; design note &middot; start from</div></footer>
+<footer><div class="wrap">Swarm &middot; design note &middot; start from</div></footer>
 
 <script>
 (function(){
@@ -517,7 +517,7 @@ footer{padding:44px 0 76px;color:var(--ink3);font-family:var(--mono);font-size:1
       targets:'Whatever the pull request targets',
       noteClass:'note good',
       noteGlyph:'✓',
-      note:'<b>Matches GitHub exactly.</b> A request into a release branch compared against main would show every commit that release branch carries as though the author had written it. Bloom follows the pull request’s own base, so the Changes tab equals the Files tab.',
+      note:'<b>Matches GitHub exactly.</b> A request into a release branch compared against main would show every commit that release branch carries as though the author had written it. Swarm follows the pull request’s own base, so the Changes tab equals the Files tab.',
       lanes:{main:true, theirs:true, yours:false},
       live:'theirs',
       head:{lane:'theirs', x:0.66},

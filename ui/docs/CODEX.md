@@ -1,4 +1,4 @@
-# Codex in Bloom
+# Codex in Swarm
 
 Ground truth plus the plan for the rest of the work. Everything under "Verified" was measured
 against `codex-cli 0.147.0` on this machine, driving the real binary, on 2026-08-21, except where
@@ -12,30 +12,30 @@ stream-json), `PLAN.md`.
 
 ## 1. The protocol, and why
 
-**Bloom drives `codex app-server --listen stdio://`, which is JSON-RPC 2.0 over stdio. It never
+**Swarm drives `codex app-server --listen stdio://`, which is JSON-RPC 2.0 over stdio. It never
 uses `codex exec --json`.**
 
 `codex exec --json` is NDJSON, one event per line, and looks like a drop-in for the reader
 `AgentRunner` already has. It is a trap:
 
 - **No text deltas.** Events are item-granular, so a reply appears all at once when it is finished.
-  Bloom's transcript types as the model does. `exec` cannot do that.
+  Swarm's transcript types as the model does. `exec` cannot do that.
 - **No reasoning items**, so every thinking row would simply be absent.
 - **No approvals at all.** Run with `-s read-only -c approval_policy=on-request` and a prompt that
   has to write a file, and nothing is asked: the patch is refused and the turn carries on. There is
-  no wire on which a question could arrive. That is the same failure Bloom already fixed once for
+  no wire on which a question could arrive. That is the same failure Swarm already fixed once for
   Claude Code with `--permission-prompt-tool stdio`.
 
 app-server has all three, plus typed lifecycles, token usage, rate limits and thread status. It is
 also what Conductor drives. The reasoning is repeated in the doc comment at the top of
-`Sources/BloomCore/Agent/Codex/CodexProtocol.swift`, because `exec` will keep looking tempting.
+`Sources/SwarmCore/Agent/Codex/CodexProtocol.swift`, because `exec` will keep looking tempting.
 
 ### The protocol describes itself
 
 Schema verification on 2026-09-12 used installed `codex-cli 0.153.4`, without sending a model
 turn. Its stable schema omits `turn/start.collaborationMode`; generating with `--experimental`
 includes `{ mode: "default" | "plan", settings: { model, reasoning_effort,
-developer_instructions } }`. Bloom now declares `experimentalApi: true` at initialise so the
+developer_instructions } }`. Swarm now declares `experimentalApi: true` at initialise so the
 Plan/Build control can use this field. Planning is independent of approval policy and sandbox.
 Null developer instructions retain Codex's defaults. Build explicitly resets the collaboration
 mode to `default` after planning.
@@ -51,7 +51,7 @@ no paid end-to-end Plan turn was run for this change.
 
 The same installed version supports two conversation-history contracts, told apart by
 `thread.historyMode`. Paginated threads take `thread/revert` with an exact `beforeTurnId`;
-legacy threads take the deprecated `thread/rollback` with a turn count. Bloom used both for a
+legacy threads take the deprecated `thread/rollback` with a turn count. Swarm used both for a
 conversation rewind that has since been removed, and calls neither now.
 
 ```
@@ -76,7 +76,7 @@ reading a transcript and guessing. Do not commit the dump; it is 1.1 MB and it i
 | `turn/interrupt` | Needs **both** `threadId` and `turnId`. Thread id alone is "missing field `turnId`" |
 | Interrupt result | `turn/completed` with status `interrupted` |
 | Per turn | `model`, `effort`, `approvalPolicy`, `sandboxPolicy`, `serviceTier`, `personality` |
-| Attachments | `UserInput` has a `localImage` variant taking a path. Bloom's existing approach works unchanged |
+| Attachments | `UserInput` has a `localImage` variant taking a path. Swarm's existing approach works unchanged |
 | stderr | The server logs tracing there. Never merge it into the frame stream |
 | Cost | Tokens only. There is no price anywhere on this protocol |
 
@@ -94,7 +94,7 @@ interrupts you about a `grep`, and always interrupts you about a `sed -i`.
 **Can a refusal carry a reason?** Not on the approval wire, which takes a word. But `turn/steer`
 puts text into a turn that is already running, and it was measured both ways: after a bare
 `decline` the agent tried the same patch again immediately, twice; after `decline` plus a steered
-sentence saying the file should be named differently, it wrote the different name. So Bloom sends
+sentence saying the file should be named differently, it wrote the different name. So Swarm sends
 the reason as a steer right behind the refusal, and a Codex denial says as much as a Claude Code
 one.
 
@@ -129,7 +129,7 @@ before anyone signs in. What it returned:
 | `gpt-5.5` | | low, medium, high, xhigh | medium |
 | `gpt-5.2` | | low, medium, high, xhigh | medium |
 
-**The efforts belong to the model.** Bloom's flat five-entry list in `ComposerOption.efforts` is
+**The efforts belong to the model.** Swarm's flat five-entry list in `ComposerOption.efforts` is
 wrong for three of these five, in both directions: it hides `ultra`, which two models take, and it
 offers `max` to two models that do not. Conductor hardcodes its list and is already stale: it names
 `gpt-5.4`, which no longer exists, and has none of the three `gpt-5.6` models. **Fetch it.**
@@ -153,7 +153,7 @@ had moved:
 `codex-auto-review`. `gpt-5.4-mini` now carries an `upgradeInfo` block naming `gpt-5.6-luna` and a
 retirement date, which nothing here reads yet.
 
-**Nothing in Bloom changed to offer the new generation.** It was fetched, drawn under the
+**Nothing in Swarm changed to offer the new generation.** It was fetched, drawn under the
 `displayName` the server sent, put at the head of the picker by `CodexModelRank` because 6 is above
 5.6, and given its own six-level effort list with its own default of `medium`. That is the whole
 return on fetching rather than hardcoding, and `Tests/fixtures/codex-model-list-astra.json` is the
@@ -164,11 +164,11 @@ model in that capture carries `serviceTiers` and `additionalSpeedTiers` beside i
 tier, `priority`, which the CLI labels "Fast" and describes as "2x speed, increased usage" on
 `gpt-6-astra` and "1.5x speed, increased usage" on the `gpt-5.6` family. `TurnStartParams` takes it
 two ways, `serviceTier` for this turn and the ones after it and `serviceTierForTurn` for this turn
-alone, with `"default"` meaning standard speed. Bloom reads `config/read` for the composer's
-project and combines `service_tier` with the selected model's advertised tiers. A missing Bloom
+alone, with `"default"` meaning standard speed. Swarm reads `config/read` for the composer's
+project and combines `service_tier` with the selected model's advertised tiers. A missing Swarm
 session preference inherits this configuration. An explicit choice sends `serviceTier` on the
 next turn and is stored separately from Claude Code's `--thinking disabled` preference. Off is
-stored explicitly, since omitting the field would leave a configured fast tier enabled. Bloom
+stored explicitly, since omitting the field would leave a configured fast tier enabled. Swarm
 does not write Codex's global configuration.
 
 
@@ -176,7 +176,7 @@ does not write Codex's global configuration.
 
 ## 2. What exists after this pass
 
-Four new files in `Sources/BloomCore/`, nothing else touched:
+Four new files in `Sources/SwarmCore/`, nothing else touched:
 
 - **`CodexProtocol.swift`**, the wire vocabulary. `CodexRequestID`, `CodexRPCError`,
   `CodexFrame.decode(line:)` (response / failure / server request / notification / malformed),
@@ -184,7 +184,7 @@ Four new files in `Sources/BloomCore/`, nothing else touched:
   is not the same request as no `sandbox`.
 - **`CodexEvent.swift`**, the event model. `CodexItem` over the eighteen thread item types, ten of
   them lifted into structs and the rest keeping their JSON; `CodexTurn`, `CodexThreadStatus`,
-  `CodexTokenUsage` (with `agentUsage`, mapping onto Bloom's own `AgentUsage`), `CodexApprovalRequest`
+  `CodexTokenUsage` (with `agentUsage`, mapping onto Swarm's own `AgentUsage`), `CodexApprovalRequest`
   and `CodexApprovalDecision`; `CodexEvent.decode(_:)` for the notifications a session needs.
 - **`CodexClient.swift`**, an actor over `StreamingProcess`. Request ids, a pending map, the
   handshake, a per-caller event stream, and `answer(_:with:)` for server-initiated requests. Typed
@@ -193,7 +193,7 @@ Four new files in `Sources/BloomCore/`, nothing else touched:
   once, shares an in-flight fetch between callers and holds the answer for fifteen minutes, the way
   `AgentCatalog` does.
 
-Tests: `Tests/BloomCoreTests/CodexProtocolTests.swift` and `CodexClientTests.swift`, 42 of them,
+Tests: `Tests/SwarmCoreTests/CodexProtocolTests.swift` and `CodexClientTests.swift`, 42 of them,
 reading four recorded fixtures in `Tests/fixtures/` (`codex-turn.ndjson`, `codex-approval.ndjson`,
 `codex-interrupt.ndjson`, `codex-model-list.json`) captured off the real server. Recorded rather
 than invented, which is how the missing `jsonrpc` member and the server's request numbering were
@@ -321,7 +321,7 @@ Turn shape for a Codex chat:
 
 ### The process's life, and the two ways it ends
 
-`turn/interrupt` ends a turn. **Nothing on this protocol ends the process**, so Bloom has to, and
+`turn/interrupt` ends a turn. **Nothing on this protocol ends the process**, so Swarm has to, and
 the two acts are deliberately not the same one:
 
 - **Stop interrupts and the server stays.** That is what lets the next message resume in the same
@@ -331,7 +331,7 @@ the two acts are deliberately not the same one:
 
 Claude Code reaches the same contract from the other end, because killing is the only way to stop
 a turn there and the next turn spawns a new process with `--resume`. Measured here while the kill
-was missing: at the moment Bloom's quit path reported the agent gone, `codex` (a node script) and
+was missing: at the moment Swarm's quit path reported the agent gone, `codex` (a node script) and
 the app-server binary it forks were both still running, and both were still running five seconds
 later. The poll behind that report asked whether a turn was open, which the interrupt had just
 made false, and nothing had signalled anything.
@@ -374,7 +374,7 @@ protocol means and survives an app restart mid-turn.
 
 ### Presenters
 
-`Sources/BloomCore/Agent/ToolPresenter.swift` is 563 lines of Claude Code tool names
+`Sources/SwarmCore/Agent/ToolPresenter.swift` is 563 lines of Claude Code tool names
 (`Read`, `Write`, `MultiEdit`, `Bash`, `Glob`, `Grep`, `Task`, `TodoWrite`, `WebFetch`, …) and it
 is the largest single cost in this work. It sat under `Views/` when this was written and is in the
 core now, which is the reason the split below could be tested at all. **Do not add Codex cases to
@@ -400,7 +400,7 @@ router; the two `ToolPresenter.present` calls left inside `CodexItemPresenter` a
 the Claude Code vocabulary and belong there. The rows that draw it are mostly reusable:
 `ToolRowView`, `ExpandableRow`, `DetailCodeBlock` and `ToolResultView` do not care where the text
 came from. `fileChange` is the nicest case, because its `changes[].diff` is already a unified diff
-and Bloom's `DiffParser` reads that shape.
+and Swarm's `DiffParser` reads that shape.
 
 ---
 
@@ -417,7 +417,7 @@ crossed with a reviewer, and five request shapes.
 `approvalsReviewer` (`user` | `auto_review` | `guardian_subagent`). **`plan` has no equivalent at
 all**, and the other four `PermissionMode` cases are exactly Codex's own four presets:
 
-| Bloom mode | Codex preset | `approvalPolicy` | `sandbox` | `approvalsReviewer` |
+| Swarm mode | Codex preset | `approvalPolicy` | `sandbox` | `approvalsReviewer` |
 | --- | --- | --- | --- | --- |
 | `auto`, "Read only" | `read-only` | `on-request` | `read-only` | `user` |
 | `acceptEdits`, "Ask for approval" | `workspace` | `on-request` | `workspace-write` | `user` |
@@ -441,28 +441,28 @@ Codex's own, which gathers context and applies a risk framework before approving
 `codex --approve-for-me` says the same in its own help, "Route approval requests through automatic
 review using the workspace-write sandbox".
 
-**Bloom shipped without that row, and a user said so**, having read the Codex app's picker beside
-Bloom's: three rows in Claude Code's vocabulary, and the one he wanted, the one the Codex app calls
+**Swarm shipped without that row, and a user said so**, having read the Codex app's picker beside
+Swarm's: three rows in Claude Code's vocabulary, and the one he wanted, the one the Codex app calls
 "Approve for me", nowhere. `acceptEdits` was already sending the pair that app calls "Ask for
 approval", so the middle mode was genuinely absent rather than merely renamed. Measured against
 0.149.1 while adding it: both `thread/start` and `turn/start` parse `approvalsReviewer`, and a
 value neither knows comes back as ``unknown variant `bogus_value`, expected one of `user`,
-`auto_review`, `guardian_subagent` ``. The third is the older spelling of the second and Bloom does
+`auto_review`, `guardian_subagent` ``. The third is the older spelling of the second and Swarm does
 not offer it.
 
 **The reviewer is named on every turn, not only on the turn that wants it.** The field is sticky,
 "this turn and subsequent turns", so a chat that ran one turn as Approve for me and was then moved
 back would keep the reviewer while the chip in the composer said otherwise.
 
-**What Bloom does not yet draw.** With `auto_review` the server also emits
+**What Swarm does not yet draw.** With `auto_review` the server also emits
 `item/autoApprovalReview/started` and `.../completed`, and offers
-`thread/approveGuardianDeniedAction` so a person can overrule a denial the subagent made. Bloom
+`thread/approveGuardianDeniedAction` so a person can overrule a denial the subagent made. Swarm
 ignores both, so an action the reviewer denies is denied without a row saying so. They are marked
 `[UNSTABLE]` in the app-server schema, "This shape is expected to change soon", which is why the
 mode ships without them rather than waiting for them.
 
 `plan` is **absent from the picker for a Codex chat, and silently so**. It used to be named in the
-picker's footnote as a mode Codex does not have, on the argument that somebody who knows Bloom has
+picker's footnote as a mode Codex does not have, on the argument that somebody who knows Swarm has
 a Plan mode would otherwise hunt for it. The owner's verdict was the other way: do the right thing
 rather than explain what you are not offering. A chat carrying Plan that moves onto Codex falls to
 `auto`, Codex's Read only, which is the preset that keeps Plan's promise that nothing changes
@@ -475,7 +475,7 @@ and moving back to Claude Code offers Plan again without choosing it. See
 ### The words over the rows
 
 **Each backend's modes are labelled in that backend's own vocabulary**, which is `PermissionVocabulary`
-in the core. The same user's report is the reason: Bloom was printing "Ask, Accept edits, Full
+in the core. The same user's report is the reason: Swarm was printing "Ask, Accept edits, Full
 access" over a Codex chat, and somebody who has read one product's documentation could not find the
 row he wanted. The labels and the one-line sentences above them are the vendors' own, from the
 `codex` binary at 0.149.1 and from `claude` at 2.1.246. Every row prints its own sentence under its
@@ -485,7 +485,7 @@ answered after the choice. The picker is a popover of two line rows now. See `Co
 
 Claude Code's side of that was wrong too, and in the same direction. Its `--permission-mode auto`
 is documented in the CLI as "Use a model classifier to approve/deny permission prompts", which is
-the mode Codex calls Approve for me; Bloom had been labelling it "Ask". It reads "Auto" now, which
+the mode Codex calls Approve for me; Swarm had been labelling it "Ask". It reads "Auto" now, which
 is what Claude Code calls it, and it is why Approve for me is offered for Codex only: a second row
 for Claude Code would be two names for one `--permission-mode auto`.
 
@@ -498,8 +498,8 @@ Each has its own response schema; `CodexApprovalDecision.result(for:)` already s
 The Claude Code side landed while this was being written, and the Codex mapping follows its shape
 deliberately, so the two feel like one app: the question becomes a transcript row where the call
 would have been, it is stored in `permission_asks` so a reopened workspace can still draw it, rules
-live in Bloom's own `permission_grants` keyed by repository and matched on **exact equality**, a
-matching grant is answered by Bloom itself with a note in the transcript saying so, and **no
+live in Swarm's own `permission_grants` keyed by repository and matched on **exact equality**, a
+matching grant is answered by Swarm itself with a note in the transcript saying so, and **no
 settings file is written by anybody**.
 
 Three things that differ, and cannot be papered over:
@@ -507,7 +507,7 @@ Three things that differ, and cannot be papered over:
 - **The question carries no detail, only an item id.** A `fileChange` approval has `itemId`,
   `threadId`, `turnId` and an optional reason. The diff is on the `item/started` that arrived a
   moment earlier. The prompt has to join the two by item id.
-- **`acceptForSession` is Codex's "do not ask again", and the server remembers it, not Bloom.**
+- **`acceptForSession` is Codex's "do not ask again", and the server remembers it, not Swarm.**
   So the `permission_grants` table, which exists because a worktree can be deleted, has nothing to
   store for Codex. A Codex chat's grants live for the life of the app-server process. Say that in
   the UI rather than showing a "remembered" list that is empty.
@@ -517,26 +517,26 @@ Three things that differ, and cannot be papered over:
   for. `CodexRunner.deliverReason` is that, and a steer that misses because the turn moved on is
   deliberately silent, since the refusal has already landed.
 - **Codex offers no rule of its own.** Claude Code's CLI sends `permission_suggestions`, its own
-  judgement about which rule would let calls like this through. Codex sends nothing, so Bloom
+  judgement about which rule would let calls like this through. Codex sends nothing, so Swarm
   offers the narrowest rule there is: the command verbatim, or the path verbatim. It cannot grant
   more than the thing on screen, and it will often not match again. Inventing a pattern would be
-  Bloom granting something nobody agreed to.
+  Swarm granting something nobody agreed to.
 - `item/permissions/requestApproval` answers with a granted permission profile rather than a word,
   so approving one properly is real work. Refusing is already expressible.
 
 The mapping that shipped:
 
-| Bloom | On the wire |
+| Swarm | On the wire |
 | --- | --- |
 | Allow once | `accept` |
 | Allow for this session | `acceptForSession` |
-| Always allow (project) | `acceptForSession`, plus a row in Bloom's own `permission_grants` |
+| Always allow (project) | `acceptForSession`, plus a row in Swarm's own `permission_grants` |
 | Deny | `decline`, and the turn carries on. The reason follows as a `turn/steer` |
 | Deny and stop | `cancel`. No steer: there is no turn left to put words into |
 
 `thread/status/changed` carries an `active` state with `activeFlags: ["waitingOnApproval"]`, which
 is the signal a sidebar needs to tell "working" from "waiting for you". Claude Code has no such
-flag and Bloom infers it; here it is handed over.
+flag and Swarm infers it; here it is handed over.
 
 ---
 
@@ -590,7 +590,7 @@ What it becomes:
 - **The effort picker follows the model, within the chat.** Codex efforts differ per model, so
   choosing `gpt-5.5` after `gpt-5.6-sol` has to drop `max` and `ultra` from the effort list, and an
   effort the new model does not take falls back to that model's own default rather than to
-  Bloom's `high`. `CodexModel.resolvedEffort(preferring:)` already does the fallback.
+  Swarm's `high`. `CodexModel.resolvedEffort(preferring:)` already does the fallback.
 - **`ComposerOption.adding(_:to:)` stays.** The open-set behaviour it exists for is still right: a
   settings file can pin an id nothing else knows, and it must remain selectable.
 - The picker keeps working with an empty catalog. `CodexModelCatalog.lastKnown` returns the last

@@ -1,8 +1,8 @@
-# Working with code in Bloom
+# Working with code in Swarm
 
 Open a file from the inspector, a transcript reference or Command-P. Add `:line` or
 `:line:column` to a filename in Command-P to open at that position. Transcript references such as
-`Sources/App.swift:42` and Markdown file links open inside Bloom. Back and Forward remember file
+`Sources/App.swift:42` and Markdown file links open inside Swarm. Back and Forward remember file
 positions within each workspace.
 
 The file toolbar offers Find, navigation, a language override, line wrapping and the current line
@@ -26,7 +26,7 @@ Command-click a relative import or file path to follow it. Command-click a symbo
 definition. When that definition points back to the clicked symbol, Command-click lists its usages
 instead. Command-Shift-click opens the destination in a new tab, including a destination chosen
 from multiple results. A single definition or usage opens directly. Go to Definition and Find
-Usages are both available in the contextual menu. Bloom looks for
+Usages are both available in the contextual menu. Swarm looks for
 SourceKit-LSP, TypeScript Language Server, Intelephense, Pyright, rust-analyzer, gopls, Ruby LSP or
 Vue Language Server on PATH, according to the file's language. It does not install servers.
 Lookups reuse a connection for up to a minute of inactivity, using the
@@ -35,7 +35,7 @@ Project dependencies and the server's available build information determine what
 Multiple definitions open a native menu beside the symbol, with project-relative paths.
 Ignored files follow project files, and Laravel Idea helpers under `vendor/_laravel_idea/` come last; missing servers and failed requests are reported in the pane.
 
-For PHP and Blade files inside a Laravel app, Bloom also queries
+For PHP and Blade files inside a Laravel app, Swarm also queries
 [Laravel LSP](https://github.com/laravel/lsp). Install it with
 `composer global require laravel/lsp` and put Composer's global `vendor/bin` directory on PATH.
 Intelephense handles PHP symbols and usages; Laravel LSP adds framework definitions such as
@@ -43,7 +43,7 @@ Intelephense handles PHP symbols and usages; Laravel LSP adds framework definiti
 Both use the current editor contents, including unsaved changes. Results are combined and deduplicated.
 The nearest directory containing `artisan` and `composer.json` within the workspace is the Laravel
 root. Its dependencies, including Tinker, must be installed so Laravel LSP can boot the app.
-Bloom forwards file changes to refresh Laravel's index and disables Pest helper generation.
+Swarm forwards file changes to refresh Laravel's index and disables Pest helper generation.
 Quoted PHP and Blade references try language servers before the ordinary file-path fallback.
 Command-Shift-click opens the result in a new tab, including Laravel views.
 
@@ -67,13 +67,13 @@ Unsaved edits stay intact when an agent changes the file. Compare shows the draf
 version and offers to keep editing, use the disk version or explicitly save the draft over it.
 Saving still refuses a disk version that changed after the comparison was loaded.
 
-For development, `Bloom --source-editor-probe` checks the native editor in an unshown window and
+For development, `Swarm --source-editor-probe` checks the native editor in an unshown window and
 writes light and dark screenshots under `/tmp/editor-*.png`. Add `--language-server` to check a
-real SourceKit-LSP lookup between two temporary Swift files. Use an isolated `BLOOM_DB_PATH`.
+real SourceKit-LSP lookup between two temporary Swift files. Use an isolated `SWARM_UI_DB_PATH`.
 
 `./Tools/test-core.sh EditorExperienceTests WorktreeWatcherTests` covers navigation and file
-watching. Set `BLOOM_LOCAL_LSP=1` for the real Intelephense check. To also test Laravel view links,
-set `BLOOM_LARAVEL_LSP_VENDOR` to the `vendor` directory of a disposable Laravel app with Tinker
+watching. Set `SWARM_UI_LOCAL_LSP=1` for the real Intelephense check. To also test Laravel view links,
+set `SWARM_UI_LARAVEL_LSP_VENDOR` to the `vendor` directory of a disposable Laravel app with Tinker
 installed; the test creates its own app and checks unsaved content and renamed Blade files.
 
 The changes view supports the same Cmd-click, Cmd-Shift-click, definition and usage actions.

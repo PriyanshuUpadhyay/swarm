@@ -11,7 +11,7 @@ bin_dir="$(swift build --show-bin-path)"
 probe_root="$(mktemp -d "${TMPDIR:-/tmp}/swarm-review-probe.XXXXXX")"
 probe_app="$probe_root/Swarm Review Probe.app"
 mkdir -p "$probe_app/Contents/MacOS"
-cp "$bin_dir/Bloom" "$probe_app/Contents/MacOS/Swarm"
+cp "$bin_dir/Swarm" "$probe_app/Contents/MacOS/Swarm"
 cp Resources/Info.plist "$probe_app/Contents/Info.plist"
 ditto Resources "$probe_app/Contents/Resources"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.priyanshuupadhyay.swarm.review-probe' "$probe_app/Contents/Info.plist"
@@ -90,7 +90,7 @@ report = pathlib.Path(root, 'result.json').read_text()
 print(report)
 if not json.loads(report)['passed']:
     if os.environ.get('RUNNER_TEMP'):
-        evidence = pathlib.Path(os.environ['RUNNER_TEMP'], 'bloom-review-probe')
+        evidence = pathlib.Path(os.environ['RUNNER_TEMP'], 'swarm-review-probe')
         evidence.mkdir(exist_ok=True)
         for item in pathlib.Path(root).iterdir():
             if item.suffix in {'.png', '.json', '.log'}:

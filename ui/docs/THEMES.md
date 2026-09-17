@@ -10,9 +10,9 @@ it reset whenever the theme changed. System, Light or Dark remains a global appe
 
 The definitions are plain Swift data with Foundation `Codable` support:
 
-| File under `Sources/BloomCore/Presentation` | Purpose |
+| File under `Sources/SwarmCore/Presentation` | Purpose |
 | --- | --- |
-| `ColourTheme+Builtins.swift` | Bloom and Charcoal Glass presets, including scheme references and font defaults |
+| `ColourTheme+Builtins.swift` | Swarm and Charcoal Glass presets, including scheme references and font defaults |
 | `CodeScheme+Builtins.swift` | Code backgrounds, text, gutter, selection, caret, diff tints and token colours |
 | `TerminalScheme+Builtins.swift` | Complete light/dark terminal palettes using the existing `GhosttyTheme` data |
 | `ThemeTypography.swift` | Optional font family, point size and line-height multiplier for code and terminal |
@@ -24,7 +24,7 @@ Colour pairs contain light and dark RGB integers. Swift definitions use `0xRRGGB
 uses decimal integers. Glass is `off`, `thin`, `regular` or `thick`, mapped to a tint over native AppKit
 sidebar material. Conversation typography retains its existing font names and size/spacing enums.
 
-`ColourThemePreference` in BloomCore is the single preference owner and is tested with isolated defaults. It saves one versioned archive
+`ColourThemePreference` in SwarmCore is the single preference owner and is tested with isolated defaults. It saves one versioned archive
 under `themeOverrides`: glass and scheme changes keyed by preset, and one typography record,
 instead of writing to the old global preferences. The first read migrates glass and the Ghostty
 choice to the selected theme and typography to the shared record. Old values remain available
@@ -68,9 +68,9 @@ terminal, with the conversation as the fallback.
 
 ## Future file support
 
-File importing is not implemented. The definitions are `Codable` and versioned so that a Bloom
+File importing is not implemented. The definitions are `Codable` and versioned so that a Swarm
 preset file, VS Code colour themes for code and Ghostty or `.itermcolors` files for the terminal
 can be adapted later without renderers knowing about external formats.
 
-Charcoal Glass keeps its approved dark glass tint `#212938` at 40% opacity. Bloom uses its
+Charcoal Glass keeps its approved dark glass tint `#212938` at 40% opacity. Swarm uses its
 blue sidebar colour at 80% opacity, leaving a subtler native glass effect.

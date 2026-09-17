@@ -24,13 +24,13 @@ help:
 build: ## Compile every target, app included
 	swift build
 
-test: ## Run the BloomCore suite without building the app target
+test: ## Run the SwarmCore suite without building the app target
 	./Tools/test-core.sh
 
-app: ## Assemble a debug Bloom.app
+app: ## Assemble a debug Swarm.app
 	./Tools/build.sh
 
-run: ## Assemble a release Bloom.app and launch it
+run: ## Assemble a release Swarm.app and launch it
 	./Tools/build.sh -r --run
 
 lint: ## Check the house rules no off the shelf linter knows

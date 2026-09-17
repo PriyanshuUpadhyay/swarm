@@ -32,11 +32,8 @@ import sys
 # a round of icon work cannot be broken by somebody editing the app while it is
 # in progress and so this folder still builds after the app has moved on.
 #
-# There was a second entry on this path, pointing at the same folder inside a
-# checkout called Baton, which is what this app was called before it was
-# renamed. It was a fallback for a copy that has not existed under that name for
-# a long time, on one person's machine, and it would have shipped an absolute
-# path to somebody else's home directory into a public repository.
+# A removed fallback pointed at another checkout on one person's machine and
+# would have put that person's absolute home path in a public repository.
 HERE_FIRST = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE_FIRST)
 import lib  # noqa: E402
@@ -112,10 +109,10 @@ def wrap_layer(body):
     return HEAD + "<defs>" + lib.defs() + "</defs>" + body + "</svg>"
 
 
-# The Big Sur template. NOTHING BLOOM SHIPS IS DRAWN TO IT ANY MORE. macOS 26
+# The Big Sur template. NOTHING SWARM SHIPS IS DRAWN TO IT ANY MORE. macOS 26
 # masks a layered icon and a flat .icns alike, but macOS 15 did not: there the
 # .icns was drawn as it is, and it had to carry the old 824 body inside a 1024
-# canvas or it landed in the dock a fifth too big. Bloom's floor is macOS 26 and
+# canvas or it landed in the dock a fifth too big. Swarm's floor is macOS 26 and
 # it ships no .icns, so `design.py` stopped calling this.
 #
 # It stays because gen9, gen10, depth and shine still draw contact sheets that

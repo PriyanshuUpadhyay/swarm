@@ -14,7 +14,7 @@ copy_notice() {
   cp "$1" "$notices/$2"
 }
 
-copy_notice "$source_root/LICENSE.md" Bloom.txt
+copy_notice "$source_root/LICENSE.md" Swarm.txt
 copy_notice "$checkouts/SwiftTerm/LICENSE" SwiftTerm.txt
 copy_notice "$checkouts/swift-argument-parser/LICENSE.txt" SwiftArgumentParser.txt
 copy_notice "$checkouts/swift-markdown-engine/LICENSE" MarkdownEngine.txt

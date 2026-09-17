@@ -1,7 +1,7 @@
 # Interop
 
 Preserve working framework integration unless migration is needed for the task. GCD, locks,
-delegates and Combine are not automatically bugs in Bloom's AppKit and subprocess code.
+delegates and Combine are not automatically bugs in Swarm's AppKit and subprocess code.
 
 - Wrap a single completion in a checked continuation when an async entry point is needed.
   Do not add a wrapper when a suitable async overload exists.

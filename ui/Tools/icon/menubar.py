@@ -4,7 +4,7 @@
     python3 Tools/icon/menubar.py            the asset and the comparison sheet
     python3 Tools/icon/menubar.py --sheet    the sheet only
 
-Writes `Resources/BloomMenuBar.pdf`, which `MenuBarStatusItem` loads out of the
+Writes `Resources/SwarmMenuBar.pdf`, which `MenuBarStatusItem` loads out of the
 bundle and marks as a template. Everything else it writes goes to
 `Tools/icon/.build/menubar/` and is not shipped.
 
@@ -1149,7 +1149,7 @@ def asset(name=CHOICE):
     """The shipped template image."""
     w, polys = draw(name)
     polys, size = fit(polys, w, ART_HEIGHT * fill_of(name))
-    out = os.path.join(RESOURCES, "BloomMenuBar.pdf")
+    out = os.path.join(RESOURCES, "SwarmMenuBar.pdf")
     with open(out, "wb") as f:
         f.write(pdf(polys, size))
     return out
@@ -1229,7 +1229,7 @@ def sheet():
     sheet = Image.new("RGBA", (width, height), (255, 255, 255, 255))
     draw = ImageDraw.Draw(sheet)
 
-    draw.text((pad, 16), "Bloom in the menu bar: every candidate, each drawn at "
+    draw.text((pad, 16), "Swarm in the menu bar: every candidate, each drawn at "
                          "the size it is used at",
               fill=(20, 20, 24), font=font(21))
     draw.text((pad, 44), "One template image per row. The top strip in each cell "

@@ -56,7 +56,7 @@ PRESET_ORDER = ["calm", "gather", "flow", "stem", "fillet", "stout", "wide",
 BODY = r"""
 <div class="page">
 <header>
-  <h1>Bloom's menu bar mark, as thirteen numbers</h1>
+  <h1>Swarm's menu bar mark, as thirteen numbers</h1>
   <p class="lede">Everything here is drawn by the same geometry
   <code>Tools/icon/menubar.py</code> uses, ported and then checked against it
   vertex by vertex and pixel by pixel, so a mark built on this page can be
@@ -445,7 +445,7 @@ def build():
               .replace("__PRESETS__", repr(PRESET_ORDER).replace("'", '"')))
     html = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            "<title>Bloom menu bar designer</title><style>%s</style></head>"
+            "<title>Swarm menu bar designer</title><style>%s</style></head>"
             "<body>%s<script>\n%s\n%s\n</script></body></html>"
             % (CSS, BODY, GEOM, app))
     out = os.path.join(HERE, "designer.html")

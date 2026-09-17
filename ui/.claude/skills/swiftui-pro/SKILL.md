@@ -1,16 +1,16 @@
 ---
 name: swiftui-pro
-description: Write and review Bloom macOS SwiftUI views for data flow, accessibility, API correctness and measured performance.
+description: Write and review Swarm macOS SwiftUI views for data flow, accessibility, API correctness and measured performance.
 license: MIT
 metadata:
   author: Paul Hudson
-  version: "1.1-bloom.1"
-  adapted-for: Bloom
+  version: "1.1-swarm.1"
+  adapted-for: Swarm
 ---
 
-# SwiftUI in Bloom
+# SwiftUI in Swarm
 
-Bloom targets macOS 26 and Swift 6.2, as declared in `Package.swift`. Follow `CLAUDE.md` for
+Swarm targets macOS 26 and Swift 6.2, as declared in `Package.swift`. Follow `CLAUDE.md` for
 architecture and file organisation. AppKit integration is intentional; do not apply iOS-only
 rules or replace working bridges simply because a SwiftUI API exists.
 
@@ -25,7 +25,7 @@ Load only the references relevant to the code:
 - [API](references/api.md): API migrations and platform availability.
 - [Navigation](references/navigation.md): navigation state, sheets and dialogs.
 - [Accessibility](references/accessibility.md): labels, keyboard access, contrast and motion.
-- [Design](references/design.md): Bloom's design system and native Mac layout.
+- [Design](references/design.md): Swarm's design system and native Mac layout.
 - [Performance](references/performance.md): identity, observation boundaries and expensive work.
 - [Swift](references/swift.md): language and Foundation choices affecting UI code.
 - [Hygiene](references/hygiene.md): project validation and handling sensitive data.

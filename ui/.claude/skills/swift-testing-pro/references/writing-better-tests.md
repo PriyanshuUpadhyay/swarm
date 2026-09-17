@@ -6,8 +6,8 @@ that merely repeat implementation details.
 
 ## Isolation and dependencies
 
-Follow the existing `Tests/BloomCoreTests` layout and fixture helpers. The test target cannot
-import SwiftUI or the app; test decisions through BloomCore. UI rendering or automation requires
+Follow the existing `Tests/SwarmCoreTests` layout and fixture helpers. The test target cannot
+import SwiftUI or the app; test decisions through SwarmCore. UI rendering or automation requires
 a separate approach when it is actually in scope.
 
 Inject the dependencies needed to control time, randomness, network replies and persistence.
@@ -15,7 +15,7 @@ Use the project's existing seams; a closure or value may be simpler than another
 Do not change a production API just to make a generic mock example fit.
 
 Use a unique temporary directory or `UserDefaults` suite per test and clean it up with `defer`.
-Never test against the owner's Bloom database or preferences. Unit tests should use controlled
+Never test against the owner's Swarm database or preferences. Unit tests should use controlled
 network responses; real CLI/network integration tests stay explicitly opt-in.
 
 ## Assertions

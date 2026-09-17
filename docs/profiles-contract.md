@@ -1,8 +1,8 @@
 # Roles, accounts and usage contract
 
 swarm owns roles, accounts and usage (ADR 0005). It wraps `agent-routing.mjs` for roles and `yelo`
-for accounts and usage, and prints the JSON below. Bloom reads only this JSON, through the Swift
-types in `ui/Sources/BloomCore/Agent/SwarmProfiles.swift`. A change to a shape changes this file,
+for accounts and usage, and prints the JSON below. Swarm reads only this JSON, through the Swift
+types in `ui/Sources/SwarmCore/Agent/SwarmProfiles.swift`. A change to a shape changes this file,
 the Rust output, and the Swift types in one commit.
 
 ## Rules

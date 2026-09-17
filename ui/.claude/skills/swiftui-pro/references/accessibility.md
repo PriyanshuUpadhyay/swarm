@@ -10,6 +10,6 @@
   grouping in context rather than assuming an asset name is a useful spoken description.
 - Preserve keyboard focus, shortcuts and a usable focus order through sheets and custom panes.
 - Respect Reduce Motion and Increase Contrast. Avoid conveying state by colour alone.
-- Prefer semantic text styles or Bloom's existing typography. Check truncation and readability
+- Prefer semantic text styles or Swarm's existing typography. Check truncation and readability
   across window sizes and supported accessibility settings. Do not impose iOS Dynamic Type or
   touch-target assumptions on native Mac controls.

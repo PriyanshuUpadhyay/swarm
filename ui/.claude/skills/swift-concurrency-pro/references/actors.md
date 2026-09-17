@@ -24,7 +24,7 @@ happen while work is in flight, use a generation or identity check so an old res
 invalidated state or clear a newer task.
 
 Do not claim a cache can be cleared *between* an actor-isolated assignment and a following return
-when there is no suspension between them. In Bloom, use `Store.update` for existing rows as
+when there is no suspension between them. In Swarm, use `Store.update` for existing rows as
 specified in `CLAUDE.md`; writing a stale whole-row value is a separate logical race.
 
 ## Boundaries

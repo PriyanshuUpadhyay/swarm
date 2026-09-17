@@ -6,7 +6,7 @@ guessed. Anything not listed here should be treated as unknown rather than inven
 ## Security rule
 
 `~/.claude.json` and `~/.codex/auth.json` contain live credentials: OAuth access tokens, refresh
-tokens and possibly an API key. Bloom reads them ONLY to show non-secret, derived facts (email,
+tokens and possibly an API key. Swarm reads them ONLY to show non-secret, derived facts (email,
 organisation, plan, auth method, expiry). A token must never be rendered in the UI, written to a
 log, put on the pasteboard, or included in an error message. When a field is missing, say
 "unknown", never fall back to printing raw file contents.
@@ -86,7 +86,7 @@ is real evidence, otherwise show that the CLI was found and leave the account bl
 config directory is `~/.cursor` (exists here, holds `hooks.json`). OpenCode's is `~/.opencode`
 (absent here).
 
-## What Bloom can actually run
+## What Swarm can actually run
 
 Claude Code, Codex and Grok. The stream-json protocol in `PROTOCOL.md` is Claude Code's and
 `AgentRunner` speaks it; the JSON-RPC app-server protocol in `CODEX.md` is Codex's and
@@ -109,13 +109,13 @@ protocol and permission adapters. Sharing discovery does not imply that cancella
 resuming work the same way. Cover those behaviours in the backend's runner tests; the shared
 cache and selection rules are covered by `AgentModelCacheTests` and `AgentModelTests`.
 
-## Registering Bloom in a client the owner runs themselves
+## Registering Swarm in a client the owner runs themselves
 
 Measured on claude 2.1.241 on 2026-08-23, by running the commands.
 
 `claude mcp add [options] <name> <commandOrUrl> [args...]` takes `-e KEY=value` repeatedly and
 `-s, --scope <local|user|project>`. `claude mcp add-json <name> <json>` exists as well and takes
-the whole server object as one JSON string, so both shapes are a single copyable line. Bloom uses
+the whole server object as one JSON string, so both shapes are a single copyable line. Swarm uses
 `add` rather than `add-json`, because the JSON has to be quoted for the shell as well as escaped
 for JSON and the result is unreadable in a settings pane, while the `add` form reads as a sentence.
 
@@ -123,28 +123,28 @@ The three scopes are not interchangeable and only one of them is right here. `lo
 project on this machine, kept in `~/.claude.json` under the project's own key. `project` writes a
 `.mcp.json` in the working directory, which is meant to be committed and shared with everyone who
 clones the repository. `user` is the top level of `~/.claude.json` and applies to every project on
-the machine. Bloom's coupling belongs to the owner and to no repository, so it is `user`, and that
+the machine. Swarm's coupling belongs to the owner and to no repository, so it is `user`, and that
 is also the only one of the three that cannot end up in a commit carrying a live token.
 
 The server is registered under a name derived from the running copy's Application Support
 directory, slugified. See `BridgeRegistration.ownerServerName`.
 
-It is deliberately not `bloom-workspace-bridge`, the name Bloom's own per-session `--mcp-config`
+It is deliberately not `swarm-workspace-bridge`, the name Swarm's own per-session `--mcp-config`
 uses. That file is additive over `~/.claude.json` rather than replacing it, so a shared name would
-put two entries called the same thing in one client: an agent Bloom launched inside a workspace
+put two entries called the same thing in one client: an agent Swarm launched inside a workspace
 would meet its own session token and the owner's standalone token under one name.
 
-It is also deliberately not one constant for every copy of Bloom, which is what it was until the
+It is also deliberately not one constant for every copy of Swarm, which is what it was until the
 name was derived. `claude mcp add` replaces an existing entry of the same name and says nothing
-about it, and `--scope user` is one file for the whole machine, so Bloom and Bloom Dev both handed
+about it, and `--scope user` is one file for the whole machine, so Swarm and Swarm Dev both handed
 out a command claiming the same entry: pasting one silently evicted the other. Deriving the name
 from the same table as the database directory means two builds can only collide here if they were
 already sharing a database, in which case they share the token beside it too.
 
 Nothing rewrites an entry left over from before that change. Somebody who ran the older command
-still has `bloom-owner-bridge` in `~/.claude.json`, and no copy of Bloom answers to that name any
+still has `swarm-owner-bridge` in `~/.claude.json`, and no copy of Swarm answers to that name any
 more, so nothing here recognises it as its own. The Settings pane says so and offers
-`claude mcp remove --scope user bloom-owner-bridge`.
+`claude mcp remove --scope user swarm-owner-bridge`.
 
 A session already running does not pick the server up. Start a new one.
 
@@ -157,22 +157,22 @@ back for it and where Regenerate lives. The step is offered only when there is s
 compares the entry under this copy's name against the shim path, socket and token it would hand
 out today. Anything but a match is offered, an unreadable file included.
 
-### The one thing Bloom does write there
+### The one thing Swarm does write there
 
 The entry holds an absolute path to the shim inside the bundle, it is written once, and nothing
-re-derives it. The owner moved Bloom from `~/Applications` to `/Applications` and every agent
+re-derives it. The owner moved Swarm from `~/Applications` to `/Applications` and every agent
 started from his own terminal failed from that moment, saying the bridge was down and naming a
 path that no longer existed. Per-session registrations were fine throughout, because
 `BridgeRegistration.shimPath` derives the shim from the running executable each time; only the
 durable entry went stale.
 
 `BridgeUserRegistrationRepair` puts that one string back, on launch, and touches nothing else. It
-rewrites only an entry under **this copy's own** name whose `BLOOM_BRIDGE_SOCKET` and
-`BLOOM_BRIDGE_TOKEN` are exactly the pair this instance mints, whose `command` names a file called
-`bloom-bridge`, and where that path no longer exists. The socket and token pair is the proof of
+rewrites only an entry under **this copy's own** name whose `SWARM_UI_BRIDGE_SOCKET` and
+`SWARM_UI_BRIDGE_TOKEN` are exactly the pair this instance mints, whose `command` names a file called
+`swarm-bridge`, and where that path no longer exists. The socket and token pair is the proof of
 authorship: the socket comes from the database path through `TmuxSessions.fingerprint` and the
-token is minted beside that database, so no other copy of Bloom can produce it. Anything else,
-including the legacy `bloom-owner-bridge` entry, an entry somebody aimed at another Bloom on
+token is minted beside that database, so no other copy of Swarm can produce it. Anything else,
+including the legacy `swarm-owner-bridge` entry, an entry somebody aimed at another Swarm on
 purpose, and an entry whose shim is still installed, is left exactly as it was. The write is
 atomic and puts the file's mode back, because it holds a live OAuth token.
 

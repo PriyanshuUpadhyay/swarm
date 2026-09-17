@@ -1,6 +1,6 @@
 # Version-dependent testing APIs
 
-Bloom's minimum toolchain is Swift 6.2. Confirm signatures in the installed `Testing` module
+Swarm's minimum toolchain is Swift 6.2. Confirm signatures in the installed `Testing` module
 before adopting newer features; examples from upstream main may require a later toolchain.
 
 - Swift 6.2 raw identifiers allow backtick-delimited test names with spaces. Follow the existing

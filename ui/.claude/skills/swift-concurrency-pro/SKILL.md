@@ -1,16 +1,16 @@
 ---
 name: swift-concurrency-pro
-description: Write and review Bloom Swift concurrency code for actor isolation, task lifetime, cancellation and stream correctness.
+description: Write and review Swarm Swift concurrency code for actor isolation, task lifetime, cancellation and stream correctness.
 license: MIT
 metadata:
   author: Paul Hudson
-  version: "1.0-bloom.1"
-  adapted-for: Bloom
+  version: "1.0-swarm.1"
+  adapted-for: Swarm
 ---
 
-# Swift concurrency in Bloom
+# Swift concurrency in Swarm
 
-Check `Package.swift` and the actual target's compiler flags before inferring isolation. Bloom
+Check `Package.swift` and the actual target's compiler flags before inferring isolation. Swarm
 uses Swift 6 language mode with a Swift 6.2 minimum toolchain; that alone does not enable default
 MainActor isolation or `NonisolatedNonsendingByDefault`.
 

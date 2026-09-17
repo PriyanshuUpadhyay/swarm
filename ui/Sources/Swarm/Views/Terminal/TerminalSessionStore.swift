@@ -1,0 +1,843 @@
+import SwiftUI
+import Observation
+import SwarmCore
+
+/// The one place that owns live shells.
+///
+/// SwiftUI rebuilds views constantly, and a `LocalProcessTerminalView` that gets rebuilt takes the
+/// user's shell and their whole scrollback with it. So nothing about a terminal lives in a view:
+/// the views are created once here, keyed by pane id, and handed back unchanged for as long as the
+/// app runs.
+///
+/// Which terminals a workspace HAS is not here and never was two things: it is `CenterTabStore`,
+/// alongside the browsers and the review, because a terminal is a tab in the centre column like
+/// any other. This owns the processes those tabs point at, and nothing else.
+@MainActor
+@Observable
+final class TerminalSessionStore {
+    static let shared = TerminalSessionStore()
+
+    private var terminals: [String: SwarmTerminalView] = [:]
+    // These are written while an NSViewRepresentable is configuring. Only process exit is a
+    // presentation change, so observing either dictionary would mutate view state during update.
+    @ObservationIgnored private var swarmAgentTerminals: [SwarmAgentPaneKey: SwarmTerminalView] = [:]
+    @ObservationIgnored private var swarmAgentOwners: [SwarmAgentPaneKey: WorkspaceID] = [:]
+    private var swarmAgentAttachments: [SwarmAgentPaneKey: SwarmAgentPaneState.Attachment] = [:]
+
+    private struct SwarmAgentPaneKey: Hashable {
+        var agent: SwarmAgentID
+        var session: SwarmSessionID
+    }
+
+    /// A command waiting for its pane's shell to exist, which is how a run script opens: a terminal
+    /// tab named after the script, with the script's own command typed into it.
+    ///
+    /// Typed rather than exec'd, and that is deliberate. The command lands in the shell's history,
+    /// so Ctrl+C then Up then Return restarts a dev server the way it does in any terminal, and
+    /// when it exits the pane is still a shell rather than a pane that closes itself.
+    private var pendingCommands: [String: String] = [:]
+
+    /// Which workspace each pane belongs to, so closing one can name its tmux session without
+    /// walking back through tabs that may already be gone.
+    private var paneOwner: [String: WorkspaceID] = [:]
+
+    /// The tmux session a pane's shell is held in, for the panes that have one. Written when the
+    /// shell is forked rather than worked out again later: the decision was taken there, against a
+    /// snapshot that has moved on since, and asking twice is how the two answers come apart.
+    private var paneSession: [String: String] = [:]
+
+    /// What each pane was running, so a pane whose process did not survive the last quit can offer
+    /// it back. Nothing here ever starts a command; see `TerminalCommandRecall`.
+    let recall = TerminalCommandRecall()
+
+    /// Whether each run script tab's command is still going. See `RunScriptActivityMonitor`.
+    let activity = RunScriptActivityMonitor()
+
+    private init() {
+        activity.probes = { [weak self] in self?.runScriptProbes() ?? [:] }
+        activity.persistence = { [weak self] in self?.persistence }
+        activity.onRunning = { [weak self] pane in self?.recall.withdraw(inPane: pane) }
+    }
+
+    // MARK: - Terminals
+
+    func excerpt(inPaneID paneID: String, workspaceID: WorkspaceID, label: String) -> TerminalExcerpt? {
+        guard paneOwner[paneID] == workspaceID,
+              let selection = terminals[paneID]?.selection, selection.active else { return nil }
+        return TerminalExcerpt(
+            terminalID: TerminalTabID(paneID), workspaceID: workspaceID, label: label,
+            firstLine: selection.start.row + 1, lastLine: selection.end.row + 1,
+            text: selection.getSelectedText()
+        )
+    }
+
+    /// Queues a command for the pane that has not been drawn yet, so the shell runs it the moment
+    /// it is forked. Nothing happens if the pane's shell already exists: a run script opens a tab
+    /// of its own when it has none, and a tab that already has a shell is typed into through
+    /// `retype` instead. See `RunScriptLauncher`.
+    func run(_ command: String, inPaneID paneID: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        pendingCommands[paneID] = trimmed
+        // The text as it was asked for, which is the one worth offering back later. `ps` would
+        // answer with the interpreter and the script it resolved to.
+        recall.remember(trimmed, sentTo: paneID)
+    }
+
+    /// Stops one split pane. The shell's whole process group goes, not just the shell: a pty child
+    /// is a session leader, so the group is where the `npm run dev` the user started in that pane
+    /// actually lives, and it would otherwise be reparented to launchd still holding its port.
+    ///
+    /// A tmux-backed pane needs the session killed as well. Signalling the pane only reaches the
+    /// tmux *client*, which is a detach, and detaching is the opposite of what closing a pane means.
+    func closePane(id: String) {
+        pendingCommands[id] = nil
+        if let workspaceID = paneOwner.removeValue(forKey: id) {
+            let persistence = self.persistence
+            Task { await persistence?.kill(workspaceID: workspaceID, paneIDs: [id]) }
+        }
+        paneSession[id] = nil
+        paneAgents[id] = nil
+        Task { await refreshAgentActivity() }
+        // A pane id is a fresh uuid and is never handed out again, so its remembered command is
+        // unreachable the moment the pane goes and would sit in the settings table for the life of
+        // the database.
+        recall.forget(panes: [id], store: repoStore)
+        activity.forget(panes: [id])
+        closedPanes.insert(id)
+        guard let view = terminals[id] else { return }
+        defer { terminals[id] = nil }
+
+        // Nothing is signalled for a shell that has already ended. Its pid has been reaped, and
+        // macOS hands pids out again, so naming that number now could land on a process group
+        // belonging to somebody else entirely.
+        guard view.process?.running == true else { return }
+        // Read before the shell is terminated, so the escalation below has a number to name.
+        let pid = view.process?.shellPid ?? 0
+
+        // Before the signal, so the exit it causes is read as Swarm closing the pane rather than
+        // as the shell ending by itself and asking for the pane to close a second time.
+        view.willStop()
+        hangUp(on: view)
+        view.shutdown()
+
+        // Anything that sat through a hangup is out of chances. The pid is still safe to name:
+        // `terminate` cancels the app's own exit monitor, so nothing reaps the child and macOS
+        // cannot have handed the number to somebody else in the meantime.
+        guard pid > 0 else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            killpg(pid, SIGKILL)
+        }
+    }
+
+    /// Tells a shell its terminal has gone.
+    ///
+    /// SIGHUP rather than SIGTERM alone, which is the fix for a real orphan: an interactive login
+    /// shell ignores SIGTERM, so closing a tab left a zsh alive in the worktree, holding its pty
+    /// and its working directory for the rest of the day, and holding whatever it had running.
+    /// SIGHUP is what a terminal emulator sends when its window closes, and it is the one an
+    /// interactive shell does not ignore. SIGTERM still follows it, for anything in the group that
+    /// answers to that and not to a hangup.
+    private func hangUp(on view: SwarmTerminalView) {
+        signal(SIGHUP, toGroupOf: view)
+        signal(SIGTERM, toGroupOf: view)
+    }
+
+    /// Panes that have been closed, which is what stops one from forking a second shell on its way
+    /// off screen.
+    ///
+    /// A view is not torn down the instant its pane goes: SwiftUI redraws on the next pass, and a
+    /// tab whose last pane has just closed is drawn one more time before the strip catches up. That
+    /// draw asks for its shell, finds the closed one gone, and forks a replacement into a worktree
+    /// nobody is looking at. It kept its process group, its port and, with persistence on, its
+    /// tmux session, and nothing ever closed it again because no tab named it any more.
+    ///
+    /// A pane id is a fresh uuid and is never reused, so remembering the ones that are over is
+    /// enough, and each is one small string.
+    private var closedPanes: Set<String> = []
+
+    /// Every pane of a tab that is going away, and the shape it was split into.
+    ///
+    /// The workspace is passed when the caller knows it, because a tab can be closed from the strip
+    /// without ever having been drawn, and a pane that was never drawn has no owner recorded.
+    func closePanes(of ownerID: String, workspaceID: WorkspaceID? = nil) {
+        for pane in TerminalSplitStore.shared.panes(of: ownerID) {
+            if let workspaceID { paneOwner[pane] = workspaceID }
+            closePane(id: pane)
+        }
+        TerminalSplitStore.shared.discard(ownerID: ownerID)
+    }
+
+    /// Whether a shell has been forked for one pane in this run of Swarm.
+    ///
+    /// **The difference from `terminal(for:...)` is the whole reason it exists**, and it is the
+    /// same difference `CenterTabStore.liveBrowser` draws next to `browser(for:)`. That one forks
+    /// a shell, which is right when a pane is about to be drawn and wrong for anything that is
+    /// only asking. `workspace_tabs` runs on an agent's word over every terminal tab a workspace
+    /// has, restored ones included, and asking through the forking accessor would have had a
+    /// listing start half a dozen shells in a worktree nobody had opened.
+    func hasShell(paneID: String) -> Bool {
+        terminals[paneID] != nil
+    }
+
+    /// The attach process state used by `SwarmAgentPaneState`. Reading it never starts a process.
+    func swarmAgentAttachment(
+        for agent: SwarmAgentID, in session: SwarmSessionID
+    ) -> SwarmAgentPaneState.Attachment {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        if let attachment = swarmAgentAttachments[key] { return attachment }
+        guard let terminal = swarmAgentTerminals[key], terminal.hasStarted else {
+            return .notStarted
+        }
+        return .running
+    }
+
+    /// The terminal for one swarm agent, retained independently of the SwiftUI view that hosts it.
+    func swarmAgentTerminal(
+        for agent: SwarmAgentID,
+        in session: SwarmSessionID,
+        workspaceID: WorkspaceID?,
+        bus: any SwarmBus
+    ) -> SwarmTerminalView {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        if let terminal = swarmAgentTerminals[key] {
+            if swarmAgentOwners[key] == nil { swarmAgentOwners[key] = workspaceID }
+            if !terminal.hasStarted { startSwarmAgentTerminal(terminal, key: key, bus: bus) }
+            return terminal
+        }
+
+        let terminal = SwarmTerminalView(frame: CGRect(x: 0, y: 0, width: 640, height: 320))
+        terminal.onExit = { [weak self, weak terminal] _ in
+            guard let self, let terminal, self.swarmAgentTerminals[key] === terminal else { return }
+            self.swarmAgentAttachments[key] = .exited
+        }
+        swarmAgentTerminals[key] = terminal
+        swarmAgentOwners[key] = workspaceID
+        startSwarmAgentTerminal(terminal, key: key, bus: bus)
+        return terminal
+    }
+
+    /// Starts a fresh attach process after the previous one ended. The terminal and its scrollback
+    /// stay in place while SwiftTerm replaces only the pty child.
+    func reattach(
+        agent: SwarmAgentID, session: SwarmSessionID, bus: any SwarmBus
+    ) {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        guard swarmAgentAttachments[key] == .exited,
+              let terminal = swarmAgentTerminals[key] else { return }
+        swarmAgentAttachments[key] = nil
+        startSwarmAgentTerminal(terminal, key: key, bus: bus)
+    }
+
+    /// Releases the retained terminal and stops its attach process when the agent tab goes away.
+    func release(agent: SwarmAgentID, session: SwarmSessionID) {
+        let key = SwarmAgentPaneKey(agent: agent, session: session)
+        swarmAgentAttachments[key] = nil
+        swarmAgentOwners[key] = nil
+        guard let terminal = swarmAgentTerminals.removeValue(forKey: key) else { return }
+        Task { await stop([terminal]) }
+    }
+
+    private func startSwarmAgentTerminal(
+        _ terminal: SwarmTerminalView,
+        key: SwarmAgentPaneKey,
+        bus: any SwarmBus
+    ) {
+        guard terminal.process?.running != true else { return }
+        terminal.start(.swarmAttach(bus.attachCommand(for: key.agent, in: key.session)))
+    }
+
+    /// Recent rendered output, with soft-wrapped screen rows joined back into logical lines.
+    /// Reading never starts a restored shell. A terminal tool that wants one has to start one
+    /// explicitly, rather than turning inspection into an action.
+    func output(paneID: String, lines limit: Int) -> (text: String, live: Bool)? {
+        guard let view = terminals[paneID] else { return nil }
+        let terminal = view.getTerminal()
+        var lines: [String] = []
+
+        var row = terminal.buffer.totalLinesTrimmed
+        while let line = terminal.getScrollInvariantLine(row: row) {
+            let text = line.translateToString(trimRight: true, skipNullCellsFollowingWide: true)
+            if line.isWrapped, !lines.isEmpty {
+                lines[lines.count - 1] += text
+            } else {
+                lines.append(text)
+            }
+            row += 1
+        }
+
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        return (lines.suffix(limit).joined(separator: "\n"), view.process?.running == true)
+    }
+
+    /// Bytes sent to the shell exactly as terminal input, without taking keyboard focus.
+    func write(_ text: String, submit: Bool, paneID: String) -> Bool {
+        guard let view = terminals[paneID], view.process?.running == true, !view.hasExited else {
+            return false
+        }
+        view.send(txt: text + (submit ? "\r" : ""))
+        // Only a submitted line is a command. Bytes without a return are a keystroke into whatever
+        // is already running, an answer to a prompt as often as not, and remembering those would
+        // offer back half a sentence.
+        if submit {
+            recall.remember(text, sentTo: paneID)
+            activity.typed(inPane: paneID)
+        }
+        return true
+    }
+
+    /// A run script's command, typed again into the shell its tab already has.
+    ///
+    /// Through `type` rather than `write`, so a shell forked a moment ago for a tab this launch had
+    /// not drawn yet gets the same startup beat a new run script tab does. False when the pane has
+    /// no live shell to type into, which the caller answers by opening a tab of its own.
+    func retype(_ command: String, inPane pane: String) -> Bool {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let view = terminals[pane], view.process?.running == true,
+              !view.hasExited else { return false }
+        recall.remember(trimmed, sentTo: pane)
+        type(trimmed, into: view, pane: pane)
+        return true
+    }
+
+    /// How to ask each run script tab's shell who holds its terminal, for the ones that have a
+    /// shell alive this launch.
+    ///
+    /// The tab's own pane only, which is the one its command was typed into: a tab split after it
+    /// opened keeps that pane under the tab's id, and a shell in the other half is somebody else's.
+    private func runScriptProbes() -> [String: RunScriptActivityMonitor.Probe] {
+        var probes: [String: RunScriptActivityMonitor.Probe] = [:]
+        for tabs in CenterTabStore.shared.tabsByWorkspace.values {
+            for tab in tabs where tab.kind == .terminal && tab.runScriptID != nil {
+                guard let view = terminals[tab.id], let process = view.process, process.running,
+                      !view.hasExited else { continue }
+                if let session = paneSession[tab.id] {
+                    probes[tab.id] = .tmux(session: session)
+                } else {
+                    probes[tab.id] = .direct(descriptor: process.childfd, shell: process.shellPid)
+                }
+            }
+        }
+        return probes
+    }
+
+    func send(_ key: TerminalKey, paneID: String) -> Bool {
+        guard let view = terminals[paneID], view.process?.running == true, !view.hasExited else {
+            return false
+        }
+        view.send(key.bytes)
+        return true
+    }
+
+    /// The Start button under a pane's remembered command.
+    ///
+    /// Typed and submitted rather than exec'd, which is what the run script and `terminal_start`
+    /// already do: the command lands in the shell's history, so the usual Ctrl+C, Up, Return
+    /// restarts it afterwards, and when it exits the pane is still a shell. The pty is long past
+    /// the startup beat `type` waits out, because a person has read a strip and pressed a button
+    /// since it was forked.
+    func startRemembered(_ command: String, inPane pane: String) {
+        guard write(command, submit: true, paneID: pane) else { return }
+        recall.accepted(command, inPane: pane)
+    }
+
+    /// The cross beside it, which is the only way a remembered command is deliberately forgotten.
+    func dismissRemembered(inPane pane: String) {
+        recall.dismiss(inPane: pane, store: repoStore)
+    }
+
+    /// The live shell for a tab, forked on first use and reused forever after.
+    ///
+    /// `directory` is what the tab asked for, empty for the worktree root, and it is checked here
+    /// rather than trusted: a tab opened on a folder outlives that folder. See
+    /// `FolderTerminal.launchDirectory`.
+    func terminal(
+        for tab: TerminalTab,
+        workspace: Workspace,
+        repo: Repo?,
+        port: Int,
+        directory: String = "",
+        output: String? = nil
+    ) -> SwarmTerminalView {
+        if let existing = terminals[tab.id.rawValue], existing.hasStarted { return existing }
+
+        let view = terminals[tab.id.rawValue]
+            ?? SwarmTerminalView(frame: CGRect(x: 0, y: 0, width: 640, height: 320))
+
+        // A pane that is already over, drawn one last time before SwiftUI catches up. It gets an
+        // empty terminal that forks nothing and is not filed under its id, so the draw after this
+        // one drops it. See `closedPanes`.
+        guard !closedPanes.contains(tab.id.rawValue) else {
+            view.willStop()
+            return view
+        }
+
+        if let output {
+            if terminals[tab.id.rawValue] == nil {
+                terminals[tab.id.rawValue] = view
+                paneOwner[tab.id.rawValue] = workspace.id
+            }
+            view.showOutput(output)
+            return view
+        }
+
+        var extra: [String: String] = [:]
+        if let repo, let store = repoStore {
+            extra = WorkspaceManager(store: store).environment(
+                for: workspace, repo: repo, port: port
+            )
+        }
+
+        // `tab.id.rawValue` is the pane id here: a split hands each pane a `TerminalTab` carrying its own id,
+        // and an unsplit tab is its own single pane.
+        paneOwner[tab.id.rawValue] = workspace.id
+        let start = FolderTerminal.launchDirectory(requested: directory, root: workspace.path)
+        let decision = persistence?.decision(workspaceID: workspace.id, paneID: tab.id.rawValue)
+            ?? .inProcess
+        if let command = persistence?.command, let session = decision.session {
+            paneSession[tab.id.rawValue] = session
+            view.start(TerminalLaunch.tmux(
+                command: command, session: session, directory: start, extra: extra
+            ))
+        } else {
+            view.start(TerminalLaunch.loginShell(directory: start, extra: extra))
+        }
+
+        terminals[tab.id.rawValue] = view
+        if let command = pendingCommands.removeValue(forKey: tab.id.rawValue) {
+            type(command, into: view, pane: tab.id.rawValue)
+        } else {
+            offerLastCommand(inPane: tab.id.rawValue, decision: decision)
+        }
+        activity.ensurePolling()
+        return view
+    }
+
+    /// Asks whether this pane has a command left over from a previous launch, and lets the strip
+    /// draw it if it has. Nothing is started here; the answer is drawn and waits to be pressed.
+    private func offerLastCommand(inPane pane: String, decision: TerminalStartDecision) {
+        guard let store = repoStore else { return }
+        let persistence = self.persistence
+        let session = decision.session
+        Task { [recall] in
+            await recall.considerOffer(
+                inPane: pane, session: session, persistence: persistence, store: store
+            )
+        }
+    }
+
+    /// Types a command into a shell that has just been forked.
+    ///
+    /// After a beat, because the pty is ready before zsh is: bytes written into it in the same
+    /// turn as the fork arrive before the line editor has been set up, and zsh's own startup then
+    /// redraws over them. A tenth of a second is longer than any of that takes and is under what
+    /// anybody reads as a delay. The command is still typed rather than exec'd, so a shell whose
+    /// rc files run slower than this simply receives it a moment later.
+    private func type(_ command: String, into view: SwarmTerminalView, pane: String) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard view.process?.running == true else { return }
+            view.send(txt: command + "\n")
+            activity.typed(inPane: pane)
+        }
+    }
+
+    /// `WorkspaceManager` needs a store only to exist, so the panel hands one over once and every
+    /// terminal after that can build its environment without threading a store through the views.
+    private var repoStore: Store?
+
+    /// The tmux server, when there is one to talk to. Built from the database path so a throwaway
+    /// instance pointed at `SWARM_UI_DB_PATH` gets its own socket and cannot sweep the real one's
+    /// sessions.
+    private(set) var persistence: TerminalPersistence?
+
+    private var didSweepOrphans = false
+
+    /// The command recorder's poll. Cancelled on the way out, after one last pass.
+    private var recordTask: Task<Void, Never>?
+    private var paneAgents: [String: AgentKind] = [:]
+    private var agentProcesses: [String: Int32] = [:]
+    private var lastHookDates: [SessionID: Date] = [:]
+    private let activityStartedAt = Date()
+    private(set) var agentTurns: [SessionID: AgentTurns.Live] = [:]
+    private(set) var runningWorkspaceIDs: Set<WorkspaceID> = []
+    var onAgentActivityChanged: (() -> Void)?
+    var onAgentTurnFinished: ((WorkspaceID) async -> Void)?
+
+    func detectedAgent(inPane pane: String) -> AgentKind? {
+        paneAgents[pane]
+    }
+
+    func detectedAgent(inTab tab: String) -> AgentKind? {
+        TerminalSplitStore.shared.panes(of: tab).compactMap { paneAgents[$0] }.first
+    }
+
+    private func refreshAgentActivity() async {
+        guard let store = repoStore else { return }
+        let panes = livePanes()
+        let linkedTabs = CenterTabStore.shared.tabsByWorkspace.values.flatMap { $0 }
+            .filter { $0.kind == .terminal && $0.agentSessionID != nil }
+        guard !panes.isEmpty || !linkedTabs.isEmpty else {
+            paneAgents = [:]
+            if !agentTurns.isEmpty || !runningWorkspaceIDs.isEmpty {
+                agentTurns = [:]
+                runningWorkspaceIDs = []
+                onAgentActivityChanged?()
+            }
+            return
+        }
+        let observedAt = Date()
+        guard let table = await ProcessTable.current() else { return }
+        var pids: [String: Int32] = [:]
+        if let persistence {
+            guard let snapshot = await persistence.panePIDSnapshot() else { return }
+            pids = snapshot
+        }
+        var detected: [String: AgentKind] = [:]
+        var processes: [String: Int32] = [:]
+        for pane in panes {
+            let shell = pane.session.flatMap { pids[$0] } ?? pane.shell
+            if let process = table.interactiveAgentProcess(ofShell: shell) {
+                detected[pane.pane] = ProcessTable.interactiveAgent(command: process.command)
+                processes[pane.pane] = process.pid
+            }
+        }
+        var runningPanes = Set(detected.compactMap { pane, kind in
+            kind.interactiveScreenIsBusy(lines: currentScreen(inPane: pane)) ? pane : nil
+        })
+        var turns: [SessionID: AgentTurns.Live] = [:]
+        for tab in linkedTabs {
+            guard let sessionID = tab.agentSessionID,
+                  let session = try? await store.session(id: sessionID),
+                  session.archivedAt == nil else { continue }
+            let paneIDs = TerminalSplitStore.shared.panes(of: tab.id)
+            for pane in paneIDs where detected[pane] == nil {
+                let name = TmuxSessions.sessionName(workspaceID: tab.workspaceID, paneID: pane)
+                if let shell = pids[name], let process = table.interactiveAgentProcess(ofShell: shell) {
+                    detected[pane] = ProcessTable.interactiveAgent(command: process.command)
+                    processes[pane] = process.pid
+                }
+            }
+            let isPresent = detected[tab.id] == session.agentKind
+            var state: SessionState = isPresent && runningPanes.contains(tab.id) ? .running
+                : (session.state == .failed ? .failed : .idle)
+            var externalSession: String?
+            let statusURL = AgentKind.interactiveStatusURL(sessionID: sessionID)
+            let replaced = agentProcesses[tab.id] != nil && agentProcesses[tab.id] != processes[tab.id]
+            if let attributes = try? statusURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+               let size = attributes.fileSize, size <= 1_048_576,
+               let data = try? Data(contentsOf: statusURL) {
+                let oldHook = attributes.contentModificationDate == lastHookDates[sessionID]
+                let disappeared = !isPresent && (agentProcesses[tab.id] != nil
+                    || session.state == .running || session.state == .waiting)
+                if disappeared || (replaced && oldHook),
+                   let modified = attributes.contentModificationDate, modified <= observedAt {
+                    try? FileManager.default.removeItem(at: statusURL)
+                } else if isPresent {
+                    state = AgentKind.interactiveHookState(data: data) ?? .idle
+                    externalSession = AgentKind.interactiveHookSessionID(data: data)
+                    if let modified = attributes.contentModificationDate,
+                       lastHookDates[sessionID] != modified {
+                        lastHookDates[sessionID] = modified
+                        if modified >= activityStartedAt,
+                           let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           event["hook_event_name"] as? String == "Stop" {
+                            await onAgentTurnFinished?(tab.workspaceID)
+                        }
+                    }
+                }
+            }
+            if isPresent, let externalSession,
+               let workspace = try? await store.workspace(id: tab.workspaceID),
+               CenterTabStore.shared.terminal(for: sessionID, in: tab.workspaceID)?.id == tab.id,
+               let resume = try? session.agentKind.prepareInteractiveCommand(
+                   directory: workspace.path, prompt: "", sessionID: sessionID,
+                   model: session.model, effort: session.effort,
+                   permissionMode: session.permissionMode, resuming: externalSession
+               ) {
+                await recall.rememberResume(resume, inPane: tab.id, store: store)
+            }
+            if isPresent { runningPanes.remove(tab.id) }
+            turns[sessionID] = AgentTurns.Live(
+                sessionID: sessionID, workspaceID: tab.workspaceID,
+                isRunning: state == .running, isAwaitingPermission: state == .waiting
+            )
+            if session.state != state || (externalSession != nil && session.agentSessionID != externalSession) {
+                let nextState = state
+                let nextID = externalSession
+                _ = try? await store.update(sessionID: sessionID) { row in
+                    row.applyInteractiveState(nextState)
+                    if let nextID { row.agentSessionID = nextID }
+                }
+            }
+        }
+        agentProcesses = processes
+        if paneAgents != detected { paneAgents = detected }
+        let running = Set(runningPanes.compactMap { paneOwner[$0] })
+        if agentTurns != turns || runningWorkspaceIDs != running {
+            agentTurns = turns
+            runningWorkspaceIDs = running
+            onAgentActivityChanged?()
+        }
+    }
+
+    private func currentScreen(inPane pane: String) -> [String] {
+        guard let terminal = terminals[pane]?.getTerminal() else { return [] }
+        let start = terminal.buffer.totalLinesTrimmed
+        var lower = start
+        var upper = start + terminal.rows
+        while terminal.getScrollInvariantLine(row: upper) != nil {
+            lower = upper
+            upper = start + (upper - start) * 2
+        }
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if terminal.getScrollInvariantLine(row: middle) == nil {
+                upper = middle
+            } else {
+                lower = middle + 1
+            }
+        }
+        // Read the live screen even when the user has scrolled into history.
+        return (max(start, upper - terminal.rows)..<upper).compactMap {
+            terminal.getScrollInvariantLine(row: $0)?.translateToString(
+                trimRight: true, skipNullCellsFollowingWide: true
+            )
+        }
+    }
+
+    func useStore(_ store: Store?) {
+        if repoStore == nil { repoStore = store }
+        ensurePersistence()
+        sweepOrphanedSessions()
+        startRecordingCommands()
+    }
+
+    /// The slow poll that writes down what each pane is running.
+    ///
+    /// Recording only at quit would be enough for a quit and useless for everything else: Swarm is
+    /// developed in Swarm and gets killed, force quit and crashed, and those are precisely the
+    /// launches where a shell was lost with something worth restarting in it. Thirty seconds is
+    /// chosen against what it costs rather than against what it buys, because what it buys is
+    /// unbounded: one `ps` for every pane at once, and only when a pane has a live shell.
+    private func startRecordingCommands() {
+        guard recordTask == nil, repoStore != nil else { return }
+        recordTask = Task { [weak self] in
+            var ticks = 0
+            while !Task.isCancelled {
+                await self?.refreshAgentActivity()
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                ticks += 1
+                if ticks == 15 {
+                    await self?.recordCommands()
+                    ticks = 0
+                }
+            }
+        }
+    }
+
+    /// One pass of the recorder, also run on the way out so a deliberate quit records the truth
+    /// rather than whatever the last poll happened to catch.
+    func recordCommands() async {
+        guard let store = repoStore else { return }
+        await recall.record(panes: livePanes(), persistence: persistence, store: store)
+    }
+
+    /// The panes with a shell alive in them right now. A pane whose shell has ended is running
+    /// nothing by definition, and its pid may have been handed out to somebody else since.
+    private func livePanes() -> [TerminalCommandRecall.Pane] {
+        terminals.compactMap { pane, view in
+            guard view.process?.running == true, !view.hasExited,
+                  let pid = view.process?.shellPid, pid > 0 else { return nil }
+            return TerminalCommandRecall.Pane(
+                pane: pane, shell: pid, session: paneSession[pane]
+            )
+        }
+    }
+
+    /// Which panes still have a shell waiting for them, or nil when tmux could not be asked.
+    ///
+    /// Separate from `useStore` because it must NOT start the launch sweep. The sweep kills every
+    /// session no tab names, and the one caller of this is the migration that decides which of the
+    /// bottom panel's tabs are worth carrying into the centre column: until it has run, no tab
+    /// names any of them, and a sweep in front of it would kill exactly the shells it is trying to
+    /// save. Bootstrap asks this, migrates, and only then hands the store over.
+    func liveSessions(store: Store?) async -> [String]? {
+        if repoStore == nil { repoStore = store }
+        ensurePersistence()
+        guard let persistence else { return [] }
+        return await persistence.sessions()
+    }
+
+    /// Built on demand rather than at init, because archiving a workspace has to be able to kill its
+    /// sessions on a launch where no terminal panel was ever opened and no store was handed over.
+    private func ensurePersistence() {
+        guard persistence == nil, let path = repoStore?.path ?? (try? Store.defaultPath()) else {
+            return
+        }
+        persistence = TerminalPersistence(databasePath: path)
+    }
+
+    /// The launch sweep, run once, the first time anything hands over a store.
+    ///
+    /// It is deliberately not on the critical path of drawing a terminal: a pane that starts before
+    /// the sweep finishes is attaching to its own session by name, which the sweep will have found
+    /// reachable and left alone.
+    private func sweepOrphanedSessions() {
+        // The store is part of the guard rather than of the task: without it there is no way to
+        // know which panes are live, and marking the sweep done would mean it never ran at all.
+        guard !didSweepOrphans, repoStore != nil, let persistence, persistence.isAvailable else {
+            return
+        }
+        didSweepOrphans = true
+
+        Task { [weak self] in
+            await persistence.refresh()
+            guard let self, let store = self.repoStore,
+                  let workspaces = try? await store.workspaces() else { return }
+
+            // Every pane Swarm can still reach: each terminal tab of each workspace still in the
+            // database, expanded through the split layout that tab was last left in.
+            //
+            // Asked of `TerminalPaneCensus` rather than walked here, and that is the whole point
+            // of that type. This enumeration is the difference between a dev server that survives
+            // a quit and one killed by a launch nobody asked anything of, and 2e3d6e3 is the note
+            // saying a migration that changes it takes running shells with it. A test can hold the
+            // census still either side of a migration; it could not hold these two lines still,
+            // so what it was covering was a faithful re-implementation rather than the real path.
+            //
+            // Where the two can differ the census names MORE panes: it decodes its own two field
+            // record per tab where `CenterTabStore` decodes the whole array and returns nothing at
+            // all if any element fails. Naming more panes only ever spares a shell.
+            //
+            // Two answers rather than one set, and the second is the one that matters: a workspace
+            // whose stored tabs are there and will not decode is reported as doubtful rather than
+            // as having no panes, and the sweep leaves its sessions alone. A decode failure used
+            // to read as "nothing is reachable here", which is the killing answer.
+            let census = TerminalPaneCensus.census(
+                of: workspaces.map(\.id), in: UserDefaults.standard
+            )
+            await persistence.sweepOrphans(livePaneIDs: census.panes, doubtful: census.doubtful)
+        }
+    }
+
+    // MARK: - Teardown
+
+    /// Called when a workspace goes away for good. Nothing calls this on a plain tab switch, which
+    /// is the entire point of this class.
+    ///
+    /// Awaitable because archiving deletes the worktree straight after. A shell whose cwd has just
+    /// been removed, or a dev server still holding its port, is exactly what should not outlive the
+    /// workspace it belonged to.
+    ///
+    /// Every tmux session of this workspace goes first and unconditionally, whatever the persistence
+    /// setting says and whether or not this launch ever drew the pane that owns it. A shell sitting
+    /// in a worktree that is being deleted is the hazard, and the setting has nothing to say about
+    /// it. The sessions are matched by name, so this holds even for a tab that was never loaded.
+    func discard(workspaceID: WorkspaceID) async {
+        ensurePersistence()
+
+        let tabs = CenterTabStore.shared.terminalTabIDs(for: workspaceID)
+        let swarmKeys = swarmAgentOwners.compactMap { key, owner in
+            owner == workspaceID ? key : nil
+        }
+        var views = swarmKeys.compactMap { swarmAgentTerminals.removeValue(forKey: $0) }
+        for key in swarmKeys {
+            swarmAgentOwners[key] = nil
+            swarmAgentAttachments[key] = nil
+        }
+
+        // Every shell of this workspace is told first that Swarm is the one ending it, because the
+        // kill below reaches them without this app signalling anything: a tmux client whose server
+        // destroys its session exits cleanly, and a clean exit is what closes a pane. Without this
+        // a workspace being archived would spend the await closing its own tabs, and the strip
+        // would open a replacement terminal for a worktree that is about to be deleted.
+        for tab in tabs {
+            for pane in TerminalSplitStore.shared.panes(of: tab) {
+                terminals[pane]?.willStop()
+            }
+        }
+
+        await persistence?.killEverything(workspaceID: workspaceID)
+
+        for tab in tabs {
+            // Every pane of the tab, which for a tab nobody split is the tab's own shell.
+            let panes = TerminalSplitStore.shared.panes(of: tab)
+            for pane in panes {
+                if let view = terminals[pane] { views.append(view) }
+                terminals[pane] = nil
+                paneOwner[pane] = nil
+                paneSession[pane] = nil
+            }
+            recall.forget(panes: panes, store: repoStore)
+            activity.forget(panes: panes)
+            TerminalSplitStore.shared.discard(ownerID: tab)
+        }
+
+        await stop(views)
+    }
+
+    /// The quit path: every shell this launch started, whichever workspace it belongs to. macOS
+    /// does not kill a process's children, so anything still alive here gets reparented to launchd
+    /// and keeps its ports for the rest of the day.
+    ///
+    /// No tmux session is killed here, and that is the feature. A tmux-backed pane's pty child is a
+    /// *client*, and the server is daemonised into its own session, so signalling the client's
+    /// process group detaches rather than terminates. The shell and everything the user started in
+    /// it stay alive for the next launch to pick back up.
+    func shutdownAll() async {
+        // Before anything is signalled, because this is the last moment the machine can still be
+        // asked what these shells are running. Afterwards there is nothing left to read.
+        recordTask?.cancel()
+        recordTask = nil
+        activity.stop()
+        await recordCommands()
+
+        let views = Array(terminals.values) + Array(swarmAgentTerminals.values)
+        terminals.removeAll()
+        swarmAgentTerminals.removeAll()
+        swarmAgentOwners.removeAll()
+        swarmAgentAttachments.removeAll()
+        paneOwner.removeAll()
+        paneSession.removeAll()
+        pendingCommands.removeAll()
+        await stop(views)
+    }
+
+    /// A hangup to every process group, a bounded wait, then SIGKILL to whatever is left.
+    private func stop(_ views: [SwarmTerminalView]) async {
+        // Only shells that are still running get signalled. A shell the user exited long ago has had
+        // its pid reaped, and macOS hands pids out again, so signalling that number now could land
+        // on somebody else's process group.
+        let live = views.filter { $0.process?.running == true }
+        guard !live.isEmpty else { return }
+
+        for view in live {
+            // Before the signal, for the reason spelled out in `closePane`.
+            view.willStop()
+            hangUp(on: view)
+            view.shutdown()
+        }
+
+        // A moment for the signal to be taken. A shell goes immediately, a dev server started in
+        // one usually wants to close its listeners first.
+        try? await Task.sleep(for: .milliseconds(250))
+
+        // Anything that sat through SIGTERM is out of chances. Their pids are still safe to name:
+        // `terminate()` stops the app from reaping them, so nothing has reused the number in the
+        // meantime.
+        for view in live { signal(SIGKILL, toGroupOf: view) }
+    }
+
+    /// Signals the shell's whole process group rather than the shell alone. A pty child is a
+    /// session leader, so its group holds everything the user started by hand in that terminal, and
+    /// those are the processes that survive a quit and keep a port bound.
+    private func signal(_ number: Int32, toGroupOf view: SwarmTerminalView) {
+        let pid = view.process?.shellPid ?? 0
+        guard pid > 0 else { return }
+        killpg(pid, number)
+    }
+
+}

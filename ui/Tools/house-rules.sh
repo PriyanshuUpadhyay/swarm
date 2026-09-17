@@ -3,13 +3,13 @@
 #
 #   ./Tools/house-rules.sh
 #
-# Ten rules, and every one of them is here because it has already been broken:
+# Eleven rules, and every one of them is here because it has already been broken:
 #
 #   1. No em dashes and no en dashes. Anywhere. They arrive by the hundred from
 #      anything that writes prose for you, and once one is in a file the next
 #      writer copies the house style it thinks it sees.
-#   2. The app is Swarm. It was called Baton before the upstream Bloom rename,
-#      and that old name still turns up in new text written from stale memory.
+#   2. The app is Swarm. Its earlier Baton name still turns up in new text
+#      written from stale memory.
 #   3. British spelling. The tree is already at 69 greys to 1 gray and 74
 #      cancelleds to 1 canceled, so this is about keeping it that way.
 #   4. Only the app target imports a UI framework. CLAUDE.md has said so since
@@ -33,6 +33,7 @@
 #  10. No subprocess is rooted at the home directory. Four were, three of them as
 #      a default argument nobody read, and macOS blames Swarm for whatever the
 #      child then touches; see the rule itself.
+#  11. The replaced app name cannot return in a tracked file or path.
 #
 # Exit status is 1 if anything was found, and every finding is printed with the
 # file and line so it can be opened. The word lists are deliberately narrow:
@@ -42,7 +43,7 @@
 # **Every search here passes `--untracked`, and that is load bearing.** Six of the
 # eight rules that existed then did not, and a plain `git grep` sees only what is
 # tracked, so a brand new file was invisible to all six until somebody staged it.
-# One decoy file inside `Sources/BloomCore` carrying a violation of each raised
+# One decoy file inside `Sources/SwarmCore` carrying a violation of each raised
 # one finding untracked and six the moment it was added, on identical bytes. That
 # is worst exactly where it matters: rules 4, 5 and 6 say in their own comments
 # that the compiler holds everything EXCEPT a new file inside the core, and a new
@@ -92,15 +93,13 @@ baton_allowed=(
   '*PROTOCOL.md'                                    # quotes a recorded session
   '*build.sh'                                       # BATON_CODESIGN_IDENTITY, kept working on purpose
   '*fixtures/'                                      # recorded sessions, byte for byte
-  'Sources/BloomCore/Persistence/LegacyDatabase.swift'          # reads the old app's database
-  'Sources/BloomCore/Persistence/LegacyDefaults.swift'          # reads the old app's preferences
-  'Sources/BloomCore/Workspace/WorkspaceManager.swift'        # a comment about the old worktree home
-  'Tests/BloomCoreTests/AgentEventTests.swift'      # sample paths and recorded payloads
-  'Tests/BloomCoreTests/FilePathGuessTests.swift'   # sample paths
-  'Tests/BloomCoreTests/HomeListTests.swift'        # a sample repository name
-  'Tests/BloomCoreTests/LegacyMigrationTests.swift' # tests the migration off the old name
-  'Tests/BloomCoreTests/RepositoryStartPlanTests.swift' # sample folder names
-  'Tools/icon/lib9.py'                              # a sample path
+  'Sources/SwarmCore/Persistence/LegacyDatabase.swift'          # reads the old app's database
+  'Sources/SwarmCore/Persistence/LegacyDefaults.swift'          # reads the old app's preferences
+  'Tests/SwarmCoreTests/AgentEventTests.swift'      # sample paths and recorded payloads
+  'Tests/SwarmCoreTests/FilePathGuessTests.swift'   # sample paths
+  'Tests/SwarmCoreTests/HomeListTests.swift'        # a sample repository name
+  'Tests/SwarmCoreTests/LegacyMigrationTests.swift' # tests the migration off the old name
+  'Tests/SwarmCoreTests/RepositoryStartPlanTests.swift' # sample folder names
 )
 for file in $(git grep --untracked -l -I -i baton -- ':!.claude' ':!Tools/house-rules.sh' || true); do
   allowed=0
@@ -124,10 +123,10 @@ for prefix in "${baton_allowed[@]}"; do
 done
 
 echo "==> only the app target imports a UI framework"
-# The split only means anything while it holds. Everything in BloomCore is
-# reachable by the test target and everything in Sources/Bloom is not, so a
+# The split only means anything while it holds. Everything in SwarmCore is
+# reachable by the test target and everything in Sources/Swarm is not, so a
 # decision that drifts into a view is a decision nothing can test. One import is
-# how that starts. `bloom-bridge` is scanned for the same reason and one more: it
+# how that starts. `swarm-bridge` is scanned for the same reason and one more: it
 # is a stdio relay a CLI launches as a child process, and it has no user
 # interface to put a window in.
 #
@@ -145,9 +144,9 @@ echo "==> only the app target imports a UI framework"
 # of either from the core or the bridge is a link error rather than a lint
 # finding, and a rule that can never fire is a rule that gets believed in.
 ui_import='(^|[^A-Za-z0-9_])import[[:space:]]+([a-z]+[[:space:]]+)?(SwiftUI|AppKit|Cocoa)([^A-Za-z0-9_]|$)'
-if hits="$(git grep --untracked -n -I -E "$ui_import" -- 'Sources/BloomCore/*' 'Sources/bloom-bridge/*' || true)" && [ -n "$hits" ]; then
+if hits="$(git grep --untracked -n -I -E "$ui_import" -- 'Sources/SwarmCore/*' 'Sources/swarm-bridge/*' || true)" && [ -n "$hits" ]; then
   echo "$hits" | show
-  report "A target that is not Sources/Bloom imports a UI framework. Move the view part into Sources/Bloom and leave the decision behind, where the suite can reach it."
+  report "A target that is not Sources/Swarm imports a UI framework. Move the view part into Sources/Swarm and leave the decision behind, where the suite can reach it."
 fi
 
 echo "==> one way to start a workspace"
@@ -161,7 +160,7 @@ echo "==> one way to start a workspace"
 # read the database every 400ms for a minute hoping to recognise its own row.
 #
 # The compiler holds most of this line, because `createWorkspace` is internal to
-# BloomCore and the app target cannot call it at all. What is left is a new file
+# SwarmCore and the app target cannot call it at all. What is left is a new file
 # inside the core, which the compiler would allow and which is exactly how the
 # next half-copy would start.
 #
@@ -185,10 +184,10 @@ echo "==> one way to start a workspace"
 # `@testable`, and a test that wants a worktree and nothing else is not a route
 # into the app.
 create_workspace_allowed=(
-  'Sources/BloomCore/Workspace/WorkspaceManager.swift' # declares it
-  'Sources/BloomCore/Workspace/WorkspaceStart.swift'   # the one caller: `start`
+  'Sources/SwarmCore/Workspace/WorkspaceManager.swift' # declares it
+  'Sources/SwarmCore/Workspace/WorkspaceStart.swift'   # the one caller: `start`
 )
-for file in $(git grep --untracked -l -I -e 'createWorkspace(' -- 'Sources/BloomCore/*' || true); do
+for file in $(git grep --untracked -l -I -e 'createWorkspace(' -- 'Sources/SwarmCore/*' || true); do
   allowed=0
   for path in "${create_workspace_allowed[@]}"; do
     [ "$file" = "$path" ] && allowed=1
@@ -211,7 +210,7 @@ echo "==> a state moves through its lifecycle"
 # `SetupLifecycle`, `SessionLifecycle`, `WorkspaceLifecycle`.
 #
 # The compiler holds most of this line. All three are `public internal(set)`, so
-# nothing in `Sources/Bloom` can assign one at all, however it reaches the value:
+# nothing in `Sources/Swarm` can assign one at all, however it reaches the value:
 # through `Store.update`'s closure, through a copy of a row, anywhere. Nor can it
 # go round the property and fabricate the value instead: the initialisers that
 # name those columns are internal as well, so the one-line version of this (build
@@ -238,10 +237,10 @@ echo "==> a state moves through its lifecycle"
 # see. If one of them ever starts naming a case, that is worth reading before it
 # is worth allowing.
 state_move_allowed=(
-  'Sources/BloomCore/Workspace/WorkspaceLifecycle.swift' # archive() and restore(), which name both
+  'Sources/SwarmCore/Workspace/WorkspaceLifecycle.swift' # archive() and restore(), which name both
 )
 state_move='(^|[^A-Za-z0-9_])(state|setupState) *= *\.(active|archived|pending|running|succeeded|failed|skipped|idle|waiting|cancelled)([^A-Za-z0-9_]|$)'
-for file in $(git grep --untracked -l -I -E "$state_move" -- 'Sources/BloomCore/*' || true); do
+for file in $(git grep --untracked -l -I -E "$state_move" -- 'Sources/SwarmCore/*' || true); do
   allowed=0
   for path in "${state_move_allowed[@]}"; do
     [ "$file" = "$path" ] && allowed=1
@@ -259,10 +258,10 @@ for path in "${state_move_allowed[@]}"; do
 done
 
 echo "==> an id has a type"
-# Every id in Bloom used to be a bare `String`, so `store.update(workspaceID:
+# Every id in Swarm used to be a bare `String`, so `store.update(workspaceID:
 # session.id)` compiled, ran, and updated no row at all. There is no crash and
 # no log line for that, just a workspace that did not archive. The typed ids in
-# Sources/BloomCore/Model/Identifier.swift are what stopped it, eight of them as
+# Sources/SwarmCore/Model/Identifier.swift are what stopped it, eight of them as
 # this is written, and the compiler holds the line everywhere they are used.
 # They are not listed here on purpose: a list that reads as complete and is not
 # is what makes the next reader think their new id is already covered.
@@ -279,27 +278,27 @@ echo "==> an id has a type"
 # in the lists below and do not need to be.
 #
 # Two vocabularies are exempt wholesale, and both for the same reason: they are
-# not Bloom's words. `AgentEvent` is Claude Code's stream-json and `CodexEvent`
+# not Swarm's words. `AgentEvent` is Claude Code's stream-json and `CodexEvent`
 # is the Codex app-server protocol, and every id in them (`uuid`, `toolUseID`,
-# `threadID`, the CLI's own `sessionID`) is an opaque token Bloom receives,
+# `threadID`, the CLI's own `sessionID`) is an opaque token Swarm receives,
 # stores and hands back without ever looking inside. Typing those would mean a
 # wrapper at every parse site and would buy nothing, because there is no second
 # kind of thread id to confuse one with.
 id_type_allowed_files=(
-  'Sources/BloomCore/Agent/AgentQuestion.swift' # Codex's opaque question answer id, not a Bloom row
-  'Sources/BloomCore/Agent/AgentEvent.swift'   # Claude Code's stream-json, as measured
-  'Sources/BloomCore/Agent/Codex/CodexEvent.swift'   # the Codex app-server protocol
-  'Sources/BloomCore/Agent/Codex/CodexTurnHandle.swift' # turn ids assigned by that server
-  'Sources/BloomCore/Agent/Codex/CodexClient.swift'  # the same protocol's request envelopes
-  'Sources/BloomCore/Agent/Grok/GrokEvent.swift'     # Grok's ACP session and tool-call ids
-  'Sources/BloomCore/Agent/Grok/GrokClient.swift'    # the same protocol's request envelopes
-  'Sources/BloomCore/Agent/Grok/GrokRunner.swift'    # Grok session ids assigned by that server
-  'Sources/BloomCore/Agent/AgentRetry.swift'   # the same stream-json, one line of it
+  'Sources/SwarmCore/Agent/AgentQuestion.swift' # Codex's opaque question answer id, not a Swarm row
+  'Sources/SwarmCore/Agent/AgentEvent.swift'   # Claude Code's stream-json, as measured
+  'Sources/SwarmCore/Agent/Codex/CodexEvent.swift'   # the Codex app-server protocol
+  'Sources/SwarmCore/Agent/Codex/CodexTurnHandle.swift' # turn ids assigned by that server
+  'Sources/SwarmCore/Agent/Codex/CodexClient.swift'  # the same protocol's request envelopes
+  'Sources/SwarmCore/Agent/Grok/GrokEvent.swift'     # Grok's ACP session and tool-call ids
+  'Sources/SwarmCore/Agent/Grok/GrokClient.swift'    # the same protocol's request envelopes
+  'Sources/SwarmCore/Agent/Grok/GrokRunner.swift'    # Grok session ids assigned by that server
+  'Sources/SwarmCore/Agent/AgentRetry.swift'   # the same stream-json, one line of it
 )
-# Names that are never a Bloom row, wherever they appear. This list should only
+# Names that are never a Swarm row, wherever they appear. This list should only
 # ever get shorter. A name not on it is a new mistake.
 id_type_allowed_names=(
-  agentSessionID    # the CLI's session, not Bloom's. Different value, different lifetime
+  agentSessionID    # the CLI's session, not Swarm's. Different value, different lifetime
   spawnToolUseID    # a tool_use id out of a payload
   toolUseID         # the same
   parentToolUseID   # the same
@@ -312,35 +311,35 @@ id_type_allowed_names=(
   itemID            # Codex's item
   clientID          # Codex's client
   processID         # a pid, as text
-  bundleID          # macOS, not Bloom
+  bundleID          # macOS, not Swarm
   ownerID           # a split pane, which is the layout's namespace and not a row
 )
 # The remaining stored `String` ids, each one a deliberate decision. This list
 # should only ever get shorter.
 id_type_allowed_lines=(
-  'Sources/BloomCore/Presentation/CodeScheme.swift'              # a portable colour scheme key
-  'Sources/BloomCore/Presentation/TerminalScheme.swift'          # a portable colour scheme key
-  'Sources/BloomCore/Presentation/ColourTheme.swift'             # a theme definition key, not a database row
-  'Sources/BloomCore/Presentation/HomeList.swift'                  # a date bucket key, not a row
-  'Sources/BloomCore/Presentation/ChatFontCatalogue.swift'          # a font family, which macOS names
-  'Sources/BloomCore/Persistence/Settings.swift'                  # a run script named in settings
-  'Sources/BloomCore/Agent/Codex/CodexModelCatalog.swift'         # a model name the CLI offers
-  'Sources/BloomCore/Agent/Grok/GrokModelCatalog.swift'           # a model name the CLI offers
-  'Sources/BloomCore/Agent/AgentModel.swift'                      # model and effort names the CLIs offer
-  'Sources/BloomCore/System/EditorCatalog.swift'             # an application, by bundle id
-  'Sources/Bloom/Views/Center/Composer/ComposerOption.swift'   # a picker entry, "opus" and friends
-  'Sources/Bloom/Views/Center/Panes/CenterTab.swift'       # a tab: a terminal row, a browser or the review pane
-  'Sources/BloomCore/System/TerminalPaneCensus.swift'        # the same tab id, read back off the same bytes
-  'Sources/Bloom/Views/Center/Attachments/PromptAttachment.swift' # a draft key, which has no session yet
-  'Sources/Bloom/State/TranscriptModel.swift'         # payload ids, read straight off an event
-  'Sources/BloomCore/GitHub/CheckFailureHandoff.swift'       # a GitHub Actions run and job, read out of a URL gh gave us
-  'Sources/BloomCore/Presentation/SearchPanelListing.swift'  # a section heading key, not a row
+  'Sources/SwarmCore/Presentation/CodeScheme.swift'              # a portable colour scheme key
+  'Sources/SwarmCore/Presentation/TerminalScheme.swift'          # a portable colour scheme key
+  'Sources/SwarmCore/Presentation/ColourTheme.swift'             # a theme definition key, not a database row
+  'Sources/SwarmCore/Presentation/HomeList.swift'                  # a date bucket key, not a row
+  'Sources/SwarmCore/Presentation/ChatFontCatalogue.swift'          # a font family, which macOS names
+  'Sources/SwarmCore/Persistence/Settings.swift'                  # a run script named in settings
+  'Sources/SwarmCore/Agent/Codex/CodexModelCatalog.swift'         # a model name the CLI offers
+  'Sources/SwarmCore/Agent/Grok/GrokModelCatalog.swift'           # a model name the CLI offers
+  'Sources/SwarmCore/Agent/AgentModel.swift'                      # model and effort names the CLIs offer
+  'Sources/SwarmCore/System/EditorCatalog.swift'             # an application, by bundle id
+  'Sources/Swarm/Views/Center/Composer/ComposerOption.swift'   # a picker entry, "opus" and friends
+  'Sources/Swarm/Views/Center/Panes/CenterTab.swift'       # a tab: a terminal row, a browser or the review pane
+  'Sources/SwarmCore/System/TerminalPaneCensus.swift'        # the same tab id, read back off the same bytes
+  'Sources/Swarm/Views/Center/Attachments/PromptAttachment.swift' # a draft key, which has no session yet
+  'Sources/Swarm/State/TranscriptModel.swift'         # payload ids, read straight off an event
+  'Sources/SwarmCore/GitHub/CheckFailureHandoff.swift'       # a GitHub Actions run and job, read out of a URL gh gave us
+  'Sources/SwarmCore/Presentation/SearchPanelListing.swift'  # a section heading key, not a row
 )
-# External tokens carried beside typed Bloom ids. Limit each exemption to its
+# External tokens carried beside typed Swarm ids. Limit each exemption to its
 # property so adding another bare internal id in the same file still fails.
 id_type_allowed_properties=(
-  'Sources/BloomCore/Agent/Delivery.swift:providerTurnID'             # the provider's accepted turn, used for recovery
-  'Sources/BloomCore/Agent/PlanArtefact.swift:sourceID'               # the provider's plan item or tool-use token
+  'Sources/SwarmCore/Agent/Delivery.swift:providerTurnID'             # the provider's accepted turn, used for recovery
+  'Sources/SwarmCore/Agent/PlanArtefact.swift:sourceID'               # the provider's plan item or tool-use token
 )
 # A stored property whose name ends in ID or Ids and whose type is a bare
 # String. Trailing `{` is excluded by the `$` anchor, which is what leaves
@@ -364,7 +363,7 @@ while IFS= read -r hit; do
   done
   if [ "$allowed" -eq 0 ]; then
     echo "$hit" | show
-    report "$file declares an id as a bare String. Give it a type from Sources/BloomCore/Model/Identifier.swift, or add it to the list in $0 saying which id from outside Bloom it holds. A String id can be handed to any lookup that wants any other id, and the write that lands on no row says nothing at all."
+    report "$file declares an id as a bare String. Give it a type from Sources/SwarmCore/Model/Identifier.swift, or add it to the list in $0 saying which id from outside Swarm it holds. A String id can be handed to any lookup that wants any other id, and the write that lands on no row says nothing at all."
   fi
 done <<EOF
 $(git grep --untracked -n -I -E "$id_declaration" -- 'Sources/*' || true)
@@ -384,9 +383,9 @@ echo "==> Views do not run subprocesses"
 # are the allowed list; they are not views, they are what a view calls instead of
 # reaching for a process itself.
 subprocess_allowed_files=(
-  'Sources/Bloom/Views/Inspector/FileRevert.swift'        # a helper type, not a view
-  'Sources/Bloom/Views/Center/Panes/FileIndex.swift'      # a helper type, not a view
-  'Sources/Bloom/Views/Terminal/TerminalPersistence.swift' # a helper type, not a view
+  'Sources/Swarm/Views/Inspector/FileRevert.swift'        # a helper type, not a view
+  'Sources/Swarm/Views/Center/Panes/FileIndex.swift'      # a helper type, not a view
+  'Sources/Swarm/Views/Terminal/TerminalPersistence.swift' # a helper type, not a view
 )
 while IFS= read -r hit; do
   [ -n "$hit" ] || continue
@@ -400,7 +399,7 @@ while IFS= read -r hit; do
     report "$file runs a subprocess from the view layer. Put it on a store, a model or a helper type beside the view (FileRevert and FileIndex are the shape), or add it to the list in $0. A decision taken inside a View is a decision nothing can test, and a body that shells out is a body that runs it again on every redraw."
   fi
 done <<EOF
-$(git grep --untracked -n -I -E 'await (Git|Shell)\.' -- 'Sources/Bloom/Views/*' || true)
+$(git grep --untracked -n -I -E 'await (Git|Shell)\.' -- 'Sources/Swarm/Views/*' || true)
 EOF
 
 echo "==> a link button goes through linkButton"
@@ -412,11 +411,11 @@ echo "==> a link button goes through linkButton"
 while IFS= read -r hit; do
   [ -n "$hit" ] || continue
   file="${hit%%:*}"
-  [ "$file" = 'Sources/Bloom/Design/Theme.swift' ] && continue
+  [ "$file" = 'Sources/Swarm/Design/Theme.swift' ] && continue
   echo "$hit" | show
   report "$file uses .buttonStyle(.link), which draws system blue however it is tinted. Use .linkButton(), or .linkButton(ink) for another colour."
 done <<EOF
-$(git grep --untracked -n -I -F '.buttonStyle(.link)' -- 'Sources/Bloom/*' || true)
+$(git grep --untracked -n -I -F '.buttonStyle(.link)' -- 'Sources/Swarm/*' || true)
 EOF
 
 echo "==> a catch says something"
@@ -461,9 +460,9 @@ EOF
 echo "==> no subprocess is rooted at the home directory"
 # A child process inherits a working directory, and both agent CLIs treat theirs
 # as the project they have been pointed at. macOS attributes what a child reads
-# to the responsible application, which is Bloom, so a CLI started in `~` asks
-# for the user's own folders in Bloom's name and the user is asked about it by a
-# system prompt naming Bloom.
+# to the responsible application, which is Swarm, so a CLI started in `~` asks
+# for the user's own folders in Swarm's name and the user is asked about it by a
+# system prompt naming Swarm.
 #
 # Four sites did it, and every one of them was reachable before a project had
 # been added: both quota readers and the Codex model catalogue took
@@ -480,8 +479,20 @@ echo "==> no subprocess is rooted at the home directory"
 # is left alone.
 if hits="$(git grep --untracked -n -I -E '(cwd|directory):[^)]*(NSHomeDirectory\(\)|homeDirectoryForCurrentUser)' -- 'Sources/*' || true)" && [ -n "$hits" ]; then
   echo "$hits" | show
-  report "A subprocess rooted at the home directory. Nothing Bloom starts stands in the user's home: use AgentScratchDirectory for an ask with no workspace, or the workspace's own path."
+  report "A subprocess rooted at the home directory. Nothing Swarm starts stands in the user's home: use AgentScratchDirectory for an ask with no workspace, or the workspace's own path."
 fi
+
+echo "==> no replaced app name"
+replaced_app='b[l]oom'
+if hits="$(git grep -n -I -i -E "$replaced_app" -- ':(top)ui/*' ':(top)docs/*' ':(exclude,top)docs/decisions/*' || true)" && [ -n "$hits" ]; then
+  echo "$hits" | show
+  report "A tracked file uses the replaced app name."
+fi
+while IFS= read -r file; do
+  if [[ "$file" =~ [Bb][Ll][Oo][Oo][Mm] ]]; then
+    report "$file uses the replaced app name in its path."
+  fi
+done < <(git ls-files -- ':(top)ui/**' ':(top)docs/**' ':(exclude,top)docs/decisions/**')
 
 echo "==> British spelling"
 # Words with an American spelling that has no other job in this codebase.

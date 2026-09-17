@@ -1,0 +1,388 @@
+import AppKit
+import SwiftUI
+import SwarmCore
+
+/// The window Swarm opens the first time it is run, and the one the Help menu opens on demand.
+///
+/// The premise it is built on: the person who has just downloaded Swarm almost certainly already
+/// runs Claude Code, because that is why they went looking for an app that runs Claude Code in
+/// worktrees. So the common case is that nothing is wrong, and a window that opened onto a
+/// checklist would be interrogating somebody who passed. It is a welcome that happens to check,
+/// not a check with a welcome painted on it: the plinth, the mark and the wordmark are the About
+/// window's, which are the site's, and the four rows underneath settle into ticks in about a
+/// second and say so.
+///
+/// For the person who IS missing something it has to be the other thing, and the same window is
+/// both. What changes is only the rows: a row that needs attention opens into the sentence saying
+/// why Swarm wants the tool and the exact command that installs it, with a copy button, and the
+/// two commands that ask questions back get a real terminal inside this window rather than a
+/// sentence telling somebody to go and open Terminal. That is `GitHubSignInSheet`'s pattern, and
+/// it was right there for the same reason.
+///
+/// One instance, kept here, and `isReleasedWhenClosed` off, for the reason `AboutWindow` documents.
+@MainActor
+enum WelcomeWindow {
+    private static var window: NSWindow?
+    private static var inspection: SetupInspection?
+    private static var registration: CommandLineRegistration?
+    /// Watches the one window for its close. Kept so the observer is registered once rather than
+    /// once per open: the window is built once and `isReleasedWhenClosed` is off, so it is closed
+    /// and shown again for the life of the process.
+    private static var closeWatch: NSObjectProtocol?
+    /// Watches Swarm's main window settling while the welcome is first placed. See
+    /// `followOwnerWhileItSettles`.
+    private static var ownerWatch: [NSObjectProtocol] = []
+
+    /// The running state, handed over by `SwarmAppDelegate` once the scene exists, and used for
+    /// exactly one thing: the bridge the command line step offers to point a terminal at.
+    ///
+    /// Weak and explicit, the same bargain `RunningApp` and `SwarmServicesProvider` make. This
+    /// window is not in the app's environment, because it is an `NSWindow` of its own opened from
+    /// a menu item and from the app delegate, and reaching the model any other way would be a
+    /// second owner of the state rather than a borrower of it.
+    private static weak var app: AppModel?
+
+    static func attach(_ model: AppModel) {
+        app = model
+    }
+
+    /// Opens it, or brings the one already open forward and looks again.
+    ///
+    /// Looking again on a second visit is the point of the menu item: somebody who came back to
+    /// this window came back because they changed something.
+    /// - Parameter mayActivate: whether Swarm is allowed to pull itself in front of whatever the
+    ///   owner is doing. True for a menu item, which is somebody asking; false for the launch
+    ///   probe, which is not.
+    static func show(
+        trigger: OnboardingTrigger = .none,
+        mayActivate: Bool = true,
+        restarting: Bool = false
+    ) {
+        let existing = prepare(trigger: trigger, restarting: restarting)
+        if !existing.isVisible {
+            centre(existing)
+            followOwnerWhileItSettles(existing)
+        }
+        existing.makeKeyAndOrderFront(nil)
+        // Only when Swarm is already the front application, or when somebody asked for this
+        // window by name. `NSApp.activate()` was unconditional, and the caller behind it is an
+        // async probe whose own comment says it "can take as long as four CLIs take", so Swarm
+        // pulled itself to the front seconds after the owner had moved to another app. The window
+        // is still ordered in, so it is there when they come back.
+        if mayActivate || NSApp.isActive { NSApp.activate() }
+        inspection?.start()
+        // Asked again for the same reason the probes are: somebody who came back may have run the
+        // command in between, and a window that kept offering it would not have noticed.
+        registration?.resolve()
+    }
+
+    /// Position against Swarm's content after its main window exists. Screen centring during
+    /// construction can place a small welcome near the top of a larger, offset app window.
+    private static func centre(_ window: NSWindow) {
+        let owner = NSApp.orderedWindows.first {
+            $0 !== window && $0.isVisible && WindowRoles.target($0).role == .workspace
+        }
+        guard let screen = owner?.screen ?? window.screen ?? NSScreen.main else { return }
+        let anchor = owner.map { $0.convertToScreen($0.contentLayoutRect) } ?? screen.visibleFrame
+        window.setFrame(CentredWindowPlacement.frame(
+            size: window.frame.size, around: anchor, visible: screen.visibleFrame
+        ), display: false)
+    }
+
+    /// Centres again each time Swarm's main window moves or resizes in the first moments after
+    /// the welcome opens, and then lets go.
+    ///
+    /// A first launch opens this window from `applicationDidFinishLaunching`, which is before
+    /// SwiftUI has finished placing the main window: the one `centre` above measured a frame the
+    /// main window was about to leave, and the welcome came up low and to the right of Swarm,
+    /// running off the bottom of the display. Waiting for the main window instead would be
+    /// guessing at when SwiftUI is done, so this listens for it being done. Time boxed, so a
+    /// welcome somebody has dragged somewhere, or a main window resized a minute later, is left
+    /// where its owner put it.
+    private static func followOwnerWhileItSettles(_ window: NSWindow) {
+        ownerWatch.forEach(NotificationCenter.default.removeObserver)
+        let names: [Notification.Name] = [
+            NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.didBecomeMainNotification,
+        ]
+        ownerWatch = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                // An identity rather than the window, because a notification is not sendable into
+                // the main actor. The window itself is found again on the other side.
+                guard let moved = (note.object as? NSWindow).map(ObjectIdentifier.init) else { return }
+                MainActor.assumeIsolated {
+                    guard moved != ObjectIdentifier(window),
+                          let owner = NSApp.windows.first(where: { ObjectIdentifier($0) == moved }),
+                          WindowRoles.target(owner).role == .workspace
+                    else { return }
+                    centre(window)
+                }
+            }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            ownerWatch.forEach(NotificationCenter.default.removeObserver)
+            ownerWatch = []
+        }
+    }
+
+    /// Preparing is separate from presentation so the lifecycle can be exercised offscreen.
+    static func prepare(trigger: OnboardingTrigger, restarting: Bool = false) -> NSWindow {
+        if restarting {
+            // A retained hosting view also retains the wizard's SwiftUI state. Merely ordering
+            // it front cannot replay it. Dispose of this presentation, including an open login,
+            // without marking the wizard completed or changing the owner's saved preferences.
+            if let closeWatch { NotificationCenter.default.removeObserver(closeWatch) }
+            closeWatch = nil
+            inspection?.cancel()
+            registration?.cancel()
+            window?.close()
+            window?.contentViewController = nil
+            window = nil
+            inspection = nil
+            registration = nil
+        }
+        let existing = window ?? make(trigger: trigger)
+        window = existing
+        return existing
+    }
+
+    static func close() {
+        window?.close()
+    }
+
+    private static func make(trigger: OnboardingTrigger) -> NSWindow {
+        let model = SetupInspection(
+            rehearsal: SetupRehearsal.report,
+            agentOverrides: { await waitForAgentOverrides() }
+        )
+        inspection = model
+
+        // Read through a closure rather than captured, because the socket is bound in
+        // `AppModel.bootstrap` and a first run opens this window before that has finished. See
+        // `CommandLineRegistration.wait`. Nothing asks it here: `show` is the only caller and it
+        // asks a line later, on this open and on every later one.
+        let offer = CommandLineRegistration(source: { app?.bridge?.ownerAttachment() })
+        registration = offer
+
+        // Where the sequence opens is `OnboardingFlow.firstStep`, in the core with its tests: a
+        // first run and an explicit wizard replay are greeted. A later broken launch opens
+        // straight onto the checks so the person sees what needs attention.
+        // A controller, not a bare `NSHostingView`, and that is the whole of the sizing.
+        //
+        // This was a hosting view with `.preferredContentSize` and one `setContentSize` at the
+        // foot of this function, which is a one way ratchet: the call happens once, so the only
+        // thing that could move the window afterwards was the hosting view's minimum size growing
+        // underneath it. Opening the GitHub login grew the window from 534 points to 747 to make
+        // room for the terminal, and pressing "Back to the checks" took the terminal out and left
+        // the window at 747, with the four check rows spread down 180 points of dead space. It
+        // never came back, not on a re-probe and not on a second visit, because nothing was left
+        // that could make a window smaller. Calling `setContentSize` again on the way back would
+        // only have been a second ratchet pointing the other way, and wrong for every size change
+        // nobody had thought to name.
+        //
+        // Automatic preferred-content sizing used to make AppKit update the window from inside
+        // its own constraint pass. The welcome sequence changes height as probes settle and steps
+        // crossfade, so that feedback could re-enter the hosting view's safe-area update. The
+        // controller below measures after layout and coalesces those changes onto the next main
+        // actor turn instead.
+        let host = WelcomeHostingController(rootView: WelcomeView(
+            inspection: model,
+            registration: offer,
+            agentDefault: WelcomeAgentDefault(store: { await waitForStore() }),
+            start: OnboardingFlow.firstStep(trigger: trigger),
+            onFinish: { close() }
+        ), contentWidth: WelcomeView.contentWidth)
+        let size = host.fittingContentSize()
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        // No `.resizable`: this is a column of fixed width whose height follows its content, and a
+        // drag handle on it would only ever produce a worse version of it. `.fullSizeContentView`
+        // is what lets the plinth run up behind the title bar, the alternative being a strip of
+        // flat window background above the gradient.
+        window.isReleasedWhenClosed = false
+        window.title = "Welcome to Swarm"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.contentViewController = host
+        window.center()
+        // Closing this window is how somebody says they have seen it. See
+        // `WelcomeLaunch.recordDismissal`, which is where the reasoning is.
+        closeWatch = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                WelcomeLaunch.recordDismissal(verdict: inspection?.truth.verdict)
+            }
+        }
+        // Cmd+W and not Escape, unlike the About window it borrows its plinth from. The GitHub
+        // step puts a real terminal in here, and Escape in a terminal is a key the program on the
+        // other end is waiting for. See `WindowRoles`.
+        WindowRoles.mark(window, as: .utility)
+        return window
+    }
+
+    /// The database, once bootstrap has opened it, for the same first-launch race
+    /// `waitForAgentOverrides` describes.
+    fileprivate static func waitForStore(timeout: Duration = .seconds(3)) async -> Store? {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if let store = app?.store { return store }
+            try? await Task.sleep(for: .milliseconds(150))
+            if Task.isCancelled { return nil }
+        }
+        return app?.store
+    }
+
+    /// Wait briefly for bootstrap to open the database, then read the paths the Agents pane wrote.
+    ///
+    /// A first run opens this window from `applicationDidFinishLaunching` while `AppModel.bootstrap`
+    /// is still opening the store from the scene's task. Reading once would reproduce the old
+    /// UserDefaults bug in another form: the custom path would work on a later visit and not on the
+    /// launch where it matters.
+    fileprivate static func waitForAgentOverrides(
+        timeout: Duration = .seconds(3)
+    ) async -> [AgentKind: String] {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if let store = app?.store {
+                return await AgentCatalog.executablePathOverrides(in: store)
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+            if Task.isCancelled { return [:] }
+        }
+        return await AgentCatalog.executablePathOverrides(in: app?.store)
+    }
+}
+
+// MARK: - Whether it opens on its own
+
+/// The launch decision, and the one flag behind it.
+///
+/// The rule itself is `OnboardingGate` in the core, with tests. This is the half that cannot be
+/// tested because it is `UserDefaults` and a window: read the flag, and on a machine that has been
+/// here before, probe quietly and open nothing unless the machine has actually stopped working.
+@MainActor
+enum WelcomeLaunch {
+    /// Opens the window if this launch is one that should see it.
+    ///
+    /// A first launch opens it immediately, before any probe has finished, because the settling is
+    /// the thing worth seeing and a window that waited for its own checks would open onto the
+    /// answer. Every later launch waits for the verdict and stays shut unless it is `.blocked`.
+    static func presentIfNeeded() {
+        let completed = UserDefaults.standard.bool(forKey: OnboardingGate.completedKey)
+        if OnboardingGate.trigger(hasCompletedBefore: completed, verdict: nil) == .firstRun {
+            // A first launch is the one case that may take focus: the app has just been opened
+            // and this window is what it opened to.
+            WelcomeWindow.show(trigger: .firstRun)
+            return
+        }
+
+        Task {
+            // Nothing is drawn for this, so it can take as long as four CLIs take. If the machine
+            // is fine, which it nearly always is, the user never learns this happened.
+            let overrides = await WelcomeWindow.waitForAgentOverrides()
+            let report = await SetupProbe(agentOverrides: overrides).report()
+            guard OnboardingGate.trigger(hasCompletedBefore: true, verdict: report.verdict) == .blocked
+            else { return }
+            WelcomeWindow.show(trigger: .blocked, mayActivate: false)
+        }
+    }
+
+    /// Remembered when somebody presses the primary button on the last screen.
+    static func recordCompletion() {
+        UserDefaults.standard.set(true, forKey: OnboardingGate.completedKey)
+    }
+
+    /// Remembered when somebody simply closes the window, which is the report this exists for:
+    /// "I don't want this popup to pop out every time I open Swarm."
+    ///
+    /// The flag used to be written by `recordCompletion` alone, and that is only reached by
+    /// walking every screen to the end of the sequence. Anybody who read the checks, saw that
+    /// their Mac was all set and shut the window had written nothing, so the next launch was a
+    /// first run again, and the one after that. The rule for whether a close counts is
+    /// `OnboardingGate.completesOnDismissal`, in the core with its tests, and it is where the
+    /// argument for a blocked machine still being met tomorrow is written down.
+    ///
+    /// Help, Welcome is untouched by any of this: that menu item opens the window by name and
+    /// never asks the flag.
+    static func recordDismissal(verdict: SetupVerdict?) {
+        guard OnboardingGate.completesOnDismissal(verdict: verdict) else { return }
+        recordCompletion()
+    }
+}
+
+// MARK: - Rehearsal
+
+/// A report handed to the window instead of one gathered from this Mac. Debug builds only.
+///
+/// The missing-tool states cannot be looked at on a machine that has every tool, and the only
+/// other ways to see them are to uninstall something or to point the agent overrides at a path
+/// that does not exist, which covers two of the four rows and none of the GitHub ones. So the
+/// detection INPUT can be supplied on the command line:
+///
+///     Swarm --setup-rehearsal signed-out-github
+///
+/// Debug only, and deliberately, for the reason `--running` is: this makes the
+/// window say something about the machine that is not true, and a shipped copy has no business
+/// being able to say that.
+enum SetupRehearsal {
+    static var report: SetupReport? {
+        #if DEBUG
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--setup-rehearsal"), index + 1 < arguments.count
+        else { return nil }
+        return named(arguments[index + 1])
+        #else
+        return nil
+        #endif
+    }
+
+    #if DEBUG
+    private static func named(_ name: String) -> SetupReport? {
+        switch name {
+        case "all-clear":
+            return make()
+        case "signed-out-github":
+            return make(gitHub: .needsSignIn(detail: nil))
+        case "no-github":
+            return make(gitHub: .missing)
+        case "no-codex":
+            return make(codex: .missing)
+        case "signed-out-claude":
+            return make(claude: .needsSignIn(detail: "2.1.234"), codex: .missing)
+        case "no-agent":
+            return make(claude: .missing, codex: .missing, gitHub: .missing)
+        case "no-git":
+            return make(git: .missing)
+        default:
+            return nil
+        }
+    }
+
+    private static func make(
+        git: SetupOutcome = .ready(detail: "2.51.0"),
+        claude: SetupOutcome = .ready(detail: "you@example.com"),
+        codex: SetupOutcome = .ready(detail: "you@example.com"),
+        grok: SetupOutcome = .missing,
+        gitHub: SetupOutcome = .ready(detail: "Signed in")
+    ) -> SetupReport {
+        // Every row the probe has, Grok included. It was written before Grok joined, and a row
+        // the rehearsal did not name stayed pending, so no rehearsal ever settled.
+        SetupReport(checks: [
+            SetupCheck(tool: .git, outcome: git),
+            SetupCheck(tool: .claudeCode, outcome: claude),
+            SetupCheck(tool: .codex, outcome: codex),
+            SetupCheck(tool: .grok, outcome: grok),
+            SetupCheck(tool: .gitHub, outcome: gitHub),
+        ])
+    }
+    #endif
+}

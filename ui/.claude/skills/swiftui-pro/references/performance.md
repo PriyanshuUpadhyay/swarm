@@ -12,7 +12,7 @@ to a fixed performance checklist.
 - Avoid type erasure in hot paths when generics or a builder suffice, but require a concrete
   benefit before changing intentional `AnyView` boundaries.
 - Choose lazy containers for large collections when they fit the required sizing and scrolling
-  behaviour. Do not override Bloom's measured transcript layout without checking its constraints.
+  behaviour. Do not override Swarm's measured transcript layout without checking its constraints.
 - Prefer format styles for display where possible. Cache expensive formatters only when needed.
 - Keep derived collections cheap, or cache with explicit invalidation. Repeated filtering in
   `ForEach` can be costly; copying it into `@State` without synchronisation produces stale UI.

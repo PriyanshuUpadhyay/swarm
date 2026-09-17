@@ -1,7 +1,7 @@
 # Swift 6.2 isolation settings
 
 Check the target configuration and compiler invocation, not just the toolchain version.
-Bloom's `Package.swift` sets Swift 6 language mode but currently enables neither of these options:
+Swarm's `Package.swift` sets Swift 6 language mode but currently enables neither of these options:
 
 - `.defaultIsolation(MainActor.self)` makes eligible declarations main-actor isolated by default.
 - `.enableUpcomingFeature("NonisolatedNonsendingByDefault")` makes nonisolated async functions

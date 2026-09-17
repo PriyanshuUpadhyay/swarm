@@ -1,17 +1,17 @@
 ---
 name: swift-testing-pro
-description: Write and review BloomCoreTests using Swift Testing, including async behaviour, isolated fixtures and regression tests.
+description: Write and review SwarmCoreTests using Swift Testing, including async behaviour, isolated fixtures and regression tests.
 license: MIT
 metadata:
   author: Paul Hudson
-  version: "1.0-bloom.1"
-  adapted-for: Bloom
+  version: "1.0-swarm.1"
+  adapted-for: Swarm
 ---
 
-# Swift Testing in Bloom
+# Swift Testing in Swarm
 
-Use Swift Testing for new core tests and follow neighbouring suites in `Tests/BloomCoreTests`.
-The target imports `BloomCore`, not the app. Test presentation decisions in the core; use XCTest
+Use Swift Testing for new core tests and follow neighbouring suites in `Tests/SwarmCoreTests`.
+The target imports `SwarmCore`, not the app. Test presentation decisions in the core; use XCTest
 for UI automation if that is requested. Do not migrate unrelated XCTest tests during a review.
 
 Run `./Tools/test-core.sh <filter>` for the affected suites. `make test` runs the whole core suite

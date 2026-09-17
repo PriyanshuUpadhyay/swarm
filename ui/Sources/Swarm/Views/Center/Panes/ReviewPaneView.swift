@@ -1,0 +1,216 @@
+import SwiftUI
+import SwarmCore
+
+/// The review, filling one pane with either a selected file or all changed files.
+///
+/// This is where reading a change belongs. It used to happen in a two hundred point drawer under
+/// the inspector's file list, where a diff got about eight lines and editing a file got the same,
+/// and the list it was under had to shrink to make room for it. In the centre both stop being a
+/// trade: the list keeps the whole inspector, the file keeps the whole column, and the split
+/// (Cmd+\) puts the conversation beside the diff instead of above it.
+///
+/// The shared review offers a choice between one file and all files. In all-files mode,
+/// layout controls live above the review and each file keeps a compact, collapsible header.
+struct ReviewPaneView: View {
+    @Bindable var model: WorkspaceModel
+    var tab: CenterTab
+    /// What every pane of the tab this one is in is showing, this pane included, which is the one
+    /// fact the composer below turns on. See `ReviewComposer`.
+    var siblings: [PaneContent] = []
+
+    /// The changed file this review is pointed at, if the agent did touch it. Nil is not a
+    /// failure: the worktree tree opens files nobody changed, and a file can stop being changed
+    /// underneath the reader when the agent reverts it.
+    private var changed: ChangedFile? {
+        model.selectedChangedFile(path: tab.path)
+    }
+
+    /// Whether the file is still on disk. Resolved when the path or the changes poll moves, and
+    /// never from `body`: this was a computed property calling `FileManager.fileExists`, and
+    /// `body` runs on every frame of a window resize because `.onGeometryChange` writes
+    /// `paneHeight` as the pane grows. That is a `stat` per frame, on the main thread, for the
+    /// whole of a drag.
+    ///
+    /// Nil until the first answer arrives, and read as "assume it is there", so opening a file
+    /// draws it on the frame it was clicked rather than flashing the sentence that says it is
+    /// gone. A file that really has gone says so a frame later.
+    @State private var exists: Bool?
+
+    private var isPresent: Bool { exists ?? true }
+
+    private struct ExistsID: Hashable {
+        var path: String
+        var generation: Int
+    }
+
+    /// How tall the whole pane is, which caps how far the composer's divider can be dragged.
+    ///
+    /// In the composer's own object rather than in this view's state, and quantised on the way in,
+    /// for the reason `ComposerRoom` sets out: as state it re-ran this body, and with it the diff
+    /// beside the box, every time the draft rewrapped a line.
+    @State private var room = ComposerRoom()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !tab.isPinnedToPath {
+                reviewToolbar
+                Hairline()
+            }
+            if case .commit(let commit) = model.diffScope {
+                CommitReviewHeader(commit: commit)
+                Hairline()
+            }
+            content
+                .id(model.diffScope)
+                // Pinned to the top, not centred, which is what an unaligned fill means and what
+                // a reader reported on 0.20.0: a file with a handful of lines in it floated in
+                // the middle of a tall pane with a band of empty above it. Every one of the views
+                // this holds reads top down. The empty states below do not centre themselves, as
+                // this once assumed: `ContentUnavailableView` hugs its content, so each one fills
+                // the pane itself, or "is gone" sits under the toolbar.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if drawsComposer {
+                ReviewPaneComposer(model: model, room: room)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { PaneMeasure.room($0.size.height) } action: {
+            room.height = $0
+        }
+        .background(Palette.surface)
+        // Option+V ticks the file on screen as viewed, and does nothing at all when this pane is
+        // showing something with no diff to tick (an empty state, an image, a file nobody
+        // changed). Its own `NSView` rather than a hidden button carrying a key equivalent: see
+        // `ViewedShortcutHost` for the character it would otherwise have swallowed out of the
+        // composer below it and out of the terminal in the pane beside it.
+        .background {
+            ViewedShortcutHost(hasFile: !tab.showsAllFiles && changed != nil) {
+                guard let changed else { return }
+                let model = model
+                Task { await model.setViewed(!model.isViewed(changed), file: changed) }
+            }
+        }
+        // Keyed on the poll as well as the path, because a file can be deleted underneath a reader
+        // who has not moved: the changes generation is what says the worktree has been looked at
+        // again.
+        .task(id: ExistsID(path: tab.path, generation: model.changesGeneration)) {
+            let path = tab.path
+            let absolute = Self.absolutePath(path, worktree: model.workspace.path)
+            exists = await Task.detached(priority: .userInitiated) {
+                !path.isEmpty && FileManager.default.fileExists(atPath: absolute)
+            }.value
+        }
+    }
+
+    /// Whether this pane draws that composer at all. The rule and the reasoning are
+    /// `ReviewComposer`; the two facts it needs are which conversation a turn from here would join
+    /// and what the panes of this tab are showing. The first of those is the chosen destination
+    /// now, not the active session, which is what makes the box appear again when the reader
+    /// points the review at a chat that is not on screen in this tab.
+    private var drawsComposer: Bool {
+        ReviewComposer.isDrawn(destination: model.reviewDestination?.id, panes: siblings)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if model.isLoadingChanges || !model.hasReadChanges {
+            LoadingView("Reading changes")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = model.changesError {
+            EmptyStateView(glyph: "exclamationmark.triangle", title: "Could not read changes", message: error)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if tab.showsAllFiles, !tab.isPinnedToPath {
+            AllFilesReviewView(
+                model: model, selectedPath: tab.path,
+                navigationRevision: tab.reviewNavigationRevision
+            )
+                .id(model.workspace.id)
+        } else if let changed {
+            // A path can exist in several workspaces. Include the workspace so switching
+            // checkouts cannot reuse another workspace's diff, selection or expanded context.
+            DiffView(model: model, file: changed)
+                .id("\(model.workspace.id.rawValue):\(changed.id)")
+        } else if model.diffScope.isHistorical {
+            EmptyStateView(glyph: "doc.text", title: "No file selected",
+                           message: model.changedFiles.isEmpty
+                            ? model.diffScope.emptyMessage(base: model.workspace.baseBranch)
+                            : "Pick a changed file in the inspector to read it here.")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if tab.path.isEmpty {
+            // Asked before the two branches below, because with no path there is nothing to look
+            // for and `isPresent` answers optimistically until the first look comes back.
+            EmptyStateView(
+                glyph: "doc.text",
+                title: "No file open",
+                message: model.changedFiles.isEmpty
+                    ? "Nothing in this worktree differs from \(model.workspace.baseBranch) yet."
+                    : "Pick a file in the inspector to read it here."
+            )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isPresent, FileMediaView.isMedia(path: tab.path) {
+            // An image, a PDF, a video. `FilePreview` reads a file as text and would say there is
+            // nothing to show, which for the screenshot somebody just attached is both wrong and
+            // the whole reason they clicked.
+            FileMediaView(
+                worktree: Self.isAbsolute(tab.path) ? "/" : model.workspace.path,
+                path: Self.isAbsolute(tab.path) ? String(tab.path.dropFirst()) : tab.path
+            )
+                .id(tab.path)
+        } else if isPresent {
+            FilePreview(
+                model: model,
+                path: tab.path,
+                absolutePathOverride: Self.isAbsolute(tab.path) ? tab.path : nil,
+                canEditInSwarm: !Self.isAbsolute(tab.path)
+            )
+                .id(tab.path)
+        } else {
+            // A file the agent deleted, or one that was reverted and then removed. Said plainly
+            // rather than left as an empty rectangle, which reads as a failure to load.
+            EmptyStateView(
+                glyph: "doc.questionmark",
+                title: "\((tab.path as NSString).lastPathComponent) is gone",
+                message: "It is no longer in this worktree. Pick another file in the inspector."
+            )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var reviewToolbar: some View {
+        HStack(spacing: InspectorLayout.gap) {
+            Picker("Review files", selection: Binding(
+                get: { tab.showsAllFiles },
+                set: { FileReview.setShowsAllFiles($0, in: model) }
+            )) {
+                Text("All files").tag(true)
+                Text("Selected file").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+
+            Spacer(minLength: 0)
+
+            if tab.showsAllFiles {
+                AllFilesReviewControls(model: model)
+            } else {
+                Text(model.diffScope.badge)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, InspectorLayout.inset)
+        .frame(height: InspectorLayout.barHeight)
+    }
+
+    private static func isAbsolute(_ path: String) -> Bool {
+        (path as NSString).isAbsolutePath
+    }
+
+    private static func absolutePath(_ path: String, worktree: String) -> String {
+        isAbsolute(path) ? path : (worktree as NSString).appendingPathComponent(path)
+    }
+
+}

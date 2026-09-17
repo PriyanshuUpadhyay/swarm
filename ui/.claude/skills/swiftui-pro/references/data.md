@@ -20,5 +20,5 @@ Do not apply iOS keyboard modifiers to macOS. A formatted field is not automatic
 choice when partially entered text must be preserved.
 
 `@AppStorage` inside an `@Observable` class does not automatically forward changes to Observation.
-Keep defaults observation at an appropriate boundary. Bloom persists domain data through its
+Keep defaults observation at an appropriate boundary. Swarm persists domain data through its
 SQLite `Store`; do not introduce SwiftData or CloudKit conventions here.

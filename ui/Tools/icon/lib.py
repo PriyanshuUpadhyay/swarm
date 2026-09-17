@@ -1,4 +1,4 @@
-"""Geometry, palette and drawing helpers for the Bloom v7 icon set.
+"""Geometry, palette and drawing helpers for the Swarm v7 icon set.
 
 Round six established the language: flat pieces of paper, a real tonal step
 between adjacent pieces, everything cropped by the tile. Round seven keeps all
@@ -27,11 +27,11 @@ import math
 # ---------------------------------------------------------------- palette
 C = dict(
     abyss="#061420", deep="#0B2438", fathom="#123B57", spatie="#197593",
-    current="#2AA3B4", bloom="#4FD8C4", shallow="#9BE9DC", foam="#E9F7F4",
+    current="#2AA3B4", swarm="#4FD8C4", shallow="#9BE9DC", foam="#E9F7F4",
     mist="#C9D6DC", slate="#5A6B76", paper="#FAFCFC",
 )
 
-RAMP = ["abyss", "deep", "fathom", "spatie", "current", "bloom", "shallow", "foam"]
+RAMP = ["abyss", "deep", "fathom", "spatie", "current", "swarm", "shallow", "foam"]
 
 CANVAS = 1024
 INSET = 100

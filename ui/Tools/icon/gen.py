@@ -58,7 +58,7 @@ from lib import (clipbody, contact, flat, ground, puck, recess, reset, sh_circle
                  sh_clip, sh_ellipse, sh_group, sh_hole, sh_move, sh_path,
                  sh_poly, sh_rect, sh_tile, sheen, thick, wrap)
 
-D = os.path.expanduser("~/Desktop/bloom-icons-v7")
+D = os.path.expanduser("~/Desktop/swarm-icons-v7")
 
 
 def above(m, c):
@@ -91,7 +91,7 @@ def rim(small=False):
     bite = sh_circle(830, 856, 400)
     return wrap("".join([
         ground(flat("deep")),
-        thick(disc, sheen("bloom"), flat("current")),
+        thick(disc, sheen("swarm"), flat("current")),
         contact(bite, disc, blur=13, alpha=0.34),
         thick(bite, sheen("spatie"), flat("fathom")),
     ]))
@@ -130,7 +130,7 @@ def crop(small=False):
     eight points."""
     bite = sh_circle(944, 936, 520 if not small else 540)
     return wrap("".join([
-        ground(sheen("bloom", 0.06, 0.12)),
+        ground(sheen("swarm", 0.06, 0.12)),
         contact(bite, sh_tile(), d=(30, 38), blur=16, alpha=0.30),
         thick(bite, sheen("spatie"), flat("fathom"), d=(20, 30)),
     ]))
@@ -148,7 +148,7 @@ def lift(small=False):
     bite = sh_circle(832, 852, 396)
     return wrap("".join([
         ground(flat("abyss")),
-        thick(disc, sheen("shallow"), flat("bloom")),
+        thick(disc, sheen("shallow"), flat("swarm")),
         contact(bite, disc, d=(50, 62), blur=26, alpha=0.42),
         thick(bite, sheen("spatie"), flat("fathom"), d=(20, 30)),
     ]))
@@ -163,7 +163,7 @@ def chip(small=False):
     a hard edge between them."""
     o = [ground(flat("deep"))]
     r1 = 366 if not small else 384
-    o.append(puck(420, 396, r1, r1, 72, sheen("bloom"), flat("current")))
+    o.append(puck(420, 396, r1, r1, 72, sheen("swarm"), flat("current")))
     disc = sh_circle(420, 396, r1)
     r2 = 300 if not small else 316
     bite = sh_circle(792, 566, r2)
@@ -200,7 +200,7 @@ def cleave(small=False):
     dx, dy = (68, 88) if not small else (104, 134)
     disc = sh_circle(452, 430, 384 if not small else 402)
     bite = sh_circle(846, 890, 396)
-    fig = thick(disc, sheen("shallow"), flat("bloom")) + \
+    fig = thick(disc, sheen("shallow"), flat("swarm")) + \
         contact(bite, disc, blur=13, alpha=0.32) + \
         thick(bite, sheen("spatie"), flat("fathom"))
     top, bot = above(0.38, 296), below(0.38, 296)
@@ -224,7 +224,7 @@ def inlay(small=False):
     hole = sh_circle(852, 878, 412)
     return wrap("".join([
         ground(flat("abyss")),
-        thick(disc, sheen("bloom"), flat("current")),
+        thick(disc, sheen("swarm"), flat("current")),
         hole(sheen("spatie", 0.03, 0.06)),
         recess(sh_hole(disc, hole), hole, d=(34, 42), blur=13, alpha=0.44),
     ]))
@@ -246,7 +246,7 @@ def ledge(small=False):
         contact(slab, sh_tile(), d=(26, 32), blur=15, alpha=0.40),
         thick(slab, sheen("spatie"), flat("fathom")),
         contact(disc, slab, d=(22, 26), blur=13, alpha=0.34),
-        thick(disc, sheen("shallow"), flat("bloom")),
+        thick(disc, sheen("shallow"), flat("swarm")),
         contact(bite, disc, d=(20, 24), blur=12, alpha=0.32),
         thick(bite, sheen("current"), flat("spatie")),
     ]))
@@ -285,7 +285,7 @@ def coins(small=False):
         if prev is not None:
             o.append(contact(c, prev, d=(22, 22), blur=12, alpha=0.32))
         o.append(thick(c, sheen(col), flat({"spatie": "fathom", "current": "spatie",
-                                            "shallow": "bloom"}[col])))
+                                            "shallow": "swarm"}[col])))
         prev = c
     return wrap("".join(o))
 
@@ -325,8 +325,8 @@ def lanes(small=False):
     lanes are unequal in width and the pitch is uneven, because an even pitch
     is a beach towel."""
     o = [ground(flat("abyss"))]
-    plan = ((188, 196, "shallow", "bloom"), (404, 124, "current", "spatie"),
-            (606, 238, "shallow", "bloom"), (858, 146, "current", "spatie"))
+    plan = ((188, 196, "shallow", "swarm"), (404, 124, "current", "spatie"),
+            (606, 238, "shallow", "swarm"), (858, 146, "current", "spatie"))
     for x, w, face, side in plan:
         w = w + (26 if small else 0)
         r = sh_rect(x - w / 2, -200, w, 1424, w / 2, deg=9, about=(x, 512))
@@ -386,7 +386,7 @@ def cross(small=False):
         ground(flat("deep")),
         thick(a, sheen("current"), flat("spatie")),
         contact(b, a, d=(22, 28), blur=14, alpha=0.36),
-        thick(b, sheen("shallow"), flat("bloom")),
+        thick(b, sheen("shallow"), flat("swarm")),
     ]))
 
 
@@ -401,7 +401,7 @@ def shear(small=False):
     o = [ground(flat("deep"))]
     disc = sh_circle(486, 452, 396 if not small else 414)
     bite = sh_circle(872, 900, 386)
-    fig = thick(disc, sheen("shallow"), flat("bloom")) + \
+    fig = thick(disc, sheen("shallow"), flat("swarm")) + \
         contact(bite, disc, blur=13, alpha=0.32) + \
         thick(bite, sheen("spatie"), flat("fathom"))
     cuts = (((-300, 700, 86), (404, 246, -70), (656, 668, 26)) if not small
@@ -426,7 +426,7 @@ def under(small=False):
         ground(flat("abyss")),
         thick(bite, sheen("spatie"), flat("fathom")),
         contact(disc, bite, d=(30, 36), blur=15, alpha=0.42),
-        thick(disc, sheen("shallow"), flat("bloom")),
+        thick(disc, sheen("shallow"), flat("swarm")),
     ]))
 
 
@@ -464,7 +464,7 @@ def slip(small=False):
     plate = "".join([
         sh_tile()(flat("deep")),
         thick(sh_circle(452, 440, 356 if not small else 374),
-              sheen("shallow"), flat("bloom")),
+              sheen("shallow"), flat("swarm")),
         sh_circle(818, 850, 380)(sheen("spatie")),
     ])
     top, bot = above(0.30, 336), below(0.30, 336)

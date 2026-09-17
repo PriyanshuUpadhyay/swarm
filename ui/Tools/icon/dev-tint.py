@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Recolours a copy of the layered icon document so the dev build is unmistakable.
 
-    python3 Tools/icon/dev-tint.py <path to a copy of Bloom.icon>/icon.json [turn]
+    python3 Tools/icon/dev-tint.py <path to a copy of Swarm.icon>/icon.json [turn]
 
 `turn` is the fraction of the colour wheel to rotate by, and it defaults to half.
 A third identity wants a different one: two builds a quarter turn apart are told
 apart at a glance, two that both took the half turn are the same icon twice.
 
 Rewrites that file in place. It is only ever pointed at the detached worktree
-Tools/dev-build.sh builds from, never at Resources/Bloom.icon in the tree.
+Tools/dev-build.sh builds from, never at Resources/Swarm.icon in the tree.
 
 WHY THIS AND NOT A SECOND DRAWING. The icon is a layered Icon Composer document
 now: `icon.json` names the artwork and the fill for each layer, and the system

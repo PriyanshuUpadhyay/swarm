@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Writes runbloom.app's copy of the mark from the same artwork the app uses.
+"""Writes runswarm.app's copy of the mark from the same artwork the app uses.
 
-    python3 Tools/icon/site.py [path to the runbloom checkout]
+    python3 Tools/icon/site.py [path to the runswarm checkout]
 
 The site is a separate repository and this file does not commit anything there.
 It writes the assets and prints what changed; the commit is a human decision
@@ -66,10 +66,10 @@ import lib  # noqa: E402
 import lib9  # noqa: E402
 
 DEFAULT_SITE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))),
-                            "runbloom")
+                            "runswarm")
 
 MARK_NOTE = """<!--
-  The Bloom mark: the app's icon, `tongue` at a margin of 150 with the shine
+  The Swarm mark: the app's icon, `tongue` at a margin of 150 with the shine
   the owner chose. A near white Foam ground fills the tile, a Deep panel sits
   inset within it, two lanes arrive and a pale bar crosses. Every piece is
   graded across its own height, lighter at its own top and deeper at its own

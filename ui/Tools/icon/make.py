@@ -5,10 +5,10 @@
 
 Writes two things into Resources/:
 
-  Bloom.icon/         the layered document macOS 26 draws, where the system
+  Swarm.icon/         the layered document macOS 26 draws, where the system
                       supplies the material, the shadow and the specular and
                       generates the dark and tinted variants itself
-  BloomMenuBar.pdf    the menu bar mark, drawn by menubar.py from the same lane
+  SwarmMenuBar.pdf    the menu bar mark, drawn by menubar.py from the same lane
                       this icon is built from. Fifteen points is too small for
                       the above, so it is a reduction rather than a scaling, and
                       menubar.py's docstring says what it keeps and what it
@@ -18,7 +18,7 @@ Writes two things into Resources/:
 THERE IS NO FLAT `.icns` ANY MORE, AND PUTTING ONE BACK WOULD CHANGE NOTHING.
 This file used to write `Resources/AppIcon.icns` as well, on the Big Sur
 template, because the app ran on macOS 15 where nothing draws a tile for us. At
-a floor of macOS 26 the system finds `Bloom.icon` through CFBundleIconName and
+a floor of macOS 26 the system finds `Swarm.icon` through CFBundleIconName and
 `Assets.car`, and the flat bitmap is never asked for. Measured before it was
 deleted, on three copies of the bundle: one carrying both, one carrying only the
 layered document, one carrying only the `.icns`. Through
@@ -121,7 +121,7 @@ def layered():
     otherwise stay on disk and go on being compiled into the catalogue.
     """
     built, _ = design.render()
-    bundle = os.path.join(RESOURCES, "Bloom.icon")
+    bundle = os.path.join(RESOURCES, "Swarm.icon")
     assets = os.path.join(bundle, "Assets")
     shutil.rmtree(assets, ignore_errors=True)
     os.makedirs(assets)

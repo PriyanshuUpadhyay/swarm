@@ -1,28 +1,28 @@
 # Agent bus contract for the UI
 
-Bloom starts swarm agents, chats with them, and shows each one's live pane (ADR 0003). Bloom is the
+Swarm starts swarm agents, chats with them, and shows each one's live pane (ADR 0003). Swarm is the
 chair of every agent it starts (ADR 0007), and swarm builds the command line for a role (ADR 0008).
-Bloom reads only the JSON and commands below, through the Swift types in
-`ui/Sources/BloomCore/Agent/SwarmBus.swift`. A change to a shape changes this file, the Rust output,
+Swarm reads only the JSON and commands below, through the Swift types in
+`ui/Sources/SwarmCore/Agent/SwarmBus.swift`. A change to a shape changes this file, the Rust output,
 and the Swift types in one commit. The rules of `docs/profiles-contract.md` apply here too: one JSON
 object on stdout and exit 0, or one stderr line and a non-zero exit; `snake_case` keys; `null`,
 never a missing key.
 
-## How Bloom calls swarm
+## How Swarm calls swarm
 
-Every call Bloom makes sets `SWARM_ADAPTER=tmux-solo`. Every call after `session new` also sets
+Every call Swarm makes sets `SWARM_ADAPTER=tmux-solo`. Every call after `session new` also sets
 `SWARM_SESSION_ID` to the workspace's session and `SWARM_AGENT_ID=orchestrator`. A call that starts
 panes (`launch`) runs with its working directory, and `PWD`, set to the workspace's worktree.
 
-One Bloom workspace has at most one swarm session. Bloom creates it the first time the workspace
+One Swarm workspace has at most one swarm session. Swarm creates it the first time the workspace
 starts an agent, with `swarm init`, `swarm session new lane`, and `swarm agent add orchestrator
-orchestrator`, and keeps the id. While a session has an agent with a pane, Bloom runs `swarm sweep`
+orchestrator`, and keeps the id. While a session has an agent with a pane, Swarm runs `swarm sweep`
 every 30 seconds, which re-rings an unread ask and reports an agent that died.
 
 The agent CLI answers only if the `swarm-voice` skill is installed for it
 (`scripts/install-skills.sh`). This contract does not check that.
 
-Example. The user starts `coder-1` with role `code.complex` and types "Fix the parser". Bloom runs
+Example. The user starts `coder-1` with role `code.complex` and types "Fix the parser". Swarm runs
 `swarm launch coder-1 code.complex --account auto`, then `swarm send coder-1 ask` with that text
 on stdin. The agent replies with `swarm finish`, and the reply is the next `summary` that
 `swarm messages --json` returns.
@@ -122,7 +122,7 @@ Caller `session`. Starts the agent CLI for a role in a new pane.
 
 ## Swift side
 
-`SwarmBus` is the protocol Bloom calls, and `AppModel.swarmBus` is the one shared instance. Views
+`SwarmBus` is the protocol Swarm calls, and `AppModel.swarmBus` is the one shared instance. Views
 call it only through a model or store beside them, never from a `body` or a button action.
 `attachCommand(for:in:)` builds the argv and environment for `swarm attach` and runs nothing, so
 the live pane can start it in a terminal view.

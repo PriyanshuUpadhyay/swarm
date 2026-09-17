@@ -1,4 +1,4 @@
-# Bloom
+# Swarm
 
 A Swift/SwiftUI rebuild of Conductor: parallel Claude Code agents, one git worktree each.
 
@@ -15,12 +15,12 @@ section says one dependency, which was true before Sparkle arrived for updates; 
 ## Status
 
 Every phase below is done and checked against its endgoal. The app builds with zero warnings,
-188 core tests pass, and the whole loop has been driven end to end: a `bloom://` deep link
+188 core tests pass, and the whole loop has been driven end to end: a `swarm://` deep link
 created a worktree, ran the repo's setup script, started an agent, streamed its transcript,
 persisted every event, produced a real diff, and rendered that diff in the inspector. Four
 agents have been run in parallel in four worktrees without interfering with each other.
 
-Three live tests (`BLOOM_LIVE=1 ./Tools/test-core.sh LiveAgent`) run against the real `claude`
+Three live tests (`SWARM_UI_LIVE=1 ./Tools/test-core.sh LiveAgent`) run against the real `claude`
 binary and cover a full turn with tool use, session resume across two runner instances, and
 cancellation. They are opt-in because they spend tokens.
 
@@ -30,7 +30,7 @@ cancellation. They are opt-in because they spend tokens.
   on its way out after SIGTERM.
 - The UI wrote whole `Session` rows, clobbering the agent session id the runner had just saved,
   which silently broke resume. The UI now writes only the columns it owns.
-- A `bloom://` link opened a second window, because a `WindowGroup` makes one per URL.
+- A `swarm://` link opened a second window, because a `WindowGroup` makes one per URL.
 - The bottom panel sat on a spinner forever when a workspace selected a terminal before its
   tabs had been read from the store.
 
@@ -71,8 +71,8 @@ Everything here runs locally against the `claude` CLI and `git`.
 - One dependency: SwiftTerm (embedded terminal). Everything else is stdlib + system SQLite.
 - Persistence: SQLite via the system `SQLite3` module, thin hand-rolled layer (`Store`).
 - All git/gh/claude interaction is subprocess based. No libgit2.
-- Core logic (git engine, NDJSON decoding, diff parsing) lives in a `BloomCore` target with
-  tests. SwiftUI views live in `Bloom` and are not unit tested.
+- Core logic (git engine, NDJSON decoding, diff parsing) lives in a `SwarmCore` target with
+  tests. SwiftUI views live in `Swarm` and are not unit tested.
 
 ## Phases
 
@@ -80,7 +80,7 @@ Each phase has an endgoal that is checkable by running something.
 
 ### Phase 0: Foundation
 SPM package, app bundle build script, three-pane SwiftUI shell.
-**Endgoal:** `./Tools/build.sh && open .build/Bloom.app` shows a window with sidebar, center and
+**Endgoal:** `./Tools/build.sh && open .build/Swarm.app` shows a window with sidebar, center and
 inspector.
 
 ### Phase 1: Data layer
@@ -114,7 +114,7 @@ highlighting, file tree/list toggle.
 
 ### Phase 6: Terminal
 SwiftTerm embedded, multiple tabs, cwd set to the worktree, environment carrying
-`BLOOM_*` vars. Setup and Run script tabs.
+`SWARM_UI_*` vars. Setup and Run script tabs.
 **Endgoal:** a working interactive shell inside the workspace, plus a Run tab that executes
 the configured run script.
 
@@ -130,5 +130,5 @@ UI, keyboard shortcuts, workspace search, launch-at-login.
 ## Conventions
 
 - No em dashes in any user-facing string.
-- `BloomCore` must not import SwiftUI.
+- `SwarmCore` must not import SwiftUI.
 - Every subprocess call goes through `Shell`, which is cancellable and captures both streams.

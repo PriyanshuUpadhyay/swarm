@@ -16,7 +16,7 @@ its effect LIVES:
 
   system   the artwork is not painted at all. The effect is asked for through
            the layered document's own keys and the system produces it. Only
-           `Bloom.icon` can do this, so the flat `.icns` gets the nearest thing
+           `Swarm.icon` can do this, so the flat `.icns` gets the nearest thing
            paint can say
   baked    the effect is painted into the artwork. The `.icns` needs this; the
            layered document gets a reduced dose so the system's pass has
@@ -846,7 +846,7 @@ CSS = depth.CSS + """
   font: 12px/1.7 ui-monospace, "SF Mono", Menlo, monospace; max-width: 82ch; }
 """
 
-HEAD = """<header><h1>Bloom, ten shine studies</h1>
+HEAD = """<header><h1>Swarm, ten shine studies</h1>
 <p>The design does not change and neither does the palette. Foam ground, Deep
 panel with its spur, two lanes, the pale bar riding inside the spur, the same
 silhouette, no border added anywhere. What changes in each row is how light
@@ -973,7 +973,7 @@ def sheet(outdir):
                        labels=(("L", "layered document, drawn by macOS itself"),
                                ("F", "flat .icns")))
 
-    html = ("<!doctype html><meta charset=utf-8><title>Bloom icon, ten shine "
+    html = ("<!doctype html><meta charset=utf-8><title>Swarm icon, ten shine "
             "studies</title><style>%s\n%s</style>%s%s%s%s%s"
             % (CSS, "".join(rules), HEAD, APPLE, "".join(cards), grid, VERDICT))
     out = os.path.join(outdir, "shine.html")
@@ -1038,9 +1038,9 @@ def sheet1024(outdir):
         tiles.append('<div class="pair"><div class="t"><img src="%s"></div>'
                      '<div class="t d"><img src="%s"></div></div>%s'
                      % (uri, uri, cap))
-    html = ('<!doctype html><meta charset=utf-8><title>Bloom icon, ten shine '
+    html = ('<!doctype html><meta charset=utf-8><title>Swarm icon, ten shine '
             'studies at 1024</title><style>%s</style>'
-            '<header><h1>Bloom, ten shine studies at 1024</h1>'
+            '<header><h1>Swarm, ten shine studies at 1024</h1>'
             '<p>The eleven ideas at full size and nothing else, for comparing '
             'them against each other rather than against the sizes they have '
             'to survive. Every tile is the layered <code>.icon</code> as macOS '

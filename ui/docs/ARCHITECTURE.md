@@ -1,15 +1,15 @@
 # Architecture and contributor guide
 
-Bloom separates its tested behaviour from its window. Read `CLAUDE.md` for the enforced rules.
+Swarm separates its tested behaviour from its window. Read `CLAUDE.md` for the enforced rules.
 Use local builds and focused tests for verification.
 
 ## Boundaries
 
-- `BloomCore` owns persistence, processes, agent protocols, workspace operations and pure
+- `SwarmCore` owns persistence, processes, agent protocols, workspace operations and pure
   presentation decisions. It cannot import a UI framework.
-- `Bloom` owns SwiftUI and AppKit integration. Main-actor observable models coordinate the window;
+- `Swarm` owns SwiftUI and AppKit integration. Main-actor observable models coordinate the window;
   views render state and forward intent rather than running shell commands.
-- `bloom-bridge` relays MCP requests to the running app. The registry establishes caller authority;
+- `swarm-bridge` relays MCP requests to the running app. The registry establishes caller authority;
   dispatch checks tool roles. Existing connections revalidate tokens for each request.
 
 Files are grouped by subject, not into generic helpers or services. Extract a component when it
@@ -54,7 +54,7 @@ The setup-copy preview and copier share one resolver. Relative traversal is reje
 symlinks must stay inside the source root, and destination symlinks cannot redirect copied files.
 Local HTML page access uses the same canonical containment primitive.
 
-These checks constrain Bloom's own operations. They are not an operating-system sandbox against
+These checks constrain Swarm's own operations. They are not an operating-system sandbox against
 a hostile local process changing files concurrently. An authorised setup script or agent can still
 execute code with the access its selected mode grants. Review scope and permissions at boundaries;
 do not describe a worktree as isolation equivalent to a virtual machine.

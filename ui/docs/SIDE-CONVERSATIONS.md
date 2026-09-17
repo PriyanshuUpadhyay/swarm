@@ -12,7 +12,7 @@ running answer or approval request cannot become unreachable.
 
 ## Context
 
-Bloom starts a separate provider session with a snapshot of the parent's recent conversation.
+Swarm starts a separate provider session with a snapshot of the parent's recent conversation.
 It does not resume or steer the parent's provider session. The snapshot includes user and
 assistant text, bounded tool arguments and results, and the answer streaming when it was opened.
 The snapshot takes up to 300 stored events and keeps the latest 32,000 characters; individual

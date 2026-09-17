@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<title>Bloom limits panel</title>
+<title>Swarm limits panel</title>
 <style>
   :root {
     --page: #f2f2f4;
@@ -136,7 +136,7 @@ function menu(mode, rows, opts) {
     ${panel(rows, opts)}
     <div class="sep"></div>
     <div class="item">Prevent Sleep While Agents Run</div>
-    <div class="item">Quit Bloom</div>
+    <div class="item">Quit Swarm</div>
   </div>`;
 }
 
@@ -245,7 +245,7 @@ const scenes = [
     title: "Nothing reported at all",
     note: "Neither CLI installed, neither signed in, or the first seconds of a launch.",
     rows: [],
-    empty: "Nothing reported yet. Bloom asks Claude Code and Codex for their figures every few " +
+    empty: "Nothing reported yet. Swarm asks Claude Code and Codex for their figures every few " +
            "minutes, so this fills in shortly after either one is installed and signed in.",
   },
 ];

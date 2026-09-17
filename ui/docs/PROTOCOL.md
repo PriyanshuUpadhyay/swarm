@@ -5,7 +5,7 @@ Ground truth, captured from `claude` on this machine on 2026-08-18. A real captu
 result). Hook payloads in that file were trimmed because they were enormous, nothing else was
 touched.
 
-## How Bloom invokes it
+## How Swarm invokes it
 
 ```
 claude
@@ -60,7 +60,7 @@ message, within the running turn and often alongside the next tool result rather
 turn. So a turn with a tool boundary left in it takes the message inside the turn, and a turn
 without one runs it next.
 
-Both are landings Bloom already handles. `AgentRunner.ingest` applies `turnStarted` on an `init`,
+Both are landings Swarm already handles. `AgentRunner.ingest` applies `turnStarted` on an `init`,
 which is the fix written for the CLI's habit of starting turns of its own (see `StrayResult`), so a
 second `init` puts the chat back to running rather than leaving it drawn as idle through a turn.
 
@@ -73,7 +73,7 @@ Every line has `type`. Every line except a few carries `uuid` and `session_id`.
 
 ### `system` / `init`
 
-First line of the session. Carries the fields Bloom needs to bind a session:
+First line of the session. Carries the fields Swarm needs to bind a session:
 
 ```json
 {"type":"system","subtype":"init","session_id":"f93932c9-...","cwd":"/path",
@@ -198,7 +198,7 @@ The same thing happens mid process, and there the turn does real work. Measured 
 the CLI wrote `task_updated`, then `system/task_notification` for the command, then a second `init`,
 then a whole turn, closed by a `result` with `origin: task-notification`. The notification is the
 only line saying why that turn began, and its `summary` reads `Background command "<description>"
-completed (exit code 0)`. Bloom stores it when it arrives between turns and draws it as the turn's
+completed (exit code 0)`. Swarm stores it when it arrives between turns and draws it as the turn's
 opening line. See `BackgroundWake`.
 
 ### `rate_limit_event`
@@ -215,13 +215,13 @@ Measured on 23 August 2026 against the installed binary, and recorded with a sec
 busier account in `Tests/fixtures/rate-limits.jsonl`. Three facts, all of which shaped `AgentQuota`:
 
 1. `rateLimitType` names a single window. `five_hour` and `seven_day` are the values observed, there
-   is no array, and there is no way to ask for the rest, so what Bloom knows about an account
+   is no array, and there is no way to ask for the rest, so what Swarm knows about an account
    accumulates over turns.
 2. **`utilization` is absent below a warning threshold.** The payload above has no usage figure at
    all. The one that does carries `"status":"allowed_warning"` and `"surpassedThreshold":0.75`
    beside it, so the number arrives only once the account is near the wall. Store that as unknown,
    never as zero: an empty bar is a claim, and it is a claim this protocol never made.
-3. **There is no monthly window.** Bloom shows the two it is given and says nothing about a third.
+3. **There is no monthly window.** Swarm shows the two it is given and says nothing about a third.
 
 Surface it quietly, never as an error. `AgentQuotaAdapters` is the reader.
 
@@ -236,8 +236,8 @@ it is not allowed to run outright, and holds the turn open until an answer arriv
             "permission_suggestions":[…]}}
 ```
 
-Only `can_use_tool` is lifted out. The other control subtypes are the CLI answering Bloom, or
-asking something Bloom has no business answering, and they stay raw rather than half understood.
+Only `can_use_tool` is lifted out. The other control subtypes are the CLI answering Swarm, or
+asking something Swarm has no business answering, and they stay raw rather than half understood.
 `request` also carries `display_name`, `tool_use_id`, `description`, `decision_reason`,
 `decision_reason_type`, `blocked_path`, `suppress_always_allow_rule`, `requires_user_interaction`
 and `classifier_approvable`, all optional. **`decision_reason` may carry ANSI escapes**, which the
@@ -258,14 +258,14 @@ nothing: the CLI refuses a response whose tool disagrees with the question and l
 `PermissionAsk` reads these and `PermissionAnswer` writes them.
 
 This wire used to fall through to `unknown` and be dropped on the floor, which is exactly what
-"Bloom never asks" looked like from the inside: the CLI was willing to ask and nobody was reading
+"Swarm never asks" looked like from the inside: the CLI was willing to ask and nobody was reading
 the line. A decoder that took the event list above as complete would hang the turn the same way.
 
 ## Rules for the decoder
 
 1. **Never fail the stream on an unknown event.** New `type` and `subtype` values ship
    regularly. Decode what is recognised, keep the raw JSON for everything else, carry on.
-2. **Keep the raw line.** Bloom stores the original JSON for every row so a renderer added later
+2. **Keep the raw line.** Swarm stores the original JSON for every row so a renderer added later
    can show detail that was not decoded at the time.
 3. Lines can be very large (a hook response, a big tool result). No length assumptions.
 4. A malformed line is possible if the CLI crashes mid-write. Skip it, do not abort.

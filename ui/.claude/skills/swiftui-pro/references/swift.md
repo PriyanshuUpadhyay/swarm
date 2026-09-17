@@ -8,7 +8,7 @@ without introducing unrelated churn.
 - `localizedStandardContains` often fits user-facing search. Case-sensitive or literal matching
   may be required for code, paths or protocol data; choose the intended search semantics.
 - Prefer `count(where:)` over allocating a filtered collection solely to count it.
-- Avoid force unwraps and swallowed errors on user-input paths. Show errors through Bloom's
+- Avoid force unwraps and swallowed errors on user-input paths. Show errors through Swarm's
   existing UI error handling rather than logging a failed user action invisibly.
 - Add `Comparable` only when a type has a meaningful natural ordering. Reusing a sort closure
   alone is not a reason to declare a total order for the entire type.

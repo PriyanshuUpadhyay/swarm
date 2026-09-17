@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds the Bloom product and assembles a launchable Swarm.app bundle.
+# Builds the Swarm product and assembles a launchable Swarm.app bundle.
 #
 #   ./Tools/build.sh            debug build
 #   ./Tools/build.sh -r         release build
@@ -25,13 +25,13 @@ while (( $# )); do
 done
 
 echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product Bloom
+swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product Swarm
 # The MCP stdio shim an agent CLI launches. A separate invocation because --product names one
 # product, and a separate binary because that is what an MCP server registration can point at: the
 # CLI spawns it, it forwards to the app over a unix socket, and the app answers. See BridgeShim.
-swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-bridge
+swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product swarm-bridge
 # The privileged daemon that holds the lid, for the same reason: one product per invocation.
-swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-sleep-helper
+swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product swarm-sleep-helper
 
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 APP="$BIN_DIR/Swarm.app"
@@ -39,14 +39,14 @@ APP="$BIN_DIR/Swarm.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cp "$BIN_DIR/Bloom" "$APP/Contents/MacOS/Swarm"
+cp "$BIN_DIR/Swarm" "$APP/Contents/MacOS/Swarm"
 # Beside the app's own executable, which is where BridgeRegistration.shimPath looks for it. A
 # bundle without it is not broken: every chat simply has no bridge tools, which is what every chat
 # had before the bridge existed.
-cp "$BIN_DIR/bloom-bridge" "$APP/Contents/MacOS/bloom-bridge"
+cp "$BIN_DIR/swarm-bridge" "$APP/Contents/MacOS/swarm-bridge"
 # `SMAppService.daemon(plistName:)` reads this one path and no other, and the plist's BundleProgram
 # points back at the executable beside it. Both are signed by the pass at the foot of this file.
-cp "$BIN_DIR/bloom-sleep-helper" "$APP/Contents/MacOS/bloom-sleep-helper"
+cp "$BIN_DIR/swarm-sleep-helper" "$APP/Contents/MacOS/swarm-sleep-helper"
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
 cp Resources/io.github.priyanshuupadhyay.swarm.sleep.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
@@ -60,20 +60,20 @@ plist_set() {
 # What version this build claims to be.
 #
 # Resources/Info.plist carries a fixed placeholder. A build only claims a version when it is given
-# one, and `BloomBuildChannel` records whether that happened so `BuildIdentity` can distinguish a
+# one, and `SwarmBuildChannel` records whether that happened so `BuildIdentity` can distinguish a
 # release from a working copy.
 #
-#   BLOOM_VERSION=0.2.0 BLOOM_BUILD=7 ./Tools/build.sh -r
+#   SWARM_UI_VERSION=0.2.0 SWARM_UI_BUILD=7 ./Tools/build.sh -r
 #
-# BLOOM_BUILD has to increase with every release and never repeat. The release pipeline derives
+# SWARM_UI_BUILD has to increase with every release and never repeat. The release pipeline derives
 # both values from the tag it is building.
-if [[ -n "${BLOOM_VERSION:-}" && -n "${BLOOM_BUILD:-}" ]]; then
-  plist_set CFBundleShortVersionString string "$BLOOM_VERSION"
-  plist_set CFBundleVersion string "$BLOOM_BUILD"
-  plist_set BloomBuildChannel string release
-  echo "==> version $BLOOM_VERSION ($BLOOM_BUILD)"
+if [[ -n "${SWARM_UI_VERSION:-}" && -n "${SWARM_UI_BUILD:-}" ]]; then
+  plist_set CFBundleShortVersionString string "$SWARM_UI_VERSION"
+  plist_set CFBundleVersion string "$SWARM_UI_BUILD"
+  plist_set SwarmBuildChannel string release
+  echo "==> version $SWARM_UI_VERSION ($SWARM_UI_BUILD)"
 else
-  plist_set BloomBuildChannel string local
+  plist_set SwarmBuildChannel string local
 fi
 
 # When this bundle was assembled, which is the only thing that tells two development builds apart.
@@ -92,7 +92,7 @@ fi
 #
 # UTC and ISO 8601, so the value is unambiguous wherever it is read and whoever reads it; the
 # window renders it in the reader's own zone and locale. See BuildTimestamp.
-plist_set BloomBuildDate string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+plist_set SwarmBuildDate string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # SwiftPM used to put products at <scratch>/<triple>/<config>. The Xcode build
 # system puts them at <scratch>/out/Products/<config>, so two dirnames from
@@ -109,7 +109,7 @@ spm_scratch_containing() {
 
 zsh Tools/package-licences.sh "$APP" "$(spm_scratch_containing checkouts)/checkouts"
 
-# The accent Bloom hands to AppKit, checked against the one Bloom draws with itself.
+# The accent Swarm hands to AppKit, checked against the one Swarm draws with itself.
 #
 # Resources/Assets.xcassets/AccentColor.colorset is a colour set and nothing more, and a colour set
 # cannot reference a Swift constant. So the hex is stated twice, once in `PaletteInk.accentFill` and
@@ -118,7 +118,7 @@ zsh Tools/package-licences.sh "$APP" "$(spm_scratch_containing checkouts)/checko
 # ramp used to be, and the window would be back to two accents with nothing saying so.
 verify_accent_matches_palette() {
   local colourset=Resources/Assets.xcassets/AccentColor.colorset/Contents.json
-  local ink=Sources/BloomCore/Presentation/PaletteInk.swift
+  local ink=Sources/SwarmCore/Presentation/PaletteInk.swift
   [[ -f "$colourset" && -f "$ink" ]] || return 0
 
   local declared asset
@@ -146,7 +146,7 @@ verify_accent_matches_palette
 
 # macOS 26 draws an app icon from a layered Icon Composer document rather than from a flat bitmap:
 # the glass, the shadow and the specular pass belong to the system and are applied live to the
-# layers. Resources/Bloom.icon is that document. actool compiles it into an Assets.car, which the
+# layers. Resources/Swarm.icon is that document. actool compiles it into an Assets.car, which the
 # system finds through CFBundleIconName in Info.plist. It is now the only icon in the bundle: the
 # floor is macOS 26 and there is no system left that would draw a flat one. Tools/icon/make.py's
 # docstring carries the measurement that settled that.
@@ -155,14 +155,14 @@ verify_accent_matches_palette
 # actool run compiling to the same directory writes a second Assets.car over the first and the app
 # loses whichever went in first. One run, two inputs, one file with both in it. What is in the
 # catalogue besides the icon is the AccentColor set NSAccentColorName names, which is what makes
-# every AppKit control in the window draw in Bloom's accent rather than the user's.
+# every AppKit control in the window draw in Swarm's accent rather than the user's.
 #
 # Command line tools on their own carry no actool, so a machine with only those produces a bundle
 # with no icon at all, and no accent either: the app then falls back to the system accent, which is
 # what it drew before this existed. That is loud enough to notice and cheaper than failing the
 # build.
 compile_asset_catalogue() {
-  local iconName=Bloom deployment
+  local iconName=Swarm deployment
   local -a inputs
   [[ -d "Resources/$iconName.icon" ]] && inputs+=("$PWD/Resources/$iconName.icon")
   [[ -d "Resources/Assets.xcassets" ]] && inputs+=("$PWD/Resources/Assets.xcassets")
@@ -208,10 +208,10 @@ compile_asset_catalogue
 # the display asks for, so one file is right on a Retina display and on a 1x monitor. The .svg
 # beside each logo is the source it was generated from and is not needed at runtime; the menu bar
 # mark's source is Tools/icon/menubar.py. The Maker*.png files are the exception to the PDF rule:
-# they are the exact bitmaps the download email on runbloom.app renders, copied from that
+# they are the exact bitmaps the download email on runswarm.app renders, copied from that
 # repository's public/mail/ rather than redrawn, because a product's own mark is not ours to
 # approximate. At 192 pixels for a mark drawn about twenty points wide they stay sharp on Retina.
-for art in Resources/Spatie*.pdf(N) Resources/BloomMenuBar.pdf(N) Resources/Maker*.png(N); do
+for art in Resources/Spatie*.pdf(N) Resources/SwarmMenuBar.pdf(N) Resources/Maker*.png(N); do
   cp "$art" "$APP/Contents/Resources/"
 done
 
@@ -220,8 +220,8 @@ for lib in "$BIN_DIR"/*.dylib(N); do
   cp "$lib" "$APP/Contents/MacOS/"
 done
 
-if [[ -d "$BIN_DIR/Bloom_Bloom.bundle" ]]; then
-  cp -R "$BIN_DIR/Bloom_Bloom.bundle" "$APP/Contents/Resources/"
+if [[ -d "$BIN_DIR/Swarm_Swarm.bundle" ]]; then
+  cp -R "$BIN_DIR/Swarm_Swarm.bundle" "$APP/Contents/Resources/"
 fi
 
 # App Intents. Shortcuts and Spotlight do not read the binary: they read a Metadata.appintents
@@ -232,7 +232,7 @@ fi
 # The extraction is its own typecheck pass rather than a flag on `swift build`, because
 # -emit-const-values-path names ONE file and is only honoured by a whole-module frontend job: on a
 # debug build it is silently dropped, and passing it to `swift build` would hand the same path to
-# SwiftTerm and BloomCore as well. A separate pass over the app target alone costs a few seconds
+# SwiftTerm and SwarmCore as well. A separate pass over the app target alone costs a few seconds
 # and answers about exactly the module that owns the intents.
 emit_app_intents_metadata() {
   local toolchain processor sdk deployment triple sources constvalues protocols
@@ -250,10 +250,10 @@ emit_app_intents_metadata() {
   sdk="$(xcrun --sdk macosx --show-sdk-path)"
   deployment="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Resources/Info.plist)"
   triple="$(uname -m)-apple-macos$deployment"
-  sources="$BIN_DIR/Bloom.appintents.sources"
-  constvalues="$BIN_DIR/Bloom.swiftconstvalues"
+  sources="$BIN_DIR/Swarm.appintents.sources"
+  constvalues="$BIN_DIR/Swarm.swiftconstvalues"
 
-  find Sources/Bloom -name '*.swift' > "$sources"
+  find Sources/Swarm -name '*.swift' > "$sources"
 
   # Beside the binary on the old SwiftPM layout. The Xcode build system does not write it
   # there, and failing the whole bundle over missing Shortcuts metadata is worse than an
@@ -265,12 +265,12 @@ emit_app_intents_metadata() {
 
   # The frontend wants a bare array of protocol names. The file Xcode ships wraps the same list in
   # an object, which it rejects as malformed.
-  local protocolList="$BIN_DIR/Bloom.appintents.protocols.json"
+  local protocolList="$BIN_DIR/Swarm.appintents.protocols.json"
   /usr/bin/python3 -c "import json,sys; json.dump(json.load(open(sys.argv[1]))['constValueProtocols'], open(sys.argv[2],'w'))" \
     "$protocols" "$protocolList"
 
-  # Worktrees take their package identity from their directory, which is not always "bloom".
-  # Reuse the actual compiler argument so this pass treats BloomCore's identifiers as ours too.
+  # Worktrees take their package identity from their directory, which is not always "swarm".
+  # Reuse the actual compiler argument so this pass treats SwarmCore's identifiers as ours too.
   local package_name
   package_name="$(python3 - "$BIN_DIR/description.json" <<'PY'
 import json
@@ -278,14 +278,14 @@ import sys
 
 with open(sys.argv[1]) as handle:
     commands = json.load(handle)['swiftCommands']
-command = next(value for value in commands.values() if value.get('moduleName') == 'Bloom')
+command = next(value for value in commands.values() if value.get('moduleName') == 'Swarm')
 arguments = command['otherArguments']
 print(arguments[arguments.index('-package-name') + 1])
 PY
 )"
 
   swiftc -typecheck -wmo \
-    -module-name Bloom \
+    -module-name Swarm \
     -package-name "$package_name" \
     -swift-version 6 \
     -target "$triple" \
@@ -295,19 +295,19 @@ PY
     -Xfrontend -const-gather-protocols-file -Xfrontend "$protocolList" \
     "@$sources"
 
-  echo "$constvalues" > "$BIN_DIR/Bloom.appintents.constvalues"
+  echo "$constvalues" > "$BIN_DIR/Swarm.appintents.constvalues"
 
   "$processor" \
     --output "$APP/Contents/Resources" \
     --toolchain-dir "$toolchain" \
-    --module-name Bloom \
+    --module-name Swarm \
     --sdk-root "$sdk" \
     --xcode-version "$(xcodebuild -version 2>/dev/null | tail -1 | awk '{print $3}')" \
     --platform-family macOS \
     --deployment-target "$deployment" \
     --target-triple "$triple" \
     --source-file-list "$sources" \
-    --swift-const-vals-list "$BIN_DIR/Bloom.appintents.constvalues" \
+    --swift-const-vals-list "$BIN_DIR/Swarm.appintents.constvalues" \
     --force >/dev/null
 }
 
@@ -321,15 +321,15 @@ emit_app_intents_metadata
 # is the only thing that fixes it, and there is no honest default for one, so it is named by the
 # environment.
 #
-#   BLOOM_CODESIGN_IDENTITY="Apple Development: You (TEAMID)" ./Tools/build.sh
+#   SWARM_UI_CODESIGN_IDENTITY="Apple Development: You (TEAMID)" ./Tools/build.sh
 #
 # The pre-rename spelling is still read, so a shell profile or CI job that exports
 # BATON_CODESIGN_IDENTITY keeps producing a signed build rather than silently dropping to ad-hoc.
-SIGN_IDENTITY="${BLOOM_CODESIGN_IDENTITY:-${BATON_CODESIGN_IDENTITY:--}}"
+SIGN_IDENTITY="${SWARM_UI_CODESIGN_IDENTITY:-${BATON_CODESIGN_IDENTITY:--}}"
 codesign --force --deep --sign "$SIGN_IDENTITY" "$APP" >/dev/null 2>&1 || true
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   echo "==> ad-hoc signed: App Intents will be listed in Shortcuts but will not run."
-  echo "    Set BLOOM_CODESIGN_IDENTITY to a real identity to make them runnable."
+  echo "    Set SWARM_UI_CODESIGN_IDENTITY to a real identity to make them runnable."
 fi
 
 echo "==> $APP"

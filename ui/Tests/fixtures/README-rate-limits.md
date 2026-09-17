@@ -15,7 +15,7 @@ Line three is Codex's `account/rateLimits/updated`, as recorded in `codex-turn.n
 
 Three facts follow, and all three are load-bearing.
 
-Claude Code names one window per event and never sends two together, so what Bloom knows about a
+Claude Code names one window per event and never sends two together, so what Swarm knows about a
 Claude account accumulates over turns. It publishes `utilization` only after a warning threshold has
 been passed, which is why usage is modelled as possibly unknown rather than as zero. And it has no
 monthly window at all: `five_hour` and `seven_day` are the whole vocabulary observed.

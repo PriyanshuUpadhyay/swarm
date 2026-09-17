@@ -17,13 +17,13 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleIconName</key>
-	<string>Bloom</string>
+	<string>Swarm</string>
 	<!--
 	    The one accent, rather than two.
 
-	    `Palette.accent` overrides `controlAccentColor` for everything Bloom draws itself, and that
+	    `Palette.accent` overrides `controlAccentColor` for everything Swarm draws itself, and that
 	    reached nothing AppKit draws: 37 toggles, every focus ring and every text selection stayed
-	    the user's blue, so one Settings pane held a Bloom-blue selected row and a system-blue
+	    the user's blue, so one Settings pane held a Swarm-blue selected row and a system-blue
 	    switch. This key points AppKit at the `AccentColor` set in Assets.car, which
 	    `Tools/build.sh` compiles from Resources/Assets.xcassets, and `NSColor.controlAccentColor`
 	    then answers Spatie Blue for this process. Everything derived from it follows:
@@ -53,7 +53,7 @@
 	    place to keep the attribution wording.
 	-->
 	<key>NSHumanReadableCopyright</key>
-	<string>Swarm UI. Based on Bloom by Spatie, MIT licence.</string>
+	<string>Swarm UI. Includes code by Spatie, MIT licence.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
