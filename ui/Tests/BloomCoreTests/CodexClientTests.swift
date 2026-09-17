@@ -56,7 +56,7 @@ private actor EventCollector {
         let handshake = box.process.stdin.compactMap(JSONValue.parse)
         #expect(handshake[0]["id"] != nil)
         #expect(handshake[1]["id"] == nil)
-        #expect(handshake[0]["params"]?["clientInfo"]?["name"]?.stringValue == "Bloom")
+        #expect(handshake[0]["params"]?["clientInfo"]?["name"]?.stringValue == "Swarm")
     }
 
     @Test func startsAThreadAndReadsItsIDOutOfTheReply() async throws {

@@ -73,7 +73,7 @@ private struct RepoSettingsWindowContent: View {
                 .id(repo.id)
         } else {
             ContentUnavailableView(
-                "This project is no longer in Bloom",
+                "This project is no longer in Swarm",
                 systemImage: "folder.badge.questionmark",
                 description: Text("It was removed, or this window was restored from a launch before it was.")
             )

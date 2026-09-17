@@ -809,12 +809,12 @@ public extension GitHub {
     /// creation time, with GitHub's own sentence.
     static func repositoryAvailability(owner: String, name: String) async -> NameAvailability {
         guard GitHubRepositoryName.isValid(name), isPlausibleLogin(owner) else {
-            return .unknown("Bloom did not check that name.")
+            return .unknown("Swarm did not check that name.")
         }
         guard let result = try? await run(
             "gh", ["api", "--silent", "repos/\(owner)/\(name)"], timeout: .seconds(15)
         ) else {
-            return .unknown("Bloom could not reach GitHub to check that name.")
+            return .unknown("Swarm could not reach GitHub to check that name.")
         }
         if result.ok { return .taken }
 
@@ -822,7 +822,7 @@ public extension GitHub {
         if output.contains("HTTP 404") || output.localizedCaseInsensitiveContains("not found") {
             return .available
         }
-        return .unknown("Bloom could not check that name with GitHub.")
+        return .unknown("Swarm could not check that name with GitHub.")
     }
 
     /// Creates an empty repository and returns the URL to add as `origin`.

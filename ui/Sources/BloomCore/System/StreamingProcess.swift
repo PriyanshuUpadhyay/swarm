@@ -55,7 +55,7 @@ public final class StreamingProcess: Sendable {
     /// writes one transcript row per line, so an inversion can land a turn's `result` before the
     /// assistant events it closes. Serialising the yields is what makes the stream ordered, and
     /// putting `finish` on the same queue is what stops the stream ending before the lines it owes.
-    private let drainQueue = DispatchQueue(label: "be.spatie.bloom.StreamingProcess.drain")
+    private let drainQueue = DispatchQueue(label: "io.github.priyanshuupadhyay.swarm.StreamingProcess.drain")
 
     /// Both streams are built here rather than in a `lazy var`.
     ///

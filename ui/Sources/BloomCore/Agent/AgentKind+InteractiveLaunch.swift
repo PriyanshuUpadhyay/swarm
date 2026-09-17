@@ -22,7 +22,7 @@ public extension AgentKind {
         )
         // A new shell may still have macOS's 1,024-byte canonical input buffer.
         guard command.utf8.count < 1_000 else {
-            throw NSError(domain: "Bloom", code: 1, userInfo: [
+            throw NSError(domain: "Swarm", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "The launch file path is too long to start an agent in a terminal."
             ])
         }

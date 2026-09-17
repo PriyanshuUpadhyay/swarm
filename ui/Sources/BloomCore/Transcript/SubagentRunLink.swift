@@ -35,7 +35,7 @@ public enum SubagentRunLink {
     public static let openActionName = "Open run"
     /// Said on the row in the place the count goes, after the meta separator.
     public static let unavailableLabel = "run not kept"
-    public static let unavailableHelp = "Bloom kept nothing of this agent's run, so there is nothing to open."
+    public static let unavailableHelp = "Swarm kept nothing of this agent's run, so there is nothing to open."
 
     /// Whether a tool call starts a subagent. The two names Claude Code has used for it, and the
     /// one `GrokTranslation` maps its own spawn onto.

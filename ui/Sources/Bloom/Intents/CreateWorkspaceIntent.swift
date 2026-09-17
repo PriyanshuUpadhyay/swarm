@@ -8,8 +8,8 @@ struct CreateWorkspaceIntent: AppIntent {
 
     static let description = IntentDescription(
         """
-        Cuts a git worktree in a Bloom project, opens it, and starts an agent on the prompt. \
-        Returns the workspace once Bloom has created it.
+        Cuts a git worktree in a Swarm project, opens it, and starts an agent on the prompt. \
+        Returns the workspace once Swarm has created it.
         """,
         categoryName: "Workspaces",
         resultValueName: "Workspace"
@@ -20,12 +20,12 @@ struct CreateWorkspaceIntent: AppIntent {
     /// that has nothing on screen, so the app comes forward and does the work itself.
     static let openAppWhenRun = true
 
-    @Parameter(title: "Project", description: "The Bloom project to cut the worktree from.")
+    @Parameter(title: "Project", description: "The Swarm project to cut the worktree from.")
     var project: ProjectEntity
 
     @Parameter(
         title: "Prompt",
-        description: "What the agent should do. Bloom names the workspace and its branch from this.",
+        description: "What the agent should do. Swarm names the workspace and its branch from this.",
         inputOptions: String.IntentInputOptions(multiline: true)
     )
     var prompt: String
@@ -45,7 +45,7 @@ struct CreateWorkspaceIntent: AppIntent {
         // Straight into the same code the create window runs, and it answers with the workspace or
         // with what went wrong.
         //
-        // It used to build a `bloom://` URL, hand it to the window, and then read the database
+        // It used to build a `swarm-ui://` URL, hand it to the window, and then read the database
         // every 400ms for up to sixty seconds looking for a row it had not seen when it started,
         // because a URL is one way and there was nothing to return. Two Shortcuts creating a
         // workspace in one project at the same second could each claim the other's row. A failure

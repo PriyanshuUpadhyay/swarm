@@ -138,13 +138,13 @@ public struct SwarmArchiveCloseFailure: Sendable, Equatable {
     public func notice(after archiveMessage: String) -> BloomNotice {
         let action: String
         if agents.isEmpty {
-            action = "Bloom could not list or close the agents in swarm session `\(session.rawValue)`. "
+            action = "Swarm could not list or close the agents in swarm session `\(session.rawValue)`. "
                 + "Run `swarm agents`, then `swarm close <name>` by hand."
         } else {
             let names = agents.map { "`\($0.rawValue)`" }.joined(separator: ", ")
             let failure = listingFailed ? "list or close" : "close"
             let noun = agents.count == 1 ? "swarm agent" : "swarm agents"
-            action = "Bloom could not \(failure) \(noun) \(names) in session `\(session.rawValue)`. "
+            action = "Swarm could not \(failure) \(noun) \(names) in session `\(session.rawValue)`. "
                 + "Run `swarm close <name>` for each agent by hand."
         }
         return BloomNotice(

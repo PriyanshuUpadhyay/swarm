@@ -279,7 +279,7 @@ public struct NewProjectAbandonment: Sendable, Equatable {
     /// What is on disk now, said in the same voice as `RepositoryStartAbandonment.state`.
     public var state: String {
         if folderRemoved {
-            return "Bloom removed the folder it had just made, so nothing is left on disk."
+            return "Swarm removed the folder it had just made, so nothing is left on disk."
         }
         return repository.state
     }

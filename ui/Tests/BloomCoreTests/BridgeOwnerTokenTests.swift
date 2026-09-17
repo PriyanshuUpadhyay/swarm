@@ -83,10 +83,10 @@ struct BridgeOwnerTokenTests {
 
     @Test("it lives beside the database, so two copies of Bloom cannot share one")
     func besideTheDatabase() {
-        let one = BridgeOwnerToken.beside(databasePath: "/x/Bloom/bloom.sqlite")
-        let other = BridgeOwnerToken.beside(databasePath: "/x/Bloom Dev/bloom.sqlite")
+        let one = BridgeOwnerToken.beside(databasePath: "/x/Swarm/bloom.sqlite")
+        let other = BridgeOwnerToken.beside(databasePath: "/x/Swarm Dev/bloom.sqlite")
 
-        #expect(one.path == "/x/Bloom/bridge-owner-token")
+        #expect(one.path == "/x/Swarm/bridge-owner-token")
         #expect(one.path != other.path)
     }
 }
@@ -144,7 +144,7 @@ struct BridgeOwnerAdmissionTests {
 @Suite("What the owner copies out of Settings")
 struct BridgeOwnerCommandTests {
     private func attachment(
-        shim: String = "/Applications/Bloom.app/Contents/MacOS/bloom-bridge",
+        shim: String = "/Applications/Swarm.app/Contents/MacOS/bloom-bridge",
         socket: String = "/tmp/bloom-bridge-abc.sock",
         token: String = "deadbeef"
     ) -> BridgeAttachment {
@@ -160,7 +160,7 @@ struct BridgeOwnerCommandTests {
         #expect(command.contains("-e 'BLOOM_BRIDGE_SOCKET=/tmp/bloom-bridge-abc.sock'"))
         #expect(command.contains("-e 'BLOOM_BRIDGE_TOKEN=deadbeef'"))
         #expect(command.contains("-e 'BLOOM_BRIDGE_ROLE=owner'"))
-        #expect(command.hasSuffix("-- '/Applications/Bloom.app/Contents/MacOS/bloom-bridge'"))
+        #expect(command.hasSuffix("-- '/Applications/Swarm.app/Contents/MacOS/bloom-bridge'"))
     }
 
     @Test("Codex receives the same owner connection")
@@ -171,7 +171,7 @@ struct BridgeOwnerCommandTests {
         #expect(command.contains("--env 'BLOOM_BRIDGE_SOCKET=/tmp/bloom-bridge-abc.sock'"))
         #expect(command.contains("--env 'BLOOM_BRIDGE_TOKEN=deadbeef'"))
         #expect(command.contains("--env 'BLOOM_BRIDGE_ROLE=owner'"))
-        #expect(command.hasSuffix("-- '/Applications/Bloom.app/Contents/MacOS/bloom-bridge'"))
+        #expect(command.hasSuffix("-- '/Applications/Swarm.app/Contents/MacOS/bloom-bridge'"))
     }
 
     @Test("Grok receives the same owner connection")
@@ -182,7 +182,7 @@ struct BridgeOwnerCommandTests {
         #expect(command.contains("-e 'BLOOM_BRIDGE_SOCKET=/tmp/bloom-bridge-abc.sock'"))
         #expect(command.contains("-e 'BLOOM_BRIDGE_TOKEN=deadbeef'"))
         #expect(command.contains("-e 'BLOOM_BRIDGE_ROLE=owner'"))
-        #expect(command.hasSuffix("-- '/Applications/Bloom.app/Contents/MacOS/bloom-bridge'"))
+        #expect(command.hasSuffix("-- '/Applications/Swarm.app/Contents/MacOS/bloom-bridge'"))
     }
 
     /// The name the owner registers under cannot be the one Bloom's own `--mcp-config` uses: that
@@ -202,23 +202,24 @@ struct BridgeOwnerCommandTests {
     func namePerInstance() {
         #expect(
             BridgeRegistration.ownerServerName(forBundleIdentifier: Store.primaryBundleIdentifier)
-                == "bloom"
+                == "swarm"
         )
         #expect(
             BridgeRegistration.ownerServerName(forBundleIdentifier: Store.devBundleIdentifier)
-                == "bloom-dev"
+                == "swarm-dev"
         )
         #expect(
-            BridgeRegistration.ownerServerName(forBundleIdentifier: "be.spatie.bloom.beta")
-                == "bloom-be-spatie-bloom-beta"
+            BridgeRegistration.ownerServerName(
+                forBundleIdentifier: "io.github.priyanshuupadhyay.swarm.beta"
+            ) == "swarm-io-github-priyanshuupadhyay-swarm-beta"
         )
-        #expect(BridgeRegistration.ownerServerName(forBundleIdentifier: nil) == "bloom-unbundled")
+        #expect(BridgeRegistration.ownerServerName(forBundleIdentifier: nil) == "swarm-unbundled")
     }
 
     @Test("a name is lower case, hyphenated, and never empty")
     func slugs() {
-        #expect(BridgeRegistration.slugified("Bloom Dev") == "bloom-dev")
-        #expect(BridgeRegistration.slugified("  Bloom (caf\u{e9} 2) ") == "bloom-caf-2")
+        #expect(BridgeRegistration.slugified("Swarm Dev") == "swarm-dev")
+        #expect(BridgeRegistration.slugified("  Swarm (caf\u{e9} 2) ") == "swarm-caf-2")
         #expect(BridgeRegistration.slugified("...") == "")
         // Nothing survives the slug, so the fallback answers instead of handing `claude mcp add`
         // an empty name and letting it read the shim path as one.
@@ -228,11 +229,11 @@ struct BridgeOwnerCommandTests {
     @Test("a path with a space in it survives the shell")
     func quotesPaths() {
         let command = BridgeRegistration.ownerAddCommand(
-            attachment(shim: "/Users/me/Applications/Bloom Dev.app/Contents/MacOS/bloom-bridge")
+            attachment(shim: "/Users/me/Applications/Swarm Dev.app/Contents/MacOS/bloom-bridge")
         )
 
         #expect(command.hasSuffix(
-            "-- '/Users/me/Applications/Bloom Dev.app/Contents/MacOS/bloom-bridge'"
+            "-- '/Users/me/Applications/Swarm Dev.app/Contents/MacOS/bloom-bridge'"
         ))
     }
 

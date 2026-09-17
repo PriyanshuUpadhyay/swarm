@@ -143,7 +143,7 @@ public struct WorkspaceManager: Sendable {
 
     /// Where a project coming back into the sidebar says so. See `bringProjectBack`.
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "workspace"
     )
 
@@ -157,7 +157,7 @@ public struct WorkspaceManager: Sendable {
     /// the whole of that and is what a route calls.
     ///
     /// **Internal, and that is the point.** It was public, and every route that reached it grew
-    /// its own half of the orchestration around it: the create window had all of it, the `bloom://`
+    /// its own half of the orchestration around it: the create window had all of it, the `swarm-ui://`
     /// link and the Services menu had none of it, and the Shortcuts intent could not reach it at
     /// all and polled the database instead. Internal means the app target cannot call this, so the
     /// compiler holds the line for every route outside the core, and `Tools/house-rules.sh` holds
@@ -319,7 +319,7 @@ public struct WorkspaceManager: Sendable {
         // '/Users/freek/conductor/workspaces/there-there/adelaide'" with "failed to run git: exit
         // status 128" on the end, which reached a dialogue as it stood. The create window asks the
         // same question before Create is pressed, so this is the second of two agreeing
-        // mechanisms rather than the only one: every other way in, the bridge and a `bloom://`
+        // mechanisms rather than the only one: every other way in, the bridge and a `swarm-ui://`
         // link included, arrives here without having asked anything.
         //
         // One `git worktree list` on the path between pressing Create and the workspace existing.
@@ -492,7 +492,7 @@ public struct WorkspaceManager: Sendable {
     }
 
     /// What the setup log says when a run was stopped before the script exited.
-    public static let setupStoppedNote = "[bloom] Setup was stopped before it finished. "
+    public static let setupStoppedNote = "[swarm] Setup was stopped before it finished. "
         + "Run setup again to finish it."
 
     /// How long a stopped setup script has to exit after SIGTERM before it is killed.

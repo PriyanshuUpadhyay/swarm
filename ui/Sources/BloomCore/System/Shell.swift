@@ -115,7 +115,7 @@ public enum Shell {
         variables.removeValue(forKey: "NO_COLOR")
         variables["TERM"] = "xterm-256color"
         variables["COLORTERM"] = "truecolor"
-        variables["TERM_PROGRAM"] = "Bloom"
+        variables["TERM_PROGRAM"] = "Swarm"
         if variables["LANG"] == nil { variables["LANG"] = "en_US.UTF-8" }
         return variables.merging(extra) { _, requested in requested }
     }

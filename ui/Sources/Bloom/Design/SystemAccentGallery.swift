@@ -83,7 +83,7 @@ struct SystemAccentGallery: View {
                     }
                 }
 
-                captioned("What Bloom draws itself") {
+                captioned("What Swarm draws itself") {
                     VStack(alignment: .leading, spacing: Metrics.spacingWide) {
                         swatch(
                             "Palette.selectedEmphasized",

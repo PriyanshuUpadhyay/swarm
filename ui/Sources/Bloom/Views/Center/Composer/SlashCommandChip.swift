@@ -181,7 +181,7 @@ struct SlashCommandChip: View {
     }
 
     private var openTitle: String {
-        "Open /\(name) in Bloom"
+        "Open /\(name) in Swarm"
     }
 
     private var helpText: String {

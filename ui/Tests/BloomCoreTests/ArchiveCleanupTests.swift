@@ -185,7 +185,7 @@ struct ArchiveCleanupTests {
         let footprints = try await store.archivedFootprints()
         let selection: Set<WorkspaceID> = [alpha.id, bravo.id, charlie.id]
         let target = footprints.filter { selection.contains($0.id) }
-        #expect(ArchiveDeletion(target).title == "Delete everything Bloom kept about 3 archived workspaces?")
+        #expect(ArchiveDeletion(target).title == "Delete everything Swarm kept about 3 archived workspaces?")
 
         let removed = try await store.deleteArchivedWorkspaces(ids: target.map(\.id))
         #expect(removed == 3)
@@ -267,7 +267,7 @@ struct ArchiveCleanupTests {
         let deletion = ArchiveDeletion([
             footprint(name: "port work", bytes: 1_500_000, archivedAt: 100, messages: 1, sessions: 1, comments: 1, note: true)
         ])
-        #expect(deletion.title == "Delete everything Bloom kept about \u{201C}port work\u{201D}?")
+        #expect(deletion.title == "Delete everything Swarm kept about \u{201C}port work\u{201D}?")
         #expect(deletion.losses[0] == "1 transcript message across 1 chat, holding \(ArchiveDeletion.bytes(1_500_000))")
         #expect(deletion.losses[1] == "1 review comment written by hand")
         #expect(deletion.losses[2] == "a workspace note")
@@ -281,7 +281,7 @@ struct ArchiveCleanupTests {
             footprint(name: "a", bytes: 1_000, archivedAt: 1, messages: 4, sessions: 2),
             footprint(name: "b", bytes: 2_000, archivedAt: 2, messages: 6, sessions: 1),
         ])
-        #expect(deletion.title == "Delete everything Bloom kept about 2 archived workspaces?")
+        #expect(deletion.title == "Delete everything Swarm kept about 2 archived workspaces?")
         #expect(deletion.losses[0] == "10 transcript messages across 3 chats, holding \(ArchiveDeletion.bytes(3_000))")
         #expect(deletion.cancelLabel == "Keep the records")
     }

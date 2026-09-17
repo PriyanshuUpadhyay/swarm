@@ -716,7 +716,7 @@ final class WorkspaceModel {
     ) async -> CrewStartOutcome {
         guard let store else { return .refused(Self.crewWithoutStore) }
         guard let parent = try? await store.session(id: parentID) else {
-            return .refused("The chat that asked for this subagent is not in Bloom any more.")
+            return .refused("The chat that asked for this subagent is not in Swarm any more.")
         }
         guard parent.parentSessionID == nil else {
             return .refused(Crew.sentence(for: .notAnOrchestrator))
@@ -744,7 +744,7 @@ final class WorkspaceModel {
         // value built three lines up, which is the one shape the head of `Store.upsert(_ session:)`
         // allows it in.
         guard let stored = try? await store.upsert(member) else {
-            return .refused("Bloom could not open a chat for that subagent.")
+            return .refused("Swarm could not open a chat for that subagent.")
         }
 
         // The brief joins the queue rather than being sent, exactly as a workspace's opening
@@ -777,7 +777,7 @@ final class WorkspaceModel {
         await transcript.drain()
 
         return .started(
-            "Started subagent \"\(name)\" in this workspace. Talk to it with agent_say, and Bloom "
+            "Started subagent \"\(name)\" in this workspace. Talk to it with agent_say, and Swarm "
                 + "will tell you here when it stops, with the last thing it said."
         )
     }
@@ -802,7 +802,7 @@ final class WorkspaceModel {
         // message is headed with the name of the agent that sent it, whichever way it is going,
         // so an agent is told which chat is talking to it rather than merely that one is.
         guard let caller = try? await store.session(id: callerID) else {
-            return .refused("The chat that said that is not in Bloom any more.")
+            return .refused("The chat that said that is not in Swarm any more.")
         }
 
         let target: Session
@@ -865,7 +865,7 @@ final class WorkspaceModel {
             return .delivered("Passed that to the agent that started you. \(when)")
         }
         return .delivered(
-            "Passed that to subagent \"\(target.title)\". \(when) Bloom will tell you here when "
+            "Passed that to subagent \"\(target.title)\". \(when) Swarm will tell you here when "
                 + "it stops."
         )
     }
@@ -987,13 +987,13 @@ final class WorkspaceModel {
     /// The one sentence every crew method says when the database never opened, so three refusals
     /// cannot describe one absence three ways.
     private static let crewWithoutStore =
-        "Bloom's database is not open, so it cannot run a subagent right now."
+        "Swarm's database is not open, so it cannot run a subagent right now."
 
     /// Two members whose names differ only in case. Refused rather than resolved to whichever was
     /// started first, which is `CrewLookup`'s own rule: acting on the agent the caller did not name
     /// is the one outcome these three methods must not have.
     private static func ambiguousCrewMember(_ name: String) -> String {
-        "Two of your subagents are called \"\(name)\", differing only in case, so Bloom will not "
+        "Two of your subagents are called \"\(name)\", differing only in case, so Swarm will not "
             + "guess which you meant. Stop one of them, or say it again with the exact name "
             + "agent_list prints."
     }

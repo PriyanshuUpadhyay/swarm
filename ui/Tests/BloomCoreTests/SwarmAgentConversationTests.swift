@@ -94,7 +94,7 @@ struct SwarmAgentConversationTests {
 
         let notice = failure.notice(after: "Docs was archived. It stopped a background command: Serve.")
         #expect(notice.message == "Docs was archived. It stopped a background command: Serve. "
-            + "Bloom could not close swarm agents `code-complex-1`, `review-1` in session `session-7`. "
+            + "Swarm could not close swarm agents `code-complex-1`, `review-1` in session `session-7`. "
             + "Run `swarm close <name>` for each agent by hand.")
         #expect(notice.dismissal == .untilDismissed)
     }
@@ -106,14 +106,14 @@ struct SwarmAgentConversationTests {
         )
 
         #expect(failure.notice(after: "Docs was archived.").message == "Docs was archived. "
-            + "Bloom could not list or close swarm agent `code-complex-1` in session `session-8`. "
+            + "Swarm could not list or close swarm agent `code-complex-1` in session `session-8`. "
             + "Run `swarm close <name>` for each agent by hand.")
 
         let unknown = SwarmArchiveCloseFailure(
             session: SwarmSessionID("session-9"), agents: [], listingFailed: true
         )
         #expect(unknown.notice(after: "Docs was archived.").message == "Docs was archived. "
-            + "Bloom could not list or close the agents in swarm session `session-9`. "
+            + "Swarm could not list or close the agents in swarm session `session-9`. "
             + "Run `swarm agents`, then `swarm close <name>` by hand.")
     }
 

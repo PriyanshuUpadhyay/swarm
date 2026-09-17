@@ -92,7 +92,7 @@ public enum WorkspacesRoot {
         }
         return "New installations use a folder named .noindex, which keeps Spotlight out of the "
             + "dependencies and build folders inside every worktree. This one keeps the folder it "
-            + "already has, because moving a worktree would break the path git and Bloom both "
+            + "already has, because moving a worktree would break the path git and Swarm both "
             + "hold for it."
     }
 }

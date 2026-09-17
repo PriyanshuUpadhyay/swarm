@@ -258,7 +258,7 @@ struct CrewToolTests {
         #expect(stop.contains("ends that agent if it is still running"))
         #expect(stop.contains("takes its row out of the owner's sidebar"))
         #expect(stop.contains("frees its name"))
-        #expect(stop.contains("its conversation stays in Bloom for the owner to read"))
+        #expect(stop.contains("its conversation stays in Swarm for the owner to read"))
         #expect(stop.contains("finish with an agent and not only how you interrupt one"))
     }
 

@@ -171,7 +171,7 @@ struct GitHubSignInSheet: View {
         VStack(alignment: .leading, spacing: Metrics.spacingWide) {
             Text(
                 "You can sign in anywhere: run gh auth login in your own terminal, or use a "
-                    + "token you already have. Bloom re-checks on its own, and Check again asks "
+                    + "token you already have. Swarm re-checks on its own, and Check again asks "
                     + "straight away."
             )
             .font(Typo.micro)
@@ -295,7 +295,7 @@ struct GitHubSignInSheet: View {
             case .notInstalled:
                 phase = .failed("The gh command is still not on this Mac.")
             case .unknown:
-                phase = .failed("Bloom could not tell whether that worked.")
+                phase = .failed("Swarm could not tell whether that worked.")
             }
         }
     }

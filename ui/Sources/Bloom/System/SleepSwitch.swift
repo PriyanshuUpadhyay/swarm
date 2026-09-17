@@ -26,14 +26,16 @@ final class SleepSwitch {
 
     private(set) var standing: Standing = .needsApproval
 
-    @ObservationIgnored private let service = SMAppService.daemon(plistName: "be.spatie.bloom.sleep.plist")
+    @ObservationIgnored private let service = SMAppService.daemon(
+        plistName: "io.github.priyanshuupadhyay.swarm.sleep.plist"
+    )
     @ObservationIgnored private var connection: NSXPCConnection?
 
     private init() {
         refreshStanding()
-        // Approving happens in System Settings, so the answer changes while Bloom is in the
+        // Approving happens in System Settings, so the answer changes while Swarm is in the
         // background and nothing here would ever hear about it. Without this the pane goes on
-        // saying "Allow Bloom's helper" after somebody already has.
+        // saying "Allow Swarm's helper" after somebody already has.
         // swiftlint:disable:next discarded_notification_center_observer
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -108,7 +110,9 @@ final class SleepSwitch {
 
     private func proxy(onInvalidation: @escaping @Sendable () -> Void) -> SleepControl? {
         if connection == nil {
-            let created = NSXPCConnection(machServiceName: "be.spatie.bloom.sleep", options: .privileged)
+            let created = NSXPCConnection(
+                machServiceName: "io.github.priyanshuupadhyay.swarm.sleep", options: .privileged
+            )
             created.remoteObjectInterface = NSXPCInterface(with: SleepControl.self)
             created.invalidationHandler = onInvalidation
             created.resume()

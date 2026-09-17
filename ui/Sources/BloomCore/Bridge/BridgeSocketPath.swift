@@ -12,7 +12,7 @@ import Foundation
 /// silence.** A path longer than that does not fail to bind: it binds to a shorter name, so two
 /// instances whose paths agree for the first 103 bytes quietly share one socket, which is the
 /// exact failure the fingerprint exists to prevent. The obvious home,
-/// `~/Library/Application Support/Bloom/`, is already around 45 characters before the filename and
+/// `~/Library/Application Support/Swarm/`, is already around 45 characters before the filename and
 /// the Dev copy is longer, so it fits on this machine and would not fit for somebody with a long
 /// user name. The per-user Darwin temp directory is around 49 and, unlike the support directory,
 /// does not grow with the app's name. The length is asserted anyway, because "it fits" is a
@@ -49,7 +49,7 @@ public enum BridgeSocketPathError: Error, CustomStringConvertible {
             """
             the bridge socket path \(path) is \(path.utf8.count) bytes, and a unix socket \
             name may be at most \(limit - 1). A longer one is truncated rather than refused, \
-            so two copies of Bloom could quietly share one socket
+            so two copies of Swarm could quietly share one socket
             """
         }
     }

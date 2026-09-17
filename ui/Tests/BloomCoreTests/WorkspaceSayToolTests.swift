@@ -154,15 +154,15 @@ struct WorkspaceSayToolTests {
         )
 
         let record = try #require(WorkspaceSayRecord(
-            toolName: "mcp__bloom-workspace-bridge__workspace_say", input: input, resultText: result.text
+            toolName: "mcp__swarm-ui-workspace-bridge__workspace_say", input: input, resultText: result.text
         ))
         #expect(record.messageID == window.sent.first?.id)
         #expect(record.text == "Release it.")
         #expect(record.target.workspace == "release")
         #expect(record.target.chat == "Release")
 
-        #expect(WorkspaceSayRecord(toolName: "mcp__bloom-workspace-bridge__agent_say", input: input, resultText: result.text) == nil)
-        #expect(WorkspaceSayRecord(toolName: "mcp__bloom-workspace-bridge__workspace_say", input: input, resultText: "Refused.") == nil)
+        #expect(WorkspaceSayRecord(toolName: "mcp__swarm-ui-workspace-bridge__agent_say", input: input, resultText: result.text) == nil)
+        #expect(WorkspaceSayRecord(toolName: "mcp__swarm-ui-workspace-bridge__workspace_say", input: input, resultText: "Refused.") == nil)
     }
 
     @Test("it refuses a blank message, its own workspace, an unknown one and an archived one")
@@ -540,7 +540,7 @@ struct WorkspaceSayToolTests {
 
         #expect(!result.isError, "\(result.text)")
         #expect(JSONValue.parse(result.text)?["notify_when_done"]?.boolValue == true)
-        #expect(result.text.contains("Bloom will tell this chat once"))
+        #expect(result.text.contains("Swarm will tell this chat once"))
         let watch = try #require(try await f.store.unspentWorkspaceDoneWatches(targetWorkspaceID: f.releaser.id).first)
         #expect(watch.watcherSessionID == f.fixerChat.id)
     }

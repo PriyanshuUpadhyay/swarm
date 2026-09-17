@@ -8,7 +8,7 @@ struct WorkspaceStatusIntent: AppIntent {
 
     static let description = IntentDescription(
         """
-        Returns one Bloom workspace with its status, whether an agent is running, its diff stat \
+        Returns one Swarm workspace with its status, whether an agent is running, its diff stat \
         and its pull request.
         """,
         categoryName: "Workspaces",
@@ -20,7 +20,7 @@ struct WorkspaceStatusIntent: AppIntent {
 
     @Parameter(
         title: "Ask GitHub",
-        description: "Looks the pull request up with gh. Turn it off to answer from Bloom's database alone.",
+        description: "Looks the pull request up with gh. Turn it off to answer from Swarm's database alone.",
         default: true
     )
     var includePullRequest: Bool

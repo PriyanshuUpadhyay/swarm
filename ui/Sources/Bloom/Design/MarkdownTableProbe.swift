@@ -23,9 +23,9 @@ enum MarkdownTableProbe {
         }
         let samples = [
             """
-            | Native option | Fit for Bloom |
+            | Native option | Fit for Swarm |
             | --- | --- |
-            | **Window tabs** (`NSWindowTabGroup`) | Provides native window tabbing, but each tab represents an entire window. This would require significant changes to Bloom's tabs and split panes. [Apple documentation](https://developer.apple.com/documentation/appkit/nswindowtabgroup) |
+            | **Window tabs** (`NSWindowTabGroup`) | Provides native window tabbing, but each tab represents an entire window. This would require significant changes to Swarm's tabs and split panes. [Apple documentation](https://developer.apple.com/documentation/appkit/nswindowtabgroup) |
             | **In-view tabs** (`NSTabViewController` with a segmented control) | Can sit inside our existing layout and supplies native styling and sizing. Closing, reordering and dragging tabs into splits would still need additional implementation. |
             """,
             """

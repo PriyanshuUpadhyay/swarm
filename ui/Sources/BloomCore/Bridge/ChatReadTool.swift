@@ -114,7 +114,7 @@ public struct ChatReadTool: BridgeToolHandling {
             }
             return .json(.object(answer))
         } catch {
-            return .failure("Bloom could not read the chat: \(error.localizedDescription)")
+            return .failure("Swarm could not read the chat: \(error.localizedDescription)")
         }
     }
 

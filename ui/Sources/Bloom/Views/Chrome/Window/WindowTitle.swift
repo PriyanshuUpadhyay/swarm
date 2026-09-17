@@ -31,7 +31,7 @@ struct WindowTitle: ViewModifier {
 
     private var title: String {
         if let workspace = app.selectedWorkspace { return workspace.name }
-        return "Bloom"
+        return "Swarm"
     }
 
     func body(content: Content) -> some View {
@@ -70,7 +70,7 @@ struct WindowTitle: ViewModifier {
 final class WindowTitleText {
     static let shared = WindowTitleText()
 
-    private(set) var text = "Bloom"
+    private(set) var text = "Swarm"
 
     /// The selection whose title tells VoiceOver it is running, because what it shows has a turn
     /// under way and no tab strip to say so in. See `BusySignalPlacement`.

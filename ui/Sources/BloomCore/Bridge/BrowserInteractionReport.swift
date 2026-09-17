@@ -21,14 +21,14 @@ public enum BrowserInteractionReport {
                     + "snapshot. Take a new snapshot."
             )
         case "disabled":
-            return .refused("\(ref.label) is disabled, so Bloom left it alone.")
+            return .refused("\(ref.label) is disabled, so Swarm left it alone.")
         default:
             return nil
         }
     }
 
     static let unanswered = BrowserPaneAnswer.refused(
-        "That page did not answer. It may have navigated while Bloom was acting on it. "
+        "That page did not answer. It may have navigated while Swarm was acting on it. "
             + "browser_read says where it is now."
     )
 
@@ -76,7 +76,7 @@ public enum BrowserInteractionReport {
                     + "filled. Use browser_click for buttons, checkboxes and radio buttons."
             )
         case "readonly":
-            return .refused("\(ref.label) is read only, so Bloom left it alone.")
+            return .refused("\(ref.label) is read only, so Swarm left it alone.")
         default:
             return unanswered
         }
@@ -112,7 +112,7 @@ public enum BrowserInteractionReport {
 
     /// What `browser_console` adds after the log, on the call that started the listening.
     public static let consoleJustStarted = """
-        Bloom started listening to this page's console with this call, so nothing logged before \
+        Swarm started listening to this page's console with this call, so nothing logged before \
         it is here. Call browser_console again after doing something, or browser_reload and then \
         browser_console to hear the page from the start.
         """

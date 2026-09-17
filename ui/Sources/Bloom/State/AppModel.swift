@@ -507,7 +507,7 @@ final class AppModel {
             // register and not a person's. See its own doc for the modal that made the point.
             Log.launchStep("bootstrap failed")
             alert = BloomAlert(
-                title: "Could not open the Bloom database",
+                title: "Could not open the Swarm database",
                 message: TranscriptStanding.complaint(about: error)
             )
             isLoaded = true
@@ -597,7 +597,7 @@ final class AppModel {
         alert = BloomAlert(
             title: "Still using the database in the old location",
             message: """
-                Bloom could not copy \(LegacyDatabase.legacyPath.path) to its new home, so it \
+                Swarm could not copy \(LegacyDatabase.legacyPath.path) to its new home, so it \
                 opened the original instead. Your work is all there. \
                 \(outcome.problem ?? "The copy could not be verified.")
                 """

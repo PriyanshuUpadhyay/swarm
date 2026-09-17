@@ -151,7 +151,7 @@ public struct ComposerControls: Equatable, Sendable {
         guard !hasWorktree else { return nil }
         return "This conversation has no worktree, so anything wider than "
             + "\(PermissionMode.auto.label(on: agentKind)) reaches the whole machine "
-            + "rather than a copy of a project. Whatever you choose lasts until Bloom "
+            + "rather than a copy of a project. Whatever you choose lasts until Swarm "
             + "next starts, and then it is back to that."
     }
 

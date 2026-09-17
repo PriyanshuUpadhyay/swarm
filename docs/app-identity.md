@@ -11,6 +11,7 @@ these values, so the pieces agree.
 | Development bundle identifier (where Bloom had `be.spatie.bloom.dev`) | `io.github.priyanshuupadhyay.swarm.dev` |
 | URL scheme and its `CFBundleURLName` | `swarm-ui`, `io.github.priyanshuupadhyay.swarm.deeplink` |
 | Sleep helper plist and Mach service | `io.github.priyanshuupadhyay.swarm.sleep` (`.plist`) |
+| Owner signing team | `not set` |
 | Dispatch queue labels and log subsystem | prefix `io.github.priyanshuupadhyay.swarm` |
 | Application Support folder | `Swarm` |
 | Terminal tmux socket and session prefix | `swarmui-<hash>` and `swarmui` |

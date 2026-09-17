@@ -148,12 +148,12 @@ public enum RepositoryStartAbandonment: Sendable, Equatable {
             "Nothing was changed. The folder is exactly as it was."
         case .repositoryRemoved:
             """
-            The repository Bloom had started making was removed again, so the folder is exactly \
+            The repository Swarm had started making was removed again, so the folder is exactly \
             as it was. Anything the run had already written to .gitignore is still there.
             """
         case .projectKept:
             """
-            The folder is a git repository and your files are in its first commit, so Bloom can \
+            The folder is a git repository and your files are in its first commit, so Swarm can \
             run workspaces in it. Nothing was sent to GitHub.
             """
         }
@@ -234,7 +234,7 @@ public struct RepositoryStartFailure: Error, Sendable, Equatable {
         }
         if !completed.contains(.commit) {
             return """
-            The folder is now a git repository, and it has no commits. Bloom cannot create a \
+            The folder is now a git repository, and it has no commits. Swarm cannot create a \
             workspace until it has one, because a worktree needs a branch to start from.
             """
         }
@@ -635,7 +635,7 @@ public enum RepositoryStarter {
         var block = ""
         if !existing.isEmpty && !existing.hasSuffix("\n") { block += "\n" }
         if !existing.isEmpty { block += "\n" }
-        block += "# Added by Bloom when this folder became a repository.\n"
+        block += "# Added by Swarm when this folder became a repository.\n"
 
         let secrets = paths.filter { $0.reason == .sensitive }
         let repositories = paths.filter { $0.reason == .nestedRepository }

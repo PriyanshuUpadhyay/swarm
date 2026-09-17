@@ -781,7 +781,7 @@ private final class NavigationObserver: NSObject, WKNavigationDelegate {
 /// The page was captured and the bytes could not be made into a PNG, which is the one failure
 /// `takeSnapshot` does not report itself.
 struct BrowserSnapshotFailure: LocalizedError {
-    var errorDescription: String? { "Bloom could not turn this page into an image." }
+    var errorDescription: String? { "Swarm could not turn this page into an image." }
 }
 
 /// One of Bloom's own scripts answered with something that is not what it returns.
@@ -792,6 +792,6 @@ struct BrowserSnapshotFailure: LocalizedError {
 /// say something a model can act on, and "try again once it has loaded" is that sentence.
 struct BrowserScriptFailure: LocalizedError {
     var errorDescription: String? {
-        "That page did not answer. It may have navigated while Bloom was reading it."
+        "That page did not answer. It may have navigated while Swarm was reading it."
     }
 }

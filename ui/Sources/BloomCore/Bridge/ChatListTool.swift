@@ -60,7 +60,7 @@ public struct ChatListTool: BridgeToolHandling {
             }
             return .json(.object(answer))
         } catch {
-            return .failure("Bloom could not list the chats: \(error.localizedDescription)")
+            return .failure("Swarm could not list the chats: \(error.localizedDescription)")
         }
     }
 

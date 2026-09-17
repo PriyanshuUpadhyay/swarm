@@ -5,7 +5,7 @@ import Testing
 @Suite("BridgeUserRegistration")
 struct BridgeUserRegistrationTests {
     private let attachment = BridgeAttachment(
-        shimPath: "/Applications/Bloom.app/Contents/MacOS/bloom-bridge",
+        shimPath: "/Applications/Swarm.app/Contents/MacOS/bloom-bridge",
         socketPath: "/tmp/bloom-bridge-abc123.sock",
         token: "0123456789abcdef",
         role: .owner
@@ -128,9 +128,11 @@ struct BridgeUserRegistrationTests {
     func namedPerCopy() throws {
         // The dev build's entry is not the owner build's, which is the whole reason the name is
         // derived. A window that looked for one name would tell Bloom Dev it was already set up.
-        let dev = BridgeRegistration.ownerServerName(forBundleIdentifier: "be.spatie.bloom.dev")
-        #expect(dev == "bloom-dev")
-        let data = try config(["bloom": entry()])
+        let dev = BridgeRegistration.ownerServerName(
+            forBundleIdentifier: "io.github.priyanshuupadhyay.swarm.dev"
+        )
+        #expect(dev == "swarm-dev")
+        let data = try config(["swarm": entry()])
         let state = BridgeUserRegistration.state(userConfig: data, serverNamed: dev, matching: attachment)
         #expect(state == .notRegistered)
     }

@@ -40,7 +40,7 @@ public struct WorkspaceListTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "workspace_list",
         description: """
-            The workspaces Bloom has: what each one is, what state it is in, and where its \
+            The workspaces Swarm has: what each one is, what state it is in, and where its \
             worktree is on disk. This is how you find out what became of a workspace you \
             started, since workspace_start answers before any work happens and nothing waits \
             for it.
@@ -54,7 +54,7 @@ public struct WorkspaceListTool: BridgeToolHandling {
 
             The worktree path is the most useful thing here. It is an ordinary git checkout, so \
             read the diff, the log and the files in it with your own tools rather than asking \
-            Bloom for them.
+            Swarm for them.
 
             agent_running is about right now, and a workspace with nothing running is still a \
             workspace: most of them sit idle most of the time, waiting to be read and merged. \
@@ -63,15 +63,15 @@ public struct WorkspaceListTool: BridgeToolHandling {
             agent_running. If the two ever look as though they disagree, one of them is being \
             read as the other's number.
 
-            By default it reads Bloom's database and nothing else, and at that price GitHub is \
+            By default it reads Swarm's database and nothing else, and at that price GitHub is \
             not consulted at all: there is no pull request, no checks, and the status can never \
             say merged, closed, draft or anything about checks. A default call has not looked, so \
             do not report that a workspace has no pull request on the strength of one. Pass \
             include_github to ask, which costs one gh call and one git call per workspace and is \
             slow on a long list.
 
-            The diff counts and the states come from Bloom's database, which a running Bloom \
-            refreshes every few seconds. With Bloom closed they are as old as the last time it \
+            The diff counts and the states come from Swarm's database, which a running Swarm \
+            refreshes every few seconds. With Swarm closed they are as old as the last time it \
             was open. Read only. It changes nothing and starts nothing.
             """,
         inputSchema: .object([
@@ -123,7 +123,7 @@ public struct WorkspaceListTool: BridgeToolHandling {
                     return .failure(refusal)
                 }
                 guard case .found(let found) = outcome else {
-                    return .failure("Bloom has no project called '\(named)'.")
+                    return .failure("Swarm has no project called '\(named)'.")
                 }
                 project = found
             }
@@ -161,7 +161,7 @@ public struct WorkspaceListTool: BridgeToolHandling {
                 )),
             ]))
         } catch {
-            return .failure("Bloom could not read its workspaces: \(error.readableMessage)")
+            return .failure("Swarm could not read its workspaces: \(error.readableMessage)")
         }
     }
 
@@ -181,8 +181,8 @@ public struct WorkspaceListTool: BridgeToolHandling {
 
         if count == 0 {
             sentences.append(
-                project.map { "Bloom has no workspaces in '\($0.name)'." }
-                    ?? "Bloom has no workspaces."
+                project.map { "Swarm has no workspaces in '\($0.name)'." }
+                    ?? "Swarm has no workspaces."
             )
             if !includeArchived {
                 sentences.append("Archived ones were not counted. Pass include_archived to see them.")

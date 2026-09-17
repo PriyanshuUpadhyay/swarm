@@ -213,13 +213,13 @@ public enum ArchiveDeletionOutcome: Sendable, Hashable {
         case .deleted: return nil
         case let .refused(complaint):
             return """
-                Bloom could not delete those archived workspaces, so they are all still here \
+                Swarm could not delete those archived workspaces, so they are all still here \
                 and nothing has been freed.
 
                 No worktree and no branch was involved: this is the database refusing to write, \
                 and it will refuse the next attempt the same way.
 
-                Quit Bloom and open it again, and if it happens a second time the database itself \
+                Quit Swarm and open it again, and if it happens a second time the database itself \
                 needs looking at.
 
                 The database said: \(complaint)
@@ -250,9 +250,9 @@ public struct ArchiveDeletion: Sendable, Hashable {
     /// title nobody reads to the end of.
     public var title: String {
         if let only = footprints.first, footprints.count == 1 {
-            return "Delete everything Bloom kept about \u{201C}\(only.workspace.name)\u{201D}?"
+            return "Delete everything Swarm kept about \u{201C}\(only.workspace.name)\u{201D}?"
         }
-        return "Delete everything Bloom kept about \(Self.count(footprints.count, "archived workspace"))?"
+        return "Delete everything Swarm kept about \(Self.count(footprints.count, "archived workspace"))?"
     }
 
     /// The sentence above the list: what state this leaves things in.
@@ -268,7 +268,7 @@ public struct ArchiveDeletion: Sendable, Hashable {
         return """
         \(subject) already lost \(pronoun) worktree when \(footprints.count == 1 ? "it was" : "they were") \
         archived, and that could be undone as long as the branch survived. This cannot. It removes \
-        the record from Bloom\u{2019}s database, and there is nothing anywhere else that holds a copy.
+        the record from Swarm\u{2019}s database, and there is nothing anywhere else that holds a copy.
         """
     }
 

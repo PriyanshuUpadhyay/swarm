@@ -82,7 +82,7 @@ struct LiveBridgeTests {
         defer { approvals.cancel() }
 
         try await runner.send("""
-            Call the whoami tool from the bloom-workspace-bridge MCP server. \
+            Call the whoami tool from the swarm-ui-workspace-bridge MCP server. \
             Reply with only the workspace name it reports and nothing else.
             """)
 

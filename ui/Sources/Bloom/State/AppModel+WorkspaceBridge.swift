@@ -38,11 +38,11 @@ extension AppModel {
         // crosses the line is "do this to that pane", and `driveBrowserForBridge` resolves which
         // pane the same way every time. See `BrowserPaneCommanding`.
         let browser: BrowserPaneCommanding = { [weak self] command, workspaceID in
-            guard let self else { return .refused("Bloom is still starting up.") }
+            guard let self else { return .refused("Swarm is still starting up.") }
             return await self.driveBrowserForBridge(command, in: workspaceID)
         }
         let terminal: TerminalPaneCommanding = { [weak self] command, workspaceID in
-            guard let self else { return .refused("Bloom is still starting up.") }
+            guard let self else { return .refused("Swarm is still starting up.") }
             return await self.driveTerminalForBridge(command, in: workspaceID)
         }
 
@@ -54,30 +54,30 @@ extension AppModel {
                 )
             },
             PaneOpenTool { [weak self] order, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.openPaneForBridge(order, in: workspaceID)
             },
             TerminalStartTool { [weak self] order, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.startTerminalForBridge(order, in: workspaceID)
             },
             TerminalReadTool(terminal),
             TerminalWriteTool(terminal),
             TerminalSendKeyTool(terminal),
             MediaShowTool { [weak self] order, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return self.showMediaForBridge(order, in: workspaceID)
             },
             PaneSplitTool { [weak self] order, axis, anchor, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.splitPaneForBridge(order, axis: axis, anchor: anchor, in: workspaceID)
             },
             PaneCloseTool { [weak self] kind, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.closePaneForBridge(kind, in: workspaceID)
             },
             PaneRenameTool { [weak self] title, kind, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.renamePaneForBridge(title, kind: kind, in: workspaceID)
             },
             PaneListTool { [weak self] workspaceID in
@@ -92,7 +92,7 @@ extension AppModel {
                 return await self.workspaceTabsForBridge(workspaceID)
             },
             WorkspaceTabSelectTool { [weak self] choice, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.selectWorkspaceTabForBridge(choice, in: workspaceID)
             },
             BrowserReadTool(browser),
@@ -109,12 +109,12 @@ extension AppModel {
             BrowserConsoleTool(browser),
             BrowserNetworkTool(browser),
             WorkspaceArchiveTool { [weak self] order in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.archiveWorkspaceForBridge(order)
             },
             WorkspaceMergeTool { [weak self] workspace, pullRequest, method in
                 guard let self else {
-                    return .refused("Bloom is still starting up. Try again in a moment.")
+                    return .refused("Swarm is still starting up. Try again in a moment.")
                 }
                 return await self.requestMergeForBridge(workspace, pullRequest, method: method)
             },
@@ -122,22 +122,22 @@ extension AppModel {
             // nowhere else. The name and the sentence were resolved in the core before this is
             // reached, so all the app does is move the selection.
             RevealTool { [weak self] reveal in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.revealForBridge(reveal)
             },
             // The three crew verbs. Every rule about them is in `Crew` and in the tools, which is
             // where a test can read it; what crosses here is the one thing the core cannot do,
             // which is make a chat in this window run a CLI. See `CrewSeam`.
             AgentStartTool { [weak self] order, sessionID, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.startCrewForBridge(order, from: sessionID, in: workspaceID)
             },
             AgentSayTool { [weak self] name, text, sessionID, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.sayToCrewForBridge(name, saying: text, from: sessionID, in: workspaceID)
             },
             AgentStopTool { [weak self] name, sessionID, workspaceID in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.stopCrewForBridge(name, from: sessionID, in: workspaceID)
             },
             // A message to another workspace. The tool has resolved the target, checked who may
@@ -145,7 +145,7 @@ extension AppModel {
             // this, and the approval card calls the same method for the rest. See
             // `AppModel+WorkspaceMessages`.
             WorkspaceSayTool { [weak self] message in
-                guard let self else { return .refused("Bloom is still starting up.") }
+                guard let self else { return .refused("Swarm is still starting up.") }
                 return await self.deliverWorkspaceMessage(message)
             },
         ])
@@ -205,7 +205,7 @@ extension AppModel {
         switch reveal.target {
         case .workspace(let id):
             guard workspaces.contains(where: { $0.id == id }) else {
-                return .refused("That workspace is not in Bloom any more.")
+                return .refused("That workspace is not in Swarm any more.")
             }
             selection = .workspace(id)
         case .home(let filter):
@@ -368,7 +368,7 @@ extension AppModel {
     /// this family's own: the pane one talks about panes, and a model told the wrong noun learns
     /// the wrong thing.
     static let noWorkspaceForCrew =
-        "That workspace is not open in Bloom any more, so there is no worktree to run a subagent in."
+        "That workspace is not open in Swarm any more, so there is no worktree to run a subagent in."
 
     /// `agent_start`, handed to the model that can actually spawn a CLI.
     ///
@@ -421,7 +421,7 @@ extension AppModel {
     }
 
     static let noWorkspaceForPane =
-        "That workspace is not open in Bloom any more, so there is nowhere to put a pane."
+        "That workspace is not open in Swarm any more, so there is nowhere to put a pane."
 
     /// `pane_open`, through the same door the title bar's `+` menu uses.
     ///
@@ -492,13 +492,13 @@ extension AppModel {
         // broken, and an agent tidying up after itself must not be able to produce one.
         guard layout.panes.count > 1 else {
             return .refused(
-                "That is the only pane open, and Bloom will not leave the centre column empty. "
+                "That is the only pane open, and Swarm will not leave the centre column empty. "
                     + "Open something else first, or leave this one."
             )
         }
 
         guard tabs.close(pane: pane, in: tab, of: model.workspace.id) else {
-            return .refused("Bloom could not close that pane.")
+            return .refused("Swarm could not close that pane.")
         }
         return .opened(kind.map { "Closed the \($0.title.lowercased())." } ?? "Closed that pane.")
     }
@@ -582,7 +582,7 @@ private enum BridgeWorkspaceModelFailure: LocalizedError {
             let choices = available.isEmpty ? "none were reported" : available.joined(separator: ", ")
             return "The model '\(model)' is not available for \(agent.label). Available models: \(choices)."
         case .noneAvailable(let agent):
-            return "Bloom could not find an available model for \(agent.label)."
+            return "Swarm could not find an available model for \(agent.label)."
         }
     }
 }

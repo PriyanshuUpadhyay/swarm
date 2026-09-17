@@ -760,7 +760,7 @@ public actor AgentRunner {
     }
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "agent-runner"
     )
 

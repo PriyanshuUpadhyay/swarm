@@ -20,30 +20,30 @@ struct DatabaseDirectoryTests {
 
     @Test("the real app keeps the directory its data is already in")
     func theRealApp() {
-        #expect(name(Store.primaryBundleIdentifier) == "Bloom")
-        #expect(Store.primaryBundleIdentifier == "be.spatie.bloom")
+        #expect(name(Store.primaryBundleIdentifier) == "Swarm")
+        #expect(Store.primaryBundleIdentifier == "io.github.priyanshuupadhyay.swarm")
     }
 
     /// `Tools/dev-build.sh` puts this same path in `LSEnvironment`, so the two agree and a dev
     /// binary started by hand lands where `make dev-db` put the copy rather than somewhere new.
     @Test("the dev copy lands where dev-build.sh already points it")
     func theDevCopy() {
-        #expect(name(Store.devBundleIdentifier) == "Bloom Dev")
-        #expect(Store.devBundleIdentifier == "be.spatie.bloom.dev")
+        #expect(name(Store.devBundleIdentifier) == "Swarm Dev")
+        #expect(Store.devBundleIdentifier == "io.github.priyanshuupadhyay.swarm.dev")
     }
 
     /// The case nothing warned about. `swift run Bloom` and `.build/debug/Bloom` are not inside a
     /// bundle, so there is no identifier at all, and until this they resolved to the real database.
     @Test("a binary in no bundle gets a directory that says so")
     func unbundled() {
-        #expect(name(nil) == "Bloom (unbundled)")
-        #expect(name("") == "Bloom (unbundled)")
+        #expect(name(nil) == "Swarm (unbundled)")
+        #expect(name("") == "Swarm (unbundled)")
     }
 
     @Test("any other bundle is named after itself rather than sharing")
     func someOtherBundle() {
-        #expect(name("be.spatie.bloom.snapshot") == "Bloom (be.spatie.bloom.snapshot)")
-        #expect(name("com.apple.dt.xctest.tool") == "Bloom (com.apple.dt.xctest.tool)")
+        #expect(name("io.github.priyanshuupadhyay.swarm.snapshot") == "Swarm (io.github.priyanshuupadhyay.swarm.snapshot)")
+        #expect(name("com.apple.dt.xctest.tool") == "Swarm (com.apple.dt.xctest.tool)")
     }
 
     /// The property that matters is not what each one is called, it is that no two of them collide.
@@ -51,7 +51,7 @@ struct DatabaseDirectoryTests {
     func noneCollide() {
         let identifiers: [String?] = [
             Store.primaryBundleIdentifier, Store.devBundleIdentifier,
-            "be.spatie.bloom.snapshot", "be.spatie.bloomer", nil,
+            "io.github.priyanshuupadhyay.swarm.snapshot", "io.github.priyanshuupadhyay.swarmer", nil,
         ]
         let names = identifiers.map(name)
         #expect(Set(names).count == names.count)
@@ -61,9 +61,9 @@ struct DatabaseDirectoryTests {
     /// a `hasPrefix` written in a hurry, and it must not.
     @Test("a near miss on the identifier is not a match")
     func aNearMissIsNotAMatch() {
-        #expect(name("be.spatie.bloom.dev.extra") != "Bloom")
-        #expect(name("be.spatie.bloom.dev.extra") != "Bloom Dev")
-        #expect(name("be.spatie.bloomer") != "Bloom")
-        #expect(name("BE.SPATIE.BLOOM") != "Bloom")
+        #expect(name("io.github.priyanshuupadhyay.swarm.dev.extra") != "Swarm")
+        #expect(name("io.github.priyanshuupadhyay.swarm.dev.extra") != "Swarm Dev")
+        #expect(name("io.github.priyanshuupadhyay.swarmer") != "Swarm")
+        #expect(name("IO.GITHUB.PRIYANSHUUPADHYAY.SWARM") != "Swarm")
     }
 }

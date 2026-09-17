@@ -62,7 +62,7 @@ struct SidebarDock: View {
                 }
             }
             .buttonStyle(.plain)
-            .help("Ask Bloom")
+            .help("Ask Swarm")
             .accessibilityValue(app.askStatus?.label ?? "")
         }
     }

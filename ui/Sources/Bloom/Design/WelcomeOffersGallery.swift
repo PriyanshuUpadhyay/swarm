@@ -23,8 +23,8 @@ struct WelcomeOffersGallery: View {
     /// will actually be. Not a token from this machine: nothing in a capture run should be able to
     /// put a live one in a PNG.
     private static let command = BridgeRegistration.ownerAddCommand(BridgeAttachment(
-        shimPath: "/Applications/Bloom.app/Contents/MacOS/bloom-bridge",
-        socketPath: "/Users/you/Library/Application Support/Bloom/bridge.sock",
+        shimPath: "/Applications/Swarm.app/Contents/MacOS/bloom-bridge",
+        socketPath: "/Users/you/Library/Application Support/Swarm/bridge.sock",
         token: "0000000000000000000000000000000000000000000000000000000000000000",
         role: .owner
     ))

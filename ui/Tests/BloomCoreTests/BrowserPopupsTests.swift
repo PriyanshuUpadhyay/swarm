@@ -84,7 +84,7 @@ struct BrowserPopupsTests {
     func anUnshowableSchemeIsQuiet() {
         var popups = BrowserPopups()
         #expect(popups.request(URL(string: "mailto:someone@example.com"), at: Self.start) == .refuse)
-        #expect(popups.request(URL(string: "bloom://open/workspace"), at: Self.start) == .refuse)
+        #expect(popups.request(URL(string: "swarm-ui://open/workspace"), at: Self.start) == .refuse)
         #expect(popups.request(URL(string: "file:///etc/passwd"), at: Self.start) == .refuse)
     }
 

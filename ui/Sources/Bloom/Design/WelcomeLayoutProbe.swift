@@ -10,7 +10,7 @@ enum WelcomeLayoutProbe {
     static var isRequested: Bool { CommandLine.arguments.contains("--welcome-layout-probe") }
 
     static func runAndExit() -> Never {
-        guard Bundle.main.bundleIdentifier == "be.spatie.bloom.welcome-probe",
+        guard Bundle.main.bundleIdentifier == "io.github.priyanshuupadhyay.swarm.welcome-probe",
               SetupRehearsal.report != nil else { exit(1) }
         NSApplication.shared.setActivationPolicy(.prohibited)
         Task { await run() }

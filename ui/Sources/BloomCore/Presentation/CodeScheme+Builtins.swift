@@ -1,5 +1,5 @@
 extension CodeScheme {
-    public static let bloom = builtin(id: "bloom", title: "Bloom", background: PaletteInk.surface)
+    public static let bloom = builtin(id: "bloom", title: "Swarm", background: PaletteInk.surface)
     public static let charcoal = builtin(
         id: "charcoal", title: "Charcoal", background: .init(light: 0xFFFFFF, dark: 0x292C33)
     )

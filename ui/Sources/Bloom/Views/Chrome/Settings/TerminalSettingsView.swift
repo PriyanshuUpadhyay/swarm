@@ -12,11 +12,11 @@ struct TerminalSettingsView: View {
                 Toggle("Keep terminals running after quitting", isOn: $persistsTerminals)
                     .disabled(!TerminalPersistence.isTmuxInstalled)
                     .help(
-                        "Terminals run in tmux instead of inside Bloom, so they survive a quit "
+                        "Terminals run in tmux instead of inside Swarm, so they survive a quit "
                         + "and come back on the next launch."
                     )
             } header: {
-                Text("After quitting Bloom")
+                Text("After quitting Swarm")
             } footer: {
                 Text(TerminalSettingsCopy.persistence(isTmuxInstalled: TerminalPersistence.isTmuxInstalled))
                     .settingsFootnote()

@@ -43,7 +43,7 @@ public enum BridgeRegistration {
     /// Claude Code has the same exposure for a milder reason: `--mcp-config` is additive over the
     /// user's own servers on purpose (never `--strict-mcp-config`, which would shut theirs out),
     /// so a shared name is a name that can be taken.
-    public static let serverName = "bloom-workspace-bridge"
+    public static let serverName = "swarm-ui-workspace-bridge"
 
     /// The name the owner's own client registers Bloom under, **derived per copy of the app** and
     /// deliberately not `serverName`.
@@ -69,11 +69,11 @@ public enum BridgeRegistration {
     /// last piece of it still shared.
     ///
     /// The derivation is `Store.databaseDirectoryName`, slugified, and reusing that table is the
-    /// point rather than a shortcut: it is already the one rule that decides which copy of Bloom a
+    /// point rather than a shortcut: it is already the one rule that decides which copy of Swarm a
     /// process is, so two builds can only collide on a name here if they were already sharing a
     /// database, and copies sharing a database share the token beside it and have nothing to
-    /// evict. The owner's copy gets `bloom`, which is also the plain name the pane is asked to
-    /// show; the dev copy gets `bloom-dev`; anything else gets a name that says what it is instead
+    /// evict. The owner's copy gets `swarm`, which is also the plain name the pane is asked to
+    /// show; the dev copy gets `swarm-dev`; anything else gets a name that says what it is instead
     /// of impersonating one of those two.
     public static var ownerServerName: String {
         ownerServerName(forBundleIdentifier: Bundle.main.bundleIdentifier)
@@ -85,16 +85,16 @@ public enum BridgeRegistration {
         let slug = slugified(Store.databaseDirectoryName(forBundleIdentifier: identifier))
         // A directory name that slugified to nothing would be handed to `claude mcp add` as an
         // empty argument, which makes it read the shim path as the server name. No identifier
-        // reaches that today, since every arm of the table above begins with "Bloom"; this is the
+        // reaches that today, since every arm of the table above begins with "Swarm"; this is the
         // answer for the day one does.
-        return slug.isEmpty ? "bloom" : slug
+        return slug.isEmpty ? "swarm" : slug
     }
 
     /// Lowercased, every run of anything else collapsed to a single hyphen, the ends trimmed.
     ///
     /// Hyphens survive intact in a server name, measured rather than assumed: the live turn
-    /// documented on `claudeArguments` saw `bloom-workspace-bridge` reach the model as
-    /// `mcp__bloom-workspace-bridge__whoami`. Nothing else in a directory name is worth finding
+    /// documented on `claudeArguments` saw `swarm-ui-workspace-bridge` reach the model as
+    /// `mcp__swarm-ui-workspace-bridge__whoami`. Nothing else in a directory name is worth finding
     /// out about the hard way, which is why this keeps ASCII letters and digits and drops
     /// everything else, rather than listing the characters seen so far and hoping.
     static func slugified(_ value: String) -> String {
@@ -222,9 +222,9 @@ public enum BridgeRegistration {
     /// Measured on claude 2.1.238 by running one live turn, because there is no free way to ask:
     /// `claude mcp list` rejects `--mcp-config` outright ("error: unknown option"), so the flag is
     /// a top-level session flag and nothing short of a turn exercises it. What that turn showed:
-    /// `system/init` listed `mcp_servers` as `uidotsh`, `figma` and `bloom-workspace-bridge`, all
+    /// `system/init` listed `mcp_servers` as `uidotsh`, `figma` and `swarm-ui-workspace-bridge`, all
     /// connected, so the file really is additive over the user's own servers; and the tool reached
-    /// the model as `mcp__bloom-workspace-bridge__whoami`, with the server name carried through
+    /// the model as `mcp__swarm-ui-workspace-bridge__whoami`, with the server name carried through
     /// **including its hyphens**. See `LiveBridgeTests`.
     public static func claudeArguments(configPath: String) -> [String] {
         ["--mcp-config", configPath]

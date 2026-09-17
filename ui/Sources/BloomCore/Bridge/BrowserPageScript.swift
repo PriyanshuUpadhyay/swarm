@@ -125,7 +125,7 @@ public struct BrowserScroll: Sendable, Equatable {
         }
         guard let direction = Direction(rawValue: raw) else {
             return .failure(
-                PaneRefusal("Bloom does not scroll '\(raw)'. 'direction' takes \(list).")
+                PaneRefusal("Swarm does not scroll '\(raw)'. 'direction' takes \(list).")
             )
         }
 

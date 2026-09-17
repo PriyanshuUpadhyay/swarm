@@ -41,7 +41,7 @@ public struct WorkspaceDiffTool: BridgeToolHandling {
             Read what a workspace has changed: its branch, the base branch it is measured against, \
             each changed file with lines added and removed, and the unified diff. The changes are \
             everything since the branch left its base, including uncommitted and untracked files, \
-            which is what Bloom's review pane shows.
+            which is what Swarm's review pane shows.
 
             Without 'workspace' it reads your own workspace. Pass 'workspace' with an id from \
             workspace_list, or a name no other active workspace shares, to read another. A client \
@@ -248,14 +248,14 @@ public enum WorkspaceDiffTrouble: Error, Sendable, Equatable {
 
         case .callerHasGone:
             return """
-                Bloom no longer has the workspace this connection speaks for, so there are no \
+                Swarm no longer has the workspace this connection speaks for, so there are no \
                 changes to read. Its row has gone, which retrying will not undo.
                 """
 
         case .worktreeGone(let workspace):
             return """
                 The worktree for '\(workspace)' is no longer on disk, so there are no changes to \
-                read. Retrying will not help; the owner can restore or archive it in Bloom.
+                read. Retrying will not help; the owner can restore or archive it in Swarm.
                 """
 
         case .pathNotText:
@@ -277,10 +277,10 @@ public enum WorkspaceDiffTrouble: Error, Sendable, Equatable {
                 """
 
         case let .gitFailed(workspace, message):
-            return "Bloom could not read the changes in '\(workspace)' from git: \(message)"
+            return "Swarm could not read the changes in '\(workspace)' from git: \(message)"
 
         case .unexplained(let message):
-            return "Bloom could not complete workspace_diff: \(message)"
+            return "Swarm could not complete workspace_diff: \(message)"
         }
     }
 }

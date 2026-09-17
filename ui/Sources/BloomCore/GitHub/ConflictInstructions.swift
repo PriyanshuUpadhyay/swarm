@@ -83,11 +83,11 @@ public enum ConflictInstructions {
     public static let defaultMarkdown = """
     # Resolving merge conflicts
 
-    Bloom attaches this file when someone presses Fix merge conflicts. This copy is Bloom's own, is
+    Swarm attaches this file when someone presses Fix merge conflicts. This copy is Swarm's own, is
     rewritten on every press and is invisible to git, so an edit made here does not last. To change
     what this project does about conflicts, write it in `.bloom/conflict-instructions.md` and commit
-    it: Bloom attaches that as well, and where the two disagree yours wins. The message these steps
-    arrived with is a prompt you can reword in Bloom's settings.
+    it: Swarm attaches that as well, and where the two disagree yours wins. The message these steps
+    arrived with is a prompt you can reword in Swarm's settings.
 
     That message names the pull request, the branch this worktree is on, and the branch that
     conflicts with it. Call the second one this branch and the third the base branch below.

@@ -158,8 +158,8 @@ struct BloomApp: App {
     var body: some Scene {
         // A single `Window` rather than a `WindowGroup`. Bloom's whole model is one window
         // listing every workspace, and a WindowGroup opens an extra window every time a
-        // `bloom://` link arrives, which is the opposite of what a deep link should do.
-        Window("Bloom", id: Self.mainWindowID) {
+        // `swarm-ui://` link arrives, which is the opposite of what a deep link should do.
+        Window("Swarm", id: Self.mainWindowID) {
             RootView()
                 .environment(model)
                 // Conditional, because the window does not need room for a pane that is not on

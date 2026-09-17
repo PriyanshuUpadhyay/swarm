@@ -43,7 +43,7 @@ final class BloomServicesProvider: NSObject {
         }
 
         guard let app, !app.repos.isEmpty else {
-            error.pointee = "Add a project folder to Bloom before starting a workspace." as NSString
+            error.pointee = "Add a project folder to Swarm before starting a workspace." as NSString
             return
         }
 
@@ -97,7 +97,7 @@ final class BloomServicesProvider: NSObject {
 
         let alert = NSAlert()
         alert.messageText = "Start a workspace from this text?"
-        alert.informativeText = "Bloom cuts a branch and a worktree, then sends this to the agent."
+        alert.informativeText = "Swarm cuts a branch and a worktree, then sends this to the agent."
         alert.accessoryView = accessory
         alert.addButton(withTitle: "Create Workspace")
         alert.addButton(withTitle: "Cancel")

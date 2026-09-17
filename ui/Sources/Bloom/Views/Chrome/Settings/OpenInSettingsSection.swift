@@ -35,8 +35,8 @@ struct OpenInSettingsSection: View {
             }
 
             Text(
-                "Every editor, terminal and git client Bloom knows is already offered once it is installed. "
-                + "Add one Bloom does not know and it joins every Open in menu, including Open Worktree in."
+                "Every editor, terminal and git client Swarm knows is already offered once it is installed. "
+                + "Add one Swarm does not know and it joins every Open in menu, including Open Worktree in."
             )
             .settingsFootnote()
         }
@@ -85,7 +85,7 @@ struct OpenInSettingsSection: View {
         refusal = nil
         guard let url = await ApplicationPicker.choose() else { return }
         guard let bundleID = Bundle(url: url)?.bundleIdentifier else {
-            refusal = "\(url.lastPathComponent) has no bundle identifier, so Bloom cannot open anything with it."
+            refusal = "\(url.lastPathComponent) has no bundle identifier, so Swarm cannot open anything with it."
             return
         }
         // Both by default, which is right for an editor and wrong for a git client, and the row's

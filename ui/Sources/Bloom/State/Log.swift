@@ -65,5 +65,5 @@ enum Log {
 
     /// The app's own bundle id, so an instance running against `BLOOM_DB_PATH` for a test can be
     /// told apart from the one somebody is using.
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "be.spatie.bloom"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm"
 }

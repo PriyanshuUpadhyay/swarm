@@ -42,7 +42,7 @@ struct CrewMessageGallery: View {
                 ))
             }
 
-            group("Bloom reporting a fact. No rule, because no agent said this.") {
+            group("Swarm reporting a fact. No rule, because no agent said this.") {
                 CrewMessageRowView(message: .stopped(
                     name: "read-the-cascade",
                     lastMessage: "Done. Eleven files read, three of them parse a diff."

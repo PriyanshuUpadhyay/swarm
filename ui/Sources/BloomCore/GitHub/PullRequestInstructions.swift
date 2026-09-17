@@ -131,7 +131,7 @@ public enum PullRequestInstructions {
         """
         # Opening a pull request
 
-        Bloom attaches this file when someone presses Create pull request. It is a normal file in this
+        Swarm attaches this file when someone presses Create pull request. It is a normal file in this
         repository: edit it to say how this project opens pull requests, and everybody working here
         gets the change.
 
@@ -165,9 +165,9 @@ public enum PullRequestInstructions {
     public static let defaultMarkdown = """
     # Opening a pull request
 
-    Bloom attaches this file when someone presses Create pull request. This copy is Bloom's own and
+    Swarm attaches this file when someone presses Create pull request. This copy is Swarm's own and
     is invisible to git. To make it this project's, move it to `.bloom/pr-instructions.md`, edit it
-    to say how this project opens pull requests, and commit it. Bloom then uses that copy instead
+    to say how this project opens pull requests, and commit it. Swarm then uses that copy instead
     and never writes over it, so everybody working here gets the change.
 
     The message this file came with names the branch to target. Call it the target branch below.

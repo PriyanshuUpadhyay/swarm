@@ -157,7 +157,7 @@ struct ArchiveConfirmationTests {
         let request = ArchiveRequest(
             workspace: makeWorkspace(),
             report: WorkspaceSafetyReport(),
-            problem: "Bloom could not check this workspace for unsaved work. The worktree for "
+            problem: "Swarm could not check this workspace for unsaved work. The worktree for "
                 + "\u{201C}Fix the login redirect\u{201D} is no longer on disk.",
             hazards: ArchiveHazards(isPullRequestMerged: true)
         )
@@ -170,7 +170,7 @@ struct ArchiveConfirmationTests {
 
         The worktree is deleted and the branch is kept. The workspace moves to Archived.
 
-        Bloom could not check this workspace for unsaved work. The worktree for \
+        Swarm could not check this workspace for unsaved work. The worktree for \
         \u{201C}Fix the login redirect\u{201D} is no longer on disk.
         """)
     }

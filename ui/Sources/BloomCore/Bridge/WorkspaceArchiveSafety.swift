@@ -37,7 +37,7 @@ public enum WorkspaceArchiveSafety {
                 }
             }
         } catch {
-            return "Bloom could not check this workspace's activity. Nothing was archived; try again shortly."
+            return "Swarm could not check this workspace's activity. Nothing was archived; try again shortly."
         }
         return nil
     }

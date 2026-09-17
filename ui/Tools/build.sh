@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Bloom and assembles a launchable .app bundle.
+# Builds the Bloom product and assembles a launchable Swarm.app bundle.
 #
 #   ./Tools/build.sh            debug build
 #   ./Tools/build.sh -r         release build
@@ -34,12 +34,12 @@ swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-bridge
 swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-sleep-helper
 
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
-APP="$BIN_DIR/Bloom.app"
+APP="$BIN_DIR/Swarm.app"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cp "$BIN_DIR/Bloom" "$APP/Contents/MacOS/Bloom"
+cp "$BIN_DIR/Bloom" "$APP/Contents/MacOS/Swarm"
 # Beside the app's own executable, which is where BridgeRegistration.shimPath looks for it. A
 # bundle without it is not broken: every chat simply has no bridge tools, which is what every chat
 # had before the bridge existed.
@@ -48,7 +48,7 @@ cp "$BIN_DIR/bloom-bridge" "$APP/Contents/MacOS/bloom-bridge"
 # points back at the executable beside it. Both are signed by the pass at the foot of this file.
 cp "$BIN_DIR/bloom-sleep-helper" "$APP/Contents/MacOS/bloom-sleep-helper"
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
-cp Resources/be.spatie.bloom.sleep.plist "$APP/Contents/Library/LaunchDaemons/"
+cp Resources/io.github.priyanshuupadhyay.swarm.sleep.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 plist_set() {
@@ -93,20 +93,6 @@ fi
 # UTC and ISO 8601, so the value is unambiguous wherever it is read and whoever reads it; the
 # window renders it in the reader's own zone and locale. See BuildTimestamp.
 plist_set BloomBuildDate string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-# The year in the copyright line, refreshed at assembly so nobody has to remember January.
-#
-# NSHumanReadableCopyright has two readers, the About window and Finder's Get Info, and both read
-# the bundle's plist. That rules out computing the year in the view: the window would be right and
-# Get Info would still show whatever year was committed, two answers to one key. So the wording
-# stays in Resources/Info.plist, where a fallback should live, and only the four digit year in it
-# is replaced with the year this bundle was assembled. A build made some other way ships the
-# committed value, which is a real year rather than a placeholder, so the failure mode is a date
-# that ages rather than a template that leaks.
-copyright="$(/usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist" 2>/dev/null || true)"
-if [[ -n "$copyright" ]]; then
-  plist_set NSHumanReadableCopyright string "$(printf '%s' "$copyright" | sed -E "s/[0-9]{4}/$(date +%Y)/")"
-fi
 
 # SwiftPM used to put products at <scratch>/<triple>/<config>. The Xcode build
 # system puts them at <scratch>/out/Products/<config>, so two dirnames from

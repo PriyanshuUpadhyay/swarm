@@ -10,7 +10,7 @@ public extension SwarmRole {
     }
 
     var launchDisabledReason: String? {
-        launchAgentKind == nil ? "Bloom cannot run \(provider) roles" : nil
+        launchAgentKind == nil ? "Swarm cannot run \(provider) roles" : nil
     }
 
     func applyingToLaunchControls(_ controls: ComposerControls) -> ComposerControls? {
@@ -244,7 +244,7 @@ public struct SwarmAccountOption: Identifiable, Sendable, Hashable {
             let disabledReason: String? = if !account.signedIn {
                 "Not signed in"
             } else if resolved == nil {
-                "Account cannot launch in Bloom"
+                "Account cannot launch in Swarm"
             } else {
                 nil
             }

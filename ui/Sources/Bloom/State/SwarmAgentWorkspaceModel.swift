@@ -311,7 +311,7 @@ private enum SwarmAgentWorkspaceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .storeUnavailable:
-            "Bloom has not finished opening its store, so it cannot save this swarm session."
+            "Swarm has not finished opening its store, so it cannot save this swarm session."
         case .sessionUnavailable:
             "This workspace has no saved swarm session."
         }

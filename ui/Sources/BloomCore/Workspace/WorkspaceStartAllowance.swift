@@ -23,7 +23,7 @@ import Foundation
 /// Neither number is a safety limit. Six worktrees and six agents is already real money, and the
 /// point of both is that somebody notices at six or at eight instead of at forty.
 public enum WorkspaceStartAllowance: Sendable, Equatable {
-    /// No brake, because the asking is already the brake. The Create sheet, a `bloom://` link, the
+    /// No brake, because the asking is already the brake. The Create sheet, a `swarm-ui://` link, the
     /// Services menu and a Shortcut: each of them is one deliberate gesture per workspace.
     case unlimited
 
@@ -97,20 +97,20 @@ public enum WorkspaceStartAllowance: Sendable, Equatable {
             return nil
 
         case .running:
-            return "You already have \(count) workspaces running, which is Bloom's limit. "
+            return "You already have \(count) workspaces running, which is Swarm's limit. "
                 + "Wait for some to be reviewed and archived before starting more."
 
         case .rate(_, let window):
             let minutes = Int(window / 60)
             return """
-                Bloom has already started \(count) workspaces for you in the last \(minutes) \
+                Swarm has already started \(count) workspaces for you in the last \(minutes) \
                 minutes, which is as many as it will start from a client outside the app. Each one \
                 is a real git worktree, a real agent process and real spend, and this many in this \
                 short a time is what a misread instruction looks like rather than a plan. Calling \
                 again will be refused for the same reason, and nothing you can do here shortens \
                 the \(minutes) minutes, so do not retry and do not wait for it. Tell the owner what \
                 you have already started and what is left over, and leave the rest to them: \
-                Bloom's own window starts workspaces with no limit, one deliberate press at a time.
+                Swarm's own window starts workspaces with no limit, one deliberate press at a time.
                 """
         }
     }

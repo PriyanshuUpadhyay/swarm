@@ -43,7 +43,7 @@ public struct WorkspaceTabCensus: Sendable, Equatable {
         if tabs.isEmpty {
             sentences.append(
                 "That workspace has nothing open in the centre column at the moment, which "
-                    + "usually means Bloom has not finished reading its chats yet."
+                    + "usually means Swarm has not finished reading its chats yet."
             )
         } else {
             sentences.append(
@@ -232,8 +232,8 @@ public struct WorkspaceTabTerminal: Sendable, Equatable {
             "live": .bool(isLive),
             "note": .string(
                 isLive
-                    ? "Bloom knows where this shell was started, not what is running in it now."
-                    : "Nobody has opened this tab in this run of Bloom, so no shell has been "
+                    ? "Swarm knows where this shell was started, not what is running in it now."
+                    : "Nobody has opened this tab in this run of Swarm, so no shell has been "
                         + "started for it yet."
             ),
         ])

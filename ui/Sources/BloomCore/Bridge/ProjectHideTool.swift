@@ -28,19 +28,19 @@ public struct ProjectHideTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "project_hide",
         description: """
-            Hide a project from Bloom's sidebar, so its row and its workspaces are left out of \
+            Hide a project from Swarm's sidebar, so its row and its workspaces are left out of \
             the project list. Takes the project's name, its absolute path, or the id \
             project_list prints.
 
             This is a view preference and nothing more. It stops nothing, closes nothing and \
             deletes nothing: the project's agents keep running, its worktrees stay exactly where \
-            they are, and its workspaces still appear on Bloom's Home screen, in the menu bar \
+            they are, and its workspaces still appear on Swarm's Home screen, in the menu bar \
             and in Shortcuts. They are left out of the sidebar and of the Cmd+K search panel, \
             which read the same preference. The owner brings a hidden project back by turning on \
             Show hidden projects in the sidebar's filter menu, or you can with project_unhide.
 
             Hiding a project that is already hidden is not an error and changes nothing. A \
-            project Bloom does not have is refused rather than added: project_add is what \
+            project Swarm does not have is refused rather than added: project_add is what \
             registers a repository.
             """,
         inputSchema: ProjectVisibilityCall.schema(
@@ -66,12 +66,12 @@ public struct ProjectUnhideTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "project_unhide",
         description: """
-            Put a hidden project back in Bloom's sidebar, in the place in the list it already \
+            Put a hidden project back in Swarm's sidebar, in the place in the list it already \
             had. Takes the project's name, its absolute path, or the id project_list prints.
 
             project_list reports which projects are hidden, so call that first if you do not know \
             which ones to bring back. Showing a project that was never hidden is not an error and \
-            changes nothing. A project Bloom does not have is refused rather than added: \
+            changes nothing. A project Swarm does not have is refused rather than added: \
             project_add is what registers a repository.
             """,
         inputSchema: ProjectVisibilityCall.schema(
@@ -172,14 +172,14 @@ enum ProjectVisibilityCall {
     private static func note(hidden: Bool, wasAlready: Bool, visible: Int) -> String {
         guard !wasAlready else {
             return hidden
-                ? "Bloom was already leaving this project out of the sidebar. Nothing changed."
-                : "This project was already showing in Bloom's sidebar. Nothing changed."
+                ? "Swarm was already leaving this project out of the sidebar. Nothing changed."
+                : "This project was already showing in Swarm's sidebar. Nothing changed."
         }
         guard hidden else {
-            return "It is back in Bloom's sidebar, in the place in the list it already had. "
+            return "It is back in Swarm's sidebar, in the place in the list it already had. "
                 + ProjectVisibility.remainingSentence(visible: visible)
         }
-        return "Bloom's sidebar and its search panel leave it out now. Nothing stopped and "
+        return "Swarm's sidebar and its search panel leave it out now. Nothing stopped and "
             + "nothing was deleted: its workspaces are running exactly as they were and are still "
             + "on Home and in the menu bar. " + ProjectVisibility.remainingSentence(visible: visible)
     }

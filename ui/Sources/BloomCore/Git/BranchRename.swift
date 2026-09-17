@@ -76,7 +76,7 @@ public enum BranchRenameRefusal: Sendable, Hashable {
     public var reason: String {
         switch self {
         case .alreadyNamed:
-            "it already has the name Bloom would have given it"
+            "it already has the name Swarm would have given it"
         case .noValidName:
             "the model did not come back with a branch name git would accept"
         case .hasCommits(let count):
@@ -86,7 +86,7 @@ public enum BranchRenameRefusal: Sendable, Hashable {
         case .hasPullRequest:
             "it has a pull request open against it"
         case .renamedByHand(let branch):
-            "you are on `\(branch)` now, which is not the branch Bloom created"
+            "you are on `\(branch)` now, which is not the branch Swarm created"
         case .detachedHead:
             "this worktree is not on a branch at all"
         case .operationInProgress:

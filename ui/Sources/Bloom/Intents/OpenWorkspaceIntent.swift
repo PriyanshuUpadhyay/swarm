@@ -5,7 +5,7 @@ struct OpenWorkspaceIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Workspace"
 
     static let description = IntentDescription(
-        "Brings Bloom to the front and selects a workspace.",
+        "Brings Swarm to the front and selects a workspace.",
         categoryName: "Workspaces"
     )
 
@@ -15,7 +15,7 @@ struct OpenWorkspaceIntent: AppIntent {
     var workspace: WorkspaceEntity
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Open \(\.$workspace) in Bloom")
+        Summary("Open \(\.$workspace) in Swarm")
     }
 
     func perform() async throws -> some IntentResult {

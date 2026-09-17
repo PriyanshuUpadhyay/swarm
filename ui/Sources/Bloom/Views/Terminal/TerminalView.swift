@@ -68,7 +68,7 @@ struct TerminalLaunch: Sendable, Hashable {
 
         var sessionVariables = extra
         sessionVariables["COLORTERM"] = "truecolor"
-        sessionVariables["TERM_PROGRAM"] = "Bloom"
+        sessionVariables["TERM_PROGRAM"] = "Swarm"
 
         return TerminalLaunch(
             executable: command.executable,

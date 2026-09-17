@@ -97,7 +97,7 @@ public struct PaneOrder: Sendable, Equatable {
         }
         guard let kind = PaneKind(rawValue: rawKind.trimmingCharacters(in: .whitespaces)) else {
             return .refused(
-                "Bloom has no pane called '\(rawKind)'. It opens \(kindList)."
+                "Swarm has no pane called '\(rawKind)'. It opens \(kindList)."
             )
         }
 
@@ -123,7 +123,7 @@ public struct PaneOrder: Sendable, Equatable {
         if let url, !url.isEmpty, let scheme = URL(string: url)?.scheme?.lowercased(),
            scheme != "http", scheme != "https" {
             return .refused(
-                "A browser pane opens http and https addresses. '\(scheme)' is not one Bloom will "
+                "A browser pane opens http and https addresses. '\(scheme)' is not one Swarm will "
                     + "open on your behalf."
             )
         }

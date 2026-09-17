@@ -78,7 +78,7 @@ public struct AgentExit: Sendable, Hashable {
         case .crashed(let error):
             Self.oneLine(Self.stopped("The CLI crashed: \(error)"))
         case .missing:
-            "Bloom could not find the agent's command."
+            "Swarm could not find the agent's command."
         case .reported(let text):
             Self.oneLine(text)
         case .silent:
@@ -106,7 +106,7 @@ public struct AgentExit: Sendable, Hashable {
             """ + ranCommand
         case .missing:
             """
-            Install the agent's CLI, or put it somewhere Bloom looks, then send the turn again. \
+            Install the agent's CLI, or put it somewhere Swarm looks, then send the turn again. \
             Nothing in this conversation was lost.
             """
         case .reported:
@@ -130,14 +130,14 @@ public struct AgentExit: Sendable, Hashable {
             """ + ranCommand
         case .storage:
             """
-            The agent itself kept running. It is Bloom's copy of the conversation that is missing \
+            The agent itself kept running. It is Swarm's copy of the conversation that is missing \
             a row, so check that the disk is not full, then reopen the workspace.
             """
         case .notStarted:
             """
             Nothing was said to the agent and no files were touched. Your message is still in the \
             queue above the composer. Choose Try Again there when the agent is available, or edit \
-            or delete the message. If trying again fails, quit and reopen Bloom to restart the \
+            or delete the message. If trying again fails, quit and reopen Swarm to restart the \
             agent connection.
             """
         }
@@ -148,7 +148,7 @@ public struct AgentExit: Sendable, Hashable {
     /// Nothing to add for a command that was never found, which has no path to name, or for a
     /// write of Bloom's own that failed, which is not about the agent's binary at all.
     private var ranCommand: String {
-        command.isEmpty ? "" : " Bloom ran \(command)."
+        command.isEmpty ? "" : " Swarm ran \(command)."
     }
 
     /// Whether the disclosure has anything to show that the summary does not already say.

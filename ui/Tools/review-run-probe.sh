@@ -8,22 +8,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bin_dir="$(swift build --show-bin-path)"
-probe_root="$(mktemp -d "${TMPDIR:-/tmp}/bloom-review-probe.XXXXXX")"
-probe_app="$probe_root/Bloom Review Probe.app"
-framework="$(find .build/artifacts -path '*Sparkle.xcframework/macos*/Sparkle.framework' -type d | head -1)"
-[[ -n "$framework" ]]
-mkdir -p "$probe_app/Contents/MacOS" "$probe_app/Contents/Frameworks"
-cp "$bin_dir/Bloom" "$probe_app/Contents/MacOS/Bloom"
+probe_root="$(mktemp -d "${TMPDIR:-/tmp}/swarm-review-probe.XXXXXX")"
+probe_app="$probe_root/Swarm Review Probe.app"
+mkdir -p "$probe_app/Contents/MacOS"
+cp "$bin_dir/Bloom" "$probe_app/Contents/MacOS/Swarm"
 cp Resources/Info.plist "$probe_app/Contents/Info.plist"
 ditto Resources "$probe_app/Contents/Resources"
-ditto "$framework" "$probe_app/Contents/Frameworks/Sparkle.framework"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier be.spatie.bloom.review-probe' "$probe_app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleName Bloom Review Probe' "$probe_app/Contents/Info.plist"
-install_name_tool -add_rpath '@executable_path/../Frameworks' "$probe_app/Contents/MacOS/Bloom"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.priyanshuupadhyay.swarm.review-probe' "$probe_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleName Swarm Review Probe' "$probe_app/Contents/Info.plist"
 codesign --force --deep --sign - "$probe_app" >/dev/null 2>&1
 
 # Refuse a release or stale binary, which would ignore the flag and start the application.
-python3 - "$probe_app/Contents/MacOS/Bloom" "$probe_root" "$@" <<'PY'
+python3 - "$probe_app/Contents/MacOS/Swarm" "$probe_root" "$@" <<'PY'
 import json
 import os
 import shutil

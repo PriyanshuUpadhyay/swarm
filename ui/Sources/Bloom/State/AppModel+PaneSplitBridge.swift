@@ -34,13 +34,13 @@ extension AppModel {
             // NewPane.open starts an unstructured task for chats. Await the same creation here
             // so the MCP result reports whether both creation and placement actually succeeded.
             guard let session = await model.createSession(title: order.title) else {
-                return .refused("Bloom could not create the new chat. Nothing was split.")
+                return .refused("Swarm could not create the new chat. Nothing was split.")
             }
             content = .chat(session.id)
         } else {
             var opened: PaneContent?
             NewPane.open(order.kind, in: model, url: order.url ?? "", title: order.title) { opened = $0 }
-            guard let opened else { return .refused("Bloom could not create the new pane. Nothing was split.") }
+            guard let opened else { return .refused("Swarm could not create the new pane. Nothing was split.") }
             content = opened
         }
 

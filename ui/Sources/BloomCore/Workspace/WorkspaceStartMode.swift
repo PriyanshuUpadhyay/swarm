@@ -173,9 +173,9 @@ public enum WorkspaceStartMode: String, CaseIterable, Identifiable, Sendable {
 
     /// - Parameter defaults: injected for the same reason `remembered(raw:)` takes a raw string
     ///   rather than reading one. Eight other core types already take this, and a test that wrote
-    ///   to `.standard` would be writing into the owner's own `be.spatie.bloom` domain, which is
-    ///   the one thing `CLAUDE.md` says never to touch. So a decision worth pinning was untestable
-    ///   and testing it would have been actively dangerous.
+    ///   to `.standard` would be writing into the owner's own `io.github.priyanshuupadhyay.swarm`
+    ///   domain, which is the one thing `CLAUDE.md` says never to touch. So a decision worth pinning
+    ///   was untestable and testing it would have been actively dangerous.
     ///
     /// Chat writes nothing. It is the ordinary case and the centre column's own default, so a key
     /// for it would be a key per workspace ever created, forever, saying what would have happened

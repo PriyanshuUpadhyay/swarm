@@ -63,7 +63,7 @@ public enum RefusedTransitions {
     private static let refusals = Mutex<Int>(0)
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "transitions"
     )
 

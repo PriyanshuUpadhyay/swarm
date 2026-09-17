@@ -29,7 +29,7 @@ struct SwarmLaunchChoiceTests {
     @Test("an unsupported provider stays visible with a short reason")
     func unsupportedRole() {
         #expect(RESEARCHER.launchAgentKind == nil)
-        #expect(RESEARCHER.launchDisabledReason == "Bloom cannot run agy roles")
+        #expect(RESEARCHER.launchDisabledReason == "Swarm cannot run agy roles")
         #expect(RESEARCHER.applyingToLaunchControls(ComposerControls()) == nil)
     }
 

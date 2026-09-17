@@ -22,7 +22,7 @@ public struct BridgeToolbox: Sendable {
     ///
     /// One thing the live run measured that the tools after this one have to answer: **a bridge
     /// call raises a permission question like any other tool call.** On claude 2.1.238, under
-    /// `acceptEdits`, calling `whoami` produced an ask for `mcp__bloom-workspace-bridge__whoami`
+    /// `acceptEdits`, calling `whoami` produced an ask for `mcp__swarm-ui-workspace-bridge__whoami`
     /// and the turn stopped until it was answered. That matters because the reason the bridge is
     /// MCP rather than a CLI the agent shells out to was partly that a shell command goes through
     /// the permission machinery; being an MCP tool does not exempt it. An agent that has to call

@@ -18,7 +18,7 @@ struct RevealToolTests {
         #expect(order.scope == .all)
         let reveal = try resolve(order, workspaces: [], projects: [])
         #expect(reveal.target == .home(HomeFilter(query: "", projects: [], scope: .all)))
-        #expect(reveal.sentence == "Bloom is on Home, showing All.")
+        #expect(reveal.sentence == "Swarm is on Home, showing All.")
     }
 
     /// The rule, pinned on its own so it cannot be changed by accident. **A reveal that hides rows
@@ -242,14 +242,14 @@ struct RevealToolTests {
     @Test("a window that is not there yet refuses rather than pretending")
     func refusesWhenTheWindowIsNotThere() async throws {
         let store = try makeTestStore("reveal-no-window")
-        let tool = RevealTool { _ in .refused("Bloom is still starting up.") }
+        let tool = RevealTool { _ in .refused("Swarm is still starting up.") }
         let result = await tool.call(
             MCPRequest(id: .integer(1), method: "reveal", params: .object([:])),
             as: .owner,
             store: store
         )
         #expect(result.isError)
-        #expect(result.text == "Bloom is still starting up.")
+        #expect(result.text == "Swarm is still starting up.")
     }
 
     // MARK: - Support

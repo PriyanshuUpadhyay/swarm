@@ -120,7 +120,7 @@ extension AppModel {
         let spoken = WorkspaceStartAttachments.spoken(prompt, staged: stagedPaths)
 
         // A caller with no controls gets the ones the owner actually chose, not the built-in
-        // fallback. The sheet and the bridge both pass controls; a `bloom://` link, the Services
+        // fallback. The sheet and the bridge both pass controls; a `swarm-ui://` link, the Services
         // menu and a Shortcut do not, and those used to open a chat on `opus` whatever the Models
         // screen said. `ComposerView.prepare` corrected it when the workspace was opened, which
         // is a race the opening turn can win: a workspace created in the background and never
@@ -236,7 +236,7 @@ extension AppModel {
             id: id,
             repo: repo,
             prompt: spoken,
-            // Almost always the owner: the sheet, a `bloom://` link, the Services menu and a
+            // Almost always the owner: the sheet, a `swarm-ui://` link, the Services menu and a
             // Shortcut all land here. The exception is the bridge, which passes `.agent` so the
             // row records who asked and the sidebar can show the lineage.
             origin: origin,
@@ -293,7 +293,7 @@ extension AppModel {
         // and the other is decoration.
         if started.projectCameBack {
             self.notice = BloomNotice(
-                message: "\(repo.name) is back in Bloom's sidebar. It was hidden, and this "
+                message: "\(repo.name) is back in Swarm's sidebar. It was hidden, and this "
                     + "workspace has just been added to it."
             )
         }
@@ -439,7 +439,7 @@ extension AppModel {
     func continueAfterMerge(
         _ workspace: Workspace, pullRequest: PullRequest
     ) async -> ContinuationOutcome {
-        guard let manager else { return .failed("Bloom is still starting up.") }
+        guard let manager else { return .failed("Swarm is still starting up.") }
 
         let facts: ContinuationFacts
         do {
@@ -497,7 +497,7 @@ extension AppModel {
         guard let repo = repo(for: workspace) else {
             alert = BloomAlert(
                 title: "Could not carry \(workspace.name) on",
-                message: "Its project is no longer in Bloom, so there is no repository to cut a "
+                message: "Its project is no longer in Swarm, so there is no repository to cut a "
                     + "worktree from. Add the project again and try once more."
             )
             return

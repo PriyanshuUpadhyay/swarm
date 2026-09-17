@@ -58,10 +58,10 @@ public enum SetupEvent: Sendable, Hashable {
         case .runSkipped(let note):
             note
         case .runInterrupted:
-            "[bloom] The app stopped while the setup script was running, so this run was "
+            "[swarm] The app stopped while the setup script was running, so this run was "
                 + "interrupted before it could report a result. Run setup again to finish it."
         case .worktreeRebuilt:
-            "[bloom] This worktree was rebuilt when the workspace was restored, so anything the "
+            "[swarm] This worktree was rebuilt when the workspace was restored, so anything the "
                 + "setup script installed is gone. Run setup again."
         }
     }

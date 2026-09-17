@@ -26,7 +26,7 @@ struct WelcomeCommandLine: View {
             // The same two rungs the checks screen opens on, so this reads as the next page of one
             // window rather than as a different window that happens to share a plinth.
             VStack(alignment: .leading, spacing: Metrics.spacing) {
-                Text("Use Bloom from your own terminal")
+                Text("Use Swarm from your own terminal")
                     .font(Typo.displayHeading)
                     .foregroundStyle(Palette.textPrimary)
 
@@ -46,7 +46,7 @@ struct WelcomeCommandLine: View {
                 // ways out of a screen that only needs one, and the one it has already says what
                 // pressing it does.
                 Text(
-                    "Bloom works without this. Settings has the command again, under Command Line, "
+                    "Swarm works without this. Settings has the command again, under Command Line, "
                         + "whenever you want it."
                 )
                 .font(Typo.caption)

@@ -194,7 +194,7 @@ extension AppModel {
         // the census above and this line leaves the number naming something else or nothing.
         guard chosen.number <= tabs.count else {
             return .refused(
-                "Browser \(chosen.number) was closed while Bloom was finding it. Call pane_list "
+                "Browser \(chosen.number) was closed while Swarm was finding it. Call pane_list "
                     + "again."
             )
         }
@@ -239,7 +239,7 @@ extension AppModel {
                 "Pointed browser \(report.number) at \(url). It is loading now: browser_read says "
                     + "when it has arrived, and browser_text or browser_screenshot show what it "
                     + "found. If it does not arrive, browser_read carries the reason: a pane that "
-                    + "failed to load draws Bloom's own message rather than a page."
+                    + "failed to load draws Swarm's own message rather than a page."
             )
 
         case .screenshot:
@@ -356,7 +356,7 @@ extension AppModel {
 
             case .read, .reload, .go, .screenshot, .scroll, .text:
                 // Answered by `perform`, which only hands the rest on.
-                return .refused("Bloom routed \(command.toolName) to the wrong place.")
+                return .refused("Swarm routed \(command.toolName) to the wrong place.")
             }
         } catch {
             return .refused(error.readableMessage)

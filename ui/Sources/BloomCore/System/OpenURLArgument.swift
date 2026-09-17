@@ -2,8 +2,8 @@ import Foundation
 
 /// Turns a `--open-url` command line argument into the URL it meant.
 ///
-/// `URL(string:)` refuses a `bloom://` link whose prompt has not been percent encoded: a space or
-/// a colon anywhere in the payload returns nil, so `Bloom --open-url "bloom://prompt=fix: the
+/// `URL(string:)` refuses a `swarm-ui://` link whose prompt has not been percent encoded: a space or
+/// a colon anywhere in the payload returns nil, so `Swarm --open-url "swarm-ui://prompt=fix: the
 /// bug&path=..."` silently opened nothing. That guard was the whole failure: no message, no link,
 /// and a harness run that looked like the deep link machinery was broken rather than the argument.
 ///

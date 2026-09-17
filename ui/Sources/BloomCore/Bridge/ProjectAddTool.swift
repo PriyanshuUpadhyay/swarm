@@ -28,7 +28,7 @@ public struct ProjectAddTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "project_add",
         description: """
-            Register a git repository that already exists as a project in Bloom, so workspaces \
+            Register a git repository that already exists as a project in Swarm, so workspaces \
             can be started in it. Takes the absolute path of the repository's folder.
 
             It only registers. It will not create a repository, and a folder that is not one \
@@ -36,7 +36,7 @@ public struct ProjectAddTool: BridgeToolHandling {
             folder should be a repository is the owner's decision. Adding a folder inside an \
             existing repository registers that repository, not the folder.
 
-            Adding a project Bloom already has is not an error and changes nothing. This does not \
+            Adding a project Swarm already has is not an error and changes nothing. This does not \
             copy, move or write anything inside the repository.
             """,
         inputSchema: .object([
@@ -91,12 +91,12 @@ public struct ProjectAddTool: BridgeToolHandling {
                 "state": .string(known ? "already_a_project" : "added"),
                 "note": .string(
                     known
-                        ? "Bloom already had this repository as a project. Nothing changed."
-                        : "It is in Bloom's sidebar now. Start work in it with workspace_start."
+                        ? "Swarm already had this repository as a project. Nothing changed."
+                        : "It is in Swarm's sidebar now. Start work in it with workspace_start."
                 ),
             ]))
         } catch {
-            return .failure("Bloom could not add that project: \(error.readableMessage)")
+            return .failure("Swarm could not add that project: \(error.readableMessage)")
         }
     }
 }

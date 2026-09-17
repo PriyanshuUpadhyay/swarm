@@ -12,7 +12,7 @@ import Foundation
 /// **It is emphatically not archiving, and not closing.** The workspaces of a hidden project are
 /// untouched: their agents keep running, their turns keep landing, their notifications keep
 /// arriving, and they keep appearing on Home, in the menu bar summary, in the Shortcuts entities
-/// and in the `bloom://` links.
+/// and in the `swarm-ui://` links.
 ///
 /// Search used to be in that list and is not any more, and the change is worth reading rather than
 /// noticing. The owner asked for the panel to answer over live, visible work by default, so it
@@ -108,13 +108,13 @@ public enum ProjectVisibility {
     public static func remainingSentence(visible: Int) -> String {
         switch visible {
         case 0:
-            return "No projects are left showing in Bloom's sidebar. They are all still there: "
+            return "No projects are left showing in Swarm's sidebar. They are all still there: "
                 + "turn on Show hidden projects in the sidebar's filter menu, or call "
                 + "project_unhide, to bring one back."
         case 1:
-            return "1 project is still showing in Bloom's sidebar."
+            return "1 project is still showing in Swarm's sidebar."
         default:
-            return "\(visible) projects are still showing in Bloom's sidebar."
+            return "\(visible) projects are still showing in Swarm's sidebar."
         }
     }
 }

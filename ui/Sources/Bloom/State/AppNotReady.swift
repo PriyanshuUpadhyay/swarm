@@ -12,7 +12,7 @@ enum AppNotReady: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .stillStartingUp:
-            "Bloom is still starting up, so there was nothing to do the work with yet. Try again."
+            "Swarm is still starting up, so there was nothing to do the work with yet. Try again."
         }
     }
 }

@@ -8,8 +8,8 @@
 #   1. No em dashes and no en dashes. Anywhere. They arrive by the hundred from
 #      anything that writes prose for you, and once one is in a file the next
 #      writer copies the house style it thinks it sees.
-#   2. The app is Bloom. It was called Baton until it was renamed, and the old
-#      name still turns up in new text written from stale memory.
+#   2. The app is Swarm. It was called Baton before the upstream Bloom rename,
+#      and that old name still turns up in new text written from stale memory.
 #   3. British spelling. The tree is already at 69 greys to 1 gray and 74
 #      cancelleds to 1 canceled, so this is about keeping it that way.
 #   4. Only the app target imports a UI framework. CLAUDE.md has said so since
@@ -31,7 +31,7 @@
 #      its `custom_rules` need SourceKit, there is none on Linux, and the lint
 #      job skips them and stays green. See the rule itself.
 #  10. No subprocess is rooted at the home directory. Four were, three of them as
-#      a default argument nobody read, and macOS blames Bloom for whatever the
+#      a default argument nobody read, and macOS blames Swarm for whatever the
 #      child then touches; see the rule itself.
 #
 # Exit status is 1 if anything was found, and every finding is printed with the
@@ -81,7 +81,7 @@ if hits="$(git grep --untracked -n -I -e "$em_dash" -e "$en_dash" -- ':!.claude'
   report "A dash that should be a comma, a full stop or a pair of brackets."
 fi
 
-echo "==> the app is called Bloom"
+echo "==> the app is called Swarm"
 # This file is exempt from this rule and the spelling rule below, because it has
 # to spell out what it is looking for. The dash rule above does apply to it,
 # which is why those two characters are built from their bytes rather than typed.
@@ -155,7 +155,7 @@ echo "==> one way to start a workspace"
 # not open the chat, write the model and effort onto it, run the setup script,
 # name the workspace or record who asked for it. All of that is
 # `WorkspaceManager.start`, and it is one method because it used to be four
-# half-copies: the create sheet had the lot, the `bloom://` link and the
+# half-copies: the create sheet had the lot, the `swarm-ui://` link and the
 # Services menu had none of it and were silently hardwired to the defaults, and
 # the Shortcuts intent could not reach any of it, so it fired a URL and then
 # read the database every 400ms for a minute hoping to recognise its own row.

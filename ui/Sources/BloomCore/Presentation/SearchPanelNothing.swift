@@ -64,7 +64,7 @@ public enum SearchPanelNothing: Equatable, Sendable {
             // "In Bloom", which is the whole app, and it stays true because this case is only
             // reached when the panel really did look everywhere: `SearchPanelResults` sends the
             // two cases below whenever something was held back. See the precedence there.
-            "Nothing in Bloom matches \(quoted(query))."
+            "Nothing in Swarm matches \(quoted(query))."
         case .noHiddenMatch(let query, let hidden):
             // "Left out", not "not searched". They ARE searched: the store's index has no idea
             // which projects the sidebar is showing, so the rows come back and the reach drops

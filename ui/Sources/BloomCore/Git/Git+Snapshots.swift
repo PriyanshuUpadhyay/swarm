@@ -57,7 +57,7 @@ extension Git {
             for (index, ref) in [(stagedIndex, snapshot.indexRef), (workIndex, snapshot.worktreeRef)] {
                 let tree = try await snapshotCommand(["write-tree"], in: worktree, index: index).trimmed
                 let commit = try await snapshotCommand(
-                    ["commit-tree", tree, "-m", "Bloom workspace snapshot"], in: worktree, index: index
+                    ["commit-tree", tree, "-m", "Swarm workspace snapshot"], in: worktree, index: index
                 ).trimmed
                 _ = try await snapshotCommand(["update-ref", ref, commit], in: worktree, index: index)
             }
@@ -123,8 +123,8 @@ extension Git {
     ) async throws -> ShellResult {
         var environment = [
             "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0",
-            "GIT_AUTHOR_NAME": "Bloom", "GIT_AUTHOR_EMAIL": "snapshot@localhost",
-            "GIT_COMMITTER_NAME": "Bloom", "GIT_COMMITTER_EMAIL": "snapshot@localhost",
+            "GIT_AUTHOR_NAME": "Swarm", "GIT_AUTHOR_EMAIL": "snapshot@localhost",
+            "GIT_COMMITTER_NAME": "Swarm", "GIT_COMMITTER_EMAIL": "snapshot@localhost",
         ]
         if let index { environment["GIT_INDEX_FILE"] = index }
         let result = try await Shell.run("git", arguments, cwd: worktree, env: environment, timeout: .seconds(30))

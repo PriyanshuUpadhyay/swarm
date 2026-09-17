@@ -16,7 +16,7 @@ enum ArchiveFailureProbe {
         let worktree = root.appendingPathComponent("bridge-worktree").path
         try FileManager.default.createDirectory(atPath: repoPath, withIntermediateDirectories: true)
         try await Shell.check("git", ["init", "-q", "-b", "main"], cwd: repoPath)
-        try await Shell.check("git", ["-c", "user.name=Bloom Probe", "-c", "user.email=probe@bloom.local",
+        try await Shell.check("git", ["-c", "user.name=Swarm Probe", "-c", "user.email=probe@swarm.local",
                                       "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Fixture"], cwd: repoPath)
         try await Shell.check("git", ["worktree", "add", "-qb", "bridge-review", worktree], cwd: repoPath)
         let repo = try await store.upsert(Repo(name: "Archive bridge probe", path: repoPath))
@@ -54,7 +54,7 @@ enum ArchiveFailureProbe {
     }
 
     private static func run() async {
-        guard Bundle.main.bundleIdentifier?.hasPrefix("be.spatie.bloom.typography-") == true else {
+        guard Bundle.main.bundleIdentifier?.hasPrefix("io.github.priyanshuupadhyay.swarm.typography-") == true else {
             harness.fail("requires a disposable probe bundle")
         }
         _ = await harness.window()

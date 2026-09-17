@@ -99,13 +99,13 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
               let image = NSImage(contentsOf: url) else {
             let fallback = NSImage(
                 systemSymbolName: "point.3.connected.trianglepath.dotted",
-                accessibilityDescription: "Bloom"
+                accessibilityDescription: "Swarm"
             )
             fallback?.isTemplate = true
             return fallback
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Bloom"
+        image.accessibilityDescription = "Swarm"
         return image
     }()
 
@@ -222,7 +222,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         if showsCup { spoken.insert(KeepAwake.onHeadline, at: 0) }
         if !strip.isEmpty { spoken.insert(strip.spoken, at: 0) }
         button.toolTip = spoken.joined(separator: "\n")
-        button.setAccessibilityLabel("Bloom. " + spoken.joined(separator: ". "))
+        button.setAccessibilityLabel("Swarm. " + spoken.joined(separator: ". "))
     }
 
     /// Gap between the image and the first glyph, and between one glyph and the next. Wider
@@ -318,7 +318,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         // Target left nil so it travels the responder chain to `NSApp`, which is what runs
         // `applicationShouldTerminate` and therefore what stops on a running turn.
         menu.addItem(NSMenuItem(
-            title: "Quit Bloom",
+            title: "Quit Swarm",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         ))
@@ -418,7 +418,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         item.toolTip = isApproved
             ? "A closing lid sleeps the Mac whatever an app asks for. This holds it open for the "
                 + "length of a session."
-            : "Needs Bloom's helper, which macOS asks you to allow once in System Settings."
+            : "Needs Swarm's helper, which macOS asks you to allow once in System Settings."
         return item
     }
 

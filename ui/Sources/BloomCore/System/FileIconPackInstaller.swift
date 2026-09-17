@@ -80,7 +80,7 @@ public actor FileIconPackInstaller {
         var errorDescription: String? {
             switch self {
             case .invalidArchive: "The download does not contain a valid icon theme. Please try again."
-            case .builtInPack: "Bloom's default icons do not need to be downloaded."
+            case .builtInPack: "Swarm's default icons do not need to be downloaded."
             }
         }
     }

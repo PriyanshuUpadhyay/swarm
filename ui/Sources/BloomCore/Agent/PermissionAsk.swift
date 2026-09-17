@@ -404,7 +404,7 @@ public enum PermissionDecision: Sendable, Hashable {
     /// those ends the turn the way turns end: with a result line and a footer. Letting the pipe
     /// close instead produces the crash row this codebase spent three commits making honest.
     public static let quittingMessage =
-        "Bloom is closing this session, so this could not be answered. Stop here."
+        "Swarm is closing this session, so this could not be answered. Stop here."
 
     public static let stoppedMessage =
         "The turn was stopped before this could be answered."

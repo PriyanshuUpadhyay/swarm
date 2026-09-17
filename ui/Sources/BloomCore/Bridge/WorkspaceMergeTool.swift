@@ -117,7 +117,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
         description: """
             Ask a workspace's own agent to merge its pull request.
 
-            This does not merge anything. It composes the request Bloom's own Merge button \
+            This does not merge anything. It composes the request Swarm's own Merge button \
             composes, with the project's merge instructions attached, and sends it into that \
             workspace's chat as an ordinary message. The agent runs `gh pr merge` there, in front \
             of the owner, under whatever permission mode they set, and can say what GitHub \
@@ -131,7 +131,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
             It refuses a pull request GitHub will not take, a worktree holding work GitHub has not \
             got, and a workspace whose agent is busy. When it refuses, do not run `gh pr merge` \
             yourself and do not ask another agent to. Merging publishes to a server other people \
-            share, and Bloom only does it where the owner can watch it happen.
+            share, and Swarm only does it where the owner can watch it happen.
 
             Name the workspace by the id workspace_list reports, not by its name. It squash merges \
             unless you say otherwise.
@@ -150,7 +150,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
                     "type": .string("string"),
                     "enum": .array(GitHub.MergeMethod.allCases.map { .string($0.rawValue) }),
                     "description": .string(
-                        "How to merge it. Leave it out for squash, which is what Bloom's own "
+                        "How to merge it. Leave it out for squash, which is what Swarm's own "
                             + "button proposes."
                     ),
                 ]),
@@ -178,7 +178,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
         if let raw = request.stringParam("method") {
             guard let chosen = GitHub.MergeMethod(rawValue: raw) else {
                 return .failure(
-                    "Bloom does not know a merge method called '\(raw)'. It merges by "
+                    "Swarm does not know a merge method called '\(raw)'. It merges by "
                         + GitHub.MergeMethod.allCases.map { "'\($0.rawValue)'" }
                         .joined(separator: ", ")
                         + ". Leave the argument out for squash."
@@ -198,7 +198,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
             }
             workspace = found
         } catch {
-            return .failure("Bloom could not read that workspace: \(error.readableMessage)")
+            return .failure("Swarm could not read that workspace: \(error.readableMessage)")
         }
 
         guard workspace.state != .archived else {
@@ -217,7 +217,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
                 )
             }
         } catch {
-            return .failure("Bloom could not read that workspace's chats: \(error.readableMessage)")
+            return .failure("Swarm could not read that workspace's chats: \(error.readableMessage)")
         }
 
         let pullRequest: PullRequest
@@ -310,7 +310,7 @@ public struct WorkspaceMergeTool: BridgeToolHandling {
         """
         Nothing is merged. A turn has begun in '\(workspace.name)', in the chat '\(chat)': its \
         agent has been asked to merge #\(pullRequest.number) and it runs `gh pr merge` itself, \
-        where the owner can watch it and answer anything it asks. Bloom does not wait for that \
+        where the owner can watch it and answer anything it asks. Swarm does not wait for that \
         turn and there is no way to wait for it from here, so do not sit idle. The merge may still \
         not happen: GitHub is allowed to refuse, and the agent is told to stop and report a \
         refusal rather than force it. To find out what became of it, call workspace_list with \

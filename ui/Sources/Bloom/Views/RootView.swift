@@ -130,7 +130,7 @@ struct RootView: View {
             // names the window as well. It is still not what the inspector keys on, below: naming a
             // window costs nothing, and showing a diff for a worktree that is gone does not.
             .containerBackground(.clear, for: .window)
-            .navigationTitle(app.menuWorkspace?.name ?? "Bloom")
+            .navigationTitle(app.menuWorkspace?.name ?? "Swarm")
 
             // And then removed from the toolbar again, because `WindowTitleControl` draws the name
             // itself and the window came up wearing it twice.
@@ -251,7 +251,7 @@ struct RootView: View {
                 Button("Close agent", role: .destructive) { closeSwarmAgent.confirm() }
                 Button("Keep agent", role: .cancel) { closeSwarmAgent.cancel() }
             } message: { request in
-                Text("Bloom will close \(request.tab.swarmAgent?.rawValue ?? "this agent") and remove its tab.")
+                Text("Swarm will close \(request.tab.swarmAgent?.rawValue ?? "this agent") and remove its tab.")
             }
             // The question asked before a setup script runs. On the window because the three controls
             // that raise it are two menus and a transcript row, and a `Commands` body is not a view

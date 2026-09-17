@@ -107,7 +107,7 @@ public struct PaneRenameTool: BridgeToolHandling {
         guard let raw, !raw.isEmpty else { return .success(PaneRenameOrder(title: title)) }
         guard let kind = PaneKind(rawValue: raw) else {
             return .failure(
-                PaneRefusal("Bloom has no pane called '\(raw)'. It opens \(PaneOrder.kindList).")
+                PaneRefusal("Swarm has no pane called '\(raw)'. It opens \(PaneOrder.kindList).")
             )
         }
         return .success(PaneRenameOrder(title: title, kind: kind))

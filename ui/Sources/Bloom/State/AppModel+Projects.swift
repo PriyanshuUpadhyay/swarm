@@ -30,7 +30,7 @@ extension AppModel {
             await addKnownRepository(at: root)
 
         case .refuse(let refusal):
-            alert = BloomAlert(title: "Bloom will not add this folder", message: refusal.sentence)
+            alert = BloomAlert(title: "Swarm will not add this folder", message: refusal.sentence)
 
         case .offer:
             await offerToStartRepository(at: facts.path, presentedIn: surface)

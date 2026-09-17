@@ -84,7 +84,7 @@ public final class StoreChangeHub: Sendable {
     private static let runawayCount = 1_000
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "store"
     )
 

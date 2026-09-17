@@ -241,7 +241,7 @@ struct StartNoteTests {
     @Test("an empty field promises a name without explaining where it comes from")
     func emptyFieldPromisesAName() {
         let note = WorkspaceStartPlan.startNote(mode: .terminal, hasCheckout: false, name: "")
-        #expect(note.contains("Leave it empty and Bloom names it for you"))
+        #expect(note.contains("Leave it empty and Swarm names it for you"))
     }
 
     @Test("a filled field says what it is about to name")

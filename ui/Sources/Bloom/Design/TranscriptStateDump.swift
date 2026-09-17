@@ -46,7 +46,7 @@ import Foundation
 /// # What it must never do
 ///
 /// It ships in the app the owner works in, so: nothing on a healthy pane, nothing that can run
-/// away, and nothing under `~/Library/Application Support/Bloom/`. The automatic trip is capped at
+/// away, and nothing under `~/Library/Application Support/Swarm/`. The automatic trip is capped at
 /// `mostTrips` files for the life of the process; a signal is a person asking and is not capped.
 /// Writing is synchronous on the main thread, which is a few milliseconds of a pane that is
 /// already broken, at most a handful of times.

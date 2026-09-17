@@ -13,7 +13,7 @@ struct WorkspaceArchiveToolTests {
         // Removing a worktree stays a question a person answers, whichever role asks it.
         #expect(!BridgeToolApproval.selfApproved.contains("workspace_archive"))
         #expect(!BridgeToolApproval.isSelfApproved(
-            toolName: "mcp__bloom-workspace-bridge__workspace_archive"
+            toolName: "mcp__swarm-ui-workspace-bridge__workspace_archive"
         ))
     }
 
@@ -186,7 +186,7 @@ struct WorkspaceArchiveToolTests {
         )
         let result = await tool.call(request([:]), as: identity, store: store)
         #expect(result.isError)
-        #expect(result.text.contains("no longer in Bloom"))
+        #expect(result.text.contains("no longer in Swarm"))
     }
 
     // MARK: - Deferred cleanup

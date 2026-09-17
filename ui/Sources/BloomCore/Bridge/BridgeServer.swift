@@ -325,7 +325,7 @@ public final class BridgeServer: Sendable {
         guard let data = line.data(using: .utf8),
               let hello = try? JSONDecoder().decode(BridgeHello.self, from: data)
         else {
-            refuse("This is Bloom's workspace bridge and that was not a hello frame.", on: connection)
+            refuse("This is Swarm's workspace bridge and that was not a hello frame.", on: connection)
             return nil
         }
         if let problem = BridgeProtocol.problem(with: hello) {

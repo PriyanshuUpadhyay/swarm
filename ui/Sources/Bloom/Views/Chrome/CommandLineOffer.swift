@@ -124,7 +124,7 @@ struct CommandLineWarning: View {
                 "Registers at user scope, in your own configuration file. Never paste it into "
                     + "a project's .mcp.json: that file is committed, and the token in it lets "
                     + "anything that can reach this Mac create projects and workspaces in your "
-                    + "Bloom."
+                    + "Swarm."
             )
         } icon: {
             Image(systemName: "exclamationmark.triangle.fill")

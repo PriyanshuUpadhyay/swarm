@@ -31,7 +31,7 @@ public enum TerminalStartDecision: Sendable, Equatable {
 public enum TmuxSessions {
     /// Session names carry it so a stray `tmux ls` on our socket reads clearly, and so nothing here
     /// could ever act on a session a person created by hand.
-    public static let sessionPrefix = "bloom"
+    public static let sessionPrefix = "swarmui"
 
     /// The one character an id may not contain, which is what makes a name splittable back into
     /// its parts. See `sanitized`.
@@ -39,7 +39,7 @@ public enum TmuxSessions {
 
     // MARK: - Naming
 
-    /// `bloom_<workspace>_<pane>`.
+    /// `swarmui_<workspace>_<pane>`.
     ///
     /// Stable across launches because both ids are: a pane is either a `terminal_tabs` row id or an
     /// id persisted inside the encoded `SplitLayout`, and both are UUIDs, so two panes can never
@@ -99,7 +99,7 @@ public enum TmuxSessions {
     /// The socket is per database, so an instance pointed at `BLOOM_DB_PATH` cannot adopt or sweep
     /// the sessions of the instance holding the user's real workspaces.
     public static func socketName(databasePath: String) -> String {
-        "bloom-" + fingerprint(databasePath)
+        "swarmui-" + fingerprint(databasePath)
     }
 
     /// FNV-1a rather than `Hashable`, whose seed changes every launch. This value names a socket
@@ -251,9 +251,9 @@ public enum TmuxSessions {
     /// on the macOS pasteboard: SwiftTerm implements OSC 52, so tmux's copy reaches it.
     public static func configuration(defaultShell: String) -> String {
         """
-        # Written by Bloom on every launch. Edits will be overwritten.
+        # Written by Swarm on every launch. Edits will be overwritten.
         #
-        # This file configures a private tmux server that holds one shell per Bloom terminal pane.
+        # This file configures a private tmux server that holds one shell per Swarm terminal pane.
         # It is not your tmux configuration and does not affect your own sessions.
 
         set -g default-shell "\(defaultShell)"

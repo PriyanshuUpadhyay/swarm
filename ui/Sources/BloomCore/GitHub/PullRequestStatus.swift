@@ -273,7 +273,7 @@ public extension PullRequest {
         }
         if checks == .failing { warnings.append(checksSummary) }
         if checks == .unavailable {
-            warnings.append("Bloom could not read this pull request's checks, so it cannot say whether they passed.")
+            warnings.append("Swarm could not read this pull request's checks, so it cannot say whether they passed.")
         }
         if hasConflicts { warnings.append("This branch conflicts with \(base).") }
         return warnings

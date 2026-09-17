@@ -192,7 +192,7 @@ public extension NewProjectRefusal {
         case .noLocation:
             "Choose where the project should live."
         case .locationNotAbsolute(let path):
-            "Bloom cannot tell where '\(path)' is, because it is not a full path."
+            "Swarm cannot tell where '\(path)' is, because it is not a full path."
         case .somethingThere(let path):
             "There is already a file called \(path). Pick another name."
         case .insideRepository(let root):
@@ -203,8 +203,8 @@ public extension NewProjectRefusal {
             """
         case .insideBloomsWorkspaces(let path):
             """
-            \(path) is inside the folder Bloom cuts its own worktrees into. A project lives where \
-            you keep your own work, and Bloom makes the worktrees from it.
+            \(path) is inside the folder Swarm cuts its own worktrees into. A project lives where \
+            you keep your own work, and Swarm makes the worktrees from it.
             """
         case .reservedLocation(let path):
             """
@@ -212,7 +212,7 @@ public extension NewProjectRefusal {
             than a project. Pick somewhere your projects live.
             """
         case .notWritable(let path):
-            "Bloom cannot write to \(path), so it cannot create the project folder there."
+            "Swarm cannot write to \(path), so it cannot create the project folder there."
         }
     }
 }
@@ -301,10 +301,10 @@ public extension NewProjectVerdict {
         switch self {
         case .create(let makesLocation):
             return makesLocation
-                ? "\(shown). Bloom will create both."
-                : "\(shown). Bloom will create it."
+                ? "\(shown). Swarm will create both."
+                : "\(shown). Swarm will create it."
         case .adopt:
-            return "\(shown) is already there and empty, so Bloom will use it."
+            return "\(shown) is already there and empty, so Swarm will use it."
         case .refuse(let refusal):
             return refusal.sentence
         }

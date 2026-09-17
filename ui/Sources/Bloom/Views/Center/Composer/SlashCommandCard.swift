@@ -134,7 +134,7 @@ struct SlashCommandCard: View {
 
     private var builtInNote: String {
         command == nil
-            ? "Bloom does not know this command. It will be sent as it is written."
+            ? "Swarm does not know this command. It will be sent as it is written."
             : "Built into the Claude Code CLI, so there is no file to open."
     }
 

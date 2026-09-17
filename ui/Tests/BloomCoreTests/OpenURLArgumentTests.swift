@@ -9,28 +9,28 @@ import Testing
 struct OpenURLArgumentTests {
     @Test("a properly encoded link is passed through byte for byte")
     func encodedLinkIsUntouched() {
-        let argument = "bloom://prompt=fix%20the%20bug&path=/tmp/x"
+        let argument = "swarm-ui://prompt=fix%20the%20bug&path=/tmp/x"
         #expect(OpenURLArgument.url(from: argument)?.absoluteString == argument)
     }
 
     @Test("a colon in the prompt no longer loses the whole link")
     func colonSurvives() throws {
         let url = try #require(
-            OpenURLArgument.url(from: "bloom://prompt=fix: the bug&path=/tmp/x")
+            OpenURLArgument.url(from: "swarm-ui://prompt=fix: the bug&path=/tmp/x")
         )
-        #expect(url.scheme == "bloom")
-        #expect(url.absoluteString == "bloom://prompt=fix%3A%20the%20bug&path=%2Ftmp%2Fx")
+        #expect(url.scheme == "swarm-ui")
+        #expect(url.absoluteString == "swarm-ui://prompt=fix%3A%20the%20bug&path=%2Ftmp%2Fx")
     }
 
     @Test("a repaired prompt decodes back to exactly what was typed")
     func repairedPromptRoundTrips() throws {
         let typed = "fix: the bug, 100% of the time + tests"
-        let url = try #require(OpenURLArgument.url(from: "bloom://prompt=\(typed)&path=/tmp/x"))
+        let url = try #require(OpenURLArgument.url(from: "swarm-ui://prompt=\(typed)&path=/tmp/x"))
 
         // Read back the way `BloomDeepLink.values(from:)` reads it: split on & and =, then map
         // + to space and remove the percent encoding. A literal + and a literal % in the typed
         // text have to survive that decoding, which is why the repair encodes both.
-        let payload = url.absoluteString.replacing("bloom://", with: "")
+        let payload = url.absoluteString.replacing("swarm-ui://", with: "")
         let pairs = payload.split(separator: "&").map {
             $0.split(separator: "=", maxSplits: 1).map(String.init)
         }
@@ -41,9 +41,9 @@ struct OpenURLArgumentTests {
     @Test("the pair structure is kept, so the path stays its own value")
     func pairsAreKept() throws {
         let url = try #require(
-            OpenURLArgument.url(from: "bloom://prompt=do the thing&path=/Users/x/dev/repo")
+            OpenURLArgument.url(from: "swarm-ui://prompt=do the thing&path=/Users/x/dev/repo")
         )
-        let payload = url.absoluteString.replacing("bloom://", with: "")
+        let payload = url.absoluteString.replacing("swarm-ui://", with: "")
         let keys = payload.split(separator: "&").map { String($0.split(separator: "=")[0]) }
         #expect(keys == ["prompt", "path"])
     }
@@ -55,7 +55,7 @@ struct OpenURLArgumentTests {
         #expect(OpenURLArgument.url(from: argument) == nil)
     }
 
-    @Test("the dev scheme repairs under its own name, not under bloom's")
+    @Test("another scheme repairs under its own name, not under Swarm's")
     func otherSchemesRepairToo() throws {
         let url = try #require(OpenURLArgument.url(from: "bloomdev://prompt=two words&path=/t"))
         #expect(url.scheme == "bloomdev")

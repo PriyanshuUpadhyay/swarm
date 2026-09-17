@@ -112,16 +112,16 @@ database, git's own safety reports, and counts.
 
 **The owner's standalone token is refused at the handshake when the shim is running inside a live
 workspace.** The owner registers Bloom in `~/.claude.json` at user scope, and Claude Code applies
-user scope to every session on the machine, Bloom's own included. Measured with `lsof` on 15
-September 2026: every Bloom-launched `claude` was running two shims, its own on its session token
+user scope to every session on the machine, Swarm's own included. Measured with `lsof` on 15
+September 2026: every Swarm-launched `claude` was running two shims, its own on its session token
 and the owner's on the standalone one, and an agent penned in as a child called
 `workspace_archive` through the owner's shim instead. The different server names kept the two
 registrations from shadowing each other and did nothing about an agent holding both.
 
 The test is the shim's working directory, read from the peer process on the socket. A CLI starts
-its stdio MCP servers where it is running, and Bloom runs a workspace agent in its worktree, so an
-owner shim started by a workspace agent is sitting in a worktree. Ask Bloom's shim runs in
-`Application Support/Bloom/Ask`, and a terminal the owner opened anywhere else is anywhere else.
+its stdio MCP servers where it is running, and Swarm runs a workspace agent in its worktree, so an
+owner shim started by a workspace agent is sitting in a worktree. Ask Swarm's shim runs in
+`Application Support/Swarm/Ask`, and a terminal the owner opened anywhere else is anywhere else.
 An environment marker was the obvious signal and the wrong one: Codex hands an MCP server a short
 allow list of variables rather than its own environment, so nothing Bloom set on the agent would
 reach the shim. The owner running their own `claude` inside a worktree is refused too, with a
@@ -844,7 +844,7 @@ variable in it, which is **how much a workspace costs the caller to ask for**.
 
 | Caller | Brake |
 | --- | --- |
-| The Create sheet, a `bloom://` link, the Services menu, a Shortcut | None. Each is a deliberate gesture per workspace |
+| The Create sheet, a `swarm-ui://` link, the Services menu, a Shortcut | None. Each is a deliberate gesture per workspace |
 | A workspace agent | Eight running workspaces it started, at once |
 | The owner's own client | Six starts in fifteen minutes |
 

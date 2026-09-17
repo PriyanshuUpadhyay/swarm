@@ -220,7 +220,7 @@ public struct QuickPromptListTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "quick_prompt_list",
         description: """
-            The owner's quick prompts: the few lines they keep typing again, kept by Bloom and put \
+            The owner's quick prompts: the few lines they keep typing again, kept by Swarm and put \
             back into the composer from the panel beside it. Each one carries its id, its name, \
             the mark drawn down the left of its row, and the whole of its text.
 
@@ -230,8 +230,8 @@ public struct QuickPromptListTool: BridgeToolHandling {
 
             \(QuickPromptCall.panelSentence)
 
-            It reads. The only thing it can ever write is Bloom's own built-in prompt, on a copy \
-            of Bloom whose quick prompt panel has never been opened, which is what opening the \
+            It reads. The only thing it can ever write is Swarm's own built-in prompt, on a copy \
+            of Swarm whose quick prompt panel has never been opened, which is what opening the \
             panel would have done anyway.
             """,
         inputSchema: BridgeTool.noArguments
@@ -249,7 +249,7 @@ public struct QuickPromptListTool: BridgeToolHandling {
                 "prompts": .array(prompts.map(QuickPromptCall.json)),
                 "note": .string(
                     prompts.isEmpty
-                        ? "Bloom has no quick prompts. quick_prompt_create writes one."
+                        ? "Swarm has no quick prompts. quick_prompt_create writes one."
                         : QuickPromptCall.panelSentence
                 ),
             ]))
@@ -300,8 +300,8 @@ public struct QuickPromptCreateTool: BridgeToolHandling {
             'text' is the prompt itself and is required: it is what goes into the composer when \
             the row is picked. 'name' is what the row is called and is optional; leave it out and \
             the row shows the start of the text instead. 'symbol' is the mark down the left of \
-            the row: one emoji, or an SF Symbol name Bloom's own picker offers. Leave it out for \
-            Bloom's default.
+            the row: one emoji, or an SF Symbol name Swarm's own picker offers. Leave it out for \
+            Swarm's default.
 
             \(QuickPromptCall.panelSentence)
 
@@ -327,7 +327,7 @@ public struct QuickPromptCreateTool: BridgeToolHandling {
                     "type": .string("string"),
                     "description": .string(
                         "The mark down the left of the row: one emoji, or an SF Symbol name from "
-                            + "Bloom's picker. Leave it out for Bloom's default."
+                            + "Swarm's picker. Leave it out for Swarm's default."
                     ),
                 ]),
             ]),
@@ -410,7 +410,7 @@ public struct QuickPromptUpdateTool: BridgeToolHandling {
             inserts nothing. A call that names no field at all is refused rather than treated as \
             a change of nothing.
 
-            There is no undo. What you overwrite was written by hand and Bloom keeps no copy of \
+            There is no undo. What you overwrite was written by hand and Swarm keeps no copy of \
             it, so read the prompt with quick_prompt_list first and change what the owner asked \
             you to change and nothing else.
             """,
@@ -431,7 +431,7 @@ public struct QuickPromptUpdateTool: BridgeToolHandling {
                 "symbol": .object([
                     "type": .string("string"),
                     "description": .string(
-                        "A new mark: one emoji, or an SF Symbol name from Bloom's picker. Leave "
+                        "A new mark: one emoji, or an SF Symbol name from Swarm's picker. Leave "
                             + "it out to keep the one it has."
                     ),
                 ]),
@@ -541,14 +541,14 @@ public struct QuickPromptDeleteTool: BridgeToolHandling {
             Remove a quick prompt from the owner's library, named by the id quick_prompt_list \
             prints.
 
-            There is no undo and Bloom keeps no copy. The answer repeats the whole prompt, its \
+            There is no undo and Swarm keeps no copy. The answer repeats the whole prompt, its \
             name, its mark and its text, so quick_prompt_create can write it back if this turns \
             out to have been the wrong one. That is the only way back, and it comes back as an \
             ordinary prompt: if sends_immediately or opens_new_chat was set, say so to the owner, \
             because no tool can set those and only he can turn them on again.
 
-            Deleting one of Bloom's own built-in prompts is a deletion like any other: it stays \
-            deleted, and no later launch and no later version of Bloom puts it back.
+            Deleting one of Swarm's own built-in prompts is a deletion like any other: it stays \
+            deleted, and no later launch and no later version of Swarm puts it back.
 
             Only call this when the owner has said to delete that prompt. Never as tidying up, and \
             never on a prompt you did not just read.
@@ -591,7 +591,7 @@ public struct QuickPromptDeleteTool: BridgeToolHandling {
                 fields["note"] = .string(
                     "That prompt is gone from the panel and there is no undo. The whole of it is "
                         + "above: quick_prompt_create writes it back if this was the wrong one. "
-                        + "If it was one Bloom shipped with, it stays deleted and no later "
+                        + "If it was one Swarm shipped with, it stays deleted and no later "
                         + "version puts it back."
                 )
                 answer = .object(fields)

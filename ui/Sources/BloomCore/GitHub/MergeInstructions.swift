@@ -56,7 +56,7 @@ public enum MergeInstructions {
       instead.
     - Change nothing on this machine. Do not delete the local branch, do not remove or move the
       worktree, and do not check out anything else. This worktree stays where it is, on the branch
-      it is on, and Bloom archives it separately when the person asks.
+      it is on, and Swarm archives it separately when the person asks.
     - Do not commit and do not push. If the worktree is holding work GitHub has not got, that was
       the reader's decision before pressing the button, not a thing to fix. Say in one line that it
       was left behind.

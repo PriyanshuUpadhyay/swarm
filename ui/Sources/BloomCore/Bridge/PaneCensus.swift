@@ -197,7 +197,7 @@ public struct BrowserPaneReport: Sendable, Equatable {
     public var trouble: String? {
         guard let failure else { return nil }
         let address = failure.namesTheAddress ? " (\(address))" : ""
-        return "Browser \(number) is showing Bloom's did-not-load state rather than a page"
+        return "Browser \(number) is showing Swarm's did-not-load state rather than a page"
             + "\(address): \(failure.title). \(failure.message) This is the page failing to "
             + "load, not the pane failing to draw."
     }

@@ -130,7 +130,7 @@ extension AppModel {
             Log.archive.error(
                 "asked to archive \(workspace.name, privacy: .public), but the app has no manager or no project for it"
             )
-            return .refused("Bloom cannot archive this workspace because its project is unavailable.")
+            return .refused("Swarm cannot archive this workspace because its project is unavailable.")
         }
         guard !isArchiving(workspace.id) else {
             return .refused("This workspace is already being archived. Check workspace_list shortly.")
@@ -166,7 +166,7 @@ extension AppModel {
                 workspace: workspace,
                 report: WorkspaceSafetyReport(),
                 deleteBranch: deleteBranch,
-                problem: "Bloom could not check this workspace for unsaved work. \(trouble.sentence)",
+                problem: "Swarm could not check this workspace for unsaved work. \(trouble.sentence)",
                 hazards: hazards
             )
             if allowsConfirmation { offerArchiveConfirmation(request, present: presentConfirmation) }
@@ -358,7 +358,7 @@ extension AppModel {
             Log.archive.error(
                 "archiving \(workspace.name, privacy: .public) stopped before it began: no workspace manager"
             )
-            return .refused("Bloom is still starting up. Try again in a moment.")
+            return .refused("Swarm is still starting up. Try again in a moment.")
         }
 
         // The agents go first: they are the ones writing to the worktree that is about to be
@@ -525,7 +525,7 @@ extension AppModel {
                 )
                 return .refused(await reportArchiveFailure(error, workspace: workspace))
             }
-            return .refused("The archive script failed. Its worktree and branch were kept. Check Bloom's alert for the script output.")
+            return .refused("The archive script failed. Its worktree and branch were kept. Check Swarm's alert for the script output.")
         } catch {
             await undoOptimisticArchive(workspace)
             Log.archive.error(
@@ -538,8 +538,8 @@ extension AppModel {
     private func archiveRefusal(_ request: ArchiveRequest) -> String {
         if let problem = request.problem { return problem }
         let reasons = request.losses + request.notes
-        guard !reasons.isEmpty else { return "Confirm this archive in Bloom." }
-        return "Archiving would discard \(reasons.joined(separator: "; ")). Resolve this or review it in Bloom."
+        guard !reasons.isEmpty else { return "Confirm this archive in Swarm." }
+        return "Archiving would discard \(reasons.joined(separator: "; ")). Resolve this or review it in Swarm."
     }
 
     /// Diagnosed rather than reported, for both of the archive's catches.
@@ -674,7 +674,7 @@ extension AppModel {
         guard let repo = repo(for: workspace) else {
             alert = BloomAlert(
                 title: "Could not bring \(workspace.name) back",
-                message: "Its project is no longer in Bloom, so there is no repository to cut a "
+                message: "Its project is no longer in Swarm, so there is no repository to cut a "
                     + "worktree from. Add the project again and try once more."
             )
             return

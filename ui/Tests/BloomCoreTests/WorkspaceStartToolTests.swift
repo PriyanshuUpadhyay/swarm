@@ -401,7 +401,7 @@ struct WorkspaceStartToolTests {
         )
 
         #expect(result.isError)
-        #expect(result.text.contains("no longer in Bloom's database"))
+        #expect(result.text.contains("no longer in Swarm's database"))
     }
 
     // MARK: Another project
@@ -868,8 +868,8 @@ struct WorkspaceStartDedupTests {
 struct BridgeToolApprovalTests {
     @Test("Bloom answers for the tools it wrote")
     func ownToolsAreApproved() {
-        #expect(BridgeToolApproval.isSelfApproved(toolName: "mcp__bloom-workspace-bridge__whoami"))
-        #expect(BridgeToolApproval.isSelfApproved(toolName: "mcp__bloom-workspace-bridge__workspace_start"))
+        #expect(BridgeToolApproval.isSelfApproved(toolName: "mcp__swarm-ui-workspace-bridge__whoami"))
+        #expect(BridgeToolApproval.isSelfApproved(toolName: "mcp__swarm-ui-workspace-bridge__workspace_start"))
     }
 
     /// The tools the agent brings with it reach outside anything Bloom knows about. Nothing here
@@ -885,7 +885,7 @@ struct BridgeToolApprovalTests {
     /// under somebody else's server name is not ours either.
     @Test("a lookalike server name is not Bloom")
     func lookalikesAreRefused() {
-        #expect(!BridgeToolApproval.isSelfApproved(toolName: "mcp__bloom-workspace-bridge-evil__workspace_start"))
+        #expect(!BridgeToolApproval.isSelfApproved(toolName: "mcp__swarm-ui-workspace-bridge-evil__workspace_start"))
         #expect(!BridgeToolApproval.isSelfApproved(toolName: "mcp__other__workspace_start"))
         #expect(!BridgeToolApproval.isSelfApproved(toolName: "workspace_start"))
     }
@@ -894,7 +894,7 @@ struct BridgeToolApprovalTests {
     /// being served from the same socket.
     @Test("a tool of ours that is not on the list still asks")
     func newToolsAreNotAutomaticallyIn() {
-        #expect(!BridgeToolApproval.isSelfApproved(toolName: "mcp__bloom-workspace-bridge__workspace_archive"))
+        #expect(!BridgeToolApproval.isSelfApproved(toolName: "mcp__swarm-ui-workspace-bridge__workspace_archive"))
     }
 
     @Test("the prefix follows the server's name rather than repeating it")

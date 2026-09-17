@@ -25,7 +25,7 @@ struct AskConversationRail: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.textSecondary)
-                .help("New Ask Bloom conversation")
+                .help("New Ask Swarm conversation")
             }
             .padding(.leading, Metrics.gutter)
             .padding(.trailing, Metrics.spacingSmall)

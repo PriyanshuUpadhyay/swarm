@@ -21,7 +21,7 @@ struct WelcomeKeepAwake: View {
 
                 Text(
                     "Agents stop when the Mac sleeps, and closing the lid sleeps it whatever an "
-                        + "app asks for. Bloom can hold it open, but only through a small helper "
+                        + "app asks for. Swarm can hold it open, but only through a small helper "
                         + "macOS makes you approve."
                 )
                 .font(Typo.body)
@@ -34,7 +34,7 @@ struct WelcomeKeepAwake: View {
                 standing
 
                 Text(
-                    "Bloom works without this. Keep Awake still holds the Mac open while the lid "
+                    "Swarm works without this. Keep Awake still holds the Mac open while the lid "
                         + "is up, and Settings has this switch again under Menu Bar."
                 )
                 .font(Typo.caption)
@@ -65,12 +65,12 @@ struct WelcomeKeepAwake: View {
             VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
                 Button("Set Up Keep Awake") { setUp() }
                     .buttonStyle(.borderedProminent)
-                Text("System Settings opens on Login Items, where Bloom's helper is waiting to be allowed.")
+                Text("System Settings opens on Login Items, where Swarm's helper is waiting to be allowed.")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
         case .unavailable(let reason):
-            Text("This copy of Bloom cannot install the helper: \(reason)")
+            Text("This copy of Swarm cannot install the helper: \(reason)")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -239,7 +239,7 @@ enum MenuActionProbe {
     // MARK: - Reading the app back
 
     private static var mainWindow: NSWindow? {
-        NSApp.windows.first { $0.title == "Bloom" && $0.contentView != nil }
+        NSApp.windows.first { $0.title == "Swarm" && $0.contentView != nil }
     }
 
     /// Front to back, which is the order the question is actually about. `NSApp.windows` is not

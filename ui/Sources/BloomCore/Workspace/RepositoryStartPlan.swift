@@ -147,14 +147,14 @@ public extension FolderRefusal {
     var sentence: String {
         switch self {
         case .notAbsolute(let path):
-            "Bloom cannot tell where '\(path)' is, because it is not a full path."
+            "Swarm cannot tell where '\(path)' is, because it is not a full path."
         case .nothingThere:
             "There is nothing at that path any more."
         case .notADirectory:
             "That is not a folder."
         case .insideBloomsWorkspaces(let path):
             """
-            \(path) is one of Bloom's own workspaces, which is a worktree of a project Bloom \
+            \(path) is one of Swarm's own workspaces, which is a worktree of a project Swarm \
             already has. Add the project it was cut from instead.
             """
         case .volumeRoot:
@@ -179,7 +179,7 @@ public extension FolderRefusal {
             all of it. Pick the project folder itself.
             """
         case .notWritable:
-            "Bloom cannot write to this folder, so it cannot create a repository in it."
+            "Swarm cannot write to this folder, so it cannot create a repository in it."
         case .containerOfProjects(let names):
             """
             This folder holds \(Self.list(names)), which are repositories of their own. It is a \
@@ -216,7 +216,7 @@ public extension FolderRefusal {
         switch self {
         case .notAbsolute(let path):
             """
-            Bloom will not add '\(path)' as a project because it is not an absolute path. Bloom \
+            Swarm will not add '\(path)' as a project because it is not an absolute path. Swarm \
             is a separate application and its working directory is not yours, so a relative path \
             points somewhere neither of us can agree on. Ask again with the full path, starting \
             at / or ~.
@@ -224,22 +224,22 @@ public extension FolderRefusal {
 
         case .nothingThere(let path):
             """
-            Bloom will not add \(path) as a project because there is nothing at that path. Check \
+            Swarm will not add \(path) as a project because there is nothing at that path. Check \
             where the repository actually is and ask again with the right path. If you were \
             guessing, stop guessing and ask the owner.
             """
 
         case .notADirectory(let path):
             """
-            Bloom will not add \(path) as a project because it is a file, not a folder. A project \
+            Swarm will not add \(path) as a project because it is a file, not a folder. A project \
             is the folder holding the repository. Ask again with the folder it is in.
             """
 
         case .insideBloomsWorkspaces(let path):
             """
-            Bloom will not add \(path) as a project because it is one of Bloom's own workspaces. \
-            A workspace is a worktree Bloom already cut from a project it already has, so adding \
-            it would give Bloom a project whose workspaces are worktrees of a worktree. Add the \
+            Swarm will not add \(path) as a project because it is one of Swarm's own workspaces. \
+            A workspace is a worktree Swarm already cut from a project it already has, so adding \
+            it would give Swarm a project whose workspaces are worktrees of a worktree. Add the \
             repository it was cut from instead, if that is not already a project.
             """
 
@@ -251,7 +251,7 @@ public extension FolderRefusal {
 
         case .insideRepository(let root):
             """
-            Bloom will not add that folder as a project because it sits inside the repository at \
+            Swarm will not add that folder as a project because it sits inside the repository at \
             \(root) without being part of it. Ask again with \(root), if that is not already a \
             project. Do not run git init to make this call succeed: whether a folder should be a \
             repository is the owner's decision.
@@ -259,7 +259,7 @@ public extension FolderRefusal {
 
         case .systemDirectory:
             """
-            Bloom will not add that folder as a project because it belongs to macOS or holds \
+            Swarm will not add that folder as a project because it belongs to macOS or holds \
             unrelated things, and it is not a git repository either. Retrying will not help and \
             neither will running git init: turning a folder into a repository is the owner's \
             decision. Ask again with the folder of the actual repository you meant.
@@ -267,14 +267,14 @@ public extension FolderRefusal {
 
         case .notWritable:
             """
-            Bloom will not add that folder as a project. It is not a git repository, and Bloom \
+            Swarm will not add that folder as a project. It is not a git repository, and Swarm \
             cannot write to it either, so retrying will not help and neither will running git \
             init. Check the path with the owner.
             """
 
         case .containerOfProjects(let names):
             """
-            Bloom will not add that folder as a project because it holds \(Self.list(names)), \
+            Swarm will not add that folder as a project because it holds \(Self.list(names)), \
             which are repositories of their own, and is not a repository itself. It is a folder \
             of projects rather than a project. Ask again with one of them, and do not run git \
             init here: that would put every project on the machine into one repository.
@@ -293,8 +293,8 @@ public extension FolderRefusal {
     /// `agentSentence`.
     static func notARepositoryForAgent(path: String) -> String {
         """
-        Bloom will not add \(path) as a project because git does not recognise it as a \
-        repository. Bloom registers repositories that already exist and it does not create them, \
+        Swarm will not add \(path) as a project because git does not recognise it as a \
+        repository. Swarm registers repositories that already exist and it does not create them, \
         so retrying will not help and neither will running git init: turning a folder into a \
         repository is the owner's decision and not something to do on their behalf while tidying \
         up a project list. If this folder should be a repository, say so and let the owner make \
@@ -304,7 +304,7 @@ public extension FolderRefusal {
 
     private static func tooBroad(_ what: String) -> String {
         """
-        Bloom will not add that folder as a project because it is \(what). Even where that is a \
+        Swarm will not add that folder as a project because it is \(what). Even where that is a \
         git repository it is not one project, and every workspace cut from it would carry \
         everything inside it. Ask again with the folder of the actual repository you meant.
         """

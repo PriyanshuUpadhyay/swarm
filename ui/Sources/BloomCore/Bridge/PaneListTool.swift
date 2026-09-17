@@ -75,7 +75,7 @@ public struct PaneListTool: BridgeToolHandling {
         }
         guard let census = await census(workspaceID) else {
             return .failure(
-                "That workspace is not open in Bloom any more, so there is nothing to list."
+                "That workspace is not open in Swarm any more, so there is nothing to list."
             )
         }
         return .json(census.json)

@@ -238,7 +238,7 @@ struct ProjectTargetTests {
             home: home,
             branch: "main"
         )
-        #expect(said.lead == "~/Developer/sparkline. Bloom will create both.")
+        #expect(said.lead == "~/Developer/sparkline. Swarm will create both.")
         #expect(said.detail.contains("empty first commit on main"))
         #expect(said.detail.contains("no README, no .gitignore"))
         #expect(said.tone == .going)

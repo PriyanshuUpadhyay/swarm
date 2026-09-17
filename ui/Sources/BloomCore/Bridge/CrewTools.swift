@@ -164,7 +164,7 @@ public enum CrewToolTrouble: Error, Sendable, Equatable {
 
         case .callerHasGone(let tool):
             return """
-                Bloom no longer has the chat this connection speaks for, so \(tool) cannot tell \
+                Swarm no longer has the chat this connection speaks for, so \(tool) cannot tell \
                 whose crew you mean. Its row has gone, which retrying will not undo.
                 """
 
@@ -231,7 +231,7 @@ public enum CrewToolTrouble: Error, Sendable, Equatable {
                 """
 
         case let .unexplained(tool, message):
-            return "Bloom could not complete \(tool): \(message)"
+            return "Swarm could not complete \(tool): \(message)"
         }
     }
 }
@@ -275,13 +275,13 @@ public struct AgentStartTool: BridgeToolHandling {
         name: CrewToolName.start,
         description: """
             Start a subagent: a second agent, with a chat of its own, working in the workspace you \
-            are already in. You give it a task, you can talk to it whenever you like, and Bloom \
+            are already in. You give it a task, you can talk to it whenever you like, and Swarm \
             tells you when it has stopped and what it last said.
 
             This is not the Task tool, and the difference is the whole reason to be here. A Task \
             subagent lives inside one turn of yours, cannot be spoken to once it is running, and \
             is gone when that turn ends. An agent started here gets its own chat and its own row \
-            in Bloom's sidebar, keeps its context from one turn to the next, takes more work from \
+            in Swarm's sidebar, keeps its context from one turn to the next, takes more work from \
             you at any time through agent_say, and is still there when this turn is over. Start \
             one here when the work outlives a single turn, or when you will want to talk to the \
             agent again. Use the Task tool for a one-shot read that has to answer inside this turn.
@@ -804,7 +804,7 @@ public struct AgentStopTool: BridgeToolHandling {
             It ends that agent if it is still running, takes its row out of the owner's sidebar, \
             and frees its name for another subagent to use. Nothing it did is undone: everything \
             it wrote in the worktree stays exactly as it left it, and its conversation stays in \
-            Bloom for the owner to read.
+            Swarm for the owner to read.
 
             This is how you finish with an agent and not only how you interrupt one. A Task \
             subagent ends itself when your turn ends; one of these does not, so an agent you have \

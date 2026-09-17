@@ -307,7 +307,7 @@ struct WorkspaceStatusTests {
         #expect(text.contains("agent"))
         // The app no longer runs the merge, so it no longer claims to be the thing that cannot
         // take it back.
-        #expect(!text.contains("Bloom cannot undo this."))
+        #expect(!text.contains("Swarm cannot undo this."))
         // The number, the title and the method are on the title line and on the button, and were
         // said a second time here for no gain.
         #expect(!text.contains("Better glyphs"))

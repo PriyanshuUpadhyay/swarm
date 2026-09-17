@@ -77,7 +77,7 @@ struct SetupLifecycleTests {
         #expect(subject.setupState == .pending)
         // `.pending` and not `.failed`: nobody witnessed a failure. The line is what separates
         // this from a workspace whose setup genuinely never started.
-        #expect(subject.setupLog.hasPrefix("installing\n[bloom] The app stopped"))
+        #expect(subject.setupLog.hasPrefix("installing\n[swarm] The app stopped"))
     }
 
     @Test("there is nothing to interrupt outside a run", arguments: [

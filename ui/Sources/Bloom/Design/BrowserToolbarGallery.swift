@@ -36,7 +36,7 @@ struct BrowserToolbarGallery: View {
             row(
                 "The dev server, just opened",
                 "Somewhere to be, so Reload and Share come alive. Still no history either way.",
-                BrowserToolbar(page: page("http://localhost:3100/", "Bloom"))
+                BrowserToolbar(page: page("http://localhost:3100/", "Swarm"))
             )
             row(
                 "Four links deep",
@@ -47,7 +47,7 @@ struct BrowserToolbarGallery: View {
                 "Gone back, so there is a page ahead as well",
                 "The one state that puts both arrows in the same bar.",
                 BrowserToolbar(
-                    page: page("http://localhost:3100/", "Bloom"),
+                    page: page("http://localhost:3100/", "Swarm"),
                     canGoBack: true,
                     canGoForward: true
                 )
@@ -77,7 +77,7 @@ struct BrowserToolbarGallery: View {
             row(
                 "A screenshot on its way to the composer",
                 "The camera goes quiet rather than attaching the same page twice.",
-                BrowserToolbar(page: page("http://localhost:3100/", "Bloom"), isCapturing: true)
+                BrowserToolbar(page: page("http://localhost:3100/", "Swarm"), isCapturing: true)
             )
         }
         .padding(20)
@@ -127,7 +127,7 @@ struct BrowserToolbarGallery: View {
         }
 
         private static let pages = [
-            BrowserTabTitle.BrowserPage(address: "http://localhost:3100/", title: "Bloom"),
+            BrowserTabTitle.BrowserPage(address: "http://localhost:3100/", title: "Swarm"),
             BrowserTabTitle.BrowserPage(address: "http://localhost:3100/workspaces", title: "Workspaces"),
         ]
 

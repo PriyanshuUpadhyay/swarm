@@ -68,6 +68,14 @@ struct MenuBarCatalogueTests {
         }
     }
 
+    @Test("app-specific items use the shipped name")
+    func appName() {
+        #expect(MenuBarCatalogue[.about].title == "About Swarm")
+        #expect(MenuBarCatalogue[.newAskConversation].title == "New Ask Swarm Conversation")
+        #expect(MenuBarCatalogue[.goToAsk].title == "Ask Swarm")
+        #expect(MenuBarCatalogue[.welcome].title == "Welcome to Swarm…")
+    }
+
     /// Every menu Bloom claims to fill has something in it. An empty menu title in the bar is a
     /// word with nothing under it.
     @Test("no menu is empty")

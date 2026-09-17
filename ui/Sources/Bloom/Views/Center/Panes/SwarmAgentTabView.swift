@@ -149,7 +149,7 @@ struct SwarmAgentTabView: View {
             ContentUnavailableView(
                 "Swarm session unavailable",
                 systemImage: "exclamationmark.triangle",
-                description: Text(swarm.lastError ?? "Bloom is loading the workspace's swarm session.")
+                description: Text(swarm.lastError ?? "Swarm is loading the workspace's swarm session.")
             )
         }
     }

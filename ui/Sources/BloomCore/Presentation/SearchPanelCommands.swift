@@ -74,7 +74,7 @@ public enum SearchPanelCommands {
     /// the row under it to teach anything.
     public static func title(of menu: MenuBarMenu) -> String {
         switch menu {
-        case .bloom: "Bloom"
+        case .bloom: "Swarm"
         case .file: "File"
         case .edit: "Edit"
         case .view: "View"

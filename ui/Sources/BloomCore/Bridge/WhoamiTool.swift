@@ -19,14 +19,14 @@ public struct WhoamiTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "whoami",
         description: """
-            What this connection is: which copy of Bloom is at the other end of it, and which \
-            workspace it is speaking for, if any. Inside a Bloom workspace that is the workspace \
+            What this connection is: which copy of Swarm is at the other end of it, and which \
+            workspace it is speaking for, if any. Inside a Swarm workspace that is the workspace \
             and its branch, the worktree path, the project it belongs to, and whether the \
             workspace was created by the owner or by another agent. From a client of the owner's \
-            own it is the copy of Bloom you have reached and how much it is holding, which is the \
+            own it is the copy of Swarm you have reached and how much it is holding, which is the \
             cheapest way to confirm the connection works before asking it for anything real.
 
-            Takes no arguments, because Bloom already knows who is calling. Read only.
+            Takes no arguments, because Swarm already knows who is calling. Read only.
             """,
         inputSchema: BridgeTool.noArguments
     )
@@ -41,7 +41,7 @@ public struct WhoamiTool: BridgeToolHandling {
             guard let workspace = try await store.workspace(id: workspaceID) else {
                 // Reachable: a workspace archived and removed while its agent was mid-turn. The
                 // model is told plainly rather than handed an empty object to misread.
-                return .failure("This workspace is no longer in Bloom's database.")
+                return .failure("This workspace is no longer in Swarm's database.")
             }
             var session: Session?
             if let sessionID = identity.sessionID {
@@ -89,7 +89,7 @@ public struct WhoamiTool: BridgeToolHandling {
             }
             return .json(.object(answer))
         } catch {
-            return .failure("Bloom could not read this workspace: \(error.readableMessage)")
+            return .failure("Swarm could not read this workspace: \(error.readableMessage)")
         }
     }
 
@@ -111,20 +111,20 @@ public struct WhoamiTool: BridgeToolHandling {
             return .json(.object([
                 "role": .string(BridgeRole.owner.rawValue),
                 "connected_to": .object([
-                    "app": .string("Bloom"),
+                    "app": .string("Swarm"),
                     "database": .string(store.path),
                     "bridge_protocol": .integer(BridgeProtocol.version),
                 ]),
                 "projects": .integer(projects.count),
                 "workspaces": .integer(workspaces.count),
                 "note": .string(
-                    "You are talking to Bloom as its owner, from outside any workspace. You can "
+                    "You are talking to Swarm as its owner, from outside any workspace. You can "
                         + "list projects, register an existing repository as one, and start "
                         + "workspaces in them."
                 ),
             ]))
         } catch {
-            return .failure("Bloom could not read its own database: \(error.readableMessage)")
+            return .failure("Swarm could not read its own database: \(error.readableMessage)")
         }
     }
 }

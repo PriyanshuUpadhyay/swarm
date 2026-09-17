@@ -212,7 +212,7 @@ struct BridgeShimTests {
     @Test("prints Bloom's refusal and exits when the protocol does not match", .timeLimit(.minutes(1)))
     func refusedAtTheHandshake() async throws {
         let socketPath = scratchSocket()
-        let refusal = BridgeWelcome.refusing("Bloom speaks 1 and this bloom-bridge speaks 2. Quit and reopen Bloom.")
+        let refusal = BridgeWelcome.refusing("Swarm speaks 1 and this bloom-bridge speaks 2. Quit and reopen Swarm.")
         let encoded = String(decoding: try JSONEncoder().encode(refusal), as: UTF8.self)
         let listener = try UnixSocketListener(path: socketPath) { connection in
             Task {
@@ -233,6 +233,6 @@ struct BridgeShimTests {
         for await line in process.errorLines { complaints.append(line) }
 
         #expect(await process.exitStatus == BridgeShim.Exit.refused)
-        #expect(complaints.joined(separator: " ").contains("Quit and reopen Bloom"))
+        #expect(complaints.joined(separator: " ").contains("Quit and reopen Swarm"))
     }
 }

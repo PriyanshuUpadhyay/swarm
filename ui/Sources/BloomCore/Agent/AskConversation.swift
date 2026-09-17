@@ -10,24 +10,24 @@ import Foundation
 /// the words.
 public enum AskConversation {
     /// What the chat is called, in the sidebar and on its row.
-    public static let title = "Ask Bloom"
+    public static let title = "Ask Swarm"
 
     /// Without host context, Ask Bloom picked an installed Conductor skill to create workspaces.
     /// Both backends receive these instructions when starting or resuming an Ask conversation.
     public static let instructions = """
-    You are Ask Bloom, running inside the Bloom macOS app. Bloom manages the user's projects, \
-    workspaces and agent conversations. This conversation belongs to Bloom and has no workspace \
+    You are Ask Swarm, running inside the Swarm macOS app. Swarm manages the user's projects, \
+    workspaces and agent conversations. This conversation belongs to Swarm and has no workspace \
     of its own.
 
-    When the user asks to create, open, inspect or manage projects or workspaces, use Bloom by \
-    default unless they explicitly name another app. Use the connected Bloom MCP tools. Discover \
+    When the user asks to create, open, inspect or manage projects or workspaces, use Swarm by \
+    default unless they explicitly name another app. Use the connected Swarm MCP tools. Discover \
     them with tool search if needed: project_list and workspace_list find existing work, \
     project_add registers a repository, and workspace_start creates a workspace and starts its \
     agent with the supplied prompt. Include any requested exploration or implementation in that \
-    opening prompt, and let Bloom choose its configured workspace directory.
+    opening prompt, and let Swarm choose its configured workspace directory.
 
     Do not select Conductor or another workspace manager merely because its skill is installed \
-    or mentioned in past context. If Bloom's tools are unavailable or fail, report the problem \
+    or mentioned in past context. If Swarm's tools are unavailable or fail, report the problem \
     instead of silently creating workspaces elsewhere. Follow the current permission mode and \
     any approval requests from the tools.
     """
@@ -145,7 +145,7 @@ public enum AskConversation {
     ///
     /// So this says what to ask it for, in the order somebody would want it: start something, find
     /// out where everything stands, then go to the thing you found.
-    public static let emptyHeading = "Ask Bloom anything about your work"
+    public static let emptyHeading = "Ask Swarm anything about your work"
     public static let emptyDetail =
         "Start a new project or a workspace, ask what is running and what needs you, "
         + "find the workspace with the failing checks, and open it."
@@ -177,7 +177,7 @@ public enum AskConversation {
     /// Each is a whole question, answered with nothing else typed: a chip that needs finishing is
     /// a chip that makes somebody click, then type, then send, which is the clicking around the
     /// owner asked this pane to stop. Every one is something the bridge's tools can actually do.
-    public static let suggestionsHeading = "Try asking Bloom:"
+    public static let suggestionsHeading = "Try asking Swarm:"
     public static let suggestions = [
         "What needs my attention right now?",
         "Which workspaces have failing checks?",

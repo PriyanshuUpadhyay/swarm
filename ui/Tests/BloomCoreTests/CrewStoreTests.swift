@@ -122,7 +122,7 @@ struct CrewStoreTests {
         #expect(pending.contains { $0.sent.contains("\"docs\"") })
         #expect(pending.allSatisfy { !$0.sent.contains("\"quiet\"") })
         #expect(pending.allSatisfy { $0.crewMessage?.event == .failed })
-        #expect(pending.contains { $0.body == "tests failed. Bloom was restarted while it was "
+        #expect(pending.contains { $0.body == "tests failed. Swarm was restarted while it was "
             + "working, so its turn was lost. Nothing it had not already reported got through." })
 
         // The reset itself still happened, which is the half that keeps the ceiling in `Crew` from

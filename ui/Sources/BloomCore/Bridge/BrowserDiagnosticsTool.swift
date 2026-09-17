@@ -51,7 +51,7 @@ public struct BrowserConsoleTool: BridgeToolHandling {
             \(BrowserPaneArgument.sentence) 'errors_only' keeps errors and warnings. 'clear' empties \
             the log after reading it, so the next call shows only what is new.
 
-            Bloom starts listening the first time this is called on a page, so that first call \
+            Swarm starts listening the first time this is called on a page, so that first call \
             cannot show anything logged earlier: reload the page and call again to hear it from \
             the start. The last \(BrowserConsoleLog.capacity) messages are kept.
 

@@ -163,7 +163,7 @@ struct ProjectHideToolTests {
             .call(request("project_unhide", "flare"), as: .owner, store: store)
 
         #expect(result.isError)
-        #expect(result.text.contains("Bloom has no projects"))
+        #expect(result.text.contains("Swarm has no projects"))
         #expect(result.text.contains("project_add"))
     }
 

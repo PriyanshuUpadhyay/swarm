@@ -30,7 +30,7 @@ enum RunningApp {
 
     /// Starts a workspace the way the create window does, and answers with it or with why not.
     ///
-    /// This replaced a `bloom://` link and a poll. An intent used to build a URL, hand it to the
+    /// This replaced a `swarm-ui://` link and a poll. An intent used to build a URL, hand it to the
     /// window, and then read the database every 400ms for up to sixty seconds looking for a row it
     /// had not seen before, because a URL is one way and there was nothing to return. Two
     /// Shortcuts creating a workspace in one project at the same second could each claim the
@@ -60,7 +60,7 @@ enum RunningApp {
         return hasWindow
     }
 
-    /// Hands the app a `bloom://` link, which is the entry point it already uses for creating a
+    /// Hands the app a `swarm-ui://` link, which is the entry point it already uses for creating a
     /// workspace from outside. Posted rather than opened through `NSWorkspace`, because the URL
     /// would take a round trip through LaunchServices only to arrive back in this process as the
     /// same notification.

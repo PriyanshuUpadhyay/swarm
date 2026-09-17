@@ -59,14 +59,14 @@ public enum QuickPromptTrouble: Error, Sendable, Equatable {
 
         case let .unknownID(id, known):
             return """
-                Bloom has no quick prompt with the id '\(id)'. It has \(Self.listing(known)). \
+                Swarm has no quick prompt with the id '\(id)'. It has \(Self.listing(known)). \
                 Retrying with the same id will fail the same way: call quick_prompt_list and use \
                 an id from its answer.
                 """
 
         case .emptyLibrary(let tool):
             return """
-                Bloom has no quick prompts, so \(tool) has nothing to act on. Retrying will not \
+                Swarm has no quick prompts, so \(tool) has nothing to act on. Retrying will not \
                 change that. quick_prompt_create is what writes one.
                 """
 
@@ -79,14 +79,14 @@ public enum QuickPromptTrouble: Error, Sendable, Equatable {
 
         case .unknownSymbol(let symbol):
             return """
-                Bloom cannot draw '\(symbol)' as a quick prompt's mark, and a mark it cannot draw \
+                Swarm cannot draw '\(symbol)' as a quick prompt's mark, and a mark it cannot draw \
                 is a blank down the left of the row. Pass one emoji, or one of the SF Symbol \
-                names Bloom's own picker offers, such as \(Self.symbolExamples). Leave 'symbol' \
-                out for Bloom's default.
+                names Swarm's own picker offers, such as \(Self.symbolExamples). Leave 'symbol' \
+                out for Swarm's default.
                 """
 
         case let .unexplained(tool, message):
-            return "Bloom could not finish \(tool): \(message)"
+            return "Swarm could not finish \(tool): \(message)"
         }
     }
 

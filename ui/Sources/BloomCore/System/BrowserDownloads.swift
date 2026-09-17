@@ -49,10 +49,10 @@ public struct BrowserDownloads: Sendable, Equatable {
     private static func notice(from name: String?) -> BrowserNotice {
         let who = name ?? "That page"
         return BrowserNotice(
-            title: "Bloom stopped \(who) downloading more files",
+            title: "Swarm stopped \(who) downloading more files",
             message: """
                 This page started several downloads at once, which is what a page in a loop does. \
-                Bloom kept the first few and refused the rest. What did arrive is in your \
+                Swarm kept the first few and refused the rest. What did arrive is in your \
                 Downloads folder.
                 """
         )

@@ -118,9 +118,9 @@ extension CodexClientError: CustomStringConvertible {
                 ? "The connection to Codex closed"
                 : "The connection to Codex closed: \(reason)"
         case .unexpectedResult:
-            "Codex returned a response Bloom could not read"
+            "Codex returned a response Swarm could not read"
         case .notInitialized:
-            "Bloom could not connect to Codex"
+            "Swarm could not connect to Codex"
         case .timedOut(let method, _):
             switch method {
             case "thread/resume":

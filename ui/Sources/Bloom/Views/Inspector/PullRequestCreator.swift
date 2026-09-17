@@ -98,8 +98,8 @@ struct PullRequestCreator: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(
                         github == .notInstalled
-                            ? "The gh command is not installed, so Bloom cannot tell whether this branch has a pull request."
-                            : "The GitHub CLI is signed out, so Bloom cannot tell whether this branch has a pull request."
+                            ? "The gh command is not installed, so Swarm cannot tell whether this branch has a pull request."
+                            : "The GitHub CLI is signed out, so Swarm cannot tell whether this branch has a pull request."
                     )
                 }
             }

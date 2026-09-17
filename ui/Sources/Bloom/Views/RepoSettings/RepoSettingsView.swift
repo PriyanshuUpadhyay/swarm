@@ -180,7 +180,7 @@ struct RepoSettingsView: View {
                 }
             }
         } footer: {
-            Text("Name, icon and colour save automatically in Bloom. Other panes use Save Files to update the repository.")
+            Text("Name, icon and colour save automatically in Swarm. Other panes use Save Files to update the repository.")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -313,7 +313,7 @@ struct RepoSettingsView: View {
         switch repo.iconSource {
         // Never searched, rather than searched and empty handed. The button beside it says
         // `Find icon` for the same reason.
-        case .undetected: return "Bloom has not looked for an icon here."
+        case .undetected: return "Swarm has not looked for an icon here."
         case .monogram, .detected, .chosen: return "Initials on the project's colour."
         }
     }
@@ -328,7 +328,7 @@ struct RepoSettingsView: View {
         Task {
             guard let found = await Task.detached(operation: { RepoIconDetector.detect(in: path) }).value
             else {
-                iconNotice = "Nothing found. Bloom looks for a favicon, a manifest icon and an app icon."
+                iconNotice = "Nothing found. Swarm looks for a favicon, a manifest icon and an app icon."
                 return
             }
             await apply(icon: found.path, source: .detected)
@@ -546,7 +546,7 @@ struct RepoSettingsView: View {
                     .foregroundStyle(Palette.negative)
             }
         } footer: {
-            Text("Bloom forgets the project. Nothing on disk is deleted.")
+            Text("Swarm forgets the project. Nothing on disk is deleted.")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -612,8 +612,8 @@ struct SettingsDestinationLabel: View {
     private var help: String {
         guard isForking, let origin else { return text }
         return """
-            \(short(origin)) was written for Conductor. Bloom reads it but does not edit it, \
-            so saving states this setting in \(short(destination)) as well. Bloom uses the new \
+            \(short(origin)) was written for Conductor. Swarm reads it but does not edit it, \
+            so saving states this setting in \(short(destination)) as well. Swarm uses the new \
             value; Conductor keeps reading the old one until the line is removed by hand.
             """
     }

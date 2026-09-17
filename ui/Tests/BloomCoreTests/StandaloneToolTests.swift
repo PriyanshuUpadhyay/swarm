@@ -179,7 +179,7 @@ struct ProjectAddToolTests {
             Issue.record("expected the worktree to be refused, and got \(verdict)")
             return
         }
-        #expect(refusal.agentSentence.contains("one of Bloom's own workspaces"))
+        #expect(refusal.agentSentence.contains("one of Swarm's own workspaces"))
     }
 
     @Test("the home folder is refused even where it is a repository")
