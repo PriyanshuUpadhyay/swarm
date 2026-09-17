@@ -20,6 +20,17 @@ struct SwarmAgentConversationTests {
         #expect(!SwarmAgentName.isValid(String(repeating: "a", count: 41)))
     }
 
+    @Test("ended session agents still reserve their names without an open tab")
+    func endedSessionAgentName() {
+        let endedSessionAgent = SwarmAgent(
+            id: coderAgent, role: "code.complex", pane: nil, alive: nil
+        )
+
+        #expect(SwarmAgentName.free(
+            role: "code.complex", excluding: [endedSessionAgent.id]
+        ) == SwarmAgentID("code-complex-2"))
+    }
+
     @Test("chat rows keep only the chair's exchange with one agent")
     func chatRows() {
         let messages = [
@@ -48,6 +59,40 @@ struct SwarmAgentConversationTests {
         ]
 
         #expect(SwarmChatRow.acknowledgements(in: messages, shownAgents: [coderAgent]) == [1])
+    }
+
+    @Test("overlapping acknowledgement batches reserve each sequence once")
+    func acknowledgementReservations() {
+        let first = SwarmAckReservation.reserve([42, 43], inFlight: [])
+        let overlapping = SwarmAckReservation.reserve([42, 43], inFlight: first.inFlight)
+
+        #expect(first.sequences == [42, 43])
+        #expect(overlapping.sequences.isEmpty)
+    }
+
+    @Test("a failed acknowledgement is released for a later retry")
+    func acknowledgementRetry() {
+        let first = SwarmAckReservation.reserve([42], inFlight: [])
+        let released = SwarmAckReservation.release(first.sequences, inFlight: first.inFlight)
+        let retry = SwarmAckReservation.reserve([42], inFlight: released)
+
+        #expect(retry.sequences == [42])
+    }
+
+    @Test("dismissed errors wait for changed text or a successful call")
+    func errorDisplay() {
+        var display = SwarmErrorDisplay()
+        display.record("swarm is unavailable")
+        display.dismiss()
+        display.record("swarm is unavailable")
+        #expect(display.visible == nil)
+
+        display.record("account is unavailable")
+        #expect(display.visible == "account is unavailable")
+        display.dismiss()
+        display.succeed()
+        display.record("account is unavailable")
+        #expect(display.visible == "account is unavailable")
     }
 
     @Test("polling backs off to the sweep interval")

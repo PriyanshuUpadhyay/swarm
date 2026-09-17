@@ -133,6 +133,7 @@ struct SwarmAgentStartSheet: View {
             errorMessage = errorText(error)
         }
         isLoading = false
+        chooseRole()
     }
 
     private func loadAgents() async {

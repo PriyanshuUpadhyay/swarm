@@ -80,6 +80,40 @@ public struct SwarmChatRow: Sendable, Hashable, Identifiable {
     }
 }
 
+public enum SwarmAckReservation {
+    public static func reserve(
+        _ candidates: [Int], inFlight: Set<Int>
+    ) -> (sequences: [Int], inFlight: Set<Int>) {
+        let sequences = candidates.filter { !inFlight.contains($0) }
+        return (sequences, inFlight.union(sequences))
+    }
+
+    public static func release(_ sequences: [Int], inFlight: Set<Int>) -> Set<Int> {
+        inFlight.subtracting(sequences)
+    }
+}
+
+public struct SwarmErrorDisplay: Sendable, Equatable {
+    public private(set) var visible: String?
+    private var dismissed: String?
+
+    public init() {}
+
+    public mutating func record(_ message: String) {
+        guard dismissed != message else { return }
+        visible = message
+    }
+
+    public mutating func dismiss() {
+        dismissed = visible
+        visible = nil
+    }
+
+    public mutating func succeed() {
+        dismissed = nil
+    }
+}
+
 public enum SwarmPollSchedule {
     public static let pollInterval: TimeInterval = 2
     public static let sweepInterval: TimeInterval = 30
@@ -108,5 +142,9 @@ public enum SwarmWorkspaceSession {
 
     public static func save(_ session: SwarmSessionID, workspaceID: WorkspaceID, in store: Store) async throws {
         try await store.setSetting(settingKey(workspaceID: workspaceID), session.rawValue)
+    }
+
+    public static func clear(workspaceID: WorkspaceID, in store: Store) async throws {
+        try await store.setSetting(settingKey(workspaceID: workspaceID), nil)
     }
 }

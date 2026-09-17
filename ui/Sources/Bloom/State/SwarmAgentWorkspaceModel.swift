@@ -14,8 +14,10 @@ final class SwarmAgentWorkspaceModel {
     private(set) var sessionID: SwarmSessionID?
     private(set) var agents: [SwarmAgentID: SwarmAgent] = [:]
     private(set) var messages: [SwarmMessage] = []
-    private(set) var lastError: String?
     private var pendingComposers: [SwarmAgentID: String] = [:]
+    private var errorDisplay = SwarmErrorDisplay()
+
+    var lastError: String? { errorDisplay.visible }
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var trackedAgents: Set<SwarmAgentID> = []
@@ -24,7 +26,6 @@ final class SwarmAgentWorkspaceModel {
     @ObservationIgnored private var failureCount = 0
     @ObservationIgnored private var lastSweep: Date?
     @ObservationIgnored private var acknowledging: Set<Int> = []
-    @ObservationIgnored private var dismissedError: String?
 
     init(
         workspaceID: WorkspaceID, directory: String,
@@ -131,8 +132,7 @@ final class SwarmAgentWorkspaceModel {
     }
 
     func dismissError() {
-        dismissedError = lastError
-        lastError = nil
+        errorDisplay.dismiss()
     }
 
     func pendingComposer(for agent: SwarmAgentID) -> String? {
@@ -162,6 +162,12 @@ final class SwarmAgentWorkspaceModel {
                     record(error)
                 }
             }
+        } catch {
+            record(error)
+        }
+        do {
+            try await SwarmWorkspaceSession.clear(workspaceID: workspaceID, in: store)
+            sessionID = nil
         } catch {
             record(error)
         }
@@ -227,19 +233,22 @@ final class SwarmAgentWorkspaceModel {
 
     private func acknowledgeVisibleMessages() async {
         guard let sessionID else { return }
-        let sequences = SwarmChatRow.acknowledgements(
+        let candidates = SwarmChatRow.acknowledgements(
             in: messages, shownAgents: visibleAgents
-        ).filter { !acknowledging.contains($0) }
+        )
+        let reservation = SwarmAckReservation.reserve(candidates, inFlight: acknowledging)
+        acknowledging = reservation.inFlight
+        let sequences = reservation.sequences
+        defer {
+            acknowledging = SwarmAckReservation.release(sequences, inFlight: acknowledging)
+        }
         for seq in sequences {
-            acknowledging.insert(seq)
             do {
                 try await bus.ack(seq, in: sessionID)
                 if let index = messages.firstIndex(where: { $0.seq == seq }) {
                     messages[index].read = true
                 }
-                acknowledging.remove(seq)
             } catch {
-                acknowledging.remove(seq)
                 record(error)
                 return
             }
@@ -261,12 +270,11 @@ final class SwarmAgentWorkspaceModel {
         default:
             message = error.localizedDescription
         }
-        guard dismissedError != message, lastError != message else { return }
-        lastError = message
+        errorDisplay.record(message)
     }
 
     private func recordSuccess() {
-        dismissedError = nil
+        errorDisplay.succeed()
     }
 
     private func outgoingMessage(
