@@ -72,6 +72,7 @@ public struct SwarmMessageList: Sendable, Hashable, Codable {
 public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var id: SwarmSessionID
     public var talkMode: String
+    public var adapter: String?
     public var cwd: String
     public var createdAt: Int
     public var chairLog: String?
@@ -80,11 +81,12 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var lastMessageAt: Int?
 
     public init(
-        id: SwarmSessionID, talkMode: String, cwd: String, createdAt: Int,
+        id: SwarmSessionID, talkMode: String, adapter: String?, cwd: String, createdAt: Int,
         chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?
     ) {
         self.id = id
         self.talkMode = talkMode
+        self.adapter = adapter
         self.cwd = cwd
         self.createdAt = createdAt
         self.chairLog = chairLog
@@ -94,13 +96,14 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, talkMode, cwd, createdAt, chairLog, agents, messages, lastMessageAt
+        case id, talkMode, adapter, cwd, createdAt, chairLog, agents, messages, lastMessageAt
     }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = SwarmSessionID(String(try values.decode(Int.self, forKey: .id)))
         talkMode = try values.decode(String.self, forKey: .talkMode)
+        adapter = try values.decodeIfPresent(String.self, forKey: .adapter)
         cwd = try values.decode(String.self, forKey: .cwd)
         createdAt = try values.decode(Int.self, forKey: .createdAt)
         chairLog = try values.decodeIfPresent(String.self, forKey: .chairLog)
@@ -122,6 +125,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         }
         try values.encode(numericID, forKey: .id)
         try values.encode(talkMode, forKey: .talkMode)
+        try values.encodeIfPresent(adapter, forKey: .adapter)
         try values.encode(cwd, forKey: .cwd)
         try values.encode(createdAt, forKey: .createdAt)
         try values.encodeIfPresent(chairLog, forKey: .chairLog)
@@ -176,16 +180,61 @@ public protocol SwarmBus: Sendable {
         _ agent: SwarmAgentID, role: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
-    func agents(in session: SwarmSessionID) async throws -> [SwarmAgent]
-    func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage]
+    func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
+    func messages(
+        in session: SwarmSessionID, after seq: Int, adapter: String
+    ) async throws -> [SwarmMessage]
     /// `swarm sessions --json`, with no session selected in the environment.
     func sessions() async throws -> [SwarmSession]
     /// `swarm send <agent> ask` with `body` on stdin. Returns the new message's seq.
     func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int
+    /// `swarm type <agent>` with `text` on stdin.
+    func type(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws
+    /// `swarm interrupt <agent>`.
+    func interrupt(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws
     func ack(_ seq: Int, in session: SwarmSessionID) async throws
     func sweep(in session: SwarmSessionID) async throws
     func close(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws
     func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand
+}
+
+public extension SwarmBus {
+    func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
+        try await agents(in: session, adapter: SwarmSessionInteraction.workspaceAdapter)
+    }
+
+    func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage] {
+        try await messages(
+            in: session, after: seq, adapter: SwarmSessionInteraction.workspaceAdapter
+        )
+    }
+
+    func agents(in session: SwarmSession) async throws -> [SwarmAgent] {
+        try await agents(in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session))
+    }
+
+    func messages(in session: SwarmSession, after seq: Int) async throws -> [SwarmMessage] {
+        try await messages(
+            in: session.id, after: seq, adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
+
+    func type(_ text: String, to agent: SwarmAgentID, in session: SwarmSession) async throws {
+        try await type(
+            text, to: agent, in: session.id,
+            adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
+
+    func interrupt(_ agent: SwarmAgentID, in session: SwarmSession) async throws {
+        try await interrupt(
+            agent, in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
 }
 
 /// The bus before swarm is connected. Every call fails as unavailable, so a view shows its empty
@@ -204,15 +253,31 @@ public struct UnavailableSwarmBus: SwarmBus {
         throw notConnected
     }
 
-    public func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] { throw notConnected }
+    public func agents(
+        in session: SwarmSessionID, adapter: String
+    ) async throws -> [SwarmAgent] { throw notConnected }
 
-    public func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage] {
+    public func messages(
+        in session: SwarmSessionID, after seq: Int, adapter: String
+    ) async throws -> [SwarmMessage] {
         throw notConnected
     }
 
     public func sessions() async throws -> [SwarmSession] { throw notConnected }
 
     public func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int {
+        throw notConnected
+    }
+
+    public func type(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        throw notConnected
+    }
+
+    public func interrupt(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
         throw notConnected
     }
 

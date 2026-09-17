@@ -74,14 +74,20 @@ public struct SwarmCLIBus: SwarmBus {
         return SwarmLaunch(pane: pane, account: reported)
     }
 
-    public func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
-        try await read(["agents", "--json"], in: session, as: SwarmAgentList.self).agents
+    public func agents(
+        in session: SwarmSessionID, adapter: String
+    ) async throws -> [SwarmAgent] {
+        try await read(
+            ["agents", "--json"], in: session, adapter: adapter, as: SwarmAgentList.self
+        ).agents
     }
 
-    public func messages(in session: SwarmSessionID, after seq: Int) async throws -> [SwarmMessage] {
+    public func messages(
+        in session: SwarmSessionID, after seq: Int, adapter: String
+    ) async throws -> [SwarmMessage] {
         try await read(
             ["messages", "--json", "--after", String(seq)],
-            in: session, as: SwarmMessageList.self
+            in: session, adapter: adapter, as: SwarmMessageList.self
         ).messages
     }
 
@@ -98,6 +104,20 @@ public struct SwarmCLIBus: SwarmBus {
             throw SwarmProfileError.failed("swarm returned an invalid message sequence")
         }
         return seq
+    }
+
+    public func type(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(
+            ["type", agent.rawValue], in: session, adapter: adapter, stdin: text
+        )
+    }
+
+    public func interrupt(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
     public func ack(_ seq: Int, in session: SwarmSessionID) async throws {
@@ -121,9 +141,10 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     private func read<Value: Decodable>(
-        _ arguments: [String], in session: SwarmSessionID? = nil, as type: Value.Type
+        _ arguments: [String], in session: SwarmSessionID? = nil,
+        adapter: String? = nil, as type: Value.Type
     ) async throws -> Value {
-        let result = try await call(arguments, in: session)
+        let result = try await call(arguments, in: session, adapter: adapter)
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -135,12 +156,12 @@ public struct SwarmCLIBus: SwarmBus {
 
     private func call(
         _ arguments: [String], in session: SwarmSessionID? = nil,
-        directory: String? = nil, stdin: String? = nil,
+        adapter: String? = nil, directory: String? = nil, stdin: String? = nil,
         timeout: Duration = .seconds(20)
     ) async throws -> ShellResult {
         let result: ShellResult
         do {
-            var environment = environment(for: session)
+            var environment = environment(for: session, adapter: adapter)
             if let directory { environment["PWD"] = directory }
             result = try await run(
                 executable, arguments, directory ?? cwd ?? AgentScratchDirectory.current(),
@@ -165,8 +186,10 @@ public struct SwarmCLIBus: SwarmBus {
         return result
     }
 
-    private func environment(for session: SwarmSessionID?) -> [String: String] {
-        var environment = ["SWARM_ADAPTER": "tmux-solo"]
+    private func environment(
+        for session: SwarmSessionID?, adapter: String? = nil
+    ) -> [String: String] {
+        var environment = ["SWARM_ADAPTER": adapter ?? SwarmSessionInteraction.workspaceAdapter]
         if let session {
             environment["SWARM_SESSION_ID"] = session.rawValue
             environment["SWARM_AGENT_ID"] = "orchestrator"

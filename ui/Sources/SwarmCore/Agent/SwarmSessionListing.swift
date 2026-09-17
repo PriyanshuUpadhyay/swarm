@@ -88,6 +88,52 @@ public enum SwarmSessionTitle {
     }
 }
 
+public enum SwarmSessionInputTarget: Sendable, Equatable {
+    case chair
+    case agent
+}
+
+/// The shared rules for reaching panes in a discovered session.
+public enum SwarmSessionInteraction {
+    public static let workspaceAdapter = "tmux-solo"
+    public static let missingAdapterSentence =
+        "This session does not record an adapter, so Swarm cannot reach its panes."
+
+    public static func adapter(for session: SwarmSession) throws -> String {
+        guard let adapter = session.adapter?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !adapter.isEmpty else {
+            throw SwarmProfileError.failed(missingAdapterSentence)
+        }
+        return adapter
+    }
+
+    public static func disabledReason(
+        adapter: String?, pane: String?, target: SwarmSessionInputTarget
+    ) -> String? {
+        guard let adapter,
+              !adapter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return missingAdapterSentence
+        }
+        guard pane != nil else {
+            return target == .chair
+                ? "The chair has no pane to receive input."
+                : "This agent has no pane to receive input."
+        }
+        return nil
+    }
+
+    public static func canSubmit(
+        _ text: String, adapter: String?, pane: String?, target: SwarmSessionInputTarget
+    ) -> Bool {
+        disabledReason(adapter: adapter, pane: pane, target: target) == nil
+            && text.contains { !$0.isWhitespace }
+    }
+
+    public static func lastActivity(of session: SwarmSession) -> Int {
+        session.lastMessageAt ?? session.createdAt
+    }
+}
+
 /// One agent's read-only summary and its asks and summaries in bus order.
 public struct SwarmSessionAgentDigest: Sendable, Hashable, Identifiable {
     public var id: SwarmAgentID { agent.id }

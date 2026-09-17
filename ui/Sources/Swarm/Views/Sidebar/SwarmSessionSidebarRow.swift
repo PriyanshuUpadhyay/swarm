@@ -18,7 +18,12 @@ struct SwarmSessionSidebarRow: View {
                     .foregroundStyle(isOnSelection ? Palette.textInverted : Palette.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(Date(timeIntervalSince1970: TimeInterval(session.session.createdAt)), style: .relative)
+                Text(
+                    Date(timeIntervalSince1970: TimeInterval(
+                        SwarmSessionInteraction.lastActivity(of: session.session)
+                    )),
+                    style: .relative
+                )
                     .font(Typo.micro)
                     .foregroundStyle(
                         isOnSelection ? Palette.textInverted.opacity(0.8) : Palette.textTertiary

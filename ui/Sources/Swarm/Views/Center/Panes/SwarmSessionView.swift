@@ -53,54 +53,67 @@ private struct SwarmSessionChat: View {
     private var lineHeight: ChatLineHeight { ColourThemePreference.shared.chatLineHeight }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                Color.clear
-                    .frame(height: TranscriptLayout.topSpace)
-                    .accessibilityHidden(true)
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    Color.clear
+                        .frame(height: TranscriptLayout.topSpace)
+                        .accessibilityHidden(true)
 
-                if let failure = reader.chatFailure {
-                    Text(failure)
-                        .font(Typo.body)
-                        .foregroundStyle(Palette.textSecondary)
-                        .subagentReadingColumn()
-                } else {
-                    SubagentConversationView(
-                        rows: reader.rows,
-                        prompt: "",
-                        home: TranscriptHome(workspaceID: nil, worktree: directory),
-                        droppedRows: reader.droppedRows,
-                        isRunning: false
-                    )
+                    if let failure = reader.chatFailure {
+                        Text(failure)
+                            .font(Typo.body)
+                            .foregroundStyle(Palette.textSecondary)
+                            .subagentReadingColumn()
+                    } else {
+                        SubagentConversationView(
+                            rows: reader.rows,
+                            prompt: "",
+                            home: TranscriptHome(workspaceID: nil, worktree: directory),
+                            droppedRows: reader.droppedRows,
+                            isRunning: false
+                        )
+                    }
                 }
+                .padding(.bottom, Metrics.pane)
             }
-            .padding(.bottom, Metrics.pane)
-        }
-        .scrollPosition($position)
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            ScrollEnd.isAtEnd(
-                contentHeight: geometry.contentSize.height,
-                viewportHeight: geometry.containerSize.height,
-                offset: geometry.contentOffset.y
+            .scrollPosition($position)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                ScrollEnd.isAtEnd(
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height,
+                    offset: geometry.contentOffset.y
+                )
+            } action: { _, atEnd in
+                followsEnd = atEnd
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                TranscriptGeometry.cap(
+                    width: proxy.size.width,
+                    share: TranscriptListView.bubbleShare,
+                    gutter: Metrics.gutter,
+                    floor: TranscriptListView.bubbleFloor
+                )
+            } action: { cap in
+                if bubbleWidth.cap != cap { bubbleWidth.cap = cap }
+            }
+            .onChange(of: reader.rows.count) { _, _ in
+                if followsEnd { position.scrollTo(edge: .bottom) }
+            }
+            .overlay { TranscriptHoverOverlay(host: hoverHost) }
+
+            Divider()
+
+            SwarmSessionInput(
+                reader: reader,
+                agent: SwarmAgentID("orchestrator"),
+                target: .chair,
+                placeholder: "Message chair",
+                maxLines: 6
             )
-        } action: { _, atEnd in
-            followsEnd = atEnd
+            .padding(Metrics.pane)
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            TranscriptGeometry.cap(
-                width: proxy.size.width,
-                share: TranscriptListView.bubbleShare,
-                gutter: Metrics.gutter,
-                floor: TranscriptListView.bubbleFloor
-            )
-        } action: { cap in
-            if bubbleWidth.cap != cap { bubbleWidth.cap = cap }
-        }
-        .onChange(of: reader.rows.count) { _, _ in
-            if followsEnd { position.scrollTo(edge: .bottom) }
-        }
-        .overlay { TranscriptHoverOverlay(host: hoverHost) }
         .environment(\.transcriptHoverHost, hoverHost)
         .environment(\.transcriptBubbleWidth, bubbleWidth)
         .environment(\.fontScale, textSize.scale)
@@ -132,7 +145,7 @@ private struct SwarmSessionAgentsView: View {
                             .foregroundStyle(Palette.textSecondary)
                     } else {
                         ForEach(reader.agents) { agent in
-                            SwarmSessionAgentView(digest: agent)
+                            SwarmSessionAgentView(digest: agent, reader: reader)
                         }
                     }
                 }
@@ -145,40 +158,149 @@ private struct SwarmSessionAgentsView: View {
 
 private struct SwarmSessionAgentView: View {
     var digest: SwarmSessionAgentDigest
+    var reader: SwarmSessionReaderModel
     @State private var showsHistory = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $showsHistory) {
-            VStack(alignment: .leading, spacing: Metrics.spacing) {
-                ForEach(digest.conversation) { row in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.kind == "ask" ? "Ask" : "Summary")
+        VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
+            DisclosureGroup(isExpanded: $showsHistory) {
+                VStack(alignment: .leading, spacing: Metrics.spacing) {
+                    ForEach(digest.conversation) { row in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.kind == "ask" ? "Ask" : "Summary")
+                                .font(Typo.micro)
+                                .foregroundStyle(Palette.textTertiary)
+                            Text(row.body ?? "This message body could not be read.")
+                                .font(Typo.body)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.top, Metrics.spacingSmall)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(digest.agent.id.rawValue)
+                            .font(Typo.label)
+                        Spacer()
+                        Text(digest.agent.role)
                             .font(Typo.micro)
                             .foregroundStyle(Palette.textTertiary)
-                        Text(row.body ?? "This message body could not be read.")
-                            .font(Typo.body)
-                            .textSelection(.enabled)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(digest.latestSummary ?? "No summary yet.")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(showsHistory ? nil : 4)
                 }
             }
-            .padding(.top, Metrics.spacingSmall)
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(digest.agent.id.rawValue)
-                        .font(Typo.label)
-                    Spacer()
-                    Text(digest.agent.role)
-                        .font(Typo.micro)
-                        .foregroundStyle(Palette.textTertiary)
+            .accessibilityHint("Shows all asks and summaries in order")
+
+            SwarmSessionInput(
+                reader: reader,
+                agent: digest.agent.id,
+                target: .agent,
+                placeholder: "Message \(digest.agent.id.rawValue)",
+                maxLines: 3
+            )
+        }
+    }
+}
+
+private struct SwarmSessionInput: View {
+    var reader: SwarmSessionReaderModel
+    var agent: SwarmAgentID
+    var target: SwarmSessionInputTarget
+    var placeholder: String
+    var maxLines: Int
+
+    @State private var draft = ""
+    @State private var caret = 0
+    @State private var isFocused = false
+    @State private var height = ComposerTextEditor.lineHeight
+    @State private var isSending = false
+
+    private var disabledReason: String? {
+        reader.disabledReason(for: agent, target: target)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
+            HStack(alignment: .bottom, spacing: Metrics.spacing) {
+                ComposerTextEditor(
+                    text: $draft,
+                    caret: $caret,
+                    isFocused: $isFocused,
+                    maxLines: maxLines,
+                    accessibilityLabel: placeholder,
+                    onHeightChange: { height = $0 },
+                    onKey: handle(key:),
+                    onAttach: { _, _ in false }
+                )
+                .frame(height: max(height, ComposerTextEditor.lineHeight))
+                .background(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text(placeholder)
+                            .font(Typo.body)
+                            .lineLimit(1)
+                            .foregroundStyle(Palette.textPlaceholder)
+                            .padding(.horizontal, ComposerTextEditor.textInset)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
-                Text(digest.latestSummary ?? "No summary yet.")
-                    .font(Typo.caption)
+
+                Button(action: submit) {
+                    Image(systemName: "paperplane.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Send to \(agent.rawValue)")
+                .disabled(
+                    isSending || !reader.canSubmit(draft, to: agent, target: target)
+                )
+            }
+            .composerBox(isFocused: $isFocused)
+            .disabled(disabledReason != nil)
+            .help("Return sends. Shift-Return starts a new line. Esc interrupts.")
+
+            if let disabledReason {
+                Text(disabledReason)
+                    .font(Typo.micro)
                     .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(showsHistory ? nil : 4)
+            } else if let failure = reader.inputFailure(for: agent) {
+                Text(failure)
+                    .font(Typo.micro)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .help(failure)
             }
         }
-        .accessibilityHint("Shows all asks and summaries in order")
+    }
+
+    private func handle(key: ComposerKey) -> Bool {
+        switch key {
+        case .returnKey, .commandReturn:
+            submit()
+            return true
+        case .escape:
+            guard disabledReason == nil else { return true }
+            Task { await reader.interrupt(agent) }
+            return true
+        case .up, .down, .tab:
+            return false
+        }
+    }
+
+    private func submit() {
+        guard !isSending, reader.canSubmit(draft, to: agent, target: target) else { return }
+        let text = draft
+        isSending = true
+        Task {
+            if await reader.type(text, to: agent) {
+                draft = ""
+                caret = 0
+            }
+            isSending = false
+        }
     }
 }

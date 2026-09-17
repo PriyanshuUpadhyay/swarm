@@ -111,11 +111,51 @@ struct SwarmSessionListingTests {
         #expect(UserTurnPrompt.text(in: transcript.messages[2].payload) == "Second question")
     }
 
+    @Test("chair parsing hides Claude system user lines")
+    func hidesChairSystemLines() throws {
+        let transcript = SubagentTranscript.parseChair(
+            [
+                Self.claudeMetaUserLine,
+                Self.claudeTaskNotificationUserLine,
+                Self.ownerUserLine,
+            ].joined(separator: "\n"),
+            sessionID: SessionID("chair")
+        )
+
+        #expect(transcript.messages.count == 1)
+        let row = try #require(transcript.messages.first)
+        #expect(row.kind == .user)
+        #expect(UserTurnPrompt.text(in: row.payload) == "Open the session view")
+    }
+
+    @Test(
+        "chair parsing hides every Claude system prefix",
+        arguments: [
+            "<local-command-caveat>",
+            "<local-command-stdout>",
+            "<command-name>",
+            "<command-message>",
+            "<command-args>",
+            "<system-reminder>",
+            "<task-notification>",
+        ]
+    )
+    func hidesChairSystemPrefix(_ prefix: String) {
+        let transcript = SubagentTranscript.parseChair(
+            #"{"type":"user","message":{"content":"\#(prefix)system text"}}"#,
+            sessionID: SessionID("chair")
+        )
+
+        #expect(transcript.messages.isEmpty)
+    }
+
     @Test("title extraction reads the first user prompt from the chair log")
     func extractsFirstUserPrompt() throws {
         let path = TestScratch.path("chair.jsonl")
         try """
         {"type":"progress","data":"ignored"}
+        \(Self.claudeMetaUserLine)
+        \(Self.claudeTaskNotificationUserLine)
         {"type":"user","message":{"content":[{"type":"text","text":"First question\\nMore"}]}}
         {"type":"user","message":{"content":"Second question"}}
         """.write(toFile: path, atomically: true, encoding: .utf8)
@@ -123,12 +163,36 @@ struct SwarmSessionListingTests {
         #expect(ChairTranscriptOutput.firstUserPrompt(path: path) == "First question\nMore")
     }
 
+    @Test("session interaction reports input limits and last activity")
+    func sessionInteraction() {
+        let session = fixture(createdAt: 10, lastMessageAt: 20)
+
+        #expect(SwarmSessionInteraction.lastActivity(of: session) == 20)
+        #expect(SwarmSessionInteraction.disabledReason(
+            adapter: nil, pane: "%1", target: .chair
+        ) == SwarmSessionInteraction.missingAdapterSentence)
+        #expect(SwarmSessionInteraction.disabledReason(
+            adapter: "herdr", pane: nil, target: .chair
+        ) == "The chair has no pane to receive input.")
+        #expect(SwarmSessionInteraction.disabledReason(
+            adapter: "herdr", pane: nil, target: .agent
+        ) == "This agent has no pane to receive input.")
+        #expect(SwarmSessionInteraction.canSubmit(
+            "Continue", adapter: "herdr", pane: "%1", target: .agent
+        ))
+        #expect(!SwarmSessionInteraction.canSubmit(
+            "  \n", adapter: "herdr", pane: "%1", target: .agent
+        ))
+    }
+
     private func fixture(
-        id: String, cwd: String = "/repo/wt/main", createdAt: Int = 1
+        id: String = "10", cwd: String = "/repo/wt/main", createdAt: Int = 1,
+        lastMessageAt: Int? = nil
     ) -> SwarmSession {
         SwarmSession(
-            id: SwarmSessionID(id), talkMode: "lane", cwd: cwd, createdAt: createdAt,
-            chairLog: nil, agents: 2, messages: 4, lastMessageAt: nil
+            id: SwarmSessionID(id), talkMode: "lane", adapter: "herdr",
+            cwd: cwd, createdAt: createdAt,
+            chairLog: nil, agents: 2, messages: 4, lastMessageAt: lastMessageAt
         )
     }
 
@@ -141,4 +205,10 @@ struct SwarmSessionListingTests {
             body: body, createdAt: seq, read: true
         )
     }
+
+    private static let claudeMetaUserLine = #"{"parentUuid":"parent","isSidechain":false,"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: local command output follows.</local-command-caveat>"},"isMeta":true,"uuid":"meta-user","cwd":"/work/project"}"#
+
+    private static let claudeTaskNotificationUserLine = #"{"parentUuid":"parent","isSidechain":false,"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>task-1</task-id>\n<output-file>/tmp/task.output</output-file>\n<status>completed</status>\n</task-notification>"},"uuid":"task-user","cwd":"/work/project"}"#
+
+    private static let ownerUserLine = #"{"parentUuid":"parent","isSidechain":false,"type":"user","message":{"role":"user","content":"Open the session view"},"uuid":"owner-user","cwd":"/work/project"}"#
 }
