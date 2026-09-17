@@ -41,6 +41,7 @@ struct PermissionAskRowView: View {
     /// where a test can read them.
     var projectName: String?
     var onAnswer: (PermissionDecision) -> Void = { _ in }
+    var onInteractiveAnswer: ((InteractivePermissionAnswer) -> Void)? = nil
 
     @State private var isWritingReason = false
     @State private var reason = ""
@@ -84,7 +85,9 @@ struct PermissionAskRowView: View {
             header
             command
             if isOpen {
-                if isWritingReason {
+                if let onInteractiveAnswer {
+                    interactiveActions(onAnswer: onInteractiveAnswer)
+                } else if isWritingReason {
                     reasonBox
                 } else if ask.isPlanApproval {
                     planActions
@@ -307,6 +310,20 @@ struct PermissionAskRowView: View {
 
             scopeLine
         }
+    }
+
+    private func interactiveActions(onAnswer: @escaping (InteractivePermissionAnswer) -> Void) -> some View {
+        HStack(spacing: Metrics.spacing) {
+            Button("Allow") { onAnswer(.allow) }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.controlAccent)
+            Button("Deny") { onAnswer(.deny) }
+                .buttonStyle(.bordered)
+            Button("Answer in terminal") { onAnswer(.terminal) }
+                .buttonStyle(.borderless)
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
     }
 
     private var planActions: some View {

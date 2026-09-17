@@ -93,6 +93,25 @@ struct ChatPaneView: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .bottom) {
+            if let card = TerminalSessionStore.shared.permissionCard(for: transcript.session.id) {
+                PermissionAskRowView(
+                    ask: card.ask,
+                    decision: nil,
+                    note: "",
+                    projectName: nil,
+                    onInteractiveAnswer: { answer in
+                        TerminalSessionStore.shared.answerPermissionCard(
+                            for: transcript.session.id, with: answer
+                        )
+                    }
+                )
+                .id(card.id)
+                .frame(maxWidth: 720)
+                .padding(.horizontal, TranscriptLayout.cardInset)
+                .padding(.bottom, room.clearance)
+            }
+        }
+        .overlay(alignment: .bottom) {
             ComposerDock(
                 showsJumpToNewest: isTranscriptScrolledUp,
                 onJumpToNewest: transcript.jumpToLiveEnd

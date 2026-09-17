@@ -45,10 +45,16 @@ public extension AgentKind {
         var arguments: [String]
         switch self {
         case .claudeCode:
-            let hook: [String: Any] = ["type": "command", "command": Self.interactiveHookCommand, "timeout": 3]
             var hooks: [String: Any] = Dictionary(uniqueKeysWithValues: (events + ["StopFailure"]).map {
-                ($0, [["hooks": [hook]]] as Any)
+                let permission = $0 == "PermissionRequest"
+                let hook: [String: Any] = [
+                    "type": "command",
+                    "command": permission ? Self.interactivePermissionHookCommand : Self.interactiveHookCommand,
+                    "timeout": permission ? 130 : 3
+                ]
+                return ($0, [["hooks": [hook]]] as Any)
             })
+            let hook: [String: Any] = ["type": "command", "command": Self.interactiveHookCommand, "timeout": 3]
             hooks["Notification"] = [[
                 "matcher": "permission_prompt|idle_prompt",
                 "hooks": [hook]
@@ -160,9 +166,16 @@ public extension AgentKind {
         #"umask 077; if [ -n "$SWARM_UI_CLI_STATUS_FILE" ]; then mkdir -p "$(dirname "$SWARM_UI_CLI_STATUS_FILE")" 2>/dev/null && swarm_status_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX") && { cat > "$swarm_status_tmp" && mv -f "$swarm_status_tmp" "$SWARM_UI_CLI_STATUS_FILE"; } 2>/dev/null; fi; exit 0"#
     }
 
+    /// The Claude permission hook keeps the request open while the app answers through one file.
+    /// It is a constant command because hook trust is attached to the command text.
+    static var interactivePermissionHookCommand: String {
+        #"umask 077; if [ -n "$SWARM_UI_CLI_STATUS_FILE" ]; then swarm_status_dir=$(dirname "$SWARM_UI_CLI_STATUS_FILE"); swarm_permission_dir="$swarm_status_dir/permission"; mkdir -p "$swarm_permission_dir" 2>/dev/null; swarm_token=$(uuidgen 2>/dev/null); swarm_status_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX" 2>/dev/null); swarm_payload_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX" 2>/dev/null); if [ -n "$swarm_token" ] && [ -n "$swarm_status_tmp" ] && [ -n "$swarm_payload_tmp" ]; then cat > "$swarm_payload_tmp"; swarm_pending="$swarm_permission_dir/$swarm_token.pending"; swarm_answer="$swarm_permission_dir/$swarm_token.answer"; : > "$swarm_pending" 2>/dev/null; { printf '{"token":"%s","payload":' "$swarm_token"; cat "$swarm_payload_tmp"; printf '}\n'; } > "$swarm_status_tmp" 2>/dev/null; rm -f "$swarm_payload_tmp"; if mv -f "$swarm_status_tmp" "$SWARM_UI_CLI_STATUS_FILE" 2>/dev/null; then swarm_waited=0; while [ "$swarm_waited" -lt 120 ] && [ ! -f "$swarm_answer" ]; do sleep 1; swarm_waited=$((swarm_waited + 1)); done; if [ -f "$swarm_answer" ]; then cat "$swarm_answer"; rm -f "$swarm_answer" "$swarm_pending"; else rm -f "$swarm_pending"; fi; else rm -f "$swarm_pending" "$swarm_status_tmp"; fi; else cat >/dev/null; rm -f "$swarm_status_tmp" "$swarm_payload_tmp"; fi; fi; exit 0"#
+    }
+
     private static func interactiveHookObject(data: Data) -> [String: Any]? {
         guard data.count <= 1_048_576 else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return object["payload"] as? [String: Any] ?? object
     }
 
     private static func interactiveTOMLString(_ value: String) -> String {
@@ -172,5 +185,81 @@ public extension AgentKind {
             return "\"\""
         }
         return string
+    }
+}
+
+public enum InteractivePermissionAnswer: Sendable, Hashable {
+    case allow
+    case deny
+    case terminal
+
+    var data: Data {
+        switch self {
+        case .allow:
+            Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8)
+        case .deny:
+            Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied in Swarm"}}}"#.utf8)
+        case .terminal:
+            Data()
+        }
+    }
+}
+
+/// One pending Claude permission request, tied to the marker created by its hook invocation.
+public struct InteractivePermissionCard: Sendable, Hashable, Identifiable {
+    private let token: String
+    private let toolName: String
+    private let input: JSONValue
+    private let statusURL: URL
+
+    public var id: String { token }
+    public var ask: PermissionAsk {
+        PermissionAsk(requestID: token, toolName: toolName, input: input)
+    }
+
+    /// Creates a card only while the matching marker exists and no answer has been written.
+    public init?(data: Data, statusURL: URL) {
+        guard data.count <= 1_048_576,
+              let envelope = JSONValue.parse(data),
+              let token = envelope["token"]?.stringValue,
+              UUID(uuidString: token) != nil,
+              let payload = envelope["payload"],
+              payload["hook_event_name"]?.stringValue == "PermissionRequest",
+              let toolName = payload["tool_name"]?.stringValue,
+              !toolName.isEmpty else { return nil }
+        self.token = token
+        self.toolName = toolName
+        self.input = payload["tool_input"] ?? .object([:])
+        self.statusURL = statusURL
+        guard isPending else { return nil }
+    }
+
+    public var isPending: Bool {
+        FileManager.default.fileExists(atPath: markerURL.path)
+            && !FileManager.default.fileExists(atPath: answerURL.path)
+    }
+
+    /// Writes the answer atomically, or returns false when the hook stopped waiting before the click.
+    @discardableResult
+    public func answer(_ answer: InteractivePermissionAnswer) throws -> Bool {
+        guard isPending else { return false }
+        try answer.data.write(to: answerURL, options: .atomic)
+        guard FileManager.default.fileExists(atPath: markerURL.path) else {
+            try? FileManager.default.removeItem(at: answerURL)
+            return false
+        }
+        return true
+    }
+
+    private var permissionDirectory: URL {
+        statusURL.deletingLastPathComponent().appendingPathComponent("permission", isDirectory: true)
+    }
+
+    private var markerURL: URL {
+        permissionDirectory.appendingPathComponent(token + ".pending")
+    }
+
+    private var answerURL: URL {
+        permissionDirectory.appendingPathComponent(token + ".answer")
     }
 }

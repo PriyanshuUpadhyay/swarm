@@ -55,7 +55,10 @@ struct InteractiveAgentTests {
         let index = try #require(claude.firstIndex(of: "--settings"))
         let settings = try #require(JSONSerialization.jsonObject(with: Data(claude[index + 1].utf8)) as? [String: Any])
         let hooks = try #require(settings["hooks"] as? [String: Any])
-        #expect(hooks["PermissionRequest"] != nil)
+        let permission = try #require(hooks["PermissionRequest"] as? [[String: Any]])
+        let permissionHooks = try #require(permission.first?["hooks"] as? [[String: Any]])
+        #expect(permissionHooks.first?["timeout"] as? Int == 130)
+        #expect(permissionHooks.first?["command"] as? String == AgentKind.interactivePermissionHookCommand)
         let notifications = try #require(hooks["Notification"] as? [[String: Any]])
         #expect(notifications.first?["matcher"] as? String == "permission_prompt|idle_prompt")
 
@@ -162,6 +165,87 @@ struct InteractiveAgentTests {
                                          env: ["SWARM_UI_CLI_STATUS_FILE": "/dev/null/impossible"])
         #expect(failed.ok)
         #expect(failed.stdout.isEmpty)
+    }
+
+    @Test("Permission answers use Claude's measured response shapes")
+    func permissionAnswers() {
+        #expect(String(decoding: InteractivePermissionAnswer.allow.data, as: UTF8.self)
+            == #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#)
+        #expect(String(decoding: InteractivePermissionAnswer.deny.data, as: UTF8.self)
+            == #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied in Swarm"}}}"#)
+        #expect(InteractivePermissionAnswer.terminal.data.isEmpty)
+    }
+
+    @Test("Permission cards follow the marker and the latest hook event")
+    func permissionCardState() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-card-\(UUID())")
+        let status = root.appendingPathComponent("status.json")
+        let permission = root.appendingPathComponent("permission", isDirectory: true)
+        try FileManager.default.createDirectory(at: permission, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let firstToken = UUID().uuidString
+        let firstData = permissionEnvelope(token: firstToken, command: "printf first")
+        let firstMarker = permission.appendingPathComponent(firstToken + ".pending")
+        try Data().write(to: firstMarker)
+        let first = try #require(InteractivePermissionCard(data: firstData, statusURL: status))
+        #expect(first.ask.toolName == "Bash")
+        #expect(first.ask.subject == "printf first")
+
+        #expect(try first.answer(.deny))
+        #expect(InteractivePermissionCard(data: firstData, statusURL: status) == nil)
+        let firstAnswer = permission.appendingPathComponent(firstToken + ".answer")
+        #expect(try Data(contentsOf: firstAnswer) == InteractivePermissionAnswer.deny.data)
+
+        try FileManager.default.removeItem(at: firstAnswer)
+        let newer = Data(#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#.utf8)
+        #expect(InteractivePermissionCard(data: newer, statusURL: status) == nil)
+        try FileManager.default.removeItem(at: firstMarker)
+        #expect(InteractivePermissionCard(data: firstData, statusURL: status) == nil)
+        #expect(try !first.answer(.allow))
+        #expect(!FileManager.default.fileExists(atPath: firstAnswer.path))
+
+        let secondToken = UUID().uuidString
+        let secondData = permissionEnvelope(token: secondToken, command: "printf second")
+        try Data().write(to: permission.appendingPathComponent(secondToken + ".pending"))
+        #expect(InteractivePermissionCard(data: secondData, statusURL: status)?.id == secondToken)
+    }
+
+    @Test("Permission hook publishes the request, waits for an answer, and prints it")
+    func permissionHook() async throws {
+        let command = AgentKind.interactivePermissionHookCommand
+        #expect(command.contains("uuidgen"))
+        #expect(command.contains(".pending"))
+        #expect(command.contains(".answer"))
+        #expect(command.contains("-lt 120"))
+        #expect(command.contains("cat \"$swarm_answer\""))
+        #expect(command.hasSuffix("exit 0"))
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-permission-hook-\(UUID())")
+        let status = root.appendingPathComponent("status.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = #"{"hook_event_name":"PermissionRequest","session_id":"native","tool_name":"Bash","tool_input":{"command":"printf ok"}}"#
+        async let running = Shell.run(
+            "/bin/sh", ["-c", command], env: ["SWARM_UI_CLI_STATUS_FILE": status.path], stdin: payload
+        )
+        var card: InteractivePermissionCard?
+        for _ in 0..<100 where card == nil {
+            if let data = try? Data(contentsOf: status) {
+                card = InteractivePermissionCard(data: data, statusURL: status)
+            }
+            if card == nil { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        let pending = try #require(card)
+        #expect(AgentKind.interactiveHookState(data: try Data(contentsOf: status)) == .waiting)
+        #expect(try pending.answer(.allow))
+        let result = try await running
+        #expect(result.ok)
+        #expect(result.stdout == String(decoding: InteractivePermissionAnswer.allow.data, as: UTF8.self))
+        #expect(!pending.isPending)
+    }
+
+    private func permissionEnvelope(token: String, command: String) -> Data {
+        Data(#"{"token":"\#(token)","payload":{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"\#(command)"}}}"#.utf8)
     }
 
     @Test("Generated resume commands remain offerable despite hook options", arguments: [AgentKind.claudeCode, .codex])

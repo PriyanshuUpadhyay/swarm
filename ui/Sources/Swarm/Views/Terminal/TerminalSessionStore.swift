@@ -510,6 +510,7 @@ final class TerminalSessionStore {
     private let activityStartedAt = Date()
     private(set) var agentTurns: [SessionID: AgentTurns.Live] = [:]
     private(set) var interactiveStates: [SessionID: InteractiveChatLifecycle.State] = [:]
+    private var interactivePermissionCards: [SessionID: InteractivePermissionCard] = [:]
     private(set) var runningWorkspaceIDs: Set<WorkspaceID> = []
     private(set) var stoppedInteractiveWorkspaceIDs: Set<WorkspaceID> = []
     var onAgentActivityChanged: (() -> Void)?
@@ -525,6 +526,20 @@ final class TerminalSessionStore {
 
     func interactiveState(for sessionID: SessionID) -> InteractiveChatLifecycle.State {
         interactiveStates[sessionID] ?? .stopped
+    }
+
+    func permissionCard(for sessionID: SessionID) -> InteractivePermissionCard? {
+        interactivePermissionCards[sessionID]
+    }
+
+    func answerPermissionCard(for sessionID: SessionID, with answer: InteractivePermissionAnswer) {
+        guard let card = interactivePermissionCards[sessionID] else { return }
+        do {
+            _ = try card.answer(answer)
+            interactivePermissionCards[sessionID] = nil
+        } catch {
+            if !card.isPending { interactivePermissionCards[sessionID] = nil }
+        }
     }
 
     /// Starts or resumes one linked CLI in its existing shell, or queues it for a shell not drawn yet.
@@ -573,10 +588,12 @@ final class TerminalSessionStore {
             .filter { $0.kind == .terminal && $0.agentSessionID != nil }
         guard !panes.isEmpty || !linkedTabs.isEmpty else {
             paneAgents = [:]
-            if !agentTurns.isEmpty || !interactiveStates.isEmpty || !runningWorkspaceIDs.isEmpty
+            if !agentTurns.isEmpty || !interactiveStates.isEmpty || !interactivePermissionCards.isEmpty
+                || !runningWorkspaceIDs.isEmpty
                 || !stoppedInteractiveWorkspaceIDs.isEmpty {
                 agentTurns = [:]
                 interactiveStates = [:]
+                interactivePermissionCards = [:]
                 runningWorkspaceIDs = []
                 stoppedInteractiveWorkspaceIDs = []
                 onAgentActivityChanged?()
@@ -604,6 +621,7 @@ final class TerminalSessionStore {
         })
         var turns: [SessionID: AgentTurns.Live] = [:]
         var interactive: [SessionID: InteractiveChatLifecycle.State] = [:]
+        var permissionCards: [SessionID: InteractivePermissionCard] = [:]
         var workspaceStates: [WorkspaceID: [InteractiveChatLifecycle.State]] = [:]
         for tab in linkedTabs {
             guard let sessionID = tab.agentSessionID,
@@ -633,6 +651,7 @@ final class TerminalSessionStore {
             if let attributes = try? statusURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
                let size = attributes.fileSize, size <= 1_048_576,
                let data = try? Data(contentsOf: statusURL) {
+                permissionCards[sessionID] = InteractivePermissionCard(data: data, statusURL: statusURL)
                 externalSession = AgentKind.interactiveHookSessionID(data: data)
                 let oldHook = attributes.contentModificationDate == lastHookDates[sessionID]
                 let disappeared = !isPresent && (agentProcesses[tab.id] != nil
@@ -695,10 +714,12 @@ final class TerminalSessionStore {
         let stopped = Set(workspaceStates.compactMap { workspace, states in
             InteractiveChatLifecycle.workspaceLabel(for: states) == nil ? nil : workspace
         })
-        if agentTurns != turns || interactiveStates != interactive || runningWorkspaceIDs != running
+        if agentTurns != turns || interactiveStates != interactive
+            || interactivePermissionCards != permissionCards || runningWorkspaceIDs != running
             || stoppedInteractiveWorkspaceIDs != stopped {
             agentTurns = turns
             interactiveStates = interactive
+            interactivePermissionCards = permissionCards
             runningWorkspaceIDs = running
             stoppedInteractiveWorkspaceIDs = stopped
             onAgentActivityChanged?()
@@ -932,6 +953,7 @@ final class TerminalSessionStore {
         pendingCommands.removeAll()
         interactiveLaunchDeadlines.removeAll()
         interactiveStates.removeAll()
+        interactivePermissionCards.removeAll()
         stoppedInteractiveWorkspaceIDs.removeAll()
         await stop(views)
     }
