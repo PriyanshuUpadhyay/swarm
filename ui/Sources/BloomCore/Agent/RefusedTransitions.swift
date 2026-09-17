@@ -20,9 +20,8 @@ import Synchronization
 ///
 /// So a refused transition **refuses**: the state is left holding what it had, which is by
 /// construction a state it was legally moved into, and the attempt is recorded here and written to
-/// the log. `AppLogExcerpt` picks the log up, so a refusal is in the feedback report the owner
-/// sends without anybody having to reproduce it, and `count` is readable from a test so the suite
-/// can assert that correct code refuses nothing.
+/// the log, and `count` is readable from a test so the suite can assert that correct code refuses
+/// nothing.
 ///
 /// What it must never do is succeed quietly, which is the state every one of these enums was in
 /// before this file existed.

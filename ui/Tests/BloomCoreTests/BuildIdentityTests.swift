@@ -61,9 +61,8 @@ struct BuildIdentityTests {
         #expect(identity.value == identity.line)
     }
 
-    /// The same precedence `SoftwareUpdate.availability` applies, and for the same reason: a
-    /// bundle carrying a master commit was built from a working copy whatever else is stamped on
-    /// it, so it must not be able to claim a released version by also setting the channel.
+    /// A bundle carrying a master commit was built from a working copy whatever else is stamped
+    /// on it, so it must not be able to claim a released version by also setting the channel.
     @Test("A master commit outranks a release channel")
     func masterCommitWins() {
         let identity = BuildIdentity.read(

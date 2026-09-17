@@ -4,14 +4,12 @@ import BloomCore
 
 /// What the welcome window draws.
 ///
-/// Two steps and three offers, and the sequence is `OnboardingFlow` in the core rather than a set
-/// of booleans here, because which screen follows which, whether back is offered and whether the
-/// third screen exists at all is the only part of a wizard that can be wrong, and a decision taken
-/// inside a view is a decision nothing can test. The greeting is `WelcomeGreeting`, the checks are
-/// the second step and are everything below, the third is `WelcomeCommandLine`, which is drawn
-/// only when `CommandLineRegistration` says there is something to offer, the fourth is
-/// `WelcomePromptSubmission`, and the last is `WelcomePostcard`. Neither of the last two can be
-/// made empty by anything about this Mac, so neither is ever left out.
+/// Two starting steps, two optional offers and a postcard. The sequence is `OnboardingFlow` in the
+/// core rather than a set of booleans here, because which screen follows which, whether back is
+/// offered and whether an optional screen exists at all is the only part of a wizard that can be
+/// wrong, and a decision taken inside a view is a decision nothing can test. The greeting is
+/// `WelcomeGreeting`, the checks are the second step, the offers are `WelcomeKeepAwake` and
+/// `WelcomeCommandLine`, and the last is `WelcomePostcard`.
 ///
 /// Three bands, in the register the About window established: the brand's plinth with the water
 /// moving in it, the reading ground under a hairline, and a chrome strip at the foot with the
@@ -83,8 +81,6 @@ struct WelcomeView: View {
                 keepAwakeStep
             case .commandLine:
                 commandLineStep
-            case .promptSubmission:
-                promptStep
             case .postcard:
                 postcardStep
             }
@@ -169,23 +165,7 @@ struct WelcomeView: View {
         .transition(reduceMotion ? .identity : .opacity)
     }
 
-    /// The prompt, in the same three bands as the two before it.
-    ///
-    /// Its one control is the offer, so it is in the reading band rather than in the footer: the
-    /// footer's button moves the sequence on and nothing else, which is what keeps a screen
-    /// somebody may walk straight past from reading as one they have to get through.
-    private var promptStep: some View {
-        VStack(spacing: 0) {
-            plinth
-            hairline
-            WelcomePromptSubmission(onSubmit: submitAPrompt)
-            hairline
-            footer
-        }
-        .transition(reduceMotion ? .identity : .opacity)
-    }
-
-    /// The screen the sequence ends on, in the same three bands as the three before it.
+    /// The screen the sequence ends on, in the same three bands as the rest.
     ///
     /// It has no control the footer needs to know about: the copy button and the link are the
     /// screen's own, the footer's button says "Start using Bloom" and only leaves. The card is
@@ -782,26 +762,5 @@ struct WelcomeView: View {
         stopLogin()
         WelcomeLaunch.recordCompletion()
         onFinish()
-    }
-
-    /// Opens the same sheet Help's Submit a Prompt opens, and closes this window on the way to it.
-    ///
-    /// **The closing is the route rather than a courtesy.** That sheet is presented by `RootView`,
-    /// on the main window, through `FeedbackPresenter`, because a draft has to outlive the sheet
-    /// it was typed into and a `Commands` body cannot present anything. This window is a separate
-    /// `NSWindow` built by hand and is not in the app's environment, so presenting the same sheet
-    /// here would mean either a second view bound to `FeedbackPresenter.sheet`, with two windows
-    /// raising a form each off one assignment, or a copy of `PromptSubmissionSheet` wired to
-    /// something else, which is two forms to keep in step over one endpoint. Left as it is, the
-    /// form would open on the window behind this one and the press would look like nothing
-    /// happening. So the window goes first, and the screen's own caption says it will.
-    ///
-    /// It finishes the sequence, and should. There is a screen after this one and it is the
-    /// postcard, which asks for nothing: somebody who has just written us a prompt has done more
-    /// than either of the last two screens asks for, and holding them in a wizard afterwards to be
-    /// shown an address would be the app taking payment twice.
-    private func submitAPrompt() {
-        finish()
-        FeedbackPresenter.shared.open(.prompt)
     }
 }

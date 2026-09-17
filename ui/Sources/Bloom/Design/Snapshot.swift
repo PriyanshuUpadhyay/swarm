@@ -603,18 +603,10 @@ enum Snapshot {
                 }
             }
 
-            // The Help menu sheets and their thank-you cards, raised by
-            // `FeedbackPresenter.presentIfRequested` rather than from here, and captured as
-            // sheets: the sheet, not the window behind it.
-            let wantsFeedbackSheet = [
-                "--feedback-sheet", "--feedback-logs", "--feedback-problems", "--feedback-sent",
-                "--prompt-sheet", "--prompt-problems", "--prompt-sent",
-            ].contains(where: arguments.contains)
-
             // A sheet is its own window, hanging off the one it was presented from, and it is
             // never in `capturableWindows()`: it carries no title bar. Asked for by name here
             // rather than searched for, so nothing else on screen can be picked by mistake.
-            if wantsProjectSetup || wantsFeedbackSheet {
+            if wantsProjectSetup {
                 for _ in 0..<20 where candidate?.attachedSheet == nil {
                     try? await Task.sleep(for: .milliseconds(250))
                 }

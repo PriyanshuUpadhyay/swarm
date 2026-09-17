@@ -1,21 +1,19 @@
 import SwiftUI
 import BloomCore
 
-/// The welcome window's two offer screens, side by side, at the width the window draws them at.
+/// The welcome window's command-line offer at the width the window draws it at.
 ///
 /// It exists because of how the alternative works. The welcome window is reachable from a capture
 /// run only through `--welcome`, which opens the real window on the real desktop and photographs
-/// it, and that window opens on the checks: there is no flag that walks it forward, so the last
-/// two screens have never been lookable-at without pressing a button on somebody's machine. A page
+/// it, and that window opens on the checks: there is no flag that walks it forward, so the offer
+/// has never been lookable-at without pressing a button on somebody's machine. A page
 /// rendered offscreen costs nobody their focus.
 ///
-/// Two columns rather than one, because the question a new screen raises is not what it says on
-/// its own, it is whether it matches the screen beside it in shape and weight. Both are the real
-/// views with the real strings, not a mock-up of them, so the page cannot say the copy is one
-/// thing while the window says another.
+/// The real view and its real strings are used, so the page cannot say the copy is one thing while
+/// the window says another.
 ///
 /// What it does not draw is the plinth and the footer. Those are `WelcomeView`'s and are private
-/// to it, they are identical on both of these screens, and the checks capture already shows them.
+/// to it, they are identical on every screen, and the checks capture already shows them.
 /// The hairlines are here because they are what the band is bounded by, and a band drawn without
 /// them reads as more space than it has.
 ///
@@ -32,13 +30,8 @@ struct WelcomeOffersGallery: View {
     ))
 
     var body: some View {
-        HStack(alignment: .top, spacing: 32) {
-            band("Third, and only when there is something to offer") {
-                WelcomeCommandLine(command: Self.command)
-            }
-            band("Last, and always there") {
-                WelcomePromptSubmission(onSubmit: {})
-            }
+        band("Only when there is something to offer") {
+            WelcomeCommandLine(command: Self.command)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -74,8 +67,8 @@ extension Gallery {
     /// The registry entry for this page. See `Gallery`.
     static let welcomeOffers = Gallery(
         name: "welcome-offers",
-        title: "The welcome window's two offer screens",
-        size: CGSize(width: 1_136, height: 560),
+        title: "The welcome window's command-line offer",
+        size: CGSize(width: 584, height: 560),
         needsFocus: false,
         view: { _ in AnyView(WelcomeOffersGallery()) }
     )

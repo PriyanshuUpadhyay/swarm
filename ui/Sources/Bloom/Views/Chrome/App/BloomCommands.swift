@@ -11,10 +11,6 @@ struct BloomCommands: Commands {
     /// See `TextZoomAvailability`.
     private let zoom = TextZoomAvailability.shared
 
-    /// Read for the same reason `zoom` is: this body is not a view, so the item only greys and
-    /// ungreys because an `@Observable` it reads has moved. See `SoftwareUpdater`.
-    private let updater = SoftwareUpdater.shared
-
     /// Nil in every scene but the main window. See `MainWindowFocus`.
     @FocusedValue(\.isMainWindowFocused) private var isMainWindowFocused: Bool?
 
@@ -54,26 +50,10 @@ struct BloomCommands: Commands {
         // window has to say. See `AboutWindow`.
         //
         // Replacing rather than adding to, because the item AppKit puts here cannot be pointed
-        // somewhere else. The update check below stays a group of its own so the separator between
-        // the two is still there.
+        // somewhere else.
         CommandGroup(replacing: .appInfo) {
             MenuCommand(.about) {
                 AboutWindow.show()
-            }
-        }
-
-        // Directly under "About Bloom", which is where every Mac app that updates itself puts it
-        // and therefore the first place anyone looks. Not in the Help menu, and not in Settings
-        // only: the Settings switch decides whether Bloom looks on its own, and this asks now.
-        //
-        // Absent rather than greyed out on a build that cannot update itself, because a permanently
-        // dead menu item invites the same click every time. See `SoftwareUpdate.availability`.
-        CommandGroup(after: .appInfo) {
-            if case .configured = updater.availability {
-                MenuCommand(.checkForUpdates) {
-                    updater.checkForUpdates()
-                }
-                .disabled(!updater.canCheckForUpdates)
             }
         }
 
@@ -614,29 +594,9 @@ struct BloomCommands: Commands {
 
             Divider()
 
-            // The two ways to say something back. In the Help menu because that is where a Mac
-            // app keeps "how do I reach these people", and next to each other because they are
-            // the same gesture aimed at two different answers: one asks for something to be
-            // fixed, the other asks for something to be built.
-            //
-            // Option+Command+F rather than Command+F, which belongs to finding in the pane in
-            // front. Feedback keeps this key: it is the one somebody already knows.
-            // The sheets themselves are raised from `RootView`, through `FeedbackPresenter`, for
-            // the reason the create window is: a menu item cannot present anything, and the draft
-            // has to outlive the sheet it was typed into.
-            MenuCommand(.sendFeedback) {
-                FeedbackPresenter.shared.open(.report)
-            }
-
-            MenuCommand(.submitPrompt) {
-                FeedbackPresenter.shared.open(.prompt)
-            }
-
-            // The third way, and the only one that goes on paper. Below the divider with the other
-            // two rather than above it with Help, because this is the same question they
-            // answer, how do I reach these people, and a row about an address filed next to the
-            // manual would read as documentation about a feature. It is also where somebody looks
-            // after meeting the word once in the welcome sequence and wanting the address again.
+            // Below the divider because a row about an address filed next to the manual would read
+            // as documentation about a feature. It is also where somebody looks after meeting the
+            // word once in the welcome sequence and wanting the address again.
             MenuCommand(.postcardware) {
                 PostcardWindow.show()
             }
