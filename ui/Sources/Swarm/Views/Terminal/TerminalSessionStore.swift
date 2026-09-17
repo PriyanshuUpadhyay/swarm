@@ -37,6 +37,9 @@ final class TerminalSessionStore {
     /// when it exits the pane is still a shell rather than a pane that closes itself.
     private var pendingCommands: [String: String] = [:]
 
+    /// A newly typed agent command gets a short grace period before absence means it stopped.
+    private var interactiveLaunchDeadlines: [String: Date] = [:]
+
     /// Which workspace each pane belongs to, so closing one can name its tmux session without
     /// walking back through tabs that may already be gone.
     private var paneOwner: [String: WorkspaceID] = [:]
@@ -504,7 +507,9 @@ final class TerminalSessionStore {
     private var lastHookDates: [SessionID: Date] = [:]
     private let activityStartedAt = Date()
     private(set) var agentTurns: [SessionID: AgentTurns.Live] = [:]
+    private(set) var interactiveStates: [SessionID: InteractiveChatLifecycle.State] = [:]
     private(set) var runningWorkspaceIDs: Set<WorkspaceID> = []
+    private(set) var stoppedInteractiveWorkspaceIDs: Set<WorkspaceID> = []
     var onAgentActivityChanged: (() -> Void)?
     var onAgentTurnFinished: ((WorkspaceID) async -> Void)?
 
@@ -516,6 +521,23 @@ final class TerminalSessionStore {
         TerminalSplitStore.shared.panes(of: tab).compactMap { paneAgents[$0] }.first
     }
 
+    func interactiveState(for sessionID: SessionID) -> InteractiveChatLifecycle.State {
+        interactiveStates[sessionID] ?? .stopped
+    }
+
+    /// Starts or resumes one linked CLI in its existing shell, or queues it for a shell not drawn yet.
+    func startInteractive(_ command: String, inPane pane: String) {
+        interactiveLaunchDeadlines[pane] = Date().addingTimeInterval(8)
+        if let sessionID = CenterTabStore.shared.tabsByWorkspace.values
+            .joined().first(where: { $0.id == pane })?.agentSessionID {
+            interactiveStates[sessionID] = .starting
+            onAgentActivityChanged?()
+        }
+        if !write(command, submit: true, paneID: pane) {
+            run(command, inPaneID: pane)
+        }
+    }
+
     private func refreshAgentActivity() async {
         guard let store = repoStore else { return }
         let panes = livePanes()
@@ -523,9 +545,12 @@ final class TerminalSessionStore {
             .filter { $0.kind == .terminal && $0.agentSessionID != nil }
         guard !panes.isEmpty || !linkedTabs.isEmpty else {
             paneAgents = [:]
-            if !agentTurns.isEmpty || !runningWorkspaceIDs.isEmpty {
+            if !agentTurns.isEmpty || !interactiveStates.isEmpty || !runningWorkspaceIDs.isEmpty
+                || !stoppedInteractiveWorkspaceIDs.isEmpty {
                 agentTurns = [:]
+                interactiveStates = [:]
                 runningWorkspaceIDs = []
+                stoppedInteractiveWorkspaceIDs = []
                 onAgentActivityChanged?()
             }
             return
@@ -550,6 +575,8 @@ final class TerminalSessionStore {
             kind.interactiveScreenIsBusy(lines: currentScreen(inPane: pane)) ? pane : nil
         })
         var turns: [SessionID: AgentTurns.Live] = [:]
+        var interactive: [SessionID: InteractiveChatLifecycle.State] = [:]
+        var workspaceStates: [WorkspaceID: [InteractiveChatLifecycle.State]] = [:]
         for tab in linkedTabs {
             guard let sessionID = tab.agentSessionID,
                   let session = try? await store.session(id: sessionID),
@@ -563,6 +590,13 @@ final class TerminalSessionStore {
                 }
             }
             let isPresent = detected[tab.id] == session.agentKind
+            let launchIsPending = interactiveLaunchDeadlines[tab.id].map { $0 > observedAt } == true
+            let presentation = InteractiveChatLifecycle.state(
+                agentIsPresent: isPresent, launchIsPending: launchIsPending
+            )
+            interactive[sessionID] = presentation
+            workspaceStates[tab.workspaceID, default: []].append(presentation)
+            if presentation != .starting { interactiveLaunchDeadlines[tab.id] = nil }
             var state: SessionState = isPresent && runningPanes.contains(tab.id) ? .running
                 : (session.state == .failed ? .failed : .idle)
             var externalSession: String?
@@ -571,6 +605,7 @@ final class TerminalSessionStore {
             if let attributes = try? statusURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
                let size = attributes.fileSize, size <= 1_048_576,
                let data = try? Data(contentsOf: statusURL) {
+                externalSession = AgentKind.interactiveHookSessionID(data: data)
                 let oldHook = attributes.contentModificationDate == lastHookDates[sessionID]
                 let disappeared = !isPresent && (agentProcesses[tab.id] != nil
                     || session.state == .running || session.state == .waiting)
@@ -579,7 +614,6 @@ final class TerminalSessionStore {
                     try? FileManager.default.removeItem(at: statusURL)
                 } else if isPresent {
                     state = AgentKind.interactiveHookState(data: data) ?? .idle
-                    externalSession = AgentKind.interactiveHookSessionID(data: data)
                     if let modified = attributes.contentModificationDate,
                        lastHookDates[sessionID] != modified {
                         lastHookDates[sessionID] = modified
@@ -618,9 +652,15 @@ final class TerminalSessionStore {
         agentProcesses = processes
         if paneAgents != detected { paneAgents = detected }
         let running = Set(runningPanes.compactMap { paneOwner[$0] })
-        if agentTurns != turns || runningWorkspaceIDs != running {
+        let stopped = Set(workspaceStates.compactMap { workspace, states in
+            InteractiveChatLifecycle.workspaceLabel(for: states) == nil ? nil : workspace
+        })
+        if agentTurns != turns || interactiveStates != interactive || runningWorkspaceIDs != running
+            || stoppedInteractiveWorkspaceIDs != stopped {
             agentTurns = turns
+            interactiveStates = interactive
             runningWorkspaceIDs = running
+            stoppedInteractiveWorkspaceIDs = stopped
             onAgentActivityChanged?()
         }
     }
@@ -846,6 +886,9 @@ final class TerminalSessionStore {
         paneOwner.removeAll()
         paneSession.removeAll()
         pendingCommands.removeAll()
+        interactiveLaunchDeadlines.removeAll()
+        interactiveStates.removeAll()
+        stoppedInteractiveWorkspaceIDs.removeAll()
         await stop(views)
     }
 

@@ -40,51 +40,58 @@ struct ToolPaneView: View {
     var body: some View {
         switch tab.kind {
         case .terminal:
-            VStack(spacing: 0) {
-                // Above the shell rather than inside it. A workspace created to be worked in by
-                // hand opens this tab while the setup script is still installing, and until this
-                // strip existed nothing on the tab said so. See `WorktreeSetupStrip`.
-                WorktreeSetupStrip(readiness: readiness)
+            if let sessionID = tab.agentSessionID,
+               let session = model.sessions.first(where: { $0.id == sessionID }),
+               TerminalSessionStore.shared.interactiveState(for: sessionID) == .stopped {
+                StoppedTerminalChatView(model: model, session: session)
+            } else {
+                VStack(spacing: 0) {
+                    // Above the shell rather than inside it. A workspace created to be worked in by
+                    // hand opens this tab while the setup script is still installing, and until this
+                    // strip existed nothing on the tab said so. See `WorktreeSetupStrip`.
+                    WorktreeSetupStrip(readiness: readiness)
 
-                Group {
-                    if readyTabID == tab.id {
-                        TerminalSplitView(
-                            ownerID: tab.id,
-                            workspace: model.workspace,
-                            repo: model.repo,
-                            port: model.port,
-                            directory: tab.directory,
-                            runScript: runScript,
-                            onCloseTab: {
-                                Task {
-                                    if let sessionID = tab.agentSessionID,
-                                       let session = model.sessions.first(where: { $0.id == sessionID }) {
-                                        await model.closeSession(session)
-                                    } else {
-                                        await CenterTabStore.shared.close(tab, in: model)
+                    Group {
+                        if readyTabID == tab.id {
+                            TerminalSplitView(
+                                ownerID: tab.id,
+                                workspace: model.workspace,
+                                repo: model.repo,
+                                port: model.port,
+                                directory: tab.directory,
+                                runScript: runScript,
+                                onCloseTab: {
+                                    Task {
+                                        if let sessionID = tab.agentSessionID,
+                                           let session = model.sessions.first(where: { $0.id == sessionID }) {
+                                            await model.closeSession(session)
+                                        } else {
+                                            await CenterTabStore.shared.close(tab, in: model)
+                                        }
                                     }
-                                }
-                            },
-                            splitColumn: splitColumn,
-                            terminalLabel: tab.title,
-                            onAddToChat: terminalHandoff,
-                            requiresTmux: tab.agentSessionID != nil
-                        )
-                        .id(tab.id)
-                    } else {
-                        LoadingView("Opening a terminal")
+                                },
+                                splitColumn: splitColumn,
+                                terminalLabel: tab.title,
+                                onAddToChat: terminalHandoff,
+                                requiresTmux: tab.agentSessionID != nil,
+                                isTerminalChat: tab.agentSessionID != nil
+                            )
+                            .id(tab.id)
+                        } else {
+                            LoadingView("Opening a terminal")
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                // Gated, because what it drives is `WorktreeSetupStrip`'s `.move(edge: .top)`: the
+                // strip slides down and back up, pushing the terminal with it, on every terminal tab
+                // opened while setup runs. A strip pushing a pane is the pane's own movement, so it
+                // is on the pane's curve rather than the `.snappy(duration: 0.2)` it was written as.
+                .animation(reduceMotion ? nil : Motion.pane, value: readiness)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.surfaceSunken)
+                .task(id: tab.id) { await prepareTerminal() }
             }
-            // Gated, because what it drives is `WorktreeSetupStrip`'s `.move(edge: .top)`: the
-            // strip slides down and back up, pushing the terminal with it, on every terminal tab
-            // opened while setup runs. A strip pushing a pane is the pane's own movement, so it
-            // is on the pane's curve rather than the `.snappy(duration: 0.2)` it was written as.
-            .animation(reduceMotion ? nil : Motion.pane, value: readiness)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.surfaceSunken)
-            .task(id: tab.id) { await prepareTerminal() }
 
         case .browser:
             BrowserTabView(model: model, tab: tab, paneMenu: paneMenu, siblings: siblings)

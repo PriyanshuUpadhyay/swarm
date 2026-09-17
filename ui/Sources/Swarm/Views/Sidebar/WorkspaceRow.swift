@@ -37,6 +37,7 @@ struct WorkspaceRow: View {
     var isRunning: Bool
     var isAwaitingPermission = false
     var isStarting = false
+    var terminalChatStatus: String? = nil
     /// The project this row belongs to, drawn as a tile at the trailing edge, and only in the
     /// status view: there the rows of six projects are interleaved by what each agent is doing, so
     /// nothing else on the row says where the work lives. Nil in the project view, where the header
@@ -145,6 +146,12 @@ struct WorkspaceRow: View {
                         hex: workspace.colour,
                         accessibilityName: workspace.colourDescription
                     )
+
+                    if let terminalChatStatus {
+                        Text(terminalChatStatus)
+                            .font(Typo.micro)
+                            .foregroundStyle(isEmphasized ? Palette.textInverted : Palette.textSecondary)
+                    }
 
                     Spacer(minLength: Metrics.spacingSmall)
 

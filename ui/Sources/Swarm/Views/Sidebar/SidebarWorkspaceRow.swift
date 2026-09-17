@@ -50,6 +50,8 @@ struct SidebarWorkspaceRow: View {
             isRunning: app.isRunning(workspace),
             isAwaitingPermission: app.isAwaitingPermission(workspace),
             isStarting: app.isStarting(workspace),
+            terminalChatStatus: TerminalSessionStore.shared.stoppedInteractiveWorkspaceIDs
+                .contains(workspace.id) ? InteractiveChatLifecycle.State.stopped.label : nil,
             trailingRepo: trailingRepo,
             subagentCount: app.subagents(of: workspace.id).count,
             isShowingSubagents: isShowingSubagents,

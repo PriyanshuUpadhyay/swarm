@@ -16,6 +16,7 @@ struct SessionTabView: View {
     var agentGlyph: String?
     var isActive: Bool
     var isRunning: Bool
+    var status: String?
     var isRenaming: Bool
     var canClose: Bool
     var onSelect: @MainActor () -> Void
@@ -34,7 +35,7 @@ struct SessionTabView: View {
 
     var body: some View {
         TabItemView(
-            title: session.title.isEmpty ? PaneNaming.untitledChat : session.title,
+            title: displayTitle,
             icon: .symbol(PaneGlyph.chatTab(agentMark: agentGlyph)),
             isActive: isActive,
             isRunning: isRunning,
@@ -55,5 +56,10 @@ struct SessionTabView: View {
             onHover: onHover,
             namespace: namespace
         )
+    }
+
+    private var displayTitle: String {
+        let title = session.title.isEmpty ? PaneNaming.untitledChat : session.title
+        return status.map { "\(title) · \($0)" } ?? title
     }
 }

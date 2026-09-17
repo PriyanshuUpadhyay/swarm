@@ -32,6 +32,8 @@ struct TerminalSplitView: View {
     var terminalLabel: String = "Terminal"
     var onAddToChat: (@MainActor (TerminalExcerpt) -> Void)?
     var requiresTmux = false
+    /// A saved chat survives its CLI process. Only the owner's Close action archives it.
+    var isTerminalChat = false
 
     /// The same switch the terminal itself reads, so turning the Ghostty theme off also turns off
     /// Ghostty's way of fading the panes that do not have the keyboard.
@@ -222,7 +224,9 @@ struct TerminalSplitView: View {
     /// a signal has printed why, and that output is the one thing worth keeping: macOS Terminal
     /// draws the same line, under "Close if the shell exited cleanly", and it is the right one.
     private func finished(_ exit: TerminalExit, in pane: String) {
-        guard exit.closesPane else { return }
+        guard InteractiveChatLifecycle.disposition(
+            for: exit, isTerminalChat: isTerminalChat
+        ) == .closePane else { return }
         close(pane)
     }
 

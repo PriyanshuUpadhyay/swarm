@@ -171,6 +171,7 @@ struct SessionTabsView: View {
             agentGlyph: sessionGlyph(for: session),
             isActive: selected == .chat(session.id),
             isRunning: busy.showsInTab(content),
+            status: terminalStatus(for: session),
             isRenaming: renamingID == session.id.rawValue,
             // Always. The workspace's last conversation IS closable, and hiding the cross was the
             // only thing pretending otherwise: "Close Session" in the File menu holds Cmd+W and has
@@ -208,6 +209,14 @@ struct SessionTabsView: View {
             return PaneGlyph.agentMark(for: session.agentKind)
         }
         return PaneGlyph.agentMark(for: session.agentKind, among: model.sessions.map(\.agentKind))
+    }
+
+    private func terminalStatus(for session: Session) -> String? {
+        guard CenterTabStore.shared.terminal(for: session.id, in: model.workspace.id) != nil else {
+            return nil
+        }
+        let state = TerminalSessionStore.shared.interactiveState(for: session.id)
+        return state == .running ? nil : state.label
     }
 
     private func toolTab(

@@ -1320,16 +1320,43 @@ final class WorkspaceModel {
         await transcript(for: session).drain()
     }
 
-    private func launchCLI(_ cliSession: Session, prompt: String, repo: Repo) async {
+    func resumeCLI(_ session: Session) async {
+        guard let repo = app.repo(for: workspace) else { return }
+        let providerID = InteractiveChatLifecycle.resumeSessionID(session.agentSessionID)
+        if providerID == nil {
+            app.notice = SwarmNotice(
+                message: "This chat had no saved provider session ID, so Swarm started a fresh CLI session."
+            )
+        }
+        await launchCLI(session, prompt: "", repo: repo, resuming: providerID)
+    }
+
+    private func launchCLI(
+        _ cliSession: Session, prompt: String, repo: Repo, resuming providerID: String? = nil
+    ) async {
+        guard let store else { return }
         let port = await ensurePort()
         guard !Task.isCancelled,
               let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
               sessions.contains(where: { $0.id == cliSession.id }),
-              let command = prepareCLICommand(for: cliSession, prompt: prompt) else { return }
+              let command = prepareCLICommand(
+                for: cliSession, prompt: prompt, resuming: providerID
+              ) else { return }
+        if cliSession.agentSessionID == nil,
+           let initialID = InteractiveChatLifecycle.initialProviderSessionID(
+            for: cliSession.agentKind, sessionID: cliSession.id
+            ) {
+            do {
+                _ = try await store.update(sessionID: cliSession.id) { $0.agentSessionID = initialID }
+            } catch {
+                app.notice = SwarmNotice(message: "Could not save this chat's resume ID: \(error.readableMessage)")
+                return
+            }
+        }
         try? FileManager.default.removeItem(at: AgentKind.interactiveStatusURL(sessionID: cliSession.id))
         let terminals = TerminalSessionStore.shared
         terminals.useStore(store)
-        terminals.run(command, inPaneID: terminal.id)
+        terminals.startInteractive(command, inPane: terminal.id)
         _ = terminals.terminal(
             for: TerminalTab(id: TerminalTabID(terminal.id), workspaceID: workspace.id, title: terminal.title),
             workspace: workspace, repo: repo, port: port, directory: terminal.directory
@@ -1338,11 +1365,14 @@ final class WorkspaceModel {
         pendingCLIPrompts[cliSession.id] = nil
     }
 
-    private func prepareCLICommand(for session: Session, prompt: String) -> String? {
+    private func prepareCLICommand(
+        for session: Session, prompt: String, resuming providerID: String? = nil
+    ) -> String? {
         do {
             return try session.agentKind.prepareInteractiveCommand(
                 directory: workspace.path, prompt: prompt, sessionID: session.id,
-                model: session.model, effort: session.effort, permissionMode: session.permissionMode
+                model: session.model, effort: session.effort,
+                permissionMode: session.permissionMode, resuming: providerID
             )
         } catch {
             app.alert = SwarmAlert(title: "Could not launch the agent", message: error.readableMessage)
