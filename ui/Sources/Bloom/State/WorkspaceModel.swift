@@ -17,6 +17,7 @@ struct GitFailure: Error, Sendable {
 final class WorkspaceModel {
     var workspace: Workspace
     private unowned let app: AppModel
+    let swarmAgents: SwarmAgentWorkspaceModel
 
     var sessions: [Session] = []
     var sideConversations: [SessionID: SideConversationState] = [:]
@@ -374,6 +375,12 @@ final class WorkspaceModel {
     init(workspace: Workspace, app: AppModel) {
         self.workspace = workspace
         self.app = app
+        self.swarmAgents = SwarmAgentWorkspaceModel(
+            workspaceID: workspace.id,
+            directory: workspace.path,
+            bus: app.swarmBus,
+            store: app.store
+        )
         self.setupOutput = workspace.setupLog
         refreshSettings()
     }
@@ -448,6 +455,7 @@ final class WorkspaceModel {
         if !hasReadSessions { hasReadSessions = true }
         let tabs = CenterTabStore.shared
         tabs.load(workspaceID: workspace.id)
+        swarmAgents.sync(agentIDs: tabs.swarmAgents(in: workspace.id))
         WorkspaceTabsStore.shared.updateOrder(
             sessions: TabSet.tabbable(fresh),
             tools: tabs.hasReadTabs(for: workspace.id) ? tabs.tabs(for: workspace.id).map(\.id) : nil,

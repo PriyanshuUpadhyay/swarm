@@ -105,7 +105,7 @@ final class CenterTabStore {
             if tab.isPinnedToPath { return (tab.path as NSString).lastPathComponent }
             if model.changedFiles.contains(where: { $0.path == tab.path }) { return tab.title }
             return (tab.path as NSString).lastPathComponent
-        case .terminal, .notes:
+        case .terminal, .notes, .swarmAgent:
             return tab.title
         }
     }
@@ -143,7 +143,8 @@ final class CenterTabStore {
     @discardableResult
     func add(
         kind: CenterTab.Kind, workspaceID: WorkspaceID, url: String = "", title: String? = nil,
-        directory: String = "", agentSessionID: SessionID? = nil, runScriptID: String? = nil
+        directory: String = "", agentSessionID: SessionID? = nil, runScriptID: String? = nil,
+        swarmAgent: SwarmAgentID? = nil
     ) -> CenterTab {
         var tabs = tabs(for: workspaceID)
         let tab = CenterTab(
@@ -154,7 +155,8 @@ final class CenterTabStore {
             isNamed: title != nil,
             directory: directory,
             agentSessionID: agentSessionID,
-            runScriptID: runScriptID
+            runScriptID: runScriptID,
+            swarmAgent: swarmAgent
         )
         tabs.append(tab)
         apply(tabs, to: workspaceID)
@@ -163,6 +165,10 @@ final class CenterTabStore {
 
     func terminal(for sessionID: SessionID, in workspaceID: WorkspaceID) -> CenterTab? {
         tabs(for: workspaceID).first { $0.kind == .terminal && $0.agentSessionID == sessionID }
+    }
+
+    func swarmAgents(in workspaceID: WorkspaceID) -> [SwarmAgentID] {
+        tabs(for: workspaceID).compactMap { $0.kind == .swarmAgent ? $0.swarmAgent : nil }
     }
 
     /// Every terminal tab of a workspace, by id, without loading the workspace into the cache.
@@ -398,6 +404,10 @@ final class CenterTabStore {
     /// Closes a tab and stops whatever it was running. Any pane showing it goes with it, and the
     /// tab it was a pane of settles around the gap. See `TabSurgery`.
     func close(_ tab: CenterTab, in model: WorkspaceModel) async {
+        if tab.kind == .swarmAgent, let agent = tab.swarmAgent {
+            let closed = await model.swarmAgents.closeIfNeeded(agent)
+            guard closed else { return }
+        }
         WorkspaceTabsStore.shared.prepareToClose(.tool(tab.id), in: model)
         apply(tabs(for: tab.workspaceID).filter { $0.id != tab.id }, to: tab.workspaceID)
         WorkspaceTabsStore.shared.forget(.tool(tab.id), workspaceID: tab.workspaceID)
@@ -408,6 +418,8 @@ final class CenterTabStore {
             browsers[tab.id] = nil
         case .terminal:
             stopShell(for: tab)
+        case .swarmAgent:
+            model.swarmAgents.sync(agentIDs: swarmAgents(in: tab.workspaceID))
         // A review holds nothing: the diff is re-read from git whenever it is drawn, and any
         // unsaved edit belongs to `FileEditSession`, which outlives every view that shows it.
         case .review:
@@ -513,6 +525,7 @@ final class CenterTabStore {
         let base = switch kind {
         case .terminal: PaneNaming.terminal
         case .browser: PaneNaming.browser
+        case .swarmAgent: "Swarm Agent"
         case .review: CenterTab.reviewTitle
         case .notes: CenterTab.notesTitle
         }

@@ -89,6 +89,8 @@ struct CenterTab: Identifiable, Hashable, Codable, Sendable {
     /// bottom panel's, the migration in `CenterTabStore.adoptTerminalTabs` drains it, and nothing
     /// has written a row to it since. Decoded as nil for every tab written before this existed.
     var runScriptID: String?
+    /// Swarm agent only: the agent this tab chats with and whose pane it attaches to.
+    var swarmAgent: SwarmAgentID?
 
     /// The glyph that tells the kinds apart in the strip. Chats carry one too now, and the whole
     /// vocabulary is `PaneGlyph`.
@@ -96,6 +98,7 @@ struct CenterTab: Identifiable, Hashable, Codable, Sendable {
         switch kind {
         case .terminal: PaneGlyph.terminal
         case .browser: PaneGlyph.browser
+        case .swarmAgent: PaneGlyph.swarmAgent
         case .review: PaneGlyph.review
         case .notes: PaneGlyph.notes
         }
@@ -133,6 +136,7 @@ struct CenterTab: Identifiable, Hashable, Codable, Sendable {
         // shared review. See `isPinnedToPath`.
         isPinnedToPath = try container.decodeIfPresent(Bool.self, forKey: .isPinnedToPath) ?? false
         runScriptID = try container.decodeIfPresent(String.self, forKey: .runScriptID)
+        swarmAgent = try container.decodeIfPresent(SwarmAgentID.self, forKey: .swarmAgent)
         showsAllFiles = try container.decodeIfPresent(Bool.self, forKey: .showsAllFiles)
             ?? (kind == .review && !isPinnedToPath)
     }
@@ -141,7 +145,7 @@ struct CenterTab: Identifiable, Hashable, Codable, Sendable {
         id: String = newID(), workspaceID: WorkspaceID, kind: Kind, title: String,
         url: String = "", path: String = "", pageTitle: String = "", isNamed: Bool = false,
         directory: String = "", isPinnedToPath: Bool = false, agentSessionID: SessionID? = nil,
-        runScriptID: String? = nil
+        runScriptID: String? = nil, swarmAgent: SwarmAgentID? = nil
     ) {
         self.runScriptID = runScriptID
         self.isPinnedToPath = isPinnedToPath
@@ -156,5 +160,6 @@ struct CenterTab: Identifiable, Hashable, Codable, Sendable {
         self.isNamed = isNamed
         self.directory = directory
         self.agentSessionID = agentSessionID
+        self.swarmAgent = swarmAgent
     }
 }
