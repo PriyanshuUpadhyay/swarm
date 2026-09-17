@@ -69,12 +69,33 @@ struct SwarmBusTests {
         ])
     }
 
+    @Test("rejects a launch without a pane")
+    func rejectsLaunchWithoutPane() async {
+        let (bus, _) = makeBus([.result()])
+
+        await #expect(throws: SwarmProfileError.failed("swarm returned no pane")) {
+            try await bus.launch(
+                coderAgent, role: "code.complex", account: nil,
+                in: workspaceSession, directory: "/workspace/project"
+            )
+        }
+    }
+
+    @Test("rejects a zero message sequence")
+    func rejectsZeroMessageSequence() async {
+        let (bus, _) = makeBus([.result(stdout: "0\n")])
+
+        await #expect(throws: SwarmProfileError.failed("swarm returned an invalid message sequence")) {
+            try await bus.send("Fix the parser", to: coderAgent, in: workspaceSession)
+        }
+    }
+
     @Test("runs every session command with its contract inputs")
     func runsSessionCommands() async throws {
         let agentsJSON = #"{"agents":[{"id":"orchestrator","role":"orchestrator","pane":null,"alive":null}]}"#
         let messagesJSON = #"{"messages":[{"seq":8,"sender":"orchestrator","recipient":"coder-1","kind":"ask","body":null,"created_at":1789576942,"read":false}]}"#
         let (bus, runner) = makeBus([
-            .result(stdout: agentsJSON),
+            .result(stdout: agentsJSON, stderr: "swarm: cannot list panes\n"),
             .result(stdout: messagesJSON),
             .result(stdout: "9\n"),
             .result(),

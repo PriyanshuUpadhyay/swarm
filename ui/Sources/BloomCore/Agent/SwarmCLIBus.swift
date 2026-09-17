@@ -63,11 +63,11 @@ public struct SwarmCLIBus: SwarmBus {
         guard let pane = firstLine(in: result.stdout) else {
             throw SwarmProfileError.failed("swarm returned no pane")
         }
-        let account = result.stderr.components(separatedBy: .newlines)
+        let reported = result.stderr.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { $0.hasPrefix("account ") }
             .map { String($0.dropFirst("account ".count)) }
-        return SwarmLaunch(pane: pane, account: account)
+        return SwarmLaunch(pane: pane, account: reported)
     }
 
     public func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
