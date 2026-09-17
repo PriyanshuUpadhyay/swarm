@@ -10,11 +10,11 @@ import Foundation
 /// and the render server; what this owns is where the line goes.
 ///
 /// The curve is sampled at a fixed step and then measured to place things along it. Those two jobs
-/// are `shape` and `paced` below, and they are
-/// separate because they answer different questions: `shape` is the line, `paced` is how fast a
-/// light travelling it should be at any moment. A keyframe animation interpolates its values on
-/// even key times, so a light handed the raw samples would race through the tight curves at the
-/// ends and dawdle along the run; handed the paced ones it holds one speed the whole way.
+/// are `shape` and `paced` below, and they are separate because they answer different questions:
+/// `shape` is the line, `paced` is how fast a light travelling it should be at any moment. A
+/// keyframe animation interpolates its values on even key times, so a light handed the raw samples
+/// would race through the tight curves and dawdle along the run. Handed the paced ones, it holds
+/// one speed the whole way.
 public enum BranchCurve {
     /// The branch, from `from` to `to` on the x axis, both ends on `spine`.
     ///

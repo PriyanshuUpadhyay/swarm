@@ -53,12 +53,11 @@ enum Brand {
 /// edges, and over five seconds it was three. A translation of a soft field is the one motion the
 /// eye cannot catch, because nothing in the field gives it a reference. The ribbons hold still
 /// enough to read as structure while the brightness travels along them, and the gate's mark
-/// breathes its glow between a quarter and six tenths
-/// opacity on a seven second cycle, which its own CSS calls alive, not animated. So this version
-/// animates the light and leaves the geometry nearly alone: each pool breathes between two fifths and
-/// full strength on its own period, the two out of phase so one waxes while the other wanes; the
-/// gate's faint diagonal band becomes a ribbon swaying slowly down the plinth and back; and the
-/// drift is kept but split per pool and opposed, so the two read as water moving over water
+/// breathes its glow between a quarter and six tenths opacity on a seven second cycle. So this
+/// version animates the light and leaves the geometry nearly alone. Each pool breathes between two
+/// fifths and full strength on its own period. The two are out of phase, so one waxes while the
+/// other wanes. The gate's faint diagonal band becomes a ribbon that sways down the plinth and
+/// back. The drift is split per pool and opposed, so the two read as water moving over water
 /// rather than as one plate sliding. The periods share no common factor, so the composition never
 /// visibly repeats, and everything eases at both ends, so there is no loop point to notice.
 ///

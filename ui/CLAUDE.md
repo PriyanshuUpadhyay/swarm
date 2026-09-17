@@ -9,13 +9,12 @@ A macOS 26 app for running coding agents in git worktrees. One window: a sidebar
 their workspaces, a transcript in the centre, a terminal, an inspector. A workspace is a real
 worktree on disk, which is why so much of what follows is about not destroying one.
 
-Longer documents, pointed at rather than repeated here: `README.md` for what the app is,
-`docs/CODEX.md` for the Codex app-server
-protocol as measured, `docs/GROK.md` for Grok's ACP over stdio, `docs/PROTOCOL.md` for Claude Code's stream-json,
-`docs/AGENTS-INTEGRATION.md` for how the four CLIs are detected, `docs/BRIDGE.md` for the MCP
-bridge an agent calls back in through and which callers may call what, `docs/PLAN.md` for what was
-built and in what order, `docs/start-from.html` for the design note the create sheet's source picker
-was drawn from, which is a page to open in a browser rather than to read here.
+Longer documents are pointed at rather than repeated here. `README.md` says what the app is,
+`docs/CODEX.md` measures the Codex app-server protocol, `docs/GROK.md` covers Grok's ACP over stdio,
+and `docs/PROTOCOL.md` covers Claude Code's stream-json. `docs/AGENTS-INTEGRATION.md` says how the
+four CLIs are detected. `docs/BRIDGE.md` covers the MCP bridge an agent calls back through and which
+callers may call what. `docs/PLAN.md` says what was built and in what order. `docs/start-from.html`
+is the design note for the create sheet's source picker and is a page to open in a browser.
 
 ## Three targets, and the line between them
 

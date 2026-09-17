@@ -126,10 +126,8 @@ clones the repository. `user` is the top level of `~/.claude.json` and applies t
 the machine. Bloom's coupling belongs to the owner and to no repository, so it is `user`, and that
 is also the only one of the three that cannot end up in a commit carrying a live token.
 
-The server is registered under a name derived from the running copy of Bloom: `bloom` from the
-owner's install, `bloom-dev` from `Tools/dev-build.sh`, and anything else from the same table that
-decides which Application Support directory a build may open, slugified. See
-`BridgeRegistration.ownerServerName`.
+The server is registered under a name derived from the running copy's Application Support
+directory, slugified. See `BridgeRegistration.ownerServerName`.
 
 It is deliberately not `bloom-workspace-bridge`, the name Bloom's own per-session `--mcp-config`
 uses. That file is additive over `~/.claude.json` rather than replacing it, so a shared name would

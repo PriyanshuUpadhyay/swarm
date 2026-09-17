@@ -21,7 +21,7 @@ help:
 	@echo
 	@echo "  Anything that takes an argument is run directly. See the head of this file."
 
-build: ## Compile every target, app included, the way CI does
+build: ## Compile every target, app included
 	swift build
 
 test: ## Run the BloomCore suite without building the app target

@@ -40,9 +40,9 @@ make build
 make app
 ```
 
-`make build` compiles every target. `make app` assembles a debug application bundle. See
-[the architecture guide](docs/ARCHITECTURE.md) before contributing. [AGENTS.md](AGENTS.md) indexes
-the shared Swift project skills for Claude and Codex.
+`make build` compiles every target. `make app` assembles a debug application bundle. Read
+[CLAUDE.md](CLAUDE.md) before contributing. [AGENTS.md](AGENTS.md) indexes the shared Swift project
+skills for Claude and Codex.
 
 There is no `.xcodeproj`, on purpose. Open `Package.swift` in Xcode and you get the targets, the
 schemes, the debugger and the previews; `CLAUDE.md` has the section explaining what a checked-in

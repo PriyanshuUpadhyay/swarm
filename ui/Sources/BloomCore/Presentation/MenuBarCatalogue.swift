@@ -182,7 +182,6 @@ public enum MenuBarCatalogue {
 
         // MARK: Help
 
-        MenuBarItem(.help, in: .help, "Bloom Help", key: .command("?")),
         MenuBarItem(.welcome, in: .help, "Welcome to Bloom…"),
         MenuBarItem(.sendFeedback, in: .help, "Send Feedback…", key: .init("f", .command, .option)),
         MenuBarItem(.submitPrompt, in: .help, "Submit a Prompt…"),
@@ -270,7 +269,6 @@ public enum MenuBarAction: String, CaseIterable, Sendable {
     case runScripts
     case stopAgent
 
-    case help
     case welcome
     case sendFeedback
     case submitPrompt

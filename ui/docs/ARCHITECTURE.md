@@ -1,8 +1,7 @@
 # Architecture and contributor guide
 
-Bloom separates its tested behaviour from its window. Read `CLAUDE.md` for the enforced rules and
-`RELEASING.md` for distribution. Build an isolated dev copy; never test against the installed
-production app or its database.
+Bloom separates its tested behaviour from its window. Read `CLAUDE.md` for the enforced rules.
+Use local builds and focused tests for verification.
 
 ## Boundaries
 
