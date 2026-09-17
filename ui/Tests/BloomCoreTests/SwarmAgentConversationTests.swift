@@ -106,7 +106,7 @@ struct SwarmAgentConversationTests {
         )
 
         #expect(failure.notice(after: "Docs was archived.").message == "Docs was archived. "
-            + "Bloom could not list or close swarm agents `code-complex-1` in session `session-8`. "
+            + "Bloom could not list or close swarm agent `code-complex-1` in session `session-8`. "
             + "Run `swarm close <name>` for each agent by hand.")
 
         let unknown = SwarmArchiveCloseFailure(

@@ -377,12 +377,12 @@ extension AppModel {
         // Read before the stop, which marks every one of them stopped. A running command never
         // asks for a confirmation, so the notice after is the only place it is mentioned.
         let stoppedCommands = workspaceModels[workspace.id]?.runningCommands ?? []
-        let swarmCloseFailure: SwarmArchiveCloseFailure?
+        let swarmClose: (session: SwarmSessionID, failure: SwarmArchiveCloseFailure?)?
         if let workspaceModel = workspaceModels[workspace.id] {
             workspaceModel.stopEverything()
-            swarmCloseFailure = await workspaceModel.swarmAgents.closeAll()
+            swarmClose = await workspaceModel.swarmAgents.closeAll()
         } else {
-            swarmCloseFailure = nil
+            swarmClose = nil
         }
 
         // Out of the sidebar now, before a single byte moves.
@@ -436,6 +436,15 @@ extension AppModel {
             // the app will ever come back for them.
             await TerminalSessionStore.shared.discard(workspaceID: workspace.id)
             workspaceModels[workspace.id]?.teardown()
+            if let swarmSession = swarmClose?.session, let store {
+                do {
+                    try await SwarmWorkspaceSession.clear(workspaceID: workspace.id, in: store)
+                } catch {
+                    Log.archive.error(
+                        "could not clear swarm session \(swarmSession.rawValue, privacy: .public) for \(workspace.name, privacy: .public): \(error.readableMessage, privacy: .public)"
+                    )
+                }
+            }
             // Everything at once, and after the discard rather than before it. The store agrees
             // the workspace is archived by now, so the reload filter has nothing left to protect,
             // and holding it across one more await can only keep a row from flickering back.
@@ -459,7 +468,7 @@ extension AppModel {
             } else {
                 archiveNotice = nil
             }
-            if let swarmCloseFailure {
+            if let swarmCloseFailure = swarmClose?.failure {
                 let archived = archiveNotice?.message ?? "\(workspace.name) was archived."
                 notice = swarmCloseFailure.notice(after: archived)
                 Log.archive.error("\(swarmCloseFailure.logMessage, privacy: .public)")

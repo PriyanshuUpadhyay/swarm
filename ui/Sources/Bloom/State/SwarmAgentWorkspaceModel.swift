@@ -141,7 +141,9 @@ final class SwarmAgentWorkspaceModel {
 
     /// Archive cleanup is best effort. Failures do not keep the other agents, or the archive,
     /// from continuing, and the returned value survives this model being discarded.
-    func closeAll() async -> SwarmArchiveCloseFailure? {
+    func closeAll() async -> (
+        session: SwarmSessionID, failure: SwarmArchiveCloseFailure?
+    )? {
         let saved: SwarmSessionID? = if let store {
             await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
         } else {
@@ -170,31 +172,17 @@ final class SwarmAgentWorkspaceModel {
             }
         } catch {
             listingFailed = true
-            var expectedAgents = trackedAgents
-            for agent in agents.values {
-                if agent.pane == nil {
-                    expectedAgents.remove(agent.id)
-                } else {
-                    expectedAgents.insert(agent.id)
-                }
-            }
-            failedAgents.formUnion(expectedAgents)
+            failedAgents.formUnion(agents.values.compactMap { $0.pane == nil ? nil : $0.id })
             record(error)
         }
-        if let store {
-            do {
-                try await SwarmWorkspaceSession.clear(workspaceID: workspaceID, in: store)
-                sessionID = nil
-            } catch {
-                record(error)
-            }
+        let failure: SwarmArchiveCloseFailure? = if listingFailed || !failedAgents.isEmpty {
+            SwarmArchiveCloseFailure(
+                session: session, agents: failedAgents, listingFailed: listingFailed
+            )
         } else {
-            record(SwarmAgentWorkspaceError.storeUnavailable)
+            nil
         }
-        guard listingFailed || !failedAgents.isEmpty else { return nil }
-        return SwarmArchiveCloseFailure(
-            session: session, agents: failedAgents, listingFailed: listingFailed
-        )
+        return (session, failure)
     }
 
     /// Returns false only when a live pane could not be closed, so its tab remains reachable.
