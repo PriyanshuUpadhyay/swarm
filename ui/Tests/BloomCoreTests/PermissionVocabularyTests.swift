@@ -173,16 +173,4 @@ struct PermissionVocabularyTests {
         #expect(resolved.permissionMode == codex.permissionMode)
         #expect(resolved.interactionMode == .plan)
     }
-
-    /// The wire slugs are older than the labels over them and are grouped by on a chart, so the
-    /// relabelling must not touch them. Only the new mode adds one.
-    @Test("relabelling a mode does not rename the slug it is counted under")
-    func slugsAreUnchanged() {
-        #expect(Feedback.wireName(.auto) == "ask")
-        #expect(Feedback.wireName(.acceptEdits) == "accept-edits")
-        #expect(Feedback.wireName(.bypassPermissions) == "full-access")
-        #expect(Feedback.wireName(.plan) == "plan")
-        #expect(Feedback.wireName(.autoReview) == "approve-for-me")
-        #expect(Set(PermissionMode.allCases.map(Feedback.wireName)).count == PermissionMode.allCases.count)
-    }
 }

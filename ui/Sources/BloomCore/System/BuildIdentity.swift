@@ -11,10 +11,13 @@ import Foundation
 /// answer wearing the format of a right one is worse than no answer: it is the number somebody
 /// reads back in a bug report.
 ///
-/// `BloomBuildChannel` is the key that knows, which is the same key `SoftwareUpdate.availability`
-/// already refuses to update on, and `BloomMasterCommit` takes precedence over it there for the
-/// same reason it does here: it is the more specific fact about the same bundle.
+/// `BloomBuildChannel` is the key that knows, and `BloomMasterCommit` takes precedence because it
+/// is the more specific fact about the same bundle.
 public enum BuildIdentity: Equatable, Sendable {
+    private static let buildChannelKey = "BloomBuildChannel"
+    private static let masterCommitKey = "BloomMasterCommit"
+    private static let releaseChannel = "release"
+
     /// Stamped by the release workflow from a tag. The only case carrying a version anyone else has.
     case release(version: String, build: String)
 
@@ -27,8 +30,8 @@ public enum BuildIdentity: Equatable, Sendable {
 
     /// Reads the keys that decide it.
     ///
-    /// The master commit is checked first, matching `SoftwareUpdate.availability`: a bundle
-    /// carrying one was built from a working copy whatever else is stamped on it.
+    /// The master commit is checked first because a bundle carrying one was built from a working
+    /// copy whatever else is stamped on it.
     public static func read(
         version: String?,
         build: String?,
@@ -36,7 +39,7 @@ public enum BuildIdentity: Equatable, Sendable {
         masterCommit: String?
     ) -> BuildIdentity {
         if let commit = filled(masterCommit) { return .master(commit: commit) }
-        guard buildChannel == SoftwareUpdate.releaseChannel, let version = filled(version) else {
+        guard buildChannel == releaseChannel, let version = filled(version) else {
             return .local
         }
         return .release(version: version, build: filled(build) ?? version)
@@ -47,10 +50,8 @@ public enum BuildIdentity: Equatable, Sendable {
         read(
             version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
-            buildChannel: bundle.object(forInfoDictionaryKey: SoftwareUpdate.buildChannelKey)
-                as? String,
-            masterCommit: bundle.object(forInfoDictionaryKey: SoftwareUpdate.masterCommitKey)
-                as? String
+            buildChannel: bundle.object(forInfoDictionaryKey: buildChannelKey) as? String,
+            masterCommit: bundle.object(forInfoDictionaryKey: masterCommitKey) as? String
         )
     }
 

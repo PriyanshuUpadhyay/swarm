@@ -4,10 +4,10 @@ import BloomCore
 
 /// Whether the panel is open, what is in its field, and which row is highlighted.
 ///
-/// **A shared object rather than `@State` in the window**, for the same reason `FeedbackPresenter`
-/// and `SetupRunAlert` are: a `Commands` body is not a view and cannot reach a `@State`, and the
-/// two keys that open this are menu items. It is also what lets the toolbar's magnifying glass and
-/// the Edit menu open the same panel rather than two.
+/// **A shared object rather than `@State` in the window**, for the same reason `SetupRunAlert` is:
+/// a `Commands` body is not a view and cannot reach a `@State`, and the two keys that open this are
+/// menu items. It is also what lets the toolbar's magnifying glass and the Edit menu open the same
+/// panel rather than two.
 ///
 /// Everything it decides is in the core. What is here is the state those decisions are taken
 /// against, and the wiring to `AppModel`: the archived list, the transcript search and the two

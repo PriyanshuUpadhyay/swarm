@@ -54,7 +54,6 @@ public enum MenuBarCatalogue {
         // MARK: Bloom
 
         MenuBarItem(.about, in: .bloom, "About Bloom"),
-        MenuBarItem(.checkForUpdates, in: .bloom, "Check for Updates…", availability: .sometimes),
 
         // MARK: File
 
@@ -182,11 +181,7 @@ public enum MenuBarCatalogue {
 
         // MARK: Help
 
-        MenuBarItem(.help, in: .help, "Bloom Help", key: .command("?")),
         MenuBarItem(.welcome, in: .help, "Welcome to Bloom…"),
-        MenuBarItem(.sendFeedback, in: .help, "Send Feedback…", key: .init("f", .command, .option)),
-        MenuBarItem(.submitPrompt, in: .help, "Submit a Prompt…"),
-        MenuBarItem(.postcardware, in: .help, "Send Us a Postcard…"),
     ]
 }
 
@@ -209,7 +204,6 @@ public enum MenuBarMenu: String, CaseIterable, Sendable {
 /// A `String` raw value so a failing test names the item rather than an ordinal.
 public enum MenuBarAction: String, CaseIterable, Sendable {
     case about
-    case checkForUpdates
 
     case newWorkspace
     case newWorkspaceFromPullRequest
@@ -271,11 +265,7 @@ public enum MenuBarAction: String, CaseIterable, Sendable {
     case runScripts
     case stopAgent
 
-    case help
     case welcome
-    case sendFeedback
-    case submitPrompt
-    case postcardware
 }
 
 public struct MenuBarItem: Equatable, Sendable, Identifiable {

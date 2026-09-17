@@ -56,7 +56,7 @@ struct BrowserToolbarGallery: View {
                 "Loading",
                 "Reload becomes Stop in place, and the fill behind the address is how far it has got.",
                 BrowserToolbar(
-                    page: page("https://spatie.be/docs", "Docs"),
+                    page: page("https://example.com/docs", "Docs"),
                     canGoBack: true,
                     isLoading: true,
                     loadProgress: 0.45
@@ -67,7 +67,7 @@ struct BrowserToolbarGallery: View {
                 "Cut at the tail, so the host is the part that always survives.",
                 BrowserToolbar(
                     page: page(
-                        "https://github.com/spatie/laravel-medialibrary/pull/3812/files"
+                        "https://github.com/example/project/pull/3812/files"
                             + "#diff-a7b3f2c9?utm_source=bloom&expand=1",
                         "Files changed"
                     ),

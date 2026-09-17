@@ -1,24 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// The colours the runbloom.app site is printed in, and the water that drifts in them.
+/// The fixed colours and the water that drifts in them.
 ///
 /// Deliberately not in `Palette`. That is the window ramp: four surfaces and a rule, resolving
 /// differently in each appearance, and CLAUDE.md is explicit that a fifth surface is how the app
-/// starts looking heavy again. These are not surfaces. They are the colours the site is printed
-/// in, and they are the same in both appearances for the same reason a record sleeve is the
-/// colour it was printed: the mark was drawn for a deep ground and the wordmark set on one, so a
-/// plinth that turned white in light mode would be showing a Bloom that exists nowhere else.
+/// starts looking heavy again. These are not surfaces. They stay the same in both appearances
+/// because the mark was drawn for a deep ground and the wordmark set on one.
 ///
 /// Its own file rather than the About window's private business, because the welcome window
 /// stands on the same plinth. The animation below carries a measurement in its head that cost an
 /// afternoon to take, and a second copy of it is a second place for that measurement to rot.
-/// `public/brand/PALETTE.md` and `resources/css/app.css` in the runbloom.app repository are where
-/// each of these numbers is from.
 enum Brand {
-    /// Depth, the site's plinth gradient: Fathom `#123B57` at the top to Abyss `#061420` at the
-    /// bottom. One of exactly two gradients the brand has, and the one that reads as looking down
-    /// into water rather than as a gradient for its own sake.
+    /// Depth runs from Fathom `#123B57` at the top to Abyss `#061420` at the bottom. It reads as
+    /// looking down into water rather than as a gradient for its own sake.
     static let depth = LinearGradient(
         colors: [
             Color(nsColor: NSColor(rgb: 0x123B57)),
@@ -31,28 +26,24 @@ enum Brand {
     /// Foam `#E9F7F4`, the ramp's near white. 16.9 to 1 on Abyss.
     static let foam = Color(nsColor: NSColor(rgb: 0xE9F7F4))
 
-    /// The site's `--mist-dim` `#8AA0AB`, which is what it sets a mono spec line in. 6.0 to 1 on
-    /// Abyss, so a spec line stays readable rather than merely present.
+    /// Mist Dim `#8AA0AB`. It measures 6.0 to 1 on Abyss, so a spec line stays readable.
     static let mistDim = Color(nsColor: NSColor(rgb: 0x8AA0AB))
 
     /// Shallow `#9BE9DC`, the brighter of the two pools, and what a settled check is ticked in on
     /// the plinth. 13.3 to 1 on Abyss.
     static let shallow = Color(nsColor: NSColor(rgb: 0x9BE9DC))
 
-    /// Fathom `#123B57`, which is the top of the `depth` gradient, named because the postcard is
-    /// printed in it.
+    /// Fathom `#123B57`, which is the top of the `depth` gradient.
     ///
     /// It is the one colour in this file that is used as ink rather than as ground, and it works
     /// as ink for the same reason it works as the top of the plinth: it is the ramp's dark blue
     /// rather than a black, so a rule and a line of type set in it belong to the same picture as
-    /// the water behind them. Measured 10.8 to 1 on Foam, which is the paper the card is, so an
-    /// address at ten points on it clears AA several times over.
+    /// the water behind them. It measures 10.8 to 1 on Foam.
     static let fathom = Color(nsColor: NSColor(rgb: 0x123B57))
 }
 
 /// The water in the plinth: two pools of light breathing against each other, a ribbon of light
-/// swaying through them, and a slow drift underneath, which is the site's water brought over as
-/// layers rather than as CSS.
+/// swaying through them, and a slow drift underneath.
 ///
 /// The first version of this transcribed `.gate__panel::before` exactly: the same two pools at
 /// seven and nine percent opacity, the whole painting translated two and a half percent over
@@ -60,14 +51,13 @@ enum Brand {
 /// Retina capture of the open window, the largest change it made to any pixel channel over twenty
 /// whole seconds was seven parts in two hundred and fifty five, spread across a gradient with no
 /// edges, and over five seconds it was three. A translation of a soft field is the one motion the
-/// eye cannot catch, because nothing in the field gives it a reference. The site itself says what
-/// to do instead. The hero's ribbons hold still enough to read as structure while the brightness
-/// travels along them, and the gate's mark breathes its glow between a quarter and six tenths
-/// opacity on a seven second cycle, which its own CSS calls alive, not animated. So this version
-/// animates the light and leaves the geometry nearly alone: each pool breathes between two fifths and
-/// full strength on its own period, the two out of phase so one waxes while the other wanes; the
-/// gate's faint diagonal band becomes a ribbon swaying slowly down the plinth and back; and the
-/// drift is kept but split per pool and opposed, so the two read as water moving over water
+/// eye cannot catch, because nothing in the field gives it a reference. The ribbons hold still
+/// enough to read as structure while the brightness travels along them, and the gate's mark
+/// breathes its glow between a quarter and six tenths opacity on a seven second cycle. So this
+/// version animates the light and leaves the geometry nearly alone. Each pool breathes between two
+/// fifths and full strength on its own period. The two are out of phase, so one waxes while the
+/// other wanes. The gate's faint diagonal band becomes a ribbon that sways down the plinth and
+/// back. The drift is split per pool and opposed, so the two read as water moving over water
 /// rather than as one plate sliding. The periods share no common factor, so the composition never
 /// visibly repeats, and everything eases at both ends, so there is no loop point to notice.
 ///
@@ -99,8 +89,7 @@ struct BrandWater: NSViewRepresentable {
 }
 
 final class BrandWaterView: NSView {
-    /// The painting, larger than the view so no sway can show an edge. The site does the same
-    /// with `inset: -35%`.
+    /// The painting is larger than the view so no sway can show an edge.
     private let canvas = CALayer()
     private let shallowPool = BrandWaterView.pool(rgb: 0x9BE9DC, alpha: 0.14)
     private let currentPool = BrandWaterView.pool(rgb: 0x2AA3B4, alpha: 0.16)
@@ -123,10 +112,10 @@ final class BrandWaterView: NSView {
     required init?(coder: NSCoder) { nil }
 
     /// One pool: a radial falloff from a palette colour to nothing by seventy percent of the
-    /// radius, which is the site's `radial-gradient(..., transparent 70%)`. The colour carries
-    /// the pool's full brightness; the layer's opacity is where the breathing lives, and its
-    /// resting value is the middle of the breath, so the still water Reduce Motion shows is the
-    /// time average of the moving water, not its brightest or dimmest frame.
+    /// radius. The colour carries the pool's full brightness; the layer's opacity is where the
+    /// breathing lives. Its resting value is the middle of the breath, so the still water that
+    /// Reduce Motion shows is the time average of the moving water, not its brightest or dimmest
+    /// frame.
     private static func pool(rgb: UInt32, alpha: CGFloat) -> CAGradientLayer {
         let pool = CAGradientLayer()
         pool.type = .radial
@@ -174,8 +163,7 @@ final class BrandWaterView: NSView {
         CATransaction.setDisableActions(true)
         canvas.frame = bounds.insetBy(dx: -bounds.width * 0.35, dy: -bounds.height * 0.35)
         let size = canvas.bounds.size
-        // The site's two pools: 38% by 30% at 26%, 24%, and 34% by 28% at 76%, 72%. Layer
-        // geometry is bottom up, so the vertical fractions are flipped.
+        // Layer geometry is bottom up, so the vertical fractions are flipped.
         shallowPool.frame = CGRect(
             x: size.width * 0.26 - size.width * 0.19,
             y: size.height * 0.76 - size.height * 0.15,

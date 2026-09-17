@@ -27,7 +27,7 @@ struct PermissionSnapshotGallery: View {
             case .short:
                 "./vendor/bin/pest --parallel"
             case .moderate:
-                "gh api repos/spatie/laravel-webhook-server/commits/"
+                "gh api repos/example/project/commits/"
                     + "$(gh pr view 168 --json headRefOid -q .headRefOid)/check-runs "
                     + "--jq '.check_runs[] | {name, conclusion}'"
             case .long:

@@ -7,23 +7,21 @@
 # takes an argument (a test filter, a ref, a tag) is run directly:
 #
 #   ./Tools/test-core.sh DiffParser
-#   ./Tools/master.sh v0.3.0
-#   ./Tools/release.sh --tag v1.4.0
 #
 # Make is not doing any dependency tracking here and is not meant to. Swift
 # Package Manager already knows what needs rebuilding, and a Makefile that
 # tried to second-guess it would be wrong the first time a file moved.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test app run lint swiftlint master dev dev-fast dev-db subagents release dmg
+.PHONY: help build test app run lint swiftlint
 
-help: ## Show this list
+help:
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-10s %s\n", $$1, $$2}'
 	@echo
 	@echo "  Anything that takes an argument is run directly. See the head of this file."
 
-build: ## Compile every target, app included, the way CI does
+build: ## Compile every target, app included
 	swift build
 
 test: ## Run the BloomCore suite without building the app target
@@ -40,24 +38,3 @@ lint: ## Check the house rules no off the shelf linter knows
 
 swiftlint: ## Check the rules SwiftLint knows, against .swiftlint.yml
 	./Tools/swiftlint.sh
-
-master: ## Build HEAD and install it to ~/Applications/Bloom.app
-	./Tools/master.sh
-
-dev: ## Build HEAD as Bloom Dev, a second app that cannot reach the real data
-	./Tools/dev-build.sh
-
-dev-fast: ## Build current edits as Bloom Dev with an incremental debug build
-	./Tools/dev-build.sh --fast
-
-dev-db: ## Copy the real database into Bloom Dev's own container
-	./Tools/dev-db.sh
-
-subagents: ## Build HEAD as Bloom Subagents, a third app for trying the subagent work out
-	./Tools/subagents-build.sh
-
-release: ## Build, sign, notarise and staple a zip and a disk image you can send
-	./Tools/release.sh
-
-dmg: ## Wrap the newest built Bloom.app in the beach disk image
-	./Tools/dmg/build.sh
