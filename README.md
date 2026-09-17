@@ -16,7 +16,7 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and the shi
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Root for `.swarm/`. Defaults to `$HOME`. |
-| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
+| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`; `tmux-solo` gives each agent a detached session that a UI can attach alone. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
@@ -37,7 +37,11 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `roles --json` | any | Print the configured routes and their resolved runners as JSON. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | Print the provider's accounts and automatic choice as JSON. |
 | `usage --json` | any | Print every account usage meter as JSON. |
+| `agents --json` | session | Print session agents and their pane state as JSON. |
+| `messages --json [--after <seq>]` | session | Print up to 500 session messages after a sequence number as JSON. |
+| `launch <id> <role> [--account <auto\|name>]` | session | Resolve the role, build its agent CLI command, and spawn it. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register, split a pane, run the command under the selected account, and print the pane id. |
+| `attach <id>` | session | Attach the terminal to the agent pane when the adapter supports it. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
