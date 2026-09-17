@@ -42,6 +42,34 @@ fn adapter(fixture: &Fixture, text: &str) {
     std::fs::write(fixture.home.join(".swarm/adapters/fake.conf"), text).unwrap();
 }
 
+fn tmux_command(fixture: &Fixture, args: &[&str], bin: &Path, log: &Path, mode: &str) -> Output {
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    command(fixture, args)
+        .env("SWARM_ADAPTER", "tmux-solo")
+        .env("FAKE_TMUX_LOG", log)
+        .env("FAKE_TMUX_MODE", mode)
+        .env("PATH", path)
+        .output()
+        .unwrap()
+}
+
+fn fake_tmux(fixture: &Fixture) -> (PathBuf, PathBuf) {
+    let bin = fixture.root.join("bin");
+    let log = fixture.root.join("tmux.log");
+    std::fs::create_dir_all(&bin).unwrap();
+    script(
+        &bin.join("tmux"),
+        r#"printf '%s\n' "$*" >> "$FAKE_TMUX_LOG"
+case "$FAKE_TMUX_MODE" in
+  lookup-empty) printf '\n' ;;
+  no-server) echo 'no server running on test socket' >&2; exit 1 ;;
+  mismatch) echo 'protocol version mismatch' >&2; exit 1 ;;
+  *) echo "bad fake tmux mode: $FAKE_TMUX_MODE" >&2; exit 9 ;;
+esac"#,
+    );
+    (bin, log)
+}
+
 fn fixture(name: &str) -> Fixture {
     let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
     let root =
@@ -295,5 +323,64 @@ fn attach_reports_missing_support_or_pane_and_passes_exit_status() {
         "swarm: no pane recorded\n"
     );
     assert_eq!(run(&fixture, &["attach", "coder-1"]).status.code(), Some(7));
+    adapter(
+        &fixture,
+        "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\nattach = kill -TERM $$\n",
+    );
+    assert_eq!(run(&fixture, &["attach", "coder-1"]).status.code(), Some(143));
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn tmux_solo_rejects_an_empty_session_lookup_for_close_and_attach() {
+    let fixture = fixture("tmux-empty-session");
+    assert!(run(&fixture, &["spawn", "coder-1", "code.complex"]).status.success());
+    let (bin, log) = fake_tmux(&fixture);
+
+    let closed = tmux_command(&fixture, &["close", "coder-1"], &bin, &log, "lookup-empty");
+    assert!(!closed.status.success());
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    assert_eq!(
+        swarm::store::pane_of(&connection, fixture.session.parse().unwrap(), "coder-1")
+            .unwrap()
+            .as_deref(),
+        Some("%1")
+    );
+
+    let attached = tmux_command(&fixture, &["attach", "coder-1"], &bin, &log, "lookup-empty");
+    assert!(!attached.status.success());
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(!calls.contains("kill-session"));
+    assert!(!calls.contains("attach-session"));
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn tmux_solo_list_ignores_only_no_server_errors() {
+    let fixture = fixture("tmux-list-errors");
+    assert!(run(&fixture, &["spawn", "coder-1", "code.complex"]).status.success());
+    let (bin, log) = fake_tmux(&fixture);
+
+    let missing = tmux_command(&fixture, &["agents", "--json"], &bin, &log, "no-server");
+    assert!(missing.status.success());
+    assert!(missing.stderr.is_empty());
+    let json: Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(json["agents"][0]["alive"], false);
+
+    let failed = tmux_command(&fixture, &["agents", "--json"], &bin, &log, "mismatch");
+    assert!(failed.status.success());
+    assert_eq!(String::from_utf8_lossy(&failed.stderr), "swarm: list failed: protocol version mismatch\n");
+    let json: Value = serde_json::from_slice(&failed.stdout).unwrap();
+    assert_eq!(json["agents"][0]["alive"], Value::Null);
+
+    let swept = tmux_command(&fixture, &["sweep"], &bin, &log, "mismatch");
+    assert!(!swept.status.success());
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    assert_eq!(
+        swarm::store::pane_of(&connection, fixture.session.parse().unwrap(), "coder-1")
+            .unwrap()
+            .as_deref(),
+        Some("%1")
+    );
     std::fs::remove_dir_all(fixture.root).unwrap();
 }

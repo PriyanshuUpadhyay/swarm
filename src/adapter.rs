@@ -40,6 +40,15 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
 }
 
 impl Adapter {
+    fn command(&self, line: &str, vars: &[(&str, &str)]) -> std::process::Command {
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(line);
+        for (key, value) in vars {
+            command.env(format!("SWARM_{}", key.to_uppercase()), value);
+        }
+        command
+    }
+
     pub fn run(&self, verb: &str, vars: &[(&str, &str)]) -> Result<String, Box<dyn std::error::Error>> {
         let line = match verb {
             "self" => &self.caller,
@@ -50,29 +59,16 @@ impl Adapter {
             "capture" => &self.capture,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
-        let mut command = std::process::Command::new("sh");
-        command.arg("-c").arg(line);
-        for (key, value) in vars {
-            command.env(format!("SWARM_{}", key.to_uppercase()), value);
-        }
-        let output = command.output()?;
+        let output = self.command(line, vars).output()?;
         if !output.status.success() {
             return Err(format!("{verb} failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    pub fn run_inherit(&self, verb: &str, vars: &[(&str, &str)]) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
-        let line = match verb {
-            "attach" => self.attach.as_ref().ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?,
-            _ => return Err(format!("adapter: unknown inherited verb {verb}").into()),
-        };
-        let mut command = std::process::Command::new("sh");
-        command.arg("-c").arg(line);
-        for (key, value) in vars {
-            command.env(format!("SWARM_{}", key.to_uppercase()), value);
-        }
-        Ok(command.status()?)
+    pub fn attach(&self, vars: &[(&str, &str)]) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        let line = self.attach.as_ref().ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?;
+        Ok(self.command(line, vars).status()?)
     }
 
     /// True when `pane` appears as a whole token in the list output, so %1 never matches %12.
@@ -116,9 +112,9 @@ mod tests {
     fn parses_and_runs_optional_attach_with_inherited_status() {
         let adapter = parse("fake", &format!("{FULL}attach = exit 7\n")).unwrap();
         assert_eq!(adapter.attach.as_deref(), Some("exit 7"));
-        assert_eq!(adapter.run_inherit("attach", &[]).unwrap().code(), Some(7));
+        assert_eq!(adapter.attach(&[]).unwrap().code(), Some(7));
         assert_eq!(
-            parse("fake", FULL).unwrap().run_inherit("attach", &[]).unwrap_err().to_string(),
+            parse("fake", FULL).unwrap().attach(&[]).unwrap_err().to_string(),
             "swarm: adapter fake has no attach"
         );
     }

@@ -1,4 +1,5 @@
 use std::env;
+use std::os::unix::process::ExitStatusExt;
 
 const RERING_AFTER_SECS: i64 = 60;
 
@@ -252,7 +253,7 @@ fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error
     let root = swarm::paths::root_dir()?;
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     let pane = swarm::store::pane_of(&connection, session_id()?, agent_id)?.ok_or("swarm: no pane recorded")?;
-    swarm::adapter::load(&root, &adapter_name())?.run_inherit("attach", &[("pane", &pane)])
+    swarm::adapter::load(&root, &adapter_name())?.attach(&[("pane", &pane)])
 }
 
 /// A child ended without `swarm finish`: send a fallback summary in its name and queue a
@@ -520,7 +521,7 @@ fn main() {
         && cmd == "attach"
     {
         match attach(agent_id) {
-            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+            Ok(status) => std::process::exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(0))),
             Err(error) => {
                 eprintln!("{error}");
                 std::process::exit(1);
