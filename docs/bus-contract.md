@@ -46,6 +46,29 @@ attach to one agent's pane alone.
 `attach` is a new verb that every adapter may declare and none must. `tmux.conf` and `herdr.conf`
 do not declare it.
 
+`interrupt` is an optional verb every shipped adapter declares. It presses Escape in `$SWARM_PANE`:
+`herdr pane send-keys "$SWARM_PANE" esc` for `herdr`, `tmux send-keys -t "$SWARM_PANE" Escape` for
+`tmux`, and the same with `-L swarm` for `tmux-solo`.
+
+## `swarm type <agent_id>`
+
+Caller `session`. Reads the text on stdin and types it into the agent's pane with the adapter's
+`ring` verb (`SWARM_PANE` is the agent's pane, `SWARM_TEXT` is the text), so the text is submitted
+with Enter the way a ring is. It prints nothing and exits 0. It fails before it runs anything with
+`swarm: no pane recorded` or `swarm: empty text` (stdin holds only whitespace). It writes no message
+row: typed text is input to the pane, not a bus message.
+
+## `swarm interrupt <agent_id>`
+
+Caller `session`. Runs the adapter's `interrupt` verb for the agent's pane, prints nothing, and
+exits 0. It fails before it runs anything with `swarm: adapter <name> has no interrupt` or
+`swarm: no pane recorded`.
+
+Example. Swarm shows session 10, whose chair is a Claude Code chat in Herdr pane `wBC:p2`. The owner
+types "use tmux" in the session's input box. Swarm runs `swarm type orchestrator` with
+`SWARM_ADAPTER=herdr` and `SWARM_SESSION_ID=10`, and the text lands in that chat as if typed there.
+Esc in the box runs `swarm interrupt orchestrator`.
+
 ## `swarm attach <agent_id>`
 
 Caller `session`. Runs the adapter's `attach` verb with `SWARM_PANE` set to the agent's pane and
@@ -106,6 +129,7 @@ migration 0007 has no `cwd` and is left out.
     {
       "id": 10,
       "talk_mode": "lane",
+      "adapter": "herdr",
       "cwd": "/Users/me/work/swarm/wt/main",
       "created_at": 1789600000,
       "chair_log": "/Users/me/.claude/projects/-Users-me-work-swarm-wt-main/cc272e02-a473-4131-991a-d2c42f340438.jsonl",
@@ -119,6 +143,9 @@ migration 0007 has no `cwd` and is left out.
 
 `swarm session new` records these, so any chair gets them, a CLI chat or Swarm:
 
+- `adapter` is the adapter name `session new` ran with (`SWARM_ADAPTER`, default `tmux`), from
+  migration 0008, or `null` for an older session. A reader that calls swarm about this session sets
+  `SWARM_ADAPTER` to it, never to its own adapter.
 - `cwd` is the absolute working directory of `swarm session new`.
 - `created_at` is Unix seconds at `session new`.
 - `chair_log` is the chair's Claude Code transcript, or `null`. When `CLAUDE_CODE_SESSION_ID` is set
