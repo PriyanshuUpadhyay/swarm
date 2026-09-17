@@ -21,6 +21,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
+    include_str!("../migrations/0006.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -154,6 +155,12 @@ pub fn inbox(
     session_id: i64,
     agent_id: &str,
 ) -> Result<Vec<Pending>, Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE message SET seen_at = unixepoch()
+         WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+           AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)",
+        (session_id, agent_id),
+    )?;
     let mut statement = connection.prepare(
         "SELECT seq, sender_id, kind, body_path FROM message
          WHERE session_id = ?1 AND recipient_id = ?2
@@ -266,27 +273,25 @@ pub fn messages(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn has_unread_older_than(
+pub fn mark_unseen_for_rering(
     connection: &Connection,
     session_id: i64,
     agent_id: &str,
     age_secs: i64,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let found: bool = connection.query_row(
-        "SELECT EXISTS (
-             SELECT 1 FROM message
-             WHERE session_id = ?1 AND recipient_id = ?2
-               AND created_at <= unixepoch() - ?3
-               AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
-               AND NOT EXISTS (
-                   SELECT 1 FROM read_mark
-                   WHERE message_seq = message.seq AND agent_id = ?2
-               )
-         )",
+    let changed = connection.execute(
+        "UPDATE message SET rung_at = unixepoch()
+         WHERE session_id = ?1 AND recipient_id = ?2
+           AND created_at <= unixepoch() - ?3
+           AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
+           AND seen_at IS NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM read_mark
+               WHERE message_seq = message.seq AND agent_id = ?2
+           )",
         (session_id, agent_id, age_secs),
-        |r| r.get(0),
     )?;
-    Ok(found)
+    Ok(changed > 0)
 }
 
 pub fn clear_pane(connection: &Connection, session_id: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -508,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn inbox_lists_pending_in_seq_order() {
+    fn inbox_lists_pending_in_seq_order_and_stamps_seen_once() {
         let mut connection = seed(0);
         let root = temp_root("inbox");
         send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "one").unwrap();
@@ -521,6 +526,11 @@ mod tests {
             .map(|m| (m.seq, m.sender_id.as_str(), m.kind.as_str(), m.body_path.as_str()))
             .collect();
         assert_eq!(seen, [(1, ORCHESTRATOR, "note", "runs/1/1.txt"), (3, ORCHESTRATOR, "ask", "runs/1/3.txt")]);
+        let seen_at: i64 = connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get(0)).unwrap();
+        assert!(seen_at > 0);
+        connection.execute("UPDATE message SET seen_at = 7 WHERE seq = 1", []).unwrap();
+        inbox(&connection, SESSION, CODER).unwrap();
+        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
         assert_eq!(inbox(&connection, SESSION, ORCHESTRATOR).unwrap().len(), 1);
         assert!(inbox(&connection, OTHER_SESSION, OUTSIDER).unwrap().is_empty());
     }
@@ -608,18 +618,23 @@ mod tests {
     }
 
     #[test]
-    fn finds_only_old_unread_messages() {
+    fn finds_only_old_unseen_messages() {
         let mut connection = seed(0);
         let root = temp_root("old-unread");
         send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "old").unwrap();
         send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "new").unwrap();
         connection.execute("UPDATE message SET created_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
 
-        assert!(has_unread_older_than(&connection, SESSION, CODER, 60).unwrap());
-        assert!(!has_unread_older_than(&connection, SESSION, CODER, 62).unwrap());
-        assert!(!has_unread_older_than(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 62).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+        assert!(mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
+        inbox(&connection, SESSION, CODER).unwrap();
+        connection.execute("UPDATE message SET rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
+        connection.execute("UPDATE message SET seen_at = NULL, rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
         ack(&connection, SESSION, 1, CODER).unwrap();
-        assert!(!has_unread_older_than(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
     }
 
     #[test]
@@ -692,8 +707,40 @@ mod tests {
         assert!(inbox(&connection, SESSION, CODER).unwrap().is_empty());
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 5);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
+        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), created_at);
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 0).unwrap());
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
         assert!(foreign_key_check.query([]).unwrap().next().unwrap().is_none());
+    }
+
+    #[test]
+    fn migration_from_version_five_keeps_messages() {
+        let root = temp_root("seen-migration");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        let connection = Connection::open(&db).unwrap();
+        for migration in &MIGRATIONS[..5] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection
+            .execute_batch(
+                "PRAGMA user_version = 5;
+                 INSERT INTO session (id, talk_mode) VALUES (1, 'lane');
+                 INSERT INTO agent (id, session_id, role) VALUES ('orchestrator', 1, 'orchestrator'), ('coder', 1, 'coder');
+                 INSERT INTO message (seq, session_id, sender_id, recipient_id, kind, body_path)
+                     VALUES (1, 1, 'orchestrator', 'coder', 'ask', 'runs/1/1.txt');",
+            )
+            .unwrap();
+        drop(connection);
+
+        let connection = open(&db).unwrap();
+
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
+        assert_eq!(connection.query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get::<_, String>(0)).unwrap(), "runs/1/1.txt");
+        let (created_at, seen_at): (i64, i64) = connection
+            .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(seen_at, created_at);
     }
 }
