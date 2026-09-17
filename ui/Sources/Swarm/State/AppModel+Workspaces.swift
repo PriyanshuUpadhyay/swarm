@@ -387,18 +387,18 @@ extension AppModel {
         var swarmSession: SwarmSessionID?
         if opensWith.cliAgentKind != nil, let session = started.session {
             let model = model(for: started.workspace)
-            guard let swarm = await model.prepareSwarmChair(for: session) else { return }
-            swarmSession = swarm
             let tabs = CenterTabStore.shared
             tabs.load(workspaceID: started.workspace.id)
-            let tab = tabs.add(
+            _ = tabs.add(
                 kind: .terminal, workspaceID: started.workspace.id,
                 title: session.agentKind.label, agentSessionID: session.id
             )
-            model.prepareSwarmChair(swarm, inPane: tab.id)
             model.pendingCLILaunches.insert(session.id)
         }
         await reload()
+        if opensWith.cliAgentKind != nil, let session = started.session {
+            swarmSession = await model(for: started.workspace).prepareSwarmChair(for: session)
+        }
         if swarmSession != nil { _ = await refreshSwarmSessionsOnce() }
 
         // Nothing waits for this: the worktree exists and the first turn goes out long before a

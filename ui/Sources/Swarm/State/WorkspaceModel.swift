@@ -534,11 +534,10 @@ final class WorkspaceModel {
               let session = await createSession(title: title, controls: controls),
               let swarm = await prepareSwarmChair(for: session)
         else { return nil }
-        let tab = CenterTabStore.shared.add(
+        _ = CenterTabStore.shared.add(
             kind: .terminal, workspaceID: workspace.id,
             title: title ?? session.agentKind.label, agentSessionID: session.id
         )
-        prepareSwarmChair(swarm, inPane: tab.id)
         pendingCLILaunches.insert(session.id)
         await launchCLI(session, prompt: "", repo: repo)
         _ = await app.refreshSwarmSessionsOnce()
@@ -568,14 +567,6 @@ final class WorkspaceModel {
             )
             return nil
         }
-    }
-
-    func prepareSwarmChair(_ session: SwarmSessionID, inPane pane: String) {
-        let environment = ProcessInfo.processInfo.environment
-        let home = environment["SWARM_HOME"] ?? environment["HOME"] ?? NSHomeDirectory()
-        TerminalSessionStore.shared.prepareChairEnvironment(
-            SwarmChairLaunch.environment(session: session, home: home), inPane: pane
-        )
     }
 
     /// Retires the old runner only after its replacement has been saved successfully.
@@ -1376,10 +1367,20 @@ final class WorkspaceModel {
         guard !Task.isCancelled,
               let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
               sessions.contains(where: { $0.id == cliSession.id }),
-              let command = prepareCLICommand(
-                for: cliSession, prompt: prompt, resuming: providerID
+              let plan = SwarmChairLaunch.plan(
+                workspaceID: workspace.id,
+                session: cliSession,
+                paneID: TerminalTabID(terminal.id),
+                swarmSession: swarm,
+                directory: workspace.path,
+                prompt: prompt,
+                home: ProcessInfo.processInfo.environment["SWARM_HOME"]
+                    ?? ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory(),
+                workspaceEnvironment: WorkspaceManager(store: store).environment(
+                    for: workspace, repo: repo, port: port
+                ),
+                resuming: providerID
               ) else { return }
-        prepareSwarmChair(swarm, inPane: terminal.id)
         if cliSession.agentSessionID == nil,
            let initialID = InteractiveChatLifecycle.initialProviderSessionID(
             for: cliSession.agentKind, sessionID: cliSession.id
@@ -1394,16 +1395,16 @@ final class WorkspaceModel {
         try? FileManager.default.removeItem(at: AgentKind.interactiveStatusURL(sessionID: cliSession.id))
         let terminals = TerminalSessionStore.shared
         terminals.useStore(store)
-        terminals.startInteractive(
-            SwarmChairLaunch.registrationCommand + " && " + command,
-            inPane: terminal.id
-        )
-        _ = terminals.terminal(
-            for: TerminalTab(id: TerminalTabID(terminal.id), workspaceID: workspace.id, title: terminal.title),
-            workspace: workspace, repo: repo, port: port, directory: terminal.directory
-        )
-        pendingCLILaunches.remove(cliSession.id)
-        pendingCLIPrompts[cliSession.id] = nil
+        defer {
+            pendingCLILaunches.remove(cliSession.id)
+            pendingCLIPrompts[cliSession.id] = nil
+        }
+        do {
+            try await SwarmChairLaunch.start(plan) { try await terminals.launch($0) }
+        } catch {
+            app.alert = SwarmAlert(title: "Could not launch the agent", message: error.readableMessage)
+            return
+        }
     }
 
     private func prepareCLICommand(

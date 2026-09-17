@@ -109,13 +109,30 @@ struct SwarmSessionListingTests {
         ) == "Fix the parser")
         #expect(SwarmSessionTitle.make(
             sessionID: SwarmSessionID("10"), firstUserPrompt: nil
-        ) == "Session 10")
+        ) == "Chat")
         let long = String(repeating: "x", count: SwarmSessionTitle.limit + 1)
         let capped = SwarmSessionTitle.make(
             sessionID: SwarmSessionID("10"), firstUserPrompt: long
         )
         #expect(capped.count == SwarmSessionTitle.limit)
         #expect(capped.hasSuffix("…"))
+    }
+
+    @Test("the newest workspace chat is represented by the workspace row")
+    func workspaceChats() {
+        let workspace = WorkspaceID("workspace")
+        let old = fixture(id: "10", createdAt: 10)
+        let new = fixture(id: "11", createdAt: 20)
+        let other = fixture(id: "12", createdAt: 30)
+        let rows = [
+            SwarmProjectSession(sessions: [old], title: "Old", workspaceID: workspace),
+            SwarmProjectSession(sessions: [other], title: "Other", workspaceID: WorkspaceID("other")),
+            SwarmProjectSession(sessions: [new], title: "New", workspaceID: workspace),
+        ]
+
+        #expect(SwarmSessionListing.workspaceChats(
+            rows, workspaceID: workspace
+        ).map(\.id) == [new.id, old.id])
     }
 
     @Test("agent digests omit the chair and pick the newest summary")

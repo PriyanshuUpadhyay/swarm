@@ -48,7 +48,6 @@ final class TerminalSessionStore {
     /// shell is forked rather than worked out again later: the decision was taken there, against a
     /// snapshot that has moved on since, and asking twice is how the two answers come apart.
     private var paneSession: [String: String] = [:]
-    private var pendingEnvironments: [String: [String: String]] = [:]
     @ObservationIgnored private var swarmBus: (any SwarmBus)?
     @ObservationIgnored private var recordedChairIDs: [SessionID: String] = [:]
 
@@ -427,7 +426,7 @@ final class TerminalSessionStore {
             return view
         }
 
-        var extra = pendingEnvironments.removeValue(forKey: tab.id.rawValue) ?? [:]
+        var extra: [String: String] = [:]
         if let repo, let store = repoStore {
             extra = WorkspaceManager(store: store).environment(
                 for: workspace, repo: repo, port: port
@@ -541,8 +540,18 @@ final class TerminalSessionStore {
         }
     }
 
-    func prepareChairEnvironment(_ environment: [String: String], inPane pane: String) {
-        pendingEnvironments[pane] = environment
+    /// Starts a chat in its tmux session without creating a terminal view.
+    func launch(_ plan: SwarmChairLaunchPlan) async throws {
+        ensurePersistence()
+        guard let persistence else {
+            throw SwarmProfileError.unavailable("tmux is required to start a chat")
+        }
+        try await persistence.launch(plan)
+        paneOwner[plan.paneID.rawValue] = plan.workspaceID
+        paneSession[plan.paneID.rawValue] = plan.tmuxSession
+        interactiveLaunchDeadlines[plan.paneID.rawValue] = Date().addingTimeInterval(8)
+        interactiveStates[plan.sessionID] = .starting
+        onAgentActivityChanged?()
     }
 
     private func refreshAgentActivity() async {

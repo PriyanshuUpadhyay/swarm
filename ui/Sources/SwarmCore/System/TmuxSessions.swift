@@ -328,6 +328,22 @@ public struct TmuxCommand: Sendable, Equatable {
         return arguments(tail)
     }
 
+    /// Starts a pane without attaching a terminal view. A later `attachOrCreate` call finds the
+    /// same named session and attaches to it instead of starting the command again.
+    public func launchDetached(_ plan: SwarmChairLaunchPlan) -> [String] {
+        var tail = ["set-environment", "-gr", "NO_COLOR", ";", "new-session", "-A", "-d",
+                    "-s", plan.tmuxSession, "-c", plan.directory]
+        for key in plan.environment.keys.sorted() {
+            tail += ["-e", "\(key)=\(plan.environment[key]!)"]
+        }
+        let command = SwarmChairLaunch.registrationCommand + " && exec "
+            + TerminalLaunchScript.command(
+                executable: plan.executable, arguments: plan.arguments
+            )
+        tail += ["/bin/sh", "-c", command]
+        return arguments(tail)
+    }
+
     public func pasteBuffer(_ buffer: String, intoAgentPaneOf session: String) -> [String] {
         arguments([
             "load-buffer", "-b", buffer, "-", ";",

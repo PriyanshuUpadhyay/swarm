@@ -79,6 +79,37 @@ struct SwarmBusTests {
             == "swarm agent add orchestrator orchestrator")
     }
 
+    @Test("builds and hands off a detached chair plan with the first prompt")
+    func detachedChairPlan() async throws {
+        let workspace = WorkspaceID("workspace")
+        let session = Session(
+            id: SessionID("chat"), workspaceID: workspace,
+            model: "gpt-5", effort: "high", agentKind: .codex
+        )
+        let plan = try #require(SwarmChairLaunch.plan(
+            workspaceID: workspace,
+            session: session,
+            paneID: TerminalTabID("pane"),
+            swarmSession: workspaceSession,
+            directory: "/workspace/project",
+            prompt: "Fix the launch",
+            home: "/swarm-home",
+            workspaceEnvironment: ["SWARM_UI_PORT": "3000"],
+            statusURL: URL(fileURLWithPath: "/tmp/chat-status.json")
+        ))
+        let recorder = ChairLaunchRecorder()
+
+        await SwarmChairLaunch.start(plan) { await recorder.record($0) }
+
+        #expect(await recorder.plan == plan)
+        #expect(plan.tmuxSession == TmuxSessions.sessionName(
+            workspaceID: workspace, paneID: "pane"
+        ))
+        #expect(plan.arguments.suffix(2) == ["--", "Fix the launch"])
+        #expect(plan.environment["SWARM_SESSION_ID"] == "42")
+        #expect(plan.environment["SWARM_UI_PORT"] == "3000")
+    }
+
     @Test("rejects a non-integer session id")
     func rejectsInvalidSessionID() async {
         let (bus, _) = makeBus([.result(), .result(stdout: "not-an-id\n")])
@@ -357,6 +388,14 @@ struct SwarmBusTests {
         await #expect(throws: expected) {
             try await bus.agents(in: workspaceSession)
         }
+    }
+}
+
+private actor ChairLaunchRecorder {
+    private(set) var plan: SwarmChairLaunchPlan?
+
+    func record(_ plan: SwarmChairLaunchPlan) {
+        self.plan = plan
     }
 }
 

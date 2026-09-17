@@ -101,6 +101,20 @@ final class TerminalPersistence {
         return result.ok
     }
 
+    func launch(_ plan: SwarmChairLaunchPlan) async throws {
+        guard let command else {
+            throw SwarmProfileError.unavailable("tmux is required to start a chat")
+        }
+        let result = try await Shell.run(
+            command.executable, command.launchDetached(plan), timeout: .seconds(10)
+        )
+        guard result.ok else {
+            let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw SwarmProfileError.failed(message.isEmpty ? "tmux could not start the chat" : message)
+        }
+        knownSessions.insert(plan.tmuxSession)
+    }
+
     func send(_ key: TerminalKey, toAgentPaneOf session: String) async -> Bool {
         guard let command,
               let result = try? await Shell.run(

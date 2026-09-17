@@ -36,6 +36,15 @@ public enum SwarmPathIdentity: Sendable, Hashable {
 
 /// The pure decisions behind the sessions shown under each project.
 public enum SwarmSessionListing {
+    public static func workspaceChats(
+        _ sessions: [SwarmProjectSession], workspaceID: WorkspaceID
+    ) -> [SwarmProjectSession] {
+        sessions.filter { $0.workspaceID == workspaceID }.sorted {
+            if $0.lastActivity != $1.lastActivity { return $0.lastActivity > $1.lastActivity }
+            return (Int($0.id.rawValue) ?? 0) > (Int($1.id.rawValue) ?? 0)
+        }
+    }
+
     /// Sessions made by repeated `swarm session new` calls in one chair chat are one chat row.
     public static func chatGroups(_ sessions: [SwarmSession]) -> [[SwarmSession]] {
         var grouped: [String: [SwarmSession]] = [:]
@@ -126,7 +135,7 @@ public enum SwarmSessionTitle {
             .first
             .map(String.init)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !firstLine.isEmpty else { return "Session \(sessionID.rawValue)" }
+        guard !firstLine.isEmpty else { return "Chat" }
         guard firstLine.count > limit else { return firstLine }
         return String(firstLine.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
     }

@@ -163,6 +163,32 @@ public struct SwarmChair: Sendable, Hashable {
     public var argument: String { provider + ":" + id.rawValue }
 }
 
+public struct SwarmChairLaunchPlan: Sendable, Equatable {
+    public var workspaceID: WorkspaceID
+    public var sessionID: SessionID
+    public var paneID: TerminalTabID
+    public var tmuxSession: String
+    public var directory: String
+    public var executable: String
+    public var arguments: [String]
+    public var environment: [String: String]
+
+    public init(
+        workspaceID: WorkspaceID, sessionID: SessionID, paneID: TerminalTabID,
+        tmuxSession: String, directory: String, executable: String,
+        arguments: [String], environment: [String: String]
+    ) {
+        self.workspaceID = workspaceID
+        self.sessionID = sessionID
+        self.paneID = paneID
+        self.tmuxSession = tmuxSession
+        self.directory = directory
+        self.executable = executable
+        self.arguments = arguments
+        self.environment = environment
+    }
+}
+
 public enum SwarmChairLaunch {
     public static func environment(
         session: SwarmSessionID, home: String
@@ -176,6 +202,51 @@ public enum SwarmChairLaunch {
     }
 
     public static let registrationCommand = "swarm agent add orchestrator orchestrator"
+
+    public static func plan(
+        workspaceID: WorkspaceID,
+        session: Session,
+        paneID: TerminalTabID,
+        swarmSession: SwarmSessionID,
+        directory: String,
+        prompt: String,
+        home: String,
+        workspaceEnvironment: [String: String],
+        resuming: String? = nil,
+        statusURL: URL? = nil
+    ) -> SwarmChairLaunchPlan? {
+        guard let agentArguments = session.agentKind.interactiveArguments(
+            prompt: prompt, sessionID: session.id, model: session.model,
+            effort: session.effort, permissionMode: session.permissionMode,
+            resuming: resuming
+        ) else { return nil }
+        let status = statusURL ?? AgentKind.interactiveStatusURL(sessionID: session.id)
+        let arguments = [
+            "-u", "NO_COLOR", "TERM=xterm-256color", "COLORTERM=truecolor",
+            "SWARM_UI_CLI_STATUS_FILE=\(status.path)", session.agentKind.executableName,
+        ] + agentArguments
+        let chairEnvironment = environment(session: swarmSession, home: home)
+        return SwarmChairLaunchPlan(
+            workspaceID: workspaceID,
+            sessionID: session.id,
+            paneID: paneID,
+            tmuxSession: TmuxSessions.sessionName(
+                workspaceID: workspaceID, paneID: paneID.rawValue
+            ),
+            directory: directory,
+            executable: "/usr/bin/env",
+            arguments: arguments,
+            environment: workspaceEnvironment.merging(chairEnvironment) { _, chair in chair }
+        )
+    }
+
+    @MainActor
+    public static func start(
+        _ plan: SwarmChairLaunchPlan,
+        using launcher: (SwarmChairLaunchPlan) async throws -> Void
+    ) async rethrows {
+        try await launcher(plan)
+    }
 }
 
 public struct SwarmSessionList: Sendable, Hashable, Codable {

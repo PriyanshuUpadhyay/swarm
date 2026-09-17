@@ -845,7 +845,11 @@ struct SidebarView: View {
 
     /// One workspace in the native sidebar list.
     private func workspaceRow(_ workspace: Workspace, projectName: String) -> some View {
-        let target = SidebarSelection.workspace(workspace.id)
+        let chat = SwarmSessionListing.workspaceChats(
+            app.swarmSessionsByRepo[workspace.repoID] ?? [], workspaceID: workspace.id
+        ).first
+        let target = chat.map { SidebarSelection.swarmSession($0.id) }
+            ?? .workspace(workspace.id)
         return SidebarWorkspaceRow(
             workspace: workspace,
             arrival: arrival,

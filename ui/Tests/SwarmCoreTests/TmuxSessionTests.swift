@@ -334,6 +334,25 @@ struct TmuxCommandTests {
         ])
     }
 
+    @Test("A detached chair starts registration and the CLI in its named session")
+    func detachedChair() {
+        let plan = SwarmChairLaunchPlan(
+            workspaceID: WorkspaceID("workspace"), sessionID: SessionID("chat"),
+            paneID: TerminalTabID("pane"), tmuxSession: "swarmui-workspace-pane",
+            directory: "/tmp/work", executable: "/usr/bin/env",
+            arguments: ["codex", "--", "Fix the launch"],
+            environment: ["SWARM_SESSION_ID": "42"]
+        )
+        let arguments = command.launchDetached(plan)
+
+        #expect(arguments.contains("swarmui-workspace-pane"))
+        #expect(arguments.contains("SWARM_SESSION_ID=42"))
+        #expect(arguments.suffix(3) == [
+            "/bin/sh", "-c",
+            "swarm agent add orchestrator orchestrator && exec '/usr/bin/env' 'codex' '--' 'Fix the launch'",
+        ])
+    }
+
     @Test("Composer input targets the agent pane and uses a named paste buffer")
     func agentInput() {
         let textArguments = command.pasteBuffer("composer", intoAgentPaneOf: "swarm-x")
