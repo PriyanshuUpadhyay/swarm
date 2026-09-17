@@ -42,6 +42,8 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `messages --json [--after <seq>]` | session | Print up to 500 session messages after a sequence number as JSON. |
 | `launch <id> <role> [--account <auto\|name>]` | session | Resolve the role, build its agent CLI command, and spawn it. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register, split a pane, run the command under the selected account, and print the pane id. |
+| `type <id>` | session | Type stdin into the agent pane and submit it with Enter. |
+| `interrupt <id>` | session | Press Escape in the agent pane when the adapter supports it. |
 | `attach <id>` | session | Attach the terminal to the agent pane when the adapter supports it. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |

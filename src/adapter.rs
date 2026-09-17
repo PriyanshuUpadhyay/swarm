@@ -8,6 +8,7 @@ pub struct Adapter {
     pub close: String,
     pub capture: String,
     pub attach: Option<String>,
+    pub interrupt: Option<String>,
 }
 
 pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Error>> {
@@ -26,6 +27,7 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
         close: take("close")?,
         capture: take("capture")?,
         attach: verbs.remove("attach"),
+        interrupt: verbs.remove("interrupt"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -57,6 +59,10 @@ impl Adapter {
             "list" => &self.list,
             "close" => &self.close,
             "capture" => &self.capture,
+            "interrupt" => self
+                .interrupt
+                .as_ref()
+                .ok_or_else(|| format!("swarm: adapter {} has no interrupt", self.name))?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         let output = self.command(line, vars).output()?;
@@ -101,6 +107,7 @@ mod tests {
         assert_eq!(adapter.ring, "herdr pane send-text");
         assert_eq!(adapter.name, "herdr");
         assert_eq!(adapter.attach, None);
+        assert_eq!(adapter.interrupt, None);
         let missing = parse("herdr", "spawn = a\nring = b\nlist = c\nclose = d\ncapture = e\n").unwrap_err().to_string();
         assert_eq!(missing, "adapter herdr: missing self");
         let unknown = parse("herdr", &format!("{FULL}dance = d\n")).unwrap_err().to_string();
@@ -116,6 +123,16 @@ mod tests {
         assert_eq!(
             parse("fake", FULL).unwrap().attach(&[]).unwrap_err().to_string(),
             "swarm: adapter fake has no attach"
+        );
+    }
+
+    #[test]
+    fn parses_and_runs_optional_interrupt() {
+        let adapter = parse("fake", &format!("{FULL}interrupt = printf interrupted\n")).unwrap();
+        assert_eq!(adapter.run("interrupt", &[]).unwrap(), "interrupted");
+        assert_eq!(
+            parse("fake", FULL).unwrap().run("interrupt", &[]).unwrap_err().to_string(),
+            "swarm: adapter fake has no interrupt"
         );
     }
 

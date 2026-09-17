@@ -43,6 +43,7 @@ pub struct MessageList {
 pub struct Session {
     pub id: i64,
     pub talk_mode: String,
+    pub adapter: Option<String>,
     pub cwd: String,
     pub created_at: i64,
     pub chair_log: Option<String>,

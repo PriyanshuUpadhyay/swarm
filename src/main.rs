@@ -21,7 +21,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -360,9 +360,16 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     if let [cmd, sub, talk_mode] = args && cmd == "session" && sub == "new" {
+        let adapter = adapter_name();
         println!(
             "{}",
-            swarm::store::create_session(&connection, talk_mode, &env::current_dir()?, chair_log().as_deref())?
+            swarm::store::create_session(
+                &connection,
+                talk_mode,
+                &env::current_dir()?,
+                chair_log().as_deref(),
+                Some(&adapter),
+            )?
         );
         return Ok(());
     }
@@ -372,6 +379,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .map(|row| swarm::bus::Session {
                 id: row.id,
                 talk_mode: row.talk_mode,
+                adapter: row.adapter,
                 cwd: row.cwd,
                 created_at: row.created_at,
                 chair_log: row.chair_log,
@@ -489,6 +497,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         swarm::adapter::load(&root, &adapter_name())?.run("close", &[("pane", &pane)])?;
         return swarm::store::clear_pane(&connection, session_id, child);
     }
+    if let [cmd, agent_id] = args && cmd == "type" {
+        let text = std::io::read_to_string(std::io::stdin())?;
+        if text.trim().is_empty() {
+            return Err("swarm: empty text".into());
+        }
+        let pane = swarm::store::pane_of(&connection, session_id()?, agent_id)?
+            .ok_or("swarm: no pane recorded")?;
+        swarm::adapter::load(&root, &adapter_name())?
+            .run("ring", &[("pane", &pane), ("text", &text)])?;
+        return Ok(());
+    }
+    if let [cmd, agent_id] = args && cmd == "interrupt" {
+        let pane = swarm::store::pane_of(&connection, session_id()?, agent_id)?
+            .ok_or("swarm: no pane recorded")?;
+        swarm::adapter::load(&root, &adapter_name())?.run("interrupt", &[("pane", &pane)])?;
+        return Ok(());
+    }
     let (session_id, agent_id) = identity()?;
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
@@ -578,7 +603,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
         swarm::store::add_agent(&connection, session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, session, CODER, "%2").unwrap();
@@ -612,7 +637,7 @@ mod tests {
     fn sweep_reports_a_dead_child_as_before() {
         let root = std::env::temp_dir().join(format!("swarm-dead-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
         swarm::store::add_agent(&connection, session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, session, CODER, "%2").unwrap();
@@ -643,7 +668,7 @@ mod tests {
         )
         .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
 
         add_agent(&connection, &root, "fake", session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, session, CODER, "coder").unwrap();

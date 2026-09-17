@@ -127,7 +127,7 @@ struct SwarmSessionListingTests {
         id: String, cwd: String = "/repo/wt/main", createdAt: Int = 1
     ) -> SwarmSession {
         SwarmSession(
-            id: SwarmSessionID(id), talkMode: "lane", cwd: cwd, createdAt: createdAt,
+            id: SwarmSessionID(id), talkMode: "lane", adapter: nil, cwd: cwd, createdAt: createdAt,
             chairLog: nil, agents: 2, messages: 4, lastMessageAt: nil
         )
     }

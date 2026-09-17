@@ -1,7 +1,8 @@
 use serde_json::Value;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
@@ -36,6 +37,17 @@ fn command(fixture: &Fixture, args: &[&str]) -> Command {
 
 fn run(fixture: &Fixture, args: &[&str]) -> Output {
     command(fixture, args).output().unwrap()
+}
+
+fn run_with_stdin(fixture: &Fixture, args: &[&str], input: &str) -> Output {
+    let mut child = command(fixture, args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child.wait_with_output().unwrap()
 }
 
 fn unscoped_command(home: &Path, args: &[&str]) -> Command {
@@ -161,6 +173,7 @@ fn session_new_records_working_directory_time_and_safe_chair_log() {
     let output = unscoped_command(&fixture.home, &["session", "new", "relay"])
         .env("CLAUDE_CONFIG_DIR", &config)
         .env("CLAUDE_CODE_SESSION_ID", "abc-123")
+        .env("SWARM_ADAPTER", "herdr")
         .current_dir(&fixture.root)
         .output()
         .unwrap();
@@ -171,16 +184,17 @@ fn session_new_records_working_directory_time_and_safe_chair_log() {
         .unwrap()
         .as_secs() as i64;
     let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
-    let metadata: (String, i64, Option<String>) = connection
+    let metadata: (String, i64, Option<String>, Option<String>) = connection
         .query_row(
-            "SELECT cwd, created_at, chair_log FROM session WHERE id = ?1",
+            "SELECT cwd, created_at, chair_log, adapter FROM session WHERE id = ?1",
             [session],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .unwrap();
     assert_eq!(metadata.0, fixture.root.canonicalize().unwrap().to_string_lossy());
     assert!((before..=after).contains(&metadata.1));
     assert_eq!(metadata.2.as_deref(), Some(log.to_string_lossy().as_ref()));
+    assert_eq!(metadata.3.as_deref(), Some("herdr"));
 
     for id in [None, Some("bad/id"), Some(".."), Some("missing")] {
         let mut command = unscoped_command(&fixture.home, &["session", "new", "lane"]);
@@ -212,8 +226,8 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
         .execute("INSERT INTO session (talk_mode) VALUES ('lane')", [])
         .unwrap();
     let legacy = connection.last_insert_rowid();
-    let older = swarm::store::create_session(&connection, "relay", Path::new("/work/older"), None).unwrap();
-    let newer = swarm::store::create_session(&connection, "open", Path::new("/work/newer"), None).unwrap();
+    let older = swarm::store::create_session(&connection, "relay", Path::new("/work/older"), None, None).unwrap();
+    let newer = swarm::store::create_session(&connection, "open", Path::new("/work/newer"), None, Some("herdr")).unwrap();
     connection
         .execute("UPDATE session SET created_at = 10 WHERE id = ?1", [older])
         .unwrap();
@@ -241,6 +255,7 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
     assert_eq!(sessions[0], serde_json::json!({
         "id": newer,
         "talk_mode": "open",
+        "adapter": "herdr",
         "cwd": "/work/newer",
         "created_at": 20,
         "chair_log": null,
@@ -249,6 +264,7 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
         "last_message_at": 40
     }));
     assert_eq!(sessions[1]["id"], older);
+    assert_eq!(sessions[1]["adapter"], Value::Null);
     assert_eq!(sessions[1]["agents"], 1);
     assert_eq!(sessions[1]["messages"], 0);
     assert_eq!(sessions[1]["last_message_at"], Value::Null);
@@ -414,6 +430,74 @@ fn launch_validates_resolution_and_sends_argv_to_the_pane() {
     assert!(line.contains("'CODEX_HOME=/profiles/work' 'codex' '--model' 'gpt-test'"));
     assert!(line.contains("'sandbox_workspace_write.writable_roots=[\""));
     assert!(line.contains("/.swarm\"]' '--ask-for-approval' 'never'"));
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn type_runs_ring_without_writing_a_message_and_rejects_empty_text_or_missing_pane() {
+    let fixture = fixture("type");
+    assert!(run(&fixture, &["spawn", "coder-1", "code.complex"]).status.success());
+    let ring = fixture.root.join("ring");
+    adapter(
+        &fixture,
+        &format!(
+            "self = true\nspawn = true\nring = printf '%s:%s' \"$SWARM_PANE\" \"$SWARM_TEXT\" > '{}'\nlist = true\nclose = true\ncapture = true\ninterrupt = true\n",
+            ring.display()
+        ),
+    );
+
+    let typed = run_with_stdin(&fixture, &["type", "coder-1"], "hello");
+    assert!(typed.status.success(), "{}", String::from_utf8_lossy(&typed.stderr));
+    assert!(typed.stdout.is_empty());
+    assert_eq!(std::fs::read_to_string(&ring).unwrap(), "%1:hello");
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM message", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+
+    let empty = run_with_stdin(&fixture, &["type", "coder-1"], " \n\t");
+    assert!(!empty.status.success());
+    assert_eq!(String::from_utf8_lossy(&empty.stderr), "swarm: empty text\n");
+    let missing = run_with_stdin(&fixture, &["type", "orchestrator"], "hello");
+    assert!(!missing.status.success());
+    assert_eq!(String::from_utf8_lossy(&missing.stderr), "swarm: no pane recorded\n");
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn interrupt_runs_optional_verb_and_reports_missing_support_or_pane() {
+    let fixture = fixture("interrupt");
+    assert!(run(&fixture, &["spawn", "coder-1", "code.complex"]).status.success());
+    let interrupted = fixture.root.join("interrupted");
+    adapter(
+        &fixture,
+        &format!(
+            "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\ninterrupt = printf '%s' \"$SWARM_PANE\" > '{}'\n",
+            interrupted.display()
+        ),
+    );
+
+    let output = run(&fixture, &["interrupt", "coder-1"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.stdout.is_empty());
+    assert_eq!(std::fs::read_to_string(interrupted).unwrap(), "%1");
+    let missing = run(&fixture, &["interrupt", "orchestrator"]);
+    assert!(!missing.status.success());
+    assert_eq!(String::from_utf8_lossy(&missing.stderr), "swarm: no pane recorded\n");
+
+    adapter(
+        &fixture,
+        "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    );
+    let unsupported = run(&fixture, &["interrupt", "coder-1"]);
+    assert!(!unsupported.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&unsupported.stderr),
+        "swarm: adapter fake has no interrupt\n"
+    );
     std::fs::remove_dir_all(fixture.root).unwrap();
 }
 

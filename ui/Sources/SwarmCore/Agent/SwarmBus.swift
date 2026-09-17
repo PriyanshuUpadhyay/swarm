@@ -72,6 +72,7 @@ public struct SwarmMessageList: Sendable, Hashable, Codable {
 public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var id: SwarmSessionID
     public var talkMode: String
+    public var adapter: String?
     public var cwd: String
     public var createdAt: Int
     public var chairLog: String?
@@ -80,11 +81,12 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var lastMessageAt: Int?
 
     public init(
-        id: SwarmSessionID, talkMode: String, cwd: String, createdAt: Int,
+        id: SwarmSessionID, talkMode: String, adapter: String?, cwd: String, createdAt: Int,
         chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?
     ) {
         self.id = id
         self.talkMode = talkMode
+        self.adapter = adapter
         self.cwd = cwd
         self.createdAt = createdAt
         self.chairLog = chairLog
@@ -94,13 +96,14 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, talkMode, cwd, createdAt, chairLog, agents, messages, lastMessageAt
+        case id, talkMode, adapter, cwd, createdAt, chairLog, agents, messages, lastMessageAt
     }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = SwarmSessionID(String(try values.decode(Int.self, forKey: .id)))
         talkMode = try values.decode(String.self, forKey: .talkMode)
+        adapter = try values.decodeIfPresent(String.self, forKey: .adapter)
         cwd = try values.decode(String.self, forKey: .cwd)
         createdAt = try values.decode(Int.self, forKey: .createdAt)
         chairLog = try values.decodeIfPresent(String.self, forKey: .chairLog)
@@ -122,6 +125,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         }
         try values.encode(numericID, forKey: .id)
         try values.encode(talkMode, forKey: .talkMode)
+        try values.encodeIfPresent(adapter, forKey: .adapter)
         try values.encode(cwd, forKey: .cwd)
         try values.encode(createdAt, forKey: .createdAt)
         try values.encodeIfPresent(chairLog, forKey: .chairLog)
