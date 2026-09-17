@@ -23,10 +23,11 @@ struct PaneSplitTests {
         #expect(PaneSplit.duplicating(tool, tabKind: .browser) == .freshBrowser)
     }
 
-    @Test("the review and the notes cannot be split, so the menu has to grey rather than lie")
+    @Test("single-instance tool tabs cannot be split, so the menu has to grey rather than lie")
     func theOnesWithNoSecondCopy() {
         #expect(PaneSplit.duplicating(tool, tabKind: .review) == .nothing)
         #expect(PaneSplit.duplicating(tool, tabKind: .notes) == .nothing)
+        #expect(PaneSplit.duplicating(tool, tabKind: .swarmAgent) == .nothing)
         #expect(!PaneSplit.duplicating(tool, tabKind: .review).opensAPane)
         #expect(!PaneSplit.duplicating(tool, tabKind: .notes).opensAPane)
     }
@@ -44,11 +45,19 @@ struct PaneSplitTests {
         #expect(Set(splittable) == [.terminal, .browser])
     }
 
+    @Test("a swarm agent tab never joins a split tree")
+    func swarmAgentStaysWhole() {
+        #expect(!PaneSplit.canJoin(tool, tabKind: .swarmAgent))
+        #expect(PaneSplit.canJoin(tool, tabKind: .review))
+        #expect(PaneSplit.canJoin(chat, tabKind: nil))
+    }
+
     /// The raw values are what `center.tabs.<workspaceID>` was written with, and the move into the
     /// core must not have changed a byte of them.
     @Test("the stored spellings survived the move into the core")
     func wireFormat() {
-        #expect(CenterTabKind.allCases.map(\.rawValue) == ["terminal", "browser", "review", "notes"])
+        #expect(CenterTabKind.allCases.map(\.rawValue)
+            == ["terminal", "browser", "swarmAgent", "review", "notes"])
     }
 
     // MARK: - Which row of a Split submenu carries the key
@@ -68,7 +77,7 @@ struct PaneSplitTests {
     /// eating `Cmd+\`.
     @Test("a pane that cannot be split has no row for the key")
     func noRowWhenNothingOpens() {
-        for kind in [CenterTabKind.review, .notes] {
+        for kind in [CenterTabKind.review, .notes, .swarmAgent] {
             let outcome = PaneSplit.duplicating(tool, tabKind: kind)
             #expect(outcome.sameAgainKind == nil, "\(kind)")
             #expect(!outcome.opensAPane, "\(kind)")

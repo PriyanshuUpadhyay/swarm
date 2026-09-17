@@ -27,6 +27,7 @@ struct TabRenamingTests {
     func theFixedTitles() {
         #expect(!TabRenaming.canRename(tool, tabKind: .review))
         #expect(!TabRenaming.canRename(tool, tabKind: .notes))
+        #expect(!TabRenaming.canRename(tool, tabKind: .swarmAgent))
     }
 
     /// The same answer `PaneSplit` gives a pointer at a tab that has gone, so the menu greys

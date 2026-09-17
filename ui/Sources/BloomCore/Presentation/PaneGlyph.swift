@@ -27,6 +27,7 @@ public enum PaneGlyph {
     public static let chat = "text.bubble"
     public static let terminal = "apple.terminal"
     public static let browser = "globe"
+    public static let swarmAgent = "person.crop.circle.badge.gearshape"
     public static let review = "doc.text"
     public static let notes = "note.text"
 

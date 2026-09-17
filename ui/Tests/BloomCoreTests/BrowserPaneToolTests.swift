@@ -310,6 +310,7 @@ struct BrowserPaneToolTests {
         let expected: [CenterTabKind: PaneCensusKind] = [
             .terminal: .terminal,
             .browser: .browser,
+            .swarmAgent: .swarmAgent,
             .review: .review,
             .notes: .notes,
         ]

@@ -132,6 +132,7 @@ public enum WorkspaceTabDetail: Sendable, Equatable {
     /// The browser's own chrome, reusing what `pane_list` and `browser_read` report, so the number
     /// in this listing is the number the six `browser_` tools take.
     case browser(BrowserPaneReport)
+    case swarmAgent(WorkspaceTabSwarmAgent)
     case review(WorkspaceTabReview)
     case notes(WorkspaceTabNote)
 
@@ -140,6 +141,7 @@ public enum WorkspaceTabDetail: Sendable, Equatable {
         case .chat: .chat
         case .terminal: .terminal
         case .browser: .browser
+        case .swarmAgent: .swarmAgent
         case .review: .review
         case .notes: .notes
         }
@@ -150,9 +152,30 @@ public enum WorkspaceTabDetail: Sendable, Equatable {
         case .chat(let chat): chat.json
         case .terminal(let terminal): terminal.json
         case .browser(let browser): browser.json
+        case .swarmAgent(let agent): agent.json
         case .review(let review): review.json
         case .notes(let note): note.json
         }
+    }
+}
+
+/// A swarm agent tab, using only the bus state Bloom already polls for the tab itself.
+public struct WorkspaceTabSwarmAgent: Sendable, Equatable {
+    public var agent: SwarmAgentID
+    public var role: String?
+    public var alive: Bool?
+
+    public init(agent: SwarmAgentID, role: String?, alive: Bool?) {
+        self.agent = agent
+        self.role = role
+        self.alive = alive
+    }
+
+    public var json: JSONValue {
+        var fields: [String: JSONValue] = ["agent": .string(agent.rawValue)]
+        fields["role"] = role.map(JSONValue.string) ?? .null
+        fields["alive"] = alive.map(JSONValue.bool) ?? .null
+        return .object(fields)
     }
 }
 
