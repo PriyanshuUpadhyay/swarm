@@ -31,7 +31,7 @@ struct SwarmAgentPaneView: View {
                 systemImage: "checkmark.circle",
                 description: Text("\(agent.rawValue) has ended.")
             )
-        case .startTerminal, .terminal:
+        case .terminal:
             terminal()
         case .reattach:
             VStack(spacing: 0) {

@@ -1,4 +1,4 @@
-/// What one swarm agent pane draws, and whether its terminal process must start.
+/// What one swarm agent pane draws.
 public enum SwarmAgentPaneState: Sendable, Hashable {
     public enum Attachment: Sendable, Hashable {
         case notStarted
@@ -8,7 +8,6 @@ public enum SwarmAgentPaneState: Sendable, Hashable {
 
     case noLivePane
     case agentEnded
-    case startTerminal
     case terminal
     case reattach
 
@@ -20,7 +19,7 @@ public enum SwarmAgentPaneState: Sendable, Hashable {
             self = .agentEnded
         case true:
             self = switch attachment {
-            case .notStarted: .startTerminal
+            case .notStarted: .terminal
             case .running: .terminal
             case .exited: .reattach
             }

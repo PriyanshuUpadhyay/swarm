@@ -25,18 +25,13 @@ struct SwarmAgentPaneStateTests {
         #expect(exited == .agentEnded)
     }
 
-    @Test("a live agent starts its first attachment")
-    func startsTerminal() {
-        let state = SwarmAgentPaneState(isAlive: true, attachment: .notStarted)
-
-        #expect(state == .startTerminal)
-    }
-
-    @Test("a running attachment stays visible")
+    @Test("a live agent shows its attachment")
     func terminal() {
-        let state = SwarmAgentPaneState(isAlive: true, attachment: .running)
+        let new = SwarmAgentPaneState(isAlive: true, attachment: .notStarted)
+        let running = SwarmAgentPaneState(isAlive: true, attachment: .running)
 
-        #expect(state == .terminal)
+        #expect(new == .terminal)
+        #expect(running == .terminal)
     }
 
     @Test("an exited attachment offers reattach only while the agent is live")

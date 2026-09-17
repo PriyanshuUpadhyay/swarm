@@ -202,10 +202,8 @@ final class TerminalSessionStore {
     ) -> BloomTerminalView {
         let key = SwarmAgentPaneKey(agent: agent, session: session)
         if let terminal = swarmAgentTerminals[key] {
-            if !terminal.hasStarted, let workspaceID {
-                swarmAgentOwners[key] = workspaceID
-                startSwarmAgentTerminal(terminal, key: key, bus: bus)
-            }
+            if swarmAgentOwners[key] == nil { swarmAgentOwners[key] = workspaceID }
+            if !terminal.hasStarted { startSwarmAgentTerminal(terminal, key: key, bus: bus) }
             return terminal
         }
 
@@ -215,10 +213,8 @@ final class TerminalSessionStore {
             self.swarmAgentAttachments[key] = .exited
         }
         swarmAgentTerminals[key] = terminal
-        if let workspaceID {
-            swarmAgentOwners[key] = workspaceID
-            startSwarmAgentTerminal(terminal, key: key, bus: bus)
-        }
+        swarmAgentOwners[key] = workspaceID
+        startSwarmAgentTerminal(terminal, key: key, bus: bus)
         return terminal
     }
 
@@ -229,7 +225,6 @@ final class TerminalSessionStore {
     ) {
         let key = SwarmAgentPaneKey(agent: agent, session: session)
         guard swarmAgentAttachments[key] == .exited,
-              swarmAgentOwners[key] != nil,
               let terminal = swarmAgentTerminals[key] else { return }
         swarmAgentAttachments[key] = nil
         startSwarmAgentTerminal(terminal, key: key, bus: bus)
