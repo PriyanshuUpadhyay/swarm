@@ -583,23 +583,11 @@ struct BloomCommands: Commands {
         }
 
         CommandGroup(replacing: .help) {
-            MenuCommand(.help) {
-                NSWorkspace.shared.open(AppSite.helpURL)
-            }
-
             // Replay the wizard from its greeting, not the cached screen from the last visit.
             MenuCommand(.welcome) {
                 WelcomeWindow.show(trigger: .firstRun, restarting: true)
             }
 
-            Divider()
-
-            // Below the divider because a row about an address filed next to the manual would read
-            // as documentation about a feature. It is also where somebody looks after meeting the
-            // word once in the welcome sequence and wanting the address again.
-            MenuCommand(.postcardware) {
-                PostcardWindow.show()
-            }
         }
     }
 

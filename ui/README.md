@@ -1,51 +1,26 @@
-# Bloom
+# Swarm UI
 
-An agent development environment, native to the Mac.
+Swarm's native macOS UI is based on Bloom by Spatie. It remains available under the MIT licence.
 
-[![Tests](https://github.com/spatie/bloom/actions/workflows/test.yml/badge.svg)](https://github.com/spatie/bloom/actions/workflows/test.yml)
-[![Latest release](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fdownloads.runbloom.app%2Fappcast.xml&query=%2F%2Fitem%5B1%5D%2Ftitle&label=release&style=flat-square)](https://github.com/spatie/bloom/releases)
+![Swarm UI](art/overview.png)
 
-[![Bloom](art/overview.png)](https://runbloom.app)
-
-Bloom runs coding agents in git worktrees. One window holds a sidebar of projects and the
+The UI runs coding agents in git worktrees. One window holds a sidebar of projects and the
 workspaces under them, the agent's conversation in the centre, and what it changed on the right. A
 workspace is a real worktree on disk with a branch of its own, so a dozen tasks can run at once
 without treading on each other.
 
-Describe a task and Bloom cuts the branch, cuts the worktree, copies the files you named across,
+Describe a task and the UI cuts the branch, cuts the worktree, copies the files you named across,
 runs your setup script and starts an agent in it. You read the transcript while it works, review
 the diff against the merge base, open a terminal standing in the worktree, and open and merge the
 pull request from the same window.
 
 It is written in Swift on the system frameworks, with two dependencies: SwiftTerm for the terminal
-panes and Sparkle for updates. There is no account to create. Bloom drives the agent CLIs already
+panes and Sparkle for updates. There is no account to create. The UI drives the agent CLIs already
 installed on your Mac.
 
-## Support us
-
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source).
-You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-Bloom is postcardware. It is free to use, and we highly appreciate you sending us a postcard from
-your hometown, mentioning what you are building with it. You'll find our address on
-[our contact page](https://spatie.be/about-us). We publish all received postcards on
-[our virtual postcard wall](https://spatie.be/open-source/postcards).
-
-## Installation
+## Build
 
 Bloom needs macOS 26 or later.
-
-Install the Apple Silicon release with [Homebrew](https://github.com/spatie/homebrew-bloom):
-
-```bash
-brew install --cask spatie/bloom/spatie-bloom
-```
-
-The cask is named `spatie-bloom` because Homebrew's `bloom` cask is an unrelated file manager.
-
-Download the disk image from [runbloom.app](https://runbloom.app), and drag Bloom into your Applications
-folder. Every release is signed, notarised and stapled, then published to a Sparkle appcast, so an
-installed copy offers you each new version as it lands.
 
 Bloom ships no agent of its own. It runs the CLIs you have installed:
 
@@ -58,36 +33,16 @@ Bloom ships no agent of its own. It runs the CLIs you have installed:
 Cursor (`cursor-agent`) and OpenCode (`opencode`) are detected and reported on the Agents settings
 screen, but neither has a backend in Bloom, so neither is offered where a chat is started.
 
-### Building from source
-
 You need Xcode 26, or a Swift 6.2 toolchain.
 
 ```bash
-git clone https://github.com/spatie/bloom.git
-cd bloom
-./Tools/dev-build.sh --fast --no-launch
+make build
+make app
 ```
 
-This installs `~/Applications/Bloom Dev.app` with a separate database, preferences and URL scheme.
-Open that copy when you want to try your changes. It does not replace the released application or
-use its data. See [the architecture guide](docs/ARCHITECTURE.md) before contributing.
-By default the dev script builds a committed revision. For current edits, including uncommitted and
-untracked files that Git does not ignore, use `make dev-fast`. It installs the same Bloom Dev.app,
-uses the same dev data, and restarts only the dev copy. It builds in debug mode with a separate,
-persistent cache for this checkout. The first build fills the cache; later builds reuse it.
-
-Use `./Tools/dev-build.sh --fast --no-launch` to install without restarting, or
-`./Tools/dev-build.sh --fast --no-install` to build without installing or launching. Fast mode cannot
-be combined with a revision. It keeps the normal assets and App Intents metadata.
-
-Working with an AI agent? [AGENTS.md](AGENTS.md) indexes the shared project skills for Claude and
-Codex, including `bloom-dev-build` and `bloom-release`. In Claude, invoke `/bloom-dev-build` or
-`/bloom-release`; in Codex, use `$bloom-dev-build` or `$bloom-release`. The skills are stored in
-`.claude/skills/` and linked from `.agents/skills/`, so a normal clone includes both entry points.
-
-`make` on its own lists every target. `make build` compiles without installing or launching.
-`make app` and `make run` retain the production bundle identity, so use the isolated dev build for
-day-to-day development.
+`make build` compiles every target. `make app` assembles a debug application bundle. Read
+[CLAUDE.md](CLAUDE.md) before contributing. [AGENTS.md](AGENTS.md) indexes the shared Swift project
+skills for Claude and Codex.
 
 There is no `.xcodeproj`, on purpose. Open `Package.swift` in Xcode and you get the targets, the
 schemes, the debugger and the previews; `CLAUDE.md` has the section explaining what a checked-in
@@ -284,8 +239,7 @@ it, so they answer "has this already been worked out" rather than touring the co
   in it: what broke, why, and what now stops it.
 
 [`CLAUDE.md`](CLAUDE.md) is the house style: where a file goes, what belongs in the core rather than
-in a view, and why the linters say what they say. [`RELEASING.md`](RELEASING.md) covers signing,
-notarising and the appcast.
+in a view, and why the linters say what they say.
 
 ## Testing
 
@@ -325,22 +279,10 @@ they are opt-in:
 BLOOM_LIVE=1 ./Tools/test-core.sh LiveAgent
 ```
 
-## Changelog
-
-Every release, with what changed in it, is on
-[runbloom.app/changelog](https://runbloom.app/changelog) and on the
-[releases page](https://github.com/spatie/bloom/releases).
-
-## Contributing
-
-Please see [CONTRIBUTING](https://github.com/spatie/.github/blob/main/CONTRIBUTING.md) for details.
-
-## Security
-
-If you discover any security related issues, please email [security@spatie.be](mailto:security@spatie.be)
-instead of using the issue tracker.
-
 ## Credits
+
+Swarm's UI is based on Bloom by Spatie. The original copyright notice stays in
+[LICENSE.md](LICENSE.md).
 
 - [Freek Van der Herten](https://github.com/freekmurze)
 - [All Contributors](../../contributors)

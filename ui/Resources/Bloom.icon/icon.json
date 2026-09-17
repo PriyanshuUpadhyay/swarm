@@ -57,8 +57,8 @@
      }
     },
     {
-     "image-name": "spatie.svg",
-     "name": "Spatie",
+     "image-name": "wave.svg",
+     "name": "Wave",
      "fill": {
       "linear-gradient": [
        "srgb:0.2235,0.5333,0.6353,1.000",

@@ -2,18 +2,14 @@ import Foundation
 
 /// The steps the welcome window walks through, and the rules for moving between them.
 ///
-/// There are five, and two of them are not always there. The window used to be one screen that
+/// There are four, and two are not always there. The window used to be one screen that
 /// opened straight onto four probes, which meant the first thing a new Bloom ever said to anybody
 /// was a list of what their Mac might be missing. That reads as a form. A greeting first, then the
 /// checks, is what turns the same two facts into a welcome, and it costs one press.
 ///
-/// **The third step is an offer rather than a stage, and that is the whole reason `OnboardingFlow`
-/// owns the sequence rather than this enum.** Bloom can be driven from the owner's own terminal by
-/// running one `claude mcp add` command, and until it was offered here it lived in a settings pane
-/// nobody browses. It is shown only when there is something to offer: this copy of Bloom has a
-/// bridge, and the owner's user scope has not already been pointed at it. Somebody who ran the
-/// command last week is not asked to run it again, and somebody who never wants it presses the
-/// same button that ended the sequence before it existed.
+/// **The optional steps are offers rather than stages, and that is the whole reason
+/// `OnboardingFlow` owns the sequence rather than this enum.** Each is shown only when there is
+/// something to offer, and somebody who accepted an offer last week is not asked to do it again.
 public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiable, Codable {
     /// The mark, the name and one line saying what Bloom is. No information to act on.
     case greeting
@@ -31,25 +27,13 @@ public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiab
     /// The one command that couples the owner's own Claude Code to this Bloom. Optional, and
     /// omitted entirely when there is nothing to offer. See `OnboardingFlow.steps`.
     case commandLine
-    /// What Bloom asks for in return, which is a postcard, and the address to send it to.
-    ///
-    /// **Last, and the position is the argument.** Every screen before it wants something: a
-    /// press, a look at what the Mac is missing, a command run in a terminal, a prompt typed into
-    /// a form. This one wants nothing. It says Bloom is free, gives an address, and leaves. A
-    /// sequence that ends on a form ends on the reader still owing something, and a sequence that
-    /// ends here ends on the one screen they might remember a week later.
-    ///
-    /// Never left out because nothing about this Mac can make an address empty. The screen after
-    /// it does not exist, so the footer's button says "Start using Bloom" here and does exactly
-    /// that.
-    case postcard
 
     public var id: String { rawValue }
 
     /// Reading order. Which of these a given window actually walks is `OnboardingFlow.steps`,
     /// which is the same list with the optional step taken out when it has nothing to say.
     public static let order: [OnboardingStep] = [
-        .greeting, .checks, .keepAwake, .commandLine, .postcard,
+        .greeting, .checks, .keepAwake, .commandLine,
     ]
 
     /// True of a step the sequence may leave out. Nothing is lost by leaving it out: the offer is
@@ -70,8 +54,8 @@ public enum OnboardingStep: String, Sendable, Hashable, CaseIterable, Identifiab
 /// greeting is never a screen that has been taken away.
 ///
 /// `steps` is which screens exist for this window at all, and it is a list rather than a constant
-/// because the command line offer is only worth a screen when it has something to offer. Every
-/// move walks that list, so a step that is not in it is not somewhere back can land either.
+/// because each optional offer is only worth a screen when it has something to offer. Every move
+/// walks that list, so a step that is not in it is not somewhere back can land either.
 public struct OnboardingFlow: Sendable, Hashable {
     public private(set) var step: OnboardingStep
     /// Every step this window has shown, in the order it showed them. What makes back honest when
@@ -134,7 +118,7 @@ public struct OnboardingFlow: Sendable, Hashable {
         }
     }
 
-    /// Says whether an optional step is worth showing. Nothing else may change the sequence.
+    /// Says whether the command line step is worth showing.
     public mutating func offerCommandLine(_ isOffered: Bool) {
         offersCommandLine = isOffered
     }

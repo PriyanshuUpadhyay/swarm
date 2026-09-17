@@ -21,7 +21,7 @@ import BloomCore
 /// `Snapshot.render` picks this up as the "tool-rows" scene, light and dark.
 struct ToolRowSnapshotGallery: View {
     /// 154 characters, wrapped in nothing. This is the line from the screenshot.
-    private static let longCommand = "gh api repos/spatie/laravel-webhook-server/commits/"
+    private static let longCommand = "gh api repos/example/project/commits/"
         + "$(gh pr view 168 --json headRefOid -q .headRefOid)/check-runs "
         + "--jq '.check_runs[] | {name, conclusion}'"
 
@@ -77,7 +77,7 @@ struct ToolRowSnapshotGallery: View {
                 row("r3", "Read", ["file_path": .string("/tmp/app/src/WebhookCall.php")])
                 row("r4", "Glob", ["pattern": .string("app/Beacon/**/*.php")])
                 row("r5", "Grep", ["pattern": .string("await Git\\.|await Shell\\.")])
-                row("r6", "WebFetch", ["url": .string("https://spatie.be/docs/laravel-webhook-server")])
+                row("r6", "WebFetch", ["url": .string("https://example.com/docs")])
             }
 
             group("Prose, left in the reading face") {

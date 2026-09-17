@@ -78,7 +78,7 @@ struct InspectorTabStripGallery: View {
         PullRequest(
             number: 42,
             title: "Hide the checks tab when there is nothing to check",
-            url: "https://github.com/spatie/bloom/pull/42",
+            url: "https://github.com/example/project/pull/42",
             state: "OPEN",
             checks: checks,
             checksSummary: summary,

@@ -8,8 +8,7 @@
 #
 # `make lint` is the other linter and they are not the same thing. `Tools/house-rules.sh` holds
 # the conventions no off the shelf tool knows about: no em dashes, British spelling, typed ids, a
-# view that does not run a subprocess. SwiftLint holds the ones every Swift codebase shares. Both
-# run in the `lint` job of .github/workflows/test.yml, on the Linux runner, side by side.
+# view that does not run a subprocess. SwiftLint holds the ones every Swift codebase shares.
 #
 # **No `--config`, deliberately.** Passing one switches SwiftLint's nested configuration off,
 # and `Tests/.swiftlint.yml` is where two rules that are wrong for a test suite and right for
@@ -24,10 +23,8 @@
 # THIS SCRIPT DOES NOT INSTALL ANYTHING.
 #
 # SwiftLint is a 37MB binary from the internet and this is somebody's Mac. If it is not on the
-# PATH the script says how to get it and stops, rather than deciding for you. CI pins a version
-# and downloads it into the runner, which is a machine that is thrown away afterwards; see the
-# `Lint the Swift` step in .github/workflows/test.yml. Locally, `brew install swiftlint` is the
-# short answer, and the release page linked below is the one CI uses.
+# PATH the script says how to get it and stops, rather than deciding for you. Locally,
+# `brew install swiftlint` is the short answer, and the SwiftLint releases page provides binaries.
 #
 # A version skew between here and CI is worth knowing about and is not worth failing over: a
 # newer SwiftLint can add a rule that fires on code this configuration was green on. The version
@@ -43,7 +40,7 @@ SwiftLint is not on the PATH.
   brew install swiftlint
 
 or take the binary from https://github.com/realm/SwiftLint/releases and put it somewhere on the
-PATH. The version CI pins is in the `Lint the Swift` step of .github/workflows/test.yml.
+PATH.
 MISSING
   exit 1
 fi

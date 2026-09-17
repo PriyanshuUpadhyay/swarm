@@ -181,9 +181,7 @@ public enum MenuBarCatalogue {
 
         // MARK: Help
 
-        MenuBarItem(.help, in: .help, "Bloom Help", key: .command("?")),
         MenuBarItem(.welcome, in: .help, "Welcome to Bloom…"),
-        MenuBarItem(.postcardware, in: .help, "Send Us a Postcard…"),
     ]
 }
 
@@ -267,9 +265,7 @@ public enum MenuBarAction: String, CaseIterable, Sendable {
     case runScripts
     case stopAgent
 
-    case help
     case welcome
-    case postcardware
 }
 
 public struct MenuBarItem: Equatable, Sendable, Identifiable {

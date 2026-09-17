@@ -1,19 +1,20 @@
-# Bloom
+# Swarm UI
 
-Project skills for development builds, releases and Swift work are indexed in [AGENTS.md](AGENTS.md).
+This directory contains Swarm's macOS UI, based on Bloom by Spatie and kept under the MIT licence.
+
+Project skills for Swift work are indexed in [AGENTS.md](AGENTS.md).
 Claude and Codex share the same skill files; load only the skill and references relevant to the task.
 
 A macOS 26 app for running coding agents in git worktrees. One window: a sidebar of projects and
 their workspaces, a transcript in the centre, a terminal, an inspector. A workspace is a real
 worktree on disk, which is why so much of what follows is about not destroying one.
 
-Longer documents, pointed at rather than repeated here: `README.md` for what the app is,
-`RELEASING.md` for signing, notarising and the appcast, `docs/CODEX.md` for the Codex app-server
-protocol as measured, `docs/GROK.md` for Grok's ACP over stdio, `docs/PROTOCOL.md` for Claude Code's stream-json,
-`docs/AGENTS-INTEGRATION.md` for how the four CLIs are detected, `docs/BRIDGE.md` for the MCP
-bridge an agent calls back in through and which callers may call what, `docs/PLAN.md` for what was
-built and in what order, `docs/start-from.html` for the design note the create sheet's source picker
-was drawn from, which is a page to open in a browser rather than to read here.
+Longer documents are pointed at rather than repeated here. `README.md` says what the app is,
+`docs/CODEX.md` measures the Codex app-server protocol, `docs/GROK.md` covers Grok's ACP over stdio,
+and `docs/PROTOCOL.md` covers Claude Code's stream-json. `docs/AGENTS-INTEGRATION.md` says how the
+four CLIs are detected. `docs/BRIDGE.md` covers the MCP bridge an agent calls back through and which
+callers may call what. `docs/PLAN.md` says what was built and in what order. `docs/start-from.html`
+is the design note for the create sheet's source picker and is a page to open in a browser.
 
 ## Three targets, and the line between them
 
@@ -49,11 +50,8 @@ Everything real is a script in `Tools/`; the `Makefile` is the index.
 
 Anything that takes an argument is run directly: `./Tools/test-core.sh DiffParser`.
 
-This copy of Bloom lives in `ui/` of the swarm repository as a git subtree. `make master`,
-`make dev`, `make dev-fast`, `make dev-db`, `make release` and `make dmg` belong to Spatie's own
-checkout: the dev and master scripts cut a git worktree of the whole repository and expect
-`Package.swift` at its root, so they do not work here. Build with `make app` and open the bundle
-it prints.
+This copy of Bloom lives in `ui/` of the swarm repository as a git subtree. Build it with
+`make app`.
 
 `./Tools/test-core.sh` mirrors the core sources into a throwaway package with no app target, so one
 broken view cannot stop the core suite. Its head documents the environment it reads: `BLOOM_TEST_ID`
@@ -83,19 +81,15 @@ spelling, typed ids, a view that does not run a subprocess, only the app target 
 framework. SwiftLint is the half every Swift codebase shares, and `.swiftlint.yml` is tuned rather
 than default, because the defaults reported 1,634 violations here. The head of that file carries
 the count each disabled rule produced and the reason it is off, so a rule is argued with rather
-than guessed at. Both run in the `lint` job of `.github/workflows/test.yml`, on the Linux runner.
+than guessed at.
 
 SwiftLint is not installed by anything here. `brew install swiftlint`, or take the binary from the
-releases page; `Tools/swiftlint.sh` says so and stops rather than installing it for you. CI pins
-its own copy. `./Tools/swiftlint.sh --fix` applies what SwiftLint can correct itself, and the
-diff has to be read: it once rewrote `let _ =` inside a `@ViewBuilder` into code that does not
-compile.
+releases page; `Tools/swiftlint.sh` says so and stops rather than installing it for you.
+`./Tools/swiftlint.sh --fix` applies what SwiftLint can correct itself, and the diff has to be read:
+it once rewrote `let _ =` inside a `@ViewBuilder` into code that does not compile.
 
 **A rule of ours goes in `Tools/house-rules.sh`, never in a `custom_rules:` block.** SwiftLint
-matches a custom rule through SourceKit, there is no SourceKit on Linux, and the lint job prints
-"Skipping enabled rule 'custom_rules'" and goes green. A rule that passes on the author's Mac and
-is not run by the thing that gates the merge is worse than no rule, so `.swiftlint.yml` has no
-such block and says why.
+matches custom rules through SourceKit, so `.swiftlint.yml` has no such block and says why.
 
 ## Why there is no Xcode project
 
@@ -116,8 +110,8 @@ the strings live in `DevToolsCore.framework` next to `PBXProjectAttribute_LastUp
 no `project.pbxproj`, so there is nothing to stamp, which is why the prompt never appears. It is
 a real feature and it is genuinely unavailable here; the question is what it would modernise. It
 edits `XCBuildConfiguration`, which is a set of build settings that **`swift build` never reads**.
-`make build`, `Tools/build.sh`, `Tools/test-core.sh`, `.github/workflows/test.yml` and
-`release.yml` all go through SwiftPM, so a project accepting a recommended setting and the app
+`make build`, `Tools/build.sh` and `Tools/test-core.sh` all go through SwiftPM, so a project
+accepting a recommended setting and the app
 everybody actually installs would be two different builds, free to disagree, with only the project
 file being told about it.
 
@@ -138,9 +132,8 @@ never fires or fires every time. A generated project is the right answer to a di
 **What to do instead, when the toolchain moves.** The package equivalent of accepting recommended
 settings is `swift-tools-version` and the language mode at the head of `Package.swift`, which are
 `6.2` and `.swiftLanguageMode(.v6)` today, plus `.enableUpcomingFeature` for anything the next
-release wants opted into. CI already refuses to build on an Xcode older than 26 and compiles with
-`-warnings-as-errors`, so a toolchain that changes its mind about something says so on the next
-push rather than in a dialog nobody opened.
+release wants opted into. `make build` uses that toolchain directly, so a changed diagnostic is
+visible in the same build the app uses.
 
 `.gitignore` has ignored `*.xcodeproj` since before this was written. Leave it there. If you want
 Xcode, open `Package.swift`.
@@ -152,10 +145,8 @@ Run tests locally, and run the ones that cover what you touched:
 not a thing to sit and repeat.** The user is working at this Mac while you run, several agents
 build at once, and a sweep of everything on every edit is how the machine stalls.
 
-The workflows under `ui/.github/` are Spatie's and do not run in the swarm repository, because
-GitHub reads workflows only from the root `.github/`. Until the swarm CI builds this target, the
-green that counts is `make build` with zero warnings, `make lint`, and the core tests that cover
-the change, all run locally.
+The green that counts is `make build` with zero warnings, `make lint`, and the core tests that
+cover the change, all run locally.
 
 ## Persistence goes through `Store`
 

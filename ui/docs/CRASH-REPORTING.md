@@ -8,17 +8,6 @@ PLCrashReporter saves a native report at the crash. After the next launch, an in
 
 Reports contain build details, macOS version, Mac model, total RAM, binary identities and stack frames. Flare's Application context shows memory in readable units such as `48.00 GB` and `3.52 MB`, with the sample time alongside it. Available memory is a timestamped estimate of free plus inactive system memory. The SDK refreshes that snapshot every 30 seconds while the app runs and preserves the pre-crash sample when sending after restart. Bloom does not add transcripts, prompts, repository contents or user identity. Native source-level symbolication is separate; binary names and offsets are retained for it. The SDK currently uses JavaScript compatibility metadata, so Flare labels the reports as JavaScript.
 
-## Verify the integration
-
-```shell
-./Tools/build.sh
-./Tools/flare-probe.sh
-```
-
-The probe is debug-only and runs before SwiftUI constructs AppModel. Its script copies the built app into a marked temporary directory and changes its bundle identifier to `be.spatie.bloom.flare-probe`. It runs headlessly, with no database or real preferences, and never signals the running Bloom app.
-
-A successful run creates three Flare occurrences: a caught Swift error, a report with supplied frames and breadcrumbs, and a recovered native Swift trap. Filtering, cancellation and a missing-key failure create no occurrences. The crash phase waits 32 seconds to allow a periodic memory refresh; `crash-started.json` records its start time for comparison with the sample in Flare. The native report first encounters a controlled upload failure, then succeeds on the next invocation; a final invocation verifies that the queue is empty. Each phase writes JSON evidence under the printed probe directory. The fake user on the supplied-frames report exists only to verify Flare's user attributes.
-
 The package's own test suite additionally covers HTTP rejection, offline requests, malformed reports, concurrent calls, size limits and native conversion. Run it against the resolved dependency if changing the integration:
 
 ```shell

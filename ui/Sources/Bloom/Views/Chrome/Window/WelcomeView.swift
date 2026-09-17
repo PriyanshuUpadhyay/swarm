@@ -4,12 +4,11 @@ import BloomCore
 
 /// What the welcome window draws.
 ///
-/// Two starting steps, two optional offers and a postcard. The sequence is `OnboardingFlow` in the
-/// core rather than a set of booleans here, because which screen follows which, whether back is
-/// offered and whether an optional screen exists at all is the only part of a wizard that can be
-/// wrong, and a decision taken inside a view is a decision nothing can test. The greeting is
-/// `WelcomeGreeting`, the checks are the second step, the offers are `WelcomeKeepAwake` and
-/// `WelcomeCommandLine`, and the last is `WelcomePostcard`.
+/// Two starting steps and two optional offers. The sequence is `OnboardingFlow` in the core rather
+/// than a set of booleans here, because which screen follows which, whether back is offered and
+/// whether an optional screen exists at all is the only part of a wizard that can be wrong, and a
+/// decision taken inside a view is a decision nothing can test. The greeting is `WelcomeGreeting`,
+/// the checks are the second step, and the offers are `WelcomeKeepAwake` and `WelcomeCommandLine`.
 ///
 /// Three bands, in the register the About window established: the brand's plinth with the water
 /// moving in it, the reading ground under a hairline, and a chrome strip at the foot with the
@@ -18,7 +17,7 @@ import BloomCore
 /// is carrying information rather than decorating the column. See `soundingLine`.
 struct WelcomeView: View {
     let inspection: SetupInspection
-    /// The optional third step's model: the command, and whether the owner's own Claude Code has
+    /// The command line step's model: the command, and whether the owner's own Claude Code has
     /// already been told about this Bloom.
     let registration: CommandLineRegistration
     /// Which agent new sessions start on, offered under the checks when more than one is ready.
@@ -81,8 +80,6 @@ struct WelcomeView: View {
                 keepAwakeStep
             case .commandLine:
                 commandLineStep
-            case .postcard:
-                postcardStep
             }
         }
         .frame(width: Self.width)
@@ -159,23 +156,6 @@ struct WelcomeView: View {
             if let command = registration.command {
                 WelcomeCommandLine(command: command)
             }
-            hairline
-            footer
-        }
-        .transition(reduceMotion ? .identity : .opacity)
-    }
-
-    /// The screen the sequence ends on, in the same three bands as the rest.
-    ///
-    /// It has no control the footer needs to know about: the copy button and the link are the
-    /// screen's own, the footer's button says "Start using Bloom" and only leaves. The card is
-    /// told whether this is a first visit so that walking back and forward through the sequence
-    /// does not throw it onto the page again.
-    private var postcardStep: some View {
-        VStack(spacing: 0) {
-            plinth
-            hairline
-            WelcomePostcard(isFirstVisit: flow.isFirstVisit(to: .postcard))
             hairline
             footer
         }

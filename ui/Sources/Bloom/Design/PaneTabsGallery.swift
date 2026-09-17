@@ -28,7 +28,7 @@ struct PaneTabsGallery: View {
             row("One chat, a browser and a terminal", tabs: [
                 fixture("Chat", PaneGlyph.chat, active: true),
                 fixture(
-                    BrowserTabTitle.title(page: "Spatie", address: "https://spatie.be/", fallback: "Browser"),
+                    BrowserTabTitle.title(page: "Example", address: "https://example.com/", fallback: "Browser"),
                     PaneGlyph.browser
                 ),
                 fixture("Terminal", PaneGlyph.terminal),
@@ -64,10 +64,10 @@ struct PaneTabsGallery: View {
                 fixture(
                     BrowserTabTitle.title(
                         page: BrowserTabTitle.advance(
-                            from: .init(address: "https://spatie.be/", title: "Spatie"),
-                            to: .init(address: "https://spatie.be/open-source")
+                            from: .init(address: "https://example.com/", title: "Example"),
+                            to: .init(address: "https://example.com/docs")
                         ).title,
-                        address: "https://spatie.be/open-source",
+                        address: "https://example.com/docs",
                         fallback: "Browser"
                     ),
                     PaneGlyph.browser,
@@ -76,10 +76,10 @@ struct PaneTabsGallery: View {
                 fixture(
                     BrowserTabTitle.title(
                         page: BrowserTabTitle.advance(
-                            from: .init(address: "https://spatie.be/", title: "Spatie"),
-                            to: .init(address: "https://github.com/spatie")
+                            from: .init(address: "https://example.com/", title: "Example"),
+                            to: .init(address: "https://github.com/example")
                         ).title,
-                        address: "https://github.com/spatie",
+                        address: "https://github.com/example",
                         fallback: "Browser"
                     ),
                     PaneGlyph.browser
@@ -100,15 +100,15 @@ struct PaneTabsGallery: View {
             row("Browser tabs, wearing what the page gave them", tabs: [
                 page(
                     BrowserTabTitle.title(
-                        page: "Spatie", address: "https://spatie.be/", fallback: "Browser"
+                        page: "Example", address: "https://example.com/", fallback: "Browser"
                     ),
                     Self.redMark,
                     active: true
                 ),
                 page(
                     BrowserTabTitle.title(
-                        page: "spatie/laravel-backup",
-                        address: "https://github.com/spatie/laravel-backup",
+                        page: "example/project",
+                        address: "https://github.com/example/project",
                         fallback: "Browser 2"
                     ),
                     Self.darkMark
