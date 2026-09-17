@@ -429,6 +429,10 @@ final class CenterTabStore {
             stopShell(for: tab)
         case .swarmAgent:
             model.swarmAgents.sync(agentIDs: swarmAgents(in: tab.workspaceID))
+            // The live pane's `swarm attach` client outlives the view, so it stops with the tab.
+            if let agent = tab.swarmAgent, let session = model.swarmAgents.sessionID {
+                TerminalSessionStore.shared.release(agent: agent, session: session)
+            }
         // A review holds nothing: the diff is re-read from git whenever it is drawn, and any
         // unsaved edit belongs to `FileEditSession`, which outlives every view that shows it.
         case .review:
