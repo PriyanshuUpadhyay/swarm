@@ -90,6 +90,19 @@ struct ToolPaneView: View {
                 .id(tab.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+        case .swarmAgent:
+            if let agent = tab.swarmAgent {
+                SwarmAgentTabView(model: model, agent: agent)
+                    .id(tab.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ContentUnavailableView(
+                    "Agent unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("This saved tab does not name a swarm agent.")
+                )
+            }
+
         // No `.id(tab.id)`: a review is one long lived tab that is repointed rather than
         // replaced, and rebuilding it on every file would throw away the scroll position of the
         // list it is drawn from. `ReviewPaneView` keys its own content on the path instead.

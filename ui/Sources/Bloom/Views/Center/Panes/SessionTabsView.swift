@@ -242,7 +242,7 @@ struct SessionTabsView: View {
                 tabs.rename(tab, to: $0)
             },
             onCancelRename: { renamingID = nil },
-            onClose: { Task { await tabs.close(tab, in: model) } },
+            onClose: { requestClose(tab) },
             onSplitRight: splitAction(.tool(tab.id), axis: .horizontal, selected: selected),
             onSplitDown: splitAction(.tool(tab.id), axis: .vertical, selected: selected),
             onMoveLeft: moveAction(content, by: -1, in: entries),
@@ -285,6 +285,7 @@ struct SessionTabsView: View {
         switch tab.kind {
         case .terminal: "Close terminal"
         case .browser: "Close browser"
+        case .swarmAgent: "Close swarm agent"
         case .review: "Close the review"
         case .notes: "Close the notes"
         }
@@ -309,8 +310,18 @@ struct SessionTabsView: View {
 
     private func canSplit(_ content: PaneContent, selected: PaneContent?) -> Bool {
         guard let selected else { return false }
+        guard canJoinSplit(content), canJoinSplit(selected) else { return false }
         guard content != selected else { return duplicable(content) }
         return store.canAbsorb(content)
+    }
+
+    private func canJoinSplit(_ content: PaneContent) -> Bool {
+        let kind: CenterTabKind? = if case .tool(let id) = content {
+            tabs.tabs(for: model.workspace.id).first(where: { $0.id == id })?.kind
+        } else {
+            nil
+        }
+        return PaneSplit.canJoin(content, tabKind: kind)
     }
 
     /// Whether asking for this tab beside itself would produce anything. The rule was written out
@@ -499,6 +510,14 @@ struct SessionTabsView: View {
 
     private func close(_ session: Session) {
         CloseSessionAlert.shared.close(session, in: model)
+    }
+
+    private func requestClose(_ tab: CenterTab) {
+        if tab.kind == .swarmAgent {
+            SwarmAgentCloseAlert.shared.ask(tab, in: model)
+        } else {
+            Task { await tabs.close(tab, in: model) }
+        }
     }
 
     private func commitRename(_ session: Session, to newTitle: String) {
