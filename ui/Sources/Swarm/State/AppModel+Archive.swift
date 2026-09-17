@@ -431,6 +431,9 @@ extension AppModel {
             if let home = ArchiveNavigation.destination(leaving: selection, archiving: workspace.id) {
                 selection = home
             }
+            let swarmArchiveError = await archiveSwarmSessions(
+                inWorkspaceAt: workspace.path
+            )
             // The worktree is gone from disk now. Its shells are sitting in a directory that no
             // longer exists and its dev servers are still holding their ports, and nothing else in
             // the app will ever come back for them.
@@ -468,12 +471,21 @@ extension AppModel {
             } else {
                 archiveNotice = nil
             }
+            var archived = archiveNotice?.message ?? "\(workspace.name) was archived."
+            if let swarmArchiveError {
+                archived += " Swarm could not archive its chats: \(swarmArchiveError)"
+                Log.archive.error(
+                    "could not archive swarm chats for \(workspace.name, privacy: .public): \(swarmArchiveError, privacy: .public)"
+                )
+            }
             if let swarmCloseFailure = swarmClose?.failure {
-                let archived = archiveNotice?.message ?? "\(workspace.name) was archived."
                 notice = swarmCloseFailure.notice(after: archived)
                 Log.archive.error("\(swarmCloseFailure.logMessage, privacy: .public)")
-            } else if let archiveNotice {
-                notice = archiveNotice
+            } else if archiveNotice != nil || swarmArchiveError != nil {
+                notice = SwarmNotice(
+                    message: archived,
+                    dismissal: swarmArchiveError == nil ? .afterReading : .untilDismissed
+                )
             }
             Log.archive.info("archived \(workspace.name, privacy: .public)")
             return .archived

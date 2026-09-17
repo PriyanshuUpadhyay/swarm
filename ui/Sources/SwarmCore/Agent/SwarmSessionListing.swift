@@ -36,6 +36,16 @@ public enum SwarmPathIdentity: Sendable, Hashable {
 
 /// The pure decisions behind the sessions shown under each project.
 public enum SwarmSessionListing {
+    public static func archiveIDs(for chat: SwarmProjectSession) -> [SwarmSessionID] {
+        chat.sessions.map(\.id)
+    }
+
+    public static func archiveIDs(
+        forWorkspaceAt path: String, sessions: [SwarmSession]
+    ) -> [SwarmSessionID] {
+        sessions.filter { contains($0.cwd, in: path) }.map(\.id)
+    }
+
     public static func workspaceChats(
         _ sessions: [SwarmProjectSession], workspaceID: WorkspaceID
     ) -> [SwarmProjectSession] {

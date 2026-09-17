@@ -21,7 +21,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] | session chair <claude|codex>:<id> | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -441,6 +441,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, sub, value] = args && cmd == "session" && sub == "chair" {
         swarm::store::set_chair(&connection, session_id()?, parse_chair(value)?)?;
+        return Ok(());
+    }
+    if let [cmd, sub, ids @ ..] = args
+        && cmd == "session"
+        && sub == "archive"
+        && !ids.is_empty()
+    {
+        let ids = ids
+            .iter()
+            .map(|id| id.parse::<i64>().map_err(|_| USAGE))
+            .collect::<Result<Vec<_>, _>>()?;
+        swarm::store::archive_sessions(&mut connection, &ids)?;
         return Ok(());
     }
     if let [cmd, json] = args && cmd == "sessions" && json == "--json" {

@@ -115,6 +115,11 @@ public struct SwarmCLIBus: SwarmBus {
         try await read(["sessions", "--json"], as: SwarmSessionList.self).sessions
     }
 
+    public func archive(_ sessions: [SwarmSessionID]) async throws {
+        guard !sessions.isEmpty else { return }
+        _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
+    }
+
     public func send(
         _ body: String, to agent: SwarmAgentID, in session: SwarmSessionID
     ) async throws -> Int {

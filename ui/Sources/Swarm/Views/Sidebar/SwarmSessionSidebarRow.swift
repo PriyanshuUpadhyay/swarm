@@ -5,6 +5,7 @@ import SwarmCore
 struct SwarmSessionSidebarRow: View {
     var session: SwarmProjectSession
 
+    @Environment(AppModel.self) private var app
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.sidebarRowIndent) private var rowIndent
 
@@ -40,5 +41,10 @@ struct SwarmSessionSidebarRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(session.title)
         .accessibilityValue(session.isRunning ? "Running chat" : "Stopped chat")
+        .contextMenu {
+            Button("Archive", role: .destructive) {
+                Task { await app.archiveSwarmChat(session) }
+            }
+        }
     }
 }

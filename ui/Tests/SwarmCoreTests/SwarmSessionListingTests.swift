@@ -135,6 +135,26 @@ struct SwarmSessionListingTests {
         ).map(\.id) == [new.id, old.id])
     }
 
+    @Test("archive targets cover a whole chat group")
+    func chatArchiveTargets() {
+        let old = fixture(id: "10")
+        let new = fixture(id: "11")
+        let chat = SwarmProjectSession(sessions: [new, old], title: "Grouped chat")
+
+        #expect(SwarmSessionListing.archiveIDs(for: chat) == [new.id, old.id])
+    }
+
+    @Test("workspace archive targets use a path component boundary")
+    func workspaceArchiveTargets() {
+        let root = fixture(id: "10", cwd: "/work/project")
+        let child = fixture(id: "11", cwd: "/work/project/topic")
+        let sibling = fixture(id: "12", cwd: "/work/project-two")
+
+        #expect(SwarmSessionListing.archiveIDs(
+            forWorkspaceAt: "/work/project", sessions: [root, child, sibling]
+        ) == [root.id, child.id])
+    }
+
     @Test("agent digests omit the chair and pick the newest summary")
     func agentDigests() throws {
         let chair = SwarmAgentID("orchestrator")

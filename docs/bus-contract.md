@@ -128,11 +128,12 @@ whether the recipient ran `swarm ack` for it.
 
 ## `swarm sessions --json`
 
-Caller none: it needs no `SWARM_SESSION_ID` or `SWARM_AGENT_ID`. Every session that has a recorded
-`cwd`, newest first (`created_at` descending, then `id` descending). A session made before
-migration 0007 has no `cwd` and is left out.
+Caller none: it needs no `SWARM_SESSION_ID` or `SWARM_AGENT_ID`. Every unarchived session that has
+a recorded `cwd`, newest first (`created_at` descending, then `id` descending). A session made
+before migration 0007 has no `cwd` and is left out.
 
 Migration 0009 adds nullable `chair_provider TEXT` and `chair_id TEXT` columns to `session`.
+Migration 0010 adds nullable `archived_at INTEGER` to `session`.
 
 ```json
 {
@@ -173,6 +174,13 @@ Migration 0009 adds nullable `chair_provider TEXT` and `chair_id TEXT` columns t
 
 A reader gets one session's agents and messages with the calls above, with `SWARM_SESSION_ID` set
 to that session's `id`.
+
+## `swarm session archive <id>...`
+
+Caller none. Sets `archived_at` to the current Unix time for every id and prints nothing. The
+update is atomic. If any id is unknown, nothing changes and the command fails with
+`swarm: no session <id>`. Archived sessions stay in the bus database but `sessions --json` leaves
+them out.
 
 Example. A Claude Code chat in `~/work/swarm/wt/main` runs `swarm session new lane` and gets 10.
 Swarm has the project `~/work/swarm/wt/feature`, which shares that git repository, so it lists

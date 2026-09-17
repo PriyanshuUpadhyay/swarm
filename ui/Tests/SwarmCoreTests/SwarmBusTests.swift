@@ -252,6 +252,21 @@ struct SwarmBusTests {
         ])
     }
 
+    @Test("archives sessions without selecting one in the environment")
+    func archivesSessions() async throws {
+        let (bus, runner) = makeBus([.result()])
+
+        try await bus.archive([SwarmSessionID("8"), SwarmSessionID("13")])
+        try await bus.archive([])
+
+        #expect(await runner.recordedCalls() == [
+            call(
+                ["session", "archive", "8", "13"],
+                environment: adapterEnvironment
+            ),
+        ])
+    }
+
     @Test("discovered session calls use its adapter and stop when it has none")
     func routesDiscoveredSessionCalls() async throws {
         let bus = AdapterRecordingSwarmBus()

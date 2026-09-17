@@ -306,6 +306,8 @@ public protocol SwarmBus: Sendable {
     ) async throws -> [SwarmMessage]
     /// `swarm sessions --json`, with no session selected in the environment.
     func sessions() async throws -> [SwarmSession]
+    /// `swarm session archive <id>...`, with no session selected in the environment.
+    func archive(_ sessions: [SwarmSessionID]) async throws
     /// `swarm send <agent> ask` with `body` on stdin. Returns the new message's seq.
     func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int
     /// `swarm type <agent>` with `text` on stdin.
@@ -332,6 +334,11 @@ public extension SwarmBus {
     func setChair(_ chair: SwarmChair, in session: SwarmSessionID) async throws {
         throw SwarmProfileError.unavailable("swarm chair sessions are not available")
     }
+
+    func archive(_ sessions: [SwarmSessionID]) async throws {
+        throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
     func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
         try await agents(in: session, adapter: SwarmSessionInteraction.workspaceAdapter)
     }

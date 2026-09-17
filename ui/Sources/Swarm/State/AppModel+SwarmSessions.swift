@@ -74,4 +74,66 @@ extension AppModel {
             return false
         }
     }
+
+    func archiveSwarmChat(_ chat: SwarmProjectSession) async {
+        let ids = SwarmSessionListing.archiveIDs(for: chat)
+        do {
+            try await swarmBus.archive(ids)
+        } catch {
+            notice = SwarmNotice(message: "Could not archive the chat: \(error.readableMessage)")
+            return
+        }
+
+        if let workspaceID = chat.workspaceID,
+           let localSessionID = chat.localSessionID,
+           let workspace = workspaces.first(where: { $0.id == workspaceID }),
+           let store {
+            do {
+                if let session = try await store.session(id: localSessionID) {
+                    await model(for: workspace).closeSession(session)
+                }
+            } catch {
+                notice = SwarmNotice(
+                    message: "The swarm chat was archived, but its app chat could not close: "
+                        + error.readableMessage
+                )
+            }
+        }
+
+        removeSwarmSessions(ids)
+        guard selection.swarmSessionID == chat.id else { return }
+        if let workspaceID = chat.workspaceID {
+            let next = swarmSessionsByRepo.values.lazy.flatMap { $0 }
+                .filter { $0.workspaceID == workspaceID }
+                .sorted { $0.lastActivity > $1.lastActivity }
+                .first
+            selection = next.map { .swarmSession($0.id) } ?? .workspace(workspaceID)
+        } else {
+            selection = .home
+        }
+    }
+
+    /// Archives the bus rows rooted in one workspace after its worktree archive succeeds.
+    func archiveSwarmSessions(inWorkspaceAt path: String) async -> String? {
+        do {
+            let sessions = try await swarmBus.sessions()
+            let ids = SwarmSessionListing.archiveIDs(
+                forWorkspaceAt: path, sessions: sessions
+            )
+            try await swarmBus.archive(ids)
+            removeSwarmSessions(ids)
+            return nil
+        } catch {
+            return error.readableMessage
+        }
+    }
+
+    private func removeSwarmSessions(_ ids: [SwarmSessionID]) {
+        let archived = Set(ids)
+        for repoID in Array(swarmSessionsByRepo.keys) {
+            swarmSessionsByRepo[repoID]?.removeAll { chat in
+                chat.sessions.contains { archived.contains($0.id) }
+            }
+        }
+    }
 }

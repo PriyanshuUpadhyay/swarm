@@ -32,6 +32,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `init` | any | Create `.swarm/`, the db, `runs/`, and the shipped adapter files. |
 | `adapter check <name>` | any | Parse `.swarm/adapters/<name>.conf`, print `ok <name>`. |
 | `session new <lane\|relay\|open>` | any | Create a session, print its id. |
+| `session archive <id>...` | any | Archive each session and print nothing. |
 | `sessions --json` | any | List recorded sessions, newest first, with agent and message counts. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent without a pane. |

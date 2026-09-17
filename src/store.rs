@@ -25,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007.sql"),
     include_str!("../migrations/0008.sql"),
     include_str!("../migrations/0009.sql"),
+    include_str!("../migrations/0010.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -221,6 +222,24 @@ pub fn set_chair_log(
     Ok(())
 }
 
+pub fn archive_sessions(
+    connection: &mut Connection,
+    session_ids: &[i64],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tx = connection.transaction()?;
+    for session_id in session_ids {
+        let changed = tx.execute(
+            "UPDATE session SET archived_at = unixepoch() WHERE id = ?1",
+            [session_id],
+        )?;
+        if changed != 1 {
+            return Err(format!("swarm: no session {session_id}").into());
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct SessionRow {
     pub id: i64,
@@ -248,7 +267,7 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
                 (SELECT count(*) FROM message WHERE session_id = session.id),
                 (SELECT max(created_at) FROM message WHERE session_id = session.id)
          FROM session
-         WHERE cwd IS NOT NULL
+         WHERE cwd IS NOT NULL AND archived_at IS NULL
          ORDER BY session.created_at DESC, session.id DESC",
     )?;
     let rows = statement.query_map([], |row| {
@@ -799,9 +818,9 @@ mod tests {
         assert!(inbox(&connection, SESSION, CODER).unwrap().is_empty());
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 9);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), MIGRATIONS.len() as i64);
         let metadata = connection
-            .query_row("SELECT cwd, session.created_at, chair_log, adapter, chair_provider, chair_id FROM session WHERE id = 1", [], |r| {
+            .query_row("SELECT cwd, session.created_at, chair_log, adapter, chair_provider, chair_id, archived_at FROM session WHERE id = 1", [], |r| {
                 Ok((
                     r.get::<_, Option<String>>(0)?,
                     r.get::<_, Option<i64>>(1)?,
@@ -809,10 +828,11 @@ mod tests {
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, Option<String>>(4)?,
                     r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<i64>>(6)?,
                 ))
             })
             .unwrap();
-        assert_eq!(metadata, (None, None, None, None, None, None));
+        assert_eq!(metadata, (None, None, None, None, None, None, None));
         assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), created_at);
         assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 0).unwrap());
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
@@ -841,7 +861,7 @@ mod tests {
 
         let connection = open(&db).unwrap();
 
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 9);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), MIGRATIONS.len() as i64);
         assert_eq!(connection.query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get::<_, String>(0)).unwrap(), "runs/1/1.txt");
         let (created_at, seen_at): (i64, i64) = connection
             .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))

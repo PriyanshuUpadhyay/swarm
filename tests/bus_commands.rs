@@ -329,6 +329,64 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
 }
 
 #[test]
+fn session_archive_is_atomic_and_hides_archived_sessions() {
+    let fixture = fixture("session-archive");
+    let second = unscoped_command(&fixture.home, &["session", "new", "lane"])
+        .output()
+        .unwrap();
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+    let second = String::from_utf8(second.stdout).unwrap().trim().to_string();
+
+    let failed = unscoped_command(
+        &fixture.home,
+        &["session", "archive", &fixture.session, "999999"],
+    )
+    .output()
+    .unwrap();
+    assert!(!failed.status.success());
+    assert_eq!(String::from_utf8_lossy(&failed.stderr), "swarm: no session 999999\n");
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    let first_archived: Option<i64> = connection
+        .query_row(
+            "SELECT archived_at FROM session WHERE id = ?1",
+            [fixture.session.parse::<i64>().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(first_archived, None);
+    drop(connection);
+
+    let archived = unscoped_command(
+        &fixture.home,
+        &["session", "archive", &fixture.session, &second],
+    )
+    .output()
+    .unwrap();
+    assert!(archived.status.success(), "{}", String::from_utf8_lossy(&archived.stderr));
+    assert!(archived.stdout.is_empty());
+
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    let archived_count: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM session WHERE id IN (?1, ?2) AND archived_at IS NOT NULL",
+            (
+                fixture.session.parse::<i64>().unwrap(),
+                second.parse::<i64>().unwrap(),
+            ),
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived_count, 2);
+
+    let listed = unscoped_command(&fixture.home, &["sessions", "--json"])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert!(json["sessions"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
 fn sessions_json_resolves_and_caches_bounded_codex_log() {
     let fixture = fixture("codex-chair-log");
     let codex_home = fixture.root.join("codex");
