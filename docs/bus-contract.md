@@ -94,6 +94,48 @@ order, at most 500. A reader pages by passing the last `seq` it has.
 `body` is the text of the message's body file, or `null` when that file cannot be read. `read` is
 whether the recipient ran `swarm ack` for it.
 
+## `swarm sessions --json`
+
+Caller none: it needs no `SWARM_SESSION_ID` or `SWARM_AGENT_ID`. Every session that has a recorded
+`cwd`, newest first (`created_at` descending, then `id` descending). A session made before
+migration 0007 has no `cwd` and is left out.
+
+```json
+{
+  "sessions": [
+    {
+      "id": 10,
+      "talk_mode": "lane",
+      "cwd": "/Users/me/work/swarm/wt/main",
+      "created_at": 1789600000,
+      "chair_log": "/Users/me/.claude/projects/-Users-me-work-swarm-wt-main/cc272e02-a473-4131-991a-d2c42f340438.jsonl",
+      "agents": 11,
+      "messages": 96,
+      "last_message_at": 1789610000
+    }
+  ]
+}
+```
+
+`swarm session new` records these, so any chair gets them, a CLI chat or Swarm:
+
+- `cwd` is the absolute working directory of `swarm session new`.
+- `created_at` is Unix seconds at `session new`.
+- `chair_log` is the chair's Claude Code transcript, or `null`. When `CLAUDE_CODE_SESSION_ID` is set
+  and matches `^[A-Za-z0-9-]{1,64}$`, swarm takes the first file that matches
+  `<CLAUDE_CONFIG_DIR>/projects/*/<CLAUDE_CODE_SESSION_ID>.jsonl`, and `CLAUDE_CONFIG_DIR` defaults
+  to `$HOME/.claude`. With no match, or with any other chair, it is `null`. Swarm never writes to it.
+- `agents` counts the session's agents, the chair included. `messages` counts its messages.
+  `last_message_at` is the newest message's `created_at`, or `null` when it has none.
+
+A reader gets one session's agents and messages with the calls above, with `SWARM_SESSION_ID` set
+to that session's `id`.
+
+Example. A Claude Code chat in `~/work/swarm/wt/main` runs `swarm session new lane` and gets 10.
+Swarm has the project `~/work/swarm/wt/ui-bloom`, which shares that git repository, so it lists
+session 10 under that project. Opening it draws the chat from `chair_log` and each agent's
+`summary` messages from `swarm messages --json`.
+
 ## `swarm launch <agent_id> <role> [--account <auto|name>]`
 
 Caller `session`. Starts the agent CLI for a role in a new pane.
