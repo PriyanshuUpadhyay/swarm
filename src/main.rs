@@ -283,22 +283,7 @@ fn sweep_once(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
-            if swarm::store::has_unseen_older_than(connection, session_id, &child, RERING_UNSEEN_AFTER_SECS)? {
-                let updated = connection.execute(
-                    "UPDATE message SET rung_at = unixepoch()
-                     WHERE session_id = ?1 AND recipient_id = ?2
-                       AND created_at <= unixepoch() - ?3
-                       AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
-                       AND seen_at IS NULL
-                       AND NOT EXISTS (
-                           SELECT 1 FROM read_mark
-                           WHERE message_seq = message.seq AND agent_id = ?2
-                       )",
-                    (session_id, &child, RERING_UNSEEN_AFTER_SECS),
-                )?;
-                if updated == 0 {
-                    continue;
-                }
+            if swarm::store::mark_unseen_for_rering(connection, session_id, &child, RERING_UNSEEN_AFTER_SECS)? {
                 match adapter.run("ring", &[("pane", &pane), ("text", "swarm: new message")]) {
                     Ok(_) => eprintln!("swarm: re-ringed {child}"),
                     Err(error) => eprintln!("swarm: re-ring failed for {child}: {error}"),
@@ -551,7 +536,7 @@ mod tests {
     const CODER: &str = "coder";
 
     #[test]
-    fn sweep_rerings_a_child_once_for_old_unread_messages() {
+    fn sweep_rerings_a_child_once_for_old_unseen_messages() {
         let root = std::env::temp_dir().join(format!("swarm-sweep-test-{}", std::process::id()));
         let ring_log = root.join("rings");
         let _ = std::fs::remove_dir_all(&root);

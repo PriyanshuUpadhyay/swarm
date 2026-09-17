@@ -273,28 +273,25 @@ pub fn messages(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn has_unseen_older_than(
+pub fn mark_unseen_for_rering(
     connection: &Connection,
     session_id: i64,
     agent_id: &str,
     age_secs: i64,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let found: bool = connection.query_row(
-        "SELECT EXISTS (
-             SELECT 1 FROM message
-             WHERE session_id = ?1 AND recipient_id = ?2
-               AND created_at <= unixepoch() - ?3
-               AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
-               AND seen_at IS NULL
-               AND NOT EXISTS (
-                   SELECT 1 FROM read_mark
-                   WHERE message_seq = message.seq AND agent_id = ?2
-               )
-         )",
+    let changed = connection.execute(
+        "UPDATE message SET rung_at = unixepoch()
+         WHERE session_id = ?1 AND recipient_id = ?2
+           AND created_at <= unixepoch() - ?3
+           AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
+           AND seen_at IS NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM read_mark
+               WHERE message_seq = message.seq AND agent_id = ?2
+           )",
         (session_id, agent_id, age_secs),
-        |r| r.get(0),
     )?;
-    Ok(found)
+    Ok(changed > 0)
 }
 
 pub fn clear_pane(connection: &Connection, session_id: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -628,14 +625,16 @@ mod tests {
         send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "new").unwrap();
         connection.execute("UPDATE message SET created_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
 
-        assert!(has_unseen_older_than(&connection, SESSION, CODER, 60).unwrap());
-        assert!(!has_unseen_older_than(&connection, SESSION, CODER, 62).unwrap());
-        assert!(!has_unseen_older_than(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 62).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+        assert!(mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
         inbox(&connection, SESSION, CODER).unwrap();
-        assert!(!has_unseen_older_than(&connection, SESSION, CODER, 60).unwrap());
-        connection.execute("UPDATE message SET seen_at = NULL WHERE seq = 1", []).unwrap();
+        connection.execute("UPDATE message SET rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
+        connection.execute("UPDATE message SET seen_at = NULL, rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
         ack(&connection, SESSION, 1, CODER).unwrap();
-        assert!(!has_unseen_older_than(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 60).unwrap());
     }
 
     #[test]
@@ -709,8 +708,8 @@ mod tests {
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
         assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
-        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, Option<i64>>(0)).unwrap(), None);
-        assert!(!has_unseen_older_than(&connection, SESSION, CODER, 0).unwrap());
+        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), created_at);
+        assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 0).unwrap());
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
         assert!(foreign_key_check.query([]).unwrap().next().unwrap().is_none());
     }
@@ -739,6 +738,9 @@ mod tests {
 
         assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
         assert_eq!(connection.query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get::<_, String>(0)).unwrap(), "runs/1/1.txt");
-        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, Option<i64>>(0)).unwrap(), None);
+        let (created_at, seen_at): (i64, i64) = connection
+            .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(seen_at, created_at);
     }
 }
