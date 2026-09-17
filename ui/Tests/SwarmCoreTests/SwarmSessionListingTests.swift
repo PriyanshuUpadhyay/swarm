@@ -71,6 +71,37 @@ struct SwarmSessionListingTests {
         ])
     }
 
+    @Test("chair identity groups sessions when the log path changes")
+    func groupsChairIdentity() {
+        var old = fixture(id: "6", chairLog: "/old.jsonl")
+        old.chairProvider = "claude"
+        old.chairID = SwarmChairID("chat-id")
+        var new = fixture(id: "10", chairLog: "/new.jsonl")
+        new.chairProvider = "claude"
+        new.chairID = SwarmChairID("chat-id")
+
+        #expect(SwarmSessionListing.chatGroups([old, new]).count == 1)
+    }
+
+    @Test("workspace ownership uses path boundaries and the deepest match")
+    func workspaceOwnership() {
+        let outer = WorkspaceID("outer")
+        let inner = WorkspaceID("inner")
+        let workspaces = [
+            (outer, "/Users/me/swarm/workspaces.noindex/project"),
+            (inner, "/Users/me/swarm/workspaces.noindex/project/chat"),
+        ]
+
+        #expect(SwarmSessionListing.workspaceOwner(
+            sessionPath: "/Users/me/swarm/workspaces.noindex/project/chat/subdir",
+            workspaces: workspaces
+        ) == inner)
+        #expect(SwarmSessionListing.workspaceOwner(
+            sessionPath: "/Users/me/swarm/workspaces.noindex/project-two",
+            workspaces: workspaces
+        ) == nil)
+    }
+
     @Test("the title is the trimmed first line with a fallback")
     func titles() {
         #expect(SwarmSessionTitle.make(

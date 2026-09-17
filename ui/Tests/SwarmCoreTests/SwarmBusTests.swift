@@ -29,6 +29,56 @@ struct SwarmBusTests {
         ])
     }
 
+    @Test("starts and updates an interactive chair session")
+    func startsChairSession() async throws {
+        let (bus, runner) = makeBus([
+            .result(), .result(stdout: "42\n"), .result(),
+        ])
+        let chair = try #require(SwarmChair(agent: .claudeCode, id: "chat-id"))
+
+        let session = try await bus.startChairSession(
+            chair: chair, directory: "/workspace/project"
+        )
+        try await bus.setChair(
+            try #require(SwarmChair(agent: .codex, id: "thread-id")), in: session
+        )
+
+        #expect(session == workspaceSession)
+        #expect(await runner.recordedCalls() == [
+            call(
+                ["init"], cwd: "/workspace/project",
+                environment: ["SWARM_ADAPTER": "tmux", "PWD": "/workspace/project"]
+            ),
+            call(
+                ["session", "new", "lane", "--chair", "claude:chat-id"],
+                cwd: "/workspace/project",
+                environment: ["SWARM_ADAPTER": "tmux", "PWD": "/workspace/project"]
+            ),
+            call(
+                ["session", "chair", "codex:thread-id"],
+                environment: [
+                    "SWARM_ADAPTER": "tmux",
+                    "SWARM_SESSION_ID": "42",
+                    "SWARM_AGENT_ID": "orchestrator",
+                ]
+            ),
+        ])
+    }
+
+    @Test("builds the chair pane environment")
+    func chairEnvironment() throws {
+        #expect(SwarmChairLaunch.environment(
+            session: workspaceSession, home: "/swarm-home"
+        ) == [
+            "SWARM_ADAPTER": "tmux",
+            "SWARM_SESSION_ID": "42",
+            "SWARM_AGENT_ID": "orchestrator",
+            "SWARM_HOME": "/swarm-home",
+        ])
+        #expect(SwarmChairLaunch.registrationCommand
+            == "swarm agent add orchestrator orchestrator")
+    }
+
     @Test("rejects a non-integer session id")
     func rejectsInvalidSessionID() async {
         let (bus, _) = makeBus([.result(), .result(stdout: "not-an-id\n")])
@@ -150,7 +200,8 @@ struct SwarmBusTests {
         let json = """
         {"sessions":[{"id":10,"talk_mode":"lane","adapter":"herdr",\
         "cwd":"/workspace/project",\
-        "created_at":1789600000,"chair_log":"/tmp/chair.jsonl","agents":3,\
+        "created_at":1789600000,"chair_provider":"claude","chair_id":"chat-id",\
+        "chair_log":"/tmp/chair.jsonl","agents":3,\
         "messages":9,"last_message_at":1789610000}]}
         """
         let (bus, runner) = makeBus([.result(stdout: json)])
@@ -160,7 +211,9 @@ struct SwarmBusTests {
         #expect(sessions == [SwarmSession(
             id: SwarmSessionID("10"), talkMode: "lane", adapter: "herdr",
             cwd: "/workspace/project",
-            createdAt: 1_789_600_000, chairLog: "/tmp/chair.jsonl",
+            createdAt: 1_789_600_000, chairProvider: "claude",
+            chairID: SwarmChairID("chat-id"),
+            chairLog: "/tmp/chair.jsonl",
             agents: 3, messages: 9, lastMessageAt: 1_789_610_000
         )])
         #expect(await runner.recordedCalls() == [

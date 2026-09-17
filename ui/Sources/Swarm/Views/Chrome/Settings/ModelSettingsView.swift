@@ -37,12 +37,6 @@ struct ModelSettingsView: View {
             }
 
             Section("New session behaviour") {
-                Picker("Open new chats in", selection: $defaults.terminalChat) {
-                    Text("Swarm chat").tag(false)
-                    Text("CLI chat").tag(true)
-                }
-                Text("Used for new chats, panes and workspaces. CLI chat supports Claude Code and Codex; other agents use Swarm chat.")
-                    .settingsFootnote()
                 Toggle("Start in plan mode", isOn: $defaults.planMode)
                 Toggle("Start in fast mode", isOn: $defaults.fastMode)
             }

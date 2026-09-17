@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SwarmCore
 
-@Suite("Swarm agent conversations")
+@Suite("Swarm agent conversations", .scratchDirectory)
 struct SwarmAgentConversationTests {
     private let coderAgent = SwarmAgentID("code-complex-1")
     private let reviewerAgent = SwarmAgentID("review-1")
@@ -122,6 +122,17 @@ struct SwarmAgentConversationTests {
         #expect(SwarmPollSchedule.delay(afterFailures: 0) == 2)
         #expect(SwarmPollSchedule.delay(afterFailures: 1) == 4)
         #expect(SwarmPollSchedule.delay(afterFailures: 8) == 30)
+    }
+
+    @Test("a chat keeps its swarm session id")
+    func storedChatSession() async throws {
+        let store = try makeTestStore("chat-swarm-session")
+        let chat = SessionID("chat-1")
+        let swarm = SwarmSessionID("42")
+
+        try await SwarmChatSession.save(swarm, sessionID: chat, in: store)
+
+        #expect(await SwarmChatSession.load(sessionID: chat, from: store) == swarm)
     }
 
     @Test("sweeps run every thirty seconds only while a pane exists")

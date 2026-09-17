@@ -489,6 +489,7 @@ final class AppModel {
                     Task { await model.onTurnFinished() }
                 }
             }
+            TerminalSessionStore.shared.useSwarmBus(swarmBus)
             TerminalSessionStore.shared.useStore(store)
             BottomPanelDefaults.forget()
             Log.launchStep("recovery done")

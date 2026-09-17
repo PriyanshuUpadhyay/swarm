@@ -97,9 +97,6 @@ struct CreateWorkspaceView: View {
     @State private var draftID = PromptAttachments.newShortID()
 
     @State private var selectedMode: WorkspaceStartMode = .chat
-    @State private var usesCLIChat = false
-    @State private var loadedChatPreference = false
-
     /// What the name field holds in the two modes that run no agent. Separate from `prompt`
     /// rather than sharing it, which is what lets a draft survive a person changing their mind
     /// twice: the box keeps its sentence while the field is on screen and the field keeps its name
@@ -169,7 +166,7 @@ struct CreateWorkspaceView: View {
 
     private var mode: WorkspaceStartMode {
         selectedMode == .chat
-            ? WorkspaceStartMode.chat(usesCLI: usesCLIChat, agent: controls.agentKind) : selectedMode
+            ? WorkspaceStartMode.chat(agent: controls.agentKind) : selectedMode
     }
 
     /// What the create button is about to be given as the task.
@@ -548,9 +545,7 @@ struct CreateWorkspaceView: View {
         .pickerStyle(.segmented)
         .fixedSize()
         .tint(Palette.controlAccent)
-        .help(defaultCLIMode == nil
-              ? "CLI chat supports Claude and Codex. Choose either as your default agent to use it."
-              : "Chat and CLI chat use your default agent configuration")
+        .help("Chat uses your default agent configuration")
     }
 
     @ViewBuilder
@@ -594,14 +589,6 @@ struct CreateWorkspaceView: View {
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var defaultCLIMode: WorkspaceStartMode? {
-        switch controls.agentKind {
-        case .claudeCode: .claudeCLI
-        case .codex: .codexCLI
-        case .grok, .cursor, .openCode: nil
         }
     }
 
@@ -662,12 +649,7 @@ struct CreateWorkspaceView: View {
                 // not going to cut a worktree because a row was arrowed onto. `QuickPromptDelivery`
                 // is the same fallback said once, for a surface that can do neither.
                 onQuickPrompt: actions.insert,
-                onSend: create,
-                usesCLIChat: Binding(
-                    get: { usesCLIChat && defaultCLIMode != nil },
-                    set: { usesCLIChat = $0 }
-                ),
-                supportsCLIChat: defaultCLIMode != nil
+                onSend: create
             )
         }
     }
@@ -1016,10 +998,6 @@ struct CreateWorkspaceView: View {
         // The gathering and both branch decisions live in the core, where the suite can reach
         // them, and where the subprocess rule wants them: this view was the last one on the
         // allow-list in `Tools/house-rules.sh` for calling `Git` itself.
-        if !loadedChatPreference {
-            usesCLIChat = appDefaults.terminalChat
-            loadedChatPreference = true
-        }
         let context = await WorkspaceStartContext.load(repoPath: path)
 
         // Cancelled means the project changed under this load, and these are the other

@@ -32,8 +32,7 @@ public enum WorkspaceStartMode: String, CaseIterable, Identifiable, Sendable {
     /// and for the same reason: nothing is written that a name could be derived from.
     case browser
 
-    public static func chat(usesCLI: Bool, agent: AgentKind) -> Self {
-        guard usesCLI else { return .chat }
+    public static func chat(agent: AgentKind) -> Self {
         switch agent {
         case .claudeCode: return .claudeCLI
         case .codex: return .codexCLI

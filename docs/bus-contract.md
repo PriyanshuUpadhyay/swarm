@@ -10,16 +10,18 @@ never a missing key.
 
 ## How Swarm calls swarm
 
-Every call Swarm makes sets `SWARM_ADAPTER=tmux-solo`. Every call after `session new` also sets
-`SWARM_SESSION_ID` to the workspace's session and `SWARM_AGENT_ID=orchestrator`. A call that starts
-panes (`launch`) runs with its working directory, and `PWD`, set to the workspace's worktree.
+Workspace agent panes use `SWARM_ADAPTER=tmux-solo`. An app chat uses `SWARM_ADAPTER=tmux`, and a
+reader uses the adapter stored on the discovered session. Every call after `session new` also sets
+`SWARM_SESSION_ID` and `SWARM_AGENT_ID=orchestrator`. A call that starts panes (`launch`) runs with
+its working directory, and `PWD`, set to the workspace's worktree.
 
-One Swarm workspace has at most one swarm session. Swarm creates it the first time the workspace
-starts an agent, with `swarm init`, `swarm session new lane --chair <claude|codex>:<id>`, and
-`swarm agent add orchestrator orchestrator`, and keeps the id. It can instead run `swarm session
-chair <claude|codex>:<id>` after the chair starts and reports its id. Both commands accept ids that
-match `^[A-Za-z0-9-]{1,64}$`; an invalid id records no chair and is not an error. `session chair`
-uses `SWARM_SESSION_ID` and prints nothing.
+Each app chat has one swarm session. Swarm creates it in the chat's workspace with `swarm init` and
+`swarm session new lane --chair <claude|codex>:<id>`. The lead CLI starts in that workspace's tmux
+pane with the session variables and runs `swarm agent add orchestrator orchestrator` there, so the
+adapter records its pane. Codex reports its thread id after it starts, so Swarm then runs `swarm
+session chair codex:<id>`. Both chair commands accept ids that match `^[A-Za-z0-9-]{1,64}$`; an
+invalid id records no chair and is not an error. `session chair` uses `SWARM_SESSION_ID` and prints
+nothing.
 
 Without `--chair`, `session new` records `claude:$CLAUDE_CODE_SESSION_ID` when that variable is
 set, else `codex:$CODEX_THREAD_ID` when that variable is set, else no chair. While a session has an

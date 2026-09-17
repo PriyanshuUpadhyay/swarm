@@ -55,6 +55,26 @@ public struct SwarmCLIBus: SwarmBus {
         return session
     }
 
+    public func startChairSession(
+        chair: SwarmChair?, directory: String
+    ) async throws -> SwarmSessionID {
+        _ = try await call(["init"], adapter: "tmux", directory: directory)
+        var arguments = ["session", "new", "lane"]
+        if let chair { arguments += ["--chair", chair.argument] }
+        let created = try await call(arguments, adapter: "tmux", directory: directory)
+        let value = created.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let number = Int(value), number > 0 else {
+            throw SwarmProfileError.failed("swarm returned an invalid session id")
+        }
+        return SwarmSessionID(value)
+    }
+
+    public func setChair(_ chair: SwarmChair, in session: SwarmSessionID) async throws {
+        _ = try await call(
+            ["session", "chair", chair.argument], in: session, adapter: "tmux"
+        )
+    }
+
     public func launch(
         _ agent: SwarmAgentID, role: String, account: String?,
         in session: SwarmSessionID, directory: String

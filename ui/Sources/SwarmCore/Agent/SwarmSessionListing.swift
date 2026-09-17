@@ -4,6 +4,9 @@ import Foundation
 public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var sessions: [SwarmSession]
     public var title: String
+    public var workspaceID: WorkspaceID?
+    public var localSessionID: SessionID?
+    public var isRunning: Bool
 
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
@@ -11,10 +14,17 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
         sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
     }
 
-    public init(sessions: [SwarmSession], title: String) {
+    public init(
+        sessions: [SwarmSession], title: String,
+        workspaceID: WorkspaceID? = nil, localSessionID: SessionID? = nil,
+        isRunning: Bool = false
+    ) {
         precondition(!sessions.isEmpty)
         self.sessions = sessions
         self.title = title
+        self.workspaceID = workspaceID
+        self.localSessionID = localSessionID
+        self.isRunning = isRunning
     }
 }
 
@@ -31,8 +41,10 @@ public enum SwarmSessionListing {
         var grouped: [String: [SwarmSession]] = [:]
         var ungrouped: [[SwarmSession]] = []
         for session in sessions {
-            if let log = session.chairLog {
-                grouped[log, default: []].append(session)
+            if let provider = session.chairProvider, let id = session.chairID {
+                grouped["chair:\(provider):\(id)", default: []].append(session)
+            } else if let log = session.chairLog {
+                grouped["log:\(log)", default: []].append(session)
             } else {
                 ungrouped.append([session])
             }
@@ -78,6 +90,15 @@ public enum SwarmSessionListing {
         case .folder(let projectPath):
             return contains(sessionPath, in: projectPath)
         }
+    }
+
+    public static func workspaceOwner(
+        sessionPath: String, workspaces: [(id: WorkspaceID, path: String)]
+    ) -> WorkspaceID? {
+        workspaces
+            .filter { contains(sessionPath, in: $0.path) }
+            .max { $0.path.count < $1.path.count }?
+            .id
     }
 
     private static func newer(_ lhs: SwarmSession, _ rhs: SwarmSession) -> Bool {
@@ -211,7 +232,9 @@ public actor SwarmSessionDiscovery {
     public init() {}
 
     public func discover(
-        sessions: [SwarmSession], repos: [Repo], excluding saved: Set<SwarmSessionID>
+        sessions: [SwarmSession], repos: [Repo], workspaces: [Workspace],
+        localChats: [SwarmSessionID: SessionID], running: Set<SwarmSessionID>,
+        excluding saved: Set<SwarmSessionID>
     ) -> [RepoID: [SwarmProjectSession]] {
         let projects = repos.map { (id: $0.id, identity: identity(for: $0.path)) }
         let sessionIdentities = Dictionary(uniqueKeysWithValues: sessions.map {
@@ -225,7 +248,17 @@ public actor SwarmSessionDiscovery {
         )
         return grouped.mapValues { matches in
             SwarmSessionListing.chatGroups(matches).map { sessions in
-                SwarmProjectSession(sessions: sessions, title: title(for: sessions[0]))
+                let local = sessions.lazy.compactMap { localChats[$0.id] }.first
+                return SwarmProjectSession(
+                    sessions: sessions,
+                    title: title(for: sessions[0]),
+                    workspaceID: SwarmSessionListing.workspaceOwner(
+                        sessionPath: sessions[0].cwd,
+                        workspaces: workspaces.map { ($0.id, $0.path) }
+                    ),
+                    localSessionID: local,
+                    isRunning: sessions.contains { running.contains($0.id) }
+                )
             }
         }
     }

@@ -6,7 +6,7 @@ import SwarmCore
 /// `BrowserTab` and `FileReview` next door are the same shape and exist for the same reason: a
 /// menu should not have to know how a session is created or where a tab is stored in order to put
 /// one in front of the user, and every route to a terminal should produce exactly the tab a
-/// terminal normally is. A chat goes through `WorkspaceModel.createSession`, a terminal and a
+/// terminal normally is. A chat goes through `WorkspaceModel.createChat`, a terminal and a
 /// browser through `CenterTabStore.add`, which is what the title bar's `+` menu already called.
 ///
 /// Where the tab goes is the caller's business, not this one's. The `+` shows it in the pane the
@@ -14,13 +14,11 @@ import SwarmCore
 /// whole difference between the two, so it is the only thing that is passed in.
 @MainActor
 enum NewPane {
-    /// Makes a tab of `kind` and hands it to `place`.
+    /// Makes a tool tab and hands it to `place`, or selects the sidebar row for a new chat.
     ///
-    /// `place` is called after the thing exists rather than before, which is why it is a closure
-    /// and not a return value: a chat has to be written to SQLite first, and a session that fails
-    /// to start must leave the column exactly as it was. Splitting first and filling afterwards
-    /// would leave a second pane standing with a copy of the first one's conversation in it every
-    /// time the agent could not be launched.
+    /// `place` is called after a tool exists rather than before, which is why it is a closure and
+    /// not a return value. A chat is a sidebar row, so it selects that row instead of filling a
+    /// workspace pane.
     ///
     /// `url` is only read for a browser. It is empty by default because a browser pane opened from
     /// a split has nowhere in particular to go: the address field is where somebody says. The
@@ -45,10 +43,7 @@ enum NewPane {
     ) {
         switch kind {
         case .chat:
-            Task {
-                guard let content = await model.createChat(title: title) else { return }
-                place(content)
-            }
+            Task { _ = await model.createChat(title: title) }
 
         // The shell itself is not started here. `ToolPaneView` settles the environment and the
         // port first, because both are baked into the process the moment it is forked.

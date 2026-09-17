@@ -48,6 +48,9 @@ final class TerminalSessionStore {
     /// shell is forked rather than worked out again later: the decision was taken there, against a
     /// snapshot that has moved on since, and asking twice is how the two answers come apart.
     private var paneSession: [String: String] = [:]
+    private var pendingEnvironments: [String: [String: String]] = [:]
+    @ObservationIgnored private var swarmBus: (any SwarmBus)?
+    @ObservationIgnored private var recordedChairIDs: [SessionID: String] = [:]
 
     /// What each pane was running, so a pane whose process did not survive the last quit can offer
     /// it back. Nothing here ever starts a command; see `TerminalCommandRecall`.
@@ -424,11 +427,11 @@ final class TerminalSessionStore {
             return view
         }
 
-        var extra: [String: String] = [:]
+        var extra = pendingEnvironments.removeValue(forKey: tab.id.rawValue) ?? [:]
         if let repo, let store = repoStore {
             extra = WorkspaceManager(store: store).environment(
                 for: workspace, repo: repo, port: port
-            )
+            ).merging(extra) { _, chair in chair }
         }
 
         // `tab.id.rawValue` is the pane id here: a split hands each pane a `TerminalTab` carrying its own id,
@@ -536,6 +539,10 @@ final class TerminalSessionStore {
         if !write(command, submit: true, paneID: pane) {
             run(command, inPaneID: pane)
         }
+    }
+
+    func prepareChairEnvironment(_ environment: [String: String], inPane pane: String) {
+        pendingEnvironments[pane] = environment
     }
 
     private func refreshAgentActivity() async {
@@ -648,6 +655,18 @@ final class TerminalSessionStore {
                     if let nextID { row.agentSessionID = nextID }
                 }
             }
+            if session.agentKind == .codex, let externalSession,
+               recordedChairIDs[sessionID] != externalSession,
+               let chair = SwarmChair(agent: .codex, id: externalSession),
+               let swarm = await SwarmChatSession.load(sessionID: sessionID, from: store),
+               let swarmBus {
+                do {
+                    try await swarmBus.setChair(chair, in: swarm)
+                    recordedChairIDs[sessionID] = externalSession
+                } catch {
+                    // The activity poll retries. The chat keeps working when the bus is unavailable.
+                }
+            }
         }
         agentProcesses = processes
         if paneAgents != detected { paneAgents = detected }
@@ -695,6 +714,10 @@ final class TerminalSessionStore {
         ensurePersistence()
         sweepOrphanedSessions()
         startRecordingCommands()
+    }
+
+    func useSwarmBus(_ bus: any SwarmBus) {
+        swarmBus = bus
     }
 
     /// The slow poll that writes down what each pane is running.

@@ -519,7 +519,7 @@ final class WorkspaceModel {
         return stored
     }
 
-    func createChat(title: String? = nil) async -> PaneContent? {
+    func createChat(title: String? = nil) async -> SwarmSessionID? {
         guard let store, let repo = app.repo(for: workspace) else { return nil }
         let defaults = await AppDefaults.loadForNewSessions(from: store)
         let controls = ComposerControls(
@@ -530,16 +530,52 @@ final class WorkspaceModel {
             isFastMode: defaults.fastMode, outputStyle: defaults.outputStyle,
             codexContextWindow: defaults.codexContextWindow
         )
-        guard let session = await createSession(title: title, controls: controls) else { return nil }
-        guard WorkspaceStartMode.chat(usesCLI: defaults.terminalChat, agent: controls.agentKind).cliAgentKind != nil
-        else { return .chat(session.id) }
-        CenterTabStore.shared.add(
+        guard WorkspaceStartMode.chat(agent: controls.agentKind).cliAgentKind != nil,
+              let session = await createSession(title: title, controls: controls),
+              let swarm = await prepareSwarmChair(for: session)
+        else { return nil }
+        let tab = CenterTabStore.shared.add(
             kind: .terminal, workspaceID: workspace.id,
             title: title ?? session.agentKind.label, agentSessionID: session.id
         )
+        prepareSwarmChair(swarm, inPane: tab.id)
         pendingCLILaunches.insert(session.id)
         await launchCLI(session, prompt: "", repo: repo)
-        return .chat(session.id)
+        _ = await app.refreshSwarmSessionsOnce()
+        app.selection = .swarmSession(swarm)
+        return swarm
+    }
+
+    func prepareSwarmChair(for session: Session) async -> SwarmSessionID? {
+        guard let store else { return nil }
+        if let existing = await SwarmChatSession.load(sessionID: session.id, from: store) {
+            return existing
+        }
+        let providerID = InteractiveChatLifecycle.initialProviderSessionID(
+            for: session.agentKind, sessionID: session.id
+        )
+        let chair = providerID.flatMap { SwarmChair(agent: session.agentKind, id: $0) }
+        do {
+            let swarm = try await app.swarmBus.startChairSession(
+                chair: chair, directory: workspace.path
+            )
+            try await SwarmChatSession.save(swarm, sessionID: session.id, in: store)
+            return swarm
+        } catch {
+            app.alert = SwarmAlert(
+                title: "Could not start the chat",
+                message: error.readableMessage
+            )
+            return nil
+        }
+    }
+
+    func prepareSwarmChair(_ session: SwarmSessionID, inPane pane: String) {
+        let environment = ProcessInfo.processInfo.environment
+        let home = environment["SWARM_HOME"] ?? environment["HOME"] ?? NSHomeDirectory()
+        TerminalSessionStore.shared.prepareChairEnvironment(
+            SwarmChairLaunch.environment(session: session, home: home), inPane: pane
+        )
     }
 
     /// Retires the old runner only after its replacement has been saved successfully.
@@ -1336,12 +1372,14 @@ final class WorkspaceModel {
     ) async {
         guard let store else { return }
         let port = await ensurePort()
+        guard let swarm = await prepareSwarmChair(for: cliSession) else { return }
         guard !Task.isCancelled,
               let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
               sessions.contains(where: { $0.id == cliSession.id }),
               let command = prepareCLICommand(
                 for: cliSession, prompt: prompt, resuming: providerID
               ) else { return }
+        prepareSwarmChair(swarm, inPane: terminal.id)
         if cliSession.agentSessionID == nil,
            let initialID = InteractiveChatLifecycle.initialProviderSessionID(
             for: cliSession.agentKind, sessionID: cliSession.id
@@ -1356,7 +1394,10 @@ final class WorkspaceModel {
         try? FileManager.default.removeItem(at: AgentKind.interactiveStatusURL(sessionID: cliSession.id))
         let terminals = TerminalSessionStore.shared
         terminals.useStore(store)
-        terminals.startInteractive(command, inPane: terminal.id)
+        terminals.startInteractive(
+            SwarmChairLaunch.registrationCommand + " && " + command,
+            inPane: terminal.id
+        )
         _ = terminals.terminal(
             for: TerminalTab(id: TerminalTabID(terminal.id), workspaceID: workspace.id, title: terminal.title),
             workspace: workspace, repo: repo, port: port, directory: terminal.directory

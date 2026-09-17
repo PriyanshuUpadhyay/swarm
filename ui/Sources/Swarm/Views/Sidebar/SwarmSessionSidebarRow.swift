@@ -14,8 +14,7 @@ struct SwarmSessionSidebarRow: View {
         Label {
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title)
-                    .font(Typo.caption)
-                    .foregroundStyle(isOnSelection ? Palette.textInverted : Palette.textSecondary)
+                    .foregroundStyle(isOnSelection ? Palette.textInverted : Palette.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(
@@ -31,15 +30,15 @@ struct SwarmSessionSidebarRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } icon: {
-            Image(systemName: "bubble.left.and.bubble.right")
+            Image(systemName: session.isRunning ? "circle.fill" : "pause.circle")
                 .font(Typo.micro)
-                .foregroundStyle(isOnSelection ? Palette.textInverted : Palette.textTertiary)
-                .accessibilityHidden(true)
+                .foregroundStyle(isOnSelection ? Palette.textInverted : Palette.textSecondary)
+                .accessibilityLabel(session.isRunning ? "Running" : "Stopped")
         }
         .labelStyle(SidebarRowLabelStyle())
-        .padding(.leading, rowIndent)
+        .padding(.leading, rowIndent + SidebarMetrics.rowIndent)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(session.title)
-        .accessibilityValue("Swarm session")
+        .accessibilityValue(session.isRunning ? "Running chat" : "Stopped chat")
     }
 }

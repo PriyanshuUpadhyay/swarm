@@ -188,3 +188,19 @@ public enum SwarmWorkspaceSession {
         try await store.setSetting(settingKey(workspaceID: workspaceID), nil)
     }
 }
+
+public enum SwarmChatSession {
+    private static func settingKey(sessionID: SessionID) -> String {
+        "session.\(sessionID.rawValue).swarmSession"
+    }
+
+    public static func load(sessionID: SessionID, from store: Store) async -> SwarmSessionID? {
+        guard let value = try? await store.setting(settingKey(sessionID: sessionID)),
+              !value.isEmpty else { return nil }
+        return SwarmSessionID(value)
+    }
+
+    public static func save(_ swarm: SwarmSessionID, sessionID: SessionID, in store: Store) async throws {
+        try await store.setSetting(settingKey(sessionID: sessionID), swarm.rawValue)
+    }
+}

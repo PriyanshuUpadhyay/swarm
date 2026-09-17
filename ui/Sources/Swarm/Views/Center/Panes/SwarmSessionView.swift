@@ -5,6 +5,9 @@ import SwarmCore
 struct SwarmSessionView: View {
     var item: SwarmProjectSession
     @State private var reader: SwarmSessionReaderModel
+    @State private var showsTerminal = false
+    @State private var localModel: WorkspaceModel?
+    @Environment(AppModel.self) private var app
 
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.item = item
@@ -23,21 +26,60 @@ struct SwarmSessionView: View {
                     : "\(item.sessions.count) sessions")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textTertiary)
+                if let localSession, TerminalSessionStore.shared.interactiveState(
+                    for: localSession.id
+                ) == .stopped {
+                    Button("Resume") {
+                        Task { await localModel?.resumeCLI(localSession) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if item.session.adapter == "tmux", localTab != nil {
+                    Button(showsTerminal ? "Show chat" : "Show terminal") {
+                        showsTerminal.toggle()
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
             .padding(.horizontal, Metrics.pane)
             .padding(.vertical, Metrics.spacing)
 
             Divider()
 
-            HSplitView {
-                SwarmSessionChat(reader: reader, directory: item.session.cwd)
-                    .frame(minWidth: 420)
-                SwarmSessionAgentsView(reader: reader)
-                    .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
+            if showsTerminal, let localModel, let localTab {
+                ToolPaneView(
+                    model: localModel, tab: localTab,
+                    splitColumn: { _, _ in }, paneMenu: nil
+                )
+            } else {
+                HSplitView {
+                    SwarmSessionChat(reader: reader, directory: item.session.cwd)
+                        .frame(minWidth: 420)
+                    SwarmSessionAgentsView(reader: reader)
+                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
+                }
             }
         }
         .background(Palette.surface)
-        .task { await reader.follow() }
+        .task {
+            if let workspaceID = item.workspaceID,
+               let workspace = app.workspaces.first(where: { $0.id == workspaceID }) {
+                let model = app.model(for: workspace)
+                await model.reloadSessions()
+                localModel = model
+            }
+            await reader.follow()
+        }
+    }
+
+    private var localSession: Session? {
+        guard let id = item.localSessionID else { return nil }
+        return localModel?.sessions.first { $0.id == id }
+    }
+
+    private var localTab: CenterTab? {
+        guard let id = item.localSessionID, let workspaceID = item.workspaceID else { return nil }
+        return CenterTabStore.shared.terminal(for: id, in: workspaceID)
     }
 }
 

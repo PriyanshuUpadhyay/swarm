@@ -75,6 +75,8 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var adapter: String?
     public var cwd: String
     public var createdAt: Int
+    public var chairProvider: String?
+    public var chairID: SwarmChairID?
     public var chairLog: String?
     public var agents: Int
     public var messages: Int
@@ -82,6 +84,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
 
     public init(
         id: SwarmSessionID, talkMode: String, adapter: String?, cwd: String, createdAt: Int,
+        chairProvider: String? = nil, chairID: SwarmChairID? = nil,
         chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?
     ) {
         self.id = id
@@ -89,6 +92,8 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         self.adapter = adapter
         self.cwd = cwd
         self.createdAt = createdAt
+        self.chairProvider = chairProvider
+        self.chairID = chairID
         self.chairLog = chairLog
         self.agents = agents
         self.messages = messages
@@ -96,7 +101,8 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, talkMode, adapter, cwd, createdAt, chairLog, agents, messages, lastMessageAt
+        case id, talkMode, adapter, cwd, createdAt, chairProvider, chairID = "chairId", chairLog
+        case agents, messages, lastMessageAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -106,6 +112,8 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         adapter = try values.decodeIfPresent(String.self, forKey: .adapter)
         cwd = try values.decode(String.self, forKey: .cwd)
         createdAt = try values.decode(Int.self, forKey: .createdAt)
+        chairProvider = try values.decodeIfPresent(String.self, forKey: .chairProvider)
+        chairID = try values.decodeIfPresent(SwarmChairID.self, forKey: .chairID)
         chairLog = try values.decodeIfPresent(String.self, forKey: .chairLog)
         agents = try values.decode(Int.self, forKey: .agents)
         messages = try values.decode(Int.self, forKey: .messages)
@@ -128,11 +136,46 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         try values.encodeIfPresent(adapter, forKey: .adapter)
         try values.encode(cwd, forKey: .cwd)
         try values.encode(createdAt, forKey: .createdAt)
+        try values.encodeIfPresent(chairProvider, forKey: .chairProvider)
+        try values.encodeIfPresent(chairID, forKey: .chairID)
         try values.encodeIfPresent(chairLog, forKey: .chairLog)
         try values.encode(agents, forKey: .agents)
         try values.encode(messages, forKey: .messages)
         try values.encodeIfPresent(lastMessageAt, forKey: .lastMessageAt)
     }
+}
+
+public struct SwarmChair: Sendable, Hashable {
+    public var provider: String
+    public var id: SwarmChairID
+
+    public init?(agent: AgentKind, id: String) {
+        let provider: String? = switch agent {
+        case .claudeCode: "claude"
+        case .codex: "codex"
+        case .cursor, .openCode, .grok: nil
+        }
+        guard let provider, !id.isEmpty else { return nil }
+        self.provider = provider
+        self.id = SwarmChairID(id)
+    }
+
+    public var argument: String { provider + ":" + id.rawValue }
+}
+
+public enum SwarmChairLaunch {
+    public static func environment(
+        session: SwarmSessionID, home: String
+    ) -> [String: String] {
+        [
+            "SWARM_ADAPTER": "tmux",
+            "SWARM_SESSION_ID": session.rawValue,
+            "SWARM_AGENT_ID": "orchestrator",
+            "SWARM_HOME": home,
+        ]
+    }
+
+    public static let registrationCommand = "swarm agent add orchestrator orchestrator"
 }
 
 public struct SwarmSessionList: Sendable, Hashable, Codable {
@@ -174,6 +217,12 @@ public struct SwarmAttachCommand: Sendable, Hashable {
 public protocol SwarmBus: Sendable {
     /// `swarm init`, `swarm session new lane` and `swarm agent add orchestrator orchestrator`.
     func startSession() async throws -> SwarmSessionID
+    /// Creates the session whose chair is the app's interactive CLI. The chair registers from its
+    /// tmux pane immediately before that CLI starts.
+    func startChairSession(
+        chair: SwarmChair?, directory: String
+    ) async throws -> SwarmSessionID
+    func setChair(_ chair: SwarmChair, in session: SwarmSessionID) async throws
     /// `swarm launch`, run in `directory`. `account` is `"auto"`, an account name, or nil for the
     /// CLI's default home.
     func launch(
@@ -203,6 +252,15 @@ public protocol SwarmBus: Sendable {
 }
 
 public extension SwarmBus {
+    func startChairSession(
+        chair: SwarmChair?, directory: String
+    ) async throws -> SwarmSessionID {
+        throw SwarmProfileError.unavailable("swarm chair sessions are not available")
+    }
+
+    func setChair(_ chair: SwarmChair, in session: SwarmSessionID) async throws {
+        throw SwarmProfileError.unavailable("swarm chair sessions are not available")
+    }
     func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
         try await agents(in: session, adapter: SwarmSessionInteraction.workspaceAdapter)
     }

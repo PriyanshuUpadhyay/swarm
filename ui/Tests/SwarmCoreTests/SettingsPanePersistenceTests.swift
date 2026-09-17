@@ -3,30 +3,13 @@ import Testing
 
 @Suite("Settings pane persistence", .scratchDirectory)
 struct SettingsPanePersistenceTests {
-    @Test("The chat interface preference persists without changing model defaults")
-    func terminalChatPreference() async throws {
-        let store = try makeTestStore("settings-terminal-chat")
-        let previous = await AppDefaults.load(from: store)
-        #expect(previous.terminalChat)
-        var edited = previous
-        edited.terminalChat = false
-        try await edited.saveChanges(from: previous, to: store)
-        let loaded = await AppDefaults.load(from: store)
-        #expect(!loaded.terminalChat)
-        #expect(loaded.storedModel == nil)
-        edited.terminalChat = true
-        try await edited.saveChanges(from: loaded, to: store)
-        #expect(await AppDefaults.load(from: store).terminalChat)
-    }
-
-    @Test("New chats honour the preferred interface for supported agents")
+    @Test("New supported chats always use their CLI")
     func preferredChatMode() {
-        #expect(WorkspaceStartMode.chat(usesCLI: true, agent: .claudeCode) == .claudeCLI)
-        #expect(WorkspaceStartMode.chat(usesCLI: true, agent: .codex) == .codexCLI)
-        #expect(WorkspaceStartMode.chat(usesCLI: false, agent: .codex) == .chat)
-        #expect(WorkspaceStartMode.chat(usesCLI: true, agent: .cursor) == .chat)
-        #expect(WorkspaceStartMode.chat(usesCLI: true, agent: .openCode) == .chat)
-        #expect(WorkspaceStartMode.chat(usesCLI: true, agent: .grok) == .chat)
+        #expect(WorkspaceStartMode.chat(agent: .claudeCode) == .claudeCLI)
+        #expect(WorkspaceStartMode.chat(agent: .codex) == .codexCLI)
+        #expect(WorkspaceStartMode.chat(agent: .cursor) == .chat)
+        #expect(WorkspaceStartMode.chat(agent: .openCode) == .chat)
+        #expect(WorkspaceStartMode.chat(agent: .grok) == .chat)
     }
 
     @Test("permission edits leave unchosen model defaults unstated")

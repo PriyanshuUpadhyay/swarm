@@ -135,3 +135,9 @@ public struct SwarmAgentID: Identifier {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
 }
+
+/// The provider's session or thread id for the CLI that chairs a swarm session.
+public struct SwarmChairID: Identifier {
+    public let rawValue: String
+    public init(_ rawValue: String) { self.rawValue = rawValue }
+}

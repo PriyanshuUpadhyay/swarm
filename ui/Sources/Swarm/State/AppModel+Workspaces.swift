@@ -132,6 +132,14 @@ extension AppModel {
             effectiveControls = try await resolvedControls(for: repo)
         }
 
+        let opensWith = opensWith == .chat
+            ? WorkspaceStartMode.chat(agent: effectiveControls.agentKind) : opensWith
+        guard opensWith != .chat else {
+            throw SwarmProfileError.unavailable(
+                "New chats support Claude Code and Codex"
+            )
+        }
+
         if let agentKind = opensWith.cliAgentKind {
             if controls == nil || effectiveControls.agentKind != agentKind {
                 effectiveControls.model = ""
@@ -376,16 +384,22 @@ extension AppModel {
         opensWith: WorkspaceStartMode,
         select: Bool
     ) async {
+        var swarmSession: SwarmSessionID?
         if opensWith.cliAgentKind != nil, let session = started.session {
+            let model = model(for: started.workspace)
+            guard let swarm = await model.prepareSwarmChair(for: session) else { return }
+            swarmSession = swarm
             let tabs = CenterTabStore.shared
             tabs.load(workspaceID: started.workspace.id)
-            tabs.add(
+            let tab = tabs.add(
                 kind: .terminal, workspaceID: started.workspace.id,
                 title: session.agentKind.label, agentSessionID: session.id
             )
-            model(for: started.workspace).pendingCLILaunches.insert(session.id)
+            model.prepareSwarmChair(swarm, inPane: tab.id)
+            model.pendingCLILaunches.insert(session.id)
         }
         await reload()
+        if swarmSession != nil { _ = await refreshSwarmSessionsOnce() }
 
         // Nothing waits for this: the worktree exists and the first turn goes out long before a
         // model has decided what to call it.
@@ -398,7 +412,10 @@ extension AppModel {
             )
         }
 
-        if select { selection = .workspace(started.workspace.id) }
+        if select {
+            selection = swarmSession.map(SidebarSelection.swarmSession)
+                ?? .workspace(started.workspace.id)
+        }
         WorkspaceStartMode.record(opensWith, workspaceID: started.workspace.id)
 
         guard let session = started.session else { return }

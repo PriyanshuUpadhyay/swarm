@@ -178,6 +178,9 @@ enum SidebarPaneRow: Identifiable {
             } else {
                 for workspace in group.workspaces {
                     rows.append(.workspace(workspace, projectName: group.repo.name))
+                    rows.append(contentsOf: group.sessions.filter {
+                        $0.workspaceID == workspace.id
+                    }.map { .swarmSession($0, repoID: group.id) })
                     // Above the turn's subagents, and the order is the lifetimes. A crew member
                     // stays until somebody archives the workspace; a subagent row is drawn from a
                     // stream and is gone minutes later. Rows that come and go belong at the
@@ -197,7 +200,7 @@ enum SidebarPaneRow: Identifiable {
                     }
                 }
                 rows.append(contentsOf: waiting.map { .pending($0) })
-                rows.append(contentsOf: group.sessions.map {
+                rows.append(contentsOf: group.sessions.filter { $0.workspaceID == nil }.map {
                     .swarmSession($0, repoID: group.id)
                 })
             }
