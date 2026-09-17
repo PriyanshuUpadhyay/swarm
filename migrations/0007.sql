@@ -1,0 +1,3 @@
+ALTER TABLE session ADD COLUMN cwd TEXT;
+ALTER TABLE session ADD COLUMN created_at INTEGER;
+ALTER TABLE session ADD COLUMN chair_log TEXT;

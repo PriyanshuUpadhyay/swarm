@@ -39,6 +39,23 @@ pub struct MessageList {
     pub messages: Vec<Message>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Session {
+    pub id: i64,
+    pub talk_mode: String,
+    pub cwd: String,
+    pub created_at: i64,
+    pub chair_log: Option<String>,
+    pub agents: i64,
+    pub messages: i64,
+    pub last_message_at: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionList {
+    pub sessions: Vec<Session>,
+}
+
 pub fn valid_agent_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     (1..=40).contains(&bytes.len())

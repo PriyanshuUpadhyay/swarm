@@ -22,6 +22,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
     include_str!("../migrations/0006.sql"),
+    include_str!("../migrations/0007.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -173,9 +174,57 @@ pub fn inbox(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn create_session(connection: &Connection, talk_mode: &str) -> Result<i64, Box<dyn std::error::Error>> {
-    connection.execute("INSERT INTO session (talk_mode) VALUES (?1)", [talk_mode])?;
+pub fn create_session(
+    connection: &Connection,
+    talk_mode: &str,
+    cwd: &Path,
+    chair_log: Option<&Path>,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    let cwd = cwd.to_string_lossy().into_owned();
+    let chair_log = chair_log.map(|path| path.to_string_lossy().into_owned());
+    connection.execute(
+        "INSERT INTO session (talk_mode, cwd, created_at, chair_log)
+         VALUES (?1, ?2, unixepoch(), ?3)",
+        (talk_mode, cwd, chair_log),
+    )?;
     Ok(connection.last_insert_rowid())
+}
+
+#[derive(Debug)]
+pub struct SessionRow {
+    pub id: i64,
+    pub talk_mode: String,
+    pub cwd: String,
+    pub created_at: i64,
+    pub chair_log: Option<String>,
+    pub agents: i64,
+    pub messages: i64,
+    pub last_message_at: Option<i64>,
+}
+
+pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT session.id, talk_mode, cwd, session.created_at, chair_log,
+                (SELECT count(*) FROM agent WHERE session_id = session.id),
+                (SELECT count(*) FROM message WHERE session_id = session.id),
+                (SELECT max(created_at) FROM message WHERE session_id = session.id)
+         FROM session
+         WHERE cwd IS NOT NULL
+         ORDER BY session.created_at DESC, session.id DESC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(SessionRow {
+            id: row.get(0)?,
+            talk_mode: row.get(1)?,
+            cwd: row.get(2)?,
+            created_at: row.get(3)?,
+            chair_log: row.get(4)?,
+            agents: row.get(5)?,
+            messages: row.get(6)?,
+            last_message_at: row.get(7)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 pub fn add_agent(
@@ -387,7 +436,7 @@ mod tests {
         let connection = open(Path::new(":memory:")).unwrap();
         connection
             .execute_batch(&format!(
-                "INSERT INTO session VALUES ({SESSION}, 'lane'), ({OTHER_SESSION}, 'lane');
+                "INSERT INTO session (id, talk_mode) VALUES ({SESSION}, 'lane'), ({OTHER_SESSION}, 'lane');
                  INSERT INTO agent (id, session_id, role) VALUES ('{ORCHESTRATOR}', {SESSION}, 'orchestrator'), ('{CODER}', {SESSION}, 'coder'), ('{OUTSIDER}', {OTHER_SESSION}, 'coder');
                  INSERT INTO job (id, session_id, agent_id, kind, run_after) VALUES (7, {SESSION}, '{CODER}', 'build', {run_after});"
             ))
@@ -558,9 +607,9 @@ mod tests {
     #[test]
     fn creates_sessions_with_increasing_ids() {
         let connection = seed(0);
-        assert_eq!(create_session(&connection, "relay").unwrap(), 3);
-        assert_eq!(create_session(&connection, "open").unwrap(), 4);
-        assert!(create_session(&connection, "loud").is_err());
+        assert_eq!(create_session(&connection, "relay", Path::new("/relay"), None).unwrap(), 3);
+        assert_eq!(create_session(&connection, "open", Path::new("/open"), None).unwrap(), 4);
+        assert!(create_session(&connection, "loud", Path::new("/loud"), None).is_err());
         let count: i64 = connection
             .query_row("SELECT count(*) FROM session", [], |r| r.get(0))
             .unwrap();
@@ -570,8 +619,8 @@ mod tests {
     #[test]
     fn agent_ids_are_unique_per_session() {
         let connection = open(Path::new(":memory:")).unwrap();
-        let first = create_session(&connection, "lane").unwrap();
-        let second = create_session(&connection, "lane").unwrap();
+        let first = create_session(&connection, "lane", Path::new("/first"), None).unwrap();
+        let second = create_session(&connection, "lane", Path::new("/second"), None).unwrap();
         add_agent(&connection, first, ORCHESTRATOR, "orchestrator").unwrap();
         add_agent(&connection, second, ORCHESTRATOR, "orchestrator").unwrap();
         set_pane(&connection, first, ORCHESTRATOR, "%1").unwrap();
@@ -589,7 +638,7 @@ mod tests {
         let connection = open(&db).unwrap();
         connection
             .execute_batch(&format!(
-                "INSERT INTO session VALUES ({SESSION}, 'lane');
+                "INSERT INTO session (id, talk_mode) VALUES ({SESSION}, 'lane');
                  INSERT INTO agent (id, session_id, role) VALUES ('{CODER}', {SESSION}, 'coder');"
             ))
             .unwrap();
@@ -673,9 +722,9 @@ mod tests {
     #[test]
     fn session_ids_are_never_reused() {
         let connection = open(Path::new(":memory:")).unwrap();
-        let first = create_session(&connection, "lane").unwrap();
+        let first = create_session(&connection, "lane", Path::new("/first"), None).unwrap();
         connection.execute("DELETE FROM session WHERE id = ?1", [first]).unwrap();
-        assert_ne!(create_session(&connection, "lane").unwrap(), first);
+        assert_ne!(create_session(&connection, "lane", Path::new("/second"), None).unwrap(), first);
     }
 
     #[test]
@@ -707,7 +756,13 @@ mod tests {
         assert!(inbox(&connection, SESSION, CODER).unwrap().is_empty());
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
+        let metadata: (Option<String>, Option<i64>, Option<String>) = connection
+            .query_row("SELECT cwd, session.created_at, chair_log FROM session WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(metadata, (None, None, None));
         assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), created_at);
         assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 0).unwrap());
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
@@ -736,7 +791,7 @@ mod tests {
 
         let connection = open(&db).unwrap();
 
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
         assert_eq!(connection.query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get::<_, String>(0)).unwrap(), "runs/1/1.txt");
         let (created_at, seen_at): (i64, i64) = connection
             .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
