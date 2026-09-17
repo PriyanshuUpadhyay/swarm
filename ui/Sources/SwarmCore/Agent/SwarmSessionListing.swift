@@ -2,13 +2,18 @@ import Foundation
 
 /// A discovered session with the stable title the sidebar draws for it.
 public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
-    public var session: SwarmSession
+    public var sessions: [SwarmSession]
     public var title: String
 
+    public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
+    public var lastActivity: Int {
+        sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
+    }
 
-    public init(session: SwarmSession, title: String) {
-        self.session = session
+    public init(sessions: [SwarmSession], title: String) {
+        precondition(!sessions.isEmpty)
+        self.sessions = sessions
         self.title = title
     }
 }
@@ -21,6 +26,22 @@ public enum SwarmPathIdentity: Sendable, Hashable {
 
 /// The pure decisions behind the sessions shown under each project.
 public enum SwarmSessionListing {
+    /// Sessions made by repeated `swarm session new` calls in one chair chat are one chat row.
+    public static func chatGroups(_ sessions: [SwarmSession]) -> [[SwarmSession]] {
+        var grouped: [String: [SwarmSession]] = [:]
+        var ungrouped: [[SwarmSession]] = []
+        for session in sessions {
+            if let log = session.chairLog {
+                grouped[log, default: []].append(session)
+            } else {
+                ungrouped.append([session])
+            }
+        }
+        return (Array(grouped.values) + ungrouped)
+            .map { $0.sorted(by: newer) }
+            .sorted { newer($0[0], $1[0]) }
+    }
+
     public static func grouped(
         sessions: [SwarmSession],
         projects: [(id: RepoID, identity: SwarmPathIdentity)],
@@ -60,7 +81,9 @@ public enum SwarmSessionListing {
     }
 
     private static func newer(_ lhs: SwarmSession, _ rhs: SwarmSession) -> Bool {
-        if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+        let left = SwarmSessionInteraction.lastActivity(of: lhs)
+        let right = SwarmSessionInteraction.lastActivity(of: rhs)
+        if left != right { return left > right }
         return (Int(lhs.id.rawValue) ?? 0) > (Int(rhs.id.rawValue) ?? 0)
     }
 
@@ -136,12 +159,17 @@ public enum SwarmSessionInteraction {
 
 /// One agent's read-only summary and its asks and summaries in bus order.
 public struct SwarmSessionAgentDigest: Sendable, Hashable, Identifiable {
-    public var id: SwarmAgentID { agent.id }
+    public var id: String { sessionID.rawValue + ":" + agent.id.rawValue }
+    public var sessionID: SwarmSessionID
     public var agent: SwarmAgent
     public var latestSummary: String?
     public var conversation: [SwarmMessage]
 
-    public init(agent: SwarmAgent, latestSummary: String?, conversation: [SwarmMessage]) {
+    public init(
+        sessionID: SwarmSessionID, agent: SwarmAgent,
+        latestSummary: String?, conversation: [SwarmMessage]
+    ) {
+        self.sessionID = sessionID
         self.agent = agent
         self.latestSummary = latestSummary
         self.conversation = conversation
@@ -150,6 +178,7 @@ public struct SwarmSessionAgentDigest: Sendable, Hashable, Identifiable {
 
 public enum SwarmSessionAgents {
     public static func digests(
+        sessionID: SwarmSessionID,
         agents: [SwarmAgent], messages: [SwarmMessage]
     ) -> [SwarmSessionAgentDigest] {
         let chair = SwarmAgentID("orchestrator")
@@ -166,7 +195,7 @@ public enum SwarmSessionAgents {
                     $0.sender == agent.id && $0.recipient == chair && $0.kind == "summary"
                 }?.body
                 return SwarmSessionAgentDigest(
-                    agent: agent,
+                    sessionID: sessionID, agent: agent,
                     latestSummary: latest,
                     conversation: conversation
                 )
@@ -195,8 +224,8 @@ public actor SwarmSessionDiscovery {
             excluding: saved
         )
         return grouped.mapValues { matches in
-            matches.map { session in
-                SwarmProjectSession(session: session, title: title(for: session))
+            SwarmSessionListing.chatGroups(matches).map { sessions in
+                SwarmProjectSession(sessions: sessions, title: title(for: sessions[0]))
             }
         }
     }

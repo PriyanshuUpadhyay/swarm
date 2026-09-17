@@ -76,28 +76,38 @@ public enum InteractiveChatTranscript {
         }
     }
 
-    public static func read(
+    public static func reader(
         agent: AgentKind,
         providerSessionID: String?,
         sessionID: SessionID,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
-    ) -> Result<SubagentTranscript, Failure> {
+    ) -> Result<TranscriptLogReader, Failure> {
         guard let providerSessionID = InteractiveChatLifecycle.resumeSessionID(providerSessionID) else {
             return .failure(.noSessionID)
         }
         guard let path = path(agent: agent, providerSessionID: providerSessionID, home: home) else {
             return agent == .claudeCode || agent == .codex ? .failure(.missing) : .failure(.unsupported)
         }
+        switch agent {
+        case .claudeCode:
+            return .success(TranscriptLogReader(
+                url: path, format: .claude(sessionID: sessionID)
+            ))
+        case .codex:
+            return .success(TranscriptLogReader(
+                url: path,
+                format: .codex(sessionID: sessionID, providerSessionID: providerSessionID)
+            ))
+        case .cursor, .openCode, .grok:
+            return .failure(.unsupported)
+        }
+    }
+
+    public static func read(
+        _ reader: TranscriptLogReader
+    ) async -> Result<SubagentTranscript, Failure> {
         do {
-            let text = try SubagentOutput.tail(of: path)
-            switch agent {
-            case .claudeCode:
-                return .success(SubagentTranscript.parseChair(text, sessionID: sessionID))
-            case .codex:
-                return .success(parseCodex(text, sessionID: sessionID, providerSessionID: providerSessionID))
-            case .cursor, .openCode, .grok:
-                return .failure(.unsupported)
-            }
+            return .success(try await reader.read())
         } catch {
             return .failure(.unreadable)
         }
@@ -122,7 +132,8 @@ public enum InteractiveChatTranscript {
 
     /// Codex rollout lines are mapped into the same user and assistant envelopes the transcript draws.
     public static func parseCodex(
-        _ text: String, sessionID: SessionID, providerSessionID: String
+        _ text: String, sessionID: SessionID, providerSessionID: String,
+        limit: Int? = SubagentTranscript.rowLimit
     ) -> SubagentTranscript {
         var messages: [Message] = []
         var used = Set<Int64>()
@@ -165,9 +176,10 @@ public enum InteractiveChatTranscript {
             ))
         }
 
-        let dropped = max(0, messages.count - SubagentTranscript.rowLimit)
+        guard let limit else { return SubagentTranscript(messages: messages) }
+        let dropped = max(0, messages.count - limit)
         return SubagentTranscript(
-            messages: Array(messages.suffix(SubagentTranscript.rowLimit)), droppedRows: dropped
+            messages: Array(messages.suffix(limit)), droppedRows: dropped
         )
     }
 

@@ -86,11 +86,15 @@ struct StoppedTerminalChatView: View {
         let agent = session.agentKind
         let providerID = session.agentSessionID
         let sessionID = session.id
-        let result = await Task.detached(priority: .utility) {
-            InteractiveChatTranscript.read(
-                agent: agent, providerSessionID: providerID, sessionID: sessionID
-            )
-        }.value
+        let result: Result<SubagentTranscript, InteractiveChatTranscript.Failure>
+        switch InteractiveChatTranscript.reader(
+            agent: agent, providerSessionID: providerID, sessionID: sessionID
+        ) {
+        case .success(let reader):
+            result = await InteractiveChatTranscript.read(reader)
+        case .failure(let reason):
+            result = .failure(reason)
+        }
         guard !Task.isCancelled else { return }
         switch result {
         case .success(let transcript):

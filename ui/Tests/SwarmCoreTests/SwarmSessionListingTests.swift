@@ -57,6 +57,20 @@ struct SwarmSessionListingTests {
         #expect(grouped[projectID]?.map(\.id) == [higherID.id, lowerID.id, oldest.id])
     }
 
+    @Test("sessions with one chair log become one newest-first chat group")
+    func groupsChairChat() {
+        let old = fixture(id: "6", createdAt: 1, lastMessageAt: 20, chairLog: "/chat.jsonl")
+        let new = fixture(id: "10", createdAt: 2, lastMessageAt: 30, chairLog: "/chat.jsonl")
+        let separate = fixture(id: "11", createdAt: 3, lastMessageAt: 40)
+        let otherSeparate = fixture(id: "12", createdAt: 4, lastMessageAt: 50)
+
+        let groups = SwarmSessionListing.chatGroups([old, separate, new, otherSeparate])
+
+        #expect(groups.map { $0.map(\.id) } == [
+            [otherSeparate.id], [separate.id], [new.id, old.id],
+        ])
+    }
+
     @Test("the title is the trimmed first line with a fallback")
     func titles() {
         #expect(SwarmSessionTitle.make(
@@ -89,9 +103,9 @@ struct SwarmSessionListingTests {
         ]
 
         let digest = try #require(SwarmSessionAgents.digests(
-            agents: agents, messages: messages
+            sessionID: SwarmSessionID("10"), agents: agents, messages: messages
         ).first)
-        #expect(digest.id == coder)
+        #expect(digest.agent.id == coder)
         #expect(digest.agent.role == "code")
         #expect(digest.latestSummary == "Done")
         #expect(digest.conversation.map(\.seq) == [1, 2, 4])
@@ -163,6 +177,55 @@ struct SwarmSessionListingTests {
         #expect(ChairTranscriptOutput.firstUserPrompt(path: path) == "First question\nMore")
     }
 
+    @Test("chair log reading appends complete lines and restarts after truncation")
+    func incrementallyReadsChairLog() async throws {
+        let path = TestScratch.path("growing-chair.jsonl")
+        try #"{"type":"user","message":{"content":"First"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path), format: .claude(sessionID: SessionID("chair"))
+        )
+
+        let first = try await reader.read()
+        #expect(first.messages.count == 1)
+
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"type":"user","message":{"content":"Sec"#.utf8))
+        try handle.close()
+        #expect(try await reader.read().messages.count == 1)
+
+        let append = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try append.seekToEnd()
+        try append.write(contentsOf: Data(#"ond"}}"#.appending("\n").utf8))
+        try append.close()
+        #expect(try await reader.read().messages.count == 2)
+
+        try #"{"type":"user","message":{"content":"Restarted"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let restarted = try await reader.read()
+        #expect(restarted.messages.count == 1)
+        #expect(UserTurnPrompt.text(in: restarted.messages[0].payload) == "Restarted")
+    }
+
+    @Test("chair log reading reports rows omitted by its byte cap")
+    func capsChairLog() async throws {
+        let path = TestScratch.path("capped-chair.jsonl")
+        let lines = (0..<8).map {
+            #"{"type":"user","message":{"content":"Question \#($0)"}}"#
+        }.joined(separator: "\n") + "\n"
+        try lines.write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path),
+            format: .claude(sessionID: SessionID("chair")), byteLimit: 180
+        )
+
+        let transcript = try await reader.read()
+
+        #expect(transcript.droppedRows > 0)
+        #expect(UserTurnPrompt.text(in: transcript.messages.last?.payload ?? Data()) == "Question 7")
+    }
+
     @Test("session interaction reports input limits and last activity")
     func sessionInteraction() {
         let session = fixture(createdAt: 10, lastMessageAt: 20)
@@ -187,12 +250,12 @@ struct SwarmSessionListingTests {
 
     private func fixture(
         id: String = "10", cwd: String = "/repo/wt/main", createdAt: Int = 1,
-        lastMessageAt: Int? = nil
+        lastMessageAt: Int? = nil, chairLog: String? = nil
     ) -> SwarmSession {
         SwarmSession(
             id: SwarmSessionID(id), talkMode: "lane", adapter: "herdr",
             cwd: cwd, createdAt: createdAt,
-            chairLog: nil, agents: 2, messages: 4, lastMessageAt: lastMessageAt
+            chairLog: chairLog, agents: 2, messages: 4, lastMessageAt: lastMessageAt
         )
     }
 

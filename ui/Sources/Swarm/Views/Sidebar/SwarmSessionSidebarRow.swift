@@ -20,7 +20,7 @@ struct SwarmSessionSidebarRow: View {
                     .truncationMode(.tail)
                 Text(
                     Date(timeIntervalSince1970: TimeInterval(
-                        SwarmSessionInteraction.lastActivity(of: session.session)
+                        session.lastActivity
                     )),
                     style: .relative
                 )

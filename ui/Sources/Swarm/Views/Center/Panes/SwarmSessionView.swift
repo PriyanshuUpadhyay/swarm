@@ -8,7 +8,7 @@ struct SwarmSessionView: View {
 
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.item = item
-        _reader = State(initialValue: SwarmSessionReaderModel(session: item.session, bus: bus))
+        _reader = State(initialValue: SwarmSessionReaderModel(item: item, bus: bus))
     }
 
     var body: some View {
@@ -18,7 +18,9 @@ struct SwarmSessionView: View {
                     .font(Typo.heading)
                     .lineLimit(1)
                 Spacer()
-                Text("Session \(item.id.rawValue)")
+                Text(item.sessions.count == 1
+                    ? "Session \(item.id.rawValue)"
+                    : "\(item.sessions.count) sessions")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -108,6 +110,7 @@ private struct SwarmSessionChat: View {
             SwarmSessionInput(
                 reader: reader,
                 agent: SwarmAgentID("orchestrator"),
+                sessionID: nil,
                 target: .chair,
                 placeholder: "Message chair",
                 maxLines: 6
@@ -199,6 +202,7 @@ private struct SwarmSessionAgentView: View {
             SwarmSessionInput(
                 reader: reader,
                 agent: digest.agent.id,
+                sessionID: digest.sessionID,
                 target: .agent,
                 placeholder: "Message \(digest.agent.id.rawValue)",
                 maxLines: 3
@@ -210,6 +214,7 @@ private struct SwarmSessionAgentView: View {
 private struct SwarmSessionInput: View {
     var reader: SwarmSessionReaderModel
     var agent: SwarmAgentID
+    var sessionID: SwarmSessionID?
     var target: SwarmSessionInputTarget
     var placeholder: String
     var maxLines: Int
@@ -221,7 +226,7 @@ private struct SwarmSessionInput: View {
     @State private var isSending = false
 
     private var disabledReason: String? {
-        reader.disabledReason(for: agent, target: target)
+        reader.disabledReason(for: agent, in: sessionID, target: target)
     }
 
     var body: some View {
@@ -256,7 +261,10 @@ private struct SwarmSessionInput: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Send to \(agent.rawValue)")
                 .disabled(
-                    isSending || !reader.canSubmit(draft, to: agent, target: target)
+                    isSending
+                        || !reader.canSubmit(
+                            draft, to: agent, in: sessionID, target: target
+                        )
                 )
             }
             .composerBox(isFocused: $isFocused)
@@ -267,7 +275,7 @@ private struct SwarmSessionInput: View {
                 Text(disabledReason)
                     .font(Typo.micro)
                     .foregroundStyle(Palette.textSecondary)
-            } else if let failure = reader.inputFailure(for: agent) {
+            } else if let failure = reader.inputFailure(for: agent, in: sessionID) {
                 Text(failure)
                     .font(Typo.micro)
                     .foregroundStyle(.red)
@@ -284,7 +292,7 @@ private struct SwarmSessionInput: View {
             return true
         case .escape:
             guard disabledReason == nil else { return true }
-            Task { await reader.interrupt(agent) }
+            Task { await reader.interrupt(agent, in: sessionID) }
             return true
         case .up, .down, .tab:
             return false
@@ -292,11 +300,13 @@ private struct SwarmSessionInput: View {
     }
 
     private func submit() {
-        guard !isSending, reader.canSubmit(draft, to: agent, target: target) else { return }
+        guard !isSending,
+              reader.canSubmit(draft, to: agent, in: sessionID, target: target)
+        else { return }
         let text = draft
         isSending = true
         Task {
-            if await reader.type(text, to: agent) {
+            if await reader.type(text, to: agent, in: sessionID) {
                 draft = ""
                 caret = 0
             }

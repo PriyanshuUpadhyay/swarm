@@ -98,8 +98,10 @@ public struct SubagentTranscript: Sendable, Equatable {
 
     /// Reads a chair transcript through the same Claude Code NDJSON parser, while keeping every
     /// user turn as a transcript row instead of lifting the one subagent brief out of the list.
-    public static func parseChair(_ text: String, sessionID: SessionID) -> SubagentTranscript {
-        parse(text, sessionID: sessionID, userText: .row)
+    public static func parseChair(
+        _ text: String, sessionID: SessionID, limit: Int? = rowLimit
+    ) -> SubagentTranscript {
+        parse(text, sessionID: sessionID, userText: .row, limit: limit)
     }
 
     private enum UserTextReading: Equatable {
@@ -108,7 +110,8 @@ public struct SubagentTranscript: Sendable, Equatable {
     }
 
     private static func parse(
-        _ text: String, sessionID: SessionID, userText: UserTextReading
+        _ text: String, sessionID: SessionID, userText: UserTextReading,
+        limit: Int? = rowLimit
     ) -> SubagentTranscript {
         var messages: [Message] = []
         var prompt = ""
@@ -137,9 +140,12 @@ public struct SubagentTranscript: Sendable, Equatable {
             }
         }
 
-        let dropped = max(0, messages.count - rowLimit)
+        guard let limit else {
+            return SubagentTranscript(messages: messages, prompt: prompt)
+        }
+        let dropped = max(0, messages.count - limit)
         return SubagentTranscript(
-            messages: Array(messages.suffix(rowLimit)), droppedRows: dropped, prompt: prompt
+            messages: Array(messages.suffix(limit)), droppedRows: dropped, prompt: prompt
         )
     }
 
@@ -339,19 +345,164 @@ public struct SubagentTranscript: Sendable, Equatable {
     }
 }
 
-/// Bounded reads of a chair's Claude Code transcript.
+/// Reads one provider-owned NDJSON transcript in full, then only bytes appended after each read.
+/// It keeps partial lines for the next read, restarts after truncation, and applies a byte limit.
+public actor TranscriptLogReader {
+    public enum Format: Sendable {
+        case claude(sessionID: SessionID)
+        case codex(sessionID: SessionID, providerSessionID: String)
+    }
+
+    public static let byteLimit = 64 * 1024 * 1024
+
+    private struct LineRecord: Sendable {
+        var bytes: Int
+        var messages: Int
+    }
+
+    private let url: URL
+    private let format: Format
+    private let limit: Int
+    private var offset: UInt64 = 0
+    private var pending = Data()
+    private var discardsLine = false
+    private var records: [LineRecord] = []
+    private var recordStart = 0
+    private var retainedBytes = 0
+    private var messages: [Message] = []
+    private var messageStart = 0
+    private var droppedRows = 0
+    private var used = Set<Int64>()
+    private var nextSequence = 0
+
+    public init(url: URL, format: Format, byteLimit: Int = TranscriptLogReader.byteLimit) {
+        self.url = url
+        self.format = format
+        self.limit = max(1, byteLimit)
+    }
+
+    public func read() throws -> SubagentTranscript {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let size = try handle.seekToEnd()
+        if size < offset { reset() }
+        if offset == 0, size > UInt64(limit) {
+            offset = size - UInt64(limit)
+            discardsLine = true
+            droppedRows = 1
+        }
+        try handle.seek(toOffset: offset)
+        while let chunk = try handle.read(upToCount: min(1024 * 1024, limit)), !chunk.isEmpty {
+            offset += UInt64(chunk.count)
+            consume(chunk)
+        }
+        return SubagentTranscript(
+            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
+        )
+    }
+
+    private func reset() {
+        offset = 0
+        pending.removeAll(keepingCapacity: true)
+        discardsLine = false
+        records.removeAll(keepingCapacity: true)
+        recordStart = 0
+        retainedBytes = 0
+        messages.removeAll(keepingCapacity: true)
+        messageStart = 0
+        droppedRows = 0
+        used.removeAll(keepingCapacity: true)
+        nextSequence = 0
+    }
+
+    private func consume(_ chunk: Data) {
+        var input = chunk
+        if discardsLine {
+            guard let newline = input.firstIndex(of: 0x0a) else { return }
+            input = Data(input[input.index(after: newline)...])
+            discardsLine = false
+        }
+        pending.append(input)
+
+        var lineStart = pending.startIndex
+        while let newline = pending[lineStart...].firstIndex(of: 0x0a) {
+            appendLine(Data(pending[lineStart..<newline]), bytes: newline - lineStart + 1)
+            lineStart = pending.index(after: newline)
+        }
+        if lineStart != pending.startIndex {
+            pending = Data(pending[lineStart...])
+        }
+        if pending.count > limit {
+            pending.removeAll(keepingCapacity: true)
+            discardsLine = true
+            droppedRows = max(1, droppedRows)
+        }
+        trim()
+    }
+
+    private func appendLine(_ line: Data, bytes: Int) {
+        let text = String(decoding: line, as: UTF8.self)
+        let parsed: [Message]
+        switch format {
+        case .claude(let sessionID):
+            parsed = SubagentTranscript.parseChair(text, sessionID: sessionID, limit: nil).messages
+        case .codex(let sessionID, let providerSessionID):
+            parsed = InteractiveChatTranscript.parseCodex(
+                text, sessionID: sessionID, providerSessionID: providerSessionID, limit: nil
+            ).messages
+        }
+
+        for var message in parsed {
+            while used.contains(message.id) { message.id -= 1 }
+            used.insert(message.id)
+            message.seq = nextSequence
+            nextSequence += 1
+            messages.append(message)
+        }
+        records.append(LineRecord(bytes: bytes, messages: parsed.count))
+        retainedBytes += bytes
+    }
+
+    private func trim() {
+        var trimmed = false
+        while retainedBytes + pending.count > limit, recordStart < records.count {
+            let record = records[recordStart]
+            recordStart += 1
+            retainedBytes -= record.bytes
+            messageStart += record.messages
+            droppedRows += record.messages
+            trimmed = true
+        }
+        if trimmed, droppedRows == 0 { droppedRows = 1 }
+        if recordStart > 1024, recordStart * 2 > records.count {
+            records.removeFirst(recordStart)
+            recordStart = 0
+        }
+        if messageStart > 1024, messageStart * 2 > messages.count {
+            messages.removeFirst(messageStart)
+            messageStart = 0
+        }
+        if trimmed { used = Set(messages.dropFirst(messageStart).map(\.id)) }
+    }
+}
+
+/// Reads of a chair's Claude Code transcript.
 public enum ChairTranscriptOutput: Sendable {
-    /// Reads the tail that can be shown while a session is open.
+    public static func reader(path: String?, sessionID: SessionID) -> TranscriptLogReader? {
+        guard let path, !path.isEmpty else { return nil }
+        return TranscriptLogReader(
+            url: URL(fileURLWithPath: path), format: .claude(sessionID: sessionID)
+        )
+    }
+
     public static func read(
-        path: String?, sessionID: SessionID
-    ) -> Result<SubagentTranscript, SubagentOutput.Failure> {
-        guard let path, !path.isEmpty else { return .failure(.noFile) }
-        let url = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: url.path) else { return .failure(.missing) }
+        _ reader: TranscriptLogReader?
+    ) async -> Result<SubagentTranscript, SubagentOutput.Failure> {
+        guard let reader else { return .failure(.noFile) }
         do {
-            return .success(SubagentTranscript.parseChair(
-                try SubagentOutput.tail(of: url), sessionID: sessionID
-            ))
+            return .success(try await reader.read())
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            return .failure(.missing)
         } catch {
             return .failure(.unreadable(error.localizedDescription))
         }
