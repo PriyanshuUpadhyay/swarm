@@ -20,7 +20,9 @@ struct TerminalLaunch: Sendable, Hashable {
     static func loginShell(directory: String, extra: [String: String]) -> TerminalLaunch {
         let shell = LoginShell.path()
 
-        let variables = Shell.terminalEnvironment(inheriting: Shell.environment(), extra: extra)
+        let variables = ChildProcessEnvironment.removingInheritedAgentIdentity(
+            from: Shell.terminalEnvironment(inheriting: Shell.environment(), extra: extra)
+        )
 
         return TerminalLaunch(
             executable: shell,
@@ -36,8 +38,13 @@ struct TerminalLaunch: Sendable, Hashable {
     /// A direct pty child for `swarm attach`. It must not use Swarm's tmux persistence, because
     /// the agent already lives in the private tmux session that this command attaches to.
     static func swarmAttach(_ command: SwarmAttachCommand) -> TerminalLaunch {
+        let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
+            from: Shell.environment()
+        )
         let variables = Shell.terminalEnvironment(
-            inheriting: Shell.environment(), extra: command.environment
+            inheriting: inherited,
+            // This is the app's new session identity, not one inherited from its parent.
+            extra: command.environment
         )
 
         return TerminalLaunch(
@@ -64,9 +71,12 @@ struct TerminalLaunch: Sendable, Hashable {
         directory: String,
         extra: [String: String]
     ) -> TerminalLaunch {
-        let variables = Shell.terminalEnvironment(inheriting: Shell.environment())
+        let inherited = Shell.environment()
+        let variables = ChildProcessEnvironment.removingInheritedAgentIdentity(
+            from: Shell.terminalEnvironment(inheriting: inherited)
+        )
 
-        var sessionVariables = extra
+        var sessionVariables = ChildProcessEnvironment.removingInheritedAgentIdentity(from: extra)
         sessionVariables["COLORTERM"] = "truecolor"
         sessionVariables["TERM_PROGRAM"] = "Swarm"
 
@@ -74,7 +84,12 @@ struct TerminalLaunch: Sendable, Hashable {
             executable: command.executable,
             execName: "tmux",
             arguments: command.attachOrCreate(
-                session: session, directory: directory, environment: sessionVariables
+                session: session,
+                directory: directory,
+                environment: sessionVariables,
+                removingEnvironment: ChildProcessEnvironment.inheritedAgentIdentityNames(
+                    in: inherited.merging(extra) { _, requested in requested }
+                ) + ["NO_COLOR"]
             ),
             environment: variables.map { "\($0.key)=\($0.value)" }.sorted(),
             directory: directory
@@ -512,6 +527,7 @@ struct TerminalView: NSViewRepresentable {
     /// what splitting does in every other terminal.
     var directory: String = ""
     var output: String?
+    var requiresTmux = false
 
     /// Split panes only. A tab holding one terminal is always its own focused pane and never moves
     /// the keyboard, so it leaves all four of these alone.
@@ -549,7 +565,13 @@ struct TerminalView: NSViewRepresentable {
 
     @MainActor private var session: SwarmTerminalView {
         TerminalSessionStore.shared.terminal(
-            for: tab, workspace: workspace, repo: repo, port: port, directory: directory, output: output
+            for: tab,
+            workspace: workspace,
+            repo: repo,
+            port: port,
+            directory: directory,
+            output: output,
+            requiresTmux: requiresTmux
         )
     }
 }

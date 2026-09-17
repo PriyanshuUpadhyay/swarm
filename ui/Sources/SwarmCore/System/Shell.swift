@@ -169,12 +169,13 @@ public enum Shell {
         _ arguments: [String] = [],
         cwd: String? = nil,
         env: [String: String] = [:],
+        replacingEnvironment: [String: String]? = nil,
         stdin: String? = nil,
         timeout: Duration? = nil,
         outputLimit: Int = 64 * 1_024 * 1_024
     ) async throws -> ShellResult {
         let result = try await runBytes(
-            executable, arguments, cwd: cwd, env: env,
+            executable, arguments, cwd: cwd, env: env, replacingEnvironment: replacingEnvironment,
             stdin: stdin.map { Data($0.utf8) }, timeout: timeout, outputLimit: outputLimit
         )
         return ShellResult(
@@ -190,6 +191,7 @@ public enum Shell {
         _ arguments: [String] = [],
         cwd: String? = nil,
         env: [String: String] = [:],
+        replacingEnvironment: [String: String]? = nil,
         stdin: Data? = nil,
         timeout: Duration? = nil,
         outputLimit: Int = 64 * 1_024 * 1_024
@@ -199,7 +201,8 @@ public enum Shell {
             throw ShellError(command: executable, status: 127, stderr: "\(executable) not found on PATH")
         }
         return try await CapturedProcess(
-            executable: path, arguments: arguments, cwd: cwd, environment: environment(extra: env),
+            executable: path, arguments: arguments, cwd: cwd,
+            environment: replacingEnvironment ?? environment(extra: env),
             input: stdin, timeout: timeout, outputLimit: outputLimit
         ).run()
     }

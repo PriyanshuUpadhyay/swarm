@@ -76,14 +76,39 @@ final class TerminalPersistence {
     // MARK: - Launch
 
     /// What a pane should do, from the snapshot this instance last took.
-    func decision(workspaceID: WorkspaceID, paneID: String) -> TerminalStartDecision {
+    func decision(
+        workspaceID: WorkspaceID, paneID: String, requiresTmux: Bool = false
+    ) -> TerminalStartDecision {
         TmuxSessions.decide(
             workspaceID: workspaceID,
             paneID: paneID,
             persistenceEnabled: Self.isSwitchedOn,
+            requiresTmux: requiresTmux,
             tmuxAvailable: isAvailable,
             existingSessions: knownSessions
         )
+    }
+
+    func write(_ text: String, toAgentPaneOf session: String) async -> Bool {
+        guard let command else { return false }
+        let buffer = "swarm-input-\(UUID().uuidString)"
+        guard let result = try? await Shell.run(
+            command.executable,
+            command.pasteBuffer(buffer, intoAgentPaneOf: session),
+            stdin: text,
+            timeout: .seconds(5)
+        ) else { return false }
+        return result.ok
+    }
+
+    func send(_ key: TerminalKey, toAgentPaneOf session: String) async -> Bool {
+        guard let command,
+              let result = try? await Shell.run(
+                  command.executable,
+                  command.send(key, toAgentPaneOf: session),
+                  timeout: .seconds(5)
+              ) else { return false }
+        return result.ok
     }
 
     /// Refreshes the snapshot, and pushes the current configuration into a server that was already

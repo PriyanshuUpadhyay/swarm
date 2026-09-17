@@ -7,16 +7,16 @@ struct SettingsPanePersistenceTests {
     func terminalChatPreference() async throws {
         let store = try makeTestStore("settings-terminal-chat")
         let previous = await AppDefaults.load(from: store)
-        #expect(!previous.terminalChat)
+        #expect(previous.terminalChat)
         var edited = previous
-        edited.terminalChat = true
+        edited.terminalChat = false
         try await edited.saveChanges(from: previous, to: store)
         let loaded = await AppDefaults.load(from: store)
-        #expect(loaded.terminalChat)
+        #expect(!loaded.terminalChat)
         #expect(loaded.storedModel == nil)
-        edited.terminalChat = false
+        edited.terminalChat = true
         try await edited.saveChanges(from: loaded, to: store)
-        #expect(await AppDefaults.load(from: store).terminalChat == false)
+        #expect(await AppDefaults.load(from: store).terminalChat)
     }
 
     @Test("New chats honour the preferred interface for supported agents")

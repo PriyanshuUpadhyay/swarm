@@ -31,6 +31,7 @@ struct TerminalSplitView: View {
     var splitColumn: @MainActor (SplitAxis, PaneKind) -> Void
     var terminalLabel: String = "Terminal"
     var onAddToChat: (@MainActor (TerminalExcerpt) -> Void)?
+    var requiresTmux = false
 
     /// The same switch the terminal itself reads, so turning the Ghostty theme off also turns off
     /// Ghostty's way of fading the panes that do not have the keyboard.
@@ -151,6 +152,7 @@ struct TerminalSplitView: View {
                 repo: repo,
                 port: port,
                 directory: directory,
+                requiresTmux: requiresTmux,
                 isFocusedPane: isFocused,
                 focusRequest: focusRequest,
                 onFocus: { splits.focus(id, in: ownerID) },

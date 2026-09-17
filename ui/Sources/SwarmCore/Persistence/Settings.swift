@@ -451,7 +451,7 @@ public struct AppDefaults: Sendable, Hashable {
     /// what lets them say so.
     public var reviewBackend: AgentKind
     public var permissionMode: PermissionMode
-    public var terminalChat: Bool = false
+    public var terminalChat: Bool = true
     public var planMode: Bool
     public var fastMode: Bool
     /// Which output style a new session opens on, by name, or `OutputStyle.defaultName` for none.
@@ -523,7 +523,9 @@ public struct AppDefaults: Sendable, Hashable {
         if let raw = await value(Key.permissionMode), let mode = PermissionMode(rawValue: raw) {
             defaults.permissionMode = mode
         }
-        defaults.terminalChat = await value(Key.terminalChat) == "1"
+        if let terminalChat = await value(Key.terminalChat) {
+            defaults.terminalChat = terminalChat == "1"
+        }
         defaults.planMode = await value(Key.planMode) == "1"
         defaults.fastMode = await value(Key.fastMode) == "1"
         defaults.outputStyle = await value(Key.outputStyle) ?? OutputStyle.defaultName
