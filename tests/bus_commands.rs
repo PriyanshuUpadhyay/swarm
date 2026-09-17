@@ -339,6 +339,7 @@ fn tmux_solo_rejects_an_empty_session_lookup_for_close_and_attach() {
 
     let closed = tmux_command(&fixture, &["close", "coder-1"], &bin, &log, "lookup-empty");
     assert!(!closed.status.success());
+    assert_eq!(String::from_utf8_lossy(&closed.stderr), "close failed: no session for %1\n");
     let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
     assert_eq!(
         swarm::store::pane_of(&connection, fixture.session.parse().unwrap(), "coder-1")
@@ -349,6 +350,7 @@ fn tmux_solo_rejects_an_empty_session_lookup_for_close_and_attach() {
 
     let attached = tmux_command(&fixture, &["attach", "coder-1"], &bin, &log, "lookup-empty");
     assert!(!attached.status.success());
+    assert_eq!(String::from_utf8_lossy(&attached.stderr), "no session for %1\n");
     let calls = std::fs::read_to_string(&log).unwrap();
     assert!(!calls.contains("kill-session"));
     assert!(!calls.contains("attach-session"));
