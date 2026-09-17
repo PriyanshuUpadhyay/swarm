@@ -24,6 +24,7 @@ import BloomCore
 /// the same words.
 struct NewTabMenu: View {
     let model: WorkspaceModel
+    @State private var showsSwarmAgentSheet = false
 
     private var store: WorkspaceTabsStore { .shared }
 
@@ -51,6 +52,9 @@ struct NewTabMenu: View {
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             // An empty note is exactly what somebody opening this is about to fix.
             Button(CenterTab.notesTitle, systemImage: "note.text") { WorkspaceNotes.open(in: model) }
+            Button("Swarm Agent", systemImage: PaneGlyph.swarmAgent) {
+                showsSwarmAgentSheet = true
+            }
             runScriptItems
         } label: {
             Label("New Tab", systemImage: "plus")
@@ -66,6 +70,9 @@ struct NewTabMenu: View {
         }
         .accessibilityLabel("New Tab")
         .help("New tab in this workspace")
+        .sheet(isPresented: $showsSwarmAgentSheet) {
+            SwarmAgentStartSheet(model: model)
+        }
     }
 
     /// The project's run scripts, under their own heading, in the order the file states them.

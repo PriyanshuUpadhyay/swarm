@@ -40,7 +40,7 @@ struct PaneGlyphTests {
     func glyphsAreDistinct() {
         let strip = [
             PaneGlyph.chat, PaneGlyph.terminal, PaneGlyph.browser,
-            PaneGlyph.review, PaneGlyph.notes,
+            PaneGlyph.swarmAgent, PaneGlyph.review, PaneGlyph.notes,
         ]
         #expect(Set(strip).count == strip.count)
     }

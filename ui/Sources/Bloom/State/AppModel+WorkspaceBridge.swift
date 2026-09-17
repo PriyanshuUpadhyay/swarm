@@ -566,7 +566,7 @@ extension AppModel {
             switch tab.kind {
             case .terminal: return .terminal
             case .browser: return .browser
-            case .review, .notes: return nil
+            case .review, .notes, .swarmAgent: return nil
             }
         }
     }

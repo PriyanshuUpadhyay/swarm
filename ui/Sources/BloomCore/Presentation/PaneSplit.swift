@@ -14,6 +14,7 @@ import Foundation
 public enum CenterTabKind: String, Codable, Sendable, CaseIterable {
     case terminal
     case browser
+    case swarmAgent
     /// The changed files of this workspace, read one at a time.
     case review
     /// The workspace's scratch text.
@@ -78,6 +79,12 @@ public enum PaneDuplicateOutcome: Equatable, Sendable {
 /// two disagreed, so Split Right on the Notes tab read as available and then did nothing at all,
 /// with no split and no feedback. Both sides ask this now.
 public enum PaneSplit {
+    /// Swarm agent tabs keep their chat and live pane together, so they never join a split tree.
+    public static func canJoin(_ content: PaneContent, tabKind: CenterTabKind?) -> Bool {
+        guard case .tool = content else { return true }
+        return tabKind != .swarmAgent
+    }
+
     /// `tabKind` is the kind of the tool tab the pane is showing, or nil when `content` is a chat
     /// or names a tab that is no longer open. A pointer at a tab that has gone produces nothing,
     /// which is also what the split itself does with one, so the menu greys for it too.
@@ -89,7 +96,7 @@ public enum PaneSplit {
             switch tabKind {
             case .terminal: return .freshTerminal
             case .browser: return .freshBrowser
-            case .review, .notes, nil: return .nothing
+            case .review, .notes, .swarmAgent, nil: return .nothing
             }
         }
     }

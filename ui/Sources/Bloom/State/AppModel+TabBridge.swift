@@ -154,6 +154,15 @@ extension AppModel {
             case .review:
                 return .review(WorkspaceTabReview(file: tab.path))
 
+            case .swarmAgent:
+                guard let agentID = tab.swarmAgent else { return nil }
+                let agent = model.swarmAgents.agents[agentID]
+                return .swarmAgent(WorkspaceTabSwarmAgent(
+                    agent: agentID,
+                    role: agent?.role,
+                    alive: agent?.alive
+                ))
+
             case .notes:
                 var characters = 0
                 if let store {

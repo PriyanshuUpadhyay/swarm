@@ -952,7 +952,11 @@ struct BloomCommands: Commands {
         case .tool(let id):
             guard let tab = CenterTabStore.shared.tabs(for: workspace.workspace.id)
                 .first(where: { $0.id == id }) else { return }
-            Task { await CenterTabStore.shared.close(tab, in: workspace) }
+            if tab.kind == .swarmAgent {
+                SwarmAgentCloseAlert.shared.ask(tab, in: workspace)
+            } else {
+                Task { await CenterTabStore.shared.close(tab, in: workspace) }
+            }
         }
     }
 

@@ -21,6 +21,7 @@ struct RootView: View {
 
     @Bindable private var projectSetup = ProjectSetup.shared
     @Bindable private var closeSession = CloseSessionAlert.shared
+    @Bindable private var closeSwarmAgent = SwarmAgentCloseAlert.shared
     @Bindable private var setupRun = SetupRunAlert.shared
     /// The two Help menu sheets, and the drafts typed into them. See `FeedbackPresenter`.
     @Bindable private var feedback = FeedbackPresenter.shared
@@ -273,6 +274,17 @@ struct RootView: View {
                 Button(request.cost.cancelTitle, role: .cancel) { closeSession.cancel() }
             } message: { request in
                 Text(request.message)
+            }
+            .confirmationDialog(
+                "Close this swarm agent?",
+                isPresented: $closeSwarmAgent.request.isPresent(),
+                titleVisibility: .visible,
+                presenting: closeSwarmAgent.request
+            ) { _ in
+                Button("Close agent", role: .destructive) { closeSwarmAgent.confirm() }
+                Button("Keep agent", role: .cancel) { closeSwarmAgent.cancel() }
+            } message: { request in
+                Text("Bloom will close \(request.tab.swarmAgent?.rawValue ?? "this agent") and remove its tab.")
             }
             // The question asked before a setup script runs. On the window because the three controls
             // that raise it are two menus and a transcript row, and a `Commands` body is not a view
