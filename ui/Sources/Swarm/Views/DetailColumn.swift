@@ -29,7 +29,19 @@ struct DetailColumn: View {
                 subagent(.recorded(toolUseID: toolUseID), in: workspaceID)
             case .archived(let id):
                 archived(id)
+            case .swarmSession(let id):
+                swarmSession(id)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func swarmSession(_ id: SwarmSessionID) -> some View {
+        if let item = app.swarmSession(id) {
+            SwarmSessionView(item: item, bus: app.swarmBus)
+                .id(id)
+        } else {
+            HomeView()
         }
     }
 

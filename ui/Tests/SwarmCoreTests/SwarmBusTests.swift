@@ -134,6 +134,27 @@ struct SwarmBusTests {
         ])
     }
 
+    @Test("lists sessions without selecting one in the environment")
+    func listsSessions() async throws {
+        let json = """
+        {"sessions":[{"id":10,"talk_mode":"lane","cwd":"/workspace/project",\
+        "created_at":1789600000,"chair_log":"/tmp/chair.jsonl","agents":3,\
+        "messages":9,"last_message_at":1789610000}]}
+        """
+        let (bus, runner) = makeBus([.result(stdout: json)])
+
+        let sessions = try await bus.sessions()
+
+        #expect(sessions == [SwarmSession(
+            id: SwarmSessionID("10"), talkMode: "lane", cwd: "/workspace/project",
+            createdAt: 1_789_600_000, chairLog: "/tmp/chair.jsonl",
+            agents: 3, messages: 9, lastMessageAt: 1_789_610_000
+        )])
+        #expect(await runner.recordedCalls() == [
+            call(["sessions", "--json"], environment: adapterEnvironment),
+        ])
+    }
+
     @Test("maps runner and output errors")
     func mapsErrors() async {
         await expectFailure(

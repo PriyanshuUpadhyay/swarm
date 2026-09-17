@@ -72,6 +72,8 @@ public enum SidebarSelection: Hashable, Sendable {
     /// and it is still the right one: a window that reopened inside a crew member's chat would
     /// start you somewhere no person put you.
     case crew(WorkspaceID, SessionID)
+    /// A swarm session discovered for a project, open for reading only.
+    case swarmSession(SwarmSessionID)
 
     /// The workspace the window is about, which is the line the three cases above keep pointing at.
     ///
@@ -85,7 +87,7 @@ public enum SidebarSelection: Hashable, Sendable {
     public var workspaceID: WorkspaceID? {
         switch self {
         case .workspace(let id), .subagent(let id, _), .subagentCall(let id, _), .crew(let id, _): id
-        case .home, .archived: nil
+        case .home, .archived, .swarmSession: nil
         }
     }
 
@@ -103,6 +105,11 @@ public enum SidebarSelection: Hashable, Sendable {
 
     public var archivedWorkspaceID: WorkspaceID? {
         if case .archived(let id) = self { return id }
+        return nil
+    }
+
+    public var swarmSessionID: SwarmSessionID? {
+        if case .swarmSession(let id) = self { return id }
         return nil
     }
 }

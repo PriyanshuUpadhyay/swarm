@@ -199,6 +199,8 @@ extension SidebarReorder {
         /// becomes will land, so a drop below it is a drop at the end of the project and the run
         /// has to reach over it exactly as it reaches over a subagent.
         case pending(projectID: RepoID)
+        /// A read-only swarm session listed after the project's workspaces.
+        case swarmSession(projectID: RepoID)
 
         /// Whether this row hangs off the end of `projectID`'s workspace rows rather than being
         /// one of them, so `workspaceRun` knows to reach over it.
@@ -208,7 +210,8 @@ extension SidebarReorder {
         /// this project.
         func trails(_ projectID: RepoID) -> Bool {
             switch self {
-            case .subagent(let owner), .crew(let owner), .pending(let owner): owner == projectID
+            case .subagent(let owner), .crew(let owner), .pending(let owner),
+                 .swarmSession(let owner): owner == projectID
             case .project, .workspace, .notice, .heading: false
             }
         }
@@ -264,7 +267,7 @@ extension SidebarReorder {
         guard let grabbed = from.min() else { return .nothing }
 
         switch rows[grabbed] {
-        case .notice, .subagent, .crew, .pending, .heading:
+        case .notice, .subagent, .crew, .pending, .swarmSession, .heading:
             return .nothing
 
         case .project(let id):

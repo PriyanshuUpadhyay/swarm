@@ -51,6 +51,13 @@ struct SidebarSelectionTests {
         #expect(SidebarSelection.home.archivedWorkspaceID == nil)
         #expect(SidebarSelection.home.subagentID == nil)
         #expect(SidebarSelection.home.crewSessionID == nil)
+        #expect(SidebarSelection.home.swarmSessionID == nil)
+    }
+
+    @Test func aSwarmSessionHasNoWorkspace() {
+        let session = SwarmSessionID("10")
+        #expect(SidebarSelection.swarmSession(session).workspaceID == nil)
+        #expect(SidebarSelection.swarmSession(session).swarmSessionID == session)
     }
 
     /// The one that stops an archived workspace being reopened as a live one. Same id, two cases,
