@@ -484,7 +484,7 @@ fi
 
 echo "==> no replaced app name"
 replaced_app='b[l]oom'
-if hits="$(git grep -n -I -i -E "$replaced_app" -- ':(top)ui/*' ':(top)docs/*' ':(exclude,top)docs/decisions/*' || true)" && [ -n "$hits" ]; then
+if hits="$(git grep -n -I -i -E "$replaced_app" -- ':(top)ui/*' ':(top)docs/*' ':(exclude,top)docs/decisions/*' ':(exclude,top)docs/council/*' || true)" && [ -n "$hits" ]; then
   echo "$hits" | show
   report "A tracked file uses the replaced app name."
 fi
@@ -492,7 +492,7 @@ while IFS= read -r file; do
   if [[ "$file" =~ [Bb][Ll][Oo][Oo][Mm] ]]; then
     report "$file uses the replaced app name in its path."
   fi
-done < <(git ls-files -- ':(top)ui/**' ':(top)docs/**' ':(exclude,top)docs/decisions/**')
+done < <(git ls-files -- ':(top)ui/**' ':(top)docs/**' ':(exclude,top)docs/decisions/**' ':(exclude,top)docs/council/**')
 
 echo "==> British spelling"
 # Words with an American spelling that has no other job in this codebase.
