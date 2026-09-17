@@ -17,13 +17,14 @@ public enum SwarmAgentName {
         while base.last == "-" { base.removeLast() }
         if base.isEmpty { base = Array("agent") }
 
-        for number in 1... {
+        var number = 1
+        while true {
             let suffix = "-\(number)"
             let stem = String(base.prefix(40 - suffix.count)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             let candidate = stem + suffix
             if !occupied.contains(candidate) { return SwarmAgentID(candidate) }
+            number += 1
         }
-        return SwarmAgentID("agent-1")
     }
 }
 
@@ -84,7 +85,7 @@ public enum SwarmPollSchedule {
     public static let sweepInterval: TimeInterval = 30
 
     public static func delay(afterFailures failures: Int) -> TimeInterval {
-        min(pollInterval * pow(2, Double(max(0, failures))), sweepInterval)
+        min(pollInterval * pow(2, Double(failures)), sweepInterval)
     }
 
     public static func shouldSweep(last: Date?, now: Date, hasPane: Bool) -> Bool {

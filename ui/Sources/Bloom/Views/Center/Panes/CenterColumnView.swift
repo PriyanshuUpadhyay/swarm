@@ -160,7 +160,9 @@ struct CenterColumnView: View {
     private func landing(for content: PaneContent, at point: CGPoint) -> PaneLanding? {
         let frame = panesFrame.value
         guard frame.contains(point), let tab = store.selectedTab(in: model),
-              canJoinSplit(content), canJoinSplit(tab), store.canAbsorb(content) else { return nil }
+              CenterTabStore.shared.canJoinSplit(content, workspaceID: model.workspace.id),
+              CenterTabStore.shared.canJoinSplit(tab, workspaceID: model.workspace.id),
+              store.canAbsorb(content) else { return nil }
         let geometry = store.layout(of: tab).geometry(
             in: frame.size, dividerThickness: CenterPanesView.dividerThickness
         )
@@ -174,7 +176,9 @@ struct CenterColumnView: View {
     /// pane on that side. The same two calls the pane's own drop made before the tab stopped being
     /// a system drag.
     private func place(_ content: PaneContent, at landing: PaneLanding) {
-        guard let tab = store.selectedTab(in: model), canJoinSplit(content), canJoinSplit(tab),
+        guard let tab = store.selectedTab(in: model),
+              CenterTabStore.shared.canJoinSplit(content, workspaceID: model.workspace.id),
+              CenterTabStore.shared.canJoinSplit(tab, workspaceID: model.workspace.id),
               store.canAbsorb(content) else { return }
         guard let placement = landing.region.placement else {
             return store.replace(pane: landing.pane, of: tab, with: content, in: model)
@@ -186,15 +190,6 @@ struct CenterColumnView: View {
             tab: tab, pane: landing.pane,
             axis: placement.axis, showing: content, before: placement.before
         )
-    }
-
-    private func canJoinSplit(_ content: PaneContent) -> Bool {
-        let kind: CenterTabKind? = if case .tool(let id) = content {
-            CenterTabStore.shared.tabs(for: model.workspace.id).first(where: { $0.id == id })?.kind
-        } else {
-            nil
-        }
-        return PaneSplit.canJoin(content, tabKind: kind)
     }
 
     /// Opens the tab a workspace created with "Start with: Terminal" or "Start with: Browser" was

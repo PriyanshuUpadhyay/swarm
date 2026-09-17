@@ -24,7 +24,10 @@ struct SwarmAgentTabView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.windowBackground)
-        .onAppear { updateVisibility() }
+        .onAppear {
+            if draft.isEmpty { draft = swarm.pendingComposer(for: agent) ?? "" }
+            updateVisibility()
+        }
         .onDisappear { swarm.hide(agent) }
         .onChange(of: mode) { _, _ in updateVisibility() }
     }

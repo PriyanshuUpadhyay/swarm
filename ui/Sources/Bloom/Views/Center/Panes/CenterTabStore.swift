@@ -171,6 +171,15 @@ final class CenterTabStore {
         tabs(for: workspaceID).compactMap { $0.kind == .swarmAgent ? $0.swarmAgent : nil }
     }
 
+    func canJoinSplit(_ content: PaneContent, workspaceID: WorkspaceID) -> Bool {
+        let kind: CenterTabKind? = if case .tool(let id) = content {
+            tabs(for: workspaceID).first(where: { $0.id == id })?.kind
+        } else {
+            nil
+        }
+        return PaneSplit.canJoin(content, tabKind: kind)
+    }
+
     /// Every terminal tab of a workspace, by id, without loading the workspace into the cache.
     ///
     /// The launch sweep asks this about workspaces nobody has opened, and it has to be told about

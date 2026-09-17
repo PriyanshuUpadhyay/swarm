@@ -17,6 +17,7 @@ struct SwarmAgentStartSheet: View {
     @State private var firstMessage = ""
     @State private var errorMessage: String?
     @State private var isLoading = true
+    @State private var isLoadingAgents = true
     @State private var isStarting = false
 
     private var selectedRole: SwarmRole? {
@@ -32,11 +33,13 @@ struct SwarmAgentStartSheet: View {
             && SwarmAgentName.isValid(name)
             && !takenNames.contains(SwarmAgentID(name))
             && !trimmedMessage.isEmpty
+            && !isLoadingAgents
             && !isStarting
     }
 
     private var takenNames: Set<SwarmAgentID> {
         Set(CenterTabStore.shared.swarmAgents(in: model.workspace.id))
+            .union(model.swarmAgents.agents.keys)
     }
 
     var body: some View {
@@ -108,7 +111,10 @@ struct SwarmAgentStartSheet: View {
         }
         .padding(Metrics.spacingWide * 2)
         .frame(width: 500)
-        .task { await loadRoles() }
+        .task {
+            await loadAgents()
+            await loadRoles()
+        }
         .task(id: selectedRoleID) { await loadAccounts() }
     }
 
@@ -127,7 +133,15 @@ struct SwarmAgentStartSheet: View {
             errorMessage = errorText(error)
         }
         isLoading = false
-        chooseRole()
+    }
+
+    private func loadAgents() async {
+        do {
+            try await model.swarmAgents.refreshAgents()
+            isLoadingAgents = false
+        } catch {
+            errorMessage = errorText(error)
+        }
     }
 
     private func chooseRole() {

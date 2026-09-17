@@ -1115,6 +1115,7 @@ final class WorkspaceModel {
     /// agents are killed here rather than merely interrupted, and killed first, which is what lets
     /// every SIGTERM escalation run at the same time instead of one after another.
     func stopEverything() {
+        swarmAgents.sync(agentIDs: [])
         for state in sideConversations.values { state.task?.cancel() }
         for transcript in transcripts.values { transcript.terminateNow() }
         setupTask?.cancel()

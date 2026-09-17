@@ -377,7 +377,10 @@ extension AppModel {
         // Read before the stop, which marks every one of them stopped. A running command never
         // asks for a confirmation, so the notice after is the only place it is mentioned.
         let stoppedCommands = workspaceModels[workspace.id]?.runningCommands ?? []
-        workspaceModels[workspace.id]?.stopEverything()
+        if let workspaceModel = workspaceModels[workspace.id] {
+            workspaceModel.stopEverything()
+            await workspaceModel.swarmAgents.closeAll()
+        }
 
         // Out of the sidebar now, before a single byte moves.
         //

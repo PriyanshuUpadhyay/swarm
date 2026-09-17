@@ -15,6 +15,7 @@ final class SwarmAgentWorkspaceModel {
     private(set) var agents: [SwarmAgentID: SwarmAgent] = [:]
     private(set) var messages: [SwarmMessage] = []
     private(set) var lastError: String?
+    private var pendingComposers: [SwarmAgentID: String] = [:]
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var trackedAgents: Set<SwarmAgentID> = []
@@ -22,6 +23,8 @@ final class SwarmAgentWorkspaceModel {
     @ObservationIgnored private var lastSeq = 0
     @ObservationIgnored private var failureCount = 0
     @ObservationIgnored private var lastSweep: Date?
+    @ObservationIgnored private var acknowledging: Set<Int> = []
+    @ObservationIgnored private var dismissedError: String?
 
     init(
         workspaceID: WorkspaceID, directory: String,
@@ -73,17 +76,30 @@ final class SwarmAgentWorkspaceModel {
             agent, role: role, account: account, in: session, directory: directory
         )
         agents[agent] = SwarmAgent(id: agent, role: role, pane: launch.pane, alive: true)
-        let seq = try await bus.send(firstMessage, to: agent, in: session)
-        merge([SwarmMessage(
-            seq: seq,
-            sender: SwarmAgentID("orchestrator"),
-            recipient: agent,
-            kind: "ask",
-            body: firstMessage,
-            createdAt: Int(Date().timeIntervalSince1970),
-            read: false
-        )])
+        do {
+            let seq = try await bus.send(firstMessage, to: agent, in: session)
+            merge([outgoingMessage(seq: seq, body: firstMessage, agent: agent)])
+            recordSuccess()
+        } catch {
+            pendingComposers[agent] = firstMessage
+            record(error)
+        }
         return session
+    }
+
+    /// Refreshes ids before the start sheet suggests a name. No saved session is a successful
+    /// empty refresh for a workspace that has not started a swarm yet.
+    func refreshAgents() async throws {
+        guard let store else { throw SwarmAgentWorkspaceError.storeUnavailable }
+        let saved = await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
+        guard let session = sessionID ?? saved else {
+            recordSuccess()
+            return
+        }
+        sessionID = session
+        let fresh = try await bus.agents(in: session)
+        agents = Dictionary(uniqueKeysWithValues: fresh.map { ($0.id, $0) })
+        recordSuccess()
     }
 
     func send(_ body: String, to agent: SwarmAgentID) async -> Bool {
@@ -91,15 +107,9 @@ final class SwarmAgentWorkspaceModel {
         guard !text.isEmpty, let session = await loadSession() else { return false }
         do {
             let seq = try await bus.send(text, to: agent, in: session)
-            merge([SwarmMessage(
-                seq: seq,
-                sender: SwarmAgentID("orchestrator"),
-                recipient: agent,
-                kind: "ask",
-                body: text,
-                createdAt: Int(Date().timeIntervalSince1970),
-                read: false
-            )])
+            merge([outgoingMessage(seq: seq, body: text, agent: agent)])
+            pendingComposers[agent] = nil
+            recordSuccess()
             return true
         } catch {
             record(error)
@@ -121,7 +131,40 @@ final class SwarmAgentWorkspaceModel {
     }
 
     func dismissError() {
+        dismissedError = lastError
         lastError = nil
+    }
+
+    func pendingComposer(for agent: SwarmAgentID) -> String? {
+        pendingComposers[agent]
+    }
+
+    /// Archive cleanup is best effort. One failed close is recorded and does not keep the other
+    /// agents, or the archive, from continuing.
+    func closeAll() async {
+        guard let store else {
+            record(SwarmAgentWorkspaceError.storeUnavailable)
+            return
+        }
+        let saved = await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
+        guard let session = sessionID ?? saved else { return }
+        sessionID = session
+        do {
+            let known = try await bus.agents(in: session)
+            agents = Dictionary(uniqueKeysWithValues: known.map { ($0.id, $0) })
+            for agent in known where agent.pane != nil {
+                do {
+                    try await bus.close(agent.id, in: session)
+                    agents[agent.id] = SwarmAgent(
+                        id: agent.id, role: agent.role, pane: nil, alive: nil
+                    )
+                } catch {
+                    record(error)
+                }
+            }
+        } catch {
+            record(error)
+        }
     }
 
     /// Returns false only when a live pane could not be closed, so its tab remains reachable.
@@ -135,6 +178,7 @@ final class SwarmAgentWorkspaceModel {
             agents[agent] = known.first(where: { $0.id == agent }).map {
                 SwarmAgent(id: $0.id, role: $0.role, pane: nil, alive: nil)
             }
+            recordSuccess()
             return true
         } catch {
             record(error)
@@ -162,6 +206,7 @@ final class SwarmAgentWorkspaceModel {
                 lastSweep = now
             }
             failureCount = 0
+            recordSuccess()
         } catch {
             failureCount += 1
             record(error)
@@ -172,11 +217,11 @@ final class SwarmAgentWorkspaceModel {
     private func loadSession() async -> SwarmSessionID? {
         if let sessionID { return sessionID }
         guard let store else {
-            lastError = SwarmAgentWorkspaceError.storeUnavailable.localizedDescription
+            record(SwarmAgentWorkspaceError.storeUnavailable)
             return nil
         }
         sessionID = await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
-        if sessionID == nil { lastError = "This workspace has no saved swarm session." }
+        if sessionID == nil { record(SwarmAgentWorkspaceError.sessionUnavailable) }
         return sessionID
     }
 
@@ -184,14 +229,17 @@ final class SwarmAgentWorkspaceModel {
         guard let sessionID else { return }
         let sequences = SwarmChatRow.acknowledgements(
             in: messages, shownAgents: visibleAgents
-        )
+        ).filter { !acknowledging.contains($0) }
         for seq in sequences {
+            acknowledging.insert(seq)
             do {
                 try await bus.ack(seq, in: sessionID)
                 if let index = messages.firstIndex(where: { $0.seq == seq }) {
                     messages[index].read = true
                 }
+                acknowledging.remove(seq)
             } catch {
+                acknowledging.remove(seq)
                 record(error)
                 return
             }
@@ -213,14 +261,39 @@ final class SwarmAgentWorkspaceModel {
         default:
             message = error.localizedDescription
         }
-        if lastError != message { lastError = message }
+        guard dismissedError != message, lastError != message else { return }
+        lastError = message
+    }
+
+    private func recordSuccess() {
+        dismissedError = nil
+    }
+
+    private func outgoingMessage(
+        seq: Int, body: String, agent: SwarmAgentID
+    ) -> SwarmMessage {
+        SwarmMessage(
+            seq: seq,
+            sender: SwarmAgentID("orchestrator"),
+            recipient: agent,
+            kind: "ask",
+            body: body,
+            createdAt: Int(Date().timeIntervalSince1970),
+            read: false
+        )
     }
 }
 
 private enum SwarmAgentWorkspaceError: LocalizedError {
     case storeUnavailable
+    case sessionUnavailable
 
     var errorDescription: String? {
-        "Bloom has not finished opening its store, so it cannot save this swarm session."
+        switch self {
+        case .storeUnavailable:
+            "Bloom has not finished opening its store, so it cannot save this swarm session."
+        case .sessionUnavailable:
+            "This workspace has no saved swarm session."
+        }
     }
 }

@@ -310,18 +310,10 @@ struct SessionTabsView: View {
 
     private func canSplit(_ content: PaneContent, selected: PaneContent?) -> Bool {
         guard let selected else { return false }
-        guard canJoinSplit(content), canJoinSplit(selected) else { return false }
+        guard tabs.canJoinSplit(content, workspaceID: model.workspace.id),
+              tabs.canJoinSplit(selected, workspaceID: model.workspace.id) else { return false }
         guard content != selected else { return duplicable(content) }
         return store.canAbsorb(content)
-    }
-
-    private func canJoinSplit(_ content: PaneContent) -> Bool {
-        let kind: CenterTabKind? = if case .tool(let id) = content {
-            tabs.tabs(for: model.workspace.id).first(where: { $0.id == id })?.kind
-        } else {
-            nil
-        }
-        return PaneSplit.canJoin(content, tabKind: kind)
     }
 
     /// Whether asking for this tab beside itself would produce anything. The rule was written out
