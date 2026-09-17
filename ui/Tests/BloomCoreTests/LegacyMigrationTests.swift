@@ -107,7 +107,7 @@ struct LegacyDefaultsTests {
         let legacy = try #require(UserDefaults(suiteName: old))
         legacy.set("w-someone-elses", forKey: "sidebar.lastWorkspaceID")
 
-        for identifier in [Store.devBundleIdentifier, "be.spatie.bloom.test", nil] {
+        for identifier in [Store.devBundleIdentifier, "io.github.priyanshuupadhyay.swarm.test", nil] {
             let outcome = LegacyDefaults.migrate(from: old, into: defaults, runningAs: identifier)
             #expect(!outcome.ran)
             #expect(outcome.copied == 0)

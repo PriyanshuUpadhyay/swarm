@@ -57,8 +57,8 @@ public enum BridgeProtocol {
     public static func problem(with hello: BridgeHello) -> String? {
         guard hello.version != version else { return nil }
         return """
-            This copy of Bloom speaks bridge protocol \(version) and bloom-bridge \
-            \(hello.shimDescription) speaks \(hello.version). Quit and reopen Bloom.
+            This copy of Swarm speaks bridge protocol \(version) and bloom-bridge \
+            \(hello.shimDescription) speaks \(hello.version). Quit and reopen Swarm.
             """
     }
 
@@ -88,18 +88,18 @@ public enum BridgeProtocol {
         guard role == BridgeRole.owner.rawValue else {
             // Minted per launch, held in memory, retired by a quit. The ordinary cause is a config
             // file left over from a launch that has since ended.
-            return "Bloom does not recognise this token. It was minted by a previous launch; "
-                + "quit and reopen Bloom."
+            return "Swarm does not recognise this token. It was minted by a previous launch; "
+                + "quit and reopen Swarm."
         }
         return """
-            Bloom does not recognise this token. It came from a standalone registration, and that \
-            kind of token is meant to outlive a quit, so restarting Bloom will not bring it back \
-            and no retry with this token will connect. Either the token was regenerated in Bloom's \
+            Swarm does not recognise this token. It came from a standalone registration, and that \
+            kind of token is meant to outlive a quit, so restarting Swarm will not bring it back \
+            and no retry with this token will connect. Either the token was regenerated in Swarm's \
             Settings, which revokes the one it replaced, or this entry belongs to a different copy \
-            of Bloom: each copy registers under its own name and keeps its own token beside its \
+            of Swarm: each copy registers under its own name and keeps its own token beside its \
             own database, so an entry written against a copy that has since been removed, replaced \
             or pointed at other data outlives the token that made it work. Both are put right the \
-            same way: open Bloom's Settings and run the registration command it offers there again.
+            same way: open Swarm's Settings and run the registration command it offers there again.
             """
     }
 }

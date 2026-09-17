@@ -33,15 +33,15 @@ public enum WorkspaceStartTrouble: Sendable, Equatable {
         switch self {
         case let .projectMissingFromDisk(project, path):
             return """
-                Bloom could not start that workspace because the project '\(project)' is no longer \
-                on disk at \(path). It has been moved, renamed or deleted since Bloom recorded it, \
+                Swarm could not start that workspace because the project '\(project)' is no longer \
+                on disk at \(path). It has been moved, renamed or deleted since Swarm recorded it, \
                 so there is no repository left to cut a worktree from. Retrying will not help. \
                 Tell the owner where the project went.
                 """
 
         case let .noCommitsYet(project):
             return """
-                Bloom could not start that workspace because the project '\(project)' has no \
+                Swarm could not start that workspace because the project '\(project)' has no \
                 commits yet. A worktree is cut from a commit, so there is nothing to start from \
                 until the first one is made. No branch name will work, so do not retry with \
                 another one. Say so and carry on with your own work.
@@ -49,10 +49,10 @@ public enum WorkspaceStartTrouble: Sendable, Equatable {
 
         case let .baseBranchMissing(branch, project, wasRequested, branches):
             let opening = wasRequested
-                ? "Bloom could not start that workspace because the project '\(project)' has no "
+                ? "Swarm could not start that workspace because the project '\(project)' has no "
                     + "branch called '\(branch)'."
-                : "Bloom could not start that workspace because '\(branch)', the default branch "
-                    + "Bloom cuts from when a call does not name one, does not exist in the "
+                : "Swarm could not start that workspace because '\(branch)', the default branch "
+                    + "Swarm cuts from when a call does not name one, does not exist in the "
                     + "project '\(project)'."
             guard !branches.isEmpty else {
                 return opening + " It has no branches at all, so there is nothing to cut from. "
@@ -72,7 +72,7 @@ public enum WorkspaceStartTrouble: Sendable, Equatable {
                     : " Call workspace_start again with one of those as base_branch.")
 
         case let .unexplained(message):
-            return "Bloom could not start that workspace: \(message)"
+            return "Swarm could not start that workspace: \(message)"
         }
     }
 

@@ -82,7 +82,7 @@ public struct PaneSplitTool: BridgeToolHandling {
         case .some("below"): return .success(.vertical)
         case .some(let other):
             return .failure(PaneRefusal(
-                "Bloom splits 'beside' or 'below', not '\(other)'. Use 'beside' for side-by-side "
+                "Swarm splits 'beside' or 'below', not '\(other)'. Use 'beside' for side-by-side "
                     + "panes with a vertical divider, or 'below' for stacked panes with a horizontal divider."
             ))
         }

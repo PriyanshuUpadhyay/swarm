@@ -1,7 +1,7 @@
 extension TerminalScheme {
     /// On the panel's own surface, so the shell sits on the same colour as the setup and run logs
     /// it shares a tab strip with.
-    public static let bloom = builtin(id: "bloom", title: "Bloom", background: PaletteInk.surfaceSunken)
+    public static let bloom = builtin(id: "bloom", title: "Swarm", background: PaletteInk.surfaceSunken)
     public static let charcoal = builtin(
         id: "charcoal", title: "Charcoal", background: ColourTheme.charcoalGlass.surfaces.sunken
     )

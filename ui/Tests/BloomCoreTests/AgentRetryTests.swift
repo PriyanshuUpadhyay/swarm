@@ -211,7 +211,7 @@ import Testing
         #expect(RetryTrouble.unreachable.isWorthActingOn)
 
         let unreachable = AgentRetry(attempt: 1, maxAttempts: 10, delay: 1, status: nil)
-        #expect(unreachable.headline == "Bloom cannot reach Anthropic's API")
+        #expect(unreachable.headline == "Swarm cannot reach Anthropic's API")
         #expect(unreachable.note.contains("Worth a glance at your connection."))
         // The reassurance is dropped here, because it would not be true.
         #expect(!unreachable.note.contains("nothing for you to do"))

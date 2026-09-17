@@ -7,8 +7,8 @@ struct ListWorkspacesIntent: AppIntent {
 
     static let description = IntentDescription(
         """
-        Returns Bloom's workspaces with their status and diff size. Reads Bloom's database \
-        directly, so it answers whether or not Bloom is open.
+        Returns Swarm's workspaces with their status and diff size. Reads Swarm's database \
+        directly, so it answers whether or not Swarm is open.
         """,
         categoryName: "Workspaces",
         resultValueName: "Workspaces"
@@ -29,7 +29,7 @@ struct ListWorkspacesIntent: AppIntent {
     var includePullRequests: Bool
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Get Bloom workspaces") {
+        Summary("Get Swarm workspaces") {
             \.$onlyRunning
             \.$includePullRequests
         }
@@ -50,7 +50,7 @@ struct ListWorkspacesIntent: AppIntent {
     /// are working is.
     private func dialog(for entities: [WorkspaceEntity]) -> IntentDialog {
         let running = entities.count(where: \.isAgentRunning)
-        if entities.isEmpty { return "Bloom has no workspaces." }
+        if entities.isEmpty { return "Swarm has no workspaces." }
         let workspaces = entities.count == 1 ? "1 workspace" : "\(entities.count) workspaces"
         if onlyRunning { return "\(workspaces) with an agent running." }
         return running == 0

@@ -63,7 +63,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
 
     /// The closing line every refusal carries. See the head of this file.
     public static let notYours = "Do not run `gh pr merge` yourself to get past this, and do not "
-        + "ask another agent to. Bloom sends a merge to the workspace's own agent so the owner "
+        + "ask another agent to. Swarm sends a merge to the workspace's own agent so the owner "
         + "watches it happen; a merge run anywhere else is the same merge with nobody watching."
 
     /// What the caller is told, whole and on its own.
@@ -74,13 +74,13 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
     private var body: String {
         switch self {
         case let .unknownWorkspace(id, alias):
-            let opening = "Bloom has no workspace with the id '\(id)'."
+            let opening = "Swarm has no workspace with the id '\(id)'."
             switch alias {
             case .none:
                 return opening + " Call workspace_list and use the id it reports, not the name: "
                     + "two workspaces are allowed to share a name, so a name does not pick one out."
             case let .one(name, resolved):
-                return opening + " '\(name)' is the NAME of a workspace Bloom has, and its id is "
+                return opening + " '\(name)' is the NAME of a workspace Swarm has, and its id is "
                     + "'\(resolved)'. Workspaces are addressed by id here because two of them are "
                     + "allowed to share a name. Ask again with that id."
             case let .several(name, count):
@@ -91,7 +91,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
 
         case .archived(let workspace):
             return """
-                Bloom will not ask for a merge in '\(workspace)' because that workspace is \
+                Swarm will not ask for a merge in '\(workspace)' because that workspace is \
                 archived. Its worktree has been removed from disk and its agent is gone, so there \
                 is no checkout to run a merge in and nobody to ask. Retrying will not help. If its \
                 pull request is still open and should land, that is the owner's to decide.
@@ -99,17 +99,17 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
 
         case .worktreeGone(let workspace):
             return """
-                Bloom will not ask for a merge in '\(workspace)' because its worktree is no longer \
-                on disk, although Bloom still has it as an active workspace. Something moved or \
-                deleted it outside Bloom. Retrying will not help. Tell the owner, and leave the \
+                Swarm will not ask for a merge in '\(workspace)' because its worktree is no longer \
+                on disk, although Swarm still has it as an active workspace. Something moved or \
+                deleted it outside Swarm. Retrying will not help. Tell the owner, and leave the \
                 pull request alone until they have looked.
                 """
 
         case .githubUnavailable(.notInstalled):
             return """
-                Bloom cannot say what state that pull request is in, because `gh` is not installed \
-                on this machine. It is what Bloom asks about pull requests and what the agent \
-                would run to merge one, so there is nothing here that installing it around Bloom's \
+                Swarm cannot say what state that pull request is in, because `gh` is not installed \
+                on this machine. It is what Swarm asks about pull requests and what the agent \
+                would run to merge one, so there is nothing here that installing it around Swarm's \
                 back would speed up. Retrying will not help. Tell the owner.
                 """
 
@@ -118,7 +118,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
             // It shares the sentence rather than being switched out, so a caller can never be told
             // nothing at all about why GitHub was not asked.
             return """
-                Bloom cannot say what state that pull request is in, because `gh` is installed but \
+                Swarm cannot say what state that pull request is in, because `gh` is installed but \
                 not signed in to GitHub. Retrying will not help until it is, and signing it in is \
                 the owner's to do rather than yours: it is their account that would be merging. \
                 Tell them, and say nothing about the pull request's state, because nothing was \
@@ -132,7 +132,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
             // looks like.
             let said = message.hasSuffix(".") ? message : message + "."
             return """
-                Bloom asked GitHub what state that pull request is in and gh did not answer: \
+                Swarm asked GitHub what state that pull request is in and gh did not answer: \
                 \(said) Nothing was sent, and nothing here says anything about the pull \
                 request, because nothing was read. What gh said is the whole of what is known: if \
                 it reads like a network or a rate limit, asking again in a minute is the right \
@@ -141,16 +141,16 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
 
         case let .noPullRequest(workspace, branch):
             return """
-                Bloom will not ask for a merge in '\(workspace)' because GitHub has no pull \
+                Swarm will not ask for a merge in '\(workspace)' because GitHub has no pull \
                 request for its branch '\(branch)'. There is nothing to merge yet. Do not open \
                 one to make this call succeed: opening a pull request is a decision of its own, \
-                with the project's own instructions behind it, and Bloom has a button for it that \
+                with the project's own instructions behind it, and Swarm has a button for it that \
                 the owner presses. If you think there should be one, say so and let them.
                 """
 
         case let .blocked(workspace, number, headline, reason):
             return """
-                Bloom will not ask for a merge of #\(number) in '\(workspace)'. GitHub reports it \
+                Swarm will not ask for a merge of #\(number) in '\(workspace)'. GitHub reports it \
                 as '\(headline)'. \(reason) Retrying will not help while that is true, and none of \
                 it is something this call can change. Do not mark the pull request ready, re-run \
                 or skip a check, dismiss a review, or touch a branch protection rule to get round \
@@ -163,9 +163,9 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
                 ? "commit and push it first"
                 : "push it first"
             return """
-                Bloom will not ask for a merge of #\(number) in '\(workspace)' because that \
+                Swarm will not ask for a merge of #\(number) in '\(workspace)' because that \
                 worktree is holding work GitHub has not got: \(detail). A merge lands what GitHub \
-                has, so none of that would be part of it. Bloom's own Merge button does allow \
+                has, so none of that would be part of it. Swarm's own Merge button does allow \
                 this, and only because it puts that same sentence in a dialogue the owner has to \
                 accept before anything is sent. There is nobody on this connection to accept it, \
                 so the answer here is no. Tell the owner what is outstanding and let them decide \
@@ -177,7 +177,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
             return Self.queued(workspace: workspace, hold: hold)
 
         case .appRefused(let sentence):
-            return "Bloom did not send the merge request. \(sentence)"
+            return "Swarm did not send the merge request. \(sentence)"
         }
     }
 
@@ -194,22 +194,22 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
         switch hold {
         case .setup:
             return """
-                Bloom will not ask for a merge in '\(workspace)' yet, because its setup script is \
+                Swarm will not ask for a merge in '\(workspace)' yet, because its setup script is \
                 still running and nothing may be said to an agent in a worktree that is still \
                 being built. A request sent now would sit in a queue rather than start a turn. \
                 Wait, and ask again once workspace_list reports its setup_state as done.
                 """
         case .question:
             return """
-                Bloom will not ask for a merge in '\(workspace)' because its agent has stopped on \
+                Swarm will not ask for a merge in '\(workspace)' because its agent has stopped on \
                 a permission question and is waiting for an answer. Writing into a turn that is \
                 blocked on one is exactly what a backend refuses. Wait for the owner to answer it, \
                 check with workspace_list that nothing is awaiting_permission, then ask again.
                 """
         case .turn:
             return """
-                Bloom will not ask for a merge in '\(workspace)' because its agent is in the \
-                middle of a turn. Bloom will not queue a merge behind work in progress, because a \
+                Swarm will not ask for a merge in '\(workspace)' because its agent is in the \
+                middle of a turn. Swarm will not queue a merge behind work in progress, because a \
                 queued message is not a turn that has begun and this call would be answering with \
                 something untrue. Wait for the turn to finish, check with workspace_list that \
                 nothing is agent_running, then ask again.
@@ -219,7 +219,7 @@ public enum WorkspaceMergeTrouble: Sendable, Equatable {
             // default, so widening `DeliveryHold` is a compile error here rather than a sentence
             // nobody wrote.
             return """
-                Bloom will not ask for a merge in '\(workspace)' right now. Check with \
+                Swarm will not ask for a merge in '\(workspace)' right now. Check with \
                 workspace_list what it is doing and ask again.
                 """
         }

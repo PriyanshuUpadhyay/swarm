@@ -79,7 +79,7 @@ public struct PaneCloseTool: BridgeToolHandling {
         if let raw = request.stringParam("kind")?.trimmingCharacters(in: .whitespaces),
            !raw.isEmpty {
             guard let named = PaneKind(rawValue: raw) else {
-                return .failure("Bloom has no pane called '\(raw)'. It opens \(PaneOrder.kindList).")
+                return .failure("Swarm has no pane called '\(raw)'. It opens \(PaneOrder.kindList).")
             }
             kind = named
         }

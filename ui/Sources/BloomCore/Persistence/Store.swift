@@ -38,8 +38,8 @@ public actor Store {
     /// Written down here because these two strings are the difference between a process that may
     /// open the real database and one that may not. `Tools/dev-build.sh` sets the second, and
     /// `Tools/guard.sh` names the directory that goes with it.
-    public static let primaryBundleIdentifier = "be.spatie.bloom"
-    public static let devBundleIdentifier = "be.spatie.bloom.dev"
+    public static let primaryBundleIdentifier = "io.github.priyanshuupadhyay.swarm"
+    public static let devBundleIdentifier = "io.github.priyanshuupadhyay.swarm.dev"
 
     /// Which Application Support directory a binary with this bundle identifier may use.
     ///
@@ -57,22 +57,22 @@ public actor Store {
     /// So it is derived from the binary instead. `LSEnvironment` is belt now rather than the only
     /// strap, and the dev copy is separated whether it is opened or run.
     ///
-    /// The dev identifier maps to "Bloom Dev", which is the same directory `Tools/dev-build.sh`
+    /// The dev identifier maps to "Swarm Dev", which is the same directory `Tools/dev-build.sh`
     /// points `BLOOM_DB_PATH` at, so a hand started dev binary lands where it was always meant to
     /// rather than somewhere new. Anything else is a build that is not one of the two: it gets a
     /// directory named after what it is, because a nameless empty database is a mystery and
-    /// "Bloom (unbundled)" sitting in Application Support answers itself.
+    /// "Swarm (unbundled)" sitting in Application Support answers itself.
     ///
     /// A pure function of the identifier, rather than of `Bundle.main`, because `Bundle.main`
     /// cannot be varied inside one process and this table is the whole of the rule.
     public static func databaseDirectoryName(forBundleIdentifier identifier: String?) -> String {
         switch identifier {
-        case primaryBundleIdentifier: "Bloom"
-        case devBundleIdentifier: "Bloom Dev"
-        case .some(let other) where !other.isEmpty: "Bloom (\(other))"
+        case primaryBundleIdentifier: "Swarm"
+        case devBundleIdentifier: "Swarm Dev"
+        case .some(let other) where !other.isEmpty: "Swarm (\(other))"
         // An executable that is not inside a bundle at all: `swift run`, `.build/debug/Bloom`, or
         // a test host. Nil and empty are the same claim and are treated the same way.
-        default: "Bloom (unbundled)"
+        default: "Swarm (unbundled)"
         }
     }
 
@@ -2288,7 +2288,7 @@ public actor Store {
                 // typed it. See `CrewMessage`.
                 crew: CrewMessage.failed(
                     name: row.string("title") ?? "",
-                    reason: "Bloom was restarted while it was working, so its turn was lost. "
+                    reason: "Swarm was restarted while it was working, so its turn was lost. "
                         + "Nothing it had not already reported got through."
                 )
             ))

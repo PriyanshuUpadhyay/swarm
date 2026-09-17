@@ -62,15 +62,15 @@ public enum SetupTool: String, Sendable, Hashable, CaseIterable, Identifiable, C
     public var purpose: String {
         switch self {
         case .git:
-            "Every workspace is a real git worktree, so Bloom builds each one with git."
+            "Every workspace is a real git worktree, so Swarm builds each one with git."
         case .claudeCode:
-            "The agent Bloom runs in a worktree, and the one most people come here for."
+            "The agent Swarm runs in a worktree, and the one most people come here for."
         case .codex:
-            "OpenAI's agent. Bloom can drive a workspace with it instead of Claude Code."
+            "OpenAI's agent. Swarm can drive a workspace with it instead of Claude Code."
         case .grok:
-            "xAI's agent. Bloom can drive a workspace with it instead of Claude Code or Codex."
+            "xAI's agent. Swarm can drive a workspace with it instead of Claude Code or Codex."
         case .gitHub:
-            "Pull requests, checks and merges. Everything else in Bloom works without it."
+            "Pull requests, checks and merges. Everything else in Swarm works without it."
         }
     }
 
@@ -388,9 +388,9 @@ public extension SetupReport {
     var sentence: String {
         switch verdict {
         case .checking:
-            return "Bloom is checking what this Mac already has."
+            return "Swarm is checking what this Mac already has."
         case .ready:
-            return "Everything Bloom uses is installed and signed in. Describe a task and it will build the worktree for you."
+            return "Everything Swarm uses is installed and signed in. Describe a task and it will build the worktree for you."
         case .readyWithNotes:
             return readyWithNotesSentence
         case .blocked:
@@ -407,24 +407,24 @@ public extension SetupReport {
             .map(\.tool.sentenceName)
 
         guard !quiet.isEmpty else {
-            return "Bloom has what it needs. Describe a task and it will build the worktree for you."
+            return "Swarm has what it needs. Describe a task and it will build the worktree for you."
         }
         // Capitalised, because the only tool whose name carries an article is the one most likely
         // to be alone in this list, and "Bloom has what it needs. the GitHub CLI is not set up"
         // is what the uncapitalised version actually printed.
         let subject = quiet.count == 1 ? "it" : "them"
-        return "Bloom has what it needs. \(list(quiet).capitalizedFirst) \(quiet.count == 1 ? "is" : "are") not set up, so only the parts that use \(subject) are off."
+        return "Swarm has what it needs. \(list(quiet).capitalizedFirst) \(quiet.count == 1 ? "is" : "are") not set up, so only the parts that use \(subject) are off."
     }
 
     private var blockedSentence: String {
         let missingGit = !outcome(for: .git).isReady
         if missingGit && !hasRunnableAgent {
-            return "Bloom needs git and an agent before it can build a workspace. Both are below."
+            return "Swarm needs git and an agent before it can build a workspace. Both are below."
         }
         if missingGit {
-            return "Bloom builds every workspace with git, and cannot find it. There is one command below."
+            return "Swarm builds every workspace with git, and cannot find it. There is one command below."
         }
-        return "Bloom needs one agent it can drive. Claude Code or Codex, either is enough."
+        return "Swarm needs one agent it can drive. Claude Code or Codex, either is enough."
     }
 
     /// "Codex", "Codex and the GitHub CLI", "A, B and C". Oxford comma deliberately absent, which

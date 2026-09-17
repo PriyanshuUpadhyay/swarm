@@ -337,7 +337,7 @@ struct SettingsEntriesTests {
         let settings = SettingsLoader.load(repo: repo)
         #expect(settings.quickPrompts.first?.symbol == QuickPrompt.defaultSymbol)
         #expect(issues(settings, in: repo).map(\.message) == [
-            "Quick prompt \u{201C}A\u{201D} shows the default symbol: \u{201C}not.a.symbol\u{201D} is not one Bloom offers.",
+            "Quick prompt \u{201C}A\u{201D} shows the default symbol: \u{201C}not.a.symbol\u{201D} is not one Swarm offers.",
         ])
 
         let emoji = try makeRepo([

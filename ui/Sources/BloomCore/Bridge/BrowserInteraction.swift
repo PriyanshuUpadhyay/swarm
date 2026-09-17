@@ -166,7 +166,7 @@ public struct BrowserKey: Sendable, Equatable {
         for part in parts {
             guard let modifier = modifierNames[part.lowercased()] else {
                 return .failure(
-                    PaneRefusal("'\(part)' is not a modifier Bloom knows. \(vocabulary)")
+                    PaneRefusal("'\(part)' is not a modifier Swarm knows. \(vocabulary)")
                 )
             }
             modifiers.insert(modifier)
@@ -180,7 +180,7 @@ public struct BrowserKey: Sendable, Equatable {
         }
         let canonical = Self.named[name] != nil ? name : aliases[name.lowercased()]
         guard let canonical, let named = Self.named[canonical] else {
-            return .failure(PaneRefusal("Bloom does not press '\(name)'. \(vocabulary)"))
+            return .failure(PaneRefusal("Swarm does not press '\(name)'. \(vocabulary)"))
         }
         return .success(
             BrowserKey(key: canonical, code: named.code, keyCode: named.keyCode, modifiers: modifiers)

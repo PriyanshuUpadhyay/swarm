@@ -188,7 +188,7 @@ struct BridgeServerTests {
         let problem = try #require(welcome.problem)
         #expect(problem.contains("\(BridgeProtocol.version)"))
         #expect(problem.contains("\(BridgeProtocol.version + 7)"))
-        #expect(problem.lowercased().contains("quit and reopen bloom"))
+        #expect(problem.lowercased().contains("quit and reopen swarm"))
 
         // And the connection really is over, rather than left open for a caller to wait on.
         #expect(await caller.iterator.next() == nil)
@@ -238,7 +238,7 @@ struct BridgeServerTests {
         #expect(!welcome.accepted)
         let problem = try #require(welcome.problem)
         #expect(problem.contains("previous launch"))
-        #expect(problem.lowercased().contains("quit and reopen bloom"))
+        #expect(problem.lowercased().contains("quit and reopen swarm"))
     }
 
     /// The same refusal, and it must not say the same thing.
@@ -278,8 +278,8 @@ struct BridgeServerTests {
         #expect(owner.contains("standalone registration"))
         #expect(!owner.lowercased().contains("quit and reopen"))
         // The two causes that are left once the name is derived per copy of the app.
-        #expect(owner.contains("regenerated in Bloom's Settings"))
-        #expect(owner.contains("a different copy of Bloom"))
+        #expect(owner.contains("regenerated in Swarm's Settings"))
+        #expect(owner.contains("a different copy of Swarm"))
         // And not the one that is not. The sentence used to blame another copy for registering
         // under the same name and taking the entry over; `BridgeRegistration.ownerServerName` is
         // derived per copy now, so that failure no longer happens and must not still be described.
@@ -291,7 +291,7 @@ struct BridgeServerTests {
         for role in [BridgeRole.workspace.rawValue, "parent", "child", "", "something else"] {
             let session = BridgeProtocol.unrecognisedToken(claiming: role)
             #expect(session.contains("previous launch"))
-            #expect(session.lowercased().contains("quit and reopen bloom"))
+            #expect(session.lowercased().contains("quit and reopen swarm"))
             #expect(session != owner)
         }
     }

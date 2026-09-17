@@ -32,7 +32,7 @@ struct ProjectRemovalTests {
     @Test("a project with nothing in it promises nothing about worktrees")
     func saysNothingAboutWorktreesThatDoNotExist() {
         let text = ProjectRemoval.consequences(workspaces: [], runningAgents: 0)
-        #expect(text == "Bloom forgets this project. Nothing on disk is deleted: the repository stays where it is.")
+        #expect(text == "Swarm forgets this project. Nothing on disk is deleted: the repository stays where it is.")
     }
 
     @Test("archived workspaces are counted as archived")

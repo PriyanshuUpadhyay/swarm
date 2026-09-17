@@ -40,7 +40,7 @@ public struct RevealTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: "reveal",
         description: """
-            Point Bloom's window at something, exactly as clicking it in the sidebar would.
+            Point Swarm's window at something, exactly as clicking it in the sidebar would.
 
             Either name one workspace with 'workspace', or leave that out and narrow Home with \
             'project', 'scope' and 'search'. Not both: asking for a workspace and a Home narrowing \

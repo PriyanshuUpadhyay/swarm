@@ -63,7 +63,9 @@ public final class WorktreeWatcher: Sendable {
     }
 
     private let watched = Mutex(Watched())
-    private let queue = DispatchQueue(label: "be.spatie.bloom.worktree-watcher", qos: .utility)
+    private let queue = DispatchQueue(
+        label: "io.github.priyanshuupadhyay.swarm.worktree-watcher", qos: .utility
+    )
 
     public init(onFilesChanged: (@Sendable ([(path: String, type: Int)]) -> Void)? = nil,
                 onChange: @escaping @Sendable (Set<String>) -> Void) {

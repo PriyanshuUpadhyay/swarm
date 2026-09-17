@@ -45,7 +45,7 @@ public enum SetupRunConfirmation {
     /// time. See `WorkspaceModel.hasRunSetup`.
     public static func question(hasRunSetup: Bool, isAgentRunning: Bool) -> Question {
         var message = "Setup runs in the worktree, preparing its submodules and running any configured "
-            + "setup script. It can take minutes, and Bloom cannot undo what it writes."
+            + "setup script. It can take minutes, and Swarm cannot undo what it writes."
 
         if isAgentRunning {
             message += "\n\nAn agent is mid turn here. Setup does not stop it, so both "

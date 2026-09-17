@@ -512,14 +512,14 @@ public enum ToolPresenter {
         let tool = parts.dropFirst().joined(separator: " ").replacing("_", with: " ")
         // Bloom's own bridge, said as Bloom.
         //
-        // The wire name is `bloom-workspace-bridge` and it has to stay that, which is not a
+        // The wire name is `swarm-ui-workspace-bridge` and it has to stay that, which is not a
         // convention: `BridgeRegistration.serverName` records the measurement behind it, that a
         // Codex `-c` override deep-merges a colliding entry leaf by leaf rather than replacing
         // it, so a server the owner had called `bloom` produced Bloom's binary running under the
         // owner's arguments and reported itself healthy. The defence is a name nobody would type.
         //
         // None of which the reader should have to look at. A row reading
-        // "bloom-workspace-bridge: pane open" names the transport where every other row names the
+        // "swarm-ui-workspace-bridge: pane open" names the transport where every other row names the
         // thing that happened, and the puzzle piece says "some extension" about the app the
         // reader is already in. Both are a presentation problem and this is the presentation, so
         // this is where it is answered rather than by moving the name the wire depends on.
@@ -531,8 +531,8 @@ public enum ToolPresenter {
         if isBloom, let row = crew(tool: bare, input: input) { return row }
 
         let label = tool.isEmpty
-            ? (isBloom ? "Bloom" : server)
-            : "\(isBloom ? "Bloom" : server): \(tool)"
+            ? (isBloom ? "Swarm" : server)
+            : "\(isBloom ? "Swarm" : server): \(tool)"
         let glyph = isBloom ? "square.stack.3d.up" : "puzzlepiece.extension"
 
         // An MCP server can name a file as plainly as a built in tool does, and one that does gets

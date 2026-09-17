@@ -145,7 +145,7 @@ public enum WorkspaceStartPlan {
             return "The worktree stands on it and \(mode.openingSentence). " + agentless
         }
         return name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Leave it empty and Bloom names it for you. " + agentless
+            ? "Leave it empty and Swarm names it for you. " + agentless
             : "This names the workspace and its branch. " + agentless
     }
 }

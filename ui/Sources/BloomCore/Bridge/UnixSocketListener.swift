@@ -61,7 +61,7 @@ public final class UnixSocketListener: Sendable {
 
         source = DispatchSource.makeReadSource(
             fileDescriptor: descriptor,
-            queue: DispatchQueue(label: "be.spatie.bloom.bridge.accept")
+            queue: DispatchQueue(label: "io.github.priyanshuupadhyay.swarm.bridge.accept")
         )
         source.setEventHandler { [descriptor] in
             // The source fires once per readable event, and a burst of connections can arrive

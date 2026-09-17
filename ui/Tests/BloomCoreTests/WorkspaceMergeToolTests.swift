@@ -198,7 +198,7 @@ struct WorkspaceMergeToolTests {
         )
 
         #expect(result.isError)
-        #expect(result.text.contains("Bloom has no workspace with the id 'nope'"))
+        #expect(result.text.contains("Swarm has no workspace with the id 'nope'"))
         #expect(result.text.contains("workspace_list"))
     }
 
@@ -667,7 +667,7 @@ struct WorkspaceMergeToolTests {
         ).call(request(["workspace": .string(target.id.rawValue)]), as: .owner, store: store)
 
         #expect(result.isError)
-        #expect(result.text.contains("Bloom did not send the merge request."))
+        #expect(result.text.contains("Swarm did not send the merge request."))
         #expect(result.text.contains("is still working"))
     }
 }

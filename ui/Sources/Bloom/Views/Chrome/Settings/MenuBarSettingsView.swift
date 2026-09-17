@@ -36,7 +36,7 @@ struct MenuBarSettingsView: View {
                 // Never disabled, whatever is off below it: this switch is the way back. It was
                 // inside the `disabled` that covers the rest, which left somebody who turned the
                 // item off with a greyed out switch and no way to return.
-                Toggle("Show Bloom in the menu bar", isOn: $showsItem)
+                Toggle("Show Swarm in the menu bar", isOn: $showsItem)
                 Group {
                     Toggle("Show usage figures", isOn: $model.showsUsage)
                     Picker("Figures", selection: $model.iconStyle) {
@@ -83,19 +83,19 @@ struct MenuBarSettingsView: View {
                     .disabled(!showsItem)
                 Toggle(isOn: $keepAwake.keepsLidClosed) {
                     Text("Keep awake with the lid closed")
-                    Text("Needs Bloom's helper, approved once in System Settings.")
+                    Text("Needs Swarm's helper, approved once in System Settings.")
                 }
                 switch sleepSwitch.standing {
                 case .ready:
                     Label(
-                        "Bloom's helper is approved. Sleep is restored when the session ends, or if Bloom crashes.",
+                        "Swarm's helper is approved. Sleep is restored when the session ends, or if Swarm crashes.",
                         systemImage: "checkmark.circle.fill"
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 case .needsApproval:
                     HStack {
-                        Text("Allow Bloom's helper to finish switching this on.")
+                        Text("Allow Swarm's helper to finish switching this on.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         Spacer()

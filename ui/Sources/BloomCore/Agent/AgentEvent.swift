@@ -75,7 +75,9 @@ public enum JSONValue: Sendable, Hashable, Codable {
         var depth = 0
     }
 
-    private static let depthKey = CodingUserInfoKey(rawValue: "be.spatie.bloom.jsonDepth")!
+    private static let depthKey = CodingUserInfoKey(
+        rawValue: "io.github.priyanshuupadhyay.swarm.jsonDepth"
+    )!
 
     /// Parse one JSON document. Returns nil instead of throwing, because every caller in Bloom is
     /// on a path that must never abort the stream. Documents nested past `maximumNesting` are

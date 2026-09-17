@@ -134,7 +134,7 @@ struct NewProjectVerdictTests {
         #expect(verdict == .create(makesLocation: true))
         #expect(
             verdict.hint(path: "/Users/tester/Developer/sparkline", home: home)
-                == "~/Developer/sparkline. Bloom will create both."
+                == "~/Developer/sparkline. Swarm will create both."
         )
     }
 

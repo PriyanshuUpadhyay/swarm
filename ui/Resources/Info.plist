@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Bloom</string>
+	<string>Swarm</string>
 	<key>CFBundleDisplayName</key>
-	<string>Bloom</string>
+	<string>Swarm</string>
 	<key>CFBundleIdentifier</key>
-	<string>be.spatie.bloom</string>
+	<string>io.github.priyanshuupadhyay.swarm</string>
 	<key>CFBundleExecutable</key>
-	<string>Bloom</string>
+	<string>Swarm</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -96,12 +96,12 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>New Bloom Workspace</string>
+				<string>New Swarm Workspace</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>createWorkspaceFromSelection</string>
 			<key>NSPortName</key>
-			<string>Bloom</string>
+			<string>Swarm</string>
 			<key>NSSendTypes</key>
 			<array>
 				<string>NSStringPboardType</string>
@@ -113,10 +113,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>be.spatie.bloom.deeplink</string>
+			<string>io.github.priyanshuupadhyay.swarm.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>bloom</string>
+				<string>swarm-ui</string>
 			</array>
 		</dict>
 	</array>

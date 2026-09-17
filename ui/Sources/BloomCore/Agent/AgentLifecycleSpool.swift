@@ -156,8 +156,8 @@ final class AgentLifecycleSpool: Sendable {
         case capacity, unavailable
         var errorDescription: String? {
             switch self {
-            case .capacity: "The live conversation buffer is full. Bloom stopped the agent to keep its turn history consistent."
-            case .unavailable: "Bloom could not preserve the live conversation updates. The agent was stopped."
+            case .capacity: "The live conversation buffer is full. Swarm stopped the agent to keep its turn history consistent."
+            case .unavailable: "Swarm could not preserve the live conversation updates. The agent was stopped."
             }
         }
     }

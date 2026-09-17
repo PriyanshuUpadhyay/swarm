@@ -8,7 +8,7 @@ import BloomCore
 /// only read what the entity publishes.
 struct WorkspaceEntity: AppEntity {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(
-        name: "Bloom Workspace",
+        name: "Swarm Workspace",
         numericFormat: "\(placeholder: .int) workspaces"
     )
 

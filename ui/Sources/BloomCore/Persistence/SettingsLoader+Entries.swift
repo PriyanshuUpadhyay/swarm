@@ -233,7 +233,7 @@ extension SettingsLoader {
                 if let stated = fields["symbol"]?.stringValue?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                    !stated.isEmpty, prompt.symbol != stated {
-                    report("shows the default symbol: \u{201C}\(stated)\u{201D} is not one Bloom offers.")
+                    report("shows the default symbol: \u{201C}\(stated)\u{201D} is not one Swarm offers.")
                 }
                 prompts.append(prompt)
             }

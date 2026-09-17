@@ -7,7 +7,7 @@ import Foundation
 /// "Menubar Settings…" posts a tab, `SettingsView` listens, and the window opens on the pane the
 /// person asked for rather than on whichever one they left it on.
 enum SettingsTabRequest {
-    static let name = Notification.Name("be.spatie.bloom.settings.tab")
+    static let name = Notification.Name("io.github.priyanshuupadhyay.swarm.settings.tab")
 
     /// The tab asked for most recently, kept until the Settings window reads it as it appears. A
     /// notification posted before the window exists reaches nobody, so "Manage presets…" opened

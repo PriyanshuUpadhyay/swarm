@@ -23,7 +23,7 @@ enum BloomDeepLink {
         // A bundle with no URL types is `swift run` or a test host. Falling back to the shipped
         // scheme keeps those working rather than making every link fail in a way that reads as a
         // malformed link.
-        return registered.isEmpty ? ["bloom"] : Set(registered)
+        return registered.isEmpty ? ["swarm-ui"] : Set(registered)
     }()
 
     /// The Apple Event handler and SwiftUI's onOpenURL can both see the same link, and creating
@@ -44,7 +44,7 @@ enum BloomDeepLink {
               !prompt.isEmpty,
               !path.isEmpty else {
             app.alert = BloomAlert(
-                title: "Could not open the Bloom link",
+                title: "Could not open the Swarm link",
                 message: "The link must include a prompt and project path."
             )
             return
@@ -55,7 +55,7 @@ enum BloomDeepLink {
         guard let repo = BridgeProjectLookup.project(atPath: path, in: app.repos) else {
             app.alert = BloomAlert(
                 title: "Project not found",
-                message: "The path in this link is not one of Bloom's projects: \(path)"
+                message: "The path in this link is not one of Swarm's projects: \(path)"
             )
             return
         }
@@ -66,7 +66,7 @@ enum BloomDeepLink {
     }
 
     /// Asks before a link starts an agent. A link is outside input: any page or script that can
-    /// hand macOS a `bloom://` URL could otherwise create a workspace and run its prompt, and a new
+    /// hand macOS a `swarm-ui://` URL could otherwise create a workspace and run its prompt, and a new
     /// session defaults to full access (`AppDefaults.fallbackPermissionMode`). The prompt is shown
     /// so the reader approves the words the agent will act on, not only the project.
     ///

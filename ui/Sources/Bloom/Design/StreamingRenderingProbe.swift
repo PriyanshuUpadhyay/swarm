@@ -12,7 +12,7 @@ enum StreamingRenderingProbe {
     static func schedule() { Task { @MainActor in await run() } }
 
     private static func run() async {
-        guard Bundle.main.bundleIdentifier?.hasPrefix("be.spatie.bloom.typography-") == true else {
+        guard Bundle.main.bundleIdentifier?.hasPrefix("io.github.priyanshuupadhyay.swarm.typography-") == true else {
             harness.fail("requires a disposable probe bundle")
         }
         _ = await harness.window()

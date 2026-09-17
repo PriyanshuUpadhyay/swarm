@@ -278,7 +278,7 @@ public struct ArchivedCarryOn: Sendable, Hashable {
     /// whether or not anybody can do anything about it; this says what is still on offer, and
     /// depends on a chat having a thread to resume, which is not a fact about the branch at all.
     public static func standing(project: String, baseBranch: String) -> String {
-        "The conversation can still be carried on: Bloom cuts a new worktree from \(baseBranch) "
+        "The conversation can still be carried on: Swarm cuts a new worktree from \(baseBranch) "
             + "in \(project) and hands this chat to an agent there, with its own memory of it "
             + "intact. This archive is left exactly as it is."
     }

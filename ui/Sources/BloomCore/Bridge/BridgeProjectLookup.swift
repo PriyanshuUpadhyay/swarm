@@ -50,18 +50,18 @@ public enum BridgeProjectLookup: Sendable {
             return nil
 
         case .ambiguous(let matches):
-            return "Bloom has \(matches.count) projects called '\(query)'. Ask again with one of "
+            return "Swarm has \(matches.count) projects called '\(query)'. Ask again with one of "
                 + "these paths instead: " + listing(matches.map(\.path)) + "."
 
         case .unknown:
             guard !projects.isEmpty else {
-                return "Bloom has no projects yet, so there is nowhere to start a workspace. Add "
+                return "Swarm has no projects yet, so there is nowhere to start a workspace. Add "
                     + "an existing git repository with project_add first."
             }
-            return "Bloom has no project called '\(query)'. It knows "
+            return "Swarm has no project called '\(query)'. It knows "
                 + listing(projects.map(\.name))
                 + ". Ask again with one of those, or add the repository with project_add first. "
-                + "Bloom will not start a workspace in a repository it does not know about."
+                + "Swarm will not start a workspace in a repository it does not know about."
         }
     }
 
@@ -83,7 +83,7 @@ public enum BridgeProjectLookup: Sendable {
     /// with a trailing slash are one project rather than three misses, and so is a path reached
     /// through a symlink.
     ///
-    /// Public because the `bloom://` link resolves a project by path too, and had its own
+    /// Public because the `swarm-ui://` link resolves a project by path too, and had its own
     /// canonicaliser. The two did not agree: this one compared the cheap way and the link resolved
     /// symlinks, so `/tmp/thing` opened a project stored as `/private/tmp/thing` from a link and
     /// was refused from `workspace_start`. One answer to "which project is this path" now, and it

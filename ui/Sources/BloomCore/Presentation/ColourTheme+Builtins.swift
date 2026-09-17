@@ -1,7 +1,7 @@
 extension ColourTheme {
     public static let bloom = ColourTheme(
         id: "bloom",
-        title: "Bloom",
+        title: "Swarm",
         glass: .thick,
         surfaces: ThemeSurfaces(
             surface: PaletteInk.surface,

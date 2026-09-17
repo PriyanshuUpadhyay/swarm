@@ -37,7 +37,7 @@ struct AppearanceSettingsView: View {
                     ForEach(CodeScheme.all) { scheme in Text(scheme.title).tag(scheme.id as String?) }
                 }
                 typographyControls(terminal: false)
-                CodeBlockView(code: "// Read a file\nlet name = \"Bloom\"\nprint(name)", language: .swift)
+                CodeBlockView(code: "// Read a file\nlet name = \"Swarm\"\nprint(name)", language: .swift)
             }
 
             Section("Terminal") {

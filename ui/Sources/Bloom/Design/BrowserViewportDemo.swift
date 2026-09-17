@@ -15,7 +15,7 @@ enum BrowserViewportDemo {
     private static var window: NSWindow?
 
     static func schedule() {
-        guard Bundle.main.bundleIdentifier == "be.spatie.bloom.dev" else { return }
+        guard Bundle.main.bundleIdentifier == "io.github.priyanshuupadhyay.swarm.dev" else { return }
         Task {
             try? await Task.sleep(for: .seconds(1))
             let session = BrowserSession(url: "")

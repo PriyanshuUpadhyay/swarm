@@ -310,7 +310,7 @@ public extension ProjectConsequence {
         case .add(let root):
             ProjectConsequence(
                 lead: "\(NewProjectPlan.display(root, home: home)) is a git repository.",
-                detail: "Bloom will add it as a project. Nothing is written to it and nothing in "
+                detail: "Swarm will add it as a project. Nothing is written to it and nothing in "
                     + "it is changed.",
                 tone: .going
             )
@@ -338,7 +338,7 @@ public extension ProjectConsequence {
     /// rewrites, and the agent about to start is a better scaffolder than a menu because it
     /// explains itself in a diff.
     private static func firstCommit(on branch: String) -> String {
-        "git init, and an empty first commit on \(branch). Bloom writes no files of its own: "
+        "git init, and an empty first commit on \(branch). Swarm writes no files of its own: "
             + "no README, no .gitignore."
     }
 

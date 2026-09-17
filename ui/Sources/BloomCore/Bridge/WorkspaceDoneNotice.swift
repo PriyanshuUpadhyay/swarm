@@ -44,7 +44,7 @@ public enum WorkspaceDoneNotice {
         case .message: "the turn your workspace_say message started"
         case .start: "the task you started it with in workspace_start"
         }
-        let once = "This is the one notice Bloom sends for that call; it will not report later turns."
+        let once = "This is the one notice Swarm sends for that call; it will not report later turns."
         let blocked = " Nothing more will arrive from it until the owner answers, so if you need it, "
             + "tell the owner it is waiting."
 

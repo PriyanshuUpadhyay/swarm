@@ -87,7 +87,7 @@ public enum BranchHolder: Sendable, Hashable, Codable {
         case .projectCheckout(let path):
             opening = "'\(branch)' is the branch the project itself is on, at \(path)."
         case .otherWorktree(let path):
-            opening = "'\(branch)' is checked out at \(path), which is not one of Bloom's workspaces."
+            opening = "'\(branch)' is checked out at \(path), which is not one of Swarm's workspaces."
         }
         return opening
             + " Git allows one worktree per branch, so it cannot be opened twice. \(wayOut),"
@@ -106,14 +106,14 @@ public enum BranchHolder: Sendable, Hashable, Codable {
         let opening: String
         switch self {
         case .workspace(let name):
-            opening = "'\(branch)' is already open in Bloom's workspace '\(name)'."
+            opening = "'\(branch)' is already open in Swarm's workspace '\(name)'."
         case .projectCheckout(let path):
             opening = "'\(branch)' is the branch the project itself is on, at \(path)."
         case .otherWorktree(let path):
-            opening = "'\(branch)' is checked out at \(path), which is not one of Bloom's workspaces."
+            opening = "'\(branch)' is checked out at \(path), which is not one of Swarm's workspaces."
         }
         return opening
-            + " Git allows one worktree per branch, so Bloom cannot open it again."
+            + " Git allows one worktree per branch, so Swarm cannot open it again."
             + " Ask again with base_branch '\(branch)' instead of existing_branch, which cuts a"
             + " new branch from it and starts you on the same code, or leave it and say so."
     }

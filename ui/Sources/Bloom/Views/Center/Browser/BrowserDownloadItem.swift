@@ -95,7 +95,7 @@ final class BrowserDownloadItem: NSObject, WKDownloadDelegate, Identifiable {
     ) async -> URL? {
         let manager = FileManager.default
         guard let folder = Self.folder(manager) else {
-            state = .failed("Bloom could not reach your Downloads folder.")
+            state = .failed("Swarm could not reach your Downloads folder.")
             return nil
         }
 
@@ -172,7 +172,7 @@ final class BrowserDownloadItem: NSObject, WKDownloadDelegate, Identifiable {
         var values = URLResourceValues()
         values.quarantineProperties = [
             kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload,
-            kLSQuarantineAgentNameKey as String: "Bloom",
+            kLSQuarantineAgentNameKey as String: "Swarm",
             kLSQuarantineDataURLKey as String: source?.absoluteString ?? "",
         ]
         do {

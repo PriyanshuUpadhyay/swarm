@@ -6,7 +6,7 @@ import Testing
 struct BridgeSocketPathTests {
     @Test("names the socket from the same fingerprint the tmux socket uses")
     func sharesTheFingerprint() throws {
-        let database = "/Users/someone/Library/Application Support/Bloom/bloom.sqlite"
+        let database = "/Users/someone/Library/Application Support/Swarm/bloom.sqlite"
         let path = try BridgeSocketPath.derive(databasePath: database, directory: "/tmp")
         let fingerprint = TmuxSessions.fingerprint(database)
 
@@ -15,7 +15,7 @@ struct BridgeSocketPathTests {
         // this same fingerprint in Python, so a divergence here stops the guard protecting the
         // right instance.
         let dev = try BridgeSocketPath.derive(
-            databasePath: "/Users/someone/Library/Application Support/Bloom Dev/bloom.sqlite",
+            databasePath: "/Users/someone/Library/Application Support/Swarm Dev/bloom.sqlite",
             directory: "/tmp"
         )
         #expect(dev != path)
@@ -31,7 +31,7 @@ struct BridgeSocketPathTests {
 
     @Test("fits under the limit in the per-user temporary directory")
     func fitsInTheRealPlace() throws {
-        let path = try BridgeSocketPath.derive(databasePath: "/Users/someone/Library/Application Support/Bloom/bloom.sqlite")
+        let path = try BridgeSocketPath.derive(databasePath: "/Users/someone/Library/Application Support/Swarm/bloom.sqlite")
         #expect(path.utf8.count < BridgeSocketPath.limit)
     }
 }
@@ -69,7 +69,7 @@ struct BridgeRegistryTests {
 @Suite("BridgeRegistration", .tags(.security), .scratchDirectory)
 struct BridgeRegistrationTests {
     private let attachment = BridgeAttachment(
-        shimPath: "/Applications/Bloom.app/Contents/MacOS/bloom-bridge",
+        shimPath: "/Applications/Swarm.app/Contents/MacOS/bloom-bridge",
         socketPath: "/var/folders/xx/T/bloom-bridge-1a2b3c4d.sock",
         token: "t0ken",
         role: .workspace
@@ -83,9 +83,9 @@ struct BridgeRegistrationTests {
     /// entire inline table, so a distinctive name is the only defence there is.
     @Test("the server name is one nobody would type by hand")
     func theNameIsCollisionProof() {
-        #expect(BridgeRegistration.serverName == "bloom-workspace-bridge")
-        #expect(BridgeRegistration.serverName != "bloom")
-        #expect(BridgeRegistration.serverName.contains("bloom"))
+        #expect(BridgeRegistration.serverName == "swarm-ui-workspace-bridge")
+        #expect(BridgeRegistration.serverName != "swarm")
+        #expect(BridgeRegistration.serverName.contains("swarm-ui"))
     }
 
     @Test("the Claude config names the shim, its environment and no arguments")
@@ -175,7 +175,7 @@ struct BridgeHandshakeTests {
         let problem = try #require(BridgeProtocol.problem(with: hello))
         #expect(problem.contains("\(BridgeProtocol.version)"))
         #expect(problem.contains("\(BridgeProtocol.version + 1)"))
-        #expect(problem.lowercased().contains("quit and reopen bloom"))
+        #expect(problem.lowercased().contains("quit and reopen swarm"))
     }
 
     @Test("a welcome round trips as JSON")

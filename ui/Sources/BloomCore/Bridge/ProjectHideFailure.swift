@@ -34,20 +34,20 @@ public enum ProjectHideTrouble: Sendable, Equatable {
         switch self {
         case .noProjectNamed(let tool):
             return """
-                \(tool) needs the project to act on, named by the name Bloom shows in its \
+                \(tool) needs the project to act on, named by the name Swarm shows in its \
                 sidebar, by the absolute path of the repository, or by the id project_list \
                 prints. Call project_list to see them.
                 """
 
         case .nothingRegistered(let tool):
             return """
-                Bloom has no projects, so \(tool) has nothing to act on. Retrying will not change \
+                Swarm has no projects, so \(tool) has nothing to act on. Retrying will not change \
                 that. Register an existing git repository with project_add first.
                 """
 
         case let .unknown(query, known):
             return """
-                Bloom has no project called '\(query)', so there is nothing to hide or show under \
+                Swarm has no project called '\(query)', so there is nothing to hide or show under \
                 that name. It knows \(BridgeProjectLookup.listing(known)). Retrying with the same \
                 name will fail the same way: ask again with one of those, with the repository's \
                 absolute path, or with an id from project_list.
@@ -55,13 +55,13 @@ public enum ProjectHideTrouble: Sendable, Equatable {
 
         case let .ambiguous(query, paths):
             return """
-                Bloom has \(paths.count) projects called '\(query)' and will not guess which one \
+                Swarm has \(paths.count) projects called '\(query)' and will not guess which one \
                 you meant. Ask again with one of these paths instead: \
                 \(BridgeProjectLookup.listing(paths)).
                 """
 
         case let .unexplained(tool, message):
-            return "Bloom could not \(tool == "project_hide" ? "hide" : "show") that project: \(message)"
+            return "Swarm could not \(tool == "project_hide" ? "hide" : "show") that project: \(message)"
         }
     }
 

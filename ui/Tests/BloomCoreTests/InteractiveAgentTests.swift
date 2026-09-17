@@ -176,8 +176,12 @@ struct InteractiveAgentTests {
     @Test("Copied session IDs cannot share hook files between app builds")
     func isolatedStatusFiles() {
         let id = SessionID("copied-session")
-        let production = AgentKind.interactiveStatusURL(sessionID: id, namespace: "be.spatie.bloom")
-        let development = AgentKind.interactiveStatusURL(sessionID: id, namespace: "be.spatie.bloom.dev")
+        let production = AgentKind.interactiveStatusURL(
+            sessionID: id, namespace: "io.github.priyanshuupadhyay.swarm"
+        )
+        let development = AgentKind.interactiveStatusURL(
+            sessionID: id, namespace: "io.github.priyanshuupadhyay.swarm.dev"
+        )
         #expect(production != development)
     }
     @Test("Private launch files keep long prompts out of terminal input", arguments: [AgentKind.claudeCode, .codex])

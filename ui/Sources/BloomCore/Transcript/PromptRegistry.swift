@@ -204,7 +204,7 @@ public enum PromptRegistry {
         title: "Commit and push",
         summary: """
         Sent when you press Commit and push in the pull request strip. The agent writes the \
-        commit message, not Bloom.
+        commit message, not Swarm.
         """,
         variables: [
             PromptVariable(name: PushLocalWork.workspace, summary: "The workspace's name."),
@@ -298,9 +298,9 @@ public enum PromptRegistry {
         id: .mergePullRequest,
         title: "Merge a pull request",
         summary: """
-        Sent when you confirm Merge, with Bloom's own merge steps under it and the project's own \
+        Sent when you confirm Merge, with Swarm's own merge steps under it and the project's own \
         instructions attached when it has any. The agent runs `gh pr merge` in front of you, not \
-        Bloom.
+        Swarm.
         """,
         variables: [
             PromptVariable(name: MergePullRequest.workspace, summary: "The workspace's name."),
@@ -368,7 +368,7 @@ public enum PromptRegistry {
         id: .fixConflicts,
         title: "Fix merge conflicts",
         summary: """
-        Sent when you press Fix merge conflicts, with Bloom's own steps attached as a file. It \
+        Sent when you press Fix merge conflicts, with Swarm's own steps attached as a file. It \
         resolves against the base branch here and pushes the result; it never merges the pull \
         request.
         """,

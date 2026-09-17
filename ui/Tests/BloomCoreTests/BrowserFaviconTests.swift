@@ -136,7 +136,7 @@ struct BrowserFaviconTests {
         "javascript:alert(1)",
         "data:image/svg+xml,<svg onload='alert(1)'/>",
         "file:///etc/passwd",
-        "bloom://workspace/1",
+        "swarm-ui://workspace/1",
         "",
         "not a url at all",
     ])

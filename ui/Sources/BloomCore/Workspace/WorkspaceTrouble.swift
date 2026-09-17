@@ -95,7 +95,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
             return """
                 The project '\(project)' is no longer at \(path).
 
-                It has been moved, renamed or deleted since Bloom recorded it, so there is no \
+                It has been moved, renamed or deleted since Swarm recorded it, so there is no \
                 repository left to cut a worktree from.
 
                 Put the folder back, or remove the project from the sidebar and add it again \
@@ -147,7 +147,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
             return """
                 The worktree for '\(workspace)' is not on disk any more.
 
-                Something outside Bloom deleted the folder this workspace was working in, so \
+                Something outside Swarm deleted the folder this workspace was working in, so \
                 there are no changes left to read.
 
                 Its branch is still in the project, so archive this workspace and start a new one \
@@ -176,7 +176,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
             return """
                 The worktree for '\(workspace)' is not on disk any more.
 
-                Something outside Bloom deleted the folder, so there is no unsaved work left in \
+                Something outside Swarm deleted the folder, so there is no unsaved work left in \
                 it and nothing left to remove.
 
                 Archiving it destroys nothing that is still there.
@@ -188,17 +188,17 @@ public enum WorkspaceTrouble: Sendable, Equatable {
                 a worktree any more, which is what a folder that was deleted and then recreated \
                 looks like.
 
-                Its files have been kept. Try archiving again. Bloom keeps folders that git \
+                Its files have been kept. Try archiving again. Swarm keeps folders that git \
                 no longer recognizes as a worktree.
                 """
 
         case let .archiveWorktreeNotEmpty(workspace):
             return """
-                The worktree for '\(workspace)' holds files that are in no commit, and Bloom \
+                The worktree for '\(workspace)' holds files that are in no commit, and Swarm \
                 will not delete a worktree holding work that is nowhere else. Nothing has been \
                 removed.
 
-                Bloom looks for unsaved work before it runs the archive script, so files that \
+                Swarm looks for unsaved work before it runs the archive script, so files that \
                 appeared after that, a log or a dump the script left behind, are the usual reason \
                 for this.
 
@@ -208,7 +208,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .archiveUnexplained(workspace, complaint):
             return """
-                Archiving '\(workspace)' stopped, and Bloom cannot say why.
+                Archiving '\(workspace)' stopped, and Swarm cannot say why.
 
                 Its worktree is still a checkout in good order and holds nothing that is not \
                 committed, so this is neither a folder that has moved nor work standing in the \
@@ -225,13 +225,13 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
                 Another workspace on the same branch is the usual reason.
 
-                Archive that one, or delete that folder if it is not one of Bloom's, and try \
+                Archive that one, or delete that folder if it is not one of Swarm's, and try \
                 again.
                 """
 
         case let .restoreBranchGone(branch, workspace):
             return """
-                The branch '\(branch)' is not on this Mac and not on any remote Bloom can see, \
+                The branch '\(branch)' is not on this Mac and not on any remote Swarm can see, \
                 so the commits '\(workspace)' held cannot be reached by name and there is nothing \
                 to rebuild its worktree from.
 
@@ -242,7 +242,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .restoreUnexplained(workspace, complaint):
             return """
-                Bringing '\(workspace)' back stopped, and Bloom cannot say why.
+                Bringing '\(workspace)' back stopped, and Swarm cannot say why.
 
                 Its project is a checkout in good order and nothing else is holding its branch, \
                 so this is neither a project nor a branch that has gone missing. It stays in \
@@ -253,7 +253,7 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .continueUnexplained(workspace, complaint):
             return """
-                Continuing '\(workspace)' stopped, and Bloom cannot say why.
+                Continuing '\(workspace)' stopped, and Swarm cannot say why.
 
                 Its worktree is still a checkout in good order and the branch it would be cut \
                 from is still there, so this is neither a folder that has moved nor a branch that \
@@ -265,13 +265,13 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .recordUnwritable(workspace, complaint):
             return """
-                Bloom finished the disk work for '\(workspace)' and could not write the result \
+                Swarm finished the disk work for '\(workspace)' and could not write the result \
                 into its own database, so the sidebar and the archive are showing where this \
                 workspace was rather than where it is.
 
                 Nothing in the worktree is at risk; the record is the only thing that is wrong.
 
-                Quit Bloom and open it again, and if it happens a second time the database itself \
+                Quit Swarm and open it again, and if it happens a second time the database itself \
                 needs looking at.
 
                 The database said: \(complaint)
@@ -279,14 +279,14 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .transcriptUnwritable(complaint):
             return """
-                Bloom could not write this turn into its own database, so this conversation is \
+                Swarm could not write this turn into its own database, so this conversation is \
                 missing rows from here on.
 
                 Nothing in the worktree has been touched and every change the agent has made is \
                 still there.
 
                 Sending again will fail the same way while the database is refusing writes, so \
-                quit Bloom and open it again; if it happens a second time the database itself \
+                quit Swarm and open it again; if it happens a second time the database itself \
                 needs looking at.
 
                 The database said: \(complaint)
@@ -294,14 +294,14 @@ public enum WorkspaceTrouble: Sendable, Equatable {
 
         case let .reviewCommentUnwritable(complaint):
             return """
-                Bloom could not save that review comment, so the list is showing what is \
+                Swarm could not save that review comment, so the list is showing what is \
                 stored rather than what you typed.
 
                 Nothing in the worktree has been touched and no comment already written has been \
                 lost.
 
                 Trying again will fail the same way while the database is refusing writes, so \
-                quit Bloom and open it again; if it happens a second time the database itself \
+                quit Swarm and open it again; if it happens a second time the database itself \
                 needs looking at.
 
                 The database said: \(complaint)

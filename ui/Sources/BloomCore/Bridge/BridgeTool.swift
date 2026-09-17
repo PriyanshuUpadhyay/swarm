@@ -79,7 +79,7 @@ public struct BridgeToolResult: Sendable, Hashable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(value) else {
-            return .failure("Bloom could not render this answer as JSON.")
+            return .failure("Swarm could not render this answer as JSON.")
         }
         return BridgeToolResult(text: String(decoding: data, as: UTF8.self))
     }

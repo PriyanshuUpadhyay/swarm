@@ -59,7 +59,7 @@ public struct WorkspaceSayTool: BridgeToolHandling {
     public let tool = BridgeTool(
         name: WorkspaceSayTool.name,
         description: """
-            Send a message to the agent in another Bloom workspace. It lands in that workspace's \
+            Send a message to the agent in another Swarm workspace. It lands in that workspace's \
             chat and starts a turn there, the way agent_say does for a subagent in your own \
             workspace, or waits for the turn that is running.
 
@@ -75,19 +75,19 @@ public struct WorkspaceSayTool: BridgeToolHandling {
             cannot see this conversation.
 
             While it is queued, the owner can delete it from the chat it was sent to. If they do, \
-            Bloom tells you here.
+            Swarm tells you here.
 
             It returns once the message is in that chat. It does not wait for an answer and there \
             is no way to wait for one from here, so say what you sent and get on with your own \
             work. An answer arrives in this chat as a message of its own.
 
-            Pass notify_when_done: true to have Bloom tell this chat once, by itself, when the \
+            Pass notify_when_done: true to have Swarm tell this chat once, by itself, when the \
             turn your message causes there comes to rest: finished (with that agent's last \
             message), failed (with the reason), or blocked waiting on the owner for a permission \
             prompt or a question. With it, there is no need to ask the other agent to report \
             back when it is done.
 
-            Bloom refuses a message identical to one you sent the same workspace in the last \
+            Swarm refuses a message identical to one you sent the same workspace in the last \
             \(Int(WorkspaceSayThrottle.window / 60)) minutes, and more than \
             \(WorkspaceSayThrottle.limit) messages to the same workspace in that time. Do not \
             thank or acknowledge an answer with another message: that starts a turn there for \
@@ -113,7 +113,7 @@ public struct WorkspaceSayTool: BridgeToolHandling {
                 WorkspaceDoneWatch.argument: .object([
                     "type": .string("boolean"),
                     "description": .string(
-                        "Have Bloom tell this chat once when the turn this message causes there "
+                        "Have Swarm tell this chat once when the turn this message causes there "
                             + "comes to rest: finished, failed, or waiting on the owner. Defaults "
                             + "to false."
                     ),
@@ -284,10 +284,10 @@ public struct WorkspaceSayTool: BridgeToolHandling {
             : "If it answers, it answers with workspace_say, and its message lands in this chat, "
                 + "unless another chat in this workspace writes to it before it does."
         let notice = if message.notifyWhenDone {
-            " Bloom will tell this chat once, by itself, when the turn this message causes there "
+            " Swarm will tell this chat once, by itself, when the turn this message causes there "
                 + "comes to rest: finished, failed, or waiting on the owner."
         } else if noticeRequested {
-            " notify_when_done was ignored: this connection is not a chat in a Bloom workspace, so "
+            " notify_when_done was ignored: this connection is not a chat in a Swarm workspace, so "
                 + "there is nowhere to deliver the notice."
         } else {
             ""
@@ -304,7 +304,7 @@ public struct WorkspaceSayTool: BridgeToolHandling {
             Key.note: .string(
                 "Sent to the chat '\(chat)' in '\(message.target.workspace)', with the owner's "
                     + "authority. It starts a turn there, or waits for the one that is running, "
-                    + "and the owner can delete it there while it waits. Bloom does not wait for "
+                    + "and the owner can delete it there while it waits. Swarm does not wait for "
                     + "an answer, so get on with your own work. " + reply + notice
             ),
         ])
@@ -384,14 +384,14 @@ public enum WorkspaceSayTrouble: Error, Sendable, Equatable {
 
         case let .unknown(given, known):
             return """
-                Bloom has no active workspace called '\(given)'. Active workspaces: \
+                Swarm has no active workspace called '\(given)'. Active workspaces: \
                 \(BridgeWorkspaceLookup.list(known)). Retrying with the same name will fail the \
                 same way, so pass an id workspace_list reports.
                 """
 
         case let .ambiguous(given, ids):
             return """
-                More than one workspace is called '\(given)', so Bloom will not guess which you \
+                More than one workspace is called '\(given)', so Swarm will not guess which you \
                 meant. Pass one of these ids instead: \(BridgeWorkspaceLookup.list(ids)).
                 """
 
@@ -409,14 +409,14 @@ public enum WorkspaceSayTrouble: Error, Sendable, Equatable {
 
         case .callerHasGone:
             return """
-                Bloom no longer has the workspace this connection speaks for, so it cannot say \
+                Swarm no longer has the workspace this connection speaks for, so it cannot say \
                 where a message from it came from. Its row has gone, which retrying will not undo.
                 """
 
         case .repeated(let workspace):
             return """
                 You already sent exactly that message to '\(workspace)' in the last \
-                \(Int(WorkspaceSayThrottle.window / 60)) minutes, and it arrived, so Bloom did not \
+                \(Int(WorkspaceSayThrottle.window / 60)) minutes, and it arrived, so Swarm did not \
                 send it again. Do not retry. Wait for the answer, which lands in this chat, or tell \
                 the owner if you are stuck.
                 """
@@ -424,17 +424,17 @@ public enum WorkspaceSayTrouble: Error, Sendable, Equatable {
         case let .tooMany(workspace, count):
             return """
                 You have sent \(count) messages to '\(workspace)' in the last \
-                \(Int(WorkspaceSayThrottle.window / 60)) minutes, which is as many as Bloom lets one \
+                \(Int(WorkspaceSayThrottle.window / 60)) minutes, which is as many as Swarm lets one \
                 workspace send another, so this one was not sent. Two agents answering each other \
                 is a loop that spends a turn on both sides every round. Do not retry and do not \
                 acknowledge: wait for the answer you are owed, or tell the owner what you need.
                 """
 
         case .appRefused(let sentence):
-            return "Bloom did not deliver it: \(sentence)"
+            return "Swarm did not deliver it: \(sentence)"
 
         case .unexplained(let message):
-            return "Bloom could not complete workspace_say: \(message)"
+            return "Swarm could not complete workspace_say: \(message)"
         }
     }
 }

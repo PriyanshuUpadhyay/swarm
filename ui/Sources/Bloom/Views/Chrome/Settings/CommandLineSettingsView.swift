@@ -75,7 +75,7 @@ struct CommandLineSettingsView: View {
                 command: BridgeRegistration.ownerGrokAddCommand(attachment)
             )
         } header: {
-            Text("Use Bloom from your own terminal")
+            Text("Use Swarm from your own terminal")
         } footer: {
             CommandLineWarning()
                 .padding(.top, Metrics.spacingSmall)
@@ -123,10 +123,10 @@ struct CommandLineSettingsView: View {
     /// A build assembled without the shim beside it is a development build somebody made by hand,
     /// and a bridge that did not start is in the log.
     private var unavailableSection: some View {
-        Section("Use Bloom from your own terminal") {
+        Section("Use Swarm from your own terminal") {
             Text(
-                "The bridge this would connect through is not running, so this copy of Bloom "
-                    + "cannot be reached from an outside client. Reinstalling Bloom is the fix."
+                "The bridge this would connect through is not running, so this copy of Swarm "
+                    + "cannot be reached from an outside client. Reinstalling Swarm is the fix."
             )
             .settingsFootnote()
         }

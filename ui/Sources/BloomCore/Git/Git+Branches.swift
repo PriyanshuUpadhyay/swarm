@@ -104,7 +104,7 @@ extension Git {
         throw ShellError(
             command: "git rev-parse \(branch)",
             status: 1,
-            stderr: "Bloom could not find \(branch) in this repository or on its configured base remote."
+            stderr: "Swarm could not find \(branch) in this repository or on its configured base remote."
         )
     }
 

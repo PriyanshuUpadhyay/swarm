@@ -30,7 +30,7 @@ enum NumericTextProbe {
     static var isRequested: Bool { CommandLine.arguments.contains("--numeric-text-probe") }
 
     static func runAndExit() -> Never {
-        guard Bundle.main.bundleIdentifier != "be.spatie.bloom" else { exit(1) }
+        guard Bundle.main.bundleIdentifier != "io.github.priyanshuupadhyay.swarm" else { exit(1) }
         NSApplication.shared.setActivationPolicy(.prohibited)
         Task {
             for fixture in Fixture.allCases { print(await measure(fixture)) }

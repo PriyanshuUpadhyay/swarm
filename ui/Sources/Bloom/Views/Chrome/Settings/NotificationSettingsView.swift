@@ -31,7 +31,7 @@ struct NotificationSettingsView: View {
                     blockedNotice
                 }
             } footer: {
-                Text("Notifications are muted for the workspace you are viewing while Bloom is active.")
+                Text("Notifications are muted for the workspace you are viewing while Swarm is active.")
                     .settingsFootnote()
             }
 
@@ -75,7 +75,7 @@ struct NotificationSettingsView: View {
     /// the column the rest of the pane lines up against is a column the width of a sentence.
     private var blockedNotice: some View {
         HStack(spacing: Metrics.gutter) {
-            Label("macOS is blocking Bloom's notifications", systemImage: "bell.slash.fill")
+            Label("macOS is blocking Swarm's notifications", systemImage: "bell.slash.fill")
                 .font(Typo.label)
                 .foregroundStyle(Palette.warning)
                 .fixedSize(horizontal: false, vertical: true)

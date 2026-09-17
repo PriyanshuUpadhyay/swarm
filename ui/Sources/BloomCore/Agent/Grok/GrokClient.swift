@@ -32,7 +32,7 @@ public actor GrokClient {
             executable: String = GrokClient.executable,
             cwd: String,
             grokHome: String? = nil,
-            clientName: String = "Bloom",
+            clientName: String = "Swarm",
             clientVersion: String = "0.0.0",
             environment: [String: String] = Shell.environment(),
             model: String = "",
@@ -382,7 +382,7 @@ public actor GrokClient {
                 write(GrokOutgoing.failure(
                     id: request.id,
                     code: -32601,
-                    message: "Bloom does not implement \(request.method)"
+                    message: "Swarm does not implement \(request.method)"
                 ))
             }
 

@@ -4,7 +4,7 @@ import BloomCore
 /// A repository Bloom knows about, so "create a workspace" can be pointed at one from a picker.
 struct ProjectEntity: AppEntity {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(
-        name: "Bloom Project",
+        name: "Swarm Project",
         numericFormat: "\(placeholder: .int) projects"
     )
 

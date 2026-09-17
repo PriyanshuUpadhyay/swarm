@@ -78,12 +78,12 @@ public struct WorkspaceNote: Sendable, Hashable {
     /// an empty pane at the moment the note the reader came for is not there, and the middle
     /// paragraph is the one saying it has not been lost.
     public static let unreadable = """
-        This note could not be read out of Bloom's database, so it is not being shown and \
+        This note could not be read out of Swarm's database, so it is not being shown and \
         cannot be edited.
 
         Nothing has been lost: it is still in the row it was in.
 
-        Try again, and if that fails too, quit Bloom and open it again.
+        Try again, and if that fails too, quit Swarm and open it again.
         """
 
     /// What the pane says when a write was refused.
@@ -91,6 +91,6 @@ public struct WorkspaceNote: Sendable, Hashable {
     /// The pane used to mark the text saved whatever the write did, and `needsSave` compares
     /// against exactly that, so one refused write convinced it forever that the note was on disk.
     /// Leaving `saved` alone is what makes the next keystroke try again, which is why this says so.
-    public static let unwritable = "Not saved. Bloom's database refused the write. Retried as you type."
+    public static let unwritable = "Not saved. Swarm's database refused the write. Retried as you type."
 
 }

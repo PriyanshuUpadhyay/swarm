@@ -191,7 +191,7 @@ public enum RevealChoice {
     }
 
     private static func sentence(for workspace: Workspace, projects: [Repo]) -> String {
-        "Bloom is showing \(workspace.name) in \(projectName(workspace, projects: projects))."
+        "Swarm is showing \(workspace.name) in \(projectName(workspace, projects: projects))."
     }
 
     /// The scope is named every time, and that is load bearing rather than wordy. See
@@ -201,11 +201,11 @@ public enum RevealChoice {
         var clauses = ["showing \(filter.scope.label(searching: false))"]
         if let project { clauses.append("in \(project.name)") }
         if !filter.query.isEmpty { clauses.append("matching '\(filter.query)'") }
-        return "Bloom is on Home, " + clauses.joined(separator: ", ") + "."
+        return "Swarm is on Home, " + clauses.joined(separator: ", ") + "."
     }
 
     private static func projectName(_ workspace: Workspace, projects: [Repo]) -> String {
-        projects.first { $0.id == workspace.repoID }?.name ?? "a project Bloom no longer has"
+        projects.first { $0.id == workspace.repoID }?.name ?? "a project Swarm no longer has"
     }
 
     /// Names, comma separated, cut off before a refusal turns into a directory listing.

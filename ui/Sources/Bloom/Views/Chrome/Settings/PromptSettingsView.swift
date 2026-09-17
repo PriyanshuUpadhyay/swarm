@@ -62,7 +62,7 @@ struct PromptSettingsView: View {
                     // A different prompt must never inherit the previous editor's draft or focus.
                     .id(definition.id)
 
-                    Text("Changes save automatically and apply the next time Bloom uses this prompt.")
+                    Text("Changes save automatically and apply the next time Swarm uses this prompt.")
                         .settingsFootnote()
                 }
                 .padding(Metrics.inset)

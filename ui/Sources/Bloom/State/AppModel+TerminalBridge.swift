@@ -59,7 +59,7 @@ extension AppModel {
         }
 
         guard let opened else {
-            return .refused("Bloom could not create the terminal tab.")
+            return .refused("Swarm could not create the terminal tab.")
         }
         try? await Task.sleep(for: .milliseconds(180))
         let position = order.focus ? "and brought it to the front" : "in the background"

@@ -96,7 +96,7 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
             workspace moves to Archived.
 
             If you are working in a workspace, pass nothing to archive your own. You are still \
-            running, so the worktree cannot go yet. The call is a request: Bloom checks again once \
+            running, so the worktree cannot go yet. The call is a request: Swarm checks again once \
             your turn has ended and archives then. Say everything you have to say in this same \
             turn, because there will not be another one, and do not report the workspace as \
             archived. Only ask when the work is done and the owner, or the workspace that started \
@@ -113,7 +113,7 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
             The normal archive script runs if the project has one. Another agent running, queued \
             messages, uncommitted changes, local files that would be lost, or a failed safety \
             check refuses the call. There is no force option and no way to delete the branch. \
-            Explain a refusal and let the owner resolve it or archive manually in Bloom. Do not \
+            Explain a refusal and let the owner resolve it or archive manually in Swarm. Do not \
             discard files just to make this tool succeed. An already archived workspace is a no-op.
             """,
         inputSchema: .object([
@@ -158,7 +158,7 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
         case .requested:
             return BridgeToolResult(text: """
                 Archiving '\(workspace.name)' is requested, not done. Nothing has been removed and \
-                you are still in the worktree. Bloom checks again when this turn ends, and \
+                you are still in the worktree. Swarm checks again when this turn ends, and \
                 archives then if no agent is running here and nothing is queued; if it refuses, \
                 the workspace stays and the owner is told why. This is your last turn in this \
                 workspace, so finish what you were saying now, and do not report it as archived.
@@ -199,11 +199,11 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
             if arguments.isEmpty {
                 do {
                     guard let own = try await store.workspace(id: workspaceID) else {
-                        return .refused("That workspace is no longer in Bloom, so there is nothing to archive.")
+                        return .refused("That workspace is no longer in Swarm, so there is nothing to archive.")
                     }
                     return .found(own, sessionID)
                 } catch {
-                    return .refused("Bloom could not read this workspace. Nothing was archived; try again shortly.")
+                    return .refused("Swarm could not read this workspace. Nothing was archived; try again shortly.")
                 }
             }
             return await started(request, arguments: arguments, by: workspaceID, store: store)
@@ -220,7 +220,7 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
             }
             return .found(found, nil)
         } catch {
-            return .refused("Bloom could not read this workspace. Nothing was archived; try again shortly.")
+            return .refused("Swarm could not read this workspace. Nothing was archived; try again shortly.")
         }
     }
 
@@ -252,13 +252,13 @@ public struct WorkspaceArchiveTool: BridgeToolHandling {
             if found.id == caller {
                 return .refused("""
                     That is the workspace you are in. Leave 'id' out to archive your own, which \
-                    Bloom does once your turn has ended.
+                    Swarm does once your turn has ended.
                     """)
             }
             guard found.origin.parentWorkspaceID == caller else { return .refused(notStarted) }
             return .found(found, nil)
         } catch {
-            return .refused("Bloom could not read that workspace. Nothing was archived; try again shortly.")
+            return .refused("Swarm could not read that workspace. Nothing was archived; try again shortly.")
         }
     }
 }

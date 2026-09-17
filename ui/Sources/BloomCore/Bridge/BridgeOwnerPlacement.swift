@@ -46,10 +46,10 @@ public enum BridgeOwnerPlacement {
         }) else { return nil }
 
         return """
-            This is the owner's own registration of Bloom, and it was started inside the Bloom \
+            This is the owner's own registration of Swarm, and it was started inside the Swarm \
             workspace '\(workspace.name)' at \(workspace.path). An agent working in a workspace \
-            uses the bridge Bloom gives that workspace, not the owner's, so this connection was \
-            refused. To use the owner's tools, run the client from a directory outside Bloom's \
+            uses the bridge Swarm gives that workspace, not the owner's, so this connection was \
+            refused. To use the owner's tools, run the client from a directory outside Swarm's \
             workspaces.
             """
     }

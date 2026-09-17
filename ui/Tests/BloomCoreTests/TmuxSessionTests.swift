@@ -10,7 +10,7 @@ struct TmuxSessionNamingTests {
         let pane = "6f1c2b8a-0f4c-4a6b-9a1e-2c3d4e5f6071"
         let name = TmuxSessions.sessionName(workspaceID: workspace, paneID: pane)
         #expect(name == TmuxSessions.sessionName(workspaceID: workspace, paneID: pane))
-        #expect(name == "bloom_\(workspace)_\(pane)")
+        #expect(name == "swarmui_\(workspace)_\(pane)")
     }
 
     @Test("Different panes never share a session")
@@ -35,11 +35,11 @@ struct TmuxSessionNamingTests {
     func foreignSessions() {
         #expect(TmuxSessions.isBloomSession(TmuxSessions.sessionName(workspaceID: WorkspaceID.new(), paneID: newID())))
         #expect(!TmuxSessions.isBloomSession("work"))
-        #expect(!TmuxSessions.isBloomSession("bloomish"))
-        #expect(!TmuxSessions.isBloomSession("my_bloom_thing"))
-        #expect(!TmuxSessions.isBloomSession("bloom_"))
-        #expect(!TmuxSessions.isBloomSession("bloom__pane"))
-        #expect(!TmuxSessions.isBloomSession("bloom_ws_pane_extra"))
+        #expect(!TmuxSessions.isBloomSession("swarmuiish"))
+        #expect(!TmuxSessions.isBloomSession("my_swarmui_thing"))
+        #expect(!TmuxSessions.isBloomSession("swarmui_"))
+        #expect(!TmuxSessions.isBloomSession("swarmui__pane"))
+        #expect(!TmuxSessions.isBloomSession("swarmui_ws_pane_extra"))
         #expect(TmuxSessions.paneID(ofSessionName: "0") == nil)
     }
 
@@ -48,17 +48,17 @@ struct TmuxSessionNamingTests {
     @Test("Characters that would break a name are folded away", arguments: [".", ":", " ", "$", "_"])
     func unsafeCharacters(character: String) {
         let name = TmuxSessions.sessionName(workspaceID: WorkspaceID("ws"), paneID: "pane\(character)one")
-        #expect(name == "bloom_ws_pane-one")
+        #expect(name == "swarmui_ws_pane-one")
         #expect(TmuxSessions.paneID(ofSessionName: name) == "pane-one")
     }
 
     @Test("The socket is per database, so a throwaway instance cannot see the real one")
     func socketPerDatabase() {
-        let real = TmuxSessions.socketName(databasePath: "/Users/x/Library/Application Support/Bloom/bloom.sqlite")
+        let real = TmuxSessions.socketName(databasePath: "/Users/x/Library/Application Support/Swarm/bloom.sqlite")
         let copy = TmuxSessions.socketName(databasePath: "/tmp/scratch/bloom.sqlite")
         #expect(real != copy)
-        #expect(real == TmuxSessions.socketName(databasePath: "/Users/x/Library/Application Support/Bloom/bloom.sqlite"))
-        #expect(real.hasPrefix("bloom-"))
+        #expect(real == TmuxSessions.socketName(databasePath: "/Users/x/Library/Application Support/Swarm/bloom.sqlite"))
+        #expect(real.hasPrefix("swarmui-"))
     }
 
     @Test("The fingerprint does not move between runs")
@@ -104,7 +104,7 @@ struct TmuxRestoreDecisionTests {
             paneID: pane,
             persistenceEnabled: true,
             tmuxAvailable: true,
-            existingSessions: [name, "bloom_other_pane"]
+            existingSessions: [name, "swarmui_other_pane"]
         )
         #expect(decision == .attach(session: name))
     }
@@ -116,14 +116,14 @@ struct TmuxRestoreDecisionTests {
             paneID: pane,
             persistenceEnabled: true,
             tmuxAvailable: true,
-            existingSessions: ["bloom_someone_else"]
+            existingSessions: ["swarmui_someone_else"]
         )
         #expect(decision == .createFresh(session: name))
     }
 
     @Test("Both tmux outcomes exec the same command, so a stale snapshot cannot break a pane")
     func sameArguments() {
-        let command = TmuxCommand(executable: "/opt/homebrew/bin/tmux", socketName: "bloom-1", configPath: "/c")
+        let command = TmuxCommand(executable: "/opt/homebrew/bin/tmux", socketName: "swarmui-1", configPath: "/c")
         let attach = TmuxSessions.decide(
             workspaceID: workspace, paneID: pane, persistenceEnabled: true, tmuxAvailable: true,
             existingSessions: [name]
@@ -178,7 +178,7 @@ struct TmuxOrphanTests {
     @Test("A session the user created themselves is never swept")
     func leavesForeignSessions() {
         let orphans = TmuxSessions.orphans(
-            sessions: ["work", "dotfiles", "0", "bloom", "bloom_only-two-fields"], livePaneIDs: [], sparing: []
+            sessions: ["work", "dotfiles", "0", "swarmui", "swarmui_only-two-fields"], livePaneIDs: [], sparing: []
         )
         #expect(orphans.isEmpty)
     }
@@ -241,7 +241,7 @@ struct TmuxOrphanTests {
 
     @Test("list-sessions output is read line by line")
     func parsesList() {
-        #expect(TmuxSessions.parseSessionList("bloom_a_b\nbloom_c_d\n") == ["bloom_a_b", "bloom_c_d"])
+        #expect(TmuxSessions.parseSessionList("swarmui_a_b\nswarmui_c_d\n") == ["swarmui_a_b", "swarmui_c_d"])
         #expect(TmuxSessions.parseSessionList("") == [])
         // What tmux prints when no server is running arrives on stderr, so stdout is empty.
         #expect(TmuxSessions.parseSessionList("\n\n") == [])

@@ -54,7 +54,7 @@ struct WorkspaceListToolTests {
 
         #expect(!result.isError)
         #expect(try workspaces(result).isEmpty)
-        #expect(result.text.contains("Bloom has no workspaces."))
+        #expect(result.text.contains("Swarm has no workspaces."))
     }
 
     @Test("a workspace answers with the columns a caller can act on")

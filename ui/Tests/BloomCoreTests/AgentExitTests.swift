@@ -96,7 +96,7 @@ struct AgentExitTests {
         ))
 
         #expect(exit.command == "/opt/homebrew/bin/claude")
-        #expect(exit.advice.hasSuffix("Bloom ran /opt/homebrew/bin/claude."))
+        #expect(exit.advice.hasSuffix("Swarm ran /opt/homebrew/bin/claude."))
         // Still one line, whatever was appended to the advice under it.
         #expect(!exit.summary.contains("claude.js"))
     }
@@ -106,7 +106,7 @@ struct AgentExitTests {
         let exit = AgentExit.decode(Self.payload(status: 1, stderr: Self.nodeCrash))
 
         #expect(exit.command.isEmpty)
-        #expect(!exit.advice.contains("Bloom ran"))
+        #expect(!exit.advice.contains("Swarm ran"))
     }
 
     // MARK: Real errors, short ones especially
@@ -187,7 +187,7 @@ struct AgentExitTests {
 
         #expect(exit.cause == .storage("storing an event: database is locked"))
         #expect(exit.title == "Not saved")
-        #expect(exit.advice.contains("Bloom's copy"))
+        #expect(exit.advice.contains("Swarm's copy"))
     }
 
     @Test("a payload that is not JSON at all still draws a row")
@@ -259,7 +259,7 @@ struct AgentExitTests {
             .silent,
             .endedMidTurn,
             .storage("storing an event: disk full"),
-            .notStarted("Bloom could not open an agent for this chat."),
+            .notStarted("Swarm could not open an agent for this chat."),
         ]
 
         for cause in causes {

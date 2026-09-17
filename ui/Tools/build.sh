@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Bloom and assembles a launchable .app bundle.
+# Builds the Bloom product and assembles a launchable Swarm.app bundle.
 #
 #   ./Tools/build.sh            debug build
 #   ./Tools/build.sh -r         release build
@@ -34,12 +34,12 @@ swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-bridge
 swift build -c "$CONFIG" "${BUILD_ARGS[@]}" --product bloom-sleep-helper
 
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
-APP="$BIN_DIR/Bloom.app"
+APP="$BIN_DIR/Swarm.app"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cp "$BIN_DIR/Bloom" "$APP/Contents/MacOS/Bloom"
+cp "$BIN_DIR/Bloom" "$APP/Contents/MacOS/Swarm"
 # Beside the app's own executable, which is where BridgeRegistration.shimPath looks for it. A
 # bundle without it is not broken: every chat simply has no bridge tools, which is what every chat
 # had before the bridge existed.
@@ -48,7 +48,7 @@ cp "$BIN_DIR/bloom-bridge" "$APP/Contents/MacOS/bloom-bridge"
 # points back at the executable beside it. Both are signed by the pass at the foot of this file.
 cp "$BIN_DIR/bloom-sleep-helper" "$APP/Contents/MacOS/bloom-sleep-helper"
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
-cp Resources/be.spatie.bloom.sleep.plist "$APP/Contents/Library/LaunchDaemons/"
+cp Resources/io.github.priyanshuupadhyay.swarm.sleep.plist "$APP/Contents/Library/LaunchDaemons/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 plist_set() {
@@ -181,12 +181,12 @@ embed_sparkle() {
   mkdir -p "$APP/Contents/Frameworks"
   rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
   /usr/bin/ditto "$framework" "$APP/Contents/Frameworks/Sparkle.framework"
-  /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Bloom" 2>/dev/null
+  /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Swarm" 2>/dev/null
 
   # Nothing above proves dyld will find it, so the answer is read back out of the binary rather
   # than assumed. An app that launches on this machine only because the framework happens to still
   # be in .build is exactly the failure this step exists to prevent.
-  if ! otool -l "$APP/Contents/MacOS/Bloom" | grep -q '@executable_path/../Frameworks'; then
+  if ! otool -l "$APP/Contents/MacOS/Swarm" | grep -q '@executable_path/../Frameworks'; then
     echo "==> Sparkle: the executable has no rpath into Contents/Frameworks" >&2
     return 1
   fi

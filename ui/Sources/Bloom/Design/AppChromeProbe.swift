@@ -10,7 +10,7 @@ enum AppChromeProbe {
     static var isRequested: Bool { CommandLine.arguments.contains("--app-chrome-probe") }
 
     static func runAndExit() -> Never {
-        guard Bundle.main.bundleIdentifier != "be.spatie.bloom",
+        guard Bundle.main.bundleIdentifier != "io.github.priyanshuupadhyay.swarm",
               ProcessInfo.processInfo.environment["BLOOM_DB_PATH"] != nil else { exit(1) }
         NSApplication.shared.setActivationPolicy(.prohibited)
         Task { await run() }

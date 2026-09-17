@@ -95,7 +95,7 @@ struct WorkspaceStartFailureTests {
             error, project: "flare", projectPath: repo.path, baseBranch: "main", wasRequested: false
         )
 
-        #expect(trouble.sentence.contains("the default branch Bloom cuts from"))
+        #expect(trouble.sentence.contains("the default branch Swarm cuts from"))
         #expect(trouble.sentence.contains("'trunk'"))
     }
 

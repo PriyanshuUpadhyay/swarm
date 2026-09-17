@@ -36,7 +36,7 @@ struct BridgeOwnerPlacementTests {
         let refusal = try #require(BridgeOwnerPlacement.refusal(workingDirectory: directory, workspaces: live))
         #expect(refusal.contains("'bothnian-sea'"))
         #expect(refusal.contains("/Users/someone/bloom/workspaces/bothnian-sea"))
-        #expect(refusal.contains("outside Bloom's workspaces"))
+        #expect(refusal.contains("outside Swarm's workspaces"))
     }
 
     /// The workspace row carrying the trailing slash rather than the directory.
@@ -59,7 +59,7 @@ struct BridgeOwnerPlacementTests {
         "/Users/someone/bloom/workspaces",
         "/Users/someone",
         // Where Ask Bloom's shim runs, which really is the owner.
-        "/Users/someone/Library/Application Support/Bloom/Ask",
+        "/Users/someone/Library/Application Support/Swarm/Ask",
         "/",
     ])
     func outsideIsLetThrough(_ directory: String) {

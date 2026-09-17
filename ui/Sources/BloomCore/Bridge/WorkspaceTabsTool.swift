@@ -103,5 +103,5 @@ public struct WorkspaceTabsTool: BridgeToolHandling {
 /// screen rather than one that reads the strip.
 public enum WorkspaceTabTrouble {
     public static let noWorkspace =
-        "That workspace is not open in Bloom any more, so its tabs cannot be reached."
+        "That workspace is not open in Swarm any more, so its tabs cannot be reached."
 }

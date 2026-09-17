@@ -13,23 +13,23 @@ extension AppModel {
     /// something, and the workspace's active chat otherwise. The delivery and its record are one
     /// store call, so a message is in a queue and visible to its sender, or neither.
     func deliverWorkspaceMessage(_ message: WorkspaceMessage) async -> WorkspaceMessageDeliveryOutcome {
-        guard let store else { return .refused("Bloom's database is not open.") }
+        guard let store else { return .refused("Swarm's database is not open.") }
         guard let targetID = message.target.workspaceID,
               let workspace = workspaces.first(where: { $0.id == targetID })
         else {
-            return .refused("The workspace '\(message.target.workspace)' is not open in Bloom any more.")
+            return .refused("The workspace '\(message.target.workspace)' is not open in Swarm any more.")
         }
 
         let model = model(for: workspace)
         guard let chat = await model.chatForWorkspaceMessage(preferring: message.replySessionID) else {
-            return .refused("Bloom could not open a chat in '\(workspace.name)' to put it in.")
+            return .refused("Swarm could not open a chat in '\(workspace.name)' to put it in.")
         }
 
         let queued: WorkspaceMessage
         do {
             queued = try await store.enqueueWorkspaceMessage(message, into: chat)
         } catch {
-            return .refused("Bloom could not queue it: \(error.readableMessage)")
+            return .refused("Swarm could not queue it: \(error.readableMessage)")
         }
 
         await model.drainWorkspaceMessage(into: chat)

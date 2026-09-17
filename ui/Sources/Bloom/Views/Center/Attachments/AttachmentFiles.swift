@@ -33,7 +33,7 @@ enum AttachmentFiles {
         var errorDescription: String? {
             switch self {
             case .unreadable(let name):
-                "Bloom could not read \(name)."
+                "Swarm could not read \(name)."
             case .tooLarge(let name, let bytes):
                 """
                 \(name) is \(Self.size(bytes)), and an attachment is copied into the worktree. \
@@ -44,7 +44,7 @@ enum AttachmentFiles {
                 // nothing to move into the worktree: what is on the clipboard is bytes, and the
                 // only way to make them smaller is to save them somewhere first.
                 """
-                That image is \(Self.size(bytes)), which is more than Bloom will write into a \
+                That image is \(Self.size(bytes)), which is more than Swarm will write into a \
                 worktree (\(Self.size(maxByteCount))). Save it to a file and attach that, or \
                 paste a smaller one. It would have been written as \(name).
                 """

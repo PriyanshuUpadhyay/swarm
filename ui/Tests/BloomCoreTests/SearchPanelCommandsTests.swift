@@ -30,7 +30,7 @@ struct SearchPanelCommandsTests {
     @Test("rows are grouped by the menu they live in, in the bar's own order")
     func groupedByMenu() {
         let sections = SearchPanelCommands.sections(SearchPanelCommands.rank(""))
-        #expect(sections.map(\.title) == ["Bloom", "File", "Edit", "View", "Workspace", "Help"])
+        #expect(sections.map(\.title) == ["Swarm", "File", "Edit", "View", "Workspace", "Help"])
         #expect(sections.allSatisfy { $0.rows.allSatisfy { $0.drillable == nil } })
     }
 

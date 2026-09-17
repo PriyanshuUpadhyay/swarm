@@ -11,11 +11,11 @@ enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .unknownProject:
-            "That project is no longer one of Bloom's. Add its folder in Bloom and try again."
+            "That project is no longer one of Swarm's. Add its folder in Swarm and try again."
         case .unknownWorkspace:
-            "That workspace no longer exists in Bloom."
+            "That workspace no longer exists in Swarm."
         case .appNeverAppeared:
-            "Bloom did not finish opening, so there was nowhere to send the request."
+            "Swarm did not finish opening, so there was nowhere to send the request."
         }
     }
 }

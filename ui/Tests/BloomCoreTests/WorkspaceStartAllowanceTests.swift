@@ -36,7 +36,7 @@ struct WorkspaceStartAllowanceTests {
         let allowance = WorkspaceStartAllowance.running(limit: 8)
 
         #expect(allowance.refusal(count: 7) == nil)
-        #expect(allowance.refusal(count: 8)?.contains("which is Bloom's limit") == true)
+        #expect(allowance.refusal(count: 8)?.contains("which is Swarm's limit") == true)
         #expect(allowance.refusal(count: 9)?.contains("9 workspaces running") == true)
     }
 

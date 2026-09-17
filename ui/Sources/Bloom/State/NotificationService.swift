@@ -210,7 +210,7 @@ final class NotificationService {
         deliver(PreparedNotification(
             identifier: "bloom.test",
             threadIdentifier: "bloom.test",
-            title: "Bloom",
+            title: "Swarm",
             body: "Notifications are working. This is what an agent finishing looks like.",
             workspaceID: app?.selection.workspaceID ?? WorkspaceID("")
         ))

@@ -49,7 +49,7 @@ public enum BridgeSocketPathError: Error, CustomStringConvertible {
             """
             the bridge socket path \(path) is \(path.utf8.count) bytes, and a unix socket \
             name may be at most \(limit - 1). A longer one is truncated rather than refused, \
-            so two copies of Bloom could quietly share one socket
+            so two copies of Swarm could quietly share one socket
             """
         }
     }

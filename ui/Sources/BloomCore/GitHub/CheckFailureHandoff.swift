@@ -232,7 +232,7 @@ public enum CheckFailureHandoff {
                 : ""
             sentence += " Its log is in \(AttachmentDraft.token(for: logPath)).\(cut)"
         } else {
-            sentence += " Bloom could not fetch its log."
+            sentence += " Swarm could not fetch its log."
         }
 
         if let detailsURL, !detailsURL.isEmpty { sentence += " The run is at \(detailsURL)." }

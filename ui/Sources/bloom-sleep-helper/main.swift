@@ -14,13 +14,14 @@ import Foundation
 /// watches the process that asked. If Bloom dies with sleep disabled, the watchdog puts it back.
 /// That is the failure Amphetamine's own alert says it cannot cover ("your Mac may be unable to
 /// return to normal sleeping behavior until you relaunch Amphetamine").
-let machServiceName = "be.spatie.bloom.sleep"
+let machServiceName = "io.github.priyanshuupadhyay.swarm.sleep"
 
 /// Only Bloom may ask. Checked by the system rather than by us: `setConnectionCodeSigningRequirement`
 /// refuses the connection before a byte of it reaches this process.
 let clientRequirement = """
 anchor apple generic and certificate leaf[subject.OU] = "97KRXCRMAY" \
-and (identifier "be.spatie.bloom" or identifier "be.spatie.bloom.dev")
+and (identifier "io.github.priyanshuupadhyay.swarm" \
+or identifier "io.github.priyanshuupadhyay.swarm.dev")
 """
 
 @objc protocol SleepControl {

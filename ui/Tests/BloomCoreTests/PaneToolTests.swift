@@ -87,7 +87,7 @@ struct PaneToolTests {
     /// tool call could render a local file in the owner's window with no prompt.
     @Test("a browser pane opens http and https, and refuses anything else")
     func refusesSchemesTheOwnerDidNotChoose() {
-        for url in ["file:///Users/freek/.ssh/id_rsa", "ftp://example.com", "bloom://open"] {
+        for url in ["file:///Users/freek/.ssh/id_rsa", "ftp://example.com", "swarm-ui://open"] {
             let outcome = PaneOrder.parse(
                 kind: "browser", url: url, focus: nil, tool: "pane_open"
             )
@@ -322,7 +322,7 @@ struct PaneToolTests {
 
 /// How Bloom's own bridge calls read in a transcript.
 ///
-/// The wire name is `bloom-workspace-bridge` and has to stay that: `BridgeRegistration.serverName`
+/// The wire name is `swarm-ui-workspace-bridge` and has to stay that: `BridgeRegistration.serverName`
 /// records why, and it is a measurement rather than a convention. What the reader sees is a
 /// separate question and is answered where the reading happens.
 @Suite("Bloom's own tools, as a reader meets them")
@@ -333,12 +333,12 @@ struct BloomBridgePresentationTests {
         )
     }
 
-    /// "bloom-workspace-bridge: pane open" names the transport where every other row names the
+    /// "swarm-ui-workspace-bridge: pane open" names the transport where every other row names the
     /// thing that happened.
     @Test("the transport does not appear in the row")
     func theTransportIsNotTheLabel() {
         let row = present("pane_open")
-        #expect(row.label == "Bloom: pane open")
+        #expect(row.label == "Swarm: pane open")
         #expect(!row.label.contains("bridge"))
         #expect(!row.label.contains("workspace-bridge"))
     }

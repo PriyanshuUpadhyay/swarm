@@ -160,7 +160,7 @@ final class AgentActivity {
             options: wanted,
             // Shown verbatim by `pmset -g assertions`, so it is written for somebody looking at
             // that list wondering what is holding their Mac open.
-            reason: session ? "Keep Awake is on in Bloom" : "Coding agents are running"
+            reason: session ? "Keep Awake is on in Swarm" : "Coding agents are running"
         )
         heldOptions = wanted
     }

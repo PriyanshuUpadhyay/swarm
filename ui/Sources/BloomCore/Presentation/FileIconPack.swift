@@ -16,7 +16,7 @@ public enum FileIconPack: String, CaseIterable, Sendable, Identifiable {
 
     public var title: String {
         switch self {
-        case .bloom: "Bloom default"
+        case .bloom: "Swarm default"
         case .vscodeIcons: "vscode-icons"
         case .material: "Material Icon Theme"
         case .symbols: "Symbols"

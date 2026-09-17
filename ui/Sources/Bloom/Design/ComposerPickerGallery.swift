@@ -66,7 +66,7 @@ struct ComposerPickerGallery: View {
 
             VStack(alignment: .leading, spacing: Metrics.pane) {
                 panel(
-                    "Ask Bloom, where the footnote is the one thing left in it",
+                    "Ask Swarm, where the footnote is the one thing left in it",
                     options: permissionOptions(on: .claudeCode),
                     selection: PermissionMode.auto.rawValue,
                     heading: "Permission mode",

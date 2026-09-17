@@ -94,7 +94,7 @@ public extension GitRepositoryProblem {
         switch self {
         case .gitUnusable(let detail):
             """
-            Bloom could not run git, so it cannot read this folder. git said: \(detail). On a Mac \
+            Swarm could not run git, so it cannot read this folder. git said: \(detail). On a Mac \
             without Apple's command line tools, running xcode-select --install in Terminal fixes \
             this.
             """
@@ -117,19 +117,19 @@ public extension GitRepositoryProblem {
         switch self {
         case .gitUnusable(let detail):
             """
-            Bloom will not add that folder as a project because git does not run on this Mac \
+            Swarm will not add that folder as a project because git does not run on this Mac \
             (\(detail)). Retrying will not help. Tell the owner, who may need to install Apple's \
             command line tools.
             """
         case .unsafeOwnership(let path):
             """
-            Bloom will not add \(path) as a project because it belongs to a different user \
+            Swarm will not add \(path) as a project because it belongs to a different user \
             account and git refuses to work in it. Retrying will not help, and do not change git's \
             safe.directory setting yourself: trusting a folder is the owner's decision. Tell them.
             """
         case .failed(let detail):
             """
-            Bloom will not add that folder as a project because git could not read it (\(detail)). \
+            Swarm will not add that folder as a project because git could not read it (\(detail)). \
             Retrying will not help. Tell the owner, and do not run git init to get past it.
             """
         }

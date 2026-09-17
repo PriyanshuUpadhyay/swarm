@@ -220,20 +220,20 @@ public struct WorkspaceStartTool: BridgeToolHandling {
         name: "workspace_start",
         description: """
             Start a workspace and give it a task. It is a real git worktree on its own branch with \
-            its own agent, and it appears in Bloom's sidebar for the owner to watch and review.
+            its own agent, and it appears in Swarm's sidebar for the owner to watch and review.
 
             Name the project to start it in with 'project', giving the name or the path that \
-            project_list reports. Bloom only starts workspaces in repositories it already has, so \
+            project_list reports. Swarm only starts workspaces in repositories it already has, so \
             a project that is not on that list has to be registered with project_add first, which \
             only the owner can do. If you are \
-            yourself running inside a Bloom workspace, leave 'project' out to start it in the \
+            yourself running inside a Swarm workspace, leave 'project' out to start it in the \
             project you are already in, or name another project to hand the work to that \
             repository instead. The new workspace is still counted as one you started.
 
             Use it when a task splits into parts that do not need to see each other's edits, and \
             you want them worked on at the same time rather than one after another.
 
-            There are two ways to start it, the two Bloom's own create window offers, and picking \
+            There are two ways to start it, the two Swarm's own create window offers, and picking \
             the wrong one is the mistake worth avoiding here.
 
             '\(WorkspaceSourceTab.newBranch.title)' is the default and needs nothing said. \
@@ -248,7 +248,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             so a branch another workspace is sitting on is refused rather than opened twice.
 
             To review an existing GitHub pull request, use 'pull_request' with its number, '#123', \
-            or its GitHub URL. Bloom checks out the pull request itself, preserving its base and \
+            or its GitHub URL. Swarm checks out the pull request itself, preserving its base and \
             identity so the Changes, Checks and Merge controls refer to that pull request. Do not \
             create a review branch with base_branch for this purpose.
 
@@ -259,7 +259,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             it from here, so do not ask for one and then sit idle: say what you started and get on \
             with your own work.
 
-            Pass notify_when_done: true to have Bloom tell this chat once, by itself, when the new \
+            Pass notify_when_done: true to have Swarm tell this chat once, by itself, when the new \
             agent's first turn comes to rest: finished (with its last message), failed (with the \
             reason), or blocked waiting on the owner for a permission prompt or a question. With \
             it, there is no need to tell the new agent to report back when it is done.
@@ -278,7 +278,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                     "type": .string("string"),
                     "description": .string(
                         "Which project to start it in, by the name or the path project_list "
-                            + "reports. Inside a Bloom workspace, leave it out for the project you "
+                            + "reports. Inside a Swarm workspace, leave it out for the project you "
                             + "are in, or name another to start the work there."
                     ),
                 ]),
@@ -291,7 +291,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                 "name": .object([
                     "type": .string("string"),
                     "description": .string(
-                        "What to call it in the sidebar. Leave it out and Bloom names it from the task."
+                        "What to call it in the sidebar. Leave it out and Swarm names it from the task."
                     ),
                 ]),
                 "base_branch": .object([
@@ -315,7 +315,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                     "type": .string("string"),
                     "description": .string(
                         "Open this GitHub pull request itself for review, by number, #number or "
-                            + "GitHub URL. This preserves the PR connection so Bloom can show "
+                            + "GitHub URL. This preserves the PR connection so Swarm can show "
                             + "checks and merge it. Do not combine it with base_branch or "
                             + "existing_branch."
                     ),
@@ -325,7 +325,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                     "enum": .array(AgentKind.runnable.map { .string($0.rawValue) }),
                     "description": .string(
                         "Which agent runs it. Leave it out for the one you are running on, or "
-                            + "for Bloom's own default if you are not running in Bloom."
+                            + "for Swarm's own default if you are not running in Swarm."
                     ),
                 ]),
                 "model": .object([
@@ -341,7 +341,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                 WorkspaceDoneWatch.argument: .object([
                     "type": .string("boolean"),
                     "description": .string(
-                        "Have Bloom tell this chat once when the new agent's first turn comes to "
+                        "Have Swarm tell this chat once when the new agent's first turn comes to "
                             + "rest: finished, failed, or waiting on the owner. Defaults to false."
                     ),
                 ]),
@@ -366,7 +366,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
         let agent = agent(in: request)
         if let requested = request.stringParam("agent"), agent == nil {
             return .failure(
-                "Bloom cannot run '\(requested)'. It runs "
+                "Swarm cannot run '\(requested)'. It runs "
                     + AgentKind.runnable.map(\.rawValue).joined(separator: " and ")
                     + ". Leave the argument out to use the same agent you are running on."
             )
@@ -411,7 +411,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             case .failure(let sentence): return .failure(sentence)
             case .checkout(.pullRequest(let request)): source = .pullRequest(request)
             case .checkout(.branch):
-                return .failure("Bloom resolved that pull request as a branch instead of a pull request.")
+                return .failure("Swarm resolved that pull request as a branch instead of a pull request.")
             }
         }
 
@@ -444,7 +444,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                 }
             } catch {
                 return .failure(
-                    "Bloom could not check for a repeat of this call: \(error.readableMessage)"
+                    "Swarm could not check for a repeat of this call: \(error.readableMessage)"
                 )
             }
         }
@@ -457,7 +457,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             if let refusal = try await overAllowance(origin, store: store) { return .failure(refusal) }
         } catch {
             return .failure(
-                "Bloom could not check how many workspaces it has started recently: "
+                "Swarm could not check how many workspaces it has started recently: "
                     + error.readableMessage
             )
         }
@@ -475,9 +475,9 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                     note = startedNote(for: identity.role, notifying: true)
                 case .noChat:
                     note += " notify_when_done was ignored: this connection is not a chat in a "
-                        + "Bloom workspace, so there is nowhere to deliver the notice."
+                        + "Swarm workspace, so there is nowhere to deliver the notice."
                 case .failed(let reason):
-                    note += " Bloom could not record notify_when_done, so it will not tell you when "
+                    note += " Swarm could not record notify_when_done, so it will not tell you when "
                         + "the new agent is done: \(reason)"
                 }
             }
@@ -547,8 +547,8 @@ public struct WorkspaceStartTool: BridgeToolHandling {
                 guard let named else {
                     return .refused(
                         "workspace_start needs a project, because this connection is not running "
-                            + "inside a Bloom workspace and nothing else says where the work "
-                            + "should go. Call project_list to see what Bloom has."
+                            + "inside a Swarm workspace and nothing else says where the work "
+                            + "should go. Call project_list to see what Swarm has."
                     )
                 }
                 // The rate is not checked here. A retry of a call that already cut a worktree is
@@ -561,10 +561,10 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             }
 
             guard let caller = try await store.workspace(id: workspaceID) else {
-                return .refused("This workspace is no longer in Bloom's database.")
+                return .refused("This workspace is no longer in Swarm's database.")
             }
             guard let project = try await store.repo(id: caller.repoID) else {
-                return .refused("This workspace's project is no longer in Bloom's database.")
+                return .refused("This workspace's project is no longer in Swarm's database.")
             }
 
             // The nesting limit, and the only lock there is: no role hides this tool from a
@@ -588,7 +588,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             case .resolved(let named, _): return .resolved(named, asking)
             }
         } catch {
-            return .refused("Bloom could not read its projects: \(error.readableMessage)")
+            return .refused("Swarm could not read its projects: \(error.readableMessage)")
         }
     }
 
@@ -602,7 +602,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
             return .refused(refusal)
         }
         guard case .found(let project) = outcome else {
-            return .refused("Bloom has no project called '\(named)'.")
+            return .refused("Swarm has no project called '\(named)'.")
         }
         return .resolved(project, nil)
     }
@@ -670,7 +670,7 @@ public struct WorkspaceStartTool: BridgeToolHandling {
     /// naming a tool a caller cannot reach is worse than naming none.
     private func startedNote(for role: BridgeRole, notifying: Bool) -> String {
         let opening = notifying
-            ? "It is setting up and will start on its own. Bloom will tell this chat once, by "
+            ? "It is setting up and will start on its own. Swarm will tell this chat once, by "
                 + "itself, when its first turn comes to rest: finished, failed, or waiting on the "
                 + "owner. You cannot wait for it from here, so carry on with your own work."
             : "It is setting up and will start on its own. It does not report back, and "

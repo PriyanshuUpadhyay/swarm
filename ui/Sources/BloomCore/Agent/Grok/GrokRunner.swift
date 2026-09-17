@@ -211,7 +211,7 @@ public actor GrokRunner: SessionRunner {
         let client = makeClient(GrokClient.Configuration(
             executable: AgentCatalog.executable(for: .grok, override: stored),
             cwd: workspacePath,
-            clientName: "Bloom",
+            clientName: "Swarm",
             clientVersion: Self.clientVersion,
             model: wireModel,
             effort: session.effort,
@@ -513,7 +513,7 @@ public actor GrokRunner: SessionRunner {
     var transcriptWasRemoved: Bool { trouble.hasStopped }
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "grok-runner"
     )
 }

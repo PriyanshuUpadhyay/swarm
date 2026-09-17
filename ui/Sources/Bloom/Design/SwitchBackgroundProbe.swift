@@ -7,7 +7,7 @@ import BloomCore
 enum SwitchBackgroundProbe {
     static func run(order: [WorkspaceID]) async -> JSONValue {
         guard ProbeHarness.isPresent("--switch-background-updates") else { return .null }
-        guard Bundle.main.bundleIdentifier?.hasPrefix("be.spatie.bloom.typography-") == true,
+        guard Bundle.main.bundleIdentifier?.hasPrefix("io.github.priyanshuupadhyay.swarm.typography-") == true,
               ProcessInfo.processInfo.environment["BLOOM_DB_PATH"] != nil,
               order.count >= 2, let app = ProbeHarness.appModel, let store = app.store,
               let workspace = app.existingModel(for: order[0]),

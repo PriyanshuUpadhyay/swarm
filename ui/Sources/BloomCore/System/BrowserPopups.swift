@@ -61,10 +61,10 @@ public struct BrowserPopups: Sendable, Equatable {
     private static func notice(for url: URL) -> Notice {
         let host = url.host() ?? "That page"
         return Notice(
-            title: "Bloom stopped \(host) opening more tabs",
+            title: "Swarm stopped \(host) opening more tabs",
             message: """
                 This page asked for several browser tabs at once, which is what a page in a loop \
-                does. Bloom opened the first few and refused the rest. Reload the page if you were \
+                does. Swarm opened the first few and refused the rest. Reload the page if you were \
                 expecting them.
                 """
         )

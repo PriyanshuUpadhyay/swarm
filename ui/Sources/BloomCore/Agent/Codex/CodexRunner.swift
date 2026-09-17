@@ -448,7 +448,7 @@ public actor CodexRunner: SessionRunner {
         let client = makeClient(CodexClient.Configuration(
             executable: AgentCatalog.executable(for: .codex, override: stored),
             cwd: workspacePath,
-            clientName: "Bloom",
+            clientName: "Swarm",
             clientVersion: Self.clientVersion,
             environment: account?.merging(into: Shell.environment()) ?? Shell.environment(),
             bridge: bridge,
@@ -925,7 +925,7 @@ public actor CodexRunner: SessionRunner {
     var transcriptWasRemoved: Bool { trouble.hasStopped }
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "be.spatie.bloom",
+        subsystem: Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm",
         category: "codex-runner"
     )
 }

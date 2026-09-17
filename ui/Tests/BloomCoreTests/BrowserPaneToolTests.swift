@@ -240,7 +240,7 @@ struct BrowserPaneToolTests {
     /// browser pane cannot come to disagree about what Bloom will open on the owner's behalf.
     @Test("browser_go opens http and https and nothing else")
     func goTakesTheTwoSchemes() {
-        for url in ["file:///Users/freek/.ssh/id_rsa", "ftp://example.com", "bloom://open"] {
+        for url in ["file:///Users/freek/.ssh/id_rsa", "ftp://example.com", "swarm-ui://open"] {
             guard case .failure(let refusal) = BrowserGoTool.address(url) else {
                 Issue.record("\(url) was not refused"); return
             }

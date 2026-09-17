@@ -52,7 +52,7 @@ public actor CodexClient {
             executable: String = CodexClient.executable,
             cwd: String,
             codexHome: String? = nil,
-            clientName: String = "Bloom",
+            clientName: String = "Swarm",
             clientVersion: String = "0.0.0",
             environment: [String: String] = Shell.environment(),
             bridge: BridgeAttachment? = nil,
@@ -513,7 +513,7 @@ public actor CodexClient {
                 write(CodexOutgoing.failure(
                     id: request.id,
                     code: -32601,
-                    message: "Bloom does not implement \(request.method)"
+                    message: "Swarm does not implement \(request.method)"
                 ))
             }
 

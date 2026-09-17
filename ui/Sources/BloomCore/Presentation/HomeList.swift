@@ -615,7 +615,7 @@ public enum HomeList {
     /// text needs a number to be about; see `DatabaseSize.compactionHelp` for the rest of the
     /// explanation, which is a paragraph and lives on the control rather than in this one line.
     private static func databaseClause(_ size: DatabaseSize) -> String {
-        let total = "Bloom\u{2019}s database is \(ArchiveDeletion.bytes(size.totalBytes))"
+        let total = "Swarm\u{2019}s database is \(ArchiveDeletion.bytes(size.totalBytes))"
         guard size.isWorthCompacting else { return total }
         return "\(total), \(ArchiveDeletion.bytes(size.freeBytes)) of it unused"
     }

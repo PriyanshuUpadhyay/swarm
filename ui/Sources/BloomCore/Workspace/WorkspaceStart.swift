@@ -4,7 +4,7 @@ import Foundation
 ///
 /// One value rather than eleven arguments, because there are now four routes to a workspace and
 /// they had already drifted apart: the create window could choose a base branch, a branch name, a
-/// backend, a model, an effort and a permission mode; the `bloom://` link, the Services menu and
+/// backend, a model, an effort and a permission mode; the `swarm-ui://` link, the Services menu and
 /// the Shortcuts intent were each hardwired to chat, the default branch and the default model,
 /// not by decision but because nobody carried the arguments through. A route that fills in a
 /// request cannot quietly lose a field, because the field is still there, holding nil, and nil has
@@ -146,8 +146,8 @@ extension WorkspaceManager {
     /// This exists because opening a workspace from outside the app has to execute the same code
     /// as opening one from the sheet, and it did not. The sheet was the only route that carried a
     /// base branch, a branch name, a backend, a model, an effort or a permission mode; the
-    /// `bloom://` link and the Services menu called the same method with everything after `prompt`
-    /// left at its default; and the Shortcuts intent did not call it at all. It built a `bloom://`
+    /// `swarm-ui://` link and the Services menu called the same method with everything after `prompt`
+    /// left at its default; and the Shortcuts intent did not call it at all. It built a `swarm-ui://`
     /// URL, opened it, and then polled the database for up to sixty seconds looking for a row it
     /// had not seen before, because a URL is one way and there was nothing to return. Two
     /// Shortcuts creating a workspace in one project at the same second could each claim the
@@ -197,7 +197,7 @@ extension WorkspaceManager {
         // Here rather than inside `createWorkspace`, for the reason that method's own comment
         // gives: it is the lower half, the worktree and the row and nothing else, and which list
         // the window draws the row in is orchestration. This is the one route every caller takes,
-        // the sheet, a `bloom://` link, the Services menu, a Shortcut and the bridge alike, so
+        // the sheet, a `swarm-ui://` link, the Services menu, a Shortcut and the bridge alike, so
         // both ways a worktree can be made, cut and checkout, are covered by the one call. See
         // `bringProjectBack`.
         let projectCameBack = await bringProjectBack(request.repo.id)

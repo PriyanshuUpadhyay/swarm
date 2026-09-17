@@ -269,7 +269,7 @@ public enum RetryTrouble: Sendable, Hashable {
         case .rateLimited: "Anthropic's API is rate limiting this account"
         case .serverFault: "Anthropic's API is failing"
         case .refused: "Anthropic's API refused the request"
-        case .unreachable: "Bloom cannot reach Anthropic's API"
+        case .unreachable: "Swarm cannot reach Anthropic's API"
         case .unexplained: "Anthropic's API returned an error"
         }
     }
@@ -311,7 +311,7 @@ public enum RetryTrouble: Sendable, Hashable {
             return "Nothing came back at all, which can be this machine's network as easily as "
                 + "theirs. Worth a glance at your connection."
         case .unexplained(let status):
-            return "It came back as \(status), which Bloom has no reading of."
+            return "It came back as \(status), which Swarm has no reading of."
         }
     }
 

@@ -25,7 +25,7 @@ import Foundation
 /// hand". This type is the one that refuses to be vague, and
 /// `init(parentWorkspaceID:spawnToolUseID:)` is the single place a row is read back into it.
 public enum WorkspaceOrigin: Sendable, Equatable, Hashable, Codable {
-    /// The owner, through the sheet, a `bloom://` link, the Services menu or a Shortcut.
+    /// The owner, through the sheet, a `swarm-ui://` link, the Services menu or a Shortcut.
     case user
 
     /// An agent running in another workspace asked for this one.

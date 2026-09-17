@@ -184,9 +184,9 @@ public enum PermissionAskOutcome {
     /// pressing something would help: the process it belonged to is gone.
     public static func summary(_ decision: String) -> String {
         switch decision {
-        case quit: "Bloom closed this session before the question was answered."
+        case quit: "Swarm closed this session before the question was answered."
         case stopped: "The turn was stopped before this was answered."
-        case abandoned: "Bloom was not running when this was asked, so it went unanswered."
+        case abandoned: "Swarm was not running when this was asked, so it went unanswered."
         case resolved: "The agent closed this question before it was answered."
         default: ""
         }

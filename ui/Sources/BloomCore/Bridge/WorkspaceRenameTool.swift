@@ -55,12 +55,12 @@ public enum WorkspaceRenameTrouble: Error, Sendable, Equatable {
         case let .unknown(given, known):
             guard !known.isEmpty else {
                 return """
-                    Bloom has no workspaces at all, so there is nothing called '\(given)' to \
+                    Swarm has no workspaces at all, so there is nothing called '\(given)' to \
                     rename. Retrying will not change that.
                     """
             }
             return """
-                Bloom has no workspace called '\(given)'. It has \
+                Swarm has no workspace called '\(given)'. It has \
                 \(BridgeWorkspaceLookup.list(known)). Retrying with the same name will fail the \
                 same way: call workspace_list and pass a name or an id from its answer.
                 """
@@ -77,12 +77,12 @@ public enum WorkspaceRenameTrouble: Error, Sendable, Equatable {
 
         case .gone:
             return """
-                That workspace is no longer in Bloom, so nothing was renamed. Its row has gone, \
+                That workspace is no longer in Swarm, so nothing was renamed. Its row has gone, \
                 which retrying will not undo.
                 """
 
         case .unexplained(let message):
-            return "Bloom could not rename that workspace: \(message)"
+            return "Swarm could not rename that workspace: \(message)"
         }
     }
 }

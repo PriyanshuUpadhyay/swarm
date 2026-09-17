@@ -131,7 +131,7 @@ struct WelcomeGreeting: View {
                 .scaleEffect(entered ? 1 : 0.88)
                 .animation(step(0), value: entered)
 
-            Text(verbatim: "Welcome to Bloom")
+            Text(verbatim: "Welcome to Swarm")
                 .font(Typo.display)
                 .tracking(Typo.displayTracking)
                 .foregroundStyle(Brand.foam)

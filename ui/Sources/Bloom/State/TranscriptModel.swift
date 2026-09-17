@@ -816,7 +816,7 @@ final class TranscriptModel {
     var holdSentence: String? {
         if history.isCapturing || history.isFinalisingTurn { return "Saving this turn's file changes." }
         if pendingDeliveries.first?.state == .uncertain {
-            return "Bloom could not confirm delivery. Check the conversation before sending again."
+            return "Swarm could not confirm delivery. Check the conversation before sending again."
         }
         if isRunning, let mode = pendingDeliveries.first?.interactionMode, mode != activeInteractionMode {
             return "Goes when this turn ends."
@@ -1142,7 +1142,7 @@ final class TranscriptModel {
         // that never opened, so it is close to impossible, and a message of the owner's
         // disappearing without a word is not a thing to leave resting on that.
         guard let runner = ensureRunner() else {
-            await abandon(delivery, saying: "Bloom could not open an agent for this chat.")
+            await abandon(delivery, saying: "Swarm could not open an agent for this chat.")
             return false
         }
         // The queue is moving, whether or not that begins a turn.

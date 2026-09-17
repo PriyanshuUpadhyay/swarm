@@ -109,14 +109,14 @@ public enum BridgeReadTrouble: Error, Sendable, Equatable {
 
         case let .unknown(given, known):
             return """
-                Bloom has no active workspace called '\(given)'. Active workspaces: \
+                Swarm has no active workspace called '\(given)'. Active workspaces: \
                 \(BridgeWorkspaceLookup.list(known)). Retrying with the same name will fail the \
                 same way, so pass an id workspace_list reports.
                 """
 
         case let .ambiguous(given, ids):
             return """
-                More than one workspace is called '\(given)', so Bloom will not guess which you \
+                More than one workspace is called '\(given)', so Swarm will not guess which you \
                 meant. Pass one of these ids instead: \(BridgeWorkspaceLookup.list(ids)).
                 """
 

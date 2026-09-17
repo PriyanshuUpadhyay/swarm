@@ -834,7 +834,7 @@ public enum AgentKind: String, Sendable, Codable, CaseIterable, Identifiable {
     /// backend that grows one joins this sentence by answering `canRunWorkspaces`.
     public static var runnableSentence: String {
         let names = runnable.map(\.label)
-        guard let last = names.last else { return "no agent Bloom can run" }
+        guard let last = names.last else { return "no agent Swarm can run" }
         guard names.count > 1 else { return last }
         return names.dropLast().joined(separator: ", ") + " and " + last
     }

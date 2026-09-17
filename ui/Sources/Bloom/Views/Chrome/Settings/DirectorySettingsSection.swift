@@ -36,9 +36,9 @@ struct DirectorySettingsSection: View {
         }
         .disabled(!isLoaded)
 
-        Section("Ask Bloom") {
-            folderRow("Working directory", path: preferences.ask, fallback: "Bloom’s own folder",
-                      message: "Choose the working directory for new Ask Bloom conversations.") {
+        Section("Ask Swarm") {
+            folderRow("Working directory", path: preferences.ask, fallback: "Swarm’s own folder",
+                      message: "Choose the working directory for new Ask Swarm conversations.") {
                 preferences.ask = $0
             }
             Text("New conversations start here. Existing conversations keep their working directory.")

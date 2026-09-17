@@ -30,7 +30,7 @@ public enum ProjectRemoval {
     public static func consequences(workspaces: [Workspace], runningAgents: Int) -> String {
         let active = workspaces.filter { $0.state == .active }.count
 
-        var text = "Bloom forgets this project"
+        var text = "Swarm forgets this project"
         switch active {
         case 0 where workspaces.isEmpty: text += "."
         case 0: text += " and its \(workspaces.count) archived workspace\(workspaces.count == 1 ? "" : "s")."

@@ -12,8 +12,8 @@ import Testing
 /// `~/.claude.json` is never read, let alone written.
 @Suite("BridgeUserRegistrationRepair")
 struct BridgeUserRegistrationRepairTests {
-    private let moved = "/Applications/Bloom.app/Contents/MacOS/bloom-bridge"
-    private let gone = "/Users/freek/Applications/Bloom.app/Contents/MacOS/bloom-bridge"
+    private let moved = "/Applications/Swarm.app/Contents/MacOS/bloom-bridge"
+    private let gone = "/Users/freek/Applications/Swarm.app/Contents/MacOS/bloom-bridge"
 
     private var attachment: BridgeAttachment {
         BridgeAttachment(
@@ -140,7 +140,7 @@ struct BridgeUserRegistrationRepairTests {
         // The shim is a relay that takes its socket and its token out of the environment, so Bloom
         // Dev's binary driving this instance's socket works, and somebody may have wired it that
         // way on purpose. "Stale" means the path names nothing, and only that is repaired.
-        let elsewhere = "/Users/freek/Applications/Bloom Dev.app/Contents/MacOS/bloom-bridge"
+        let elsewhere = "/Users/freek/Applications/Swarm Dev.app/Contents/MacOS/bloom-bridge"
         let data = try config(["bloom": entry(command: elsewhere)])
         #expect(decide(data, present: [moved, elsewhere]) == .leaveAlone(.shimStillThere))
     }
@@ -151,7 +151,7 @@ struct BridgeUserRegistrationRepairTests {
         // `Store.databaseDirectoryName`, so the three identities in Tools/guard.sh are not looking
         // at the same entry at all; and underneath that, the socket and token pair belongs to one
         // database, so a copy that somehow did look at the other's entry could not claim it.
-        let devShim = "/Users/freek/Applications/Bloom Dev.app/Contents/MacOS/bloom-bridge"
+        let devShim = "/Users/freek/Applications/Swarm Dev.app/Contents/MacOS/bloom-bridge"
         let dev: [String: Any] = [
             "command": devShim,
             "env": [

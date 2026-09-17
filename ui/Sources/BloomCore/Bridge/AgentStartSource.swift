@@ -185,9 +185,9 @@ public enum AgentStartBranch: Sendable, Equatable {
 
         guard !branches.isEmpty else {
             return .refused(
-                "Bloom found no branches in the project '\(project)' to continue on. It may have "
-                    + "no commits yet, or Bloom may no longer be able to read the repository. "
-                    + "Leave existing_branch out to have Bloom cut a new branch, which says what "
+                "Swarm found no branches in the project '\(project)' to continue on. It may have "
+                    + "no commits yet, or Swarm may no longer be able to read the repository. "
+                    + "Leave existing_branch out to have Swarm cut a new branch, which says what "
                     + "is wrong if it cannot."
             )
         }

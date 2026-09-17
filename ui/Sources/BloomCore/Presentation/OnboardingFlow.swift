@@ -270,7 +270,7 @@ public struct OnboardingPrimary: Sendable, Hashable {
     ///
     /// Named here rather than only in the verdict's table because the screen that ends the
     /// sequence is one no verdict has an opinion about.
-    public static let finishTitle = "Start using Bloom"
+    public static let finishTitle = "Start using Swarm"
 
     public init(step: OnboardingStep, verdict: SetupVerdict, next: OnboardingStep?) {
         // Blocked is asked about only on the screen carrying the column. A re-probe that turns

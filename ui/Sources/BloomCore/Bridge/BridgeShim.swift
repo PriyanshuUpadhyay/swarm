@@ -41,7 +41,7 @@ public enum BridgeShim {
         } catch {
             // The ordinary case, and it deserves a sentence rather than an errno: Bloom has quit
             // and somebody is running the CLI by hand from a config file Bloom left behind.
-            complain("bloom-bridge could not reach Bloom on \(socketPath). Is Bloom running?")
+            complain("bloom-bridge could not reach Swarm on \(socketPath). Is Swarm running?")
             return Exit.cannotReachBloom
         }
 
@@ -54,13 +54,13 @@ public enum BridgeShim {
         connection.writeLine(String(decoding: data, as: UTF8.self))
 
         guard let reply = await iterator.next() else {
-            complain("Bloom closed the bridge without answering. Quit and reopen Bloom.")
+            complain("Swarm closed the bridge without answering. Quit and reopen Swarm.")
             connection.close()
             return Exit.cannotReachBloom
         }
         let welcome = (reply.data(using: .utf8)).flatMap { try? JSONDecoder().decode(BridgeWelcome.self, from: $0) }
         guard let welcome, welcome.accepted else {
-            complain(welcome?.problem ?? "Bloom refused the bridge connection.")
+            complain(welcome?.problem ?? "Swarm refused the bridge connection.")
             connection.close()
             return Exit.refused
         }
@@ -84,7 +84,7 @@ public enum BridgeShim {
         // status. The model waits on a tool result that is never coming, and the one thing that
         // could have told it otherwise stayed silent. A wrong answer is recoverable; that is not.
         guard shutdownAsked.wasAsked else {
-            complain("Bloom closed the bridge before answering. Quit and reopen Bloom, then try again.")
+            complain("Swarm closed the bridge before answering. Quit and reopen Swarm, then try again.")
             return Exit.cannotReachBloom
         }
         return Exit.ok
@@ -128,7 +128,7 @@ public enum BridgeShim {
             ? "Neither was set"
             : "\(missing[0]) was not set"
         return """
-            bloom-bridge is launched by Bloom and takes \(BridgeProtocol.socketVariable) and \
+            bloom-bridge is launched by Swarm and takes \(BridgeProtocol.socketVariable) and \
             \(BridgeProtocol.tokenVariable) from its environment. \(absent), so there is \
             nothing to connect to.
             """

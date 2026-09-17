@@ -135,7 +135,7 @@ struct AskConversationTests {
         #expect(!ask.hasWorktree)
         let note = try #require(ask.permissionModeNote)
         #expect(note.contains("whole machine"))
-        #expect(note.contains("Bloom next starts"))
+        #expect(note.contains("Swarm next starts"))
     }
 
     /// The empty state is the first thing the owner sees, and it used to open by listing what this

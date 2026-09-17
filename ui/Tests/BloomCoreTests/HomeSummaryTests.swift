@@ -195,7 +195,7 @@ struct HomeSummaryTests {
                 listing: machine, filter: HomeFilter(scope: .archived), projects: 4,
                 database: tidy
             ) == "17 archived in 4 projects, holding \(ArchiveDeletion.bytes(7_600_000)) "
-                + "\u{00B7} Bloom\u{2019}s database is \(ArchiveDeletion.bytes(40_960_000))"
+                + "\u{00B7} Swarm\u{2019}s database is \(ArchiveDeletion.bytes(40_960_000))"
         )
     }
 
@@ -243,7 +243,7 @@ struct HomeSummaryTests {
         #expect(
             HomeList.summary(
                 listing: quiet, filter: HomeFilter(scope: .archived), projects: 4, database: size
-            ) == "Nothing archived \u{00B7} Bloom\u{2019}s database is "
+            ) == "Nothing archived \u{00B7} Swarm\u{2019}s database is "
                 + "\(ArchiveDeletion.bytes(40_960_000))"
         )
     }
@@ -264,7 +264,7 @@ struct HomeSummaryTests {
                 projects: 4,
                 database: size
             ) == "Showing 11 of 312 workspaces, holding \(ArchiveDeletion.bytes(2_100_000)) "
-                + "\u{00B7} Bloom\u{2019}s database is \(ArchiveDeletion.bytes(40_960_000))"
+                + "\u{00B7} Swarm\u{2019}s database is \(ArchiveDeletion.bytes(40_960_000))"
         )
         // And nothing about bytes on any other chip, narrowed or not.
         #expect(

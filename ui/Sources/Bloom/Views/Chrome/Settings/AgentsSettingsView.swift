@@ -144,7 +144,7 @@ struct AgentsSettingsView: View {
 
             if status.connection != .notInstalled {
                 Button(status.connection == .connected ? "Sign in with another account…" : "Sign in…", action: runLogin)
-                    .help("Sign in to \(selection.label) in Bloom.")
+                    .help("Sign in to \(selection.label) in Swarm.")
             }
         } header: {
             Text(selection.label)
@@ -159,7 +159,7 @@ struct AgentsSettingsView: View {
     private var notInstalledSection: some View {
         Section {
             Label {
-                Text("Bloom looked for \(selection.executableName) on your PATH and did not find it. Install the CLI, or point Bloom at the executable below.")
+                Text("Swarm looked for \(selection.executableName) on your PATH and did not find it. Install the CLI, or point Swarm at the executable below.")
                     .settingsFootnote()
             } icon: {
                 Image(systemName: "magnifyingglass")
@@ -260,7 +260,7 @@ struct AgentsSettingsView: View {
         if !selection.canRunWorkspaces {
             Section {
                 Label {
-                    Text("\(selection.label) cannot run workspaces in Bloom yet. Use \(AgentKind.runnableSentence).")
+                    Text("\(selection.label) cannot run workspaces in Swarm yet. Use \(AgentKind.runnableSentence).")
                         .settingsFootnote()
                 } icon: {
                     Image(systemName: "info.circle")

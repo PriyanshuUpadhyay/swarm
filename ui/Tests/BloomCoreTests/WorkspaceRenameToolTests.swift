@@ -237,7 +237,7 @@ struct WorkspaceRenameToolTests {
         )
 
         #expect(result.isError)
-        #expect(result.text.contains("no longer in Bloom"))
+        #expect(result.text.contains("no longer in Swarm"))
     }
 
     // MARK: - The owner names one out loud

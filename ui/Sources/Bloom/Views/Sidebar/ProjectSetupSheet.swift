@@ -159,8 +159,8 @@ struct ProjectSetupSheet: View {
     @ViewBuilder
     private var offer: some View {
         Text(
-            "Bloom runs every agent in a git worktree, so a project has to be a repository. "
-                + "Bloom can make this folder one."
+            "Swarm runs every agent in a git worktree, so a project has to be a repository. "
+                + "Swarm can make this folder one."
         )
         .font(Typo.body)
         .foregroundStyle(Palette.textSecondary)

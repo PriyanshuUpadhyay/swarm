@@ -90,10 +90,10 @@ public enum ContinuationRefusal: Sendable, Hashable {
                 + "Wait for the turn to finish, then press Continue again."
         case .detachedHead:
             "This worktree is not on a branch at all. Commits made on a detached HEAD are held by "
-                + "nothing but this checkout, so Bloom will not move it."
+                + "nothing but this checkout, so Swarm will not move it."
         case .switchedByHand(let branch, let pullRequestBranch):
             "This worktree is on \(branch) now, and the pull request that merged was for "
-                + "\(pullRequestBranch). Bloom will not move a checkout off a branch it was not "
+                + "\(pullRequestBranch). Swarm will not move a checkout off a branch it was not "
                 + "the one to put it on."
         case .operationInProgress:
             "A rebase or merge is half finished in this worktree. Finish or abort it first."
@@ -101,7 +101,7 @@ public enum ContinuationRefusal: Sendable, Hashable {
             "This worktree is on \(branch), which is the branch everything is merged into. "
                 + "There is nothing to continue from here."
         case .noValidName:
-            "Bloom could not work out a branch name to continue on."
+            "Swarm could not work out a branch name to continue on."
         }
     }
 }

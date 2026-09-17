@@ -88,7 +88,7 @@ struct CrewPresentationTests {
         for tool in [CrewToolName.start, CrewToolName.say, CrewToolName.list, CrewToolName.stop] {
             let row = present(tool, ["name": .string("tests"), "to": .string("tests")])
             #expect(!row.label.contains("bridge"), "\(tool) named the transport")
-            #expect(!row.label.contains("Bloom:"), "\(tool) named the app rather than the act")
+            #expect(!row.label.contains("Swarm:"), "\(tool) named the app rather than the act")
             #expect(row.glyph != "puzzlepiece.extension", "\(tool) drew the extension glyph")
         }
     }
@@ -145,7 +145,7 @@ struct CrewPresentationTests {
     func anotherBridgeToolIsUnchanged() {
         let row = present("pane_open")
 
-        #expect(row.label == "Bloom: pane open")
+        #expect(row.label == "Swarm: pane open")
         #expect(row.literal == nil)
     }
 
