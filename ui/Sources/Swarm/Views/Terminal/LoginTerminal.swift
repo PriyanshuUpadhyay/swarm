@@ -28,7 +28,9 @@ final class LoginTerminalSession {
     ) {
         guard let path = Shell.which(executable) else { return nil }
 
-        let variables = Shell.terminalEnvironment(inheriting: Shell.environment())
+        let variables = ChildProcessEnvironment.removingInheritedAgentIdentity(
+            from: Shell.terminalEnvironment(inheriting: Shell.environment())
+        )
 
         label = ([executable] + arguments).joined(separator: " ")
         launch = TerminalLaunch(

@@ -250,6 +250,10 @@ struct ComposerView: View {
             send()
             return true
         case .escape:
+            if transcript.usesInteractiveTerminal {
+                Task { await transcript.interruptInteractiveTerminal() }
+                return true
+            }
             if let onDismiss { onDismiss() } else { isFocused = false }
             return true
         case .up:
@@ -527,8 +531,9 @@ struct ComposerView: View {
                     template: template
                 )
             }.value
-            await transcript.submit(composed, clearingDraft: sourceDraft)
-            await model?.removeReviewComments(ids: comments.map(\.id))
+            if await transcript.submit(composed, clearingDraft: sourceDraft) {
+                await model?.removeReviewComments(ids: comments.map(\.id))
+            }
         }
     }
 

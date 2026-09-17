@@ -33,7 +33,7 @@ public struct AgentLaunch: Sendable, Hashable {
         self.executable = executable
         self.arguments = arguments
         self.cwd = cwd
-        self.environment = environment
+        self.environment = ChildProcessEnvironment.removingInheritedAgentIdentity(from: environment)
     }
 }
 

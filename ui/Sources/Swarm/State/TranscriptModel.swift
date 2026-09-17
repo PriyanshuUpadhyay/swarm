@@ -698,14 +698,24 @@ final class TranscriptModel {
     func submit(_ text: String, clearingDraft sourceDraft: String? = nil,
                 interactionMode: InteractionMode? = nil, sourcePlan: PlanArtefact? = nil) async -> Bool {
         guard !isWorkspaceArchiving else { return false }
-        if usesInteractiveTerminal {
-            app.alert = SwarmAlert(
-                title: "This agent runs in a terminal",
-                message: "Open its agent tab and enter the prompt in the CLI."
-            )
-            return false
-        }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let terminal = interactiveTerminal {
+            guard !body.isEmpty else { return false }
+            let sent = await TerminalSessionStore.shared.submitToAgent(
+                body, paneID: terminal.id
+            )
+            guard sent else {
+                app.notice = SwarmNotice(
+                    message: "Could not send the message because the agent pane did not accept it."
+                )
+                return false
+            }
+            if SubmittedDraft.matching(current: draft, message: body, source: sourceDraft) != nil {
+                draft = ""
+                await saveDraft()
+            }
+            return true
+        }
         guard !body.isEmpty, let store else { return false }
 
         // Review payloads expand compact chips into comments. Clear the source draft, while
@@ -1455,10 +1465,22 @@ final class TranscriptModel {
         return runner
     }
 
-    private var usesInteractiveTerminal: Bool {
-        guard let workspaceID = session.workspaceID else { return false }
+    var usesInteractiveTerminal: Bool { interactiveTerminal != nil }
+
+    func interruptInteractiveTerminal() async {
+        guard let terminal = interactiveTerminal else { return }
+        guard await TerminalSessionStore.shared.interruptAgent(paneID: terminal.id) else {
+            app.notice = SwarmNotice(
+                message: "Could not interrupt the agent because its pane is not available."
+            )
+            return
+        }
+    }
+
+    private var interactiveTerminal: CenterTab? {
+        guard let workspaceID = session.workspaceID else { return nil }
         CenterTabStore.shared.load(workspaceID: workspaceID)
-        return CenterTabStore.shared.terminal(for: session.id, in: workspaceID) != nil
+        return CenterTabStore.shared.terminal(for: session.id, in: workspaceID)
     }
 
     /// The one place a backend becomes a process. Static and taking only values, so which runner a

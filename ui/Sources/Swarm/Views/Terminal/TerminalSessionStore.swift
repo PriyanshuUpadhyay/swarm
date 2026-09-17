@@ -330,6 +330,44 @@ final class TerminalSessionStore {
         return true
     }
 
+    func submitToAgent(_ text: String, paneID: String) async -> Bool {
+        let writes = TerminalChatInput.submission(text)
+        for (index, write) in writes.enumerated() {
+            if index > 0 {
+                do {
+                    try await Task.sleep(for: TerminalChatInput.interWriteDelay)
+                } catch {
+                    return false
+                }
+            }
+            guard await sendToAgent(write, paneID: paneID) else { return false }
+        }
+        return true
+    }
+
+    func interruptAgent(paneID: String) async -> Bool {
+        await sendToAgent(.key(.escape), paneID: paneID)
+    }
+
+    private func sendToAgent(_ write: TerminalChatInput.Write, paneID: String) async -> Bool {
+        guard let view = terminals[paneID], view.process?.running == true, !view.hasExited else {
+            return false
+        }
+        if let session = paneSession[paneID], let persistence {
+            switch write {
+            case .text(let text):
+                return await persistence.write(text, toAgentPaneOf: session)
+            case .key(let key):
+                return await persistence.send(key, toAgentPaneOf: session)
+            }
+        }
+        switch write {
+        case .text(let text): view.send(txt: text)
+        case .key(let key): view.send(key.bytes)
+        }
+        return true
+    }
+
     /// The Start button under a pane's remembered command.
     ///
     /// Typed and submitted rather than exec'd, which is what the run script and `terminal_start`
@@ -358,7 +396,8 @@ final class TerminalSessionStore {
         repo: Repo?,
         port: Int,
         directory: String = "",
-        output: String? = nil
+        output: String? = nil,
+        requiresTmux: Bool = false
     ) -> SwarmTerminalView {
         if let existing = terminals[tab.id.rawValue], existing.hasStarted { return existing }
 
@@ -393,7 +432,11 @@ final class TerminalSessionStore {
         // and an unsplit tab is its own single pane.
         paneOwner[tab.id.rawValue] = workspace.id
         let start = FolderTerminal.launchDirectory(requested: directory, root: workspace.path)
-        let decision = persistence?.decision(workspaceID: workspace.id, paneID: tab.id.rawValue)
+        let decision = persistence?.decision(
+            workspaceID: workspace.id,
+            paneID: tab.id.rawValue,
+            requiresTmux: requiresTmux
+        )
             ?? .inProcess
         if let command = persistence?.command, let session = decision.session {
             paneSession[tab.id.rawValue] = session

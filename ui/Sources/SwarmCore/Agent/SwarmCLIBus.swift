@@ -18,8 +18,12 @@ public struct SwarmCLIBus: SwarmBus {
             environment: ProcessInfo.processInfo.environment,
             resolveExecutable: { Shell.which($0) },
             run: { executable, arguments, cwd, environment, stdin, timeout in
-                try await Shell.run(
-                    executable, arguments, cwd: cwd, env: environment,
+                let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
+                    from: Shell.environment()
+                )
+                return try await Shell.run(
+                    executable, arguments, cwd: cwd,
+                    replacingEnvironment: inherited.merging(environment) { _, requested in requested },
                     stdin: stdin, timeout: timeout
                 )
             }

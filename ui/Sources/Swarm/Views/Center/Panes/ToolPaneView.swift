@@ -67,7 +67,8 @@ struct ToolPaneView: View {
                             },
                             splitColumn: splitColumn,
                             terminalLabel: tab.title,
-                            onAddToChat: terminalHandoff
+                            onAddToChat: terminalHandoff,
+                            requiresTmux: tab.agentSessionID != nil
                         )
                         .id(tab.id)
                     } else {

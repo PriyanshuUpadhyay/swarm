@@ -97,6 +97,19 @@ struct TmuxRestoreDecisionTests {
         #expect(decision == .inProcess)
     }
 
+    @Test("An agent chat uses tmux even when terminal persistence is off")
+    func agentChatRequiresTmux() {
+        let decision = TmuxSessions.decide(
+            workspaceID: workspace,
+            paneID: pane,
+            persistenceEnabled: false,
+            requiresTmux: true,
+            tmuxAvailable: true,
+            existingSessions: []
+        )
+        #expect(decision == .createFresh(session: name))
+    }
+
     @Test("A session that survived the last quit is reattached")
     func reattach() {
         let decision = TmuxSessions.decide(
@@ -321,6 +334,18 @@ struct TmuxCommandTests {
         ])
     }
 
+    @Test("Composer input targets the agent pane and uses a named paste buffer")
+    func agentInput() {
+        let textArguments = command.pasteBuffer("composer", intoAgentPaneOf: "swarm-x")
+        let returnArguments = command.send(.enter, toAgentPaneOf: "swarm-x")
+        #expect(textArguments == [
+            "-L", "swarm-deadbeef", "-f", "/cfg/tmux.conf", "-u",
+            "load-buffer", "-b", "composer", "-", ";",
+            "paste-buffer", "-d", "-p", "-b", "composer", "-t", "=swarm-x:0.0",
+        ])
+        #expect(returnArguments.suffix(4) == ["send-keys", "-t", "=swarm-x:0.0", "Enter"])
+    }
+
     @Test("Kills name the session exactly, so a prefix match can never take a second one")
     func exactKill() {
         #expect(command.killSession("swarm-x").suffix(2) == ["-t", "=swarm-x"])
@@ -339,6 +364,8 @@ struct TmuxCommandTests {
         // alternate screen, so without this a scroll would do nothing at all.
         #expect(text.contains("set -g mouse on"))
         #expect(text.contains("set -g set-clipboard on"))
+        #expect(!text.contains("unset-environment TMUX"))
+        #expect(!text.contains("unset-environment TMUX_PANE"))
     }
 }
 

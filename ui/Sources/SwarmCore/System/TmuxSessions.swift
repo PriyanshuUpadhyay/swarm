@@ -126,10 +126,11 @@ public enum TmuxSessions {
         workspaceID: WorkspaceID,
         paneID: String,
         persistenceEnabled: Bool,
+        requiresTmux: Bool = false,
         tmuxAvailable: Bool,
         existingSessions: Set<String>
     ) -> TerminalStartDecision {
-        guard persistenceEnabled, tmuxAvailable else { return .inProcess }
+        guard (persistenceEnabled || requiresTmux), tmuxAvailable else { return .inProcess }
         let name = sessionName(workspaceID: workspaceID, paneID: paneID)
         return existingSessions.contains(name) ? .attach(session: name) : .createFresh(session: name)
     }
@@ -312,16 +313,48 @@ public struct TmuxCommand: Sendable, Equatable {
     public func attachOrCreate(
         session: String,
         directory: String,
-        environment: [String: String]
+        environment: [String: String],
+        removingEnvironment: [String] = ["NO_COLOR"]
     ) -> [String] {
         // Existing servers keep their original environment even after Swarm is rebuilt.
-        var tail = ["set-environment", "-gr", "NO_COLOR", ";",
-                    "new-session", "-A", "-D", "-s", session, "-c", directory]
+        var tail = removingEnvironment.sorted().flatMap {
+            ["set-environment", "-gr", $0, ";"]
+        }
+        tail += ["new-session", "-A", "-D", "-s", session, "-c", directory]
         for key in environment.keys.sorted() {
             tail.append("-e")
             tail.append("\(key)=\(environment[key]!)")
         }
         return arguments(tail)
+    }
+
+    public func pasteBuffer(_ buffer: String, intoAgentPaneOf session: String) -> [String] {
+        arguments([
+            "load-buffer", "-b", buffer, "-", ";",
+            "paste-buffer", "-d", "-p", "-b", buffer, "-t", agentPane(of: session),
+        ])
+    }
+
+    public func send(_ key: TerminalKey, toAgentPaneOf session: String) -> [String] {
+        arguments(["send-keys", "-t", agentPane(of: session), tmuxName(of: key)])
+    }
+
+    private func agentPane(of session: String) -> String {
+        // Councils add panes to this window, but the CLI stays in the pane the session began with.
+        "=\(session):0.0"
+    }
+
+    private func tmuxName(of key: TerminalKey) -> String {
+        switch key {
+        case .enter: "Enter"
+        case .controlC: "C-c"
+        case .tab: "Tab"
+        case .escape: "Escape"
+        case .up: "Up"
+        case .down: "Down"
+        case .left: "Left"
+        case .right: "Right"
+        }
     }
 
     public func killSession(_ session: String) -> [String] {
