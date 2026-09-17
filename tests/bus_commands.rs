@@ -58,7 +58,9 @@ fn unscoped_command(home: &Path, args: &[&str]) -> Command {
         .env_remove("SWARM_SESSION_ID")
         .env_remove("SWARM_AGENT_ID")
         .env_remove("CLAUDE_CODE_SESSION_ID")
-        .env_remove("CLAUDE_CONFIG_DIR");
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_HOME");
     command
 }
 
@@ -159,20 +161,16 @@ esac"#,
 }
 
 #[test]
-fn session_new_records_working_directory_time_and_safe_chair_log() {
+fn session_new_records_explicit_chair_env_fallback_and_invalid_id() {
     let fixture = fixture("session-metadata");
-    let config = fixture.root.join("claude");
-    let project = config.join("projects/project-slug");
-    std::fs::create_dir_all(&project).unwrap();
-    let log = project.join("abc-123.jsonl");
-    std::fs::write(&log, "transcript").unwrap();
     let before = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    let output = unscoped_command(&fixture.home, &["session", "new", "relay"])
-        .env("CLAUDE_CONFIG_DIR", &config)
-        .env("CLAUDE_CODE_SESSION_ID", "abc-123")
+    let output = unscoped_command(
+        &fixture.home,
+        &["session", "new", "relay", "--chair", "codex:thread-123"],
+    )
         .env("SWARM_ADAPTER", "herdr")
         .current_dir(&fixture.root)
         .output()
@@ -184,35 +182,91 @@ fn session_new_records_working_directory_time_and_safe_chair_log() {
         .unwrap()
         .as_secs() as i64;
     let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
-    let metadata: (String, i64, Option<String>, Option<String>) = connection
+    let metadata: (String, i64, Option<String>, Option<String>, Option<String>) = connection
         .query_row(
-            "SELECT cwd, created_at, chair_log, adapter FROM session WHERE id = ?1",
+            "SELECT cwd, created_at, adapter, chair_provider, chair_id FROM session WHERE id = ?1",
             [session],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .unwrap();
     assert_eq!(metadata.0, fixture.root.canonicalize().unwrap().to_string_lossy());
     assert!((before..=after).contains(&metadata.1));
-    assert_eq!(metadata.2.as_deref(), Some(log.to_string_lossy().as_ref()));
-    assert_eq!(metadata.3.as_deref(), Some("herdr"));
+    assert_eq!(metadata.2.as_deref(), Some("herdr"));
+    assert_eq!(metadata.3.as_deref(), Some("codex"));
+    assert_eq!(metadata.4.as_deref(), Some("thread-123"));
 
-    for id in [None, Some("bad/id"), Some(".."), Some("missing")] {
+    for (claude, codex, expected) in [
+        (Some("claude-1"), Some("codex-1"), Some(("claude", "claude-1"))),
+        (None, Some("codex-2"), Some(("codex", "codex-2"))),
+        (Some("bad/id"), Some("codex-3"), None),
+    ] {
         let mut command = unscoped_command(&fixture.home, &["session", "new", "lane"]);
-        command.env("CLAUDE_CONFIG_DIR", &config).current_dir(&fixture.root);
-        if let Some(id) = id {
+        command.current_dir(&fixture.root);
+        if let Some(id) = claude {
             command.env("CLAUDE_CODE_SESSION_ID", id);
+        }
+        if let Some(id) = codex {
+            command.env("CODEX_THREAD_ID", id);
         }
         let output = command.output().unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         let session: i64 = String::from_utf8(output.stdout).unwrap().trim().parse().unwrap();
         assert_eq!(
             connection
-                .query_row("SELECT chair_log FROM session WHERE id = ?1", [session], |row| row.get::<_, Option<String>>(0))
+                .query_row(
+                    "SELECT chair_provider, chair_id FROM session WHERE id = ?1",
+                    [session],
+                    |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
                 .unwrap(),
-            None,
-            "id {id:?}"
+            expected.map(|(provider, id)| (Some(provider.to_string()), Some(id.to_string()))).unwrap_or_default(),
         );
     }
+
+    let invalid = unscoped_command(
+        &fixture.home,
+        &["session", "new", "lane", "--chair", "claude:bad/id"],
+    )
+    .output()
+    .unwrap();
+    assert!(invalid.status.success(), "{}", String::from_utf8_lossy(&invalid.stderr));
+    let invalid: i64 = String::from_utf8(invalid.stdout).unwrap().trim().parse().unwrap();
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT chair_provider, chair_id FROM session WHERE id = ?1",
+                [invalid],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .unwrap(),
+        (None, None),
+    );
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn session_chair_sets_pair_without_output() {
+    let fixture = fixture("session-chair");
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE session SET chair_log = '/old/log' WHERE id = ?1",
+            [fixture.session.parse::<i64>().unwrap()],
+        )
+        .unwrap();
+    drop(connection);
+    let output = run(&fixture, &["session", "chair", "claude:late-123"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.stdout.is_empty());
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    let chair: (String, String, Option<String>) = connection
+        .query_row(
+            "SELECT chair_provider, chair_id, chair_log FROM session WHERE id = ?1",
+            [fixture.session.parse::<i64>().unwrap()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(chair, ("claude".into(), "late-123".into(), None));
     std::fs::remove_dir_all(fixture.root).unwrap();
 }
 
@@ -258,6 +312,8 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
         "adapter": "herdr",
         "cwd": "/work/newer",
         "created_at": 20,
+        "chair_provider": null,
+        "chair_id": null,
         "chair_log": null,
         "agents": 2,
         "messages": 2,
@@ -269,6 +325,62 @@ fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
     assert_eq!(sessions[1]["messages"], 0);
     assert_eq!(sessions[1]["last_message_at"], Value::Null);
     assert!(!sessions.iter().any(|session| session["id"] == legacy));
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn sessions_json_resolves_and_caches_bounded_codex_log() {
+    let fixture = fixture("codex-chair-log");
+    let codex_home = fixture.root.join("codex");
+    let previous_day = codex_home.join("sessions/2023/11/13");
+    std::fs::create_dir_all(&previous_day).unwrap();
+    let log = previous_day.join("rollout-test-thread-123.jsonl");
+    std::fs::write(&log, "transcript").unwrap();
+
+    let found = unscoped_command(
+        &fixture.home,
+        &["session", "new", "lane", "--chair", "codex:thread-123"],
+    )
+    .output()
+    .unwrap();
+    assert!(found.status.success(), "{}", String::from_utf8_lossy(&found.stderr));
+    let found: i64 = String::from_utf8(found.stdout).unwrap().trim().parse().unwrap();
+    let missing = unscoped_command(
+        &fixture.home,
+        &["session", "new", "lane", "--chair", "codex:missing-123"],
+    )
+    .output()
+    .unwrap();
+    assert!(missing.status.success(), "{}", String::from_utf8_lossy(&missing.stderr));
+    let missing: i64 = String::from_utf8(missing.stdout).unwrap().trim().parse().unwrap();
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE session SET created_at = 1700000000 WHERE id IN (?1, ?2)",
+            (found, missing),
+        )
+        .unwrap();
+    drop(connection);
+
+    let output = unscoped_command(&fixture.home, &["sessions", "--json"])
+        .env("CODEX_HOME", &codex_home)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let sessions = json["sessions"].as_array().unwrap();
+    let found_json = sessions.iter().find(|session| session["id"] == found).unwrap();
+    assert_eq!(found_json["chair_provider"], "codex");
+    assert_eq!(found_json["chair_id"], "thread-123");
+    assert_eq!(found_json["chair_log"], log.to_string_lossy().as_ref());
+    let missing_json = sessions.iter().find(|session| session["id"] == missing).unwrap();
+    assert_eq!(missing_json["chair_log"], Value::Null);
+
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    let cached: String = connection
+        .query_row("SELECT chair_log FROM session WHERE id = ?1", [found], |row| row.get(0))
+        .unwrap();
+    assert_eq!(cached, log.to_string_lossy());
     std::fs::remove_dir_all(fixture.root).unwrap();
 }
 

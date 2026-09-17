@@ -24,6 +24,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0006.sql"),
     include_str!("../migrations/0007.sql"),
     include_str!("../migrations/0008.sql"),
+    include_str!("../migrations/0009.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -179,17 +180,45 @@ pub fn create_session(
     connection: &Connection,
     talk_mode: &str,
     cwd: &Path,
-    chair_log: Option<&Path>,
+    chair: Option<(&str, &str)>,
     adapter: Option<&str>,
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let cwd = cwd.to_string_lossy().into_owned();
-    let chair_log = chair_log.map(|path| path.to_string_lossy().into_owned());
+    let (chair_provider, chair_id) = chair.unzip();
     connection.execute(
-        "INSERT INTO session (talk_mode, cwd, created_at, chair_log, adapter)
-         VALUES (?1, ?2, unixepoch(), ?3, ?4)",
-        (talk_mode, cwd, chair_log, adapter),
+        "INSERT INTO session (talk_mode, cwd, created_at, adapter, chair_provider, chair_id)
+         VALUES (?1, ?2, unixepoch(), ?3, ?4, ?5)",
+        (talk_mode, cwd, adapter, chair_provider, chair_id),
     )?;
     Ok(connection.last_insert_rowid())
+}
+
+pub fn set_chair(
+    connection: &Connection,
+    session_id: i64,
+    chair: Option<(&str, &str)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (provider, id) = chair.unzip();
+    let changed = connection.execute(
+        "UPDATE session SET chair_provider = ?2, chair_id = ?3, chair_log = NULL WHERE id = ?1",
+        (session_id, provider, id),
+    )?;
+    if changed != 1 {
+        return Err(format!("session {session_id} not found").into());
+    }
+    Ok(())
+}
+
+pub fn set_chair_log(
+    connection: &Connection,
+    session_id: i64,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE session SET chair_log = ?2 WHERE id = ?1",
+        (session_id, path.to_string_lossy()),
+    )?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -199,7 +228,10 @@ pub struct SessionRow {
     pub adapter: Option<String>,
     pub cwd: String,
     pub created_at: i64,
+    pub chair_provider: Option<String>,
+    pub chair_id: Option<String>,
     pub chair_log: Option<String>,
+    pub chair_days: [String; 3],
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,
@@ -207,7 +239,11 @@ pub struct SessionRow {
 
 pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT session.id, talk_mode, adapter, cwd, session.created_at, chair_log,
+        "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
+                chair_provider, chair_id, chair_log,
+                strftime('%Y/%m/%d', session.created_at - 86400, 'unixepoch'),
+                strftime('%Y/%m/%d', session.created_at, 'unixepoch'),
+                strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
                 (SELECT max(created_at) FROM message WHERE session_id = session.id)
@@ -222,10 +258,13 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
             adapter: row.get(2)?,
             cwd: row.get(3)?,
             created_at: row.get(4)?,
-            chair_log: row.get(5)?,
-            agents: row.get(6)?,
-            messages: row.get(7)?,
-            last_message_at: row.get(8)?,
+            chair_provider: row.get(5)?,
+            chair_id: row.get(6)?,
+            chair_log: row.get(7)?,
+            chair_days: [row.get(8)?, row.get(9)?, row.get(10)?],
+            agents: row.get(11)?,
+            messages: row.get(12)?,
+            last_message_at: row.get(13)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -760,13 +799,20 @@ mod tests {
         assert!(inbox(&connection, SESSION, CODER).unwrap().is_empty());
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 8);
-        let metadata: (Option<String>, Option<i64>, Option<String>, Option<String>) = connection
-            .query_row("SELECT cwd, session.created_at, chair_log, adapter FROM session WHERE id = 1", [], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 9);
+        let metadata = connection
+            .query_row("SELECT cwd, session.created_at, chair_log, adapter, chair_provider, chair_id FROM session WHERE id = 1", [], |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<i64>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                ))
             })
             .unwrap();
-        assert_eq!(metadata, (None, None, None, None));
+        assert_eq!(metadata, (None, None, None, None, None, None));
         assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 1", [], |r| r.get::<_, i64>(0)).unwrap(), created_at);
         assert!(!mark_unseen_for_rering(&connection, SESSION, CODER, 0).unwrap());
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
@@ -795,7 +841,7 @@ mod tests {
 
         let connection = open(&db).unwrap();
 
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 8);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 9);
         assert_eq!(connection.query_row("SELECT body_path FROM message WHERE seq = 1", [], |r| r.get::<_, String>(0)).unwrap(), "runs/1/1.txt");
         let (created_at, seen_at): (i64, i64) = connection
             .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
