@@ -117,6 +117,7 @@ public struct SubagentTranscript: Sendable, Equatable {
         for source in text.split(whereSeparator: \.isNewline) {
             let raw = Data(source.utf8)
             guard let json = JSONValue.parse(raw) else { continue }
+            if userText == .row, hidesChairSystemLine(json) { continue }
             for reading in read(json, raw: raw, userText: userText) {
                 switch reading {
                 case .brief(let brief):
@@ -140,6 +141,27 @@ public struct SubagentTranscript: Sendable, Equatable {
         return SubagentTranscript(
             messages: Array(messages.suffix(rowLimit)), droppedRows: dropped, prompt: prompt
         )
+    }
+
+    private static let chairSystemPrefixes = [
+        "<local-command-caveat>",
+        "<local-command-stdout>",
+        "<command-name>",
+        "<command-message>",
+        "<command-args>",
+        "<system-reminder>",
+        "<task-notification>",
+    ]
+
+    private static func hidesChairSystemLine(_ json: JSONValue) -> Bool {
+        guard json["type"]?.stringValue == "user" else { return false }
+        if json["isMeta"]?.boolValue == true { return true }
+        guard let content = json["message"]?["content"] else { return false }
+        let text = content.stringValue ?? content.arrayValue?
+            .compactMap { $0["text"]?.stringValue }
+            .first
+        guard let text else { return false }
+        return chairSystemPrefixes.contains { text.hasPrefix($0) }
     }
 
     /// The same reading, taken off Swarm's own stored rows rather than off the CLI's file.

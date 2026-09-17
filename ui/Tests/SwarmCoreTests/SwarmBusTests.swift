@@ -101,11 +101,17 @@ struct SwarmBusTests {
             .result(),
             .result(),
             .result(),
+            .result(),
+            .result(),
         ])
 
         let agents = try await bus.agents(in: workspaceSession)
         let messages = try await bus.messages(in: workspaceSession, after: 7)
         let seq = try await bus.send("Fix the parser", to: coderAgent, in: workspaceSession)
+        try await bus.type(
+            "Use the session adapter", to: coderAgent, in: workspaceSession, adapter: "herdr"
+        )
+        try await bus.interrupt(coderAgent, in: workspaceSession, adapter: "herdr")
         try await bus.ack(seq, in: workspaceSession)
         try await bus.sweep(in: workspaceSession)
         try await bus.close(coderAgent, in: workspaceSession)
@@ -128,6 +134,11 @@ struct SwarmBusTests {
                 ["send", "coder-1", "ask"], environment: sessionEnvironment,
                 stdin: "Fix the parser"
             ),
+            call(
+                ["type", "coder-1"], environment: herdrSessionEnvironment,
+                stdin: "Use the session adapter"
+            ),
+            call(["interrupt", "coder-1"], environment: herdrSessionEnvironment),
             call(["ack", "9"], environment: sessionEnvironment),
             call(["sweep"], environment: sessionEnvironment),
             call(["close", "coder-1"], environment: sessionEnvironment),
@@ -137,7 +148,8 @@ struct SwarmBusTests {
     @Test("lists sessions without selecting one in the environment")
     func listsSessions() async throws {
         let json = """
-        {"sessions":[{"id":10,"talk_mode":"lane","adapter":"herdr","cwd":"/workspace/project",\
+        {"sessions":[{"id":10,"talk_mode":"lane","adapter":"herdr",\
+        "cwd":"/workspace/project",\
         "created_at":1789600000,"chair_log":"/tmp/chair.jsonl","agents":3,\
         "messages":9,"last_message_at":1789610000}]}
         """
@@ -146,13 +158,40 @@ struct SwarmBusTests {
         let sessions = try await bus.sessions()
 
         #expect(sessions == [SwarmSession(
-            id: SwarmSessionID("10"), talkMode: "lane", adapter: "herdr", cwd: "/workspace/project",
+            id: SwarmSessionID("10"), talkMode: "lane", adapter: "herdr",
+            cwd: "/workspace/project",
             createdAt: 1_789_600_000, chairLog: "/tmp/chair.jsonl",
             agents: 3, messages: 9, lastMessageAt: 1_789_610_000
         )])
         #expect(await runner.recordedCalls() == [
             call(["sessions", "--json"], environment: adapterEnvironment),
         ])
+    }
+
+    @Test("discovered session calls use its adapter and stop when it has none")
+    func routesDiscoveredSessionCalls() async throws {
+        let bus = AdapterRecordingSwarmBus()
+        let session = discoveredSession(adapter: "herdr")
+
+        _ = try await bus.agents(in: session)
+        _ = try await bus.messages(in: session, after: 4)
+        try await bus.type("Continue", to: coderAgent, in: session)
+        try await bus.interrupt(coderAgent, in: session)
+
+        #expect(await bus.recordedCalls() == [
+            .agents(session.id, "herdr"),
+            .messages(session.id, 4, "herdr"),
+            .type(session.id, coderAgent, "Continue", "herdr"),
+            .interrupt(session.id, coderAgent, "herdr"),
+        ])
+
+        let oldSession = discoveredSession(adapter: nil)
+        await #expect(throws: SwarmProfileError.failed(
+            SwarmSessionInteraction.missingAdapterSentence
+        )) {
+            try await bus.agents(in: oldSession)
+        }
+        #expect(await bus.recordedCalls().count == 4)
     }
 
     @Test("maps runner and output errors")
@@ -217,6 +256,18 @@ struct SwarmBusTests {
         sessionEnvironment.merging(["PWD": "/workspace/project"]) { _, requested in requested }
     }
 
+    private var herdrSessionEnvironment: [String: String] {
+        sessionEnvironment.merging(["SWARM_ADAPTER": "herdr"]) { _, requested in requested }
+    }
+
+    private func discoveredSession(adapter: String?) -> SwarmSession {
+        SwarmSession(
+            id: SwarmSessionID("10"), talkMode: "lane", adapter: adapter,
+            cwd: "/workspace/project", createdAt: 1,
+            chairLog: nil, agents: 2, messages: 4, lastMessageAt: nil
+        )
+    }
+
     private func makeBus(
         _ outcomes: [ScriptedRunner.Outcome], resolvedExecutable: String? = "/opt/swarm"
     ) -> (SwarmCLIBus, ScriptedRunner) {
@@ -254,6 +305,67 @@ struct SwarmBusTests {
             try await bus.agents(in: workspaceSession)
         }
     }
+}
+
+private actor AdapterRecordingSwarmBus: SwarmBus {
+    enum Call: Sendable, Equatable {
+        case agents(SwarmSessionID, String)
+        case messages(SwarmSessionID, Int, String)
+        case type(SwarmSessionID, SwarmAgentID, String, String)
+        case interrupt(SwarmSessionID, SwarmAgentID, String)
+    }
+
+    private var calls: [Call] = []
+    private var unused: SwarmProfileError { .failed("unused fake bus call") }
+
+    func startSession() async throws -> SwarmSessionID { throw unused }
+
+    func launch(
+        _ agent: SwarmAgentID, role: String, account: String?,
+        in session: SwarmSessionID, directory: String
+    ) async throws -> SwarmLaunch { throw unused }
+
+    func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent] {
+        calls.append(.agents(session, adapter))
+        return []
+    }
+
+    func messages(
+        in session: SwarmSessionID, after seq: Int, adapter: String
+    ) async throws -> [SwarmMessage] {
+        calls.append(.messages(session, seq, adapter))
+        return []
+    }
+
+    func sessions() async throws -> [SwarmSession] { throw unused }
+
+    func send(
+        _ body: String, to agent: SwarmAgentID, in session: SwarmSessionID
+    ) async throws -> Int { throw unused }
+
+    func type(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        calls.append(.type(session, agent, text, adapter))
+    }
+
+    func interrupt(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        calls.append(.interrupt(session, agent, adapter))
+    }
+
+    func ack(_ seq: Int, in session: SwarmSessionID) async throws { throw unused }
+    func sweep(in session: SwarmSessionID) async throws { throw unused }
+    func close(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws { throw unused }
+
+    nonisolated func attachCommand(
+        for agent: SwarmAgentID, in session: SwarmSessionID
+    ) -> SwarmAttachCommand {
+        SwarmAttachCommand(executable: "swarm", arguments: [], environment: [:])
+    }
+
+    func recordedCalls() -> [Call] { calls }
 }
 
 private struct RecordedCall: Sendable, Equatable {
