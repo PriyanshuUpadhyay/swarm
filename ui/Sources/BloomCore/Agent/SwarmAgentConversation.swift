@@ -114,6 +114,44 @@ public struct SwarmErrorDisplay: Sendable, Equatable {
     }
 }
 
+public struct SwarmArchiveCloseFailure: Sendable, Equatable {
+    public var session: SwarmSessionID
+    public var agents: [SwarmAgentID]
+    public var listingFailed: Bool
+
+    public init(
+        session: SwarmSessionID, agents: some Sequence<SwarmAgentID>, listingFailed: Bool
+    ) {
+        self.session = session
+        self.agents = Array(Set(agents)).sorted { $0.rawValue < $1.rawValue }
+        self.listingFailed = listingFailed
+    }
+
+    public var logMessage: String {
+        let names = agents.map(\.rawValue).joined(separator: ", ")
+        let failure = listingFailed ? "could not list or close" : "could not close"
+        let namesSuffix = names.isEmpty ? "" : ": \(names)"
+        return "\(failure) swarm agents in session \(session.rawValue)\(namesSuffix)"
+    }
+
+    public func notice(after archiveMessage: String) -> BloomNotice {
+        let action: String
+        if agents.isEmpty {
+            action = "Bloom could not list or close the agents in swarm session `\(session.rawValue)`. "
+                + "Run `swarm agents`, then `swarm close <name>` by hand."
+        } else {
+            let names = agents.map { "`\($0.rawValue)`" }.joined(separator: ", ")
+            let failure = listingFailed ? "list or close" : "close"
+            action = "Bloom could not \(failure) swarm agents \(names) in session `\(session.rawValue)`. "
+                + "Run `swarm close <name>` for each agent by hand."
+        }
+        return BloomNotice(
+            message: archiveMessage + " " + action,
+            dismissal: .untilDismissed
+        )
+    }
+}
+
 public enum SwarmPollSchedule {
     public static let pollInterval: TimeInterval = 2
     public static let sweepInterval: TimeInterval = 30

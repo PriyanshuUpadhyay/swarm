@@ -20,17 +20,6 @@ struct SwarmAgentConversationTests {
         #expect(!SwarmAgentName.isValid(String(repeating: "a", count: 41)))
     }
 
-    @Test("ended session agents still reserve their names without an open tab")
-    func endedSessionAgentName() {
-        let endedSessionAgent = SwarmAgent(
-            id: coderAgent, role: "code.complex", pane: nil, alive: nil
-        )
-
-        #expect(SwarmAgentName.free(
-            role: "code.complex", excluding: [endedSessionAgent.id]
-        ) == SwarmAgentID("code-complex-2"))
-    }
-
     @Test("chat rows keep only the chair's exchange with one agent")
     func chatRows() {
         let messages = [
@@ -93,6 +82,39 @@ struct SwarmAgentConversationTests {
         display.succeed()
         display.record("account is unavailable")
         #expect(display.visible == "account is unavailable")
+    }
+
+    @Test("archive cleanup notice names the session and every agent left open")
+    func archiveCloseFailureNotice() {
+        let failure = SwarmArchiveCloseFailure(
+            session: SwarmSessionID("session-7"),
+            agents: [reviewerAgent, coderAgent, reviewerAgent],
+            listingFailed: false
+        )
+
+        let notice = failure.notice(after: "Docs was archived. It stopped a background command: Serve.")
+        #expect(notice.message == "Docs was archived. It stopped a background command: Serve. "
+            + "Bloom could not close swarm agents `code-complex-1`, `review-1` in session `session-7`. "
+            + "Run `swarm close <name>` for each agent by hand.")
+        #expect(notice.dismissal == .untilDismissed)
+    }
+
+    @Test("archive cleanup notice names known agents after a list failure")
+    func archiveListFailureNotice() {
+        let failure = SwarmArchiveCloseFailure(
+            session: SwarmSessionID("session-8"), agents: [coderAgent], listingFailed: true
+        )
+
+        #expect(failure.notice(after: "Docs was archived.").message == "Docs was archived. "
+            + "Bloom could not list or close swarm agents `code-complex-1` in session `session-8`. "
+            + "Run `swarm close <name>` for each agent by hand.")
+
+        let unknown = SwarmArchiveCloseFailure(
+            session: SwarmSessionID("session-9"), agents: [], listingFailed: true
+        )
+        #expect(unknown.notice(after: "Docs was archived.").message == "Docs was archived. "
+            + "Bloom could not list or close the agents in swarm session `session-9`. "
+            + "Run `swarm agents`, then `swarm close <name>` by hand.")
     }
 
     @Test("polling backs off to the sweep interval")

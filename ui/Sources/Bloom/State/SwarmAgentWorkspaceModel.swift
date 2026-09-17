@@ -139,16 +139,21 @@ final class SwarmAgentWorkspaceModel {
         pendingComposers[agent]
     }
 
-    /// Archive cleanup is best effort. One failed close is recorded and does not keep the other
-    /// agents, or the archive, from continuing.
-    func closeAll() async {
-        guard let store else {
-            record(SwarmAgentWorkspaceError.storeUnavailable)
-            return
+    /// Archive cleanup is best effort. Failures do not keep the other agents, or the archive,
+    /// from continuing, and the returned value survives this model being discarded.
+    func closeAll() async -> SwarmArchiveCloseFailure? {
+        let saved: SwarmSessionID? = if let store {
+            await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
+        } else {
+            nil
         }
-        let saved = await SwarmWorkspaceSession.load(workspaceID: workspaceID, from: store)
-        guard let session = sessionID ?? saved else { return }
+        guard let session = sessionID ?? saved else {
+            if store == nil { record(SwarmAgentWorkspaceError.storeUnavailable) }
+            return nil
+        }
         sessionID = session
+        var failedAgents: Set<SwarmAgentID> = []
+        var listingFailed = false
         do {
             let known = try await bus.agents(in: session)
             agents = Dictionary(uniqueKeysWithValues: known.map { ($0.id, $0) })
@@ -159,18 +164,37 @@ final class SwarmAgentWorkspaceModel {
                         id: agent.id, role: agent.role, pane: nil, alive: nil
                     )
                 } catch {
+                    failedAgents.insert(agent.id)
                     record(error)
                 }
             }
         } catch {
+            listingFailed = true
+            var expectedAgents = trackedAgents
+            for agent in agents.values {
+                if agent.pane == nil {
+                    expectedAgents.remove(agent.id)
+                } else {
+                    expectedAgents.insert(agent.id)
+                }
+            }
+            failedAgents.formUnion(expectedAgents)
             record(error)
         }
-        do {
-            try await SwarmWorkspaceSession.clear(workspaceID: workspaceID, in: store)
-            sessionID = nil
-        } catch {
-            record(error)
+        if let store {
+            do {
+                try await SwarmWorkspaceSession.clear(workspaceID: workspaceID, in: store)
+                sessionID = nil
+            } catch {
+                record(error)
+            }
+        } else {
+            record(SwarmAgentWorkspaceError.storeUnavailable)
         }
+        guard listingFailed || !failedAgents.isEmpty else { return nil }
+        return SwarmArchiveCloseFailure(
+            session: session, agents: failedAgents, listingFailed: listingFailed
+        )
     }
 
     /// Returns false only when a live pane could not be closed, so its tab remains reachable.

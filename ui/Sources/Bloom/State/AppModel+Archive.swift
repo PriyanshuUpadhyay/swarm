@@ -377,9 +377,12 @@ extension AppModel {
         // Read before the stop, which marks every one of them stopped. A running command never
         // asks for a confirmation, so the notice after is the only place it is mentioned.
         let stoppedCommands = workspaceModels[workspace.id]?.runningCommands ?? []
+        let swarmCloseFailure: SwarmArchiveCloseFailure?
         if let workspaceModel = workspaceModels[workspace.id] {
             workspaceModel.stopEverything()
-            await workspaceModel.swarmAgents.closeAll()
+            swarmCloseFailure = await workspaceModel.swarmAgents.closeAll()
+        } else {
+            swarmCloseFailure = nil
         }
 
         // Out of the sidebar now, before a single byte moves.
@@ -443,15 +446,25 @@ extension AppModel {
             // it any other way now. See `WorkspaceDoneWatch`.
             await noteWorkspaceArchivedForWatchers(workspace.id)
             await offerUndo(of: workspace, repo: repo, report: report)
+            let archiveNotice: BloomNotice?
             if let path = report?.preservedFolderPath {
-                notice = BloomNotice(
+                archiveNotice = BloomNotice(
                     message: "\(workspace.name) was archived. Its folder at `\(path)` and its branch "
                         + "were kept because Git no longer recognizes the folder as a worktree. "
                         + "The archive script was skipped.",
                     dismissal: .untilDismissed
                 )
             } else if let stopped = BackgroundWork.archived(workspace.name, stopping: stoppedCommands) {
-                notice = BloomNotice(message: stopped)
+                archiveNotice = BloomNotice(message: stopped)
+            } else {
+                archiveNotice = nil
+            }
+            if let swarmCloseFailure {
+                let archived = archiveNotice?.message ?? "\(workspace.name) was archived."
+                notice = swarmCloseFailure.notice(after: archived)
+                Log.archive.error("\(swarmCloseFailure.logMessage, privacy: .public)")
+            } else if let archiveNotice {
+                notice = archiveNotice
             }
             Log.archive.info("archived \(workspace.name, privacy: .public)")
             return .archived
