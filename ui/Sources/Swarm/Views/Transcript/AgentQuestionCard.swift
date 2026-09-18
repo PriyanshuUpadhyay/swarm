@@ -23,6 +23,7 @@ struct AgentQuestionCard: View {
     /// twice would write into a pipe nobody is reading.
     var decision: String?
     var onAnswer: (PermissionDecision) -> Void = { _ in }
+    var onAnswerInTerminal: (() -> Void)? = nil
 
     /// The half-finished answer: what is ticked, what is typed, and which Other rows are open.
     ///
@@ -136,7 +137,9 @@ struct AgentQuestionCard: View {
                     optionRow(question, option)
                 }
 
-                if question.allowsOther { otherRow(question) }
+                // Interactive CLI questions leave free text to their own picker until its wire
+                // shape has been measured. `onAnswerInTerminal` marks that form of the card.
+                if question.allowsOther, onAnswerInTerminal == nil { otherRow(question) }
             }
         }
     }
@@ -306,12 +309,17 @@ struct AgentQuestionCard: View {
 
             Spacer(minLength: 0)
 
-            // Not "Deny". Nothing is being refused: the agent asked and is being told to decide for
-            // itself, which is a different sentence and produces a different answer.
-            Button("Let the agent decide") {
-                onAnswer(.deny(message: Self.skipMessage, endsTurn: false))
+            if let onAnswerInTerminal {
+                Button("Answer in terminal") { onAnswerInTerminal() }
+                    .buttonStyle(.borderless)
+            } else {
+                // Not "Deny". Nothing is being refused: the agent asked and is being told to
+                // decide for itself, which is a different sentence and produces a different answer.
+                Button("Let the agent decide") {
+                    onAnswer(.deny(message: Self.skipMessage, endsTurn: false))
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
         }
         .controlSize(.small)
     }

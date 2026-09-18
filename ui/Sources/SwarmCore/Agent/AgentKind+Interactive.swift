@@ -196,17 +196,33 @@ public extension AgentKind {
 
 public enum InteractivePermissionAnswer: Sendable, Hashable {
     case allow
+    case answer(input: JSONValue)
     case deny
     case terminal
 
     var data: Data {
-        switch self {
-        case .allow:
-            Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8)
-        case .deny:
-            Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied in Swarm"}}}"#.utf8)
-        case .terminal:
-            Data()
+        get throws {
+            switch self {
+            case .allow:
+                return Data(
+                    #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8
+                )
+            case .answer(let input):
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+                var data = Data(
+                    #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":"#.utf8
+                )
+                data.append(try encoder.encode(input))
+                data.append(Data(#"}}}"#.utf8))
+                return data
+            case .deny:
+                return Data(
+                    #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied in Swarm"}}}"#.utf8
+                )
+            case .terminal:
+                return Data()
+            }
         }
     }
 }

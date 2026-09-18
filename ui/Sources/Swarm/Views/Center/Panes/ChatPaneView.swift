@@ -94,17 +94,7 @@ struct ChatPaneView: View {
         }
         .overlay(alignment: .bottom) {
             if let card = TerminalSessionStore.shared.permissionCard(for: transcript.session.id) {
-                PermissionAskRowView(
-                    ask: card.ask,
-                    decision: nil,
-                    note: "",
-                    projectName: nil,
-                    onInteractiveAnswer: { answer in
-                        TerminalSessionStore.shared.answerPermissionCard(
-                            for: transcript.session.id, with: answer
-                        )
-                    }
-                )
+                interactiveCard(card)
                 .id(card.id)
                 .frame(maxWidth: 720)
                 .padding(.horizontal, TranscriptLayout.cardInset)
@@ -171,5 +161,31 @@ struct ChatPaneView: View {
         .environment(\.fontScale, textSize.scale)
         .environment(\.chatFont, ChatFont(rawValue: chatFontID))
         .environment(\.chatLineHeight, lineHeight)
+    }
+
+    @ViewBuilder
+    private func interactiveCard(_ card: InteractivePermissionCard) -> some View {
+        let answer: (InteractivePermissionAnswer) -> Void = {
+            TerminalSessionStore.shared.answerPermissionCard(for: transcript.session.id, with: $0)
+        }
+        if card.ask.isQuestion {
+            AgentQuestionCard(
+                ask: card.ask,
+                decision: nil,
+                onAnswer: { decision in
+                    guard case .answer(let input) = decision else { return }
+                    answer(.answer(input: input))
+                },
+                onAnswerInTerminal: { answer(.terminal) }
+            )
+        } else {
+            PermissionAskRowView(
+                ask: card.ask,
+                decision: nil,
+                note: "",
+                projectName: nil,
+                onInteractiveAnswer: answer
+            )
+        }
     }
 }

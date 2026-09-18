@@ -175,12 +175,68 @@ struct InteractiveAgentTests {
     }
 
     @Test("Permission answers use Claude's measured response shapes")
-    func permissionAnswers() {
-        #expect(String(decoding: InteractivePermissionAnswer.allow.data, as: UTF8.self)
+    func permissionAnswers() throws {
+        #expect(String(decoding: try InteractivePermissionAnswer.allow.data, as: UTF8.self)
             == #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#)
-        #expect(String(decoding: InteractivePermissionAnswer.deny.data, as: UTF8.self)
+        #expect(String(decoding: try InteractivePermissionAnswer.deny.data, as: UTF8.self)
             == #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied in Swarm"}}}"#)
-        #expect(InteractivePermissionAnswer.terminal.data.isEmpty)
+        #expect(try InteractivePermissionAnswer.terminal.data.isEmpty)
+    }
+
+    @Test("Interactive questions keep every question and build Claude's exact answer")
+    func interactiveQuestions() throws {
+        let token = UUID().uuidString
+        let input = try #require(JSONValue.parse(#"""
+        {"questions":[
+          {"question":"Which colour do you prefer?","header":"Colour","options":[
+            {"label":"Red","description":"The colour red"},
+            {"label":"Blue","description":"The colour blue"}
+          ],"multiSelect":false},
+          {"question":"Which checks?","header":"Checks","options":[
+            {"label":"Build","description":"Compile it"},
+            {"label":"Tests","description":"Run tests"}
+          ],"multiSelect":true}
+        ]}
+        """#))
+        let parsed = try interactiveAsk(token: token, toolName: "AskUserQuestion", input: input)
+        let ask = try #require(parsed)
+
+        let questions = AgentQuestionnaire.questions(in: ask.input)
+        #expect(ask.isQuestion)
+        #expect(questions.count == 2)
+        #expect(questions[0].header == "Colour")
+        #expect(questions[0].question == "Which colour do you prefer?")
+        #expect(questions[0].options.map(\.label) == ["Red", "Blue"])
+        #expect(questions[0].options.map(\.description) == ["The colour red", "The colour blue"])
+        #expect(!questions[0].multiSelect)
+        #expect(questions[1].multiSelect)
+
+        let answered = AgentQuestionnaire.answered(input, answers: [
+            "Which colour do you prefer?": "Red",
+            "Which checks?": AgentQuestionnaire.joined(["Build", "Tests"]),
+        ])
+        let json = String(decoding: try InteractivePermissionAnswer.answer(input: answered).data, as: UTF8.self)
+        let expected =
+            #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":"#
+            + #"{"answers":{"Which checks?":"Build, Tests","Which colour do you prefer?":"Red"},"questions":["#
+            + #"{"header":"Colour","multiSelect":false,"options":[{"description":"The colour red","label":"Red"},"#
+            + #"{"description":"The colour blue","label":"Blue"}],"question":"Which colour do you prefer?"},"#
+            + #"{"header":"Checks","multiSelect":true,"options":[{"description":"Compile it","label":"Build"},"#
+            + #"{"description":"Run tests","label":"Tests"}],"question":"Which checks?"}]}}}}"#
+        #expect(json == expected)
+    }
+
+    @Test("An unknown interactive tool keeps the existing permission shape")
+    func unknownInteractiveTool() throws {
+        let token = UUID().uuidString
+        let input = try #require(JSONValue.parse(#"{"opaque":42}"#))
+        let parsed = try interactiveAsk(token: token, toolName: "FutureTool", input: input)
+        let ask = try #require(parsed)
+
+        #expect(ask.toolName == "FutureTool")
+        #expect(ask.input == input)
+        #expect(!ask.isQuestion)
+        #expect(AgentQuestionnaire.questions(in: ask.input).isEmpty)
     }
 
     @Test("Permission cards follow the marker and the latest hook event")
@@ -247,8 +303,30 @@ struct InteractiveAgentTests {
         #expect(try pending.answer(.allow))
         let result = try await running
         #expect(result.ok)
-        #expect(result.stdout == String(decoding: InteractivePermissionAnswer.allow.data, as: UTF8.self))
+        #expect(result.stdout == String(decoding: try InteractivePermissionAnswer.allow.data, as: UTF8.self))
         #expect(!pending.isPending)
+    }
+
+    private func interactiveAsk(
+        token: String, toolName: String, input: JSONValue
+    ) throws -> PermissionAsk? {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-card-\(token)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(JSONValue.object([
+            "token": .string(token),
+            "payload": .object([
+                "hook_event_name": .string("PermissionRequest"),
+                "tool_name": .string(toolName),
+                "tool_input": input,
+            ]),
+        ]))
+        let status = root.appendingPathComponent("status.json")
+        let permission = root.appendingPathComponent("permission", isDirectory: true)
+        try FileManager.default.createDirectory(at: permission, withIntermediateDirectories: true)
+        try Data().write(to: permission.appendingPathComponent(token + ".pending"))
+        return InteractivePermissionCard(data: data, statusURL: status)?.ask
     }
 
     private func permissionEnvelope(token: String, command: String) -> Data {
