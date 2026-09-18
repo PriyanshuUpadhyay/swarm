@@ -2,6 +2,12 @@ use std::env;
 
 const RERING_AFTER_SECS: i64 = 60;
 
+/// The ring is typed into the recipient's prompt, so it names the next step. An agent that did
+/// not load the swarm skill otherwise takes the bare ring as the whole task and waits.
+fn ring_text(root: &std::path::Path) -> String {
+    format!("swarm: new message. Run swarm inbox, read each body at {}/<body_path>, then swarm ack <seq>.", root.display())
+}
+
 fn init() -> Result<(), Box<dyn std::error::Error>> {
     let runs_dir = swarm::paths::runs_dir()?;
 
@@ -55,7 +61,7 @@ fn deliver(
     if let Some(pane) = swarm::store::pane_of(connection, session_id, &recipient)? {
         connection.execute("UPDATE message SET rung_at = unixepoch() WHERE seq = ?1", [seq])?;
         let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", "swarm: new message")]));
+            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
         if let Err(error) = ring {
             eprintln!("swarm: ring failed: {error}");
         }
@@ -119,7 +125,7 @@ fn sweep_once(
                        AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)",
                     (session_id, &child, RERING_AFTER_SECS),
                 )?;
-                match adapter.run("ring", &[("pane", &pane), ("text", "swarm: new message")]) {
+                match adapter.run("ring", &[("pane", &pane), ("text", &ring_text(root))]) {
                     Ok(_) => eprintln!("swarm: re-ringed {child}"),
                     Err(error) => eprintln!("swarm: re-ring failed for {child}: {error}"),
                 }
@@ -310,11 +316,12 @@ mod tests {
         .unwrap();
         sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
         sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
-        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%2:swarm: new message\n");
+        let ring = format!("%2:{}\n", ring_text(&root));
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
         connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
         sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
 
-        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "%2:swarm: new message\n%2:swarm: new message\n");
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), ring.repeat(2));
     }
 
     #[test]
@@ -339,6 +346,6 @@ mod tests {
         deliver(&mut connection, &root, "fake", session, "child", "orchestrator", "summary", "done").unwrap();
 
         assert_eq!(swarm::store::pane_of(&connection, session, "orchestrator").unwrap().as_deref(), Some("%9"));
-        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "%9:swarm: new message\n");
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
     }
 }
