@@ -72,6 +72,13 @@ struct InteractiveAgentTests {
         #expect(!codex.contains("exec"))
         #expect(!codex.contains("--dangerously-bypass-hook-trust"))
         #expect(codex.contains("model_reasoning_effort=\"high\""))
+        let codexPermission = try #require(codex.first { $0.hasPrefix("hooks.PermissionRequest=") })
+        #expect(codexPermission.contains("timeout=130"))
+        // The command is TOML-escaped, so the test matches a phrase only the waiting hook has.
+        #expect(codexPermission.contains("swarm_permission_dir"))
+        let codexStop = try #require(codex.first { $0.hasPrefix("hooks.Stop=") })
+        #expect(codexStop.contains("timeout=3"))
+        #expect(!codexStop.contains("swarm_permission_dir"))
     }
 
     @Test("Claude model aliases use the same translation as managed chats")

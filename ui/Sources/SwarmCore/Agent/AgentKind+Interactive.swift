@@ -75,7 +75,12 @@ public extension AgentKind {
                 if permissionMode == .autoReview { arguments += ["--approve-for-me"] }
             }
             for event in events {
-                arguments += ["-c", "hooks.\(event)=[{hooks=[{type=\"command\",command=\(Self.interactiveTOMLString(Self.interactiveHookCommand)),timeout=3}]}]"]
+                let permission = event == "PermissionRequest"
+                let command = Self.interactiveTOMLString(
+                    permission ? Self.interactivePermissionHookCommand : Self.interactiveHookCommand
+                )
+                arguments += ["-c", "hooks.\(event)=[{hooks=[{type=\"command\",command=\(command),"
+                    + "timeout=\(permission ? 130 : 3)}]}]"]
             }
             if !effort.isEmpty {
                 arguments += ["-c", "model_reasoning_effort=\(Self.interactiveTOMLString(effort))"]
@@ -166,7 +171,8 @@ public extension AgentKind {
         #"umask 077; if [ -n "$SWARM_UI_CLI_STATUS_FILE" ]; then mkdir -p "$(dirname "$SWARM_UI_CLI_STATUS_FILE")" 2>/dev/null && swarm_status_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX") && { cat > "$swarm_status_tmp" && mv -f "$swarm_status_tmp" "$SWARM_UI_CLI_STATUS_FILE"; } 2>/dev/null; fi; exit 0"#
     }
 
-    /// The Claude permission hook keeps the request open while the app answers through one file.
+    /// The permission hook keeps the request open while the app answers through one file. Claude Code
+    /// and Codex share the event, the payload and the answer shape, so both run this command.
     /// It is a constant command because hook trust is attached to the command text.
     static var interactivePermissionHookCommand: String {
         #"umask 077; if [ -n "$SWARM_UI_CLI_STATUS_FILE" ]; then swarm_status_dir=$(dirname "$SWARM_UI_CLI_STATUS_FILE"); swarm_permission_dir="$swarm_status_dir/permission"; mkdir -p "$swarm_permission_dir" 2>/dev/null; swarm_token=$(uuidgen 2>/dev/null); swarm_status_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX" 2>/dev/null); swarm_payload_tmp=$(mktemp "$SWARM_UI_CLI_STATUS_FILE.XXXXXX" 2>/dev/null); if [ -n "$swarm_token" ] && [ -n "$swarm_status_tmp" ] && [ -n "$swarm_payload_tmp" ]; then cat > "$swarm_payload_tmp"; swarm_pending="$swarm_permission_dir/$swarm_token.pending"; swarm_answer="$swarm_permission_dir/$swarm_token.answer"; : > "$swarm_pending" 2>/dev/null; { printf '{"token":"%s","payload":' "$swarm_token"; cat "$swarm_payload_tmp"; printf '}\n'; } > "$swarm_status_tmp" 2>/dev/null; rm -f "$swarm_payload_tmp"; if mv -f "$swarm_status_tmp" "$SWARM_UI_CLI_STATUS_FILE" 2>/dev/null; then swarm_waited=0; while [ "$swarm_waited" -lt 120 ] && [ ! -f "$swarm_answer" ]; do sleep 1; swarm_waited=$((swarm_waited + 1)); done; if [ -f "$swarm_answer" ]; then cat "$swarm_answer"; rm -f "$swarm_answer" "$swarm_pending"; else rm -f "$swarm_pending"; fi; else rm -f "$swarm_pending" "$swarm_status_tmp"; fi; else cat >/dev/null; rm -f "$swarm_status_tmp" "$swarm_payload_tmp"; fi; fi; exit 0"#
