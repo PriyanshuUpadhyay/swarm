@@ -168,6 +168,8 @@ struct RootView: View {
             }
             .animation(reduceMotion ? nil : Motion.pane, value: app.notice)
 
+            .background { PerformanceStallMonitor(app: app) }
+
             .task { await app.bootstrap() }
             // Debug builds can raise the search panel from a capture flag. The panel is otherwise
             // reachable only by a key equivalent and a glyph. See `SearchPanelModel.presentIfRequested`.

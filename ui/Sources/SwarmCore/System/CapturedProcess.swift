@@ -44,6 +44,18 @@ final class CapturedProcess: Sendable {
 
     private func capture() throws -> ShellBytes {
         if cancelled.withLock({ $0 }) { throw CancellationError() }
+        let captureStarted = ContinuousClock.now
+        defer {
+            let duration = captureStarted.duration(to: .now).components
+            let milliseconds = Double(duration.seconds) * 1_000
+                + Double(duration.attoseconds) / 1e15
+            if milliseconds > 250 {
+                PerfLog.shared.record(.processCapture(
+                    milliseconds: milliseconds,
+                    executable: (executable as NSString).lastPathComponent
+                ))
+            }
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
