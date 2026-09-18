@@ -382,10 +382,36 @@ public actor TranscriptLogReader {
     }
 
     public func read() throws -> SubagentTranscript {
+        _ = try consumeAppended()
+        return SubagentTranscript(
+            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
+        )
+    }
+
+    /// Nil when the file has not grown since the last read, which is most seconds of a pane
+    /// watching a chat nobody is typing into.
+    ///
+    /// A caller turns these messages into rows, and for a chair log that is thousands of rows and
+    /// a JSON payload read for each one, once a second, to find that nothing changed. The answer
+    /// is the same file the pane already has, so it says so rather than building it again.
+    public func readIfChanged() throws -> SubagentTranscript? {
+        guard try consumeAppended() else { return nil }
+        return SubagentTranscript(
+            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
+        )
+    }
+
+    /// Reads the bytes added since the last read. True when there were any, or when a truncated
+    /// file sent the reader back to the beginning.
+    private func consumeAppended() throws -> Bool {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         let size = try handle.seekToEnd()
-        if size < offset { reset() }
+        var changed = false
+        if size < offset {
+            reset()
+            changed = true
+        }
         if offset == 0, size > UInt64(limit) {
             offset = size - UInt64(limit)
             discardsLine = true
@@ -395,10 +421,9 @@ public actor TranscriptLogReader {
         while let chunk = try handle.read(upToCount: min(1024 * 1024, limit)), !chunk.isEmpty {
             offset += UInt64(chunk.count)
             consume(chunk)
+            changed = true
         }
-        return SubagentTranscript(
-            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
-        )
+        return changed
     }
 
     private func reset() {
@@ -501,6 +526,20 @@ public enum ChairTranscriptOutput: Sendable {
         guard let reader else { return .failure(.noFile) }
         do {
             return .success(try await reader.read())
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            return .failure(.missing)
+        } catch {
+            return .failure(.unreadable(error.localizedDescription))
+        }
+    }
+
+    /// A success holding nil means the log has not grown, so the pane keeps the rows it has.
+    public static func readIfChanged(
+        _ reader: TranscriptLogReader?
+    ) async -> Result<SubagentTranscript?, SubagentOutput.Failure> {
+        guard let reader else { return .failure(.noFile) }
+        do {
+            return .success(try await reader.readIfChanged())
         } catch let error as CocoaError where error.code == .fileNoSuchFile {
             return .failure(.missing)
         } catch {

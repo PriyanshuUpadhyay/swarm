@@ -43,11 +43,15 @@ final class SwarmSessionReaderModel {
     }
 
     private func refresh() async {
-        let reading = await Self.readChat(chatReader)
+        // Nil while the chat log has not grown, and that is most passes. Rebuilding thousands of
+        // rows every second to find they are the rows the pane already has cost a tenth of a core.
+        if let reading = await Self.readChat(chatReader) {
+            guard !Task.isCancelled else { return }
+            if rows != reading.rows { rows = reading.rows }
+            if droppedRows != reading.droppedRows { droppedRows = reading.droppedRows }
+            chatFailure = reading.failure
+        }
         guard !Task.isCancelled else { return }
-        if rows != reading.rows { rows = reading.rows }
-        if droppedRows != reading.droppedRows { droppedRows = reading.droppedRows }
-        chatFailure = reading.failure
 
         do {
             for session in sessions {
@@ -158,11 +162,13 @@ final class SwarmSessionReaderModel {
         return InputRoute(sessionID: sessionID, agentID: agent)
     }
 
-    nonisolated private static func readChat(_ reader: TranscriptLogReader?) async -> ChairReading {
-        let result = await ChairTranscriptOutput.read(reader)
+    nonisolated private static func readChat(_ reader: TranscriptLogReader?) async -> ChairReading? {
+        let result = await ChairTranscriptOutput.readIfChanged(reader)
+        if case .success(nil) = result { return nil }
         return await Task.detached(priority: .utility) {
             switch result {
             case .success(let transcript):
+                guard let transcript else { return nil }
                 return ChairReading(
                     rows: TranscriptModel.rows(from: transcript.messages),
                     droppedRows: transcript.droppedRows,

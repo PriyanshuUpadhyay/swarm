@@ -276,6 +276,32 @@ struct SwarmSessionListingTests {
         #expect(UserTurnPrompt.text(in: restarted.messages[0].payload) == "Restarted")
     }
 
+    @Test("a chair log that has not grown is read as no change")
+    func quietChairLogReportsNoChange() async throws {
+        let path = TestScratch.path("quiet-chair.jsonl")
+        try #"{"type":"user","message":{"content":"First"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path), format: .claude(sessionID: SessionID("chair"))
+        )
+
+        #expect(try await reader.readIfChanged()?.messages.count == 1)
+        #expect(try await reader.readIfChanged() == nil)
+
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"type":"user","message":{"content":"Second"}}"#
+            .appending("\n").utf8))
+        try handle.close()
+        #expect(try await reader.readIfChanged()?.messages.count == 2)
+
+        // A truncated file is a change even though it adds no bytes, because the pane's rows are
+        // now a conversation that is not there any more.
+        try #"{"type":"user","message":{"content":"Restarted"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(try await reader.readIfChanged()?.messages.count == 1)
+    }
+
     @Test("chair log reading reports rows omitted by its byte cap")
     func capsChairLog() async throws {
         let path = TestScratch.path("capped-chair.jsonl")
