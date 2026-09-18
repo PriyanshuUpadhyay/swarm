@@ -76,11 +76,6 @@ final class AppModel {
     /// from one clock reading. The menu is built at the moment it opens, so it takes that reading
     /// itself and this stays the durable half.
     private(set) var quotas: [AgentQuota] = []
-    /// Every account's latest usage from swarm. Empty keeps the existing single-account display.
-    private(set) var swarmUsageMeters: [SwarmUsageMeter] = []
-    /// What each provider said about the account on the last ask: its plan and, for Codex, its
-    /// balances. In memory rather than in the store, for the reason `AgentAccount` gives.
-    private(set) var accounts: [AgentKind: AgentAccount] = [:]
 
     /// Selecting a workspace is the moment its live model should come into existence, rather than
     /// the moment some view body happens to ask for it. Doing it here keeps model creation out of
@@ -395,18 +390,12 @@ final class AppModel {
     /// each bubble reads its own one row and nothing needs the whole table in memory. See
     /// `WorkspaceMessageSentRowView`.
     private(set) var workspaceMessagesRevision = 0
-    private var quotaPollTask: Task<Void, Never>?
     /// When the one asker last went out, and whether it is still out. Together they are what
     /// makes it one asker: every route into `askForQuotas` reads both, so a background poll, a
     /// menu opening and ten workspaces all collapse into a single question per interval.
     ///
     /// Observed, because the usage panel's footer counts down to the next ask and says "Updating"
     /// while one is out. Both change twice per ask, which is nothing to publish.
-    private(set) var lastQuotaAskAt: Date?
-    private(set) var isAskingForQuotas = false
-    @ObservationIgnored private var lastSwarmUsageAskAt: Date?
-    @ObservationIgnored private var isAskingForSwarmUsage = false
-    @ObservationIgnored private var swarmUsageFailures = SwarmUsageFailureState()
     private var identityTask: Task<Void, Never>?
     /// The launch sweep for project icons. Not private, because the work it does is in
     /// `AppModel+ProjectIcons.swift`, and outside observation because nothing draws from it.
@@ -527,7 +516,6 @@ final class AppModel {
         startObservingSessions()
         startObservingWorkspaceMessages()
         startObservingQuotas()
-        startPollingQuotas()
         // After the bridge is bound, because it is the bridge that says what the entry should
         // point at, and nothing waits for it. See `startOwnerRegistrationRepair`.
         startOwnerRegistrationRepair()
@@ -626,8 +614,6 @@ final class AppModel {
         quotaObservationTask = nil
         workspaceMessageObservationTask?.cancel()
         workspaceMessageObservationTask = nil
-        quotaPollTask?.cancel()
-        quotaPollTask = nil
         identityTask?.cancel()
         identityTask = nil
         iconSearchTask?.cancel()
@@ -788,89 +774,6 @@ final class AppModel {
         guard let store else { return }
         let loaded = (try? await store.quotas()) ?? []
         if quotas != loaded { quotas = loaded }
-    }
-
-    /// Asks every provider what is left, rather than waiting to be told.
-    ///
-    /// **This is the one asker.** Nothing else in the app may call a `AgentQuotaSource`, and this
-    /// takes no session, no workspace and no runner, because an allowance is account wide: ten
-    /// workspaces open is ten views of one number, and ten askers would be ten HTTP calls for it.
-    /// The gap is the shortest acceptable age of the last answer, so a menu opening can ask sooner
-    /// than the background poll without being a button that hammers an endpoint.
-    ///
-    /// Nothing is thrown and nothing is reported. A provider that is not installed or not logged
-    /// in answers nothing, which is the same as never having been asked, and the panel keeps
-    /// saying what it already knew.
-    ///
-    /// Not before the store is open. The windows an ask brings back are written to the store and
-    /// reach the panel through its feed, while the account facts are kept here in memory, so an
-    /// ask made with no store half landed: the plan and the Codex balances appeared, every window
-    /// was dropped, and the ask still counted, so nothing asked again for ten minutes. That is
-    /// what a panel opened in the first second of a launch, or on a database that would not open,
-    /// used to show.
-    func refreshQuotas(after gap: TimeInterval = QuotaPollSchedule.interval) async {
-        guard store != nil,
-              !isAskingForQuotas,
-              QuotaPollSchedule.isDue(lastAskedAt: lastQuotaAskAt, at: Date(), after: gap)
-        else { return }
-        isAskingForQuotas = true
-        lastQuotaAskAt = Date()
-        defer { isAskingForQuotas = false }
-        let report = await AgentQuotaSources.report()
-        for account in report.accounts where accounts[account.provider] != account {
-            accounts[account.provider] = account
-        }
-        await recordQuotas(report.quotas)
-    }
-
-    /// Refreshes both usage sources. swarm has its own one-minute gate because opening the menu
-    /// must never turn into a way to run the CLI repeatedly.
-    func refreshUsage(after quotaGap: TimeInterval = QuotaPollSchedule.interval) async {
-        async let quotas: Void = refreshQuotas(after: quotaGap)
-        async let swarm: Void = refreshSwarmUsage()
-        _ = await (quotas, swarm)
-    }
-
-    private func refreshSwarmUsage() async {
-        guard !isAskingForSwarmUsage,
-              QuotaPollSchedule.isDue(
-                lastAskedAt: lastSwarmUsageAskAt,
-                at: Date(),
-                after: QuotaPollSchedule.interval
-              )
-        else { return }
-        isAskingForSwarmUsage = true
-        lastSwarmUsageAskAt = Date()
-        defer { isAskingForSwarmUsage = false }
-        do {
-            let meters = try await swarmProfiles.usage()
-            swarmUsageFailures.reset()
-            if swarmUsageMeters != meters { swarmUsageMeters = meters }
-        } catch SwarmProfileError.unavailable {
-            swarmUsageFailures.reset()
-            if !swarmUsageMeters.isEmpty { swarmUsageMeters = [] }
-        } catch {
-            guard swarmUsageFailures.failed() else { return }
-            let stale = swarmUsageMeters.map { meter in
-                guard meter.window != nil, meter.usedPct != nil else { return meter }
-                var copy = meter
-                copy.state = "stale"
-                return copy
-            }
-            if swarmUsageMeters != stale { swarmUsageMeters = stale }
-        }
-    }
-
-    /// The background poll, which is what keeps the menu bar's own severity honest for somebody
-    /// who never opens the menu. `QuotaPollSchedule` holds the interval and the argument for it.
-    private func startPollingQuotas() {
-        quotaPollTask?.cancel()
-        quotaPollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refreshUsage()
-                try? await Task.sleep(for: .seconds(QuotaPollSchedule.interval))
-            }
-        }
     }
 
     /// Follows the store, so a write anybody makes is a window that has already redrawn.

@@ -128,9 +128,9 @@ public enum CodexQuotaAdapter: AgentQuotaAdapter {
     /// and a weekly window of its own. They were read and dropped along with the rest of the
     /// answer's extras; OpenUsage shows them as "Spark" and "Spark Weekly", behind the caret.
     ///
-    /// Keyed `<limit id>.<slot>` so they cannot collide with the account's own `primary`, and so
-    /// `UsageCatalogue` can tell which limit a row belongs to. The limit's own entry in the map is
-    /// the snapshot already read above and is skipped.
+    /// Keyed `<limit id>.<slot>` so they cannot collide with the account's own `primary`, and so a
+    /// reader can tell which limit a row belongs to. The limit's own entry in the map is the
+    /// snapshot already read above and is skipped.
     static func extraLimits(in body: JSONValue, besides ownID: String, at now: Date) -> [AgentQuota] {
         let extras = body["rateLimitsByLimitId"]?.objectValue ?? [:]
         return extras.keys.sorted().filter { $0 != ownID }.flatMap { limitID -> [AgentQuota] in

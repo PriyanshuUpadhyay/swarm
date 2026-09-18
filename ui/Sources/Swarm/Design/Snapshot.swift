@@ -904,12 +904,6 @@ enum Snapshot {
 
         let model = await seededModel()
 
-        // The limits panel is drawn from a real ask rather than from made up rows. It is the one
-        // scene here whose whole point is what a CLI actually answered, and a picture of invented
-        // percentages would be a picture of nothing. A machine with neither CLI installed renders
-        // the panel's own empty state, which is also worth a photograph.
-        let report = await AgentQuotaSources.report()
-
         let scenes: [(String, AnyView, CGSize)] = [
             ("workspace-setup", AnyView(WorkspaceSetupOptionGallery()), CGSize(width: 760, height: 200)),
             ("sidebar", AnyView(SidebarView().frame(width: 260, height: 620)), CGSize(width: 260, height: 620)),
@@ -979,26 +973,6 @@ enum Snapshot {
             // same directory, so whichever ran second replaced a real photograph with a yellow
             // bar, and they disagreed about the width while doing it (800 here, 820 there).
 
-            // The usage panel's dashboard on its own ground, drawn from what the two CLIs answered.
-            // See `UsagePanelView`.
-            (
-                "limits",
-                AnyView(UsagePanelSnapshot(quotas: report.quotas, accounts: report.accounts, now: Date())),
-                CGSize(width: UsageMenuBlock.width + 28, height: 900)
-            ),
-            // And the states a real ask cannot produce on the machine this runs on: a window
-            // nobody measured, a provider absent, extra usage switched on, a window past its wall.
-            // Invented rather than measured, and that is the difference from the scene above: this
-            // one is a photograph of the drawing rather than of an account, and it exists because
-            // "photograph every state" is not a thing one account can be asked to be.
-            (
-                "limits-states",
-                AnyView(
-                    LimitsStateGallery()
-                        .background(Color(nsColor: .windowBackgroundColor))
-                ),
-                CGSize(width: UsageMenuBlock.width + 28, height: 2400)
-            ),
         ]
 
         for appearanceName in ["light", "dark"] {
@@ -1242,136 +1216,3 @@ extension View {
 /// machine this renders on has one plan, one set of windows and no extra usage, so four of the
 /// six states below cannot be asked for. The `limits` scene beside this one is the real ask and
 /// stays that way.
-private struct LimitsStateGallery: View {
-    /// A fixed instant, so every countdown in the capture is the same countdown next week.
-    private static let now = Date(timeIntervalSince1970: 1_787_500_000)
-    private static let week: TimeInterval = 604_800
-
-    private static func quota(
-        _ provider: AgentKind,
-        _ window: QuotaWindow,
-        _ used: Double?,
-        after resets: TimeInterval?
-    ) -> AgentQuota {
-        AgentQuota(
-            provider: provider,
-            window: window,
-            measure: used.map { .fraction($0) } ?? .unknown,
-            resetsAt: resets.map { now.addingTimeInterval($0) },
-            observedAt: now
-        )
-    }
-
-    private static let scenes: [(String, [AgentQuota])] = [
-        ("Quiet", [
-            quota(.claudeCode, .named("five_hour"), 0.12, after: 15_600),
-            quota(.claudeCode, .named("seven_day"), 0.09, after: week * 0.85),
-            quota(.codex, .lasting(week, key: "primary"), 0.03, after: week * 0.7),
-        ]),
-        ("The ramp, and the owner's own figures", [
-            quota(.claudeCode, .named("five_hour"), 0.04, after: 3900),
-            quota(.claudeCode, .named("seven_day"), 0.60, after: week * 0.535),
-            quota(
-                .claudeCode,
-                QuotaWindow(key: "seven_day_model_fable", label: "Week (Fable)", duration: week),
-                0.71,
-                after: week * 0.535
-            ),
-            quota(.codex, .lasting(week, key: "primary"), 0, after: week * 0.9),
-        ]),
-        ("Nobody measured the session window", [
-            quota(.claudeCode, .named("five_hour"), nil, after: 9600),
-            quota(.claudeCode, .named("seven_day"), 0.44, after: week * 0.6),
-            quota(.codex, .lasting(week, key: "primary"), 0, after: week * 0.9),
-        ]),
-        ("Codex absent, and one window spent", [
-            quota(.claudeCode, .named("five_hour"), 1, after: 2900),
-            quota(.claudeCode, .named("seven_day"), 0.88, after: week * 0.3),
-        ]),
-        ("Model scoped rows and extra usage, both present", [
-            quota(.claudeCode, .named("five_hour"), 0.22, after: 7900),
-            quota(.claudeCode, .named("seven_day"), 0.66, after: week * 0.6),
-            quota(
-                .claudeCode,
-                QuotaWindow(key: "seven_day_model_opus", label: "Week (Opus)", duration: week),
-                0.93,
-                after: week * 0.6
-            ),
-            AgentQuota(
-                provider: .claudeCode,
-                window: QuotaWindow(key: "extra_usage", label: "Extra usage"),
-                measure: .counted(used: 17.2, limit: 50, unit: "USD"),
-                resetsAt: nil,
-                observedAt: now
-            ),
-            quota(.codex, .lasting(week, key: "primary"), 0.58, after: week * 0.45),
-        ]),
-        ("Nothing reported at all", []),
-    ]
-
-    private static let swarmUsage = [
-        SwarmUsageMeter(
-            provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
-            window: "5h", usedPct: 28, resetsIn: "3h12m", state: "ok", reason: nil, asOf: nil
-        ),
-        SwarmUsageMeter(
-            provider: "claude", account: "ORCHESTRATOR", label: "cl·orchestrator",
-            window: "7d", usedPct: 91, resetsIn: "2d4h", state: "ok", reason: nil, asOf: nil
-        ),
-        SwarmUsageMeter(
-            provider: "codex", account: "CODER", label: "cx·coder",
-            window: "5h", usedPct: 52, resetsIn: "1h8m", state: "stale", reason: nil, asOf: nil
-        ),
-        SwarmUsageMeter(
-            provider: "codex", account: "REVIEWER", label: "cx·reviewer",
-            window: nil, usedPct: nil, resetsIn: nil, state: "logged_out",
-            reason: "Sign in to Codex", asOf: nil
-        ),
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(Self.scenes.enumerated()), id: \.offset) { _, scene in
-                Text(scene.0)
-                    .font(Font(NSFont.menuFont(ofSize: 0)).weight(.semibold))
-                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .padding(.leading, 22)
-                    .padding(.top, 20)
-                UsagePanelSnapshot(quotas: scene.1, now: Self.now)
-            }
-            Text("Every swarm account")
-                .font(Font(NSFont.menuFont(ofSize: 0)).weight(.semibold))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .padding(.leading, 22)
-                .padding(.top, 20)
-            UsagePanelSnapshot(quotas: [], swarmUsage: Self.swarmUsage, now: Self.now)
-        }
-        .padding(.bottom, 20)
-    }
-}
-
-/// The limits block drawn from quotas handed to it, which is what hangs in the middle of the menu.
-/// The menu's own model supplies the layout and the display settings, as it does on screen.
-private struct UsagePanelSnapshot: View {
-    let quotas: [AgentQuota]
-    var accounts: [AgentAccount] = []
-    var swarmUsage: [SwarmUsageMeter] = []
-    let now: Date
-
-    var body: some View {
-        let byProvider = Dictionary(accounts.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
-        UsageMenuBlock(
-            model: UsageMenuModel.shared,
-            metrics: UsageCatalogue.metrics(quotas: quotas, accounts: byProvider, at: now),
-            accounts: byProvider,
-            now: now,
-            canReorder: false,
-            swarmUsage: SwarmUsageBoard.make(
-                from: swarmUsage,
-                options: UsageMenuModel.shared.options,
-                layout: UsageMenuModel.shared.layout
-            )
-        )
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-}

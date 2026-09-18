@@ -110,7 +110,7 @@ public enum KeepAwake {
         whileAgentsRun: Bool,
         runningCount: Int,
         at now: Date,
-        clock: UsageTimeFormat = .automatic,
+        clock: ClockStyle = .automatic,
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> Status {
@@ -118,8 +118,8 @@ public enum KeepAwake {
             guard let until = session.until else {
                 return Status(isOn: true, headline: onHeadline, detail: "Until you stop it")
             }
-            let clockTime = UsageFormat.timeOfDay(until, clock: clock, calendar: calendar, locale: locale)
-            let left = UsageFormat.compactDuration(until.timeIntervalSince(now))
+            let clockTime = ClockFormat.timeOfDay(until, clock: clock, calendar: calendar, locale: locale)
+            let left = ClockFormat.compactDuration(until.timeIntervalSince(now))
             return Status(isOn: true, headline: onHeadline, detail: "\(left) left, until \(clockTime)")
         }
         if SleepPrevention.preventsSleep(isEnabled: whileAgentsRun, runningCount: runningCount) {
@@ -147,14 +147,14 @@ public enum KeepAwake {
         whileAgentsRun: Bool,
         runningCount: Int,
         at now: Date,
-        clock: UsageTimeFormat = .automatic,
+        clock: ClockStyle = .automatic,
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> String? {
         if let session, session.isActive(at: now) {
             guard let until = session.until else { return "Keeping this Mac awake" }
-            let clockTime = UsageFormat.timeOfDay(until, clock: clock, calendar: calendar, locale: locale)
-            return "\(UsageFormat.compactDuration(until.timeIntervalSince(now))) left, until \(clockTime)"
+            let clockTime = ClockFormat.timeOfDay(until, clock: clock, calendar: calendar, locale: locale)
+            return "\(ClockFormat.compactDuration(until.timeIntervalSince(now))) left, until \(clockTime)"
         }
         if SleepPrevention.preventsSleep(isEnabled: whileAgentsRun, runningCount: runningCount) {
             let verb = runningCount == 1 ? "runs" : "run"

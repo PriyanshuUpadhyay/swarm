@@ -2,9 +2,12 @@ import AppKit
 import SwiftUI
 import SwarmCore
 
-/// The menu bar item: the starred usage figures beside each provider's mark, a cup while the Mac is
-/// being kept awake, how many agents are waiting on a person and how many finished unread, and a
-/// menu under a click.
+/// The menu bar item: Swarm's mark, a cup while the Mac is being kept awake, how many agents are
+/// waiting on a person and how many finished unread, and a menu under a click.
+///
+/// **The usage figures that used to ride here are gone**, with the board, the star layout and the
+/// background poll that ran the provider CLIs to keep them honest. Jellow reports usage, so Swarm
+/// does not.
 ///
 /// An `NSStatusItem` rather than SwiftUI's `MenuBarExtra`. `MenuBarExtra(isInserted:)` is the
 /// obvious way to express a status item that can be switched off, and on macOS 26 a scene whose
@@ -46,18 +49,13 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
     private var unreadCount = 0
     private var waitingCount = 0
     private var keepsAwake = false
-    private var strip = MenuBarUsageStrip()
-    private let model = UsageMenuModel.shared
+    private let model = MenuBarPreferences.shared
 
     private override init() {}
 
     /// Inserts or removes the item. Idempotent, so the reporter can call it on every change.
     func setEnabled(_ isEnabled: Bool, app: AppModel) {
         self.app = app
-        model.refresh = { [weak app] in
-            guard let app else { return }
-            Task { await app.refreshUsage(after: 0) }
-        }
 
         guard isEnabled else {
             if let item { NSStatusBar.system.removeStatusItem(item) }
@@ -72,7 +70,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         menu.delegate = self
         created.menu = menu
         item = created
-        observeUsage()
+        observeMenuBarSettings()
         refreshButton()
         claimPlaceInMenuBar(created)
     }
@@ -174,28 +172,19 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
         refreshButton()
     }
 
-    /// Follows the quotas, the accounts, the layout and the display settings, and redraws the strip
-    /// when any of them moves.
+    /// Follows the item's own display settings and redraws when one of them moves.
     ///
-    /// A tracking loop rather than a view modifier, because the strip has to stay right with every
+    /// A tracking loop rather than a view modifier, because the item has to stay right with every
     /// window closed, which is exactly when a modifier on the main window stops being evaluated.
-    private func observeUsage() {
-        guard let app, item != nil else { return }
-        let metrics = withObservationTracking {
-            _ = model.layout
-            _ = model.options
-            _ = model.iconStyle
-            _ = model.showsUsage
+    private func observeMenuBarSettings() {
+        guard item != nil else { return }
+        withObservationTracking {
+            _ = model.showsCup
             _ = model.showsWaitingCount
             _ = model.showsUnreadCount
-            return UsageCatalogue.metrics(quotas: app.quotas, accounts: app.accounts)
         } onChange: { [weak self] in
-            Task { @MainActor in self?.observeUsage() }
+            Task { @MainActor in self?.observeMenuBarSettings() }
         }
-        model.adopt(metrics)
-        strip = model.showsUsage
-            ? MenuBarUsageStrip.make(layout: model.layout, metrics: metrics, options: model.options)
-            : MenuBarUsageStrip()
         refreshButton()
     }
 
@@ -203,11 +192,7 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
 
     private func refreshButton() {
         guard let button = item?.button else { return }
-        if !strip.isEmpty, let image = MenuBarStripImage.image(for: strip, style: model.iconStyle) {
-            button.image = image
-        } else {
-            button.image = Self.mark
-        }
+        button.image = Self.mark
 
         let segments = MenuBarSummary.segments(
             waiting: waitingCount,
@@ -220,7 +205,6 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
 
         var spoken = [MenuBarSummary.tooltip(waiting: waitingCount, unread: unreadCount)]
         if showsCup { spoken.insert(KeepAwake.onHeadline, at: 0) }
-        if !strip.isEmpty { spoken.insert(strip.spoken, at: 0) }
         button.toolTip = spoken.joined(separator: "\n")
         button.setAccessibilityLabel("Swarm. " + spoken.joined(separator: ". "))
     }
@@ -290,21 +274,9 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // Somebody is about to read the limits, so ask for fresher ones. Not awaited: a menu that
-        // waited on usage subprocesses would open a second after it was clicked, and what this drops
-        // in arrives on the store's own feed, ready the next time the menu opens.
-        if let app {
-            Task { await app.refreshUsage(after: QuotaPollSchedule.onDemandFloor) }
-        }
-
         // Keep Awake first: it is the one thing in here people open the menu to change rather than
         // to read.
         for item in keepAwakeItems() { menu.addItem(item) }
-
-        if let limits = limitsItem() {
-            menu.addItem(.separator())
-            menu.addItem(limits)
-        }
 
         menu.addItem(.separator())
         addWorkspaces(to: menu)
@@ -432,45 +404,6 @@ final class MenuBarStatusItem: NSObject, NSMenuDelegate {
     }
 
     // MARK: The limits
-
-    /// The limits, hosted in a menu item.
-    ///
-    /// The item is disabled on purpose. AppKit highlights a custom view's item under the pointer
-    /// exactly as it would a real command, and a block that lights up when you cross it and then
-    /// does nothing when you click reads as a bug. Disabling it costs the accessibility label,
-    /// which is why one is set by hand.
-    ///
-    /// The view is measured with `fittingSize` and pinned: an `NSHostingView` inside a menu item is
-    /// given no layout pass by the menu, so a view left to size itself lands with a zero height
-    /// frame and the row collapses to nothing.
-    private func limitsItem() -> NSMenuItem? {
-        guard model.showsUsage, let app else { return nil }
-        let metrics = model.metrics(quotas: app.quotas, accounts: app.accounts)
-        let sections = model.layout.sections(for: metrics)
-        let swarmUsage = SwarmUsageBoard.make(
-            from: app.swarmUsageMeters,
-            options: model.options,
-            layout: model.layout
-        )
-        guard !sections.isEmpty || !swarmUsage.isEmpty else { return nil }
-
-        let host = NSHostingView(rootView: UsageMenuBlock(
-            model: model,
-            metrics: metrics,
-            accounts: app.accounts,
-            now: Date(),
-            swarmUsage: swarmUsage
-        ))
-        host.frame = CGRect(origin: .zero, size: host.fittingSize)
-
-        let item = NSMenuItem()
-        item.view = host
-        item.isEnabled = false
-        item.setAccessibilityLabel(swarmUsage.isEmpty
-            ? MenuBarSummary.limitSentence(for: QuotaBoard.make(from: app.quotas))
-            : swarmUsage.accessibilityLabel)
-        return item
-    }
 
     // MARK: Workspaces
 

@@ -5,12 +5,15 @@ import Testing
 /// The segmentation fault the quota reader took the app down with.
 ///
 /// A dev build died on `EXC_BAD_ACCESS`, a byte read at address 0x64, inside
-/// `_NSFileHandleIsClosed` reached from `StreamingProcess.write`. The stack under it was
-/// `AgentQuotaSources.readAll` into `CodexQuotaSource.read` into `CodexClient.start`, so the
-/// crashing write was the `initialize` line of the handshake, and a second thread was inside
-/// `StreamingProcess.start()` for the Claude Code source at the same moment, doing the launch the
-/// Codex source had not done. A field read off nothing, on the first write of a connection: the
-/// handle was reached for in a state nobody had checked.
+/// `_NSFileHandleIsClosed` reached from `StreamingProcess.write`. The stack under it was the quota
+/// reader into `CodexClient.start`, so the crashing write was the `initialize` line of the
+/// handshake, and a second thread was inside `StreamingProcess.start()` for the Claude Code source
+/// at the same moment, doing the launch the Codex source had not done. A field read off nothing, on
+/// the first write of a connection: the handle was reached for in a state nobody had checked.
+///
+/// **The quota reader itself is gone**, removed with the menu bar's usage figures, and these tests
+/// are not. The bug was never about quotas: it was `StreamingProcess` and `CodexClient` being
+/// written to in two states neither of them checked, and every agent CLI writes to both.
 ///
 /// Two states are not writable and neither was asked about. The child has never been launched,
 /// which is what `CodexClient` did every time, because it left claiming `lines` to an unstructured
@@ -19,9 +22,8 @@ import Testing
 /// `CodexRunner.terminateNow` does from the main actor on Stop, close, archive and quit, and which
 /// the old check could not stop because it read its flag under the lock and then wrote outside it.
 ///
-/// A quota reading is a background convenience. Nothing it does may take the app down, so the
-/// tests here write to processes that are not there rather than reasoning about whether anything
-/// would.
+/// Nothing a background reader does may take the app down, so the tests here write to processes
+/// that are not there rather than reasoning about whether anything would.
 ///
 /// **The second way a dying child took Swarm down, found by this suite.** The first CI run of it
 /// killed the whole test binary with signal 13, SIGPIPE, part way through and named no failing
@@ -133,20 +135,6 @@ struct ProcessStdinTests {
         #expect(process.linesWereClaimed)
     }
 
-    // MARK: - The quota sources
-
-    @Test("a Codex source whose process says nothing answers nothing", .timeLimit(.minutes(1)))
-    func aSilentCodexProcessFailsAsASource() async {
-        let source = CodexQuotaSource(makeProcess: { _ in DeadProcess() })
-
-        // A source that cannot talk to its process contributes nothing, which is the same
-        // outcome as never having been asked, and is what `readAll` is written to expect.
-        let payload = await source.read()
-        #expect(payload == nil)
-
-        let quotas = await AgentQuotaSources.readAll([source] as [any AgentQuotaSource])
-        #expect(quotas.isEmpty)
-    }
 }
 
 // MARK: - Doubles
@@ -217,29 +205,4 @@ private final class LaunchOrderProcess: AgentProcessing, @unchecked Sendable {
     }
 
     func kill() { terminate() }
-}
-
-/// A process that ended before anybody asked it anything.
-private final class DeadProcess: AgentProcessing, @unchecked Sendable {
-    let lines: AsyncThrowingStream<String, Error>
-    let errorLines: AsyncStream<String>
-
-    init() {
-        let (stdout, out) = AsyncThrowingStream.makeStream(
-            of: String.self, throwing: Error.self, bufferingPolicy: .unbounded
-        )
-        let (stderr, err) = AsyncStream.makeStream(of: String.self, bufferingPolicy: .unbounded)
-        lines = stdout
-        errorLines = stderr
-        out.finish()
-        err.finish()
-    }
-
-    var isRunning: Bool { false }
-    var exitStatus: Int32 { get async { 1 } }
-
-    func writeLine(_ text: String) {}
-    func closeStdin() {}
-    func terminate() {}
-    func kill() {}
 }
