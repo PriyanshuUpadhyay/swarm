@@ -111,6 +111,21 @@ struct ScrollEndOfferTests {
         #expect(!ScrollEnd.isWorthOffering(contentHeight: 300, viewportHeight: 800, offset: 0))
     }
 
+    @Test("more history is asked for a screen before the reader reaches the top")
+    func historyArrivesBeforeTheTop() {
+        // Under a screen from the first row on an eight hundred point pane, then over one.
+        #expect(ScrollEnd.isNearStart(contentHeight: 4_000, viewportHeight: 800, offset: 700))
+        #expect(!ScrollEnd.isNearStart(contentHeight: 4_000, viewportHeight: 800, offset: 900))
+    }
+
+    /// The same guards the other two answers have, and content that fits has no history above the
+    /// reader to grow into.
+    @Test("a pane with nothing to scroll asks for no history")
+    func nothingToScrollAsksForNoHistory() {
+        #expect(!ScrollEnd.isNearStart(contentHeight: 4_000, viewportHeight: 0, offset: 0))
+        #expect(!ScrollEnd.isNearStart(contentHeight: 300, viewportHeight: 800, offset: 0))
+    }
+
     /// It is not the negation of the other question, and must not become one.
     @Test("still following along and worth offering are different answers")
     func theTwoQuestionsDisagreeOnPurpose() {

@@ -57,6 +57,21 @@ public enum ScrollEnd {
         return contentHeight - offset - viewportHeight > viewportHeight * screens
     }
 
+    /// Whether the reader is near enough to the top for the pane to take another chunk of history.
+    ///
+    /// One viewport rather than `threshold`, because this answer arranges work: the older rows
+    /// have to arrive while there is still a screen of them left to read, or the reader meets the
+    /// top of the window and waits there. A pane nobody has laid out, and content that fits,
+    /// answer false, because neither has history above the reader to grow into.
+    public static func isNearStart(
+        contentHeight: Double,
+        viewportHeight: Double,
+        offset: Double
+    ) -> Bool {
+        guard viewportHeight > 0, contentHeight > viewportHeight else { return false }
+        return offset < viewportHeight
+    }
+
     public static func isAtEnd(
         contentHeight: Double,
         viewportHeight: Double,

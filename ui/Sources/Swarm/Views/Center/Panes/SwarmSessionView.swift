@@ -91,10 +91,30 @@ private struct SwarmSessionChat: View {
     @State private var followsEnd = true
     @State private var bubbleWidth = TranscriptBubbleWidth()
     @State private var hoverHost = TranscriptHoverHost()
+    /// Which rows the lazy stack is handed. A chair log runs to thousands of rows, and a lazy stack
+    /// walks every child it holds on each layout pass, so the pane opens on the newest rows and
+    /// takes another chunk when the reader scrolls back towards the top. See `TranscriptWindow`.
+    @State private var window = TranscriptWindow(start: 0, end: 0)
+    @State private var isGrowing = false
 
     private var textSize: ChatTextSize { ColourThemePreference.shared.chatTextSize }
     private var chatFontID: String { ColourThemePreference.shared.chatFont }
     private var lineHeight: ChatLineHeight { ColourThemePreference.shared.chatLineHeight }
+
+    /// One chunk of older rows, once per scroll that reaches the top of the window.
+    ///
+    /// The live end is checked because a window shorter than the pane is at its top and its bottom
+    /// at once, and growing that one would put rows above a reader who is reading the newest one.
+    /// `isGrowing` is checked because a scroll asks this on every frame it is near the top.
+    private func growWindow() {
+        guard !followsEnd, window.canGrowUp, !isGrowing else { return }
+        isGrowing = true
+        window = window.grownUp()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            isGrowing = false
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,11 +130,12 @@ private struct SwarmSessionChat: View {
                             .foregroundStyle(Palette.textSecondary)
                             .subagentReadingColumn()
                     } else {
+                        let drawn = window.clamped(rowCount: reader.rows.count)
                         SubagentConversationView(
-                            rows: reader.rows,
+                            rows: Array(reader.rows[drawn.start..<drawn.end]),
                             prompt: "",
                             home: TranscriptHome(workspaceID: nil, worktree: directory),
-                            droppedRows: reader.droppedRows,
+                            droppedRows: reader.droppedRows + drawn.start,
                             isRunning: false
                         )
                     }
@@ -123,6 +144,9 @@ private struct SwarmSessionChat: View {
             }
             .scrollPosition($position)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // Older rows go in ABOVE the reader, so the anchor is what keeps the rows they are
+            // reading under their eyes while the window grows.
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ScrollEnd.isAtEnd(
                     contentHeight: geometry.contentSize.height,
@@ -131,6 +155,15 @@ private struct SwarmSessionChat: View {
                 )
             } action: { _, atEnd in
                 followsEnd = atEnd
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                ScrollEnd.isNearStart(
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height,
+                    offset: geometry.contentOffset.y
+                )
+            } action: { _, nearStart in
+                if nearStart { growWindow() }
             }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 TranscriptGeometry.cap(
@@ -142,7 +175,10 @@ private struct SwarmSessionChat: View {
             } action: { cap in
                 if bubbleWidth.cap != cap { bubbleWidth.cap = cap }
             }
-            .onChange(of: reader.rows.count) { _, _ in
+            .onChange(of: reader.rows.count, initial: true) { previous, count in
+                window = window.count == 0
+                    ? TranscriptWindow.liveEnd(rowCount: count)
+                    : window.includingAppendedRows(previousCount: previous, rowCount: count)
                 if followsEnd { position.scrollTo(edge: .bottom) }
             }
             .overlay { TranscriptHoverOverlay(host: hoverHost) }
