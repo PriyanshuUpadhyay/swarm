@@ -147,6 +147,13 @@ extension EnvironmentValues {
     @Entry var markdownIsStreaming: Bool = false
     @Entry var markdownLinkActions = TranscriptLinkActions()
     @Entry var markdownLineSpacingOverride: CGFloat?
+    /// A pane that can draw a document itself, for a transcript that has no workspace to open one
+    /// in. Nil everywhere else, and nil is what makes a file link fall back to the editor.
+    ///
+    /// An environment value rather than an argument, because the two transcripts in a swarm
+    /// session are built by different types (`TranscriptListView` builds its own link actions from
+    /// the transcript's workspace) and both have to land in the same pane. See `TranscriptLink`.
+    @Entry var transcriptShowsFile: (@MainActor @Sendable (String) -> Void)?
 }
 
 private struct MarkdownBlocksView: View {

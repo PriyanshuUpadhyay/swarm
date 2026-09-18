@@ -146,4 +146,31 @@ public enum FilePathGuess {
         let inside = String(path.dropFirst(root.count + 1))
         return inside.isEmpty ? nil : inside
     }
+
+    /// The file this path names when there is no worktree to read it against, and nil when it
+    /// names none.
+    ///
+    /// The other half of `relative(_:to:)`, which refuses everything on an empty worktree because
+    /// a relative path means nothing without one. **A transcript with no workspace behind it is
+    /// the common case rather than the odd one**: a swarm session gets a workspace only when its
+    /// working directory sits inside one, and a session started by hand does not. The paths in a
+    /// bus summary are absolute, so they name a file whoever is reading them, and until this
+    /// existed every one of them was drawn as a link and opened nothing.
+    ///
+    /// A `~` is expanded here rather than left to the caller, because what this answers with is
+    /// about to be handed to the file system. Relative paths are still refused, and that is the
+    /// whole of the rule: `src/main.rs` is a file in a directory nobody here can name.
+    ///
+    /// - Parameter home: the home directory a leading `~` stands for. Passed in rather than read
+    ///   from the process, so the rule can be checked without depending on whose Mac runs it.
+    public static func absolute(_ path: String, home: String) -> String? {
+        guard isWellFormed(path) else { return nil }
+        if path.hasPrefix("~/") {
+            let root = home.hasSuffix("/") ? String(home.dropLast()) : home
+            guard !root.isEmpty else { return nil }
+            return root + String(path.dropFirst(1))
+        }
+        guard path.hasPrefix("/") else { return nil }
+        return path
+    }
 }

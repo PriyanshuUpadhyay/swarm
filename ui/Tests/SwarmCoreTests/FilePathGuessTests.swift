@@ -193,4 +193,33 @@ struct FilePathGuessTests {
     func rejectsEmptyWorktree() {
         #expect(FilePathGuess.relative("a.swift", to: "") == nil)
     }
+
+    // MARK: - With no worktree at all
+    //
+    // The swarm session panel. Every file link in it was drawn, underlined and dead, because the
+    // only door to a file needed a workspace and a session started outside one has none.
+
+    @Test("an absolute path names its file with no worktree in hand")
+    func keepsAbsolute() {
+        #expect(FilePathGuess.absolute("/tmp/report.md", home: "/Users/x") == "/tmp/report.md")
+    }
+
+    @Test("a tilde is expanded, because the answer goes to the file system")
+    func expandsTilde() {
+        #expect(
+            FilePathGuess.absolute("~/notes/plan.md", home: "/Users/x")
+                == "/Users/x/notes/plan.md"
+        )
+        // A home with a trailing separator must not produce `//`, which no longer names the file
+        // on a case where the path is compared rather than opened.
+        #expect(
+            FilePathGuess.absolute("~/plan.md", home: "/Users/x/") == "/Users/x/plan.md"
+        )
+    }
+
+    @Test("a relative path is refused, because nothing here can say what it is relative to",
+          arguments: ["src/main.rs", "./a.swift", "../a.swift", "a.swift", "~", ""])
+    func refusesRelative(path: String) {
+        #expect(FilePathGuess.absolute(path, home: "/Users/x") == nil)
+    }
 }

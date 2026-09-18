@@ -210,6 +210,9 @@ struct TranscriptListView: View {
     /// And the line height, for the same reason: a step is points on every line of every
     /// paragraph, so a row at another step is another height.
     @Environment(\.chatLineHeight) private var chatLineHeight
+    /// Where a document goes when this transcript has no workspace to open one in. Nil for every
+    /// transcript that has one, and the swarm session pane is what sets it.
+    @Environment(\.transcriptShowsFile) private var showsFile
 
     /// How much of the session the table is being handed, and which session that is about.
     ///
@@ -383,7 +386,9 @@ struct TranscriptListView: View {
     /// is not a change: see `TranscriptRowEnvironment`, which is what carries it to the rows.
     private var linkActions: TranscriptLinkActions {
         TranscriptLink.actions(
-            for: transcript.workspace.flatMap { app.existingModel(for: $0.id) }, pane: memory?.pane
+            for: transcript.workspace.flatMap { app.existingModel(for: $0.id) },
+            pane: memory?.pane,
+            showsFile: showsFile
         )
     }
 

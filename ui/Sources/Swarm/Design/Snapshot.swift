@@ -906,6 +906,10 @@ enum Snapshot {
 
         let scenes: [(String, AnyView, CGSize)] = [
             ("workspace-setup", AnyView(WorkspaceSetupOptionGallery()), CGSize(width: 760, height: 200)),
+            // The swarm session's column and its document pane. Offscreen is enough: the one
+            // representable on this page is the document preview, which is shown in the state
+            // that has no web view in it. See `SwarmSessionGallery`.
+            ("swarm-session", AnyView(SwarmSessionGallery()), CGSize(width: 600, height: 760)),
             ("sidebar", AnyView(SidebarView().frame(width: 260, height: 620)), CGSize(width: 260, height: 620)),
             ("home", AnyView(HomeView().frame(width: 900, height: 620)), CGSize(width: 900, height: 620)),
             ("components", AnyView(ComponentGallery().frame(width: 640, height: 700)), CGSize(width: 640, height: 700)),

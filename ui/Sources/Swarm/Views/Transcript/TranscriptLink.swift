@@ -233,12 +233,29 @@ enum TranscriptLink {
     /// named the address, rather than beside whichever pane happens to hold the keyboard, because
     /// a right click in a pane does not move the focus to it and splitting the other half of a
     /// tab would be the one thing the reader did not ask for.
+    ///
+    /// `showsFile` is a pane that can draw a document itself, and only a transcript with no
+    /// workspace has any use for one: the swarm session panel passes the half of its split that
+    /// the chair chat sits in. It is given an absolute path and never a code file, because Swarm's
+    /// code viewer is a workspace's review tab and this case has no workspace. See
+    /// `openWithoutAWorktree`.
     @MainActor
-    static func actions(for model: WorkspaceModel?, pane: String? = nil) -> TranscriptLinkActions {
+    static func actions(
+        for model: WorkspaceModel?, pane: String? = nil,
+        showsFile: (@MainActor @Sendable (String) -> Void)? = nil
+    ) -> TranscriptLinkActions {
         TranscriptLinkActions(
-            identity: .workspace(model?.workspace.id, pane: pane),
+            // A value that can draw a file must not compare equal to one that cannot, which is the
+            // reason `workspaceOpeningFiles` exists. Without this the two are one identity and a
+            // pane that gained the door would keep the actions that had none.
+            identity: showsFile == nil
+                ? .workspace(model?.workspace.id, pane: pane)
+                : .workspaceOpeningFiles(model?.workspace.id, pane: pane),
             open: { url, target in
-                if let location = SourceReference.location(url), let model {
+                if let location = SourceReference.location(url) {
+                    guard let model else {
+                        return openWithoutAWorktree(location, showing: showsFile)
+                    }
                     FileReview.open(location: location, in: model)
                     return
                 }
@@ -281,6 +298,48 @@ enum TranscriptLink {
     // Which addresses may be opened at all is `LinkPolicy.opens`, in the core where the rule is
     // tested: an agent's markdown can name any scheme it likes, and the gate on that is not a
     // drawing decision.
+
+    /// A file named in a transcript that has no worktree behind it.
+    ///
+    /// **Every such link used to be dead**, and the swarm session panel is where a reader met
+    /// that. `actions(for:)` opened a file only when it held a model, and a session gets a model
+    /// only when its working directory sits inside a Swarm workspace, which is the minority: on
+    /// this machine six of eight sessions ran from `~` or from a Worktrunk hub. The click then
+    /// fell through to `LinkPolicy.opens`, which refuses `swarm-source`, so the path stayed
+    /// underlined and pressable and did nothing at all.
+    ///
+    /// The editor rather than the centre column, because there is no centre column to open it in:
+    /// the review pane is a workspace's. `Reveal.inEditor` is the same door ⇧⌘E and the Open in
+    /// submenu use, so the file lands where the reader's other files land.
+    ///
+    /// Absolute paths only, and `FilePathGuess.absolute` is where that rule is written and tested.
+    /// The disk is asked here rather than there, because nothing in the core touches it.
+    ///
+    /// A document goes to `showsFile` where the caller offered one, which is Swarm's own Markdown
+    /// and HTML viewer. Everything else goes to the editor, and that split is `DocumentPreview`'s
+    /// rather than a guess: it is the same rule that decides whether the review pane draws a file
+    /// as a document or as source. A `.swift` file has no viewer here to go to, because the one
+    /// Swarm has is a workspace's review tab and this whole path is the case with no workspace.
+    /// **A document is handed over without asking the disk, and the pane reports a file that has
+    /// gone.** Measured on this machine: of 335 document paths in the swarm bus, the ones in the
+    /// session most recently opened all named `/tmp/councils/<run>/`, which the council run
+    /// removes when it finishes. Every one of those clicks was refused here and did nothing at
+    /// all, which reads exactly like a feature that does not work. A pane saying the file is gone
+    /// is the answer to the question the click asked.
+    ///
+    /// The editor still asks first, because handing a missing path to Zed opens an empty buffer
+    /// named after a file that is not there.
+    @MainActor
+    private static func openWithoutAWorktree(
+        _ location: CodeLocation, showing showsFile: (@MainActor @Sendable (String) -> Void)?
+    ) {
+        guard let path = FilePathGuess.absolute(location.path, home: NSHomeDirectory()) else {
+            return
+        }
+        if let showsFile, DocumentPreview.kind(path: path) != nil { return showsFile(path) }
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        Reveal.inEditor(path)
+    }
 
     // MARK: Copying
 

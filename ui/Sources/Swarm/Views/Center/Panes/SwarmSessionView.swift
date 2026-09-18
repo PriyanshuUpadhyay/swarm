@@ -6,6 +6,15 @@ struct SwarmSessionView: View {
     var item: SwarmProjectSession
     @State private var reader: SwarmSessionReaderModel
     @State private var showsTerminal = false
+    /// The document a link in this session was clicked on, drawn where the chat is. Nil for none.
+    ///
+    /// **This pane exists because a swarm session has no workspace**, and every door in this
+    /// window that opens a file is a workspace's: the review tab, the browser tab and the
+    /// inspector all hang off `selection.workspaceID`, which `.swarmSession` answers nil for. So a
+    /// path an agent named had nowhere to go and went to the user's editor instead, which is the
+    /// one place the reader was not. `DocumentPreviewView` needs no worktree, and says so, so the
+    /// chat's half of the split is a place it can be drawn in.
+    @State private var preview: String?
     @State private var localModel: WorkspaceModel?
     /// Built in `.task` rather than in `init`, because it needs the `AppModel` from the environment
     /// and an environment value does not exist yet while an initialiser runs.
@@ -46,6 +55,12 @@ struct SwarmSessionView: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
+                // Beside the terminal toggle rather than over the document, because it is the same
+                // question that button asks: which of this session's things is in the left half.
+                if preview != nil {
+                    Button("Show chat") { preview = nil }
+                        .buttonStyle(.bordered)
+                }
                 if item.session.adapter == "tmux", localTab != nil {
                     Button(showsTerminal ? "Show chat" : "Show terminal") {
                         showsTerminal.toggle()
@@ -66,17 +81,34 @@ struct SwarmSessionView: View {
             } else {
                 HSplitView {
                     Group {
-                        if let transcript {
+                        if let preview {
+                            SwarmSessionDocument(path: preview)
+                        } else if let transcript {
                             SwarmSessionChat(reader: reader, transcript: transcript)
                         }
                     }
                     .frame(minWidth: 420)
                     SwarmSessionAgentsView(reader: reader)
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
-                        .markdownLinkActions(TranscriptLink.actions(for: localModel))
+                        .markdownLinkActions(
+                            TranscriptLink.actions(for: localModel, showsFile: showsFile)
+                        )
                 }
+                // The chair's chat builds its own link actions out of the transcript's workspace,
+                // so it is reached through the environment rather than through the call above.
+                // Both halves of the split have to land in the same pane.
+                .environment(\.transcriptShowsFile, showsFile)
             }
         }
+        // Fills the pane rather than sitting in the middle of it.
+        //
+        // **Without this the whole session floated.** The pane hands this view a flexible frame,
+        // and a flexible frame CENTRES a child that does not fill it. Every child here used to be
+        // greedy, because the chat is a transcript, so the stack filled by accident; the document
+        // pane's empty state is not greedy, and the first picture of it showed the title, the
+        // split and the agents squeezed into a 280 point band with 540 points of window above it
+        // and 545 below. `InspectorView` carries the same line for the same reason.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.surface)
         .task {
             if let workspaceID = item.workspaceID,
@@ -111,6 +143,70 @@ struct SwarmSessionView: View {
     private var localTab: CenterTab? {
         guard let id = item.localSessionID, let workspaceID = item.workspaceID else { return nil }
         return CenterTabStore.shared.terminal(for: id, in: workspaceID)
+    }
+
+    /// Where a clicked document lands. Held as one value so that the agents panel and the chair
+    /// chat, which reach their link actions by different roads, open into the same pane.
+    private var showsFile: @MainActor @Sendable (String) -> Void {
+        let preview = $preview
+        return { preview.wrappedValue = $0 }
+    }
+}
+
+/// A document named in this session, drawn by Swarm's own Markdown and HTML viewer.
+///
+/// `worktree` is nil, which `DocumentPreviewView` accepts and documents: the preview may then read
+/// the folder the file sits in and nothing above it, which is what one clicked path asked for.
+struct SwarmSessionDocument: View {
+    var path: String
+
+    /// Asked once per draw rather than held, because the pane is rebuilt on each clicked path and
+    /// a file that arrives while it is open is a case nothing here has to serve.
+    private var exists: Bool { FileManager.default.fileExists(atPath: path) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Metrics.spacing) {
+                Image(systemName: "doc.text")
+                    .font(Typo.micro)
+                    .foregroundStyle(Palette.textTertiary)
+                    .accessibilityHidden(true)
+                Text((path as NSString).lastPathComponent)
+                    .font(Typo.labelEmphasis)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: Metrics.spacingSmall)
+                // The one way out to the real file. A viewer with no door to the thing it is
+                // showing is a dead end, and this is where the click used to go.
+                if exists {
+                    Button("Open in Editor") { Reveal.inEditor(path) }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, Metrics.inset)
+            .frame(height: Metrics.barHeight)
+            .help(path)
+            .overlay(alignment: .bottom) { Hairline() }
+
+            if exists {
+                // ponytail: loaded once, so a file rewritten while it is open does not redraw. The
+                // revision is the workspace's change generation everywhere else, and this pane has
+                // no workspace; watch the file's folder if that turns out to matter.
+                DocumentPreviewView(path: path, worktree: nil, revision: 0)
+            } else {
+                // Said rather than left silent. An agent names a file it wrote into a scratch
+                // directory, the run that owned that directory removes it, and the message
+                // naming it stays in the bus for ever. See `TranscriptLink.openWithoutAWorktree`.
+                EmptyStateView(
+                    glyph: "doc.questionmark",
+                    title: "That file is not there any more",
+                    message: path
+                )
+            }
+        }
+        // The half of the split this pane is, whatever is in it. See `SwarmSessionView.body`.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -171,80 +267,207 @@ private struct SwarmSessionChat: View {
     }
 }
 
-private struct SwarmSessionAgentsView: View {
+struct SwarmSessionAgentsView: View {
     var reader: SwarmSessionReaderModel
+
+    /// Which agent is open, by `SwarmSessionAgentDigest.id`, and nil for none.
+    ///
+    /// One at a time, which is what makes the closed list worth reading. Held here rather than as
+    /// a flag on each row so that opening one closes the last, the way a Mail mailbox or a Finder
+    /// column does.
+    @State private var opened: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            header
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Palette.windowBackground)
+    }
+
+    /// The same height as the centre column's own first band, so the two panes start their first
+    /// line together and the rule between them runs straight across the join. `Metrics.pane` of
+    /// padding put this title 24 points down a column whose neighbour's title is at 8, which is
+    /// what made the panel read as a floating box rather than as the other half of the window.
+    /// See `InspectorView`, which draws its top band the same way and for the same reason.
+    private var header: some View {
+        HStack(spacing: Metrics.spacingSmall) {
             Text("Agents")
-                .font(Typo.label)
-                .padding(Metrics.pane)
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Metrics.spacing) {
-                    if let failure = reader.agentsFailure {
-                        Text(failure)
-                            .font(Typo.body)
-                            .foregroundStyle(Palette.textSecondary)
-                    } else if reader.agents.isEmpty {
-                        Text("This session has no agents to show.")
-                            .font(Typo.body)
-                            .foregroundStyle(Palette.textSecondary)
-                    } else {
-                        ForEach(reader.agents) { agent in
-                            SwarmSessionAgentView(digest: agent, reader: reader)
-                        }
-                    }
-                }
-                .padding(Metrics.pane)
+                .font(Typo.labelEmphasis)
+                .foregroundStyle(Palette.textPrimary)
+            Spacer(minLength: Metrics.spacingSmall)
+            if !reader.agents.isEmpty {
+                Text(reader.agents.count.formatted())
+                    .font(Typo.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.textTertiary)
             }
         }
-        .background(Palette.windowBackground)
+        .padding(.horizontal, Metrics.inset)
+        .frame(height: Metrics.barHeight)
+        .overlay(alignment: .bottom) { Hairline() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // `ContentUnavailableView` under both, through `EmptyStateView`, rather than a grey
+        // sentence pinned to the top left corner. It is the system's own empty state, so a panel
+        // with nothing in it is centred, marked and worded the way every other empty pane in this
+        // app and on this Mac is.
+        if let failure = reader.agentsFailure {
+            EmptyStateView(
+                glyph: "exclamationmark.triangle",
+                title: "The bus could not be read",
+                message: failure
+            )
+        } else if reader.agents.isEmpty {
+            EmptyStateView(
+                glyph: "person.2",
+                title: "No agents yet",
+                message: "Agents this session launches appear here."
+            )
+        } else {
+            ScrollView {
+                SwarmSessionAgentList(reader: reader, opened: $opened)
+            }
+        }
     }
 }
 
-private struct SwarmSessionAgentView: View {
-    var digest: SwarmSessionAgentDigest
+/// The rows themselves, apart from the scroller that holds them.
+///
+/// **Split out so a picture can be taken of it.** `ImageRenderer` proposes no height to a
+/// `ScrollView`, so a column photographed whole comes out as an empty box with a header on it,
+/// which is what the first capture of this panel was. `CrewMessageGallery` records the same lesson.
+/// The app wraps this in the scroller and the gallery draws it directly, so what is photographed is
+/// the list the app runs rather than a copy of it.
+struct SwarmSessionAgentList: View {
     var reader: SwarmSessionReaderModel
-    @State private var showsHistory = false
+    @Binding var opened: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
-            DisclosureGroup(isExpanded: $showsHistory) {
-                VStack(alignment: .leading, spacing: Metrics.spacing) {
-                    ForEach(digest.conversation) { row in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.kind == "ask" ? "Ask" : "Summary")
-                                .font(Typo.micro)
-                                .foregroundStyle(Palette.textTertiary)
-                            // The same renderer the transcript uses, so a bus message gets the
-                            // code spans, lists and file links its author wrote, and a path in one
-                            // previews on hover + Space like a path anywhere else in the app.
-                            MarkdownView(row.body ?? "This message body could not be read.")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(.top, Metrics.spacingSmall)
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(digest.agent.id.rawValue)
-                            .font(Typo.label)
-                        Spacer()
-                        Text(digest.agent.role)
-                            .font(Typo.micro)
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                    Text(digest.latestSummary ?? "No summary yet.")
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(showsHistory ? nil : 4)
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(reader.agents) { agent in
+                SwarmSessionAgentRow(
+                    digest: agent,
+                    reader: reader,
+                    isOpen: opened == agent.id,
+                    toggle: { opened = opened == agent.id ? nil : agent.id }
+                )
+                // Under the mark rather than across the pane, which is where AppKit puts the rule
+                // between two rows of a source list.
+                if agent.id != reader.agents.last?.id {
+                    Hairline().padding(.leading, Metrics.inset)
                 }
             }
-            .accessibilityHint("Shows all asks and summaries in order")
+        }
+        .padding(.vertical, Metrics.spacingSmall)
+    }
+}
+
+/// One agent: whether it is working, what it last said, and, once it is open, everything it said
+/// and a box to answer it in.
+///
+/// **The composer is inside the open row, and that is the change worth arguing.** Every row used
+/// to carry one, always drawn, so a session with six agents was six text boxes stacked down a 320
+/// point column and the summaries between them had nowhere to go. The question this panel is
+/// opened to answer is which agent is doing what; typing at one is the second question, and it is
+/// asked of one agent at a time. A closed row is now a name, a mark and two lines, so the list can
+/// be read at a glance, and the row that is open holds the whole conversation and the box.
+struct SwarmSessionAgentRow: View {
+    var digest: SwarmSessionAgentDigest
+    var reader: SwarmSessionReaderModel
+    var isOpen: Bool
+    var toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HoverRow(isSelected: isOpen) {
+                Button(action: toggle) { summary }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(
+                        isOpen ? "Hides this agent's messages" : "Shows this agent's messages"
+                    )
+            }
+            .padding(.horizontal, Metrics.spacingSmall)
+
+            if isOpen { details }
+        }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacingHair) {
+            HStack(spacing: Metrics.spacing) {
+                // `ActivityDot` rather than a dot of this pane's own. It is the app's one busy
+                // mark, its idle state is the grey this needs, and until now the only thing
+                // drawing it was the component gallery.
+                ActivityDot(isActive: digest.agent.alive == true)
+                    .frame(width: Metrics.glyph, height: Metrics.glyph)
+                    .accessibilityLabel(liveness)
+                    .help(liveness)
+
+                Text(digest.agent.id.rawValue)
+                    .font(Typo.labelEmphasis)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: Metrics.spacingSmall)
+
+                Chip(text: digest.agent.role)
+
+                Image(systemName: "chevron.right")
+                    .font(Typo.micro)
+                    .imageScale(.small)
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    .accessibilityHidden(true)
+            }
+
+            Text(digest.latestSummary ?? "No summary yet.")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+                // Two lines closed, all of it open. A picture of this page caught it clipped at
+                // "became n…" on the open row, where there is no reason left to ration the height.
+                .lineLimit(isOpen ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                // Under the name rather than under the mark, so the closed list has one left edge
+                // for its words and the marks sit outside it in a column of their own.
+                .padding(.leading, Metrics.glyph + Metrics.spacing)
+        }
+        .padding(.horizontal, Metrics.spacing)
+        .padding(.vertical, Metrics.spacingWide)
+        .contentShape(Rectangle())
+    }
+
+    /// Three states and not two. `SwarmAgent.alive` is nil until `SwarmPaneLiveness` has asked the
+    /// adapter, which is up to five seconds after a session opens, and a panel that said "Ended"
+    /// for those five seconds would be wrong about every agent in it. The dot is grey for both,
+    /// and the words are what separate them.
+    private var liveness: String {
+        switch digest.agent.alive {
+        case true?: "Running"
+        case false?: "Ended"
+        case nil: "Status unknown"
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacingWide) {
+            ForEach(digest.conversation) { row in
+                VStack(alignment: .leading, spacing: Metrics.spacingTight) {
+                    // Who spoke, rather than which kind of row it is. "Ask" and "Summary" named
+                    // the bus verb and left the reader to work out the direction from it.
+                    Text(caption(for: row))
+                        .font(Typo.micro)
+                        .foregroundStyle(Palette.textTertiary)
+                    // The same renderer the transcript uses, so a bus message gets the code spans,
+                    // lists and file links its author wrote, and a path in one previews on hover +
+                    // Space like a path anywhere else in the app.
+                    MarkdownView(row.body ?? "This message body could not be read.")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             SwarmSessionInput(
                 reader: reader,
@@ -255,6 +478,14 @@ private struct SwarmSessionAgentView: View {
                 maxLines: 3
             )
         }
+        .padding(.horizontal, Metrics.inset)
+        .padding(.bottom, Metrics.spacingWide)
+    }
+
+    private func caption(for message: SwarmMessage) -> String {
+        message.sender == digest.agent.id
+            ? "\(digest.agent.id.rawValue) answered"
+            : "Chair asked"
     }
 }
 
