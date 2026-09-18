@@ -66,6 +66,17 @@ final class SwarmSessionReaderModel {
         }
 
         do {
+            let busReadStarted = ContinuousClock.now
+            defer {
+                let duration = busReadStarted.duration(to: .now).components
+                let milliseconds = Double(duration.seconds) * 1_000
+                    + Double(duration.attoseconds) / 1e15
+                if milliseconds > 100 {
+                    PerfLog.shared.record(.busRead(
+                        milliseconds: milliseconds, sessionCount: sessions.count
+                    ))
+                }
+            }
             var readings: [SessionReading] = []
             for session in sessions {
                 async let agents = bus.agents(in: session)
@@ -163,9 +174,10 @@ final class SwarmSessionReaderModel {
     }
 
     nonisolated private static func readChat(_ reader: TranscriptLogReader?) async -> ChairReading? {
+        let readStarted = ContinuousClock.now
         let result = await ChairTranscriptOutput.readIfChanged(reader)
         if case .success(nil) = result { return nil }
-        return await Task.detached(priority: .utility) {
+        let reading: ChairReading? = await Task.detached(priority: .utility) { () -> ChairReading? in
             switch result {
             case .success(let transcript):
                 guard let transcript else { return nil }
@@ -182,6 +194,22 @@ final class SwarmSessionReaderModel {
                 return ChairReading(failure: "The chair chat log could not be read. \(reason)")
             }
         }.value
+        let duration = readStarted.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1e15
+        if milliseconds > 50 {
+            let messageCount = if case .success(let transcript) = result {
+                transcript?.messages.count ?? 0
+            } else {
+                0
+            }
+            PerfLog.shared.record(.chatRead(
+                milliseconds: milliseconds,
+                messageCount: messageCount,
+                rowCount: reading?.rows.count ?? 0
+            ))
+        }
+        return reading
     }
 
     nonisolated private static func message(for error: any Error) -> String {

@@ -22,6 +22,7 @@ struct SwarmApp: App {
         // already answered from an empty domain would then WRITE that empty answer back, which
         // is how a migration that runs one step too late destroys the thing it came to save.
         LegacyDefaults.migrate()
+        PerfLog.shared.start()
 
         // The stored appearance, applied while the process is still faceless. It used to be a
         // side effect of `SettingsView.init`, which made a dark preference's arrival at launch
