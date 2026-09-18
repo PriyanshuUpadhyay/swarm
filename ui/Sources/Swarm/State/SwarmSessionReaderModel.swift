@@ -8,11 +8,7 @@ import SwarmCore
 final class SwarmSessionReaderModel {
     private let sessions: [SwarmSession]
     @ObservationIgnored private let bus: any SwarmBus
-    @ObservationIgnored private let chatReader: TranscriptLogReader?
 
-    private(set) var rows: [TranscriptRow] = []
-    private(set) var droppedRows = 0
-    private(set) var chatFailure: String?
     private(set) var agents: [SwarmSessionAgentDigest] = []
     private(set) var agentsFailure: String?
     private var inputFailures: [InputRoute: String] = [:]
@@ -22,10 +18,6 @@ final class SwarmSessionReaderModel {
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.sessions = item.sessions
         self.bus = bus
-        self.chatReader = ChairTranscriptOutput.reader(
-            path: item.session.chairLog,
-            sessionID: SessionID("swarm-" + item.session.id.rawValue)
-        )
         if item.sessions.allSatisfy({ (try? SwarmSessionInteraction.adapter(for: $0)) == nil }) {
             agentsFailure = SwarmSessionInteraction.missingAdapterSentence
         }
@@ -42,26 +34,24 @@ final class SwarmSessionReaderModel {
         }
     }
 
+    /// **Every observed property here is written only when it changes, and that is load-bearing.**
+    ///
+    /// `@Observable` fires on the assignment, not on a difference, so `agentsFailure = nil` once a
+    /// second rebuilt the whole agents panel once a second whether or not anything had happened,
+    /// and `listedAgents` did the same to every message field in it. The pane flickered while a
+    /// chat ran because of that, not because the chat had new rows. `agents` was already guarded
+    /// for this reason; the rest were not.
     private func refresh() async {
-        // Nil while the chat log has not grown, and that is most passes. Rebuilding thousands of
-        // rows every second to find they are the rows the pane already has cost a tenth of a core.
-        if let reading = await Self.readChat(chatReader) {
-            guard !Task.isCancelled else { return }
-            if rows != reading.rows { rows = reading.rows }
-            if droppedRows != reading.droppedRows { droppedRows = reading.droppedRows }
-            chatFailure = reading.failure
-        }
-        guard !Task.isCancelled else { return }
-
         do {
             for session in sessions {
                 _ = try SwarmSessionInteraction.adapter(for: session)
             }
         } catch {
-            agents = []
-            listedAgents = [:]
-            chairRoute = nil
-            agentsFailure = Self.message(for: error)
+            if !agents.isEmpty { agents = [] }
+            if !listedAgents.isEmpty { listedAgents = [:] }
+            if chairRoute != nil { chairRoute = nil }
+            let sentence = Self.message(for: error)
+            if agentsFailure != sentence { agentsFailure = sentence }
             return
         }
 
@@ -93,23 +83,26 @@ final class SwarmSessionReaderModel {
             }
             guard !Task.isCancelled else { return }
             if agents != digest { agents = digest }
-            listedAgents = Dictionary(uniqueKeysWithValues: readings.flatMap { reading in
+            let listed = Dictionary(uniqueKeysWithValues: readings.flatMap { reading in
                 reading.agents.map {
                     (InputRoute(sessionID: reading.session.id, agentID: $0.id), $0)
                 }
             })
-            chairRoute = readings.compactMap { reading -> InputRoute? in
+            if listedAgents != listed { listedAgents = listed }
+            let chair = readings.compactMap { reading -> InputRoute? in
                 let chair = SwarmAgentID("orchestrator")
                 guard reading.agents.contains(where: { $0.id == chair && $0.pane != nil }) else {
                     return nil
                 }
                 return InputRoute(sessionID: reading.session.id, agentID: chair)
             }.first
-            agentsFailure = nil
+            if chairRoute != chair { chairRoute = chair }
+            if agentsFailure != nil { agentsFailure = nil }
         } catch is CancellationError {
             return
         } catch {
-            agentsFailure = Self.message(for: error)
+            let sentence = Self.message(for: error)
+            if agentsFailure != sentence { agentsFailure = sentence }
         }
     }
 
@@ -173,45 +166,6 @@ final class SwarmSessionReaderModel {
         return InputRoute(sessionID: sessionID, agentID: agent)
     }
 
-    nonisolated private static func readChat(_ reader: TranscriptLogReader?) async -> ChairReading? {
-        let readStarted = ContinuousClock.now
-        let result = await ChairTranscriptOutput.readIfChanged(reader)
-        if case .success(nil) = result { return nil }
-        let reading: ChairReading? = await Task.detached(priority: .utility) { () -> ChairReading? in
-            switch result {
-            case .success(let transcript):
-                guard let transcript else { return nil }
-                return ChairReading(
-                    rows: TranscriptModel.rows(from: transcript.messages),
-                    droppedRows: transcript.droppedRows,
-                    failure: nil
-                )
-            case .failure(.noFile):
-                return ChairReading(failure: "This session has no chair chat log.")
-            case .failure(.missing):
-                return ChairReading(failure: "The chair chat log is missing.")
-            case .failure(.unreadable(let reason)):
-                return ChairReading(failure: "The chair chat log could not be read. \(reason)")
-            }
-        }.value
-        let duration = readStarted.duration(to: .now).components
-        let milliseconds = Double(duration.seconds) * 1_000
-            + Double(duration.attoseconds) / 1e15
-        if milliseconds > 50 {
-            let messageCount = if case .success(let transcript) = result {
-                transcript?.messages.count ?? 0
-            } else {
-                0
-            }
-            PerfLog.shared.record(.chatRead(
-                milliseconds: milliseconds,
-                messageCount: messageCount,
-                rowCount: reading?.rows.count ?? 0
-            ))
-        }
-        return reading
-    }
-
     nonisolated private static func message(for error: any Error) -> String {
         switch error {
         case SwarmProfileError.unavailable(let text), SwarmProfileError.failed(let text): text
@@ -229,10 +183,4 @@ private struct SessionReading: Sendable {
     var session: SwarmSession
     var agents: [SwarmAgent]
     var messages: [SwarmMessage]
-}
-
-private struct ChairReading: Sendable {
-    var rows: [TranscriptRow] = []
-    var droppedRows = 0
-    var failure: String?
 }

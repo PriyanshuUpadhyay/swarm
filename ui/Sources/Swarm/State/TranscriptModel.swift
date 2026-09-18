@@ -117,6 +117,29 @@ final class TranscriptModel {
     /// Where this chat's agent runs: its worktree, or the directory retained by its Ask tab.
     /// New Ask conversations use the folder chosen in Settings, with Swarm's own folder as fallback.
     let cwd: String
+    /// The chair log this conversation is read from, for a swarm session that Swarm did not start.
+    ///
+    /// **Nil for every chat the store holds, and that is the switch this whole source rests on.**
+    /// A session `swarm session new` made on the command line has no row in `sessions` and no
+    /// `messages` rows, only a Claude Code NDJSON log on disk. Before this it therefore could not
+    /// have a `TranscriptModel` at all, so `SwarmSessionView` drew its own scroll view over
+    /// `SubagentConversationView` and the owner got a different chat depending on which of the two
+    /// made the session. The adapter was never the reason; the store was.
+    ///
+    /// Non-nil makes `store` answer nil, which turns off every store-backed part of this model at
+    /// once — drafts, queued deliveries, the unread mark, permission decisions, the idle policy and
+    /// the file history. Each of those already guards on `store`, so none of them needed a second
+    /// condition adding. What is left is the list, and the list is what the owner is looking at.
+    @ObservationIgnored let chairLog: TranscriptLogReader?
+    /// Why the chair log could not be read, for a log-backed chat that has nothing to draw.
+    /// Always nil for a stored one, which cannot fail this way.
+    private(set) var chatLogFailure: String?
+    /// How many rows were dropped off the front of the chair log to keep the read bounded.
+    ///
+    /// Drawn as a line saying so, because `SubagentTranscript.rowLimit` is 500 and a chair that has
+    /// worked all afternoon passes it. A conversation that silently starts in the middle is a lie
+    /// about what the chair did. Always zero for a stored chat, which is read whole.
+    private(set) var droppedRows = 0
     private unowned let app: AppModel
 
     /// Where this conversation's file paths point, and which workspace a file chip opens into.
@@ -401,6 +424,7 @@ final class TranscriptModel {
         self.session = session
         self.workspace = workspace
         self.cwd = workspace.path
+        self.chairLog = nil
         self.app = app
         history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
     }
@@ -414,16 +438,42 @@ final class TranscriptModel {
         self.session = session
         self.workspace = nil
         self.cwd = directory
+        self.chairLog = nil
         self.app = app
         history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
     }
 
-    private var store: Store? { app.store }
+    /// A swarm session's chair chat, read from its log rather than from the store.
+    ///
+    /// A third initialiser for the reason the second one exists. This one disagrees with both about
+    /// where the conversation comes from, and that is not something a caller should be able to get
+    /// wrong by passing nil to the wrong argument. See `chairLog`.
+    init(swarmSession session: Session, chairLog: TranscriptLogReader?, directory: String, app: AppModel) {
+        self.session = session
+        self.workspace = nil
+        self.cwd = directory
+        self.chairLog = chairLog
+        self.app = app
+        history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
+    }
+
+    /// Nil for a log-backed chat, which is what turns off everything this model does through the
+    /// store. See `chairLog` for the whole argument.
+    private var store: Store? { chairLog == nil ? app.store : nil }
 
     // MARK: - Loading
 
     func load() async {
-        guard let store, !isLoaded else {
+        guard !isLoaded else {
+            SwitchTrace.mark("transcript.reused", workspace: workspace?.id)
+            SwitchTrace.markOnScreen("transcript.reused", workspace: workspace?.id)
+            return
+        }
+        if let chairLog {
+            await loader.run { [self] in await readChairLog(chairLog) }
+            return
+        }
+        guard let store else {
             SwitchTrace.mark("transcript.reused", workspace: workspace?.id)
             SwitchTrace.markOnScreen("transcript.reused", workspace: workspace?.id)
             return
@@ -432,6 +482,64 @@ final class TranscriptModel {
         // The guard above cannot tell them apart, because neither of them is reusing anything: they
         // are both asking for the same session's history at the same moment.
         await loader.run { [self] in await read(from: store) }
+    }
+
+    /// Follows the chair log for as long as the pane is on screen.
+    ///
+    /// The once-a-second re-read `SubagentPane.refreshSeconds` names, for the reason it names it: a
+    /// log on disk has nothing to push, so the only way to see a chair's next answer is to look
+    /// again. `readIfChanged` answers nil while the file has not grown, which is most passes, so a
+    /// settled conversation costs one `stat` a second and nothing else.
+    /// Through `loader`, for the reason `SingleFlight` exists. `TranscriptListView` calls `load()`
+    /// from its own task when the pane draws, so the first tick of this loop and that read arrive
+    /// together. `apply` has an await in the middle of it, so two of them running at once can
+    /// assign the older row list last.
+    func follow() async {
+        guard let chairLog else { return }
+        while !Task.isCancelled {
+            await loader.run { [self] in await readChairLog(chairLog) }
+            do {
+                try await Task.sleep(for: .seconds(SubagentPane.refreshSeconds))
+            } catch {
+                return
+            }
+        }
+    }
+
+    /// One pass over the chair log, folded into rows the same way a stored session is.
+    ///
+    /// Nothing is assigned when the log has not grown. Rebuilding thousands of identical rows once
+    /// a second is what `readIfChanged` exists to prevent, and an `@Observable` write fires on the
+    /// assignment rather than on a difference, so an unconditional one would redraw the pane every
+    /// second whether or not the chair had said anything.
+    private func readChairLog(_ reader: TranscriptLogReader) async {
+        let readStarted = ContinuousClock.now
+        let result = await ChairTranscriptOutput.readIfChanged(reader)
+        guard !Task.isCancelled else { return }
+        switch result {
+        case .success(let transcript):
+            guard let transcript else { isLoaded = true; return }
+            await apply(messages: transcript.messages, decisions: [:])
+            if chatLogFailure != nil { chatLogFailure = nil }
+            if droppedRows != transcript.droppedRows { droppedRows = transcript.droppedRows }
+            let duration = readStarted.duration(to: .now).components
+            let milliseconds = Double(duration.seconds) * 1_000
+                + Double(duration.attoseconds) / 1e15
+            if milliseconds > 50 {
+                PerfLog.shared.record(.chatRead(
+                    milliseconds: milliseconds,
+                    messageCount: transcript.messages.count,
+                    rowCount: rows.count
+                ))
+            }
+        case .failure(.noFile):
+            chatLogFailure = "This session has no chair chat log."
+        case .failure(.missing):
+            chatLogFailure = "The chair chat log is missing."
+        case .failure(.unreadable(let reason)):
+            chatLogFailure = "The chair chat log could not be read. \(reason)"
+        }
+        isLoaded = true
     }
 
     /// The read itself, reached only through `loader`.
@@ -450,6 +558,24 @@ final class TranscriptModel {
         // rows and at most a handful of them are questions.
         let decisions = (try? await store.permissionAskDecisions(sessionID: session.id)) ?? [:]
 
+        await apply(messages: messages, decisions: decisions)
+
+        draft = (try? await store.draft(sessionID: session.id)) ?? ""
+        // Read, and deliberately not drained. A message queued before the last quit must not
+        // start a paid turn on a Mac nobody is sitting at, so it is shown as pending and goes with
+        // the owner's next message. See `DeliveryHold.none`.
+        await refreshQueue()
+        await history.load(store: store, sessionID: session.id)
+        isLoaded = true
+    }
+
+    /// Messages into rows, whichever of the two sources they came from.
+    ///
+    /// Split out of `read(from:)` when the chair log became a second source, so that a swarm
+    /// session's rows are folded by the same code, in the same order, with the same caches reset.
+    /// Two copies of this would be two chats that fold a tool result onto its call differently the
+    /// day one of them changes.
+    private func apply(messages: [Message], decisions: [String: String]) async {
         // Off the main actor, and not for tidiness. The fold below is the one place in the app
         // that JSON-parses a whole session in one go: `ParentProbe.parentToolUseID` materialises
         // every message's payload to read one top level key, `ToolResultSummary.decode` does it
@@ -500,14 +626,6 @@ final class TranscriptModel {
         contextUsage = ContextWindowUsage.latest(in: built.rows)
         SwitchTrace.mark("transcript.rows.built", workspace: workspace?.id)
         SwitchTrace.markOnScreen("transcript.rows.built", workspace: workspace?.id)
-
-        draft = (try? await store.draft(sessionID: session.id)) ?? ""
-        // Read, and deliberately not drained. A message queued before the last quit must not
-        // start a paid turn on a Mac nobody is sitting at, so it is shown as pending and goes with
-        // the owner's next message. See `DeliveryHold.none`.
-        await refreshQueue()
-        await history.load(store: store, sessionID: session.id)
-        isLoaded = true
     }
 
     /// Folds a stored message into the row list, pairing tool results onto their tool call.
@@ -611,8 +729,17 @@ final class TranscriptModel {
 
     // MARK: - Unread
 
+    /// **Nil for a log-backed chat, which has no unread mark to be first past.**
+    ///
+    /// `lastReadSeq` is a column on the session row and `markAllRead` writes it through the store,
+    /// so a swarm session read from disk has neither: it starts at nought and nothing ever moves
+    /// it. Every row therefore counted as unread, `TranscriptListView` opened the pane on the first
+    /// of them, and the chair's conversation opened at the top rather than at what was just said.
+    /// A chat nobody can mark read has no unread row, and saying so here is what puts the pane on
+    /// the live end. See `chairLog`.
     var firstUnreadSeq: Int? {
-        rows.first { $0.seq > session.lastReadSeq }?.seq
+        guard chairLog == nil else { return nil }
+        return rows.first { $0.seq > session.lastReadSeq }?.seq
     }
 
     func markAllRead() async {

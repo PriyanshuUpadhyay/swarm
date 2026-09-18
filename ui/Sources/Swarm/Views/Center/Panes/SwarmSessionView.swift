@@ -7,11 +7,23 @@ struct SwarmSessionView: View {
     @State private var reader: SwarmSessionReaderModel
     @State private var showsTerminal = false
     @State private var localModel: WorkspaceModel?
+    /// Built in `.task` rather than in `init`, because it needs the `AppModel` from the environment
+    /// and an environment value does not exist yet while an initialiser runs.
+    @State private var transcript: TranscriptModel?
     @Environment(AppModel.self) private var app
 
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.item = item
         _reader = State(initialValue: SwarmSessionReaderModel(item: item, bus: bus))
+    }
+
+    /// The identity this conversation has inside the app.
+    ///
+    /// Prefixed, because a swarm session id is a small integer the bus hands out and a `SessionID`
+    /// is the key of the store's own table. Two namespaces meeting on "10" would be one chat
+    /// reading another's rows.
+    private var chatSessionID: SessionID {
+        SessionID("swarm-" + item.session.id.rawValue)
     }
 
     var body: some View {
@@ -53,10 +65,15 @@ struct SwarmSessionView: View {
                 )
             } else {
                 HSplitView {
-                    SwarmSessionChat(reader: reader, directory: item.session.cwd)
-                        .frame(minWidth: 420)
+                    Group {
+                        if let transcript {
+                            SwarmSessionChat(reader: reader, transcript: transcript)
+                        }
+                    }
+                    .frame(minWidth: 420)
                     SwarmSessionAgentsView(reader: reader)
                         .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
+                        .markdownLinkActions(TranscriptLink.actions(for: localModel))
                 }
             }
         }
@@ -69,6 +86,20 @@ struct SwarmSessionView: View {
                 localModel = model
             }
             await reader.follow()
+        }
+        // Its own task, because `reader.follow` above never returns and the chair log has to be
+        // followed at the same time as the bus.
+        .task {
+            let model = transcript ?? TranscriptModel(
+                swarmSession: Session(id: chatSessionID, workspaceID: nil, title: item.title),
+                chairLog: ChairTranscriptOutput.reader(
+                    path: item.session.chairLog, sessionID: chatSessionID
+                ),
+                directory: item.session.cwd,
+                app: app
+            )
+            if transcript == nil { transcript = model }
+            await model.follow()
         }
     }
 
@@ -83,105 +114,44 @@ struct SwarmSessionView: View {
     }
 }
 
+/// The chair's conversation, drawn by the transcript every other chat is drawn by.
+///
+/// **This used to be a second chat**, a `ScrollView` over a `LazyVStack` over
+/// `SubagentConversationView`, with its own window, its own scroll anchoring and its own hover
+/// overlay. The rows inside it were already the transcript's rows, so what the owner saw was the
+/// right content in the wrong list: no height cache, no minimap, no jump-to-newest, and a scroll
+/// position that reset where the real chat remembers. The reason it existed was that
+/// `TranscriptModel` could only read the store, and a swarm session started on the command line
+/// has no store row. `TranscriptModel.chairLog` removes that reason, so the second list goes.
+///
+/// The composer below it is still `SwarmSessionInput` rather than `ComposerView`, and that is not
+/// an oversight. A chair in a tmux pane is typed at through the bus, not through a store delivery
+/// queue, so the send path is genuinely different even though the list is not.
 private struct SwarmSessionChat: View {
     var reader: SwarmSessionReaderModel
-    var directory: String
-
-    @State private var position = ScrollPosition(edge: .bottom)
-    @State private var followsEnd = true
-    @State private var bubbleWidth = TranscriptBubbleWidth()
-    @State private var hoverHost = TranscriptHoverHost()
-    /// Which rows the lazy stack is handed. A chair log runs to thousands of rows, and a lazy stack
-    /// walks every child it holds on each layout pass, so the pane opens on the newest rows and
-    /// takes another chunk when the reader scrolls back towards the top. See `TranscriptWindow`.
-    @State private var window = TranscriptWindow(start: 0, end: 0)
-    @State private var isGrowing = false
+    var transcript: TranscriptModel
 
     private var textSize: ChatTextSize { ColourThemePreference.shared.chatTextSize }
     private var chatFontID: String { ColourThemePreference.shared.chatFont }
     private var lineHeight: ChatLineHeight { ColourThemePreference.shared.chatLineHeight }
 
-    /// One chunk of older rows, once per scroll that reaches the top of the window.
-    ///
-    /// The live end is checked because a window shorter than the pane is at its top and its bottom
-    /// at once, and growing that one would put rows above a reader who is reading the newest one.
-    /// `isGrowing` is checked because a scroll asks this on every frame it is near the top.
-    private func growWindow() {
-        guard !followsEnd, window.canGrowUp, !isGrowing else { return }
-        isGrowing = true
-        window = window.grownUp()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
-            isGrowing = false
-        }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    Color.clear
-                        .frame(height: TranscriptLayout.topSpace)
-                        .accessibilityHidden(true)
-
-                    if let failure = reader.chatFailure {
-                        Text(failure)
-                            .font(Typo.body)
-                            .foregroundStyle(Palette.textSecondary)
-                            .subagentReadingColumn()
-                    } else {
-                        let drawn = window.clamped(rowCount: reader.rows.count)
-                        SubagentConversationView(
-                            rows: Array(reader.rows[drawn.start..<drawn.end]),
-                            prompt: "",
-                            home: TranscriptHome(workspaceID: nil, worktree: directory),
-                            droppedRows: reader.droppedRows + drawn.start,
-                            isRunning: false
-                        )
-                    }
+            if let failure = transcript.chatLogFailure {
+                Text(failure)
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                if transcript.droppedRows > 0 {
+                    DetailCaption(
+                        text: "\(Counted.of(transcript.droppedRows, "earlier step")) not shown"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, Metrics.spacingSmall)
                 }
-                .padding(.bottom, Metrics.pane)
+                TranscriptView(transcript: transcript, drawsBackground: false)
             }
-            .scrollPosition($position)
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            // Older rows go in ABOVE the reader, so the anchor is what keeps the rows they are
-            // reading under their eyes while the window grows.
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                ScrollEnd.isAtEnd(
-                    contentHeight: geometry.contentSize.height,
-                    viewportHeight: geometry.containerSize.height,
-                    offset: geometry.contentOffset.y
-                )
-            } action: { _, atEnd in
-                followsEnd = atEnd
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                ScrollEnd.isNearStart(
-                    contentHeight: geometry.contentSize.height,
-                    viewportHeight: geometry.containerSize.height,
-                    offset: geometry.contentOffset.y
-                )
-            } action: { _, nearStart in
-                if nearStart { growWindow() }
-            }
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                TranscriptGeometry.cap(
-                    width: proxy.size.width,
-                    share: TranscriptListView.bubbleShare,
-                    gutter: Metrics.gutter,
-                    floor: TranscriptListView.bubbleFloor
-                )
-            } action: { cap in
-                if bubbleWidth.cap != cap { bubbleWidth.cap = cap }
-            }
-            .onChange(of: reader.rows.count, initial: true) { previous, count in
-                window = window.count == 0
-                    ? TranscriptWindow.liveEnd(rowCount: count)
-                    : window.includingAppendedRows(previousCount: previous, rowCount: count)
-                if followsEnd { position.scrollTo(edge: .bottom) }
-            }
-            .overlay { TranscriptHoverOverlay(host: hoverHost) }
 
             Divider()
 
@@ -195,8 +165,6 @@ private struct SwarmSessionChat: View {
             )
             .padding(Metrics.pane)
         }
-        .environment(\.transcriptHoverHost, hoverHost)
-        .environment(\.transcriptBubbleWidth, bubbleWidth)
         .environment(\.fontScale, textSize.scale)
         .environment(\.chatFont, ChatFont(rawValue: chatFontID))
         .environment(\.chatLineHeight, lineHeight)
@@ -251,9 +219,10 @@ private struct SwarmSessionAgentView: View {
                             Text(row.kind == "ask" ? "Ask" : "Summary")
                                 .font(Typo.micro)
                                 .foregroundStyle(Palette.textTertiary)
-                            Text(row.body ?? "This message body could not be read.")
-                                .font(Typo.body)
-                                .textSelection(.enabled)
+                            // The same renderer the transcript uses, so a bus message gets the
+                            // code spans, lists and file links its author wrote, and a path in one
+                            // previews on hover + Space like a path anywhere else in the app.
+                            MarkdownView(row.body ?? "This message body could not be read.")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }

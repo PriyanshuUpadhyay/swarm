@@ -30,8 +30,16 @@ public enum SourceReference {
                               column: Int(items.first(where: { $0.name == "column" })?.value ?? "") ?? 1)
     }
 
+    /// Two shapes, and the line suffix is only required of one of them.
+    ///
+    /// A relative path has to carry `:42` or `#L12` to be a link, because the prose these scan is
+    /// full of `Package.swift` and `README.md` written as words in a sentence, and a detector that
+    /// took those would underline half the transcript. An absolute path carries its own evidence:
+    /// `/private/tmp/councils/depth-19d43a07/claude.md` is never a turn of phrase, so it is a link
+    /// with no suffix at all. That is what makes a bus summary naming a report openable, and it is
+    /// why a version number like `2.1.275` is still left alone — it does not start at `/` or `~/`.
     public static func links(in text: String) -> [(NSRange, URL)] {
-        let pattern = #"(?<![\w@:/])(?:[\w./-]+\.[\w]+)(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)"#
+        let pattern = #"(?<![\w@:/])(?:[\w./-]+\.[\w]+(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)|~?/[\w./-]*[\w-]\.[\w]+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in
             guard let url = url((text as NSString).substring(with: match.range)) else { return nil }

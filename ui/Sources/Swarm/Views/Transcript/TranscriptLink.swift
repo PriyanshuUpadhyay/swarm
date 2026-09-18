@@ -262,9 +262,15 @@ enum TranscriptLink {
                     for: url, placement: BrowserTab.placement(of: pane, in: model)
                 )
             },
+            // A worktree is what a *relative* path needs, not what a preview needs. The swarm
+            // session panel draws bus summaries with no workspace behind them at all, and every
+            // path in one is absolute, so requiring a model here refused to preview the one case
+            // that could always have been previewed. `FileChipTarget.resolve` already answers for
+            // an empty worktree, and `QuickLookTarget` asks the disk before any panel opens, so a
+            // relative path with nothing to resolve against simply finds no file.
             previewSource: { url in
-                guard let location = SourceReference.location(url), let model else { return nil }
-                let target = FileChipTarget.resolve(location.path, in: model.workspace.path)
+                guard let location = SourceReference.location(url) else { return nil }
+                let target = FileChipTarget.resolve(location.path, in: model?.workspace.path ?? "")
                 return PromptAttachment.sent(path: target.path).url(in: target.worktree)
             }
         )

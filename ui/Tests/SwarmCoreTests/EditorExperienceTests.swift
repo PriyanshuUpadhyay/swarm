@@ -256,6 +256,27 @@ struct EditorExperienceTests {
         #expect(SourceReference.links(in: "See src/File.swift:42 and other.php#L12").count == 2)
     }
 
+    @Test("An absolute path is a link without a line number, and prose still is not")
+    func absolutePathsLinkOnTheirOwn() throws {
+        let summary = "RESEARCH_DONE /private/tmp/councils/depth-19d43a07/claude.md"
+        let found = SourceReference.links(in: summary)
+        #expect(found.count == 1)
+        let location = try #require(SourceReference.location(found[0].1))
+        #expect(location.path == "/private/tmp/councils/depth-19d43a07/claude.md")
+
+        #expect(SourceReference.links(in: "Wrote ~/reports/2026-09-18-web.md today").count == 1)
+        // The sentence ends; the full stop is not part of the file.
+        let ends = SourceReference.links(in: "See /tmp/foo.md.")
+        #expect(ends.count == 1)
+        #expect(try #require(SourceReference.location(ends[0].1)).path == "/tmp/foo.md")
+
+        // Still refused, because none of these starts at a root: a bare filename in a sentence, a
+        // version number, and a path inside an address the browser owns.
+        #expect(SourceReference.links(in: "Package.swift and README.md are files").isEmpty)
+        #expect(SourceReference.links(in: "Claude Code 2.1.275 and Codex 0.154.0").isEmpty)
+        #expect(SourceReference.links(in: "https://example.com/docs/guide.md").isEmpty)
+    }
+
     @Test func embeddedLanguagesCarryAcrossLines() {
         let source = "<script lang=\"ts\">\nconst count = 42;\n</script>\n<div>{{ count + 1 }}</div>"
         let tokens = SyntaxHighlighter.tokenize(source: source, language: .vue)
