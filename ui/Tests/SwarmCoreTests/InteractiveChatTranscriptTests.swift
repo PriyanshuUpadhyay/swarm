@@ -66,7 +66,7 @@ struct InteractiveChatTranscriptTests {
         ) == nil)
     }
 
-    @Test("Codex rollout keeps only user and assistant prose")
+    @Test("Codex rollout keeps prose, thinking and every record nobody has coded for")
     func codexRows() throws {
         let transcript = InteractiveChatTranscript.parseCodex(
             """
@@ -82,10 +82,21 @@ struct InteractiveChatTranscriptTests {
             providerSessionID: providerID
         )
 
-        #expect(transcript.messages.map(\.kind) == [.user, .assistantText])
-        #expect(UserTurnPrompt.text(in: transcript.messages[0].payload) == "How do CDC systems work?")
+        // What is still dropped, and why each one is a decision and not an oversight:
+        // - `session_meta` is session state, on the measured deny list;
+        // - the AGENTS.md and `<environment_context>` turn is prompt scaffolding every part of
+        //   which `hidesCodexSystemText` names, so the turn has no words left in it.
+        //
+        // What now survives that used to vanish: a `developer` message, the model's thinking when
+        // it carries a readable summary, and a `custom_tool_call` nobody has written a case for.
+        #expect(transcript.messages.map(\.kind) == [
+            .system, .user, .thinking, .system, .assistantText,
+        ])
+        #expect(UserTurnPrompt.text(in: transcript.messages[1].payload) == "How do CDC systems work?")
+        #expect(OpaqueRecord.read(transcript.messages[3].payload)?.title == "response_item")
+
         let answer = try #require(AgentEvent.decode(
-            line: String(decoding: transcript.messages[1].payload, as: UTF8.self)
+            line: String(decoding: transcript.messages[4].payload, as: UTF8.self)
         ))
         guard case .assistantText(let block) = answer else {
             Issue.record("Expected assistant text")

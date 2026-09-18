@@ -114,3 +114,86 @@ import Foundation
         #expect(OpaqueRecord.read(Data("not json".utf8)) == nil)
     }
 }
+
+/// The same rule on the Codex side, where the hole was larger.
+///
+/// The rollout reader kept `response_item/message` and nothing else, which across 1,286 real
+/// rollouts is 13% of the lines. Every command Codex ran and every result it got back, half the
+/// file, reached the pane as nothing at all.
+@Suite struct CodexOpaqueRecordTests {
+    private static let sessionID = SessionID("codex-opaque")
+
+    private func rows(_ lines: [String]) -> [Message] {
+        InteractiveChatTranscript.parseCodex(
+            lines.joined(separator: "\n"),
+            sessionID: Self.sessionID,
+            providerSessionID: "01a0b3d5-e175-7782-9cd5-000000000000"
+        ).messages
+    }
+
+    @Test("a call and its output become a paired tool row")
+    func callsBecomeToolRows() {
+        // The shapes are taken from a real rollout: a call carries `name`, `call_id` and
+        // `arguments` as a JSON STRING, and its output carries `call_id` and `output`.
+        let rows = rows([
+            #"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_1","arguments":"{\"cmd\":\"ls\"}"}}"#,
+            #"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"a.txt"}}"#,
+        ])
+
+        #expect(rows.map(\.kind) == [.toolUse, .toolResult])
+        // Paired by the same id, which is what lets one row draw the call and its result together.
+        #expect(rows[0].refID == "call_1")
+        #expect(rows[1].refID == "call_1")
+    }
+
+    @Test("a call's arguments are unwrapped from the string Codex sends")
+    func argumentsAreParsed() throws {
+        let rows = rows([
+            #"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c","arguments":"{\"cmd\":\"ls -la\"}"}}"#,
+        ])
+
+        let row = try #require(rows.first)
+        let json = try #require(JSONValue.parse(row.payload))
+        let block = try #require(json["message"]?["content"]?.arrayValue?.first)
+        // An escaped blob in the row would make the tool row unreadable, so the string is parsed
+        // back into an object on the way in.
+        #expect(block["input"]?["cmd"]?.stringValue == "ls -la")
+        #expect(block["name"]?.stringValue == "exec_command")
+    }
+
+    @Test("a response item nobody has a case for still becomes one row")
+    func unknownItemsSurvive() {
+        let rows = rows([
+            #"{"type":"response_item","payload":{"type":"web_search_call","id":"w1","query":"swift"}}"#,
+        ])
+
+        #expect(rows.map(\.kind) == [.system])
+        #expect(OpaqueRecord.read(rows[0].payload)?.title == "response_item")
+    }
+
+    @Test("the second stream and session state are denied by name")
+    func deniedCodexTypesAreDropped() {
+        // `event_msg` repeats what the response items already say and counts tokens, 1,692 lines
+        // of it. `reasoning` is denied for a different reason: all 564 measured are encrypted
+        // with an empty summary, so a row for one would hold nothing.
+        let rows = rows([
+            #"{"type":"event_msg","payload":{"type":"token_count","total":900}}"#,
+            #"{"type":"event_msg","payload":{"type":"agent_message","message":"hello"}}"#,
+            #"{"type":"turn_context","cwd":"/tmp"}"#,
+            #"{"type":"session_meta","id":"s"}"#,
+            #"{"type":"response_item","payload":{"type":"reasoning","summary":[],"encrypted_content":"x"}}"#,
+        ])
+
+        #expect(rows.isEmpty)
+    }
+
+    @Test("an ordinary message is still an ordinary message")
+    func messagesAreUnchanged() {
+        let rows = rows([
+            #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"run it"}]}}"#,
+            #"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}"#,
+        ])
+
+        #expect(rows.map(\.kind) == [.user, .assistantText])
+    }
+}
