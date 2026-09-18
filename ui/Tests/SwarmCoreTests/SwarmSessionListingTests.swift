@@ -193,8 +193,8 @@ struct SwarmSessionListingTests {
         #expect(UserTurnPrompt.text(in: transcript.messages[2].payload) == "Second question")
     }
 
-    @Test("chair parsing hides Claude system user lines")
-    func hidesChairSystemLines() throws {
+    @Test("a Claude system user line is never drawn as the owner's turn")
+    func chairSystemLinesAreNotOwnerTurns() throws {
         let transcript = SubagentTranscript.parseChair(
             [
                 Self.claudeMetaUserLine,
@@ -204,31 +204,42 @@ struct SwarmSessionListingTests {
             sessionID: SessionID("chair")
         )
 
-        #expect(transcript.messages.count == 1)
-        let row = try #require(transcript.messages.first)
-        #expect(row.kind == .user)
-        #expect(UserTurnPrompt.text(in: row.payload) == "Open the session view")
+        // The load-bearing half: exactly one row is the owner's, and it is the one they typed.
+        // These lines arrive as `user` records, and drawing them in the owner's bubble was the
+        // reason they were hidden in the first place.
+        let owner = transcript.messages.filter { $0.kind == .user }
+        #expect(owner.count == 1)
+        #expect(UserTurnPrompt.text(in: try #require(owner.first).payload) == "Open the session view")
+
+        // The other half, which used to be nothing at all: the scaffolding still reaches the pane
+        // as its own collapsed kind, so a turn the reader watched happen leaves a trace.
+        #expect(transcript.messages.map(\.kind) == [.system, .system, .user])
     }
 
     @Test(
-        "chair parsing hides every Claude system prefix",
+        "every Claude system prefix becomes a named collapsed row, not a dropped line",
         arguments: [
-            "<local-command-caveat>",
-            "<local-command-stdout>",
-            "<command-name>",
-            "<command-message>",
-            "<command-args>",
-            "<system-reminder>",
-            "<task-notification>",
+            ("<local-command-caveat>", "local command"),
+            ("<local-command-stdout>", "command output"),
+            ("<command-name>", "local command"),
+            ("<command-message>", "local command"),
+            ("<command-args>", "local command"),
+            ("<system-reminder>", "system reminder"),
+            ("<task-notification>", "task notification"),
         ]
     )
-    func hidesChairSystemPrefix(_ prefix: String) {
+    func chairSystemPrefixBecomesARow(_ prefix: String, _ title: String) throws {
         let transcript = SubagentTranscript.parseChair(
             #"{"type":"user","message":{"content":"\#(prefix)system text"}}"#,
             sessionID: SessionID("chair")
         )
 
-        #expect(transcript.messages.isEmpty)
+        let row = try #require(transcript.messages.first)
+        #expect(transcript.messages.count == 1)
+        #expect(row.kind == .system)
+        // The row says which kind of scaffolding it was, which is the whole difference between
+        // this and the bare unexplained message `/compact` used to leave behind.
+        #expect(OpaqueRecord.read(row.payload)?.title == title)
     }
 
     @Test("title extraction reads the first user prompt from the chair log")

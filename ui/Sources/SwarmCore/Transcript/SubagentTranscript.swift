@@ -120,7 +120,17 @@ public struct SubagentTranscript: Sendable, Equatable {
         for source in text.split(whereSeparator: \.isNewline) {
             let raw = Data(source.utf8)
             guard let json = JSONValue.parse(raw) else { continue }
-            if userText == .row, hidesChairSystemLine(json) { continue }
+            if userText == .row, isChairScaffolding(json) {
+                messages.append(Message(
+                    id: identifier(for: raw, avoiding: &used),
+                    sessionID: sessionID,
+                    seq: messages.count,
+                    kind: .system,
+                    payload: raw,
+                    refID: nil
+                ))
+                continue
+            }
             for reading in read(json, raw: raw, userText: userText) {
                 switch reading {
                 case .brief(let brief):
@@ -159,7 +169,13 @@ public struct SubagentTranscript: Sendable, Equatable {
         "<task-notification>",
     ]
 
-    private static func hidesChairSystemLine(_ json: JSONValue) -> Bool {
+    /// A user line the reader never typed: a slash command's echo and output, a reminder Claude
+    /// Code injected, or a subagent's finish notice.
+    ///
+    /// These used to be dropped, which is why `/compact` left nothing behind. They are 4% of user
+    /// lines across 446 captures, so drawing each as one collapsed row costs almost nothing and
+    /// stops the chat from losing a turn the reader can see happening.
+    private static func isChairScaffolding(_ json: JSONValue) -> Bool {
         guard json["type"]?.stringValue == "user" else { return false }
         if json["isMeta"]?.boolValue == true { return true }
         guard let content = json["message"]?["content"] else { return false }
@@ -169,6 +185,38 @@ public struct SubagentTranscript: Sendable, Equatable {
         guard let text else { return false }
         return chairSystemPrefixes.contains { text.hasPrefix($0) }
     }
+
+    /// Record types that carry no account of the conversation, so they never become a row.
+    ///
+    /// Measured across 446 captures: these are 61% of all lines, led by `attachment` at 27% and
+    /// `last-prompt`, `atis-latch`, `mode` and `permission-mode` at about 4.5% each. Every one of
+    /// them is app state the pane already shows elsewhere or does not show at all. They are
+    /// dropped HERE rather than hidden in the view so that they never take a place under
+    /// `rowLimit`, which counts rows and not lines.
+    ///
+    /// Anything not on this list becomes a row, even a type Swarm has never seen. That is the
+    /// point: two new types appeared in one month of captures, `file-history-delta` and
+    /// `pr-link`, and a type nobody has written code for must still be visible.
+    static let deniedRecordTypes: Set<String> = [
+        "agent-name",
+        "ai-title",
+        "artifact-autoreact-ledger",
+        "artifact-comment-monitor",
+        "atis-latch",
+        "attachment",
+        "bridge-session",
+        "continued-in",
+        "cost-state",
+        "custom-title",
+        "file-history-delta",
+        "file-history-snapshot",
+        "frame-link",
+        "history-suppression",
+        "last-prompt",
+        "mode",
+        "permission-mode",
+        "queue-operation",
+    ]
 
     /// The same reading, taken off Swarm's own stored rows rather than off the CLI's file.
     ///
@@ -252,8 +300,17 @@ public struct SubagentTranscript: Sendable, Equatable {
         _ json: JSONValue, raw: Data, userText: UserTextReading
     ) -> [Reading] {
         guard let type = json["type"]?.stringValue else { return [] }
-        guard type == "user" || type == "assistant" else { return [] }
-        guard let message = json["message"] else { return [] }
+        // Anything the reader does not know becomes one opaque row rather than nothing. A dropped
+        // line is a feature that vanished from the chat with no trace that it happened; an opaque
+        // row says the provider sent something and keeps its bytes for the reader to open.
+        guard type == "user" || type == "assistant" else {
+            return deniedRecordTypes.contains(type)
+                ? []
+                : [.row(kind: .system, payload: raw, refID: nil)]
+        }
+        guard let message = json["message"] else {
+            return [.row(kind: .system, payload: raw, refID: nil)]
+        }
         let isUser = type == "user"
 
         // The first user line of a file is the brief, and it arrives as a bare string rather than
@@ -322,8 +379,11 @@ public struct SubagentTranscript: Sendable, Equatable {
             guard let payload = payload() else { return nil }
             return .row(kind: .toolResult, payload: payload, refID: block["tool_use_id"]?.stringValue)
 
+        // A block type nobody has written a case for. It keeps its bytes and draws collapsed,
+        // for the same reason the line above it does.
         default:
-            return nil
+            guard let payload = payload() else { return nil }
+            return .row(kind: .system, payload: payload, refID: nil)
         }
     }
 

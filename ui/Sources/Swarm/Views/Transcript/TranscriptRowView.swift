@@ -226,6 +226,13 @@ struct TranscriptRowView: View, Equatable {
                 SessionStartRowView(info: info)
             } else if let wake = backgroundWake {
                 BackgroundWakeRowView(wake: wake)
+            } else if let record = OpaqueRecord.read(row.payload) {
+                // The branch that used to be nothing. Every system row the two cases above do not
+                // claim is a record somebody would have had to write a case for before it was
+                // visible at all, which is how `/compact` came to leave no trace.
+                OpaqueRecordRowView(
+                    record: record, isExpanded: isExpanded, onToggle: onToggle
+                )
             }
 
         // A result row is a turn boundary, and the footer that renders it needs the rows around it,

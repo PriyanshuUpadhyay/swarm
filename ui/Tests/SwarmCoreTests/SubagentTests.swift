@@ -548,15 +548,21 @@ import Foundation
     }
 
     @Test func aLineThatWillNotParseIsSkippedRatherThanEndingTheRead() {
-        // Swarm does not own this file, so a shape it does not know degrades to fewer rows.
+        // Swarm does not own this file, so the read must survive anything in it. Three outcomes
+        // are pinned here, and they are three different things:
+        //
+        // - bytes that are not JSON make no row, because there is nothing to show;
+        // - `attachment` makes no row, because it is on the measured deny list;
+        // - `summary` DOES make a row, because nobody has written a case for it and a type
+        //   nobody has coded for is exactly what must stay visible. See `OpaqueRecord`.
         let transcript = SubagentTranscript.parse("""
         not json at all
         {"type":"summary","summary":"something new"}
         {"type":"attachment","attachment":{"type":"skill_listing","content":"a page of skills"}}
         {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}
         """, sessionID: Self.session)
-        #expect(transcript.messages.count == 1)
-        #expect(transcript.messages[0].kind == .assistantText)
+        #expect(transcript.messages.map(\.kind) == [.system, .assistantText])
+        #expect(OpaqueRecord.read(transcript.messages[0].payload)?.title == "summary")
     }
 
     @Test func anEmptyFileIsEmptyRatherThanAFailure() {
