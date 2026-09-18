@@ -118,12 +118,30 @@ final class SQLiteDatabase: @unchecked Sendable {
     /// about being able to say that in the type system rather than about contention.
     private let uncommitted = Mutex<Set<StoreDomain>>([])
 
-    init(path: String) throws {
+    /// `readOnly` opens a file this app does not own, and it is not a tidiness flag.
+    ///
+    /// `SwarmBusStore` reads `~/.swarm/swarm.db`, which the `swarm` CLI writes. Without the flag
+    /// this initialiser would add `SQLITE_OPEN_CREATE`, so a typo in the path would silently make
+    /// an empty database and the app would report a session list of none rather than a fault. It
+    /// would also set `journal_mode` and `synchronous` on somebody else's file, and install an
+    /// update hook that cannot fire, since nothing is ever written through this handle.
+    ///
+    /// **`SQLITE_OPEN_READONLY` is the wrong flag for this, which is not obvious and was measured
+    /// rather than guessed.** A WAL database needs its `-shm` file to be read at all, and SQLite
+    /// creates that file on demand. `~/.swarm/swarm.db` is in WAL mode and the CLI deletes both
+    /// `-shm` and `-wal` when its last connection closes, which is nearly always, because the CLI
+    /// is a process that runs for a few milliseconds. A `SQLITE_OPEN_READONLY` connection cannot
+    /// create the file it needs, so every read failed with SQLITE_CANTOPEN whenever no swarm
+    /// process happened to be running. `SQLITE_OPEN_READWRITE` without `SQLITE_OPEN_CREATE` opens
+    /// an existing file and may make the `-shm`, and `PRAGMA query_only` is what makes read-only
+    /// true: a write through this handle fails with "attempt to write a readonly database".
+    init(path: String, readOnly: Bool = false) throws {
         // Before anything that can throw, because a stored property has to be there whether this
         // initialiser returns or not.
         self.changes = StoreChangeHub.shared(forPath: path)
         var handle: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        var flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        if !readOnly { flags |= SQLITE_OPEN_CREATE }
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let handle else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "could not open \(path)"
             sqlite3_close_v2(handle)
@@ -131,6 +149,11 @@ final class SQLiteDatabase: @unchecked Sendable {
         }
         self.handle = handle
         sqlite3_busy_timeout(handle, 5_000)
+        guard !readOnly else {
+            // Last, so nothing above it is refused, and before the caller can issue a statement.
+            try execute("PRAGMA query_only = 1;")
+            return
+        }
         try execute("PRAGMA journal_mode = WAL;")
         try execute("PRAGMA synchronous = NORMAL;")
         // Also what keeps the update hook honest, which is not why it is here but is worth knowing

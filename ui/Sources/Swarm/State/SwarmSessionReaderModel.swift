@@ -23,16 +23,56 @@ final class SwarmSessionReaderModel {
         }
     }
 
+    /// A reader with its answers already in it, for `SwarmSessionGallery`.
+    ///
+    /// The gallery is drawn by `ImageRenderer`, which runs nothing asynchronous, so a reader that
+    /// can only be filled by awaiting the bus draws an empty column and photographs nothing worth
+    /// looking at. Nothing else may use this: `refresh` is what fills `agents` in the app.
+    init(showing agents: [SwarmSessionAgentDigest], in sessions: [SwarmSession]) {
+        self.sessions = sessions
+        self.bus = UnavailableSwarmBus()
+        self.agents = agents
+    }
+
+    /// Refreshes when `~/.swarm` changes, and on `backstopSeconds` whether it changed or not.
+    ///
+    /// The once-a-second loop this replaces was the app's most expensive habit. `PerfLog` for
+    /// 2026-09-18 recorded 2,089 passes over 100ms, median 164ms, for four sessions, and almost
+    /// every one of them found exactly what the pass before had found. A bus that nobody is
+    /// writing to now costs one sleeping task.
+    ///
+    /// The backstop is not belt and braces. `SwarmAgent.alive` is the adapter's pane list, and a
+    /// pane that ends writes nothing to `~/.swarm`, so no file event can carry it. It is also the
+    /// answer when `FSEventStreamStart` fails, which `WorktreeWatcher` reports by watching
+    /// nothing.
     func follow() async {
-        while !Task.isCancelled {
-            await refresh()
-            do {
-                try await Task.sleep(for: .seconds(SubagentPane.refreshSeconds))
-            } catch {
-                return
+        // One stream with two sources, so the loop below stays a plain `for await`.
+        // `bufferingNewest(1)` is what makes a write storm one refresh: an agent writing a long
+        // body produces many events, and every one of them asks the same question.
+        let changes = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let watcher = WorktreeWatcher { _ in continuation.yield() }
+            watcher.watch(roots: [SwarmBusStore.shared.root])
+            let backstop = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(Self.backstopSeconds))
+                    continuation.yield()
+                }
+            }
+            continuation.onTermination = { _ in
+                watcher.stop()
+                backstop.cancel()
             }
         }
+        await refresh()
+        for await _ in changes {
+            if Task.isCancelled { return }
+            await refresh()
+        }
     }
+
+    /// Five seconds, matching `SwarmPaneLiveness.interval`, because the liveness read is the one
+    /// thing this tick exists to drive when no file has changed.
+    static let backstopSeconds: Double = 5
 
     /// **Every observed property here is written only when it changes, and that is load-bearing.**
     ///

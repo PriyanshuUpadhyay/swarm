@@ -12,11 +12,18 @@ public struct SwarmCLIBus: SwarmBus {
     private let cwd: String?
     private let resolveExecutable: ExecutableResolver
     private let run: Runner
+    /// Nil means every read runs the CLI, and that is the default for the initialiser the suite
+    /// uses. A test hands in its own `run` and asserts on the arguments, so a store reading this
+    /// machine's real `~/.swarm/swarm.db` would make those tests depend on whatever the developer
+    /// happened to be running. Only `init()`, the live app's, connects the store.
+    private let store: SwarmBusStore?
+    private let liveness: SwarmPaneLiveness?
 
     public init() {
         self.init(
             environment: ProcessInfo.processInfo.environment,
             resolveExecutable: { Shell.which($0) },
+            store: .shared, liveness: .shared,
             run: { executable, arguments, cwd, environment, stdin, timeout in
                 let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
                     from: Shell.environment()
@@ -33,12 +40,15 @@ public struct SwarmCLIBus: SwarmBus {
     init(
         environment: [String: String], cwd: String? = nil,
         resolveExecutable: @escaping ExecutableResolver = { Shell.which($0) },
+        store: SwarmBusStore? = nil, liveness: SwarmPaneLiveness? = nil,
         run: @escaping Runner
     ) {
         let configured = environment["SWARM_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         executable = configured.flatMap { $0.isEmpty ? nil : $0 } ?? "swarm"
         self.cwd = cwd
         self.resolveExecutable = resolveExecutable
+        self.store = store
+        self.liveness = liveness
         self.run = run
     }
 
@@ -94,7 +104,51 @@ public struct SwarmCLIBus: SwarmBus {
         return SwarmLaunch(pane: pane, account: reported)
     }
 
+    /// The roster from `SwarmBusStore`, and `alive` from the CLI on `SwarmPaneLiveness.interval`.
+    ///
+    /// Split because the two halves change at completely different rates and cost completely
+    /// different amounts. The roster is three columns of a SQLite table. `alive` is the adapter's
+    /// `list`, which is a second process inside the first one, and it is why `swarm agents --json`
+    /// showed a 910ms median in the performance log.
     public func agents(
+        in session: SwarmSessionID, adapter: String
+    ) async throws -> [SwarmAgent] {
+        guard let store, let liveness else {
+            return try await listAgents(in: session, adapter: adapter)
+        }
+        let roster: [SwarmAgent]
+        do {
+            roster = try await store.agents(in: session)
+        } catch {
+            return try await listAgents(in: session, adapter: adapter)
+        }
+        let alive = await liveness.panes(in: session) {
+            try await listAgents(in: session, adapter: adapter)
+        }
+        return roster.map { agent in
+            var agent = agent
+            // Only where the recorded pane still matches. An agent relaunched into a new pane
+            // since the last liveness pass would otherwise inherit the dead pane's answer.
+            if let pane = agent.pane, let known = alive[agent.id], known.pane == pane {
+                agent.alive = known.alive
+            }
+            return agent
+        }
+    }
+
+    public func messages(
+        in session: SwarmSessionID, after seq: Int, adapter: String
+    ) async throws -> [SwarmMessage] {
+        if let store, let messages = try? await store.messages(in: session, after: seq) {
+            return messages
+        }
+        return try await read(
+            ["messages", "--json", "--after", String(seq)],
+            in: session, adapter: adapter, as: SwarmMessageList.self
+        ).messages
+    }
+
+    private func listAgents(
         in session: SwarmSessionID, adapter: String
     ) async throws -> [SwarmAgent] {
         try await read(
@@ -102,15 +156,17 @@ public struct SwarmCLIBus: SwarmBus {
         ).agents
     }
 
-    public func messages(
-        in session: SwarmSessionID, after seq: Int, adapter: String
-    ) async throws -> [SwarmMessage] {
-        try await read(
-            ["messages", "--json", "--after", String(seq)],
-            in: session, adapter: adapter, as: SwarmMessageList.self
-        ).messages
-    }
-
+    /// Still the CLI, and deliberately so.
+    ///
+    /// `SwarmBusStore` could run this query, and the `WHERE` and `ORDER BY` were checked against
+    /// `store.rs:259-271` and matched. `chair_log` is what stops it. swarm does not report the
+    /// column: `resolved_chair_log` (`src/main.rs:181`) ignores a path whose file has gone, and
+    /// then searches `$CLAUDE_CONFIG_DIR/projects/*/<id>.jsonl` for a Claude chair, or three days
+    /// of `$CODEX_HOME/sessions/<day>/rollout-*-<id>.jsonl` for a Codex one. A diff against the
+    /// live database found two of nine sessions where the column was null and the CLI had found
+    /// the log anyway. That rule is swarm's to own, and copying it here would leave two spellings
+    /// of it to drift apart. This is polled every two seconds rather than every second, so it is
+    /// also a twelfth of what the two reads above were costing.
     public func sessions() async throws -> [SwarmSession] {
         try await read(["sessions", "--json"], as: SwarmSessionList.self).sessions
     }

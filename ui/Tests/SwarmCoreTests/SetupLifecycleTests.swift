@@ -214,7 +214,12 @@ struct RefusedTransitionsTests {
             setupState: .succeeded
         )
         for _ in 0..<250 { subject.apply(.runInterrupted) }
-        #expect(RefusedTransitions.count == 250)
+        // At least, not exactly. `RefusedTransitions` is one register for the whole process and
+        // `SessionLifecycle` writes to it too, so a session test running beside this one in
+        // another suite adds to the same number. `.serialized` orders this suite and cannot order
+        // those. Only this file ever calls `forget()`, so the count can be pushed up and never
+        // down, and "the count is not bounded" is what this line is here to prove.
+        #expect(RefusedTransitions.count >= 250)
         #expect(RefusedTransitions.recent.count == 200)
         RefusedTransitions.forget()
     }
