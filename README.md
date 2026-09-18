@@ -16,10 +16,12 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and the shi
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Root for `.swarm/`. Defaults to `$HOME`. |
-| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
+| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`; `tmux-solo` gives each agent a detached session that a UI can attach alone. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
+| `SWARM_ROUTING_CMD` | Routing tool executable. Defaults to `$HOME/.claude/scripts/agent-routing.mjs`. |
+| `SWARM_YELO_CMD` | Account and usage tool executable. Defaults to `yelo`. |
 
 ## Commands
 
@@ -30,15 +32,26 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `init` | any | Create `.swarm/`, the db, `runs/`, and the shipped adapter files. |
 | `adapter check <name>` | any | Parse `.swarm/adapters/<name>.conf`, print `ok <name>`. |
 | `session new <lane\|relay\|open>` | any | Create a session, print its id. |
+| `session archive <id>...` | any | Archive each session and print nothing. |
+| `sessions --json` | any | List recorded sessions, newest first, with agent and message counts. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent without a pane. |
-| `spawn <id> <role> [-- <cmd>...]` | session | Register, split a pane, run `<cmd>; swarm exited` in it, print the pane id. |
+| `roles --json` | any | Print the configured routes and their resolved runners as JSON. |
+| `accounts --provider <claude\|codex\|agy> --json` | any | Print the provider's accounts and automatic choice as JSON. |
+| `usage --json` | any | Print every account usage meter as JSON. |
+| `agents --json` | session | Print session agents and their pane state as JSON. |
+| `messages --json [--after <seq>]` | session | Print up to 500 session messages after a sequence number as JSON. |
+| `launch <id> <role> [--account <auto\|name>]` | session | Resolve the role, build its agent CLI command, and spawn it. |
+| `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register, split a pane, run the command under the selected account, and print the pane id. |
+| `type <id>` | session | Type stdin into the agent pane and submit it with Enter. |
+| `interrupt <id>` | session | Press Escape in the agent pane when the adapter supports it. |
+| `attach <id>` | session | Attach the terminal to the agent pane when the adapter supports it. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
 | `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, report a missing summary. |
-| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
-| `inbox` | agent | Print `seq sender kind body_path` per unread message. |
+| `sweep [--every <secs>]` | agent | Re-ring unseen messages after 15 seconds, and report each child whose pane is gone with `dead <id>`. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
+| `inbox` | agent | Print `seq sender kind body_path` per unread message and mark each one seen. |
 | `ack <seq>` | agent | Mark one message read. |
 
 ## Agents

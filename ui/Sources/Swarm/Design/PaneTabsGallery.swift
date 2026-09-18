@@ -1,0 +1,298 @@
+import AppKit
+import SwiftUI
+import SwarmCore
+
+/// The centre column's tab strip: what its tabs are called and what they wear.
+///
+/// It exists because `--snapshot` cannot photograph this. The strip's ground is a material, and
+/// an offscreen `ImageRenderer` paints SwiftUI's yellow placeholder over any `NSViewRepresentable`,
+/// which is what a material is; the tabs would come out on a yellow bar. This page is captured in
+/// a real window instead. See `Snapshot`.
+///
+/// Photograph it with `Swarm --snapshot-gallery <dir> --gallery pane-tabs`.
+///
+/// The tabs here are `TabItemView`, the same view the strip draws, at the same size, so the
+/// picture cannot disagree with the app about what a tab looks like. What is faked is only the
+/// state behind them: there is no workspace, no session and no web view in a capture.
+struct PaneTabsGallery: View {
+    /// Only so the strip has one to read. `TabStrip` puts the busy signal on the rule under the
+    /// title bar and asks the app model whether anything is running, so a strip drawn without one
+    /// in the environment traps rather than draws.
+    var app: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("Pane tabs")
+                .font(Typo.title)
+
+            row("One chat, a browser and a terminal", tabs: [
+                fixture("Chat", PaneGlyph.chat, active: true),
+                fixture(
+                    BrowserTabTitle.title(page: "Example", address: "https://example.com/", fallback: "Browser"),
+                    PaneGlyph.browser
+                ),
+                fixture("Terminal", PaneGlyph.terminal),
+            ])
+
+            row("Several chats, numbered", tabs: [
+                fixture("Chat", PaneGlyph.chat),
+                fixture("Chat 2", PaneGlyph.chat, active: true),
+                fixture("Chat 3", PaneGlyph.chat),
+                fixture("Terminal", PaneGlyph.terminal),
+            ])
+
+            row("A workspace running two backends", tabs: [
+                fixture("Chat", PaneGlyph.agentMark(for: .claudeCode), active: true),
+                fixture("Chat 2", PaneGlyph.agentMark(for: .codex)),
+                fixture("Terminal", PaneGlyph.terminal),
+            ])
+
+            row("A page with a long title, beside its neighbours", tabs: [
+                fixture("Chat", PaneGlyph.chat),
+                fixture(
+                    BrowserTabTitle.title(
+                        page: Self.longTitle, address: "https://developer.apple.com/documentation/webkit",
+                        fallback: "Browser"
+                    ),
+                    PaneGlyph.browser,
+                    active: true
+                ),
+                fixture("Terminal", PaneGlyph.terminal),
+            ])
+
+            row("A browser mid load: the name it came from, then the host it went to", tabs: [
+                fixture(
+                    BrowserTabTitle.title(
+                        page: BrowserTabTitle.advance(
+                            from: .init(address: "https://example.com/", title: "Example"),
+                            to: .init(address: "https://example.com/docs")
+                        ).title,
+                        address: "https://example.com/docs",
+                        fallback: "Browser"
+                    ),
+                    PaneGlyph.browser,
+                    active: true
+                ),
+                fixture(
+                    BrowserTabTitle.title(
+                        page: BrowserTabTitle.advance(
+                            from: .init(address: "https://example.com/", title: "Example"),
+                            to: .init(address: "https://github.com/example")
+                        ).title,
+                        address: "https://github.com/example",
+                        fallback: "Browser"
+                    ),
+                    PaneGlyph.browser
+                ),
+                fixture(
+                    BrowserTabTitle.title(page: "", address: "http://localhost:3000/", fallback: "Browser"),
+                    PaneGlyph.browser
+                ),
+                fixture(
+                    BrowserTabTitle.title(page: "", address: "about:blank", fallback: "Browser 2"),
+                    PaneGlyph.browser
+                ),
+            ])
+
+            // The two states a browser tab has. A page that declared an icon wears it; a dev
+            // server that declared none and a tab at no address keep the globe. Both are drawn in
+            // the same box at the same width, so nothing moves when an icon lands.
+            row("Browser tabs, wearing what the page gave them", tabs: [
+                page(
+                    BrowserTabTitle.title(
+                        page: "Example", address: "https://example.com/", fallback: "Browser"
+                    ),
+                    Self.redMark,
+                    active: true
+                ),
+                page(
+                    BrowserTabTitle.title(
+                        page: "example/project",
+                        address: "https://github.com/example/project",
+                        fallback: "Browser 2"
+                    ),
+                    Self.darkMark
+                ),
+                page(
+                    BrowserTabTitle.title(
+                        page: "", address: "http://localhost:3000/", fallback: "Browser 3"
+                    ),
+                    nil
+                ),
+                page(
+                    BrowserTabTitle.title(page: "", address: "about:blank", fallback: "Browser 4"),
+                    nil
+                ),
+            ])
+
+            // Two rows that have to come out identical, which is the whole reason they are both
+            // here. The control is a `Button` and has no on state to draw, the way the sidebar's
+            // own toolbar item has none: see `InspectorToggle`. A filled plate in the second row
+            // is the bug this page exists to catch.
+            row(
+                "The inspector toggle, inspector hidden",
+                tabs: [
+                    fixture("Chat", PaneGlyph.chat, active: true),
+                    fixture("Terminal", PaneGlyph.terminal),
+                ],
+                inspectorVisible: false
+            )
+            row(
+                "The same strip, inspector shown. Identical, and that is the point",
+                tabs: [
+                    fixture("Chat", PaneGlyph.chat, active: true),
+                    fixture("Terminal", PaneGlyph.terminal),
+                ],
+                inspectorVisible: true
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                caption("The three glyphs at the size they are read at")
+                HStack(spacing: 20) {
+                    ForEach([PaneGlyph.chat, PaneGlyph.terminal, PaneGlyph.browser], id: \.self) {
+                        Image(systemName: $0)
+                            .imageScale(.small)
+                            .font(Typo.label)
+                            .foregroundStyle(Palette.textPrimary)
+                    }
+                }
+                .padding(.horizontal, Metrics.inset)
+                .frame(height: Metrics.barHeight)
+                .background(Palette.surface)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .environment(app)
+    }
+
+    /// Long enough to run past a tab's 200 points several times over, so the picture shows what
+    /// the strip does with one rather than what a comfortable title does.
+    private static let longTitle =
+        "WKWebView | Apple Developer Documentation | Displaying web content in a view"
+
+    private func row(_ title: String, tabs: [Fixture], inspectorVisible: Bool? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            caption(title)
+            StripRow(tabs: tabs, inspectorVisible: inspectorVisible)
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(Typo.label)
+            .foregroundStyle(Palette.textSecondary)
+    }
+
+    private func fixture(_ title: String, _ icon: String, active: Bool = false) -> Fixture {
+        Fixture(title: title, icon: .symbol(icon), isActive: active)
+    }
+
+    private func page(_ title: String, _ favicon: NSImage?, active: Bool = false) -> Fixture {
+        Fixture(title: title, icon: .page(favicon), isActive: active)
+    }
+
+    /// Stand-ins for a real page's icon, drawn here because a gallery has no network and a capture
+    /// must not depend on one. Built once rather than per draw: this page redraws.
+    private static let redMark = mark(.systemRed, "S")
+    private static let darkMark = mark(.black, "G")
+
+    /// At `BrowserFavicon.pixels` square, which is what the page is asked to draw into, so the
+    /// strip is shown resampling exactly what it resamples.
+    private static func mark(_ colour: NSColor, _ letter: String) -> NSImage {
+        let side = CGFloat(BrowserFavicon.pixels)
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            colour.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: side / 5, yRadius: side / 5).fill()
+
+            let text = letter as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: side * 0.62, weight: .bold),
+                .foregroundColor: NSColor.white,
+            ]
+            let drawn = text.size(withAttributes: attributes)
+            text.draw(
+                at: NSPoint(x: (rect.width - drawn.width) / 2, y: (rect.height - drawn.height) / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
+    }
+}
+
+/// One strip, with a selection namespace of its own.
+///
+/// A view rather than a function, because `matchedGeometryEffect` matches within one namespace and
+/// the page holds five strips: sharing one left the selected fill in whichever strip drew it last
+/// and the other four reading as though nothing in them were selected.
+private struct StripRow: View {
+    var tabs: [Fixture]
+    /// Whether the strip ends in the inspector's control, and which way the inspector is. Nil for
+    /// the rows that are about the tabs. Both values must draw the same button.
+    var inspectorVisible: Bool?
+
+    @Namespace private var selection
+
+    var body: some View {
+        // Use the real strip so captures exercise equal widths and overflow at the same limit.
+        TabStrip(tabCount: tabs.count, pane: .content) {
+            EmptyView()
+        } tabs: {
+            HStack(spacing: 0) {
+                ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
+                    if index > 0 {
+                        TabStripSeparator(isHidden: tab.isActive || tabs[index - 1].isActive)
+                    }
+                    item(tab)
+                }
+            }
+        } append: {
+            EmptyView()
+        } trailing: {
+            if let inspectorVisible {
+                TabStripSeparator()
+                InspectorToggle(isVisible: .constant(inspectorVisible))
+            }
+        }
+        .frame(width: 620)
+        .background(Palette.surface)
+    }
+
+    private func item(_ fixture: Fixture) -> some View {
+        TabItemView(
+            title: fixture.title,
+            icon: fixture.icon,
+            isActive: fixture.isActive,
+            surface: TabPane.content.surface,
+            isRenaming: false,
+            editableTitle: fixture.title,
+            canClose: true,
+            closeTitle: "Close",
+            onSelect: {},
+            onStartRename: {},
+            onCommitRename: { _ in },
+            onCancelRename: {},
+            onClose: {},
+            namespace: selection
+        )
+    }
+}
+
+private struct Fixture {
+    var title: String
+    var icon: TabItemIcon
+    var isActive: Bool
+}
+
+extension Gallery {
+    /// The registry entry for this page. See `Gallery`.
+    ///
+    /// No field on this page: every tab on it is drawn as a label.
+    static let paneTabs = Gallery(
+        name: "pane-tabs",
+        title: "Pane tabs",
+        size: CGSize(width: 700, height: 880),
+        needsFocus: false,
+        view: { app in AnyView(PaneTabsGallery(app: app)) }
+    )
+}

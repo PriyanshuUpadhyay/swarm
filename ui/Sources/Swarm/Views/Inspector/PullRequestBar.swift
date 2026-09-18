@@ -1,0 +1,333 @@
+import SwiftUI
+import SwarmCore
+
+/// The pull request strip along the top edge of the window, over the inspector column.
+///
+/// The bar owns the state colour rather than its contents doing, so the tint runs the full width
+/// of the pane including the insets its rows keep. A wash painted by the row inside had to grow
+/// itself back out with a negative margin, which is a number that has to be kept in step with the
+/// inset by hand.
+///
+/// It polls while it is on screen and stops when the inspector is hidden, because the state it
+/// shows changes on GitHub's schedule rather than the user's. The poll is silent: a machine
+/// without `gh`, or with `gh` signed out, simply never gets a pull request back, and a background
+/// refresh is never a reason to put a dialog in front of anybody.
+///
+/// It is exactly one row tall, always, and that is a hard requirement rather than a preference.
+/// The strip is a title bar accessory now (`TitleBarStrip`), and an accessory is laid out from a
+/// frame its controller sets by hand rather than from anything SwiftUI measures. Anything this
+/// view draws below that one row is drawn into a band with no room for it: the content is centred
+/// in the frame and cut off at both ends, which is what happened to the Continue notice. So what
+/// the strip has to SAY, as opposed to show, goes to `model.pullRequestNotice` and is drawn by
+/// `InspectorView` at the top of the column, one row lower and as tall as it needs to be.
+struct PullRequestBar: View {
+    let model: WorkspaceModel
+
+    /// Continue and Archive are both about the workspace rather than about the pull request, so
+    /// they go through the app the way every other archive does rather than being reimplemented
+    /// against git from a view.
+    @Environment(AppModel.self) private var app
+
+    /// How often GitHub is asked again while the bar is on screen.
+    private static let pollInterval = Duration.seconds(20)
+
+    @State private var isWorking = false
+    @State private var pendingArchive: ArchiveRequest?
+    @State private var isVisible = false
+
+    /// Where an answer goes. Set here, drawn in the column: see the note on the type.
+    private var report: PullRequestNotice? {
+        get { model.pullRequestNotice }
+        nonmutating set { model.pullRequestNotice = newValue }
+    }
+
+    var body: some View {
+        strip
+            .task(id: model.workspace.id) { await poll() }
+            .onChange(of: model.workspace.id) { _, _ in pendingArchive = nil }
+            .onAppear { isVisible = true }
+            .onDisappear {
+                isVisible = false
+                pendingArchive = nil
+            }
+    }
+
+    private var strip: some View {
+        content
+            .padding(.horizontal, InspectorLayout.inset)
+            .frame(height: InspectorLayout.pullRequestBarHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                // A tint over the surface rather than instead of it, so the strip keeps the
+                // pane's own colour underneath and the state only ever adds to it.
+                ZStack {
+                    Palette.surface
+                    if let tint {
+                        tint.opacity(washOpacity)
+                    }
+                }
+            }
+    }
+
+    /// Nil until there is a pull request, and for the states that have nothing to signal.
+    ///
+    /// The same status the strip's contents draw, local work weighed in, so a branch holding work
+    /// GitHub has not got turns the whole band amber rather than only its headline.
+    private var tint: Color? {
+        model.pullRequest?.status(local: model.localWork).tone.color
+    }
+
+    /// How hard the band carries its colour.
+    ///
+    /// An open pull request is asking for something and gets the full wash. Merged and closed are
+    /// answers: they keep the hue, so "did this land" is still one glance, and they give it up as
+    /// volume, because the reading matter in this column is the diff below and a finished branch
+    /// has no business competing with it. `PullRequestSummary` makes the same split in type.
+    private var washOpacity: Double {
+        model.pullRequest?.isOpen == false
+            ? InspectorLayout.bandOpacityQuiet
+            : InspectorLayout.bandOpacity
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let pullRequest = model.pullRequest {
+            PullRequestSummary(
+                pullRequest: pullRequest,
+                baseBranch: model.workspace.baseBranch,
+                worktree: model.workspace.path,
+                localWork: model.localWork,
+                isWorking: isWorking,
+                branchActions: branchActions,
+                mergeMethod: model.mergeMethod,
+                onChooseMergeMethod: chooseMergeMethod,
+                onMerge: merge,
+                onMarkReadyForReview: { markReadyForReview(pullRequest) },
+                onPush: push,
+                onFixConflicts: { fixConflicts(on: pullRequest) },
+                onContinue: { carryOn(after: pullRequest) },
+                onArchive: archive,
+                archiveRequest: $pendingArchive,
+                onConfirmArchive: confirmArchive
+            )
+        } else {
+            PullRequestCreator(
+                branch: model.workspace.branch,
+                baseBranch: model.workspace.baseBranch,
+                isWorking: isWorking || model.isLoadingPullRequest,
+                branchActions: branchActions,
+                worktree: model.workspace.path,
+                hasChanges: hasChanges,
+                continued: model.continued,
+                action: createPullRequest
+            )
+        }
+    }
+
+    /// Message requests stay available during a turn. Continue and Archive still read the
+    /// workspace-wide busy signal, shared with the sidebar through `AppModel.isRunning`.
+    private var branchActions: BranchActionAvailability {
+        .mayActOnBranch(
+            isAgentBusy: app.isRunning(model.workspace),
+            pullRequest: model.pullRequest
+        )
+    }
+
+    /// Whether the branch has anything on it. The inspector's own list first, because it is the
+    /// freshest thing here, and the workspace row's counts behind it for the moment before the
+    /// list has been read.
+    private var hasChanges: Bool {
+        !model.changedFiles.isEmpty || model.workspace.hasDiff
+    }
+
+    // MARK: - Actions
+
+    /// Changes how this project merges, and merges nothing.
+    ///
+    /// The whole point of the split button: the menu picks the mode, the button performs it. A
+    /// menu item that merged was the old chevron, and it meant the irreversible press was in two
+    /// places at once, one of them unlabelled until it had already happened.
+    private func chooseMergeMethod(_ method: GitHub.MergeMethod) {
+        Task { await model.chooseMergeMethod(method) }
+    }
+
+    private func poll() async {
+        // The first pass is an arrival rather than a poll, and it is allowed a recent answer.
+        // This runs on `.task(id:)`, so it used to send two gh calls to GitHub every time the
+        // window landed on a workspace, including landing back on one it had left four seconds
+        // earlier. Every pass after this one asks GitHub properly: twenty seconds is exactly long
+        // enough that an answer from the last one is not worth having.
+        // Read on every arrival rather than once per launch, because the choice belongs to the
+        // project and not to this workspace: picking Rebase in one of a project's worktrees has
+        // to be what the band says in the next one, and switching workspace is what starts this.
+        await model.loadMergeMethod()
+
+        var maxAge = WorkspaceModel.pullRequestArrivalMaxAge
+        while !Task.isCancelled {
+            await model.refreshPullRequest(maxAge: maxAge)
+            maxAge = .zero
+            try? await Task.sleep(for: Self.pollInterval)
+        }
+    }
+
+    /// Creation is the agent's job: it pushes, writes the description and calls `gh` with the
+    /// project's own conventions in context. Swarm only composes the turn.
+    private func createPullRequest() {
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            if let refusal = await model.requestPullRequest() {
+                report = PullRequestNotice(
+                    tone: .info, title: "Nothing was sent", message: refusal
+                )
+            }
+        }
+    }
+
+    private func markReadyForReview(_ pullRequest: PullRequest) {
+        guard !isWorking, branchActions.isAllowed else { return }
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            do {
+                try await model.markReadyForReview(pullRequest)
+            } catch {
+                report = PullRequestNotice(
+                    tone: .failure, title: "Could not mark ready for review",
+                    message: String(describing: error)
+                )
+            }
+        }
+    }
+
+    /// Hands the outstanding work to the agent, the same way Create pull request does.
+    ///
+    /// Nothing here runs git. Swarm does not write commit messages, so the whole of this is
+    /// composing a turn and sending it; what comes back is a normal turn in the transcript, and
+    /// the strip notices the result on its next refresh like any other change to the worktree.
+    private func push() {
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            if let refusal = await model.requestPush() {
+                report = PullRequestNotice(
+                    tone: .info, title: "Nothing was sent", message: refusal
+                )
+            }
+        }
+    }
+
+    /// Hands the conflict to the agent, the same way the other three buttons hand it their work.
+    ///
+    /// Nothing here runs git, and there is nothing to report on success either: what comes back is
+    /// an ordinary turn in the transcript, and the strip notices the resolved worktree on its next
+    /// refresh like any other change on this disk.
+    ///
+    /// The turn pushes the resolution itself unless it is unsure of it, so the pull request stops
+    /// being conflicted on GitHub without anybody pressing anything else. It used to stop at the
+    /// commit and leave Commit and push to the reader, which read as finished and was not: see the
+    /// argument on `PromptRegistry.fixConflicts`. Commit and push is still the button the strip
+    /// offers when an agent stopped short.
+    private func fixConflicts(on pullRequest: PullRequest) {
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            if let refusal = await model.requestFixConflicts(pullRequest) {
+                report = PullRequestNotice(
+                    tone: .info, title: "Nothing was sent", message: refusal
+                )
+            }
+        }
+    }
+
+    /// Cuts a fresh branch in this worktree and hands the session on to it.
+    ///
+    /// Reported when it does not work, and silent when it does. A refusal names the condition that
+    /// stopped it, because Continue is the sort of button that looks broken when nothing happens.
+    ///
+    /// **Success used to raise a green banner over the file list**, naming the new branch and what
+    /// it was cut from, and the owner asked for it to go: "remove this, we don't need that." A
+    /// press that worked shows its work anyway. The strip is already drawing the new branch name a
+    /// row above, `ContinuedBranch.line` says underneath it where that branch came from, and the
+    /// turn the press sends is in the transcript.
+    private func carryOn(after pullRequest: PullRequest) {
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            switch await app.continueAfterMerge(model.workspace, pullRequest: pullRequest) {
+            case .continued:
+                break
+            case .refused(let refusal):
+                report = PullRequestNotice(
+                    tone: .info, title: "Nothing was changed", message: refusal.sentence
+                )
+            case .failed(let reason):
+                report = PullRequestNotice(
+                    tone: .failure,
+                    title: "Could not continue",
+                    // The reassurance used to be appended here, which read as a contradiction
+                    // over a worktree that had been deleted. `WorkspaceTrouble` carries it in
+                    // the one sentence where it is true.
+                    message: reason,
+                    details: nil
+                )
+            }
+        }
+    }
+
+    /// The safety checks stay in AppModel; only their presentation belongs to this button.
+    private func archive() {
+        let workspace = model.workspace
+        Task {
+            await app.archive(workspace, presentConfirmation: presentArchive)
+        }
+    }
+
+    private func confirmArchive(_ request: ArchiveRequest) {
+        pendingArchive = nil
+        Task {
+            await app.confirmArchive(request, presentConfirmation: presentArchive)
+        }
+    }
+
+    private func presentArchive(_ request: ArchiveRequest) {
+        guard isVisible, app.selection.workspaceID == request.workspace.id else { return }
+        pendingArchive = request
+    }
+
+    /// Hands the merge to the agent, the same way Create pull request and Commit and push do.
+    ///
+    /// Nothing here runs `gh`, and that is the change this whole file was rewritten for. Swarm used
+    /// to merge over the network from this function and report the outcome into a notice, which
+    /// left it with one thing to say about the case that happens most: GitHub refused, and the
+    /// person needed a conversation rather than a red box. Now the request goes down the composer's
+    /// own path, the commands run in the transcript under the permission mode the person set, and
+    /// the strip notices the merge on its next refresh like any other change on GitHub.
+    ///
+    /// So there is nothing to report here on success. What used to be a `WorkspaceEvent` row is
+    /// now the turn itself, a few points to the left, said in the agent's own words.
+    private func merge(_ method: GitHub.MergeMethod) {
+        guard let pullRequest = model.pullRequest else { return }
+        isWorking = true
+        report = nil
+
+        Task {
+            defer { isWorking = false }
+            if let refusal = await model.requestMerge(pullRequest, method: method) {
+                report = PullRequestNotice(
+                    tone: .info, title: "Nothing was sent", message: refusal
+                )
+            }
+        }
+    }
+}

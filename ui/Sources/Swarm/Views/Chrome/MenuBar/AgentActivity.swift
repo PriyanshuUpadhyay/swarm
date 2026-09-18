@@ -1,0 +1,178 @@
+import AppKit
+import Foundation
+import SwarmCore
+
+/// What the rest of macOS is told about the agents: the activity assertion while they are working,
+/// and the dock badge once they have stopped.
+///
+/// Both come from the same place, so they are held by one object rather than two that could
+/// disagree. A singleton because there is one process and one dock tile.
+@MainActor
+final class AgentActivity {
+    static let shared = AgentActivity()
+
+    /// The assertion, held only while at least one agent is mid turn. Nil is the normal state.
+    ///
+    /// It does two jobs, and they are two different bits of the same option set.
+    ///
+    /// **App Nap.** Without the assertion macOS naps Swarm the moment the user switches to their
+    /// editor, which is exactly when the agents are streaming: timers coalesce, and the pumps that
+    /// read the agent's stdout are throttled. That reads as an agent that has stalled. This half
+    /// is not optional and is held whatever the sleep preference says, because a throttled pump is
+    /// a bug rather than a taste.
+    ///
+    /// **Idle sleep.** `NSActivityUserInitiated` is `0xFFFFFF`, and
+    /// `NSActivityIdleSystemSleepDisabled` is `1 << 20`, so the plain `.userInitiated` set has
+    /// always carried it: measured with `pmset -g assertions`, a process holding
+    /// `.userInitiated` owns a `PreventUserIdleSystemSleep`. That was never a decision anybody
+    /// made, it came along with the App Nap fix, and it is what the sleep preference now controls
+    /// deliberately. `.userInitiatedAllowingIdleSystemSleep` is the same set with that one bit
+    /// cleared, which is why turning the preference off costs the App Nap protection nothing.
+    ///
+    /// **Not the display.** Neither set contains `NSActivityIdleDisplaySleepDisabled` (`1 << 40`),
+    /// and nothing here adds it. Agents do not need the screen on, and a coding tool that quietly
+    /// stops a laptop's display from ever sleeping is a battery complaint and a burn-in complaint
+    /// waiting to be filed.
+    ///
+    /// It is released the moment the last agent finishes. An app that never naps is the same bad
+    /// citizen from the other side: it would keep the machine awake through a whole idle afternoon.
+    private var assertion: (any NSObjectProtocol)?
+
+    /// What the held assertion was taken with, so a preference changed mid turn can be noticed and
+    /// the assertion retaken. `beginActivity` has no way to widen or narrow one in place.
+    private var heldOptions: ProcessInfo.ActivityOptions?
+
+    private var runningCount = 0
+    private var unreadCount = 0
+    private var waitingCount = 0
+    private var isBadgeEnabled = true
+    private var preventsSleep = SleepPrevention.isOnByDefault
+    /// A Keep Awake session somebody started by hand. See `KeepAwakeSession`; `KeepAwakeModel`
+    /// owns it and ends it when it runs out.
+    private var keepAwakeSession: KeepAwakeSession?
+
+    private init() {
+        // Belt and braces. The kernel drops every assertion a process owns when it exits, so a
+        // crash cannot leave one behind (which is the entire reason this is not a `caffeinate`
+        // child process). Quitting cleanly goes through `shutdownEverything`, which stops the
+        // agents and drives the running count to zero through the reporter. This covers the gap
+        // between those two: a quit that beats SwiftUI to the last update pass still releases
+        // here, so the release is provable rather than inferred from process death.
+        // The token is dropped because there is nothing left to remove this from: the observer
+        // is the singleton's own, it fires once as the process ends, and the only thing that
+        // could outlive it is the app itself.
+        // swiftlint:disable:next discarded_notification_center_observer
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                AgentActivity.shared.releaseAssertion()
+                SleepSwitch.shared.releaseOnQuit()
+            }
+        }
+    }
+
+    /// How many agents are mid turn. Idempotent, so the reporter can call it on every change
+    /// without checking whether anything moved.
+    ///
+    /// This no longer touches the badge. A running agent is not news: the user started it, and it
+    /// is on screen in the sidebar. What is news is the one that finished while they were in
+    /// another app, which is what `setUnreadCount` counts.
+    func setRunningCount(_ newCount: Int) {
+        guard newCount != runningCount else { return }
+        runningCount = newCount
+        applyAssertion()
+    }
+
+    /// Whether the user wants the Mac held awake while agents work. See `SleepPrevention`.
+    ///
+    /// Applied immediately in both directions rather than at the next change of running count.
+    /// Turning it off in the middle of a six agent run has to let the machine sleep now, which is
+    /// the only moment somebody would think to reach for it.
+    func setPreventsSleep(_ isOn: Bool) {
+        guard isOn != preventsSleep else { return }
+        preventsSleep = isOn
+        applyAssertion()
+    }
+
+    /// A session of keeping the Mac awake with no agent involved, or nothing to end one.
+    func setKeepAwakeSession(_ session: KeepAwakeSession?) {
+        guard session != keepAwakeSession else { return }
+        keepAwakeSession = session
+        applyAssertion()
+    }
+
+    /// How many workspaces finished something nobody has read. See `DockBadge`.
+    func setUnreadCount(_ newCount: Int) {
+        guard newCount != unreadCount else { return }
+        unreadCount = newCount
+        applyBadge()
+    }
+
+    /// How many workspaces have an agent blocked on a question nobody has answered.
+    ///
+    /// This is the one number here that gets worse by being ignored, which is why `DockBadge`
+    /// lets it win over the unread count rather than adding the two together.
+    func setWaitingCount(_ newCount: Int) {
+        guard newCount != waitingCount else { return }
+        waitingCount = newCount
+        applyBadge()
+    }
+
+    /// Whether the user wants a badge at all. Applied immediately in both directions: turning it
+    /// off takes the badge away now rather than at the next change, and turning it back on puts
+    /// the current count back rather than waiting for one.
+    func setBadgeEnabled(_ isEnabled: Bool) {
+        guard isEnabled != isBadgeEnabled else { return }
+        isBadgeEnabled = isEnabled
+        applyBadge()
+    }
+
+    private func applyBadge() {
+        NSApp?.dockTile.badgeLabel = DockBadge.label(
+            unread: unreadCount, waiting: waitingCount, isEnabled: isBadgeEnabled
+        )
+    }
+
+    /// The one place the assertion is taken, retaken or dropped, so the three things that move it
+    /// (an agent starting, the last one finishing, the preference changing) cannot each grow their
+    /// own version of the rule.
+    ///
+    /// A Keep Awake session is the fourth, and it takes the full `.userInitiated` set whether or
+    /// not an agent is running, because holding idle sleep off is the whole of what it was asked
+    /// for. The menu bar is told afterwards whether idle sleep is being held, which is what draws
+    /// the cup beside the mark; it reads the outcome rather than restating the rule.
+    private func applyAssertion() {
+        defer { MenuBarStatusItem.shared.setKeepsAwake(heldOptions == .userInitiated) }
+        let session = keepAwakeSession?.isActive(at: Date()) ?? false
+        let wanted: ProcessInfo.ActivityOptions?
+        if session {
+            wanted = .userInitiated
+        } else {
+            wanted = runningCount > 0 ? wantedOptions : nil
+        }
+        guard wanted != heldOptions else { return }
+
+        releaseAssertion()
+        guard let wanted else { return }
+
+        assertion = ProcessInfo.processInfo.beginActivity(
+            options: wanted,
+            // Shown verbatim by `pmset -g assertions`, so it is written for somebody looking at
+            // that list wondering what is holding their Mac open.
+            reason: session ? "Keep Awake is on in Swarm" : "Coding agents are running"
+        )
+        heldOptions = wanted
+    }
+
+    private func releaseAssertion() {
+        guard let held = assertion else { return }
+        ProcessInfo.processInfo.endActivity(held)
+        assertion = nil
+        heldOptions = nil
+    }
+
+    private var wantedOptions: ProcessInfo.ActivityOptions {
+        preventsSleep ? .userInitiated : .userInitiatedAllowingIdleSystemSleep
+    }
+}

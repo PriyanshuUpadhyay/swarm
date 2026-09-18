@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Swarm</string>
+	<key>CFBundleDisplayName</key>
+	<string>Swarm</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.priyanshuupadhyay.swarm</string>
+	<key>CFBundleExecutable</key>
+	<string>Swarm</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleIconName</key>
+	<string>Swarm</string>
+	<!--
+	    The one accent, rather than two.
+
+	    `Palette.accent` overrides `controlAccentColor` for everything Swarm draws itself, and that
+	    reached nothing AppKit draws: 37 toggles, every focus ring and every text selection stayed
+	    the user's blue, so one Settings pane held a Swarm-blue selected row and a system-blue
+	    switch. This key points AppKit at the `AccentColor` set in Assets.car, which
+	    `Tools/build.sh` compiles from Resources/Assets.xcassets, and `NSColor.controlAccentColor`
+	    then answers Spatie Blue for this process. Everything derived from it follows:
+	    `keyboardFocusIndicatorColor`, `selectedTextBackgroundColor` and
+	    `selectedContentBackgroundColor` were measured moving with it.
+
+	    It only wins where the user has not chosen an accent, which is the Multicolour default. A
+	    Mac set to Pink or to Graphite keeps that choice and this key is ignored, measured with a
+	    probe rather than assumed. See `Palette.accent` for the whole of it.
+	-->
+	<key>NSAccentColorName</key>
+	<string>AccentColor</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<!--
+	    Who made it, in the one place macOS itself reads that from. The Finder's Get Info panel
+	    shows this key, and so does the App Store listing for a bundle that has one. `AboutWindow`
+	    reads the same key rather than carrying a second copy of the sentence, so there is one
+	    place to keep the attribution wording.
+	-->
+	<key>NSHumanReadableCopyright</key>
+	<string>Swarm UI. Includes code by Spatie, MIT licence.</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>New Swarm Workspace</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>createWorkspaceFromSelection</string>
+			<key>NSPortName</key>
+			<string>Swarm</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSStringPboardType</string>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.priyanshuupadhyay.swarm.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>swarm-ui</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,121 @@
+import Foundation
+
+/// What the card says when it has no rows to draw.
+///
+/// # Why this replaced two rows
+///
+/// It used to be a sentence with two actions under it: "Start a workspace called qsdfqsdf" and
+/// "Search Home for qsdfqsdf", argued from Raycast's fallback commands. The owner looked at them
+/// and said no: "just say nothing found here, don't offer up those two actions". He is right, and
+/// the footer said why better than the argument for them did. The two rows were rows, so the
+/// count on the right read "2 results" under a sentence saying nothing matched, and the panel
+/// contradicted itself in one glance. A search that found nothing should say so and stop.
+///
+/// # Three different nothings, because they are three different facts
+///
+/// Somebody on a fresh install has nothing yet; somebody whose query missed has a query that
+/// missed; somebody in the menu bar has typed a command that does not exist. Saying "No results"
+/// to all three would be the app declining to know which one it is in. The first is the only one
+/// that says what to do next, and it says it in one sentence with no button: an empty install is
+/// the one case where the reader genuinely does not know what the app wants from them.
+///
+/// **The query is in the message, verbatim.** Somebody who typed nine characters wants to see
+/// which nine, and a message that repeats them is also how a typo announces itself.
+public enum SearchPanelNothing: Equatable, Sendable {
+    /// Resting, on a machine with no workspaces to list.
+    case nothingYet
+    /// A search of workspaces, transcripts and commands that matched nothing.
+    case noMatch(String)
+    /// Nothing in live work matched, but the archive holds workspaces that did.
+    ///
+    /// This is what makes the default reach safe rather than merely narrow. A panel that answers
+    /// over live work alone would otherwise refuse to find the archived workspace somebody is
+    /// searching for the name of, and say nothing about having refused. See `SearchPanelReach`.
+    case noLiveMatch(String, archived: Int)
+    /// Nothing matched anywhere the panel is looking, and it is not looking everywhere: there are
+    /// projects the sidebar has been told to hide.
+    ///
+    /// **This is not a corner case on the machine it was written for.** Thirteen of the owner's
+    /// seventeen projects are hidden, so an answer that quietly leaves them out is leaving out most
+    /// of his machine, and without this nothing would say so.
+    ///
+    /// It says how many projects are out, and not how much is in them, because the panel does not
+    /// know: the count of hidden PROJECTS is a fact, and any count of matches inside them would be
+    /// one the reach was built to avoid computing. That is also why the archive outranks it below:
+    /// "12 archived workspaces do" names matches that exist, where this names doors that may open
+    /// on nothing.
+    case noHiddenMatch(String, hidden: Int)
+    /// The menu bar, searched for something that is not in it.
+    case noCommand(String)
+
+    public var title: String {
+        switch self {
+        case .nothingYet: "Nothing to show yet"
+        case .noMatch, .noLiveMatch, .noHiddenMatch: "No results"
+        case .noCommand: "No such command"
+        }
+    }
+
+    public var message: String {
+        switch self {
+        case .nothingYet:
+            "Add a project and start a workspace, and what you are working on turns up here."
+        case .noMatch(let query):
+            // "In Swarm", which is the whole app, and it stays true because this case is only
+            // reached when the panel really did look everywhere: `SearchPanelResults` sends the
+            // two cases below whenever something was held back. See the precedence there.
+            "Nothing in Swarm matches \(quoted(query))."
+        case .noHiddenMatch(let query, let hidden):
+            // "Left out", not "not searched". They ARE searched: the store's index has no idea
+            // which projects the sidebar is showing, so the rows come back and the reach drops
+            // them from the answer and from every count. Saying they were not searched would be
+            // saying the untrue half of a true thing.
+            hidden == 1
+                ? "Nothing in your visible work matches \(quoted(query)). 1\u{00A0}hidden project is left out."
+                : "Nothing in your visible work matches \(quoted(query)). \(hidden)\u{00A0}hidden projects are left out."
+        case .noLiveMatch(let query, let archived):
+            // The count and the noun, and no instruction after them. The chip that would show
+            // them is on the row above this card with the same number on it, so a sentence
+            // telling the reader to press it would be saying what they can already see. The two
+            // rows this replaced were exactly that mistake.
+            archived == 1
+                ? "Nothing in your live work matches \(quoted(query)). 1\u{00A0}archived workspace does."
+                : "Nothing in your live work matches \(quoted(query)). \(archived)\u{00A0}archived workspaces do."
+        case .noCommand(let query):
+            "No menu item matches \(quoted(query))."
+        }
+    }
+
+    /// The sentence under the message while the transcript index is still being built.
+    ///
+    /// **Only while the backfill is actually running.** The index is built after launch, and until
+    /// it finishes a "nothing matched" about work the user knows they did can be wrong. At any
+    /// other time the same sentence would be an excuse rather than a fact, which is why it is
+    /// keyed on the flag rather than printed always. It belongs to `noMatch` alone: an empty
+    /// install has nothing to index, and the menu bar is not in the index at all.
+    public func indexNotice(isIndexing: Bool) -> String? {
+        guard isIndexing else { return nil }
+        switch self {
+        case .noMatch, .noLiveMatch, .noHiddenMatch: break
+        case .nothingYet, .noCommand: return nil
+        }
+        return "The transcript index is still building, so older conversations are not searchable yet."
+    }
+
+    /// **The space after a count is `\u{00A0}` and not an ordinary one, in every sentence here.**
+    /// The card wraps, and at the width the panel is drawn at the hidden sentence broke as
+    /// "…matches “houdini”. 13" over "hidden projects are left out.", which puts a number on one
+    /// line and the thing it counts on the next. That reads as carelessness rather than as
+    /// wrapping, and it is the exact class of thing this panel has been reported for all day. The
+    /// archive sentence can break the same way at some other width, so it is tied too.
+    ///
+    /// Written as the escape rather than as the character, because an invisible byte in a string
+    /// literal is a thing the next reader cannot see and will delete by accident.
+    /// `SearchPanelNothingTests` proves the property over every sentence rather than matching
+    /// these two, so a fourth sentence with a count in it fails until it is tied as well.
+    ///
+    /// Typographic quotes, because the query is quoted prose rather than code.
+    private func quoted(_ query: String) -> String {
+        "\u{201C}\(query.trimmingCharacters(in: .whitespacesAndNewlines))\u{201D}"
+    }
+}
