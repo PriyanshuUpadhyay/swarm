@@ -264,7 +264,15 @@ fn add_agent(
     } else {
         None
     };
-    swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    // A chair registers again each time its CLI starts, from a pane that may be new. Any other
+    // clash is still an error, so a second agent cannot take an existing agent's name.
+    let rejoins = pane.is_some()
+        && swarm::store::agents(connection, session_id)?
+            .iter()
+            .any(|agent| agent.id == agent_id && agent.role == role);
+    if !rejoins {
+        swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    }
     if let Some(pane) = pane
         && !pane.is_empty()
     {

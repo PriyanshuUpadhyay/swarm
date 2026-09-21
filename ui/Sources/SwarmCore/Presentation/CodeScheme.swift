@@ -16,7 +16,10 @@ public struct CodeScheme: Codable, Hashable, Sendable, Identifiable {
         tokens[kind] ?? foreground
     }
 
-    public static let all: [Self] = [.swarm, .charcoal]
+    public static let all: [Self] = [
+        .conductor, .swarm, .charcoal, .catppuccin, .dracula, .nord, .tokyoNight, .gruvbox, .solarized,
+        .rosePine, .github, .one,
+    ]
     public static func find(_ key: String?, fallback: Self = .swarm) -> Self {
         all.first { $0.id == key } ?? fallback
     }

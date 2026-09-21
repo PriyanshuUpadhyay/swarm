@@ -69,6 +69,8 @@ struct UserTurnRowView: View {
 
     private var maxWidth: CGFloat { bubbleWidth?.cap ?? Self.uncappedFallback }
 
+    private var isNeutral: Bool { Palette.bubble != nil }
+
     /// The pill inside the sentence the pointer is currently on, reported by `LinkTextView` the
     /// moment it arrives. Nil for every bubble nobody is pointing at, which is what keeps the
     /// probe below and the timer beside it off every other row in the transcript.
@@ -102,6 +104,8 @@ struct UserTurnRowView: View {
     /// Local on purpose: `Metrics` is where radii live and this is a candidate to move there as
     /// `Metrics.cornerBubble` the moment anything else needs it. Nothing else does yet.
     static let corner: CGFloat = 12
+    /// Conductor's turn box, which is a card rather than a speech bubble.
+    static let neutralCorner: CGFloat = 8
 
     /// Air inside the fill. Wider than the plate it replaces, because a hairline lets text sit
     /// close to the edge and a fill does not: on a coloured ground the words need to look placed
@@ -112,33 +116,17 @@ struct UserTurnRowView: View {
         HStack(spacing: 0) {
             Spacer(minLength: Self.inset)
 
-            CappedWidth(width: maxWidth) {
-                bubble.padding(Self.padding)
+            if let fill = Palette.bubble {
+                // A theme that names a bubble fill gets Conductor's turn: a quiet box in the page's
+                // own ink, no tail. Nothing inside is inverted, so chips and selection keep their
+                // ordinary colours.
+                CappedWidth(width: maxWidth) {
+                    bubble.padding(Self.padding)
+                }
+                .background(fill, in: RoundedRectangle(cornerRadius: Self.neutralCorner, style: .continuous))
+            } else {
+                filledBubble
             }
-            .padding(.bottom, OutgoingBubbleShape.tailDrop)
-            .background(Palette.accentFill, in: OutgoingBubbleShape(cornerRadius: Self.corner))
-            // No stroke around the fill. A border on a filled shape is a control's outline,
-            // and the fill already separates the turn from the ground in both appearances.
-            //
-            // Everything inside is told it is sitting on the accent fill, which is the same
-            // signal a selected sidebar row sends. `Chip`, `DiffStatLabel`, `RepoIcon` and
-            // `AttachmentChip` all read it and swap to the variant that survives the inversion,
-            // so a chip inside a user turn needs no knowledge of this view.
-            .environment(\.isOnEmphasizedSelection, true)
-            // And that the ground under them is dark, which on a light page it now is.
-            //
-            // This is not a stylistic flourish, it is what makes the text selectable in any
-            // useful sense. Selecting text paints `selectedTextBackgroundColor` BEHIND the glyphs
-            // and leaves the foreground exactly as it was: on the light ramp that colour is a pale
-            // blue, so dragging over a white sentence on this fill wrote it in white on near white
-            // and the selection was unreadable while it was being made. Measured off a probe of
-            // this exact bubble: the highlight comes out #BAD6FB and white on it is 1.5 to 1.
-            //
-            // Naming the scheme resolves every appearance-dependent colour inside the bubble on
-            // the dark ramp. The claim is honest rather than a trick: this bubble IS a dark
-            // surface whatever the page around it is doing. AppKit cannot read it, which is why
-            // the text view below is handed `Palette.bubbleTextSelection` as well.
-            .environment(\.colorScheme, .dark)
         }
         .padding(.horizontal, TranscriptLayout.inset)
         .padding(.vertical, TranscriptLayout.inset)
@@ -161,6 +149,29 @@ struct UserTurnRowView: View {
             hoverTask?.cancel()
             withdraw()
         }
+    }
+
+    /// The filled accent bubble with a tail, for themes that do not name a bubble fill.
+    private var filledBubble: some View {
+        CappedWidth(width: maxWidth) {
+            bubble.padding(Self.padding)
+        }
+        .padding(.bottom, OutgoingBubbleShape.tailDrop)
+        .background(Palette.accentFill, in: OutgoingBubbleShape(cornerRadius: Self.corner))
+        // No stroke around the fill. A border on a filled shape is a control's outline,
+        // and the fill already separates the turn from the ground in both appearances.
+        //
+        // Everything inside is told it is sitting on the accent fill, which is the same
+        // signal a selected sidebar row sends. `Chip`, `DiffStatLabel`, `RepoIcon` and
+        // `AttachmentChip` all read it and swap to the variant that survives the inversion,
+        // so a chip inside a user turn needs no knowledge of this view.
+        .environment(\.isOnEmphasizedSelection, true)
+        // And that the ground under them is dark, which on a light page it now is. Selecting
+        // text paints `selectedTextBackgroundColor` behind the glyphs, and on the light ramp
+        // that is a pale blue that leaves white text at 1.5 to 1. Naming the scheme resolves
+        // every colour inside on the dark ramp; the text view is handed
+        // `Palette.bubbleTextSelection` for the same reason.
+        .environment(\.colorScheme, .dark)
     }
 
     /// The words and then the files, which is the order they were written in and the order the
@@ -189,19 +200,19 @@ struct UserTurnRowView: View {
                         font: font,
                         // White, the same ink a selected row uses on the same fill. Measured 5.2
                         // to 1 on Spatie Blue, which passes AA for body text in both appearances.
-                        color: .alternateSelectedControlTextColor,
+                        color: isNeutral ? Palette.textPrimaryNSColor : .alternateSelectedControlTextColor,
                         // The reader's line height, and handing it in is also what keeps the
                         // bubble's own cache honest: `SentTurnKey` is keyed on this number, so a
                         // step just moved is a miss rather than a bubble redrawn at the old one.
                         lineSpacing: TranscriptLayout.proseLeading(
                             Typo.body, scale: fontScale, face: chatFont, lineHeight: chatLineHeight
                         ),
-                        chipGround: .userBubble
+                        chipGround: isNeutral ? .composer : .userBubble
                     ),
-                    linkColor: NSColor(Palette.linkInverted),
+                    linkColor: isNeutral ? Palette.linkNSColor : NSColor(Palette.linkInverted),
                     // The measured value from the note above: on the dark ramp the selection is a
                     // muted slate that sits clearly on Spatie Blue and leaves white text alone.
-                    selectionColor: Palette.bubbleTextSelection,
+                    selectionColor: isNeutral ? .selectedTextBackgroundColor : Palette.bubbleTextSelection,
                     alignsBubbleInk: true,
                     actions: linkActions.opening(
                         file: open, hovering: { hovered = $0 },

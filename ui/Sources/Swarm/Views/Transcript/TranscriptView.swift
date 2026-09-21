@@ -26,12 +26,17 @@ struct TranscriptView: View {
     /// slab between them.
     private let drawsBackground: Bool
 
+    /// Rows this pane adds under the conversation, or nil where it adds none. The swarm session's
+    /// agents ride here. See `TranscriptTableEntry.appended`.
+    private let appended: (@MainActor () -> AnyView)?
+
     init(
         transcript: TranscriptModel,
         isRunningSetup: Bool = false,
         emptyState: TranscriptEmptyState? = nil,
         memory: TranscriptPaneMemory? = nil,
         drawsBackground: Bool = true,
+        appended: (@MainActor () -> AnyView)? = nil,
         onScrolledUpChange: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) {
         self.transcript = transcript
@@ -39,6 +44,7 @@ struct TranscriptView: View {
         self.emptyState = emptyState
         self.memory = memory
         self.drawsBackground = drawsBackground
+        self.appended = appended
         self.onScrolledUpChange = onScrolledUpChange
     }
 
@@ -50,6 +56,7 @@ struct TranscriptView: View {
         emptyState: TranscriptEmptyState? = nil,
         memory: TranscriptPaneMemory? = nil,
         drawsBackground: Bool = true,
+        appended: (@MainActor () -> AnyView)? = nil,
         onScrolledUpChange: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) {
         self.transcript = transcript
@@ -57,6 +64,7 @@ struct TranscriptView: View {
         self.emptyState = emptyState
         self.memory = memory
         self.drawsBackground = drawsBackground
+        self.appended = appended
         self.onScrolledUpChange = onScrolledUpChange
     }
 
@@ -68,6 +76,7 @@ struct TranscriptView: View {
                     isRunningSetup: isRunningSetup,
                     emptyState: emptyState,
                     memory: memory,
+                    appended: appended,
                     onScrolledUpChange: onScrolledUpChange
                 )
             } else {

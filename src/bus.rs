@@ -95,6 +95,10 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
                 model()?.into(),
                 "-c".into(),
                 format!("model_reasoning_effort=\"{}\"", effort()?),
+                // Codex asks "Update available! 1. Update now 2. Skip" before it reads anything,
+                // and an agent pane has nobody at it to answer.
+                "-c".into(),
+                "check_for_update_on_startup=false".into(),
             ];
             if let Some(sandbox) = &resolved.sandbox {
                 args.extend(["--sandbox".into(), sandbox.clone()]);
@@ -191,6 +195,8 @@ mod tests {
                 "model-1",
                 "-c",
                 "model_reasoning_effort=\"high\"",
+                "-c",
+                "check_for_update_on_startup=false",
                 "--sandbox",
                 "workspace-write",
                 "-c",

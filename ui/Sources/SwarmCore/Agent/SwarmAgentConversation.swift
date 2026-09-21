@@ -200,6 +200,25 @@ public enum SwarmChatSession {
         return SwarmSessionID(value)
     }
 
+    /// Every chat that belongs to a swarm session, open or closed.
+    ///
+    /// **Closed chats have to be in here.** The links are read to decide which chat a swarm
+    /// session types into, and `Store.sessions(workspaceID:)` lists open chats only. A chat closed
+    /// while its swarm session stayed open therefore vanished from the map, the session fell back
+    /// to the bus, and the owner saw "ring failed: can't find pane: %0".
+    public static func loadAll(from store: Store) async -> [SwarmSessionID: SessionID] {
+        let prefix = "session."
+        let suffix = ".swarmSession"
+        guard let rows = try? await store.settings(withPrefix: prefix) else { return [:] }
+        var links: [SwarmSessionID: SessionID] = [:]
+        for (key, value) in rows where key.hasSuffix(suffix) && !value.isEmpty {
+            let id = String(key.dropFirst(prefix.count).dropLast(suffix.count))
+            guard !id.isEmpty else { continue }
+            links[SwarmSessionID(value)] = SessionID(id)
+        }
+        return links
+    }
+
     public static func save(_ swarm: SwarmSessionID, sessionID: SessionID, in store: Store) async throws {
         try await store.setSetting(settingKey(sessionID: sessionID), swarm.rawValue)
     }

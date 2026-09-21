@@ -14,8 +14,20 @@ public struct ThemeOverrides: Codable, Equatable, Sendable {
     /// Ghostty became one setting for every theme, and `followsGhostty(migrating:from:)` moves it
     /// there; nothing writes it any more.
     public var terminalSource: TerminalSource?
+    /// Colours changed in Settings, keyed by `ThemeColourRole`. A string key so the archive stays
+    /// a plain JSON object.
+    public var colours: [String: PaletteInk.Pair]?
 
     public init() {}
+
+    /// The preset's surfaces with every changed colour laid over them.
+    public func surfaces(for theme: ColourTheme) -> ThemeSurfaces {
+        var surfaces = theme.surfaces
+        for (key, value) in colours ?? [:] {
+            ThemeColourRole(rawValue: key)?.set(value, in: &surfaces)
+        }
+        return surfaces
+    }
 
     public struct Archive: Codable, Equatable, Sendable {
         public var schemaVersion = 1

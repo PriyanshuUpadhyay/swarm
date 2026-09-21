@@ -26,6 +26,8 @@ struct NewTabMenu: View {
     let model: WorkspaceModel
     @State private var showsSwarmAgentSheet = false
 
+    @Environment(AppModel.self) private var app
+
     private var store: WorkspaceTabsStore { .shared }
 
     private var tabs: CenterTabStore { .shared }
@@ -132,11 +134,19 @@ struct NewTabMenu: View {
     /// a per-pane `+` whose meaning moving it could lose. Opening beside the focused pane is the
     /// View menu's Split Right and Split Down.
     private func newChat() {
-        NewPane.open(.chat, in: model) { store.select($0, in: model) }
+        NewPane.open(.chat, in: model) { show($0) }
     }
 
     private func newTerminal() {
-        NewPane.open(.terminal, in: model) { store.select($0, in: model) }
+        NewPane.open(.terminal, in: model) { show($0) }
+    }
+
+    /// Selects the new tab and the workspace it belongs to. The `+` is also offered while a swarm
+    /// session, subagent or crew member of the workspace is open, and there the centre column draws
+    /// that child rather than the tabs, so a tab selected alone was made and never seen.
+    private func show(_ content: PaneContent) {
+        store.select(content, in: model)
+        app.selection = .workspace(model.workspace.id)
     }
 
     /// The `+` opens a browser on the workspace's own dev server, where a split opens one on
@@ -146,7 +156,7 @@ struct NewTabMenu: View {
         let model = model
         Task {
             let address = await model.browserAddress()
-            NewPane.open(.browser, in: model, url: address) { store.select($0, in: model) }
+            NewPane.open(.browser, in: model, url: address) { show($0) }
         }
     }
 }

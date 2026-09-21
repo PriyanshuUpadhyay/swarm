@@ -413,7 +413,10 @@ extension AppModel {
         }
 
         if select {
-            selection = swarmSession.map(SidebarSelection.swarmSession)
+            // The workspace this session was just started in, so the window keeps its inspector.
+            // See `SidebarSelection.swarmSession`.
+            selection = swarmSession
+                .map { SidebarSelection.swarmSession($0, workspaceID: started.workspace.id) }
                 ?? .workspace(started.workspace.id)
         }
         WorkspaceStartMode.record(opensWith, workspaceID: started.workspace.id)

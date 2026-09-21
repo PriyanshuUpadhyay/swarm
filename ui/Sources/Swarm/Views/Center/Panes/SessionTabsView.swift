@@ -231,7 +231,6 @@ struct SessionTabsView: View {
             // is going. An ordinary terminal never does: nothing polls it, and a shell somebody ran
             // `ls` in is not a thing anybody is waiting on. See `WorkspaceTabsStore.busySignal`.
             isRunning: busy.showsInTab(content),
-            surface: Self.pane.surface,
             isRenaming: renamingID == tab.id,
             // What is on the tab, not what the tab is filed under. A browser showing "Spatie"
             // whose editor opened on "Browser" reads as the rename having gone to the wrong tab,

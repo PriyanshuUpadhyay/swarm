@@ -54,10 +54,27 @@ struct SidebarSelectionTests {
         #expect(SidebarSelection.home.swarmSessionID == nil)
     }
 
-    @Test func aSwarmSessionHasNoWorkspace() {
+    /// **This used to assert the opposite, and asserting it is what kept the bug.** A session
+    /// inside a workspace answering nil here is what turned the window's inspector off, hid the
+    /// toolbar's Inspector button and greyed the Workspace menu on a click that changed nothing
+    /// about the worktree. `.subagent` and `.crew` carry their parent for that exact reason; this
+    /// one was the case that did not.
+    @Test func aSwarmSessionCarriesTheWorkspaceItRunsIn() {
         let session = SwarmSessionID("10")
-        #expect(SidebarSelection.swarmSession(session).workspaceID == nil)
-        #expect(SidebarSelection.swarmSession(session).swarmSessionID == session)
+        let workspace = WorkspaceID("w1")
+        let inside = SidebarSelection.swarmSession(session, workspaceID: workspace)
+        #expect(inside.workspaceID == workspace)
+        #expect(inside.swarmSessionID == session)
+    }
+
+    /// And the honest half. Most sessions run from the home directory or a Worktrunk hub, which
+    /// are not Swarm worktrees, so there is genuinely no parent to point at and the window has no
+    /// inspector to draw. `SwarmSessionChangesView` is what those get instead.
+    @Test func aSwarmSessionOutsideAWorkspaceStillHasNone() {
+        let session = SwarmSessionID("10")
+        let outside = SidebarSelection.swarmSession(session, workspaceID: nil)
+        #expect(outside.workspaceID == nil)
+        #expect(outside.swarmSessionID == session)
     }
 
     /// The one that stops an archived workspace being reopened as a live one. Same id, two cases,

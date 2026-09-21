@@ -56,9 +56,11 @@ private struct AskConversationView: View {
     @State private var room = ComposerRoom()
 
     var body: some View {
-        TranscriptView(transcript: transcript, emptyState: Self.opening) {
-            isTranscriptScrolledUp = $0
-        }
+        TranscriptView(
+            transcript: transcript,
+            emptyState: Self.opening,
+            onScrolledUpChange: { isTranscriptScrolledUp = $0 }
+        )
         .environment(\.composerRoom, room)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {

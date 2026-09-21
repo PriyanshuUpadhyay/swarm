@@ -24,12 +24,10 @@ struct TranscriptFoldRowView: View {
                     .frame(width: TranscriptLayout.disclosureWidth)
 
                 HStack(spacing: TranscriptLayout.glyphGap) {
-                    TranscriptGlyph(symbol: "circle")
-                        .environment(\.transcriptFoldCount, hiddenCount)
-
-                    Text("actions")
+                    // Conductor's line: the count in words, no badge.
+                    Text(hiddenCount == 1 ? "1 action" : "\(hiddenCount) actions")
                         .font(Typo.label)
-                        .foregroundStyle(Palette.textTertiary)
+                        .foregroundStyle(isHovered ? Palette.textSecondary : Palette.textTertiary)
                         .lineLimit(1)
 
                     Spacer(minLength: 0)

@@ -39,13 +39,13 @@ struct CheckRunRow: View {
                     Text(duration)
                         .font(Typo.micro)
                         .monospacedDigit()
-                        .foregroundStyle(Palette.textTertiary)
+                        .foregroundStyle(tint(Palette.textTertiary))
                 }
                 if run.detailsURL != nil {
                     Image(systemName: "arrow.up.right")
                         .font(Typo.micro)
                         .imageScale(.small)
-                        .foregroundStyle(Palette.textTertiary)
+                        .foregroundStyle(tint(Palette.textTertiary))
                         .accessibilityHidden(true)
                 }
             }
@@ -145,6 +145,11 @@ struct CheckRunRow: View {
 
     /// A pass/fail colour is unreadable on the accent fill, so a selected row hands the meaning
     /// back to the glyph's shape and borrows the row's own foreground.
+    ///
+    /// The duration and the hand-off arrow go through here too, and for a while they did not: they
+    /// kept `Palette.textTertiary` on the accent fill, which a picture of this list caught as a
+    /// dark smudge where "1m 1s" should be. Tertiary ink is chosen to sit back from a white ground
+    /// and has nothing to sit back from on a blue one.
     private func tint(_ colour: Color) -> Color {
         isOnSelection ? Palette.selectedEmphasizedText : colour
     }

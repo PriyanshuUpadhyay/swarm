@@ -15,6 +15,7 @@ struct SwarmApp: App {
         if TranscriptSelectionProbe.isRequested { TranscriptSelectionProbe.runAndExit() }
         if MarkdownTableProbe.isRequested { MarkdownTableProbe.runAndExit() }
         if NumericTextProbe.isRequested { NumericTextProbe.runAndExit() }
+        if SmokeChat.isRequested { SmokeChat.runAndExit() }
         #endif
         if BrowserViewportDemo.isRequested { BrowserViewportDemo.schedule() }
         // First, before anything else in the process. Every `@AppStorage` binding in the app

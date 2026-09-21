@@ -6,6 +6,17 @@ extension TerminalScheme {
         id: "charcoal", title: "Charcoal", background: ColourTheme.charcoalGlass.surfaces.sunken
     )
 
+    public static let conductor = builtin(id: "conductor", title: "Conductor", background: ColourTheme.conductor.surfaces.sunken)
+    public static let catppuccin = builtin(id: "catppuccin", title: "Catppuccin", background: ColourTheme.catppuccin.surfaces.sunken)
+    public static let dracula = builtin(id: "dracula", title: "Dracula", background: ColourTheme.dracula.surfaces.sunken)
+    public static let nord = builtin(id: "nord", title: "Nord", background: ColourTheme.nord.surfaces.sunken)
+    public static let tokyoNight = builtin(id: "tokyoNight", title: "Tokyo Night", background: ColourTheme.tokyoNight.surfaces.sunken)
+    public static let gruvbox = builtin(id: "gruvbox", title: "Gruvbox", background: ColourTheme.gruvbox.surfaces.sunken)
+    public static let solarized = builtin(id: "solarized", title: "Solarized", background: ColourTheme.solarized.surfaces.sunken)
+    public static let rosePine = builtin(id: "rosePine", title: "Rosé Pine", background: ColourTheme.rosePine.surfaces.sunken)
+    public static let github = builtin(id: "github", title: "GitHub", background: ColourTheme.github.surfaces.sunken)
+    public static let one = builtin(id: "one", title: "One", background: ColourTheme.one.surfaces.sunken)
+
     private static func builtin(id: String, title: String, background: PaletteInk.Pair) -> Self {
         Self(id: id, title: title,
              light: palette(background: background, dark: false),

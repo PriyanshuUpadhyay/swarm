@@ -1,9 +1,9 @@
 import SwiftUI
 import SwarmCore
 
-/// The strip pinned to the bottom of the sidebar: Home, New and Ask Swarm (`SidebarDock`), the two
-/// controls that narrow or explain the list, and a line the pane borrows when it has something to
-/// say about itself.
+/// The strip pinned to the bottom of the sidebar: Ask Swarm (`SidebarDock`), the two controls that
+/// narrow or explain the list, Settings, and a line the pane borrows when it has something to say
+/// about itself.
 ///
 /// The filter lives down here rather than in a header, which is where Xcode and Finder put the
 /// controls that narrow a source list.
@@ -14,8 +14,6 @@ struct SidebarStatusBar: View {
     /// Raised to the sidebar so the projects submenu's New workspace posts for the create window
     /// through the same door every other entry point uses. See `SidebarView.presentCreate`.
     var onCreateWorkspace: (Repo) -> Void = { _ in }
-    /// New workspace with no project named, which the create window asks for.
-    var onNewWorkspace: () -> Void = {}
     var onStartProject: () -> Void = {}
     /// Whether the projects the owner has hidden are in the list. A preference rather than this
     /// window's state, which is why it is `@AppStorage` here and in `SidebarView` rather than a
@@ -33,13 +31,14 @@ struct SidebarStatusBar: View {
     @State private var isShowingLegend = false
     @State private var isFilterHovered = false
     @State private var isLegendHovered = false
+    @State private var isSettingsHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
             Hairline()
 
             HStack(spacing: Metrics.spacingSmall) {
-                SidebarDock(onNewWorkspace: onNewWorkspace, onStartProject: onStartProject)
+                SidebarDock()
 
                 noteLabel
 
@@ -94,11 +93,14 @@ struct SidebarStatusBar: View {
                     SidebarLegend()
                 }
 
-                // **No Settings cogwheel.** There was one here, and it was the one control in this
-                // strip that duplicated something every Mac user already knows: Command-comma, and
-                // the Swarm menu. The other two earn their place because neither is reachable any
-                // other way, and a third glyph beside them spent the strip's width saying what the
-                // menu bar says for free.
+                // Settings, bottom right, where Conductor keeps it. Command-comma still works.
+                SettingsLink {
+                    controlLabel("Settings", systemImage: "gearshape", isHovered: isSettingsHovered)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .onHoverChange { isSettingsHovered = $0 }
+                .help("Settings (\u{2318},)")
             }
             .padding(.horizontal, Metrics.spacingSmall)
             .frame(height: Metrics.barHeight)

@@ -103,6 +103,12 @@ public struct ProcessTable: Sendable, Equatable {
 
     public func interactiveAgentProcess(ofShell shell: Int32) -> Row? {
         guard shell > 0 else { return nil }
+        // A chair Swarm starts is exec'd in place of the pane's shell, so the agent IS the pane's
+        // process and has no shell above it. Looking only at children called it absent, and every
+        // such chat read "Stopped" eight seconds after it started.
+        if let own = rows.first(where: { $0.pid == shell }), Self.interactiveAgent(command: own.command) != nil {
+            return own
+        }
         let children = rows.filter { $0.parent == shell && $0.pid != shell }
         let leaders = children.filter { $0.pid == $0.group }
         guard let job = (leaders.isEmpty ? children : leaders).last else { return nil }

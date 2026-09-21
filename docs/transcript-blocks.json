@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "envelope": "claude-code-jsonl-line",
+  "kinds": [
+    "user",
+    "assistantText",
+    "thinking",
+    "toolUse",
+    "toolResult",
+    "permissionAsk",
+    "result",
+    "error",
+    "system",
+    "notice",
+    "crew"
+  ],
+  "claude": {
+    "deniedTypes": [
+      "agent-name",
+      "ai-title",
+      "artifact-autoreact-ledger",
+      "artifact-comment-monitor",
+      "atis-latch",
+      "attachment",
+      "bridge-session",
+      "continued-in",
+      "cost-state",
+      "custom-title",
+      "file-history-delta",
+      "file-history-snapshot",
+      "frame-link",
+      "history-suppression",
+      "last-prompt",
+      "mode",
+      "permission-mode",
+      "queue-operation"
+    ],
+    "scaffoldingPrefixes": [
+      "<local-command-caveat>",
+      "<local-command-stdout>",
+      "<command-name>",
+      "<command-message>",
+      "<command-args>",
+      "<system-reminder>",
+      "<task-notification>"
+    ]
+  },
+  "codex": {
+    "stateRecords": [
+      "event_msg",
+      "session_meta",
+      "token_usage_record",
+      "turn_context",
+      "world_state"
+    ],
+    "hiddenTextPrefixes": [
+      "# AGENTS.md instructions for ",
+      "<environment_context>",
+      "<permissions instructions>"
+    ]
+  }
+}

@@ -32,10 +32,6 @@ struct TabItemView: View {
     /// the icon and the label, which keep their own ink. The caller asks `BusySignalPlacement`, so a
     /// tab and the column's top edge never both sweep.
     var isRunning = false
-    /// The ground of the pane this tab opens and the ink that reads on it, worn while the tab is
-    /// the selected one. `TabPane.content.surface` for the centre column, `.sunken` for the bottom
-    /// panel, and the user's own Ghostty colours for a terminal running their theme.
-    var surface: TabSurface = TabPane.content.surface
     var isRenaming: Bool
     /// What the rename field opens with. Kept apart from `title` because a session that has not
     /// been named yet shows "Untitled", and putting that word into the editor hands the user a
@@ -89,6 +85,8 @@ struct TabItemView: View {
     private static let labelHeight: CGFloat = 20
     /// Native window tabs use a 24-point capsule inside their track.
     static let tabHeight: CGFloat = 24
+    /// The rule under the selected tab.
+    private static let underline: CGFloat = 2
     /// One highlight for the whole strip, so `matchedGeometryEffect` has something to match on.
     private static let selectionID = "tabItem.selection"
 
@@ -110,7 +108,7 @@ struct TabItemView: View {
     var body: some View {
         HStack(spacing: 6) {
             if let icon {
-                TabItemIconView(icon: icon, ink: isActive ? surface.ink : Palette.textPrimary)
+                TabItemIconView(icon: icon, ink: labelInk)
                     .frame(width: TabItemIconView.pageSize, height: TabItemIconView.pageSize)
             }
 
@@ -120,23 +118,25 @@ struct TabItemView: View {
                 // over that fill is a line of black on black.
                 TextField("Name", text: $renameText)
                     .textFieldStyle(.plain)
-                    .foregroundStyle(isActive ? surface.ink : Palette.textPrimary)
+                    .foregroundStyle(labelInk)
                     .focused($isRenameFocused)
                     .frame(minWidth: 0, idealWidth: Self.renameWidth, maxWidth: Self.renameWidth)
                     .onSubmit { onCommitRename(renameText) }
                     .onExitCommand(perform: onCancelRename)
             } else {
                 Text(title)
-                    .foregroundStyle(isActive ? surface.ink : Palette.textPrimary)
+                    .foregroundStyle(labelInk)
                     .lineLimit(1)
             }
         }
-        .font(Typo.caption)
+        .font(Typo.label)
         .opacity(labelOpacity)
         .frame(height: Self.labelHeight)
-        // Equal space on both sides centres the label independently of the leading close button.
-        .padding(.horizontal, Self.closeSize + Metrics.spacingWide)
-        .frame(minWidth: tabItemWidth ?? Self.minimumWidth, maxWidth: tabItemWidth ?? Self.maximumWidth)
+        // Room for the close cross, which draws over the leading edge under the pointer.
+        .padding(.leading, Self.closeSize + Metrics.spacingSmall)
+        .padding(.trailing, Metrics.spacingWide + Metrics.spacingSmall)
+        .frame(maxWidth: tabItemWidth ?? Self.maximumWidth)
+        .fixedSize(horizontal: tabItemWidth == nil, vertical: false)
         .frame(height: Self.tabHeight)
         // Decoration must not intercept the press that starts a tab drag. The closure also keeps
         // the fill inside the tab's bounds instead of extending into the unified toolbar inset.
@@ -149,6 +149,16 @@ struct TabItemView: View {
             closeButton.padding(.leading, Metrics.spacingSmall * 1.5)
         }
         .frame(height: Metrics.barHeight)
+        .overlay(alignment: .bottom) {
+            if isActive {
+                Rectangle()
+                    .fill(Palette.textPrimary)
+                    .frame(height: Self.underline)
+                    .padding(.horizontal, Metrics.spacingSmall)
+                    .matchedGeometryEffect(id: Self.selectionID, in: namespace)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(Rectangle())
         // A single click selects and a double click renames, which is one gesture with two
         // meanings rather than a button, so it cannot be expressed as one.
@@ -214,6 +224,13 @@ struct TabItemView: View {
         .transition(.opacity)
     }
 
+    /// The selected tab and the one under the pointer in full ink, the rest a step down.
+    private var labelInk: Color {
+        // Window ink rather than the pane's: the tab no longer sits on the pane's fill, so a
+        // terminal's own light ink would vanish on a light bar.
+        isActive || isHovered ? Palette.textPrimary : Palette.textSecondary
+    }
+
     private var labelOpacity: Double {
         appearsActive || contrast == .increased ? 1 : 0.55
     }
@@ -241,8 +258,6 @@ struct TabItemView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: BusySweep.fade), value: isRunning)
 
             if isActive {
-                TabGlassBackground(shape: Capsule(), fill: surface.fill)
-                    .matchedGeometryEffect(id: Self.selectionID, in: namespace)
                 if isRunning && reduceMotion {
                     Capsule().fill(Palette.busyTabStill)
                 }
@@ -284,7 +299,7 @@ struct TabItemView: View {
                 .background {
                     if isVisible && isCloseHovered {
                         Circle()
-                            .fill((isActive ? surface.ink : Palette.textPrimary)
+                            .fill(Palette.textPrimary
                                 .opacity(contrast == .increased ? 0.2 : 0.1))
                     }
                 }
@@ -304,8 +319,8 @@ struct TabItemView: View {
     private var closeInk: Color {
         guard isVisible else { return .clear }
         let ink = isCloseHovered
-            ? (isActive ? surface.ink : Palette.textPrimary)
-            : (isActive ? surface.inkMuted : Palette.textSecondary)
+            ? Palette.textPrimary
+            : Palette.textSecondary
         return ink.opacity(labelOpacity)
     }
 

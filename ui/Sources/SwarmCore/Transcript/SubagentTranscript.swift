@@ -104,13 +104,8 @@ public struct SubagentTranscript: Sendable, Equatable {
         parse(text, sessionID: sessionID, userText: .row, limit: limit)
     }
 
-    private enum UserTextReading: Equatable {
-        case brief
-        case row
-    }
-
     private static func parse(
-        _ text: String, sessionID: SessionID, userText: UserTextReading,
+        _ text: String, sessionID: SessionID, userText: TranscriptMapping.UserText,
         limit: Int? = rowLimit
     ) -> SubagentTranscript {
         var messages: [Message] = []
@@ -120,7 +115,7 @@ public struct SubagentTranscript: Sendable, Equatable {
         for source in text.split(whereSeparator: \.isNewline) {
             let raw = Data(source.utf8)
             guard let json = JSONValue.parse(raw) else { continue }
-            if userText == .row, isChairScaffolding(json) {
+            if userText == .row, TranscriptMapping.claudeScaffolding(json) {
                 messages.append(Message(
                     id: identifier(for: raw, avoiding: &used),
                     sessionID: sessionID,
@@ -131,20 +126,20 @@ public struct SubagentTranscript: Sendable, Equatable {
                 ))
                 continue
             }
-            for reading in read(json, raw: raw, userText: userText) {
+            for reading in TranscriptMapping.claude(json, raw: raw, userText: userText) {
                 switch reading {
                 case .brief(let brief):
                     // The last one wins. A file holds exactly one; a run of stored stream lines
                     // holds one per subagent and this is only ever handed one subagent's.
                     prompt = brief
-                case .row(let kind, let payload, let refID):
+                case .block(let block):
                     messages.append(Message(
-                        id: identifier(for: payload, avoiding: &used),
+                        id: identifier(for: block.payload, avoiding: &used),
                         sessionID: sessionID,
                         seq: messages.count,
-                        kind: kind,
-                        payload: payload,
-                        refID: refID
+                        kind: block.kind,
+                        payload: block.payload,
+                        refID: block.refID
                     ))
                 }
             }
@@ -158,65 +153,6 @@ public struct SubagentTranscript: Sendable, Equatable {
             messages: Array(messages.suffix(limit)), droppedRows: dropped, prompt: prompt
         )
     }
-
-    private static let chairSystemPrefixes = [
-        "<local-command-caveat>",
-        "<local-command-stdout>",
-        "<command-name>",
-        "<command-message>",
-        "<command-args>",
-        "<system-reminder>",
-        "<task-notification>",
-    ]
-
-    /// A user line the reader never typed: a slash command's echo and output, a reminder Claude
-    /// Code injected, or a subagent's finish notice.
-    ///
-    /// These used to be dropped, which is why `/compact` left nothing behind. They are 4% of user
-    /// lines across 446 captures, so drawing each as one collapsed row costs almost nothing and
-    /// stops the chat from losing a turn the reader can see happening.
-    private static func isChairScaffolding(_ json: JSONValue) -> Bool {
-        guard json["type"]?.stringValue == "user" else { return false }
-        if json["isMeta"]?.boolValue == true { return true }
-        guard let content = json["message"]?["content"] else { return false }
-        let text = content.stringValue ?? content.arrayValue?
-            .compactMap { $0["text"]?.stringValue }
-            .first
-        guard let text else { return false }
-        return chairSystemPrefixes.contains { text.hasPrefix($0) }
-    }
-
-    /// Record types that carry no account of the conversation, so they never become a row.
-    ///
-    /// Measured across 446 captures: these are 61% of all lines, led by `attachment` at 27% and
-    /// `last-prompt`, `atis-latch`, `mode` and `permission-mode` at about 4.5% each. Every one of
-    /// them is app state the pane already shows elsewhere or does not show at all. They are
-    /// dropped HERE rather than hidden in the view so that they never take a place under
-    /// `rowLimit`, which counts rows and not lines.
-    ///
-    /// Anything not on this list becomes a row, even a type Swarm has never seen. That is the
-    /// point: two new types appeared in one month of captures, `file-history-delta` and
-    /// `pr-link`, and a type nobody has written code for must still be visible.
-    static let deniedRecordTypes: Set<String> = [
-        "agent-name",
-        "ai-title",
-        "artifact-autoreact-ledger",
-        "artifact-comment-monitor",
-        "atis-latch",
-        "attachment",
-        "bridge-session",
-        "continued-in",
-        "cost-state",
-        "custom-title",
-        "file-history-delta",
-        "file-history-snapshot",
-        "frame-link",
-        "history-suppression",
-        "last-prompt",
-        "mode",
-        "permission-mode",
-        "queue-operation",
-    ]
 
     /// The same reading, taken off Swarm's own stored rows rather than off the CLI's file.
     ///
@@ -286,123 +222,6 @@ public struct SubagentTranscript: Sendable, Equatable {
         used.insert(id)
         return id
     }
-
-    // MARK: - Reading one line
-
-    /// What one content block turned out to be.
-    private enum Reading {
-        /// The brief, which is drawn above the conversation rather than inside it.
-        case brief(String)
-        case row(kind: MessageKind, payload: Data, refID: String?)
-    }
-
-    private static func read(
-        _ json: JSONValue, raw: Data, userText: UserTextReading
-    ) -> [Reading] {
-        guard let type = json["type"]?.stringValue else { return [] }
-        // Anything the reader does not know becomes one opaque row rather than nothing. A dropped
-        // line is a feature that vanished from the chat with no trace that it happened; an opaque
-        // row says the provider sent something and keeps its bytes for the reader to open.
-        guard type == "user" || type == "assistant" else {
-            return deniedRecordTypes.contains(type)
-                ? []
-                : [.row(kind: .system, payload: raw, refID: nil)]
-        }
-        guard let message = json["message"] else {
-            return [.row(kind: .system, payload: raw, refID: nil)]
-        }
-        let isUser = type == "user"
-
-        // The first user line of a file is the brief, and it arrives as a bare string rather than
-        // as blocks. An assistant message shaped the same way is the thing it said.
-        if let content = message["content"]?.stringValue {
-            let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !body.isEmpty else { return [] }
-            if isUser {
-                return userText == .brief
-                    ? [.brief(body)]
-                    : [.row(kind: .user, payload: raw, refID: nil)]
-            }
-            guard let payload = oneBlockLine(json, holding: .object([
-                "type": .string("text"), "text": .string(body),
-            ])) else { return [] }
-            return [.row(kind: .assistantText, payload: payload, refID: nil)]
-        }
-
-        let blocks = message["content"]?.arrayValue ?? []
-        return blocks.compactMap { block in
-            read(
-                block: block, in: json, raw: raw, isOnlyBlock: blocks.count == 1,
-                isUser: isUser, userText: userText
-            )
-        }
-    }
-
-    private static func read(
-        block: JSONValue, in json: JSONValue, raw: Data, isOnlyBlock: Bool,
-        isUser: Bool, userText: UserTextReading
-    ) -> Reading? {
-        // The bytes of the line itself wherever the line holds one block, which is every line in
-        // every capture measured. It is the payload every renderer downstream wants: the uuid,
-        // the model, the usage and `tool_result_meta` are all outside `content` and all of them
-        // are lost by rebuilding the line rather than keeping it.
-        func payload() -> Data? {
-            isOnlyBlock ? raw : oneBlockLine(json, holding: block)
-        }
-
-        switch block["type"]?.stringValue {
-        case "text":
-            let body = (block["text"]?.stringValue ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !body.isEmpty else { return nil }
-            // A text block on a USER line is the brief, not an answer. See the type's header:
-            // reading it as an answer is what drew the prompt under both headings.
-            if isUser {
-                guard userText == .row else { return .brief(body) }
-                guard let payload = payload() else { return nil }
-                return .row(kind: .user, payload: payload, refID: nil)
-            }
-            guard let payload = payload() else { return nil }
-            return .row(kind: .assistantText, payload: payload, refID: nil)
-
-        case "thinking":
-            let thought = (block["thinking"]?.stringValue ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !isUser, !thought.isEmpty, let payload = payload() else { return nil }
-            return .row(kind: .thinking, payload: payload, refID: nil)
-
-        case "tool_use":
-            guard !isUser, let payload = payload() else { return nil }
-            return .row(kind: .toolUse, payload: payload, refID: block["id"]?.stringValue)
-
-        case "tool_result":
-            guard let payload = payload() else { return nil }
-            return .row(kind: .toolResult, payload: payload, refID: block["tool_use_id"]?.stringValue)
-
-        // A block type nobody has written a case for. It keeps its bytes and draws collapsed,
-        // for the same reason the line above it does.
-        default:
-            guard let payload = payload() else { return nil }
-            return .row(kind: .system, payload: payload, refID: nil)
-        }
-    }
-
-    /// The same line with one block where its content was, for the message that carried several.
-    ///
-    /// One line means one row throughout Swarm, and `AgentEvent` reads the first block of a
-    /// message and no others, so a message with two blocks in it has to become two lines before
-    /// either can be drawn. Every key outside `content` is kept, which is what makes this safe to
-    /// do to a line Swarm does not own.
-    private static func oneBlockLine(_ json: JSONValue, holding block: JSONValue) -> Data? {
-        guard case .object(var top) = json, case .object(var message)? = json["message"] else {
-            return nil
-        }
-        message["content"] = .array([block])
-        top["message"] = .object(message)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        return try? encoder.encode(JSONValue.object(top))
-    }
 }
 
 /// Reads one provider-owned NDJSON transcript in full, then only bytes appended after each read.
@@ -414,6 +233,15 @@ public actor TranscriptLogReader {
     }
 
     public static let byteLimit = 64 * 1024 * 1024
+
+    /// How many messages a chat keeps in memory.
+    ///
+    /// **The read is cheap and the fold is not.** Only appended bytes are parsed, so a long chat
+    /// costs one parse per new line; but every caller rebuilds its whole row list from the
+    /// messages each time the file grows, which is four times a second while a turn runs. Without
+    /// a cap that is thousands of JSON payloads per second on a chat that has been going for a
+    /// day. The older messages are counted in `droppedRows` and the chat says so.
+    public static let messageLimit = SubagentTranscript.rowLimit
 
     private struct LineRecord: Sendable {
         var bytes: Int
@@ -550,6 +378,11 @@ public actor TranscriptLogReader {
 
     private func trim() {
         var trimmed = false
+        while messages.count - messageStart > Self.messageLimit {
+            messageStart += 1
+            droppedRows += 1
+            trimmed = true
+        }
         while retainedBytes + pending.count > limit, recordStart < records.count {
             let record = records[recordStart]
             recordStart += 1
@@ -573,11 +406,18 @@ public actor TranscriptLogReader {
 
 /// Reads of a chair's Claude Code transcript.
 public enum ChairTranscriptOutput: Sendable {
-    public static func reader(path: String?, sessionID: SessionID) -> TranscriptLogReader? {
+    /// A Codex chair writes a Codex rollout, which the Claude reader turns into one opaque row
+    /// per line (`session_meta`, `event_msg`, `response_item`), so the chair's provider decides.
+    public static func reader(
+        path: String?, sessionID: SessionID, provider: String? = nil, chairID: SwarmChairID? = nil
+    ) -> TranscriptLogReader? {
         guard let path, !path.isEmpty else { return nil }
-        return TranscriptLogReader(
-            url: URL(fileURLWithPath: path), format: .claude(sessionID: sessionID)
-        )
+        let format: TranscriptLogReader.Format = if provider == AgentKind.codex.rawValue, let chairID {
+            .codex(sessionID: sessionID, providerSessionID: chairID.rawValue)
+        } else {
+            .claude(sessionID: sessionID)
+        }
+        return TranscriptLogReader(url: URL(fileURLWithPath: path), format: format)
     }
 
     public static func read(

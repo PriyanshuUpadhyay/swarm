@@ -174,6 +174,8 @@ struct ThemePreferenceStateTests {
         let older = Data(#"{"schemaVersion":1,"themes":{"swarm":{"glass":"thin","chatTextSize":"small"}}}"#.utf8)
         defaults.set(older, forKey: "themeOverrides")
         defaults.set("large", forKey: ChatTextSize.defaultsKey)
+        // Swarm was the default then; Conductor is now, so the choice is written out.
+        defaults.set("swarm", forKey: ColourTheme.defaultsKey)
         let state = ColourThemePreference(defaults: defaults)
         #expect(state.glass == .thin)
         #expect(state.chatTextSize == .large)

@@ -6,10 +6,8 @@ struct ProseRowView: View {
     var isStreaming = false
 
     var body: some View {
+        // No rule above the message. Conductor lets the prose follow the working line directly.
         VStack(alignment: .leading, spacing: TranscriptLayout.block) {
-            Hairline()
-                .accessibilityHidden(true)
-
             MarkdownView(text, isStreaming: isStreaming)
                 .font(Typo.body)
                 .proseLeading()

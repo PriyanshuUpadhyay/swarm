@@ -101,17 +101,40 @@ final class TerminalPersistence {
         return result.ok
     }
 
-    func launch(_ plan: SwarmChairLaunchPlan) async throws {
+    func launch(_ plan: SwarmChairLaunchPlan, replacing: Bool = false) async throws {
         guard let command else {
             throw SwarmProfileError.unavailable("tmux is required to start a chat")
         }
-        let result = try await Shell.run(
+        var result = try await Shell.run(
             command.executable, command.launchDetached(plan), timeout: .seconds(10)
         )
+        if !result.ok, result.stderr.contains("duplicate session") {
+            // The session outlived a quit, or the Terminal tab opened a shell in it. A chair still
+            // running there is left alone: the view can ask before the first poll has said so.
+            if !replacing,
+               let shell = await panePIDSnapshot()?[plan.tmuxSession],
+               let table = await ProcessTable.current(),
+               table.interactiveAgentProcess(ofShell: shell) != nil {
+                knownSessions.insert(plan.tmuxSession)
+                return
+            }
+            // A reused session keeps the environment it was born with, and the respawned pane
+            // inherits it, so the update has to land before the respawn rather than after it.
+            // See `TmuxSessions.setEnvironment`.
+            if let update = command.setEnvironment(plan) {
+                _ = try? await Shell.run(command.executable, update, timeout: .seconds(5))
+            }
+            result = try await Shell.run(
+                command.executable, command.respawnAgent(plan), timeout: .seconds(10)
+            )
+        }
         guard result.ok else {
             let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             throw SwarmProfileError.failed(message.isEmpty ? "tmux could not start the chat" : message)
         }
+        _ = try? await Shell.run(
+            command.executable, command.resizeWindow(plan), timeout: .seconds(5)
+        )
         knownSessions.insert(plan.tmuxSession)
     }
 

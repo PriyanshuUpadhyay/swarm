@@ -17,19 +17,34 @@ import SwarmCore
 struct SwarmSessionGallery: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            group("The column as it is read. A mark, a name, a role, two lines of the last summary.") {
-                SwarmSessionAgentList(reader: Self.reader, opened: .constant(nil))
-                    .frame(width: 320)
-                    .background(Palette.windowBackground)
+            // Closed, which is how it is drawn every time the pane opens, and counting only the
+            // two agents of the three that have reported.
+            group("The agents, under the chair's conversation and in its scroll. Read only.") {
+                SwarmSessionAgentReport(reader: Self.reader)
+                    .frame(width: 560)
+                    .background(Palette.surface)
                     .border(Palette.border)
             }
 
-            group("One row open. The conversation and the box belong to the row, not to the column.") {
-                SwarmSessionAgentRow(
-                    digest: Self.digests[0], reader: Self.reader, isOpen: true, toggle: {}
-                )
-                .frame(width: 320)
+            // The rows themselves, which nothing else on this page photographs now that the block
+            // above starts closed.
+            group("One agent's summary, as the block draws it when it is opened.") {
+                VStack(alignment: .leading, spacing: Metrics.spacingWide) {
+                    ForEach(Self.digests.filter { $0.latestSummary != nil }) { digest in
+                        SwarmSessionAgentSummaryRow(digest: digest)
+                    }
+                }
+                .padding(TranscriptLayout.inset)
+                .frame(width: 560)
+                .background(Palette.surface)
                 .border(Palette.border)
+            }
+
+            group("The changed files in the session's own folder, in the column the agents left.") {
+                SwarmSessionChangeList(cwd: "/Users/x/work/swarm", files: Self.changed)
+                    .frame(width: 320)
+                    .background(Palette.windowBackground)
+                    .border(Palette.border)
             }
 
             group("A document whose file has gone, which is most of the paths an old session names.") {
@@ -101,6 +116,23 @@ struct SwarmSessionGallery: View {
             latestSummary: nil,
             conversation: []
         ),
+    ]
+
+    /// One file of each layer and each status letter, because the letter and its tint are what
+    /// this column is checked for.
+    private static let changed: [ChangedFile] = [
+        ChangedFile(path: "ui/Sources/Swarm/Views/Center/Panes/SwarmSessionView.swift",
+                    change: .modified, additions: 118, deletions: 83, layer: .staged),
+        ChangedFile(path: "ui/Sources/Swarm/State/SwarmSessionChangesModel.swift",
+                    change: .added, additions: 84, deletions: 0, layer: .staged),
+        ChangedFile(path: "ui/Sources/Swarm/Views/Transcript/TranscriptListView.swift",
+                    change: .modified, additions: 9, deletions: 1, layer: .unstaged),
+        ChangedFile(path: "ui/Sources/Swarm/Design/SwarmSessionAgentsView.swift",
+                    change: .deleted, additions: 0, deletions: 66, layer: .unstaged),
+        ChangedFile(path: "docs/bus-contract.md", change: .untracked, additions: 41,
+                    layer: .untracked),
+        ChangedFile(path: "ui/Resources/mark.png", change: .untracked, isBinary: true,
+                    layer: .untracked),
     ]
 
     private static func message(

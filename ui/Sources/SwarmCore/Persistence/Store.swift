@@ -3609,6 +3609,20 @@ public actor Store {
         try db.query("SELECT value FROM settings WHERE key = ?", [.text(key)]).first?.string("value")
     }
 
+    /// Every setting whose key begins with `prefix`, for a caller that holds the values rather
+    /// than the ids, such as the chat-to-swarm-session links.
+    public func settings(withPrefix prefix: String) throws -> [String: String] {
+        let rows = try db.query(
+            "SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\'",
+            [.text(prefix.replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_") + "%")]
+        )
+        return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+            guard let key = row.string("key"), let value = row.string("value") else { return nil }
+            return (key, value)
+        })
+    }
+
     public func saveComposerControls(_ controls: ComposerControls, sessionID: SessionID) throws {
         try db.transaction {
             for (key, value) in controls.settings(sessionID: sessionID) {

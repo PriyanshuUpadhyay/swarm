@@ -3,7 +3,7 @@ import SwarmCore
 
 extension ToolTint {
     /// The one place a tool row's role becomes a colour.
-    var colour: Color {
+    @MainActor var colour: Color {
         switch self {
         case .neutral: Palette.textSecondary
         case .accent: Palette.accent

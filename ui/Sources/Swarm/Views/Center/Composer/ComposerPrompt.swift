@@ -285,6 +285,8 @@ struct ComposerPrompt<Footer: View>: View {
             handle: editor,
             placeholder: placeholder
         )
+        // Conductor's empty box is a few lines tall, so it reads as a place to write.
+        .frame(minHeight: isFloating ? ComposerLayout.minimumTextHeight : nil, alignment: .top)
     }
 
     /// Files that were attached before a file was a word in the draft.

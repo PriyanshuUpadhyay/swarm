@@ -37,7 +37,7 @@ public enum SourceReference {
     /// took those would underline half the transcript. An absolute path carries its own evidence:
     /// `/private/tmp/councils/depth-19d43a07/claude.md` is never a turn of phrase, so it is a link
     /// with no suffix at all. That is what makes a bus summary naming a report openable, and it is
-    /// why a version number like `2.1.275` is still left alone — it does not start at `/` or `~/`.
+    /// why a version number like `2.1.275` is still left alone, because it does not start at `/` or `~/`.
     public static func links(in text: String) -> [(NSRange, URL)] {
         let pattern = #"(?<![\w@:/])(?:[\w./-]+\.[\w]+(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)|~?/[\w./-]*[\w-]\.[\w]+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }

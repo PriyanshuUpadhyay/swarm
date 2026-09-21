@@ -335,7 +335,9 @@ final class TerminalSessionStore {
         return true
     }
 
-    func submitToAgent(_ text: String, paneID: String) async -> Bool {
+    /// `workspaceID` names the pane's tmux session when its view has not been drawn this launch,
+    /// which is the case for a chair read from its session pane rather than its terminal tab.
+    func submitToAgent(_ text: String, paneID: String, workspaceID: WorkspaceID? = nil) async -> Bool {
         let writes = TerminalChatInput.submission(text)
         for (index, write) in writes.enumerated() {
             if index > 0 {
@@ -345,26 +347,31 @@ final class TerminalSessionStore {
                     return false
                 }
             }
-            guard await sendToAgent(write, paneID: paneID) else { return false }
+            guard await sendToAgent(write, paneID: paneID, workspaceID: workspaceID) else { return false }
         }
         return true
     }
 
-    func interruptAgent(paneID: String) async -> Bool {
-        await sendToAgent(.key(.escape), paneID: paneID)
+    func interruptAgent(paneID: String, workspaceID: WorkspaceID? = nil) async -> Bool {
+        await sendToAgent(.key(.escape), paneID: paneID, workspaceID: workspaceID)
     }
 
-    private func sendToAgent(_ write: TerminalChatInput.Write, paneID: String) async -> Bool {
-        guard let view = terminals[paneID], view.process?.running == true, !view.hasExited else {
-            return false
-        }
-        if let session = paneSession[paneID], let persistence {
+    private func sendToAgent(
+        _ write: TerminalChatInput.Write, paneID: String, workspaceID: WorkspaceID? = nil
+    ) async -> Bool {
+        // A tmux session needs no view: tmux answers for the pane whether or not it is on screen.
+        let session = paneSession[paneID]
+            ?? workspaceID.map { TmuxSessions.sessionName(workspaceID: $0, paneID: paneID) }
+        if let session, let persistence {
             switch write {
             case .text(let text):
                 return await persistence.write(text, toAgentPaneOf: session)
             case .key(let key):
                 return await persistence.send(key, toAgentPaneOf: session)
             }
+        }
+        guard let view = terminals[paneID], view.process?.running == true, !view.hasExited else {
+            return false
         }
         switch write {
         case .text(let text): view.send(txt: text)
@@ -555,8 +562,9 @@ final class TerminalSessionStore {
         }
     }
 
-    /// Starts a chat in its tmux session without creating a terminal view.
-    func launch(_ plan: SwarmChairLaunchPlan) async throws {
+    /// Starts a chat in its tmux session without creating a terminal view. `replacing` ends a CLI
+    /// that is still in the pane, which is what a model change asks for.
+    func launch(_ plan: SwarmChairLaunchPlan, replacing: Bool = false) async throws {
         ensurePersistence()
         guard let persistence else {
             throw SwarmProfileError.unavailable("tmux is required to start a chat")
@@ -573,7 +581,7 @@ final class TerminalSessionStore {
                 try trusted.write(to: file, atomically: true, encoding: .utf8)
             }
         }
-        try await persistence.launch(plan)
+        try await persistence.launch(plan, replacing: replacing)
         paneOwner[plan.paneID.rawValue] = plan.workspaceID
         paneSession[plan.paneID.rawValue] = plan.tmuxSession
         interactiveLaunchDeadlines[plan.paneID.rawValue] = Date().addingTimeInterval(8)

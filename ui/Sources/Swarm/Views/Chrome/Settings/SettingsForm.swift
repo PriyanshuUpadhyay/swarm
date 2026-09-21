@@ -21,6 +21,9 @@ import SwiftUI
 extension View {
     func settingsForm() -> some View {
         formStyle(.grouped)
+            // The window's own ground behind the form, so a form narrower than the window does not
+            // sit on a second, system grey band.
+            .scrollContentBackground(.hidden)
             .hidesScrollEdgeRule()
             .modifier(SettingsLabelColumn())
             .disclosureGroupStyle(.wholeRow)

@@ -40,6 +40,9 @@ struct PullRequestCreator: View {
     /// It settles both halves of the strip: the line under the branch name, and whether there is a
     /// button at all.
     var hasChanges: Bool
+    /// Whether git could not compare the branch at all. "Nothing has changed" is then a claim
+    /// nobody checked, and the changes list under it says the opposite.
+    var changesFailed = false
     /// Set for the branch this workspace was carried on to when its pull request merged, and only
     /// while nothing has been committed to it. It is the difference between an empty branch that
     /// has just been cut from a landed pull request and an empty branch nobody has done anything
@@ -157,6 +160,7 @@ struct PullRequestCreator: View {
         // `PullRequestSummary.detailLine` gives: a disabled button that explains itself only on
         // hover is a button most people never get an explanation from.
         if let note = branchActions.note { return note }
+        if changesFailed { return "Could not compare this branch with \(baseBranch)." }
         guard hasChanges else { return ContinuedBranch.line(on: branch, continued: continued) }
         return "No pull request yet. Target \(baseBranch)."
     }

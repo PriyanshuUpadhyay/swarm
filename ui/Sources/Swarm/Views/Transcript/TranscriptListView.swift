@@ -39,18 +39,23 @@ struct TranscriptListView: View {
     /// a transcript nobody comes back to, which is the archive sheet's. See `TranscriptResume`.
     let memory: TranscriptPaneMemory?
     let onScrolledUpChange: (@MainActor @Sendable (Bool) -> Void)?
+    /// Rows this pane adds under the conversation, or nil where it adds none. See
+    /// `TranscriptTableEntry.appended`.
+    let appended: (@MainActor () -> AnyView)?
 
     init(
         transcript: TranscriptModel,
         isRunningSetup: Bool = false,
         emptyState: TranscriptEmptyState? = nil,
         memory: TranscriptPaneMemory? = nil,
+        appended: (@MainActor () -> AnyView)? = nil,
         onScrolledUpChange: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) {
         self.transcript = transcript
         self.isRunningSetup = isRunningSetup
         self.emptyState = emptyState
         self.memory = memory
+        self.appended = appended
         self.onScrolledUpChange = onScrolledUpChange
         // Seeded here rather than restored from a `task`, because both of these decide what the
         // FIRST pass of this body draws and a task runs after it. `remembered` reads a dictionary
@@ -878,6 +883,10 @@ struct TranscriptListView: View {
                     )
                 }
             ))
+        }
+        // After the queue and before the breathing room, which is where a reader looks last.
+        if let appended {
+            out.append(.appended(content: appended))
         }
         out.append(.bottomSpacing(clearance: composerRoom?.clearance ?? 0))
         // One increment and one add for the whole pass. See `TranscriptHoldCensus.entryPasses`:

@@ -347,6 +347,11 @@ struct TmuxCommandTests {
 
         #expect(arguments.contains("swarmui-workspace-pane"))
         #expect(arguments.contains("SWARM_SESSION_ID=42"))
+        // Room for a chair to split its window for every worker it spawns. An 80 by 24 window
+        // answered "no space for a new pane" and left a whole council with no seats.
+        #expect(arguments.contains("-x"))
+        #expect(arguments.contains(String(TmuxCommand.detachedColumns)))
+        #expect(arguments.contains(String(TmuxCommand.detachedRows)))
         #expect(arguments.suffix(3) == [
             "/bin/sh", "-c",
             "swarm agent add orchestrator orchestrator && exec '/usr/bin/env' 'codex' '--' 'Fix the launch'",

@@ -148,6 +148,22 @@ struct SwarmAgentConversationTests {
         #expect(!SwarmPollSchedule.shouldSweep(last: nil, now: now, hasPane: false))
     }
 
+    /// The link a swarm session types through. It must survive the chat being closed, because the
+    /// session stays open in the sidebar and a message typed into it has to reach the same pane.
+    /// The owner saw "ring failed: can't find pane: %0" when a closed chat fell out of this map.
+    @Test("every chat that belongs to a swarm session is found, closed ones too")
+    func linksIncludeClosedChats() async throws {
+        let store = try Store(path: ":memory:")
+        let open = SessionID("open-chat")
+        let closed = SessionID("closed-chat")
+        try await SwarmChatSession.save(SwarmSessionID("7"), sessionID: open, in: store)
+        try await SwarmChatSession.save(SwarmSessionID("9"), sessionID: closed, in: store)
+        try await store.setSetting("session.\(closed.rawValue).other", "not a link")
+
+        let links = await SwarmChatSession.loadAll(from: store)
+        #expect(links == [SwarmSessionID("7"): open, SwarmSessionID("9"): closed])
+    }
+
     private func message(
         _ seq: Int, from sender: SwarmAgentID, to recipient: SwarmAgentID,
         kind: String, body: String?

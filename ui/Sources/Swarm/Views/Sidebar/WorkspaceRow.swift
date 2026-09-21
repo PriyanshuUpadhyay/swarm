@@ -62,6 +62,7 @@ struct WorkspaceRow: View {
     var onConfirmArchive: (ArchiveRequest) -> Void = { _ in }
 
     @Environment(AppModel.self) private var app
+    @AppStorage(SidebarRowDetail.storageKey) private var rowDetail = SidebarRowDetail.time
 
     /// How many of this turn's subagents failed, whichever of them still have rows of their own.
     private var subagentFailures: Int { app.subagentFailures(of: workspace.id) }
@@ -200,7 +201,7 @@ struct WorkspaceRow: View {
                     // row of a dozen made the diff the loudest thing in a pane whose job is to say
                     // which agent wants something, and it is the number people read last. The same
                     // figures in full colour are in the hover card, on Home and in the inspector.
-                    if workspace.hasDiff {
+                    if rowDetail.showsChanges, workspace.hasDiff {
                         DiffStatLabel(
                             additions: workspace.additions,
                             deletions: workspace.deletions,
@@ -220,6 +221,19 @@ struct WorkspaceRow: View {
                             .frame(width: SidebarMetrics.rowButton)
                             .opacity(isHovered ? 0 : 1)
                             .accessibilityHidden(true)
+                    }
+
+                    // Last, where Conductor keeps it, so the ages line up down the column.
+                    if rowDetail.showsTime {
+                        // Redrawn once a minute, which is the finest step the age has.
+                        TimelineView(.everyMinute) { context in
+                            Text(HomeAge.short(for: workspace.lastActivityAt, now: context.date))
+                                .font(Typo.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(isEmphasized ? Palette.textInverted : Palette.textTertiary)
+                        }
+                        .opacity(isHovered ? 0 : 1)
+                        .accessibilityHidden(true)
                     }
                 }
             }

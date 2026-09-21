@@ -15,7 +15,10 @@ public struct ColourTheme: Codable, Hashable, Sendable, Identifiable, CaseIterab
     public let surfaces: ThemeSurfaces
 
     public static let defaultsKey = "colourTheme"
-    public static let allCases: [ColourTheme] = [.swarm, .charcoalGlass]
+    public static let allCases: [ColourTheme] = [
+        .conductor, .swarm, .charcoalGlass, .catppuccin, .dracula, .nord, .tokyoNight, .gruvbox, .solarized,
+        .rosePine, .github, .one,
+    ]
 
     public init(
         id: String, title: String, glass: ThemeGlass, surfaces: ThemeSurfaces,
@@ -41,6 +44,6 @@ public struct ColourTheme: Codable, Hashable, Sendable, Identifiable, CaseIterab
     }
 
     public init(storedValue: String?) {
-        self = Self.allCases.first { $0.id == storedValue } ?? .swarm
+        self = Self.allCases.first { $0.id == storedValue } ?? .conductor
     }
 }

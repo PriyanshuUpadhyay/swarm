@@ -230,6 +230,12 @@ public enum SwarmChairLaunch {
         prompt: String,
         home: String,
         workspaceEnvironment: [String: String],
+        /// The signed-in home of each provider a seat may use, such as `CLAUDE_CONFIG_DIR`.
+        ///
+        /// Every provider, not only the chair's own. The chair splits its window for each seat it
+        /// spawns, a split inherits this session's environment, and a Claude seat under a Codex
+        /// chair has nothing else to tell it which profile is signed in.
+        providerEnvironment: [String: String] = [:],
         resuming: String? = nil,
         statusURL: URL? = nil
     ) -> SwarmChairLaunchPlan? {
@@ -254,7 +260,9 @@ public enum SwarmChairLaunch {
             directory: directory,
             executable: "/usr/bin/env",
             arguments: arguments,
-            environment: workspaceEnvironment.merging(chairEnvironment) { _, chair in chair },
+            environment: workspaceEnvironment
+                .merging(providerEnvironment) { _, provider in provider }
+                .merging(chairEnvironment) { _, chair in chair },
             codexTrustDirectory: session.agentKind == .codex ? directory : nil
         )
     }

@@ -45,6 +45,29 @@ struct ComposerSendButton: View {
     private var isNamed: Bool { intent == .create }
 
     var body: some View {
+        if isNamed { namedButton } else { arrowButton }
+    }
+
+    /// Conductor's send control: a small square in the page's own ink with the arrow knocked out
+    /// of it, rather than an accent circle.
+    private var arrowButton: some View {
+        Button(action: onSend) {
+            Label(intent.title, systemImage: "arrow.up")
+                .labelStyle(.iconOnly)
+                .font(Typo.labelEmphasis)
+                .foregroundStyle(Palette.surface)
+                .frame(width: Self.glyph, height: Self.glyph)
+                .background(Palette.textPrimary, in: RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous))
+                .opacity(canSend ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: Metrics.rowHeight)
+        .contentShape(Rectangle())
+        .disabled(!canSend)
+        .help(queues ? "Queue this message. It goes when the queue moves (Return)" : intent.help)
+    }
+
+    private var namedButton: some View {
         Button(action: onSend) {
             if isNamed {
                 HStack(spacing: Metrics.spacingSmall) {

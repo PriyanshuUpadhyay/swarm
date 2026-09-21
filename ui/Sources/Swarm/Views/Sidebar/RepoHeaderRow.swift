@@ -168,10 +168,6 @@ struct RepoHeaderRow: View {
     ///
     /// The weight is invisible to VoiceOver, so the same fact is said in words as the heading's
     /// value. The dot on the row does the same through `WorkspaceRow`'s status description.
-    /// `Typo.title` with one more step of weight on it, and nothing else changed. Not a rung of
-    /// the scale, because it is not a size: it is the same rung saying one more thing.
-    private static let unreadTitle = ScaledFont(.headline, weight: .heavy)
-
     /// The project's name with what is under it, for VoiceOver only.
     ///
     /// A hidden project says so here, because the only other thing that says it is an opacity and
@@ -198,9 +194,11 @@ struct RepoHeaderRow: View {
         // `.headline`, which carries its own weight inside the `Font` it resolves to, and a
         // `fontWeight` outside that resolves to nothing at all: captured both ways, the two names
         // were identical to the pixel.
+        // Conductor sets its section headings small and quiet, over rows that are the work. The
+        // name keeps its tile and its menu; unread work below lifts it back to full ink.
         let label = Text(repo.name)
-            .font(hasUnreadWork ? Self.unreadTitle : Typo.title)
-            .foregroundStyle(Palette.textPrimary)
+            .font(Typo.labelEmphasis)
+            .foregroundStyle(hasUnreadWork ? Palette.textPrimary : Palette.textSecondary)
             .lineLimit(1)
 
         // The heading says what the outline no longer does.

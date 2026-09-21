@@ -207,7 +207,7 @@ struct CrewMessageRowView: View {
 /// Swarm's own voice gets no rule at all, and that is the case carrying the meaning: a fact is not
 /// a message, and a rule down the left of one would say an agent spoke when none did.
 enum CrewInk {
-    static func rule(for sender: CrewMessage.Sender) -> Color? {
+    @MainActor static func rule(for sender: CrewMessage.Sender) -> Color? {
         switch sender {
         case .orchestrator, .subagent: Palette.accent
         case .otherWorkspace: Palette.workspaceMessage

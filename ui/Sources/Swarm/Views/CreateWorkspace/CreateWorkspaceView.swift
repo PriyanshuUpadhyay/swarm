@@ -96,7 +96,18 @@ struct CreateWorkspaceView: View {
     /// pick up the previous draft's screenshots.
     @State private var draftID = PromptAttachments.newShortID()
 
-    @State private var selectedMode: WorkspaceStartMode = .chat
+    /// This window starts a chat and nothing else.
+    ///
+    /// **The segmented control that offered Terminal and Browser is gone, and the two starts are
+    /// not.** A terminal workspace and a browser workspace are the same worktree with a different
+    /// tab in front, which `WorkspaceStartMode` argues at its own head, and that tab is one item
+    /// of the `+` menu away once the workspace is open. What the control cost was a choice put in
+    /// front of the one thing this window is opened for. So the choice moves to after the worktree
+    /// exists, where it is cheap, and the window opens on the box.
+    ///
+    /// A constant rather than state, because nothing writes it any more. `mode` still turns it
+    /// into the CLI variant for whichever agent is chosen, so the two are not the same value.
+    private let selectedMode: WorkspaceStartMode = .chat
     /// What the name field holds in the two modes that run no agent. Separate from `prompt`
     /// rather than sharing it, which is what lets a draft survive a person changing their mind
     /// twice: the box keeps its sentence while the field is on screen and the field keeps its name
@@ -479,8 +490,6 @@ struct CreateWorkspaceView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: Metrics.gutter) {
-            modePicker
-
             if isEnteringReference {
                 referenceField
             }
@@ -536,18 +545,6 @@ struct CreateWorkspaceView: View {
         .padding(Metrics.gutter)
     }
 
-    private var modePicker: some View {
-        Picker("Start with", selection: modeBinding) {
-            Text("Chat").tag(WorkspaceStartMode.chat)
-            Text("Terminal").tag(WorkspaceStartMode.terminal)
-            Text("Browser").tag(WorkspaceStartMode.browser)
-        }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        .tint(Palette.controlAccent)
-        .help("Chat uses your default agent configuration")
-    }
-
     @ViewBuilder
     private var launchPickers: some View {
         if !swarmProfilesUnavailable, !launchRoles.isEmpty {
@@ -590,31 +587,6 @@ struct CreateWorkspaceView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    // Preserve the draft when switching between agent and non-agent starts.
-    private var modeBinding: Binding<WorkspaceStartMode> {
-        Binding(
-            get: { selectedMode },
-            set: { chosen in
-                guard chosen != selectedMode else { return }
-                switch chosen {
-                case .terminal, .browser:
-                    typedName = WorkspaceStartPlan.carriedName(
-                        prompt: spokenPrompt, currentName: typedName
-                    )
-                case .chat, .claudeCLI, .codexCLI:
-                    prompt = WorkspaceStartPlan.carriedPrompt(
-                        name: typedName, currentPrompt: prompt
-                    )
-                    caret = (prompt as NSString).length
-                }
-                // Written before the focus is moved, because `focusTheBox` reads the mode back
-                // out of it and would otherwise put the keyboard in the box that is leaving.
-                selectedMode = chosen
-                focusTheBox()
-            }
-        )
     }
 
     /// Chat mode, which is what this was before a second button was put in its footer.
@@ -876,6 +848,13 @@ struct CreateWorkspaceView: View {
                 // Explicit so every primary action reads from the shared semantic token.
                 .tint(Palette.controlAccent)
         }
+        // **Without this the whole empty state sat in the left third of the window.** The body is a
+        // `VStack(alignment: .leading)` 760 points wide, and `ContentUnavailableView` asks for only
+        // the width its longest line needs, so a leading stack put a centred placeholder against
+        // the left edge with 350 points of nothing beside it. It has to be told to take the column
+        // before it can centre itself in it. `InspectorView` and `SwarmSessionView` carry the same
+        // line for the same reason, one axis over.
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Derived

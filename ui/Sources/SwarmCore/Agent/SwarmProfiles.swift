@@ -81,6 +81,18 @@ public struct SwarmAccountList: Sendable, Hashable, Codable {
         self.accounts = accounts
         self.auto = auto
     }
+
+    /// The environment of the account this provider would pick by itself, or nothing.
+    ///
+    /// **A seat inherits the app's environment, and the app has none.** Swarm is started with a
+    /// clean environment on purpose, so it carries no `CLAUDE_CONFIG_DIR`, and a CLI spawned by a
+    /// chair opened the provider's default home rather than the signed-in profile. Both seats of
+    /// one council run stopped at "Not logged in · Please run /login" for that reason alone.
+    public var autoEnvironment: [String: String] {
+        let signedIn = accounts.filter(\.signedIn)
+        let chosen = signedIn.first { $0.name == auto } ?? signedIn.first
+        return chosen?.env ?? [:]
+    }
 }
 
 /// One usage window for one account, such as Claude's seven day window. A row with a nil `window`

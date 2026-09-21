@@ -328,20 +328,75 @@ public struct TmuxCommand: Sendable, Equatable {
         return arguments(tail)
     }
 
+    /// The size a chat's window is born with, when no terminal view has attached to it yet.
+    ///
+    /// **A detached tmux session is 80 by 24, and a chair cannot split that.** A swarm chair
+    /// splits its own window for every worker it spawns, and the sixth spawn of one council run
+    /// answered `spawn failed: size or position no space for a new pane`. Every seat of that run
+    /// was recorded with no pane, so the chair waited for workers that were never started. A
+    /// client that attaches later resizes the window to itself, so this is the size only while
+    /// nobody is watching, which is exactly when the splits happen.
+    public static let detachedColumns = 400
+    public static let detachedRows = 120
+
     /// Starts a pane without attaching a terminal view. A later `attachOrCreate` call finds the
     /// same named session and attaches to it instead of starting the command again.
+    /// No `-A`. With it, a session that already exists (a stopped chat's shell, still held by its
+    /// tab) turned `new-session` into `attach-session`, which needs a terminal the app does not
+    /// have: "open terminal failed: not a terminal". That case is `respawnAgent` instead.
     public func launchDetached(_ plan: SwarmChairLaunchPlan) -> [String] {
-        var tail = ["set-environment", "-gr", "NO_COLOR", ";", "new-session", "-A", "-d",
+        var tail = ["set-environment", "-gr", "NO_COLOR", ";", "new-session", "-d",
+                    "-x", String(Self.detachedColumns), "-y", String(Self.detachedRows),
                     "-s", plan.tmuxSession, "-c", plan.directory]
-        for key in plan.environment.keys.sorted() {
-            tail += ["-e", "\(key)=\(plan.environment[key]!)"]
-        }
-        let command = SwarmChairLaunch.registrationCommand + " && exec "
-            + TerminalLaunchScript.command(
-                executable: plan.executable, arguments: plan.arguments
-            )
-        tail += ["/bin/sh", "-c", command]
+        tail += environmentFlags(plan) + ["/bin/sh", "-c", chairCommand(plan)]
         return arguments(tail)
+    }
+
+    /// Writes the plan's environment onto a tmux session that already exists.
+    ///
+    /// **`new-session -e` is read once, at creation.** A chat's tmux session outlives every restart
+    /// of its CLI, so a session born with `SWARM_SESSION_ID=33` still said 33 while the chair had
+    /// moved on to 37, and every seat the chair spawned registered against the dead session. A
+    /// split inherits the session environment, so this is also how a seat learns which profile is
+    /// signed in.
+    public func setEnvironment(_ plan: SwarmChairLaunchPlan) -> [String]? {
+        guard !plan.environment.isEmpty else { return nil }
+        var tail: [String] = []
+        for key in plan.environment.keys.sorted() {
+            if !tail.isEmpty { tail.append(";") }
+            tail += ["set-environment", "-t", plan.tmuxSession, key, plan.environment[key]!]
+        }
+        return arguments(tail)
+    }
+
+    /// Grows a window that was born small, for a chat that already exists.
+    ///
+    /// **Every chat made before the size above is still 80 by 24**, and a chair cannot split that.
+    /// `window-size latest` is set again afterwards, because `resize-window` puts the window into
+    /// manual sizing and a terminal view attaching later must still govern what it draws.
+    public func resizeWindow(_ plan: SwarmChairLaunchPlan) -> [String] {
+        arguments([
+            "resize-window", "-t", plan.tmuxSession,
+            "-x", String(Self.detachedColumns), "-y", String(Self.detachedRows),
+            ";",
+            "set-option", "-w", "-t", plan.tmuxSession, "window-size", "latest",
+        ])
+    }
+
+    /// Starts the chair again in the session it already has, replacing whatever the pane runs.
+    public func respawnAgent(_ plan: SwarmChairLaunchPlan) -> [String] {
+        var tail = ["respawn-pane", "-k", "-t", agentPane(of: plan.tmuxSession), "-c", plan.directory]
+        tail += environmentFlags(plan) + ["/bin/sh", "-c", chairCommand(plan)]
+        return arguments(tail)
+    }
+
+    private func environmentFlags(_ plan: SwarmChairLaunchPlan) -> [String] {
+        plan.environment.keys.sorted().flatMap { ["-e", "\($0)=\(plan.environment[$0]!)"] }
+    }
+
+    private func chairCommand(_ plan: SwarmChairLaunchPlan) -> String {
+        SwarmChairLaunch.registrationCommand + " && exec "
+            + TerminalLaunchScript.command(executable: plan.executable, arguments: plan.arguments)
     }
 
     public func pasteBuffer(_ buffer: String, intoAgentPaneOf session: String) -> [String] {

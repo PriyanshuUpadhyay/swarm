@@ -72,6 +72,9 @@ struct InteractiveAgentTests {
         #expect(!codex.contains("exec"))
         #expect(!codex.contains("--dangerously-bypass-hook-trust"))
         #expect(codex.contains("model_reasoning_effort=\"high\""))
+        // Nobody is at the pane of a chat Swarm started to answer "Update available! 1. Update
+        // now 2. Skip", and Codex asks that before it reads the prompt.
+        #expect(codex.contains("check_for_update_on_startup=false"))
         let codexPermission = try #require(codex.first { $0.hasPrefix("hooks.PermissionRequest=") })
         #expect(codexPermission.contains("timeout=130"))
         // The command is TOML-escaped, so the test matches a phrase only the waiting hook has.

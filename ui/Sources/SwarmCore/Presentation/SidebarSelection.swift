@@ -73,7 +73,21 @@ public enum SidebarSelection: Hashable, Sendable {
     /// start you somewhere no person put you.
     case crew(WorkspaceID, SessionID)
     /// A swarm session discovered for a project, open for reading only.
-    case swarmSession(SwarmSessionID)
+    ///
+    /// **It carries its workspace too, and `workspaceID` returns it**, for the reason `.subagent`
+    /// and `.crew` give above. This was the one child case that carried only its own id, and the
+    /// window did to it exactly what those two comments warned of: `isInspectorPresented` tests
+    /// `selectedWorkspace != nil`, so clicking a session inside a workspace put the changed files
+    /// away, hid the toolbar's Inspector button and greyed the Workspace menu, although nothing
+    /// about the worktree had changed. The pane then grew a second, poorer changes column of its
+    /// own to stand in, so one workspace had two right hand columns depending on which of its rows
+    /// was clicked.
+    ///
+    /// Optional, unlike the three above, and that is the honest part: most sessions on this Mac
+    /// run from the home directory or from a Worktrunk hub rather than from a Swarm worktree, and
+    /// those have no parent to point at. See `SwarmSessionChangesView`, which is what a session
+    /// with no workspace gets instead.
+    case swarmSession(SwarmSessionID, workspaceID: WorkspaceID?)
 
     /// The workspace the window is about, which is the line the three cases above keep pointing at.
     ///
@@ -87,7 +101,8 @@ public enum SidebarSelection: Hashable, Sendable {
     public var workspaceID: WorkspaceID? {
         switch self {
         case .workspace(let id), .subagent(let id, _), .subagentCall(let id, _), .crew(let id, _): id
-        case .home, .archived, .swarmSession: nil
+        case .swarmSession(_, let id): id
+        case .home, .archived: nil
         }
     }
 
@@ -108,8 +123,16 @@ public enum SidebarSelection: Hashable, Sendable {
         return nil
     }
 
+    /// The selection for a discovered session, taking its workspace off the session itself.
+    ///
+    /// Every caller has the whole `SwarmProjectSession` in hand, and a caller that passed the id
+    /// alone would be the caller that quietly reintroduced the nil this case used to answer.
+    public static func swarmSession(_ item: SwarmProjectSession) -> Self {
+        .swarmSession(item.id, workspaceID: item.workspaceID)
+    }
+
     public var swarmSessionID: SwarmSessionID? {
-        if case .swarmSession(let id) = self { return id }
+        if case .swarmSession(let id, _) = self { return id }
         return nil
     }
 }

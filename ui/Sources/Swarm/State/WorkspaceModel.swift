@@ -541,7 +541,7 @@ final class WorkspaceModel {
         pendingCLILaunches.insert(session.id)
         await launchCLI(session, prompt: "", repo: repo)
         _ = await app.refreshSwarmSessionsOnce()
-        app.selection = .swarmSession(swarm)
+        app.selection = .swarmSession(swarm, workspaceID: workspace.id)
         return swarm
     }
 
@@ -1347,27 +1347,108 @@ final class WorkspaceModel {
         await transcript(for: session).drain()
     }
 
-    func resumeCLI(_ session: Session) async {
-        guard let repo = app.repo(for: workspace) else { return }
+    /// Chats started again on their own this launch. A CLI that exits as soon as it starts would
+    /// otherwise be started again each time the poll found it stopped.
+    private(set) var restartedCLIs: Set<SessionID> = []
+    /// Of those, the ones whose start has not returned yet.
+    private(set) var restartingCLIs: Set<SessionID> = []
+
+    /// Starts a stopped chat when it is opened, once per launch. After that a send starts it.
+    func restartStoppedCLI(_ session: Session) async {
+        guard restartedCLIs.insert(session.id).inserted else { return }
+        restartingCLIs.insert(session.id)
+        await resumeCLI(session)
+        restartingCLIs.remove(session.id)
+    }
+
+    /// Starts the CLI again on the conversation it is already having, for a setting it only reads
+    /// when it starts. The model picker is the one that matters: a CLI keeps the model it was
+    /// started with, so without this the picker moved a label and nothing else.
+    func restartCLI(_ session: Session) async {
+        await resumeCLI(session, replacing: true)
+    }
+
+    /// Opens a chat that was closed, and gives it back the tab its CLI runs in.
+    ///
+    /// **A swarm session outlives the chat row it was started from.** The owner closed the chat
+    /// behind swarm session 33, the session stayed in the sidebar, and the next message typed into
+    /// it had nowhere to go: `sessions` holds open chats only, so the launch returned at once and
+    /// the send fell back to the bus, whose tmux adapter cannot see Swarm's own server. What the
+    /// owner saw was "ring failed: can't find pane: %0".
+    private func reopen(_ session: Session) async -> Session? {
+        // **The tabs are read back by a view's task, and a send does not wait for a view.** A
+        // message typed four seconds after a launch found an empty tab list, so the chat had no
+        // terminal, the launch returned without a word, and the pane the message wanted was never
+        // started. `load` answers at once when the list is already in the map.
+        CenterTabStore.shared.load(workspaceID: workspace.id)
+        var session = session
+        if session.archivedAt != nil {
+            guard let store else { return nil }
+            do {
+                _ = try await store.update(sessionID: session.id) { $0.archivedAt = nil }
+            } catch {
+                app.notice = SwarmNotice(
+                    message: "Could not open this chat again: \(error.readableMessage)"
+                )
+                return nil
+            }
+            session.archivedAt = nil
+            await reloadSessions()
+        }
+        if CenterTabStore.shared.terminal(for: session.id, in: workspace.id) == nil {
+            _ = CenterTabStore.shared.add(
+                kind: .terminal, workspaceID: workspace.id,
+                title: session.title, agentSessionID: session.id
+            )
+        }
+        return session
+    }
+
+    /// Starts a stopped chat's CLI again. `prompt` is its first message, for a send typed while it
+    /// was stopped. `replacing` ends a CLI that is still running in the pane.
+    func resumeCLI(_ session: Session, prompt: String = "", replacing: Bool = false) async {
+        guard let repo = app.repo(for: workspace) else {
+            Log.chat.error("no repo for workspace \(self.workspace.id.rawValue, privacy: .public)")
+            return
+        }
+        guard let session = await reopen(session) else {
+            Log.chat.error("chat \(session.id.rawValue, privacy: .public) could not be reopened")
+            return
+        }
         let providerID = InteractiveChatLifecycle.resumeSessionID(session.agentSessionID)
         if providerID == nil {
             app.notice = SwarmNotice(
                 message: "This chat had no saved provider session ID, so Swarm started a fresh CLI session."
             )
         }
-        await launchCLI(session, prompt: "", repo: repo, resuming: providerID)
+        await launchCLI(
+            session, prompt: prompt, repo: repo, resuming: providerID, replacing: replacing
+        )
     }
 
     private func launchCLI(
-        _ cliSession: Session, prompt: String, repo: Repo, resuming providerID: String? = nil
+        _ cliSession: Session, prompt: String, repo: Repo, resuming providerID: String? = nil,
+        replacing: Bool = false
     ) async {
-        guard let store else { return }
+        guard let store else {
+            Log.chat.error("no store, so chat \(cliSession.id.rawValue, privacy: .public) cannot start")
+            return
+        }
         let port = await ensurePort()
-        guard let swarm = await prepareSwarmChair(for: cliSession) else { return }
-        guard !Task.isCancelled,
-              let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id),
-              sessions.contains(where: { $0.id == cliSession.id }),
-              let plan = SwarmChairLaunch.plan(
+        guard let swarm = await prepareSwarmChair(for: cliSession) else {
+            Log.chat.error("no swarm session for chat \(cliSession.id.rawValue, privacy: .public)")
+            return
+        }
+        guard !Task.isCancelled else { return }
+        guard let terminal = CenterTabStore.shared.terminal(for: cliSession.id, in: workspace.id) else {
+            Log.chat.error("no terminal tab for chat \(cliSession.id.rawValue, privacy: .public)")
+            return
+        }
+        guard sessions.contains(where: { $0.id == cliSession.id }) else {
+            Log.chat.error("chat \(cliSession.id.rawValue, privacy: .public) is not in this workspace")
+            return
+        }
+        guard let plan = SwarmChairLaunch.plan(
                 workspaceID: workspace.id,
                 session: cliSession,
                 paneID: TerminalTabID(terminal.id),
@@ -1379,8 +1460,12 @@ final class WorkspaceModel {
                 workspaceEnvironment: WorkspaceManager(store: store).environment(
                     for: workspace, repo: repo, port: port
                 ),
+                providerEnvironment: await signedInProviderEnvironment(),
                 resuming: providerID
-              ) else { return }
+        ) else {
+            Log.chat.error("no launch plan for chat \(cliSession.id.rawValue, privacy: .public)")
+            return
+        }
         if cliSession.agentSessionID == nil,
            let initialID = InteractiveChatLifecycle.initialProviderSessionID(
             for: cliSession.agentKind, sessionID: cliSession.id
@@ -1400,11 +1485,35 @@ final class WorkspaceModel {
             pendingCLIPrompts[cliSession.id] = nil
         }
         do {
-            try await SwarmChairLaunch.start(plan) { try await terminals.launch($0) }
+            try await SwarmChairLaunch.start(plan) {
+                try await terminals.launch($0, replacing: replacing)
+            }
+            Log.chat.notice(
+                "started \(cliSession.id.rawValue, privacy: .public) in tmux session \(plan.tmuxSession, privacy: .public)"
+            )
         } catch {
+            Log.chat.error(
+                "tmux refused chat \(cliSession.id.rawValue, privacy: .public): \(error.readableMessage, privacy: .public)"
+            )
             app.alert = SwarmAlert(title: "Could not launch the agent", message: error.readableMessage)
             return
         }
+    }
+
+    /// The signed-in home of each provider, for the chat's tmux environment.
+    ///
+    /// Read at launch rather than stored, because a person signs in and out between launches, and
+    /// a stale home is the same "Not logged in" the missing one was. A provider that answers
+    /// nothing, such as agy, contributes nothing and keeps its CLI default.
+    private func signedInProviderEnvironment() async -> [String: String] {
+        var found: [String: String] = [:]
+        for provider in ["claude", "codex"] {
+            guard let list = try? await app.swarmProfiles.accounts(provider: provider) else {
+                continue
+            }
+            found.merge(list.autoEnvironment) { _, new in new }
+        }
+        return found
     }
 
     private func prepareCLICommand(

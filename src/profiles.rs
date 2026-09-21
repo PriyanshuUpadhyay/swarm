@@ -105,6 +105,27 @@ pub fn empty_accounts(provider: &str) -> AccountList {
     }
 }
 
+/// The same variables yelo writes into `~/.local/bin/<cli>-<account>`.
+///
+/// `CLAUDE_CONFIG_DIR` alone is not enough: Claude Code keeps the credentials in a second tree,
+/// so a pane that gets only the config dir starts at "Not logged in · Run /login".
+fn account_environment(provider: &str, name: &str, dir: &str) -> BTreeMap<String, String> {
+    match provider {
+        "claude" => {
+            let home = crate::paths::home().unwrap_or_default();
+            BTreeMap::from([
+                ("AGENT_PROFILE_LABEL".to_string(), name.to_string()),
+                ("CLAUDE_CONFIG_DIR".to_string(), dir.to_string()),
+                (
+                    "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_string(),
+                    format!("{home}/.claude-{name}"),
+                ),
+            ])
+        }
+        _ => BTreeMap::from([("CODEX_HOME".to_string(), dir.to_string())]),
+    }
+}
+
 pub fn translate_accounts(
     provider: &str,
     list_json: &str,
@@ -112,19 +133,17 @@ pub fn translate_accounts(
 ) -> Result<AccountList, String> {
     let input: Vec<YeloAccount> =
         serde_json::from_str(list_json).map_err(|error| format!("yelo account JSON: {error}"))?;
-    let env_name = match provider {
-        "claude" => "CLAUDE_CONFIG_DIR",
-        "codex" => "CODEX_HOME",
-        _ => return Err(format!("unknown provider {provider}")),
-    };
+    if !matches!(provider, "claude" | "codex") {
+        return Err(format!("unknown provider {provider}"));
+    }
     let accounts: Vec<Account> = input
         .into_iter()
         .filter_map(|row| {
             let name = row.name?;
             Some(Account {
+                env: account_environment(provider, &name, &row.dir),
                 name,
                 email: row.email,
-                env: BTreeMap::from([(env_name.to_string(), row.dir.clone())]),
                 home: row.dir,
                 signed_in: row.signed_in,
                 remaining_pct: row.remaining,
@@ -286,6 +305,8 @@ mod tests {
             result.accounts[0].env["CLAUDE_CONFIG_DIR"],
             "/profiles/work"
         );
+        // Without the credential tree the pane starts at "Not logged in".
+        assert!(result.accounts[0].env["CLAUDE_SECURESTORAGE_CONFIG_DIR"].ends_with("/.claude-work"));
         assert_eq!(result.accounts[0].remaining_pct, Some(52));
         assert_eq!(result.accounts.len(), 2);
         assert_eq!(resolve_account(&result, "auto").unwrap().name, "work");

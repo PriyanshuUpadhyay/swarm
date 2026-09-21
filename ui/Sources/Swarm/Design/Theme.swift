@@ -64,7 +64,7 @@ enum Palette {
     @MainActor static var sidebar: Color { Color(nsColor: sidebarNSColor) }
     @MainActor static var sidebarNSColor: NSColor { themedNSColor(\.sidebar) }
     @MainActor static var sidebarGlassTint: Color {
-        let surfaces = ColourThemePreference.shared.choice.surfaces
+        let surfaces = ColourThemePreference.shared.surfaces
         return cached(surfaces.glassTint ?? surfaces.sunken)
     }
 
@@ -108,6 +108,12 @@ enum Palette {
     /// as a smudge. These are the same two steps, taken along Swarm's ramp instead.
     @MainActor static var selected: Color { themed(\.selected) }
 
+    /// The fill behind the reader's own message, when the theme names one. Nil keeps the filled
+    /// accent bubble with white text.
+    @MainActor static var bubble: Color? {
+        ColourThemePreference.shared.surfaces.bubble.map(cached)
+    }
+
     /// Selection in a focused list inside the key window, where macOS uses the accent colour.
     /// Selection and control emphasis supplied by macOS.
     ///
@@ -131,8 +137,23 @@ enum Palette {
 
     // MARK: Text
 
-    static let textPrimary = Color(nsColor: .labelColor)
-    static let textSecondary = Color(nsColor: .secondaryLabelColor)
+    /// The system's label colours while they read on the theme's grounds, which is every preset.
+    /// A ground changed in Settings can break that (a white background in dark appearance), and
+    /// then the ink moves to one that reads.
+    @MainActor static var textPrimary: Color { Color(nsColor: textPrimaryNSColor) }
+    /// Moves only when the primary label had to. The system's secondary label is translucent, so
+    /// an opaque stand in cannot say whether it reads on a tinted preset; it can on a broken one.
+    @MainActor static var textSecondary: Color {
+        readable(PaletteInk.labelPrimary, labels: true) == PaletteInk.labelPrimary
+            ? Color(nsColor: .secondaryLabelColor)
+            : cached(readable(PaletteInk.labelSecondary, floor: Contrast.largeTextFloor, labels: true))
+    }
+    @MainActor static var textPrimaryNSColor: NSColor { labelNSColor(.labelColor, PaletteInk.labelPrimary, floor: Contrast.textFloor) }
+
+    @MainActor private static func labelNSColor(_ semantic: NSColor, _ ink: PaletteInk.Pair, floor: Double) -> NSColor {
+        let moved = readable(ink, floor: floor, labels: true)
+        return moved == ink ? semantic : cachedNSColor(moved)
+    }
     /// Named rather than `tertiaryLabelColor`.
     ///
     /// The system's third rung is 26 percent ink, which is `#BDBDBD` on white: a contrast ratio of
@@ -148,7 +169,7 @@ enum Palette {
     /// headers and about sixty other things meant to be read, and `PullRequestSummary` already
     /// called one of them "a number nobody can read". The hue is unchanged; the value moved until
     /// the worst ground cleared AA. See `PaletteContrastTests`, which now says so on every build.
-    static let textTertiary = dynamic(PaletteInk.textTertiary)
+    @MainActor static var textTertiary: Color { cached(readable(ColourThemePreference.shared.colour(.muted))) }
 
     /// The tertiary rung where the ground under it is glass, which is a different rung in each
     /// appearance because the ground moves in only one of them.
@@ -233,11 +254,14 @@ enum Palette {
     /// recognisably the same glyph in light.
     ///
     /// This is for ink and strokes that convey Swarm identity or status, not interactive emphasis.
-    static let accent = dynamic(PaletteInk.accent)
+    @MainActor static var accent: Color { cached(accentInk) }
+
+    /// The theme's accent, or the one changed in Settings, moved until it reads on the theme.
+    @MainActor static var accentInk: PaletteInk.Pair { readable(ColourThemePreference.shared.colour(.accent)) }
 
     /// The same pair as an `NSColor`, for the layers that hold a `CGColor` and therefore have to be
     /// handed a colour already resolved against the window's appearance.
-    static let accentNSColor = dynamicNSColor(PaletteInk.accent)
+    @MainActor static var accentNSColor: NSColor { cachedNSColor(accentInk) }
 
     /// A brand fill capable of carrying light text, for identity surfaces such as the user's
     /// message bubble. Controls and selections use `controlAccent` instead.
@@ -261,12 +285,12 @@ enum Palette {
     ///
     /// The underline is not decoration and is not optional: it is what makes the link findable
     /// without colour vision, and `linkInverted` below leans on it almost entirely.
-    static let link = accent
+    @MainActor static var link: Color { accent }
 
     /// The same ink as an `NSFont`-side colour, for the transcript's text views. Built from the
     /// same pair rather than converted from `link`, so the two can never drift apart and the
     /// dynamic pair survives: an `NSTextView` resolves it against the window it is in.
-    static let linkNSColor = accentNSColor
+    @MainActor static var linkNSColor: NSColor { accentNSColor }
 
     /// An address inside a filled bubble, which in practice means the user's own turn.
     ///
@@ -311,7 +335,7 @@ enum Palette {
     /// not fine: a finished workspace and a working one are the two states a glance most needs to
     /// tell apart, and they were the same value. See `running` below, and `PaletteContrastTests`,
     /// which now fails if the two ever meet again.
-    static let positive = accent
+    @MainActor static var positive: Color { cached(readable(ColourThemePreference.shared.surfaces.positive)) }
 
     /// The wash and the rule of the agent's question card while it is holding the turn open.
     ///
@@ -320,11 +344,11 @@ enum Palette {
     /// drift apart. The wash is deliberately faint: the card sits in the transcript for as long
     /// as the person thinks, so it has to mark itself out without shouting over the prose it
     /// interrupted.
-    static let questionWash = accent.opacity(0.06)
-    static let questionBorder = accent.opacity(0.4)
+    @MainActor static var questionWash: Color { accent.opacity(0.06) }
+    @MainActor static var questionBorder: Color { accent.opacity(0.4) }
     /// The same card once the question is settled: barely off the page, behind the plain border,
     /// so a finished question reads as part of the record rather than as something still waiting.
-    static let questionWashSettled = accent.opacity(0.03)
+    @MainActor static var questionWashSettled: Color { accent.opacity(0.03) }
 
     /// The amber twin of the set above: the wash and the rule of a card that wants something of
     /// the reader without being an error. The permission ask while it is holding the turn open,
@@ -335,10 +359,10 @@ enum Palette {
     /// amber plates a reader meets in one scroll with visibly different rules. The border takes
     /// `questionBorder`'s rung rather than either of the two literals it replaces, since neither
     /// of them had an argument behind it and the question card is the same card in another colour.
-    static let cautionWash = warning.opacity(0.07)
-    static let cautionBorder = warning.opacity(0.4)
+    @MainActor static var cautionWash: Color { warning.opacity(0.07) }
+    @MainActor static var cautionBorder: Color { warning.opacity(0.4) }
     /// The ask card once it has been answered, matching `questionWashSettled`.
-    static let cautionWashSettled = warning.opacity(0.03)
+    @MainActor static var cautionWashSettled: Color { warning.opacity(0.03) }
 
     /// Something went wrong: a failed check, an error row, a deletion count.
     ///
@@ -351,7 +375,7 @@ enum Palette {
     /// The dark member was `#E4695E`, which is 5.2 to 1 on the dark sidebar and 4.24 on the raised
     /// surface, and the raised one is the ground it is drawn on in a card. Lifted three and a half
     /// percent of its value, hue untouched, to `#EC6D61`, which clears AA on all three.
-    static let negative = dynamic(PaletteInk.negative)
+    @MainActor static var negative: Color { cached(readable(PaletteInk.negative)) }
 
     /// The stop control, which is a quieter red than a failure is.
     ///
@@ -363,7 +387,7 @@ enum Palette {
     /// this: the pair has to be moved with it by hand. Which is exactly what happened when the
     /// contrast table arrived: the dark member went from `#CC7B76` to `#D07D78`, two percent of
     /// value, because 4.36 to 1 on the raised surface is under AA.
-    static let stop = dynamic(PaletteInk.stop)
+    @MainActor static var stop: Color { cached(readable(PaletteInk.stop)) }
 
     /// Something needs attention but nothing is broken: setup that failed and can be run again,
     /// checks still going, a rate limit. Quieter than `systemOrange`, for the reason written on
@@ -390,7 +414,7 @@ enum Palette {
     /// `#9C6C00` became `#9A6A00` when the contrast table was written, which is one and a half
     /// percent of value and invisible: it measured 4.39 to 1 on the sunken surface, and the sunken
     /// surface is where a strip sits.
-    static let warning = dynamic(PaletteInk.warning)
+    @MainActor static var warning: Color { cached(readable(PaletteInk.warning)) }
     /// An agent mid turn: the sidebar's dot and the transcript's "Working" dot. A busy tab and a
     /// busy column's top edge sweep in `accentFill` instead; see `BusySweep`.
     ///
@@ -426,12 +450,10 @@ enum Palette {
     /// but they are why the lightness is where it is: darker in light and lighter in dark than the
     /// separation alone would want, so the mark is never a grey one. `PaletteContrastTests` pins
     /// all of it.
-    static let running = dynamic(PaletteInk.running)
+    @MainActor static var running: Color { cached(readable(PaletteInk.running)) }
 
     /// The same pair as an `NSColor`, for `ActivityRuleView`'s layers. See `accentNSColor`.
-    static let runningNSColor = dynamicNSColor(
-        light: PaletteInk.running.light, dark: PaletteInk.running.dark
-    )
+    @MainActor static var runningNSColor: NSColor { cachedNSColor(readable(PaletteInk.running)) }
 
     /// The house fill as an `NSColor`, for `BusySweepView`'s layers. See `accentNSColor`.
     static let accentFillNSColor = dynamicNSColor(PaletteInk.accentFill)
@@ -486,7 +508,7 @@ enum Palette {
     /// case, `PullRequestTint` resolves it here, and `WorkspaceStatusGlyph` draws the merge mark
     /// in it, so one landed pull request is one colour in every pane that reports it. Nothing else
     /// moved: passing checks, an open pull request and a closed one keep the tones they had.
-    static let merged = dynamic(PaletteInk.merged)
+    @MainActor static var merged: Color { cached(readable(PaletteInk.merged)) }
 
     /// A merge as a fill with light text on it: the Archive button on a landed pull request.
     ///
@@ -555,8 +577,8 @@ enum Palette {
     /// is. Two steps of the same wash rather than two hues, so a commented line and its band read
     /// as one annotation instead of a line with a strip stuck under it. Both are translucent for
     /// the reason the diff washes are: the ground shows through, so neither needs a dark twin.
-    static let reviewLine = warning.opacity(0.14)
-    static let reviewBand = warning.opacity(0.07)
+    @MainActor static var reviewLine: Color { warning.opacity(0.14) }
+    @MainActor static var reviewBand: Color { warning.opacity(0.07) }
 
     @MainActor static var codeBackground: Color { cached(ColourThemePreference.shared.codeScheme.background) }
     @MainActor static var codeForeground: Color { codeColours[.plain]! }
@@ -578,14 +600,35 @@ enum Palette {
     }
 
     @MainActor private static func themedNSColor(_ key: KeyPath<ThemeSurfaces, PaletteInk.Pair>) -> NSColor {
-        cachedNSColor(ColourThemePreference.shared.choice.surfaces[keyPath: key])
+        cachedNSColor(ColourThemePreference.shared.surfaces[keyPath: key])
     }
 
-    @MainActor private static func cached(_ pair: PaletteInk.Pair) -> Color {
+    /// A meaning ink moved until it reads on the selected theme. See `ThemeSurfaces.readable`.
+    @MainActor static func readable(
+        _ ink: PaletteInk.Pair, floor: Double = Contrast.textFloor, labels: Bool = false
+    ) -> PaletteInk.Pair {
+        let surfaces = ColourThemePreference.shared.surfaces
+        let key = ReadableInk(surfaces: surfaces, ink: ink, floor: floor, labels: labels)
+        if let known = readableInks[key] { return known }
+        let moved = surfaces.readable(ink, floor: floor, labels: labels)
+        readableInks[key] = moved
+        return moved
+    }
+
+    private struct ReadableInk: Hashable {
+        var surfaces: ThemeSurfaces
+        var ink: PaletteInk.Pair
+        var floor: Double
+        var labels: Bool
+    }
+
+    @MainActor private static var readableInks: [ReadableInk: PaletteInk.Pair] = [:]
+
+    @MainActor static func cached(_ pair: PaletteInk.Pair) -> Color {
         Color(nsColor: cachedNSColor(pair))
     }
 
-    @MainActor private static func cachedNSColor(_ pair: PaletteInk.Pair) -> NSColor {
+    @MainActor static func cachedNSColor(_ pair: PaletteInk.Pair) -> NSColor {
         if let colour = surfaceColours[pair] { return colour }
         let colour = dynamicNSColor(pair)
         surfaceColours[pair] = colour
@@ -1062,7 +1105,7 @@ struct Callout: View {
         case warning
         case negative
 
-        var color: Color {
+        @MainActor var color: Color {
             switch self {
             case .warning: Palette.warning
             case .negative: Palette.negative

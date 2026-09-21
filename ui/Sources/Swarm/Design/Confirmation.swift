@@ -276,7 +276,7 @@ enum ConfirmationTone: Sendable {
     ///
     /// No green of its own: the ramp is explicit that this app does not get a second one, and
     /// `positive` is the accent for exactly that reason.
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
         case .destructive: Palette.negative
         case .completing: Palette.positive

@@ -130,7 +130,8 @@ public enum InteractiveChatTranscript {
         }
     }
 
-    /// Codex rollout lines are mapped into the same user and assistant envelopes the transcript draws.
+    /// Codex rollout lines are mapped into the same user and assistant envelopes the transcript
+    /// draws. Which line becomes which row is `TranscriptMapping.codex`.
     public static func parseCodex(
         _ text: String, sessionID: SessionID, providerSessionID: String,
         limit: Int? = SubagentTranscript.rowLimit
@@ -138,119 +139,20 @@ public enum InteractiveChatTranscript {
         var messages: [Message] = []
         var used = Set<Int64>()
 
-        func append(kind: MessageKind, payload: Data, refID: String? = nil) {
-            var id = SubagentTranscript.rowID(for: payload)
-            while used.contains(id) { id -= 1 }
-            used.insert(id)
-            messages.append(Message(
-                id: id, sessionID: sessionID, seq: messages.count,
-                kind: kind, payload: payload, refID: refID
-            ))
-        }
-
         for source in text.split(whereSeparator: \.isNewline) {
             let raw = Data(source.utf8)
             guard let json = JSONValue.parse(raw) else { continue }
-            guard json["type"]?.stringValue == "response_item",
-                  let payload = json["payload"]
-            else {
-                // `event_msg`, `turn_context` and `session_meta`. The first repeats what the
-                // response items already say and counts tokens; the other two are session state.
-                if let line = codexRow(other: json, raw: raw) { append(kind: .system, payload: line) }
-                continue
+            for block in TranscriptMapping.codex(
+                json, raw: raw, providerSessionID: providerSessionID
+            ) {
+                var id = SubagentTranscript.rowID(for: block.payload)
+                while used.contains(id) { id -= 1 }
+                used.insert(id)
+                messages.append(Message(
+                    id: id, sessionID: sessionID, seq: messages.count,
+                    kind: block.kind, payload: block.payload, refID: block.refID
+                ))
             }
-
-            // A call and its output, which is 50% of a rollout and drew nothing at all before.
-            // They are rebuilt in the Claude vocabulary the rows are stored in, exactly the way
-            // the live stream is, so one presenter draws both. See `CodexTranslation`.
-            switch payload["type"]?.stringValue {
-            case "function_call":
-                let callID = payload["call_id"]?.stringValue ?? ""
-                append(
-                    kind: .toolUse,
-                    payload: CodexTranslation.assistantLine(
-                        blocks: [.object([
-                            "type": .string("tool_use"),
-                            "id": .string(callID),
-                            "name": .string(payload["name"]?.stringValue ?? "call"),
-                            "input": codexArguments(payload["arguments"]),
-                        ])],
-                        messageID: callID, model: "", usage: .zero, sessionID: providerSessionID
-                    ),
-                    refID: callID
-                )
-                continue
-
-            case "function_call_output":
-                let callID = payload["call_id"]?.stringValue ?? ""
-                append(
-                    kind: .toolResult,
-                    payload: CodexTranslation.toolResultLine(
-                        toolUseID: callID,
-                        text: payload["output"]?.stringValue ?? "",
-                        isError: false, refusalKind: nil, sessionID: providerSessionID
-                    ),
-                    refID: callID
-                )
-                continue
-
-            case "reasoning":
-                // Every one of the 564 reasoning records measured carries `encrypted_content` and
-                // an empty `summary`, so most of these make no row. When a summary does arrive it
-                // is the model's own account of its thinking, and it draws like Claude's.
-                let thought = (payload["summary"]?.arrayValue ?? [])
-                    .compactMap { $0["text"]?.stringValue }
-                    .joined(separator: "\n\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !thought.isEmpty else { continue }
-                append(
-                    kind: .thinking,
-                    payload: CodexTranslation.assistantLine(
-                        blocks: [.object([
-                            "type": .string("thinking"), "thinking": .string(thought),
-                        ])],
-                        messageID: "", model: "", usage: .zero, sessionID: providerSessionID
-                    )
-                )
-                continue
-
-            case "message":
-                break
-
-            default:
-                // Everything else keeps its bytes and draws collapsed, so a response item Codex
-                // adds next month is visible the day it ships. `reasoning` is denied above
-                // because every one of the 564 measured carries only `encrypted_content`.
-                if let line = codexRow(other: json, raw: raw) { append(kind: .system, payload: line) }
-                continue
-            }
-
-            guard let role = payload["role"]?.stringValue,
-                  role == "user" || role == "assistant"
-            else {
-                if let line = codexRow(other: json, raw: raw) { append(kind: .system, payload: line) }
-                continue
-            }
-
-            let expected = role == "user" ? "input_text" : "output_text"
-            let parts = (payload["content"]?.arrayValue ?? []).compactMap { block -> String? in
-                guard block["type"]?.stringValue == expected,
-                      let value = block["text"]?.stringValue,
-                      !hidesCodexSystemText(value) else { return nil }
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed.isEmpty ? nil : trimmed
-            }
-            let body = parts.joined(separator: "\n\n")
-            guard !body.isEmpty else { continue }
-
-            let rowPayload = role == "user"
-                ? userLine(body)
-                : CodexTranslation.assistantLine(
-                    blocks: [.object(["type": .string("text"), "text": .string(body)])],
-                    messageID: payload["id"]?.stringValue ?? "",
-                    model: "", usage: .zero, sessionID: providerSessionID
-                )
-            append(kind: role == "user" ? .user : .assistantText, payload: rowPayload)
         }
 
         guard let limit else { return SubagentTranscript(messages: messages) }
@@ -260,52 +162,16 @@ public enum InteractiveChatTranscript {
         )
     }
 
-    private static func userLine(_ text: String) -> Data {
-        let json = JSONValue.object([
-            "type": .string("user"),
-            "message": .object([
-                "role": .string("user"),
-                "content": .array([.object([
-                    "type": .string("text"), "text": .string(text),
-                ])]),
-            ]),
-        ])
-        return Data(json.compactJSON.utf8)
-    }
-
-    /// Codex rollout records that carry no account of the conversation.
+    /// The row a chat draws for a message that has gone to the CLI and is not in its log yet.
     ///
-    /// Measured across 1,286 real rollouts. `event_msg` is the whole of a second stream that
-    /// repeats what the response items already say: its `agent_message` and `user_message`
-    /// duplicate `response_item/message`, and `token_count` is 717 lines of pure state.
-    /// `turn_context` and `session_meta` are session state.
-    ///
-    /// `reasoning` is not on this list. It is handled in `parseCodex`, which keeps the ones that
-    /// carry a readable summary and skips the rest, because all 564 measured are encrypted with an
-    /// empty summary and a row for one of those would hold nothing.
-    static let deniedCodexTypes: Set<String> = [
-        "event_msg", "session_meta", "turn_context",
-    ]
-
-    /// One collapsed row for a rollout line no case above claimed, or nil when it is denied.
-    private static func codexRow(other json: JSONValue, raw: Data) -> Data? {
-        deniedCodexTypes.contains(json["type"]?.stringValue ?? "") ? nil : raw
-    }
-
-    /// A call's arguments, which Codex sends as a JSON string rather than as an object.
-    ///
-    /// Parsed so the tool row can name the command it ran instead of showing an escaped blob. A
-    /// string that will not parse is kept as itself, because the row still has to show something.
-    private static func codexArguments(_ value: JSONValue?) -> JSONValue {
-        guard let text = value?.stringValue else { return value ?? .object([:]) }
-        return JSONValue.parse(Data(text.utf8)) ?? .string(text)
-    }
-
-    private static func hidesCodexSystemText(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.hasPrefix("# AGENTS.md instructions for ")
-            || trimmed.hasPrefix("<environment_context>")
-            || trimmed.hasPrefix("<permissions instructions>")
+    /// A CLI writes the prompt to its log when its turn starts, which is a moment after the key
+    /// went down, and a chat read from a log has no delivery queue to draw a pending bubble from.
+    /// So the message sat nowhere until the CLI wrote it.
+    public static func sentRow(_ text: String, sessionID: SessionID, seq: Int) -> Message {
+        Message(
+            id: Int64.min + 1, sessionID: sessionID, seq: seq, kind: .user,
+            payload: TranscriptMapping.userLine(text), refID: nil
+        )
     }
 
     private static func safe(_ id: String) -> Bool {

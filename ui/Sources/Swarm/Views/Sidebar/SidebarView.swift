@@ -159,7 +159,8 @@ struct SidebarView: View {
                     paneRowsList
                 } header: {
                     Text("Projects")
-                        .bold()
+                        .font(Typo.label)
+                        .foregroundStyle(Palette.textTertiary)
                         .accessibilityAddTraits(.isHeader)
                 }
             } else {
@@ -251,17 +252,15 @@ struct SidebarView: View {
         // A struct of its own rather than a closure here: written inline, it put `body` past what
         // the CI runner's type checker would finish, green on this Mac and red there.
         .toolbar {
-            SidebarToolbar(
-                isFolded: isSidebarFolded,
-                onNewWorkspace: { presentCreate(in: nil) },
-                onStartProject: startProject
-            )
+            SidebarToolbar(isFolded: isSidebarFolded)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SidebarNavigation(onNewWorkspace: { presentCreate(in: nil) }, onStartProject: startProject)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarStatusBar(
                 filter: $filter,
                 onCreateWorkspace: { presentCreate(in: $0) },
-                onNewWorkspace: { presentCreate(in: nil) },
                 onStartProject: startProject,
                 note: reorderNote?.sentence
             )
@@ -492,8 +491,8 @@ struct SidebarView: View {
         case .swarmSession(let session, _):
             SwarmSessionSidebarRow(session: session)
                 .moveDisabled(true)
-                .tag(SidebarSelection.swarmSession(session.id))
-                .sidebarSelection(selectionStyle(for: .swarmSession(session.id)))
+                .tag(SidebarSelection.swarmSession(session))
+                .sidebarSelection(selectionStyle(for: .swarmSession(session)))
         case .pending(let pending):
             // A workspace that does not exist yet, so there is nothing to select, nothing
             // to open and nothing to write a `sort_order` onto. Refused here and again in
@@ -848,7 +847,7 @@ struct SidebarView: View {
         let chat = SwarmSessionListing.workspaceChats(
             app.swarmSessionsByRepo[workspace.repoID] ?? [], workspaceID: workspace.id
         ).first
-        let target = chat.map { SidebarSelection.swarmSession($0.id) }
+        let target = chat.map { SidebarSelection.swarmSession($0) }
             ?? .workspace(workspace.id)
         return SidebarWorkspaceRow(
             workspace: workspace,
@@ -963,8 +962,7 @@ extension EnvironmentValues {
     @Entry var isSidebarFolded = false
 }
 
-/// New and the collapse button, in one piece of glass, the way the detail column's plus, search
-/// and inspector share one.
+/// The collapse button beside the traffic lights.
 ///
 /// The system's own toggle cannot join a group: it is `NavigationSplitView`'s item, and a `+`
 /// beside it came out as two separate capsules. So `RootView` removes that toggle and this is its
@@ -973,25 +971,12 @@ extension EnvironmentValues {
 /// after the column has gone.
 struct SidebarToolbar: ToolbarContent {
     var isFolded: Bool
-    var onNewWorkspace: () -> Void
-    var onStartProject: () -> Void
 
     var body: some ToolbarContent {
         if !isFolded {
-            // Pushes the pair to the sidebar's trailing edge. Without it they sat against the
-            // traffic lights.
-            ToolbarSpacer(.flexible, placement: .primaryAction)
-
-            ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Button("New workspace…", action: onNewWorkspace)
-                    Button("New project…", action: onStartProject)
-                } label: {
-                    Label("New", systemImage: "plus")
-                }
-                .menuIndicator(.hidden)
-                .help("New workspace or project")
-
+            // Beside the traffic lights, where Conductor keeps it. New lives in the sidebar's own
+            // rows now. See `SidebarNavigation`.
+            ToolbarItem(placement: .navigation) {
                 SidebarToggleButton()
             }
         }

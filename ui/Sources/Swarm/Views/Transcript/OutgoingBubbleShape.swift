@@ -6,14 +6,20 @@ struct OutgoingBubbleShape: InsettableShape {
     static let tailDrop: CGFloat = 5
 
     var cornerRadius: CGFloat
+    /// False for a theme's neutral turn box, which is a plain rounded rectangle.
+    var hasTail = true
     private var insetAmount: CGFloat = 0
 
-    init(cornerRadius: CGFloat) {
+    init(cornerRadius: CGFloat, hasTail: Bool = true) {
         self.cornerRadius = cornerRadius
+        self.hasTail = hasTail
     }
 
     func path(in bounds: CGRect) -> Path {
         let rect = bounds.insetBy(dx: insetAmount, dy: insetAmount)
+        if !hasTail {
+            return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
+        }
         guard rect.width > 0, rect.height > Self.tailDrop else { return Path() }
         let right = rect.maxX
         let bottom = rect.maxY - Self.tailDrop

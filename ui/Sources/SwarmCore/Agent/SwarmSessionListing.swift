@@ -55,6 +55,22 @@ public enum SwarmSessionListing {
         }
     }
 
+    /// The chat one swarm session belongs to, by the group's own id or by any session inside it.
+    ///
+    /// **A chat's id moves, and a selection holding the old one must still find it.** The id is
+    /// the newest session of the group, so every `swarm session new` in the same chair renames the
+    /// chat. A window that looked the chat up by id alone then found nothing and drew Home.
+    public static func chat(
+        _ id: SwarmSessionID, in chats: some Sequence<SwarmProjectSession>
+    ) -> SwarmProjectSession? {
+        var member: SwarmProjectSession?
+        for chat in chats {
+            if chat.id == id { return chat }
+            if member == nil, chat.sessions.contains(where: { $0.id == id }) { member = chat }
+        }
+        return member
+    }
+
     /// Sessions made by repeated `swarm session new` calls in one chair chat are one chat row.
     public static func chatGroups(_ sessions: [SwarmSession]) -> [[SwarmSession]] {
         var grouped: [String: [SwarmSession]] = [:]

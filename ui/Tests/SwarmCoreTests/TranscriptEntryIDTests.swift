@@ -32,6 +32,18 @@ struct TranscriptEntryIDTests {
         #expect(TranscriptEntryID.pending(DeliveryID("d1")).redrawsItself)
     }
 
+    /// **The appended block is the fifth, and it has to be.** What it holds comes from a source
+    /// the transcript never reads: a swarm agent's summary lands on the bus rather than in the
+    /// chair's log, so there is nothing for a content key to hash and the cell is what notices a
+    /// new summary. Measured at nought and left there, a session's agents would never appear.
+    @Test("appended content redraws itself and names no stored row")
+    func appendedRedrawsItself() {
+        #expect(TranscriptEntryID.appended.redrawsItself)
+        #expect(TranscriptEntryID.appended.seq == nil)
+        #expect(TranscriptEntryID.appended != .bottomSpacing)
+        #expect(TranscriptEntryID.appended.description == "appended")
+    }
+
     /// **A fold's line is the case that ended the coincidence below.** It names no stored row, so
     /// it has no sequence number, and it still cannot redraw itself: what it says is hashed into
     /// its content key exactly as a row's is, and it draws nothing at all for most of its life. A

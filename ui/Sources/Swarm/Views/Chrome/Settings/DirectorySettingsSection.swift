@@ -9,7 +9,7 @@ struct DirectorySettingsSection: View {
     @State private var error: String?
 
     var body: some View {
-        Section("Project folders") {
+        Section {
             folderRow("New projects", path: preferences.projects, fallback: "Automatic",
                       message: "Choose where new projects are created.") {
                 preferences.projects = $0
@@ -31,19 +31,29 @@ struct DirectorySettingsSection: View {
                     preferences.additionalProjects.append(path)
                 }
             }
+        } header: {
+            Text("Project folders")
+        } footer: {
+            // Under the card rather than as a last row inside it. Every other pane in this window
+            // says its secondary line with `footer:`, and a picture of General beside Sessions
+            // caught these two explaining themselves from inside the group while the one below
+            // them, `SleepSettingsSection`'s, explained itself from outside.
             Text("Autocomplete also searches beside projects you have already added.")
                 .settingsFootnote()
         }
         .disabled(!isLoaded)
 
-        Section("Ask Swarm") {
+        Section {
             folderRow("Working directory", path: preferences.ask, fallback: "Swarm’s own folder",
                       message: "Choose the working directory for new Ask Swarm conversations.") {
                 preferences.ask = $0
             }
+            if let error { Text(error).foregroundStyle(Palette.negative) }
+        } header: {
+            Text("Ask Swarm")
+        } footer: {
             Text("New conversations start here. Existing conversations keep their working directory.")
                 .settingsFootnote()
-            if let error { Text(error).foregroundStyle(Palette.negative) }
         }
         .disabled(!isLoaded)
         .task {

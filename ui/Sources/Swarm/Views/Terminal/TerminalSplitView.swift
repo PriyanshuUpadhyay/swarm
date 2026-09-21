@@ -32,6 +32,8 @@ struct TerminalSplitView: View {
     var terminalLabel: String = "Terminal"
     var onAddToChat: (@MainActor (TerminalExcerpt) -> Void)?
     var requiresTmux = false
+    /// Columns each pane draws whatever its width, and 0 to follow the width. See `TerminalScrollHost`.
+    var fixedColumns = 0
     /// A saved chat survives its CLI process. Only the owner's Close action archives it.
     var isTerminalChat = false
 
@@ -153,6 +155,7 @@ struct TerminalSplitView: View {
                 workspace: workspace,
                 repo: repo,
                 port: port,
+                fixedColumns: fixedColumns,
                 directory: directory,
                 requiresTmux: requiresTmux,
                 isFocusedPane: isFocused,

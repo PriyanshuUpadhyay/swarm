@@ -100,6 +100,23 @@ struct ProcessTableTests {
         #expect(table.foregroundCommand(ofShell: 40123) == "npm run dev")
     }
 
+    /// A chair Swarm starts replaces the pane's shell with the CLI (`exec`), so the pane's own
+    /// process is the agent and its only child is a helper. It read as absent, and a chat that was
+    /// answering showed "Stopped".
+    @Test("An agent exec'd in place of the pane's shell is found")
+    func agentInPlaceOfShell() {
+        let table = ProcessTable(psOutput: """
+              59217 59216 59217 59217 codex --sandbox danger-full-access --model gpt-5.5 -- Testing
+              59345 59217 59217 59217 /opt/homebrew/bin/cq mcp
+            """)
+        #expect(table.interactiveAgentProcess(ofShell: 59217)?.pid == 59217)
+        // A shell at its prompt is still not an agent.
+        let shell = ProcessTable(psOutput: """
+              40123     1 40123 40123 /bin/zsh -l
+            """)
+        #expect(shell.interactiveAgentProcess(ofShell: 40123) == nil)
+    }
+
     @Test("A shell at its prompt answers with nothing")
     func idle() {
         let table = ProcessTable(psOutput: """

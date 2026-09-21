@@ -9,9 +9,18 @@ public final class ColourThemePreference {
     @ObservationIgnored private let defaults: UserDefaults
 
     public var choice: ColourTheme {
-        didSet { defaults.set(choice.id, forKey: ColourTheme.defaultsKey) }
+        didSet {
+            defaults.set(choice.id, forKey: ColourTheme.defaultsKey)
+            surfaces = overrides.surfaces(for: choice)
+        }
     }
-    private var saved: [String: ThemeOverrides]
+    private var saved: [String: ThemeOverrides] {
+        didSet { surfaces = overrides.surfaces(for: choice) }
+    }
+
+    /// The selected preset's colours with the person's changes over them. Stored rather than
+    /// computed, because every surface the window paints reads it.
+    public private(set) var surfaces: ThemeSurfaces
 
     /// The selected preset's glass and colour schemes, as changed while it was selected.
     public var overrides: ThemeOverrides {
@@ -39,6 +48,20 @@ public final class ColourThemePreference {
         set { overrides.glass = newValue }
     }
     public var glass: ThemeGlass { glassOverride ?? choice.glass }
+
+    /// One colour of the selected preset as it is drawn, changes included.
+    public func colour(_ role: ThemeColourRole) -> PaletteInk.Pair { role.value(in: surfaces) }
+
+    /// Changes one colour of the selected preset, or puts it back with nil.
+    public func setColour(_ role: ThemeColourRole, to value: PaletteInk.Pair?) {
+        var changed = overrides
+        var colours = changed.colours ?? [:]
+        colours[role.rawValue] = value
+        changed.colours = colours.isEmpty ? nil : colours
+        overrides = changed
+    }
+
+    public func isChanged(_ role: ThemeColourRole) -> Bool { overrides.colours?[role.rawValue] != nil }
     public var codeScheme: CodeScheme { overrides.codeScheme(for: choice) }
     public var terminalScheme: TerminalScheme { overrides.terminalScheme(for: choice) }
     public var codeTypography: ThemeTypography { typographyOverrides.codeTypography.inheriting(choice.codeTypography) }
@@ -62,6 +85,7 @@ public final class ColourThemePreference {
         self.defaults = defaults
         let initialChoice = ColourTheme(storedValue: defaults.string(forKey: ColourTheme.defaultsKey))
         choice = initialChoice
+        surfaces = initialChoice.surfaces
         if let data = defaults.data(forKey: Self.overridesKey) {
             do {
                 let archive = try ThemeOverrides.Archive.decode(data)
@@ -85,6 +109,7 @@ public final class ColourThemePreference {
             typographyOverrides = .migrating(from: defaults, theme: initialChoice)
             persist()
         }
+        surfaces = overrides.surfaces(for: initialChoice)
     }
 
     /// Puts the selected preset's glass and colours back. Typography is left alone, because it

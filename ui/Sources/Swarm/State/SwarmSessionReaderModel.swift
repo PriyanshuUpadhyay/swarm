@@ -12,7 +12,6 @@ final class SwarmSessionReaderModel {
     private(set) var agents: [SwarmSessionAgentDigest] = []
     private(set) var agentsFailure: String?
     private var inputFailures: [InputRoute: String] = [:]
-    private var listedAgents: [InputRoute: SwarmAgent] = [:]
     private var chairRoute: InputRoute?
 
     init(item: SwarmProjectSession, bus: any SwarmBus) {
@@ -77,10 +76,9 @@ final class SwarmSessionReaderModel {
     /// **Every observed property here is written only when it changes, and that is load-bearing.**
     ///
     /// `@Observable` fires on the assignment, not on a difference, so `agentsFailure = nil` once a
-    /// second rebuilt the whole agents panel once a second whether or not anything had happened,
-    /// and `listedAgents` did the same to every message field in it. The pane flickered while a
-    /// chat ran because of that, not because the chat had new rows. `agents` was already guarded
-    /// for this reason; the rest were not.
+    /// second rebuilt the whole agents panel once a second whether or not anything had happened.
+    /// The pane flickered while a chat ran because of that, not because the chat had new rows.
+    /// `agents` was already guarded for this reason; the rest were not.
     private func refresh() async {
         do {
             for session in sessions {
@@ -88,7 +86,6 @@ final class SwarmSessionReaderModel {
             }
         } catch {
             if !agents.isEmpty { agents = [] }
-            if !listedAgents.isEmpty { listedAgents = [:] }
             if chairRoute != nil { chairRoute = nil }
             let sentence = Self.message(for: error)
             if agentsFailure != sentence { agentsFailure = sentence }
@@ -123,12 +120,6 @@ final class SwarmSessionReaderModel {
             }
             guard !Task.isCancelled else { return }
             if agents != digest { agents = digest }
-            let listed = Dictionary(uniqueKeysWithValues: readings.flatMap { reading in
-                reading.agents.map {
-                    (InputRoute(sessionID: reading.session.id, agentID: $0.id), $0)
-                }
-            })
-            if listedAgents != listed { listedAgents = listed }
             let chair = readings.compactMap { reading -> InputRoute? in
                 let chair = SwarmAgentID("orchestrator")
                 guard reading.agents.contains(where: { $0.id == chair && $0.pane != nil }) else {
@@ -144,26 +135,6 @@ final class SwarmSessionReaderModel {
             let sentence = Self.message(for: error)
             if agentsFailure != sentence { agentsFailure = sentence }
         }
-    }
-
-    func disabledReason(
-        for agent: SwarmAgentID, in sessionID: SwarmSessionID?,
-        target: SwarmSessionInputTarget
-    ) -> String? {
-        let route = route(for: agent, in: sessionID, target: target)
-        let session = route.flatMap { route in sessions.first { $0.id == route.sessionID } }
-        return SwarmSessionInteraction.disabledReason(
-            adapter: session?.adapter ?? sessions.first?.adapter,
-            pane: route.flatMap { listedAgents[$0]?.pane }, target: target
-        )
-    }
-
-    func canSubmit(
-        _ text: String, to agent: SwarmAgentID, in sessionID: SwarmSessionID?,
-        target: SwarmSessionInputTarget
-    ) -> Bool {
-        disabledReason(for: agent, in: sessionID, target: target) == nil
-            && text.contains { !$0.isWhitespace }
     }
 
     func inputFailure(for agent: SwarmAgentID, in sessionID: SwarmSessionID?) -> String? {
@@ -182,18 +153,6 @@ final class SwarmSessionReaderModel {
         } catch {
             inputFailures[route] = Self.message(for: error)
             return false
-        }
-    }
-
-    func interrupt(_ agent: SwarmAgentID, in sessionID: SwarmSessionID?) async {
-        guard let route = route(
-            for: agent, in: sessionID, target: sessionID == nil ? .chair : .agent
-        ), let session = sessions.first(where: { $0.id == route.sessionID }) else { return }
-        do {
-            try await bus.interrupt(agent, in: session)
-            inputFailures[route] = nil
-        } catch {
-            inputFailures[route] = Self.message(for: error)
         }
     }
 

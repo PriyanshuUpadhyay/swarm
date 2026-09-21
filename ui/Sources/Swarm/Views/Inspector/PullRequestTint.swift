@@ -11,7 +11,7 @@ extension PullRequestStatus.Tone {
     ///
     /// This is the INK value: a headline, a badge rim, a menu's chevron, and the bar's own wash of
     /// itself. Anything that fills a control and puts white text on it takes `fill` instead.
-    var color: Color? {
+    @MainActor var color: Color? {
         switch self {
         case .neutral: nil
         case .positive: Palette.positive
@@ -40,7 +40,7 @@ extension PullRequestStatus.Tone {
     /// button label; `Palette.mergedFill` holds the light member in both appearances and measures
     /// 5.05. The other tones hand back their own colour unchanged, which is what they drew before
     /// this existed.
-    var fill: Color {
+    @MainActor var fill: Color {
         switch self {
         case .merged: Palette.mergedFill
         default: color ?? Palette.controlAccent

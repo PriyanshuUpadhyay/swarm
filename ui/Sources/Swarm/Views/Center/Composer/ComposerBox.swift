@@ -34,15 +34,14 @@ struct ComposerBox: ViewModifier {
 
         if isFloating {
             padded
-                // One material for the whole composer. Its controls keep their ordinary styles,
-                // and completion menus are attached outside this modifier.
-                .glassEffect(.regular, in: shape)
+                // Conductor's box: one solid raised fill and a rule that is always there, a step
+                // darker while the box has focus. Completion menus are attached outside this.
+                .background(Palette.surfaceRaised, in: shape)
                 .overlay {
                     shape.strokeBorder(
-                        isDropTarget ? Palette.controlAccent : focusColour,
-                        lineWidth: isDropTarget || contrast == .increased ? 2 : 0.5
+                        isDropTarget ? Palette.controlAccent : (isRingVisible ? focusColour.opacity(focusOpacity) : Palette.border),
+                        lineWidth: isDropTarget || contrast == .increased ? 2 : Metrics.hairline
                     )
-                    .opacity(isDropTarget ? 1 : (isRingVisible ? focusOpacity : 0))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
@@ -69,7 +68,7 @@ struct ComposerBox: ViewModifier {
         contrast == .increased ? Palette.focusRing : Palette.textSecondary
     }
 
-    private var focusOpacity: Double { contrast == .increased ? 1 : 0.2 }
+    private var focusOpacity: Double { contrast == .increased ? 1 : 0.35 }
 }
 
 extension View {

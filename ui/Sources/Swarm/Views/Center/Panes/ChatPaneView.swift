@@ -83,8 +83,9 @@ struct ChatPaneView: View {
         TranscriptView(
             transcript: transcript,
             isRunningSetup: model.isRunningSetup,
-            memory: TranscriptPaneMemory(model: model, pane: pane)
-        ) { isTranscriptScrolledUp = $0 }
+            memory: TranscriptPaneMemory(model: model, pane: pane),
+            onScrolledUpChange: { isTranscriptScrolledUp = $0 }
+        )
         .environment(\.composerRoom, room)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {

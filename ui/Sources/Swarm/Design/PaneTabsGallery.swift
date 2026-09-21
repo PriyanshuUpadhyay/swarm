@@ -263,7 +263,6 @@ private struct StripRow: View {
             title: fixture.title,
             icon: fixture.icon,
             isActive: fixture.isActive,
-            surface: TabPane.content.surface,
             isRenaming: false,
             editableTitle: fixture.title,
             canClose: true,

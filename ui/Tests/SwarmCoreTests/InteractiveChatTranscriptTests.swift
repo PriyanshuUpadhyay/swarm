@@ -66,7 +66,37 @@ struct InteractiveChatTranscriptTests {
         ) == nil)
     }
 
-    @Test("Codex rollout keeps prose, thinking and every record nobody has coded for")
+    /// A Codex chair's log was read as a Claude log, so the swarm session pane showed one raw
+    /// `session_meta`, `event_msg` or `response_item` row per line and no conversation.
+    @Test("A Codex chair's log is read as a Codex rollout")
+    func codexChairLog() async throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chair-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("""
+            {"type":"session_meta","payload":{"id":"safe-id","cwd":"/Users/example/work"}}
+            {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Testing swarm"}]}}
+            {"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","id":"answer","content":[{"type":"output_text","text":"Test received."}]}}
+
+            """.utf8).write(to: file)
+        let reader = ChairTranscriptOutput.reader(
+            path: file.path, sessionID: sessionID, provider: "codex", chairID: SwarmChairID(providerID)
+        )
+        let transcript = try await #require(reader).read()
+        #expect(transcript.messages.map(\.kind) == [.user, .assistantText])
+    }
+
+    /// The bubble a chat draws the moment the key goes down. A CLI writes the prompt to its log
+    /// when its turn starts, so without this the message sat nowhere for a second or more.
+    @Test("a sent message draws as a user row before the CLI writes it")
+    func sentRowReadsBack() {
+        let row = InteractiveChatTranscript.sentRow("say ok", sessionID: sessionID, seq: 7)
+        #expect(row.kind == .user)
+        #expect(row.seq == 7)
+        #expect(UserTurnPrompt.text(in: row.payload) == "say ok")
+    }
+
+    @Test("Codex rollout keeps prose, thinking and every agent action nobody has coded for")
     func codexRows() throws {
         let transcript = InteractiveChatTranscript.parseCodex(
             """
@@ -82,21 +112,16 @@ struct InteractiveChatTranscriptTests {
             providerSessionID: providerID
         )
 
-        // What is still dropped, and why each one is a decision and not an oversight:
-        // - `session_meta` is session state, on the measured deny list;
-        // - the AGENTS.md and `<environment_context>` turn is prompt scaffolding every part of
-        //   which `hidesCodexSystemText` names, so the turn has no words left in it.
-        //
-        // What now survives that used to vanish: a `developer` message, the model's thinking when
-        // it carries a readable summary, and a `custom_tool_call` nobody has written a case for.
-        #expect(transcript.messages.map(\.kind) == [
-            .system, .user, .thinking, .system, .assistantText,
-        ])
-        #expect(UserTurnPrompt.text(in: transcript.messages[1].payload) == "How do CDC systems work?")
-        #expect(OpaqueRecord.read(transcript.messages[3].payload)?.title == "response_item")
+        // Dropped: `session_meta` is session state, the `developer` message is an instruction
+        // Codex sent and nobody said, and the AGENTS.md turn is scaffolding every part of which
+        // `hidesCodexSystemText` names. Kept: the thinking with a readable summary, and a
+        // `custom_tool_call` nobody has written a case for, folded.
+        #expect(transcript.messages.map(\.kind) == [.user, .thinking, .system, .assistantText])
+        #expect(UserTurnPrompt.text(in: transcript.messages[0].payload) == "How do CDC systems work?")
+        #expect(OpaqueRecord.read(transcript.messages[2].payload)?.title == "response_item")
 
         let answer = try #require(AgentEvent.decode(
-            line: String(decoding: transcript.messages[4].payload, as: UTF8.self)
+            line: String(decoding: transcript.messages[3].payload, as: UTF8.self)
         ))
         guard case .assistantText(let block) = answer else {
             Issue.record("Expected assistant text")

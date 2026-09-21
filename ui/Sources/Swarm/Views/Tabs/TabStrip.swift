@@ -1,49 +1,11 @@
 import SwiftUI
 
-/// The colours a tab wears while it is the selected one.
-///
-/// The selected capsule uses its pane's background and text colours. Terminal tabs can carry a
-/// custom Ghostty theme, so the background and foreground must stay together for readable labels.
-struct TabSurface: Equatable {
-    /// What the selected tab is filled with.
-    var fill: Color
-    /// The selected tab's title and glyph.
-    var ink: Color
-    /// A step under `ink`, for the close cross, which is a smaller mark and should not be the
-    /// heaviest thing in the strip.
-    var inkMuted: Color
-
-    /// One of Swarm's own grounds, wearing Swarm's own label colours.
-    static func pane(_ fill: Color) -> TabSurface {
-        TabSurface(fill: fill, ink: Palette.textPrimary, inkMuted: Palette.textSecondary)
-    }
-
-    /// A pane painted by something outside the app, which therefore has to bring its own ink.
-    ///
-    /// The muted step is an opacity on that ink rather than Swarm's secondary label: over a cream
-    /// terminal in a light window the secondary label is a mid grey that all but disappears, and
-    /// over a near black one it disappears the other way.
-    static func themed(fill: Color, ink: Color) -> TabSurface {
-        TabSurface(fill: fill, ink: ink, inkMuted: ink.opacity(0.62))
-    }
-}
-
-/// Which of Swarm's grounds a strip of tabs opens onto.
-///
-/// Determines the selected tab's background.
+/// Which of Swarm's grounds a strip of tabs opens onto, which is the ground the strip is drawn on.
 enum TabPane {
     /// The reading ground: the centre column's conversations, terminals, browsers and reviews.
     case content
     /// A recessed pane: the bottom panel's setup log, run scripts and shells.
     case sunken
-
-    @MainActor var surface: TabSurface {
-        switch self {
-        case .content: .pane(Palette.surface)
-        case .sunken: .pane(Palette.surfaceSunken)
-        }
-    }
-
 }
 
 /// Tabs share the pane's available width. Controls stay at the ends while crowded tabs scroll.
@@ -68,7 +30,6 @@ struct TabStrip<Leading: View, Tabs: View, Append: View, Trailing: View>: View {
     var append: Append
     var trailing: Trailing
 
-    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Available width for the tabs, rounded down so their combined width stays inside the track.
@@ -103,14 +64,9 @@ struct TabStrip<Leading: View, Tabs: View, Append: View, Trailing: View>: View {
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
+                    // Conductor's strip: tabs as wide as their titles, on the bare bar, with no
+                    // track behind them. The selected one is underlined. See `TabItemView`.
                     tabs
-                        .environment(\.tabItemWidth, itemWidth)
-                        .background {
-                            Capsule()
-                                .fill(Palette.hover.opacity(appearsActive ? 1 : 0.8))
-                                .frame(height: Metrics.barHeight - Metrics.spacingSmall)
-                                .allowsHitTesting(false)
-                        }
                         .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded(.up) } action: {
                             tabsWidth = $0
                         }
@@ -144,9 +100,9 @@ struct TabStrip<Leading: View, Tabs: View, Append: View, Trailing: View>: View {
 
             trailing
         }
-        .padding(.leading, Metrics.spacingWide)
+        .padding(.leading, Metrics.spacingSmall)
         .frame(height: Metrics.barHeight)
-        .background(Palette.sidebar)
+        .background(pane == .content ? Palette.surface : Palette.surfaceSunken)
         // No full width busy rule here any more: a band sweeps through each busy tab instead,
         // which `TabItemView` draws. See `BusySignalPlacement`.
         .tabStripMaterial()
@@ -154,12 +110,6 @@ struct TabStrip<Leading: View, Tabs: View, Append: View, Trailing: View>: View {
 }
 
 extension TabStrip {
-    private var itemWidth: CGFloat {
-        guard tabCount > 0 else { return TabItemView.minimumWidth }
-        // No share for the separators: they take no width. See `TabStripSeparator`.
-        return max(TabItemView.minimumWidth, width / CGFloat(tabCount))
-    }
-
     @ViewBuilder
     private var fade: some View {
         // Scroll geometry can arrive before the tabs settle after a resize or count change.
@@ -274,14 +224,10 @@ struct TabStripSeparator: View {
     var isHidden = false
 
     var body: some View {
+        // Conductor's strip draws no rule between tabs; the underline alone marks the selection.
+        // The slot stays so the strip's structure does not change.
         Color.clear
             .frame(width: 0, height: Metrics.barHeight / 2)
-            .overlay {
-                Rectangle()
-                    .fill(Palette.textTertiary.opacity(0.35))
-                    .frame(width: Metrics.hairline)
-            }
-            .opacity(isHidden ? 0 : 1)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

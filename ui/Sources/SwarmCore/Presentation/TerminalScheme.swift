@@ -6,7 +6,10 @@ public struct TerminalScheme: Codable, Hashable, Sendable, Identifiable {
     public var light: GhosttyTheme
     public var dark: GhosttyTheme
 
-    public static let all: [Self] = [.swarm, .charcoal]
+    public static let all: [Self] = [
+        .conductor, .swarm, .charcoal, .catppuccin, .dracula, .nord, .tokyoNight, .gruvbox, .solarized,
+        .rosePine, .github, .one,
+    ]
     public static func find(_ key: String?, fallback: Self = .swarm) -> Self {
         all.first { $0.id == key } ?? fallback
     }

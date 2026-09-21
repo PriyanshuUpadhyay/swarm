@@ -69,6 +69,9 @@ public extension AgentKind {
             if !effort.isEmpty { arguments += ["--effort", effort] }
         case .codex:
             arguments = resuming.map { ["resume", $0] } ?? []
+            // Codex asks "Update available! 1. Update now 2. Skip" before it reads anything else,
+            // and a chat that Swarm started sits at that question with nobody at its pane.
+            arguments += ["-c", "check_for_update_on_startup=false"]
             if let permissionMode {
                 arguments += ["--sandbox", CodexRunner.sandboxMode(for: permissionMode).rawValue,
                               "--ask-for-approval", CodexRunner.approvalPolicy(for: permissionMode).rawValue]

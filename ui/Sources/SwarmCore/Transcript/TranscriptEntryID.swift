@@ -37,6 +37,14 @@ public enum TranscriptEntryID: Hashable, Sendable, CustomStringConvertible {
     case streaming
     /// A queued message, waiting to be sent.
     case pending(DeliveryID)
+    /// Rows a pane adds after the conversation, from a source the transcript does not read.
+    ///
+    /// One entry rather than one per row, and in the list from the moment the pane offers any,
+    /// drawing nothing until there is something: that is the argument the four singletons above
+    /// carry. What is inside it is the pane's business. A swarm session puts its agents here,
+    /// each with the summary it left when it closed, so the chair's conversation and the agents
+    /// it ran are one scroll rather than a chat beside a column.
+    case appended
     /// Breathing room after all content, including streaming output and queued messages.
     case bottomSpacing
 
@@ -71,7 +79,10 @@ public enum TranscriptEntryID: Hashable, Sendable, CustomStringConvertible {
     public var redrawsItself: Bool {
         switch self {
         case .row, .fold, .bottomSpacing: false
-        case .setup, .sending, .streaming, .pending: true
+        // `appended` is with the four that redraw, because what it holds comes from a source the
+        // transcript does not watch: a swarm agent's summary lands on the bus, not in the chair's
+        // log, so nothing here can hash it into a content key.
+        case .setup, .sending, .streaming, .pending, .appended: true
         }
     }
 
@@ -83,6 +94,7 @@ public enum TranscriptEntryID: Hashable, Sendable, CustomStringConvertible {
         case .sending: "sending"
         case .streaming: "streaming"
         case .pending(let id): "pending.\(id)"
+        case .appended: "appended"
         case .bottomSpacing: "bottomSpacing"
         }
     }

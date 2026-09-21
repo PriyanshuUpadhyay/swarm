@@ -63,6 +63,14 @@ enum Log {
     /// Run scripts: an autostart approval that could not be written, which is why nothing started.
     static let runScripts = Logger(subsystem: subsystem, category: "runScripts")
 
+    /// A chat hosted by a CLI: where a typed message went, and what could not be resolved.
+    ///
+    /// These two questions were unanswerable from outside the process, and both of them reached
+    /// the owner as "it is stuck" with nothing to read. A send takes one of three roads, and a
+    /// chat whose swarm session id is no longer the id of its group drew Home and said nothing.
+    /// Read it with `log show --last 10m --predicate 'category == "chat"'`.
+    static let chat = Logger(subsystem: subsystem, category: "chat")
+
     /// The app's own bundle id, so an instance running against `SWARM_UI_DB_PATH` for a test can be
     /// told apart from the one somebody is using.
     private static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.priyanshuupadhyay.swarm"

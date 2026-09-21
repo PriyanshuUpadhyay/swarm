@@ -64,9 +64,11 @@ struct SettingsView: View {
                     }
                     .padding(Metrics.inset)
                 }
+                // Against the list of panes rather than centred, so a wide window does not open a
+                // gap between the list and the form it chose.
                 pane
                     .frame(maxWidth: 680)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .background(Palette.windowBackground)
         }

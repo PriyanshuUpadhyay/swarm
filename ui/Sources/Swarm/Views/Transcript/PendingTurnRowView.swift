@@ -175,12 +175,16 @@ struct PendingTurnRowView: View {
             // takes the width they actually use, matching the sent bubble above it.
             .padding(Self.padding)
         }
-        .padding(.bottom, OutgoingBubbleShape.tailDrop)
-        .background(Palette.surfaceRaised, in: OutgoingBubbleShape(cornerRadius: Self.corner))
-        .overlay {
-            OutgoingBubbleShape(cornerRadius: Self.corner)
-                .strokeBorder(Palette.textTertiary, style: Self.dots)
-        }
+        .padding(.bottom, Palette.bubble == nil ? OutgoingBubbleShape.tailDrop : 0)
+        .background(Palette.surfaceRaised, in: shape)
+        .overlay { shape.strokeBorder(Palette.textTertiary, style: Self.dots) }
+    }
+
+    /// The sent bubble's outline, so a queued turn changes into a sent one without changing shape.
+    private var shape: OutgoingBubbleShape {
+        Palette.bubble == nil
+            ? OutgoingBubbleShape(cornerRadius: Self.corner)
+            : OutgoingBubbleShape(cornerRadius: UserTurnRowView.neutralCorner, hasTail: false)
     }
 
     private var attachmentTurn: (body: String, paths: [String]) {

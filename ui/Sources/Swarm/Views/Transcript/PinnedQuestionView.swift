@@ -58,7 +58,8 @@ struct PinnedQuestionView: View {
     var onOpen: () -> Void
 
     /// Include the gap below the tabs when leaving room above the destination bubble.
-    static let height: CGFloat = Metrics.barHeight + Metrics.spacingWide
+    static let height: CGFloat = Metrics.barHeight + Metrics.spacingWide + Metrics.spacingSmall
+    private static let shape = RoundedRectangle(cornerRadius: ComposerLayout.corner, style: .continuous)
 
     var body: some View {
         Button(action: onOpen) {
@@ -85,16 +86,23 @@ struct PinnedQuestionView: View {
             }
             .padding(.horizontal, Metrics.gutter)
             .frame(maxWidth: .infinity, minHeight: Metrics.barHeight, maxHeight: Metrics.barHeight)
-            .contentShape(Capsule())
+            .contentShape(Self.shape)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: TranscriptLayout.conversationMeasure)
-        .glassEffect(.regular.interactive(), in: Capsule())
+        // Solid, in the composer's own box, so the conversation scrolling under it cannot show
+        // through the question.
+        .background(Palette.surfaceRaised, in: Self.shape)
+        .overlay { Self.shape.strokeBorder(Palette.border, lineWidth: Metrics.hairline) }
         .pointerStyle(.link)
         .help("Show the full question")
         .accessibilityLabel("Show question: \(question.summary)")
         .padding(.horizontal, ComposerLayout.horizontalInset)
         .padding(.top, Metrics.spacingWide)
+        .padding(.bottom, Metrics.spacingSmall)
         .frame(maxWidth: .infinity, alignment: .center)
+        // A band the width of the pane, so the conversation scrolling under the question is
+        // covered above and beside the box as well as behind it.
+        .background(Palette.surface)
     }
 }

@@ -39,7 +39,6 @@ struct SessionTabView: View {
             icon: .symbol(PaneGlyph.chatTab(agentMark: agentGlyph)),
             isActive: isActive,
             isRunning: isRunning,
-            surface: TabPane.content.surface,
             isRenaming: isRenaming,
             editableTitle: session.title,
             canClose: canClose,

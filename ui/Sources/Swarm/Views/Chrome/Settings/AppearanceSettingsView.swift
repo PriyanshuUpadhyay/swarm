@@ -6,28 +6,45 @@ struct AppearanceSettingsView: View {
     @AppStorage("appearance") private var appearance = "system"
     @Bindable private var colourTheme = ColourThemePreference.shared
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(SidebarRowDetail.storageKey) private var rowDetail = SidebarRowDetail.time
 
     var body: some View {
         Form {
             Section("Theme") {
-                Picker("Theme", selection: $colourTheme.choice) {
-                    ForEach(ColourTheme.allCases) { theme in Text(theme.title).tag(theme) }
-                }
+                ThemeGallery(selection: $colourTheme.choice)
                 Picker("Appearance", selection: $appearance) {
                     Text("System").tag("system")
                     Text("Light").tag("light")
                     Text("Dark").tag("dark")
                 }
                 .pickerStyle(.segmented)
-                Text("Glass and colour schemes are saved for \(colourTheme.choice.title). Fonts, sizes and line heights apply to every theme.")
+                Text("Colours, glass and schemes are saved for \(colourTheme.choice.title). Fonts, sizes and line heights apply to every theme.")
                     .settingsFootnote()
                 Button("Restore Theme Defaults") { colourTheme.restoreDefaults() }
+            }
+
+            Section {
+                // A theme with no message fill draws the filled accent bubble, which is not a colour
+                // this row could change without turning the bubble into a box in both appearances.
+                ForEach(ThemeColourRole.allCases.filter {
+                    $0 != .bubble || colourTheme.choice.surfaces.bubble != nil
+                }) { role in
+                    ThemeColourRow(role: role, preference: colourTheme)
+                }
+            } header: {
+                Text("Colours")
+            } footer: {
+                Text("A change applies to \(colourTheme.choice.title) in \(colorScheme == .dark ? "dark" : "light") appearance. Switch appearance to change the other one. Status colours adjust to stay readable on your background.")
+                    .settingsFootnote()
             }
 
             Section("Window") {
                 Picker("Sidebar glass", selection: $colourTheme.glassOverride) {
                     Text("Theme default (\(colourTheme.choice.glass.title))").tag(nil as ThemeGlass?)
                     ForEach(ThemeGlass.allCases) { glass in Text(glass.title).tag(glass as ThemeGlass?) }
+                }
+                Picker("Workspace rows show", selection: $rowDetail) {
+                    ForEach(SidebarRowDetail.allCases) { detail in Text(detail.title).tag(detail) }
                 }
             }
 

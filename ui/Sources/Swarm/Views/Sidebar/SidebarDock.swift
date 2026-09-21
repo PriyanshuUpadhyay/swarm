@@ -1,50 +1,19 @@
 import SwiftUI
 import SwarmCore
 
-/// Home, New and Ask Swarm, at the leading end of the sidebar's status bar.
+/// Ask Swarm, at the leading end of the sidebar's status bar.
 ///
-/// **These were two rows and a plus at the top of the list.** Home carried the pane's one `+`, and
-/// Ask Swarm sat under it as a destination of its own. The owner found "Home / Ask Swarm" a waste of
-/// the pane's best real estate and asked for Ask behind a button, as Amp does it; the plus came
-/// with them, as a third button, second in the row because making something is reached for more
-/// often than asking. The rows' sixty points went back to the list.
-///
-/// Buttons in a status bar rather than a toolbar, because this strip is already where the pane
-/// keeps the controls that are about the whole of it, and it is in both shapes of the pane.
+/// Home and New moved to the rows over the list, where Conductor keeps them. See
+/// `SidebarNavigation`. Ask stays down here as a button, which is where the owner asked for it.
 struct SidebarDock: View {
     @Environment(AppModel.self) private var app
 
-    var onNewWorkspace: () -> Void
-    var onStartProject: () -> Void
-
     @State private var hovered: Item?
 
-    private enum Item { case home, new, ask }
+    private enum Item { case ask }
 
     var body: some View {
         HStack(spacing: Metrics.spacingTight) {
-            Button { goHome() } label: {
-                label("Home", systemImage: "house", item: .home, isActive: app.selection == .home)
-            }
-            .buttonStyle(.plain)
-            .help("Home")
-
-            Menu {
-                // The same words, and the same order, the plus on Home's row had.
-                Button("New workspace…", action: onNewWorkspace)
-                Button("New project…", action: onStartProject)
-            } label: {
-                label("New", systemImage: "plus", item: .new, isActive: false)
-            }
-            // `.button` with `.plain` rather than `.borderlessButton`, for the reason measured on
-            // the workspace row's own menu: the borderless style inks its label itself and ignores
-            // the colour it is handed.
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("New workspace or project")
-
             Button { askSwarm() } label: {
                 label(
                     AskConversation.title, systemImage: PaneGlyph.chat, item: .ask,
@@ -65,11 +34,6 @@ struct SidebarDock: View {
             .help("Ask Swarm")
             .accessibilityValue(app.askStatus?.label ?? "")
         }
-    }
-
-    private func goHome() {
-        AskPanelModel.shared.close()
-        app.selection = .home
     }
 
     private func askSwarm() {

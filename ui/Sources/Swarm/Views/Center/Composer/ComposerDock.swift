@@ -25,7 +25,8 @@ struct ComposerDock<Content: View>: View {
 }
 
 enum ComposerLayout {
-    static let corner: CGFloat = 22
+    static let corner: CGFloat = 10
+    static let minimumTextHeight: CGFloat = 48
     static let horizontalInset: CGFloat = 16
     static let bottomInset: CGFloat = 14
     static let textClearance: CGFloat = 12

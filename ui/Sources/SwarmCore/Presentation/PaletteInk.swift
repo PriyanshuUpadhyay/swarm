@@ -49,6 +49,12 @@ public enum PaletteInk {
     public static let merged = Pair(light: 0x8250DF, dark: 0xAA7BF8)
     public static let mergedFill = Pair(light: 0x8250DF, dark: 0x8250DF)
     public static let diffPositive = Pair(light: 0x28CD41, dark: 0x30D158)
+    /// Done and passed, for a theme with an accent of its own. See `ThemeSurfaces.positive`.
+    public static let success = Pair(light: 0x1A7F37, dark: 0x3FB950)
+    /// `labelColor` and `secondaryLabelColor` as opaque values, for measuring them against a
+    /// ground. See `Palette.textPrimary`.
+    public static let labelPrimary = Pair(light: 0x262626, dark: 0xDADADA)
+    public static let labelSecondary = Pair(light: 0x808080, dark: 0x8C8C8C)
     public static let synKeyword = Pair(light: 0x9B2393, dark: 0xD08EE0)
     public static let synType = Pair(light: 0x0B7285, dark: 0x5BC8DB)
     public static let synString = Pair(light: 0xC0392B, dark: 0xE8846E)

@@ -144,6 +144,50 @@ struct SwarmSessionListingTests {
         #expect(SwarmSessionListing.archiveIDs(for: chat) == [new.id, old.id])
     }
 
+    /// The window held session 33 while the chair had opened 36 in the same chat, and the pane it
+    /// drew was Home.
+    @Test("a chat is found by an older session inside it, not only by its newest")
+    func chatFoundByAnyMember() {
+        let old = fixture(id: "33")
+        let new = fixture(id: "36")
+        let elsewhere = fixture(id: "12")
+        let chats = [
+            SwarmProjectSession(sessions: [new, old], title: "Testing swarm"),
+            SwarmProjectSession(sessions: [elsewhere], title: "Another"),
+        ]
+
+        #expect(SwarmSessionListing.chat(old.id, in: chats)?.title == "Testing swarm")
+        #expect(SwarmSessionListing.chat(new.id, in: chats)?.title == "Testing swarm")
+        #expect(SwarmSessionListing.chat(SwarmSessionID("99"), in: chats) == nil)
+    }
+
+    /// Two council seats stopped at "Not logged in" because the app passed no profile at all.
+    @Test("the signed-in account names the home a seat inherits")
+    func autoAccountEnvironment() {
+        let list = SwarmAccountList(
+            provider: "claude",
+            source: "yelo",
+            accounts: [
+                SwarmAccount(
+                    name: "priyanshu", email: nil, home: "/homes/priyanshu",
+                    env: ["CLAUDE_CONFIG_DIR": "/homes/priyanshu"],
+                    signedIn: true, remainingPct: 100, summary: nil
+                ),
+                SwarmAccount(
+                    name: "sirsendu", email: nil, home: "/homes/sirsendu",
+                    env: ["CLAUDE_CONFIG_DIR": "/homes/sirsendu"],
+                    signedIn: true, remainingPct: 34, summary: nil
+                ),
+            ],
+            auto: "sirsendu"
+        )
+
+        #expect(list.autoEnvironment == ["CLAUDE_CONFIG_DIR": "/homes/sirsendu"])
+        #expect(SwarmAccountList(
+            provider: "agy", source: nil, accounts: [], auto: nil
+        ).autoEnvironment.isEmpty)
+    }
+
     @Test("workspace archive targets use a path component boundary")
     func workspaceArchiveTargets() {
         let root = fixture(id: "10", cwd: "/work/project")
@@ -329,6 +373,30 @@ struct SwarmSessionListingTests {
 
         #expect(transcript.droppedRows > 0)
         #expect(UserTurnPrompt.text(in: transcript.messages.last?.payload ?? Data()) == "Question 7")
+    }
+
+    /// The cap that keeps the fold cheap. A day-long chat is re-folded into rows four times a
+    /// second while a turn runs, so what it keeps has to be bounded by count and not only by size.
+    @Test("a chat keeps only its newest messages and counts the rest")
+    func capsChairLogByCount() async throws {
+        let path = TestScratch.path("counted-chair.jsonl")
+        let total = TranscriptLogReader.messageLimit + 20
+        let lines = (0..<total).map {
+            #"{"type":"user","message":{"content":"Question \#($0)"}}"#
+        }.joined(separator: "\n") + "\n"
+        try lines.write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path), format: .claude(sessionID: SessionID("chair"))
+        )
+
+        let transcript = try await reader.read()
+
+        #expect(transcript.messages.count == TranscriptLogReader.messageLimit)
+        #expect(transcript.droppedRows == 20)
+        #expect(
+            UserTurnPrompt.text(in: transcript.messages.last?.payload ?? Data())
+                == "Question \(total - 1)"
+        )
     }
 
     @Test("session interaction reports input limits and last activity")

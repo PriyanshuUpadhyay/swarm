@@ -22,13 +22,13 @@ struct SidebarStatusHeadingRow: View {
 
     var body: some View {
         HStack(spacing: Metrics.spacingSmall) {
-            Text(group.title.uppercased())
-                .font(Typo.micro)
-                .tracking(Typo.microTracking)
+            // Conductor's section heading: sentence case at label size, no tracking.
+            Text(group.title)
+                .font(Typo.label)
                 .foregroundStyle(group == .needsYou ? Palette.warning : Palette.textTertiary)
 
             Text(count.formatted(Figures.count))
-                .font(Typo.micro)
+                .font(Typo.label)
                 .monospacedDigit()
                 .foregroundStyle(Palette.textTertiary)
 

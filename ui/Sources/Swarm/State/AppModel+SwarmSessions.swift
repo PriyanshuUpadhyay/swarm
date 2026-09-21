@@ -2,8 +2,24 @@ import SwarmCore
 
 /// Discovers swarm sessions for the project sidebar while this window is active.
 extension AppModel {
+    /// The chat one swarm session belongs to, by the group's own id or by any session inside it.
+    ///
+    /// **The second lookup is why the window stopped falling back to Home.** A chat is a GROUP of
+    /// swarm sessions that share a chair, and `SwarmProjectSession.id` is the newest of them. Every
+    /// time the chair starts again it opens another session, that session sorts first, and the
+    /// group's id changes under a selection that still holds the old one. `DetailColumn` then
+    /// resolved nil and drew `HomeView`, with nothing said and nothing to press. Sessions 33 and 36
+    /// of one testing chat are the case that found it.
     func swarmSession(_ id: SwarmSessionID) -> SwarmProjectSession? {
-        swarmSessionsByRepo.values.lazy.flatMap { $0 }.first { $0.id == id }
+        guard let chat = SwarmSessionListing.chat(
+            id, in: swarmSessionsByRepo.values.lazy.flatMap { $0 }
+        ) else {
+            Log.chat.notice(
+                "swarm session \(id.rawValue, privacy: .public) is in no chat this window knows"
+            )
+            return nil
+        }
+        return chat
     }
 
     /// Owned by the sidebar's active-window task, so leaving the window cancels both the sleep and
@@ -31,17 +47,12 @@ extension AppModel {
         do {
             let sessions = try await swarmBus.sessions()
             var saved: Set<SwarmSessionID> = []
-            var localChats: [SwarmSessionID: SessionID] = [:]
+            let localChats = await SwarmChatSession.loadAll(from: store)
             for workspace in workspaces {
                 if let session = await SwarmWorkspaceSession.load(
                     workspaceID: workspace.id, from: store
                 ) {
                     saved.insert(session)
-                }
-                for chat in (try? await store.sessions(workspaceID: workspace.id)) ?? [] {
-                    if let swarm = await SwarmChatSession.load(sessionID: chat.id, from: store) {
-                        localChats[swarm] = chat.id
-                    }
                 }
             }
             var running = Set(localChats.compactMap { swarm, chat in
@@ -107,7 +118,7 @@ extension AppModel {
                 .filter { $0.workspaceID == workspaceID }
                 .sorted { $0.lastActivity > $1.lastActivity }
                 .first
-            selection = next.map { .swarmSession($0.id) } ?? .workspace(workspaceID)
+            selection = next.map { .swarmSession($0) } ?? .workspace(workspaceID)
         } else {
             selection = .home
         }

@@ -270,6 +270,29 @@ fn session_chair_sets_pair_without_output() {
     std::fs::remove_dir_all(fixture.root).unwrap();
 }
 
+/// Swarm starts a chat's CLI again after a quit, and the chair registers from its new pane. The
+/// add used to fail on the existing row, which stopped the CLI from starting at all.
+#[test]
+fn chair_registers_again_from_a_new_pane() {
+    let fixture = fixture("chair-again");
+    adapter(
+        &fixture,
+        "self = printf '%s' '%7'\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    );
+    let again = run(&fixture, &["agent", "add", "orchestrator", "orchestrator"]);
+    assert!(again.status.success(), "{}", String::from_utf8_lossy(&again.stderr));
+    let connection = swarm::store::open(&fixture.home.join(".swarm/swarm.db")).unwrap();
+    let session = fixture.session.parse::<i64>().unwrap();
+    assert_eq!(
+        swarm::store::pane_of(&connection, session, "orchestrator")
+            .unwrap()
+            .as_deref(),
+        Some("%7")
+    );
+    assert!(!run(&fixture, &["agent", "add", "orchestrator", "coder"]).status.success());
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
 #[test]
 fn sessions_json_excludes_legacy_rows_orders_and_counts_without_identity() {
     let fixture = fixture("sessions");

@@ -246,11 +246,14 @@ fn spawn_quotes_selected_account_and_rejects_unknown_before_spawn() {
         String::from_utf8_lossy(&explicit.stderr),
         "account claudeWorkAccount\n"
     );
-    assert!(
-        std::fs::read_to_string(&ring)
-            .unwrap()
-            .starts_with("'env' '--' 'CLAUDE_CONFIG_DIR=/profiles/claude' 'true'; ")
-    );
+    // Claude keeps its credentials outside the config dir, so a seat that gets only
+    // CLAUDE_CONFIG_DIR starts at "Not logged in".
+    assert!(std::fs::read_to_string(&ring).unwrap().starts_with(&format!(
+        "'env' '--' 'AGENT_PROFILE_LABEL=claudeWorkAccount' \
+         'CLAUDE_CONFIG_DIR=/profiles/claude' \
+         'CLAUDE_SECURESTORAGE_CONFIG_DIR={}/.claude-claudeWorkAccount' 'true'; ",
+        swarm_home.display()
+    )));
 
     let ignored_provider = Command::new(env!("CARGO_BIN_EXE_swarm"))
         .args([

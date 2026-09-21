@@ -15,7 +15,19 @@ struct SwarmSessionView: View {
     /// one place the reader was not. `DocumentPreviewView` needs no worktree, and says so, so the
     /// chat's half of the split is a place it can be drawn in.
     @State private var preview: String?
+    /// The uncommitted work in this session's own folder, which is what the right hand column
+    /// shows now that the agents are in the conversation.
+    ///
+    /// **The window's own inspector cannot serve this pane.** `AppModel.isInspectorPresented` is
+    /// `isInspectorVisible && selectedWorkspace != nil`, and `SidebarSelection.swarmSession`
+    /// answers nil for a workspace, so the whole right column was switched off here and the
+    /// toolbar's Inspector button was hidden with it. Rather than teach the window that a session
+    /// is a workspace, which it is not, this pane keeps its own column and its own switch.
+    @State private var changes: SwarmSessionChangesModel
+    @State private var showsChanges = true
     @State private var localModel: WorkspaceModel?
+    @State private var isLocalLoaded = false
+    @State private var closedSession: Session?
     /// Built in `.task` rather than in `init`, because it needs the `AppModel` from the environment
     /// and an environment value does not exist yet while an initialiser runs.
     @State private var transcript: TranscriptModel?
@@ -24,6 +36,7 @@ struct SwarmSessionView: View {
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.item = item
         _reader = State(initialValue: SwarmSessionReaderModel(item: item, bus: bus))
+        _changes = State(initialValue: SwarmSessionChangesModel(cwd: item.session.cwd))
     }
 
     /// The identity this conversation has inside the app.
@@ -37,46 +50,66 @@ struct SwarmSessionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: Metrics.spacing) {
-                Text(item.title)
-                    .font(Typo.heading)
-                    .lineLimit(1)
-                Spacer()
+            // The same strip every other pane draws: the chat, and its terminal when there is one,
+            // as underlined tabs, with the session's own controls at the trailing end.
+            HStack(spacing: 0) {
+                SessionHeaderTab(title: item.title, isActive: !showsTerminal && preview == nil) {
+                    showsTerminal = false
+                    preview = nil
+                }
+                if let preview {
+                    SessionHeaderTab(title: (preview as NSString).lastPathComponent, isActive: true) {}
+                        .accessibilityHint("A document the chat pointed at")
+                }
+                // **Not behind the debug flag, unlike every other CLI chat's terminal.** A swarm
+                // chair splits its own tmux window for each seat it spawns, so this one view is
+                // every worker's pane as well as the chair's. Hiding it hid the whole swarm, and
+                // the point of a swarm is that its workers are watchable.
+                if item.session.adapter == "tmux", localTab != nil {
+                    SessionHeaderTab(title: "Panes", isActive: showsTerminal) {
+                        showsTerminal = true
+                        preview = nil
+                    }
+                }
+                Spacer(minLength: Metrics.spacing)
                 Text(item.sessions.count == 1
                     ? "Session \(item.id.rawValue)"
                     : "\(item.sessions.count) sessions")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textTertiary)
-                if let localSession, TerminalSessionStore.shared.interactiveState(
-                    for: localSession.id
-                ) == .stopped {
-                    Button("Resume") {
-                        Task { await localModel?.resumeCLI(localSession) }
+                    .padding(.trailing, Metrics.spacing)
+                // Only where this pane draws a column of its own. A session inside a workspace
+                // gets the window's real inspector and the toolbar's own Inspector button, so a
+                // second switch here would be two controls for one column.
+                if ownsChangesColumn, !showsTerminal {
+                    Button("Changes", systemImage: "sidebar.right") {
+                        showsChanges.toggle()
                     }
-                    .buttonStyle(.borderedProminent)
-                }
-                // Beside the terminal toggle rather than over the document, because it is the same
-                // question that button asks: which of this session's things is in the left half.
-                if preview != nil {
-                    Button("Show chat") { preview = nil }
-                        .buttonStyle(.bordered)
-                }
-                if item.session.adapter == "tmux", localTab != nil {
-                    Button(showsTerminal ? "Show chat" : "Show terminal") {
-                        showsTerminal.toggle()
-                    }
-                    .buttonStyle(.bordered)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .padding(.leading, Metrics.spacing)
+                    .accessibilityValue(showsChanges ? "Shown" : "Hidden")
+                    .help(showsChanges ? "Hide the changed files" : "Show the changed files")
                 }
             }
-            .padding(.horizontal, Metrics.pane)
-            .padding(.vertical, Metrics.spacing)
+            .padding(.leading, Metrics.spacingSmall)
+            .padding(.trailing, Metrics.gutter)
+            .frame(height: Metrics.barHeight)
+            .background(Palette.surface)
+            // A chat whose CLI stopped (Swarm quit with terminal persistence off) starts again as
+            // soon as it is opened. Once per launch, so a CLI that exits at once is not started in
+            // a loop; after that a send starts it. See `TranscriptModel.submit`.
+            .task(id: stoppedChat) {
+                guard let localSession, let localModel, stoppedChat == localSession.id else { return }
+                await localModel.restartStoppedCLI(localSession)
+            }
 
-            Divider()
+            Hairline()
 
             if showsTerminal, let localModel, let localTab {
                 ToolPaneView(
                     model: localModel, tab: localTab,
-                    splitColumn: { _, _ in }, paneMenu: nil
+                    splitColumn: { _, _ in }, showsShell: true, paneMenu: nil
                 )
             } else {
                 HSplitView {
@@ -84,15 +117,14 @@ struct SwarmSessionView: View {
                         if let preview {
                             SwarmSessionDocument(path: preview)
                         } else if let transcript {
-                            SwarmSessionChat(reader: reader, transcript: transcript)
+                            SwarmSessionChat(reader: reader, transcript: transcript, model: localModel)
                         }
                     }
                     .frame(minWidth: 420)
-                    SwarmSessionAgentsView(reader: reader)
-                        .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
-                        .markdownLinkActions(
-                            TranscriptLink.actions(for: localModel, showsFile: showsFile)
-                        )
+                    if ownsChangesColumn, showsChanges {
+                        SwarmSessionChangesView(model: changes)
+                            .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
+                    }
                 }
                 // The chair's chat builds its own link actions out of the transcript's workspace,
                 // so it is reached through the environment rather than through the call above.
@@ -117,27 +149,76 @@ struct SwarmSessionView: View {
                 await model.reloadSessions()
                 localModel = model
             }
+            if let id = item.localSessionID, localSession == nil {
+                closedSession = try? await app.store?.session(id: id)
+            }
+            isLocalLoaded = true
             await reader.follow()
         }
         // Its own task, because `reader.follow` above never returns and the chair log has to be
         // followed at the same time as the bus.
-        .task {
-            let model = transcript ?? TranscriptModel(
-                swarmSession: Session(id: chatSessionID, workspaceID: nil, title: item.title),
+        .task(id: transcriptKey) {
+            guard transcriptKey != nil else { return }
+            let model = TranscriptModel(
+                swarmSession: localSession ?? busChair,
                 chairLog: ChairTranscriptOutput.reader(
-                    path: item.session.chairLog, sessionID: chatSessionID
+                    path: item.session.chairLog, sessionID: chatSessionID,
+                    provider: item.session.chairProvider, chairID: item.session.chairID
                 ),
                 directory: item.session.cwd,
                 app: app
             )
-            if transcript == nil { transcript = model }
+            // A chair Swarm started is its session's chat, and the composer reaches its CLI through
+            // that session's terminal. The bus cannot: its tmux adapter runs a plain `tmux`, which
+            // is the default server rather than Swarm's, so `swarm type` failed with "can't find
+            // pane". Only a chair started elsewhere is typed at through the bus.
+            if localSession == nil {
+                let reader = reader
+                let app = app
+                let chair = SwarmAgentID("orchestrator")
+                model.chairInput = { text in
+                    guard await reader.type(text, to: chair, in: nil) else {
+                        app.notice = SwarmNotice(
+                            message: reader.inputFailure(for: chair, in: nil)
+                                ?? "The chair's pane did not accept the message."
+                        )
+                        return false
+                    }
+                    return true
+                }
+            }
+            transcript = model
             await model.follow()
         }
     }
 
+    /// Nil until the workspace's sessions are read, so the chat is built once, on the session it
+    /// belongs to.
+    private var transcriptKey: String? {
+        isLocalLoaded ? localSession?.id.rawValue ?? chatSessionID.rawValue : nil
+    }
+
+    /// The chat of a chair started outside Swarm, which has no row in the store.
+    private var busChair: Session {
+        Session(
+            id: chatSessionID, workspaceID: nil, title: item.title,
+            agentSessionID: item.session.chairID?.rawValue,
+            agentKind: item.session.chairProvider.flatMap(AgentKind.init(rawValue:)) ?? .claudeCode
+        )
+    }
+
+    private var stoppedChat: SessionID? {
+        guard let localSession,
+              TerminalSessionStore.shared.interactiveState(for: localSession.id) == .stopped
+        else { return nil }
+        return localSession.id
+    }
+
+    /// This session's chat, open or closed. A closed one still draws and still takes a message,
+    /// which opens it again. See `WorkspaceModel.reopen`.
     private var localSession: Session? {
         guard let id = item.localSessionID else { return nil }
-        return localModel?.sessions.first { $0.id == id }
+        return localModel?.sessions.first { $0.id == id } ?? closedSession
     }
 
     private var localTab: CenterTab? {
@@ -147,6 +228,15 @@ struct SwarmSessionView: View {
 
     /// Where a clicked document lands. Held as one value so that the agents panel and the chair
     /// chat, which reach their link actions by different roads, open into the same pane.
+    /// Whether this pane draws its own changes column.
+    ///
+    /// Only for a session with no workspace behind it. Where there is one, the window draws the
+    /// real inspector against it, with the changed files, the diff, the history and the toolbar's
+    /// own button, and this pane must not put a second poorer column beside it. That is what the
+    /// owner saw: one workspace with two different right hand columns depending on which of its
+    /// rows was clicked. See `SidebarSelection.swarmSession`, which is where the nil was.
+    private var ownsChangesColumn: Bool { item.workspaceID == nil }
+
     private var showsFile: @MainActor @Sendable (String) -> Void {
         let preview = $preview
         return { preview.wrappedValue = $0 }
@@ -220,188 +310,123 @@ struct SwarmSessionDocument: View {
 /// `TranscriptModel` could only read the store, and a swarm session started on the command line
 /// has no store row. `TranscriptModel.chairLog` removes that reason, so the second list goes.
 ///
-/// The composer below it is still `SwarmSessionInput` rather than `ComposerView`, and that is not
-/// an oversight. A chair in a tmux pane is typed at through the bus, not through a store delivery
-/// queue, so the send path is genuinely different even though the list is not.
+/// The composer is the one every other chat has, with its `/` menu of commands and skills. It
+/// sends through `TranscriptModel.submit`, which reaches a chair Swarm started through its
+/// terminal and any other chair through the bus. See `TranscriptModel.chairInput`.
 private struct SwarmSessionChat: View {
     var reader: SwarmSessionReaderModel
     var transcript: TranscriptModel
-
-    private var textSize: ChatTextSize { ColourThemePreference.shared.chatTextSize }
-    private var chatFontID: String { ColourThemePreference.shared.chatFont }
-    private var lineHeight: ChatLineHeight { ColourThemePreference.shared.chatLineHeight }
+    var model: WorkspaceModel?
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let failure = transcript.chatLogFailure {
-                Text(failure)
-                    .font(Typo.body)
-                    .foregroundStyle(Palette.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                if transcript.droppedRows > 0 {
-                    DetailCaption(
-                        text: "\(Counted.of(transcript.droppedRows, "earlier step")) not shown"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, Metrics.spacingSmall)
-                }
-                TranscriptView(transcript: transcript, drawsBackground: false)
-            }
-
-            Divider()
-
-            SwarmSessionInput(
-                reader: reader,
-                agent: SwarmAgentID("orchestrator"),
-                sessionID: nil,
-                target: .chair,
-                placeholder: "Message chair",
-                maxLines: 6
-            )
-            .padding(Metrics.pane)
+        InteractiveChatView(
+            transcript: transcript,
+            model: model,
+            appended: { AnyView(SwarmSessionAgentReport(reader: reader)) }
+        ) {
+            EmptyView()
         }
-        .environment(\.fontScale, textSize.scale)
-        .environment(\.chatFont, ChatFont(rawValue: chatFontID))
-        .environment(\.chatLineHeight, lineHeight)
     }
 }
 
-struct SwarmSessionAgentsView: View {
+/// What this session's agents reported, drawn under the chair's conversation in the same scroll.
+///
+/// **It used to be a column beside the chat, and that was the wrong shape for what it holds.** A
+/// swarm agent is asked one thing and answers once; what it leaves behind when it closes is a
+/// summary, and a summary is a paragraph. A paragraph belongs next to the sentence that asked for
+/// it, not in a 320 point column with a disclosure triangle and a message box on every row. The
+/// column also took the only place the window has for a right hand pane, so a session could not
+/// show its changed files at all.
+///
+/// **Read only, deliberately.** The rows carry the mark, the name, the role and the summary, and
+/// nothing opens. Talking to one agent is a different question from reading what they all did,
+/// and it is asked at the pane the agent is running in. See `TranscriptTableEntry.appended`, which
+/// is how these reach the transcript's own list.
+///
+/// **An agent appears here when it has reported, and the block starts closed.** It used to list
+/// every agent the session had ever launched, each with "Nothing reported yet." under it, under
+/// every answer the chair gave. Four running agents put four paragraphs of nothing between the
+/// reader and the end of the conversation. A summary is what an agent leaves when it finishes, so
+/// it is also the right test for whether there is anything to read.
+struct SwarmSessionAgentReport: View {
     var reader: SwarmSessionReaderModel
 
-    /// Which agent is open, by `SwarmSessionAgentDigest.id`, and nil for none.
-    ///
-    /// One at a time, which is what makes the closed list worth reading. Held here rather than as
-    /// a flag on each row so that opening one closes the last, the way a Mail mailbox or a Finder
-    /// column does.
-    @State private var opened: String?
+    @State private var isExpanded = false
+
+    private var finished: [SwarmSessionAgentDigest] {
+        reader.agents.filter { $0.latestSummary != nil }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Palette.windowBackground)
-    }
-
-    /// The same height as the centre column's own first band, so the two panes start their first
-    /// line together and the rule between them runs straight across the join. `Metrics.pane` of
-    /// padding put this title 24 points down a column whose neighbour's title is at 8, which is
-    /// what made the panel read as a floating box rather than as the other half of the window.
-    /// See `InspectorView`, which draws its top band the same way and for the same reason.
-    private var header: some View {
-        HStack(spacing: Metrics.spacingSmall) {
-            Text("Agents")
-                .font(Typo.labelEmphasis)
-                .foregroundStyle(Palette.textPrimary)
-            Spacer(minLength: Metrics.spacingSmall)
-            if !reader.agents.isEmpty {
-                Text(reader.agents.count.formatted())
-                    .font(Typo.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.textTertiary)
-            }
-        }
-        .padding(.horizontal, Metrics.inset)
-        .frame(height: Metrics.barHeight)
-        .overlay(alignment: .bottom) { Hairline() }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        // `ContentUnavailableView` under both, through `EmptyStateView`, rather than a grey
-        // sentence pinned to the top left corner. It is the system's own empty state, so a panel
-        // with nothing in it is centred, marked and worded the way every other empty pane in this
-        // app and on this Mac is.
+        // Nothing at all while nobody has reported, rather than an empty state: this sits under a
+        // conversation that is already saying something, and a panel announcing that there is no
+        // second thing would be the loudest object on the page. A column had to fill itself; a
+        // block in a scroll does not.
         if let failure = reader.agentsFailure {
-            EmptyStateView(
-                glyph: "exclamationmark.triangle",
-                title: "The bus could not be read",
-                message: failure
-            )
-        } else if reader.agents.isEmpty {
-            EmptyStateView(
-                glyph: "person.2",
-                title: "No agents yet",
-                message: "Agents this session launches appear here."
-            )
-        } else {
-            ScrollView {
-                SwarmSessionAgentList(reader: reader, opened: $opened)
-            }
-        }
-    }
-}
-
-/// The rows themselves, apart from the scroller that holds them.
-///
-/// **Split out so a picture can be taken of it.** `ImageRenderer` proposes no height to a
-/// `ScrollView`, so a column photographed whole comes out as an empty box with a header on it,
-/// which is what the first capture of this panel was. `CrewMessageGallery` records the same lesson.
-/// The app wraps this in the scroller and the gallery draws it directly, so what is photographed is
-/// the list the app runs rather than a copy of it.
-struct SwarmSessionAgentList: View {
-    var reader: SwarmSessionReaderModel
-    @Binding var opened: String?
-
-    var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(reader.agents) { agent in
-                SwarmSessionAgentRow(
-                    digest: agent,
-                    reader: reader,
-                    isOpen: opened == agent.id,
-                    toggle: { opened = opened == agent.id ? nil : agent.id }
-                )
-                // Under the mark rather than across the pane, which is where AppKit puts the rule
-                // between two rows of a source list.
-                if agent.id != reader.agents.last?.id {
-                    Hairline().padding(.leading, Metrics.inset)
+            note("The bus could not be read. " + failure)
+        } else if case let done = finished, !done.isEmpty {
+            VStack(alignment: .leading, spacing: Metrics.spacingWide) {
+                heading(count: done.count)
+                if isExpanded {
+                    ForEach(done) { agent in
+                        SwarmSessionAgentSummaryRow(digest: agent)
+                    }
                 }
             }
+            .padding(.horizontal, TranscriptLayout.inset)
+            .padding(.vertical, TranscriptLayout.block)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, Metrics.spacingSmall)
+    }
+
+    private func heading(count: Int) -> some View {
+        ExpandableRowHeader(isExpanded: isExpanded, onToggle: { isExpanded.toggle() }) {
+            HStack(spacing: Metrics.spacingSmall) {
+                TranscriptDisclosure(isExpanded: isExpanded, isVisible: true)
+                Text(Counted.of(count, "agent") + " reported")
+                    .font(Typo.micro)
+                    .foregroundStyle(Palette.textTertiary)
+                Hairline()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, TranscriptLayout.inset)
+            .padding(.top, TranscriptLayout.block)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// One agent: whether it is working, what it last said, and, once it is open, everything it said
-/// and a box to answer it in.
-///
-/// **The composer is inside the open row, and that is the change worth arguing.** Every row used
-/// to carry one, always drawn, so a session with six agents was six text boxes stacked down a 320
-/// point column and the summaries between them had nowhere to go. The question this panel is
-/// opened to answer is which agent is doing what; typing at one is the second question, and it is
-/// asked of one agent at a time. A closed row is now a name, a mark and two lines, so the list can
-/// be read at a glance, and the row that is open holds the whole conversation and the box.
-struct SwarmSessionAgentRow: View {
+/// One agent, as one paragraph: whether it is running, what it is called, what it was for, and the
+/// summary it left.
+struct SwarmSessionAgentSummaryRow: View {
     var digest: SwarmSessionAgentDigest
-    var reader: SwarmSessionReaderModel
-    var isOpen: Bool
-    var toggle: () -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HoverRow(isSelected: isOpen) {
-                Button(action: toggle) { summary }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(
-                        isOpen ? "Hides this agent's messages" : "Shows this agent's messages"
-                    )
-            }
-            .padding(.horizontal, Metrics.spacingSmall)
+    /// The mark's box and the gap after it, which is what stands between the row's leading edge
+    /// and its first letter. The summary hangs on the name's column rather than on the mark's, so
+    /// the block has one left edge for its words.
+    private static let markGutter = Metrics.glyph + Metrics.spacing
 
-            if isOpen { details }
-        }
+    /// The summary's own words when the parse fails, because a summary that will not parse still
+    /// has to be readable.
+    private static func rendered(_ text: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
     }
 
-    private var summary: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: Metrics.spacingHair) {
             HStack(spacing: Metrics.spacing) {
                 // `ActivityDot` rather than a dot of this pane's own. It is the app's one busy
-                // mark, its idle state is the grey this needs, and until now the only thing
-                // drawing it was the component gallery.
+                // mark and its idle state is the grey this needs.
                 ActivityDot(isActive: digest.agent.alive == true)
                     .frame(width: Metrics.glyph, height: Metrics.glyph)
                     .accessibilityLabel(liveness)
@@ -412,38 +437,31 @@ struct SwarmSessionAgentRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Spacer(minLength: Metrics.spacingSmall)
-
                 Chip(text: digest.agent.role)
 
-                Image(systemName: "chevron.right")
-                    .font(Typo.micro)
-                    .imageScale(.small)
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isOpen ? 90 : 0))
-                    .accessibilityHidden(true)
+                Spacer(minLength: Metrics.spacingSmall)
             }
 
-            Text(digest.latestSummary ?? "No summary yet.")
+            // Inline markdown, because an agent's summary names files and symbols in backticks and
+            // a plain `Text` put the backticks on screen. Foundation's own parse rather than the
+            // chat's `MarkdownView`, which holds a text view that `ImageRenderer` cannot draw, so
+            // the design page would photograph a placeholder instead of this row.
+            Text(Self.rendered(digest.latestSummary ?? ""))
                 .font(Typo.caption)
                 .foregroundStyle(Palette.textSecondary)
-                // Two lines closed, all of it open. A picture of this page caught it clipped at
-                // "became n…" on the open row, where there is no reason left to ration the height.
-                .lineLimit(isOpen ? nil : 2)
                 .fixedSize(horizontal: false, vertical: true)
-                // Under the name rather than under the mark, so the closed list has one left edge
-                // for its words and the marks sit outside it in a column of their own.
-                .padding(.leading, Metrics.glyph + Metrics.spacing)
+                .frame(maxWidth: TranscriptLayout.proseMeasure, alignment: .leading)
+                .padding(.leading, Self.markGutter)
+                .textSelection(.enabled)
         }
-        .padding(.horizontal, Metrics.spacing)
-        .padding(.vertical, Metrics.spacingWide)
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     /// Three states and not two. `SwarmAgent.alive` is nil until `SwarmPaneLiveness` has asked the
-    /// adapter, which is up to five seconds after a session opens, and a panel that said "Ended"
-    /// for those five seconds would be wrong about every agent in it. The dot is grey for both,
-    /// and the words are what separate them.
+    /// adapter, which is up to five seconds after a session opens, and a row that said "Ended" for
+    /// those five seconds would be wrong about every agent in it. The dot is grey for both, and the
+    /// words are what separate them.
     private var liveness: String {
         switch digest.agent.alive {
         case true?: "Running"
@@ -451,144 +469,36 @@ struct SwarmSessionAgentRow: View {
         case nil: "Status unknown"
         }
     }
-
-    private var details: some View {
-        VStack(alignment: .leading, spacing: Metrics.spacingWide) {
-            ForEach(digest.conversation) { row in
-                VStack(alignment: .leading, spacing: Metrics.spacingTight) {
-                    // Who spoke, rather than which kind of row it is. "Ask" and "Summary" named
-                    // the bus verb and left the reader to work out the direction from it.
-                    Text(caption(for: row))
-                        .font(Typo.micro)
-                        .foregroundStyle(Palette.textTertiary)
-                    // The same renderer the transcript uses, so a bus message gets the code spans,
-                    // lists and file links its author wrote, and a path in one previews on hover +
-                    // Space like a path anywhere else in the app.
-                    MarkdownView(row.body ?? "This message body could not be read.")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            SwarmSessionInput(
-                reader: reader,
-                agent: digest.agent.id,
-                sessionID: digest.sessionID,
-                target: .agent,
-                placeholder: "Message \(digest.agent.id.rawValue)",
-                maxLines: 3
-            )
-        }
-        .padding(.horizontal, Metrics.inset)
-        .padding(.bottom, Metrics.spacingWide)
-    }
-
-    private func caption(for message: SwarmMessage) -> String {
-        message.sender == digest.agent.id
-            ? "\(digest.agent.id.rawValue) answered"
-            : "Chair asked"
-    }
 }
 
-private struct SwarmSessionInput: View {
-    var reader: SwarmSessionReaderModel
-    var agent: SwarmAgentID
-    var sessionID: SwarmSessionID?
-    var target: SwarmSessionInputTarget
-    var placeholder: String
-    var maxLines: Int
 
-    @State private var draft = ""
-    @State private var caret = 0
-    @State private var isFocused = false
-    @State private var height = ComposerTextEditor.lineHeight
-    @State private var isSending = false
+/// One tab in the session pane's strip, drawn the way `TabItemView` draws a tab: full ink and a
+/// rule under it while selected, a step quieter otherwise.
+private struct SessionHeaderTab: View {
+    var title: String
+    var isActive: Bool
+    var action: () -> Void
 
-    private var disabledReason: String? {
-        reader.disabledReason(for: agent, in: sessionID, target: target)
-    }
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Metrics.spacingSmall) {
-            HStack(alignment: .bottom, spacing: Metrics.spacing) {
-                ComposerTextEditor(
-                    text: $draft,
-                    caret: $caret,
-                    isFocused: $isFocused,
-                    maxLines: maxLines,
-                    accessibilityLabel: placeholder,
-                    onHeightChange: { height = $0 },
-                    onKey: handle(key:),
-                    onAttach: { _, _ in false }
-                )
-                .frame(height: max(height, ComposerTextEditor.lineHeight))
-                .background(alignment: .topLeading) {
-                    if draft.isEmpty {
-                        Text(placeholder)
-                            .font(Typo.body)
-                            .lineLimit(1)
-                            .foregroundStyle(Palette.textPlaceholder)
-                            .padding(.horizontal, ComposerTextEditor.textInset)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
+        Button(action: action) {
+            Text(title)
+                .font(Typo.label)
+                .lineLimit(1)
+                .foregroundStyle(isActive || isHovered ? Palette.textPrimary : Palette.textSecondary)
+                .padding(.horizontal, Metrics.gutter)
+                .frame(height: Metrics.barHeight)
+                .overlay(alignment: .bottom) {
+                    if isActive {
+                        Rectangle().fill(Palette.textPrimary).frame(height: 2)
+                            .padding(.horizontal, Metrics.spacingSmall)
                     }
                 }
-
-                Button(action: submit) {
-                    Image(systemName: "paperplane.fill")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Send to \(agent.rawValue)")
-                .disabled(
-                    isSending
-                        || !reader.canSubmit(
-                            draft, to: agent, in: sessionID, target: target
-                        )
-                )
-            }
-            .composerBox(isFocused: $isFocused)
-            .disabled(disabledReason != nil)
-            .help("Return sends. Shift-Return starts a new line. Esc interrupts.")
-
-            if let disabledReason {
-                Text(disabledReason)
-                    .font(Typo.micro)
-                    .foregroundStyle(Palette.textSecondary)
-            } else if let failure = reader.inputFailure(for: agent, in: sessionID) {
-                Text(failure)
-                    .font(Typo.micro)
-                    .foregroundStyle(.red)
-                    .lineLimit(1)
-                    .help(failure)
-            }
+                .contentShape(Rectangle())
         }
-    }
-
-    private func handle(key: ComposerKey) -> Bool {
-        switch key {
-        case .returnKey, .commandReturn:
-            submit()
-            return true
-        case .escape:
-            guard disabledReason == nil else { return true }
-            Task { await reader.interrupt(agent, in: sessionID) }
-            return true
-        case .up, .down, .tab:
-            return false
-        }
-    }
-
-    private func submit() {
-        guard !isSending,
-              reader.canSubmit(draft, to: agent, in: sessionID, target: target)
-        else { return }
-        let text = draft
-        isSending = true
-        Task {
-            if await reader.type(text, to: agent, in: sessionID) {
-                draft = ""
-                caret = 0
-            }
-            isSending = false
-        }
+        .buttonStyle(.plain)
+        .onHoverChange { isHovered = $0 }
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
     }
 }

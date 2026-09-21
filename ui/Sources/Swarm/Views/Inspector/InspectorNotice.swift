@@ -35,7 +35,7 @@ struct InspectorNotice: View {
         /// It did not work.
         case failure
 
-        var color: Color {
+        @MainActor var color: Color {
             switch self {
             case .info: Palette.accent
             case .failure: Palette.negative
