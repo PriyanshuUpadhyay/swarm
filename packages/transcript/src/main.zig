@@ -62,6 +62,8 @@ pub fn main(init: std.process.Init) !void {
 
     var output_buffer: [4096]u8 = undefined;
     var file_writer: std.Io.File.Writer = .initStreaming(.stdout(), init.io, &output_buffer);
+    var error_buffer: [4096]u8 = undefined;
+    var error_writer: std.Io.File.Writer = .initStreaming(.stderr(), init.io, &error_buffer);
 
     if (tail) |line_count| {
         const file_size = (file.stat(init.io) catch fail(init, "error: failed to translate input file\n")).size;
@@ -73,19 +75,19 @@ pub fn main(init: std.process.Init) !void {
             fail(init, "error: failed to write output\n");
         file_writer.interface.writeByte('\n') catch fail(init, "error: failed to write output\n");
         if (follow) {
-            transcript.translateFollowWindow(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface) catch
+            transcript.translateFollowWindowWithLog(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface, &error_writer.interface) catch
                 fail(init, "error: failed to translate input file\n");
         } else {
-            transcript.translateWindow(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface) catch
+            transcript.translateWindowWithLog(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface, &error_writer.interface) catch
                 fail(init, "error: failed to translate input file\n");
         }
     } else if (follow) {
-        transcript.translateFollow(init.gpa, format, session_id, file, init.io, &file_writer.interface) catch
+        transcript.translateFollowWithLog(init.gpa, format, session_id, file, init.io, &file_writer.interface, &error_writer.interface) catch
             fail(init, "error: failed to translate input file\n");
     } else {
         var input_buffer: [64 * 1024]u8 = undefined;
         var file_reader = file.reader(init.io, &input_buffer);
-        transcript.translate(init.gpa, format, session_id, &file_reader.interface, &file_writer.interface) catch
+        transcript.translateWithLog(init.gpa, format, session_id, &file_reader.interface, &file_writer.interface, &error_writer.interface) catch
             fail(init, "error: failed to translate input file\n");
     }
     file_writer.interface.flush() catch fail(init, "error: failed to write output\n");
