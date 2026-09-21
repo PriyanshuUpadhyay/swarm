@@ -325,32 +325,68 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
     try stringify.endObject();
 }
 
-pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
-    var line_buffer: std.Io.Writer.Allocating = .init(gpa);
-    defer line_buffer.deinit();
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
-    defer arena_state.deinit();
-    while (true) {
-        line_buffer.clearRetainingCapacity();
-        _ = arena_state.reset(.retain_capacity);
-        _ = try reader.streamDelimiterEnding(&line_buffer.writer, '\n');
-        const at_end = end: {
-            const byte = reader.takeByte() catch |err| switch (err) {
-                error.EndOfStream => break :end true,
-                else => return err,
-            };
-            std.debug.assert(byte == '\n');
-            break :end false;
+const Translator = struct {
+    line_buffer: std.Io.Writer.Allocating,
+    arena_state: std.heap.ArenaAllocator,
+
+    fn init(gpa: std.mem.Allocator) Translator {
+        return .{
+            .line_buffer = .init(gpa),
+            .arena_state = .init(gpa),
         };
-        if (line_buffer.written().len == 0 and at_end) break;
-        const line = std.mem.trimEnd(u8, line_buffer.written(), "\r");
-        const events = try parseLine(arena_state.allocator(), line);
-        for (events) |event| {
-            try writeEventJson(writer, event);
-            try writer.writeByte('\n');
+    }
+
+    fn deinit(translator: *Translator) void {
+        translator.line_buffer.deinit();
+        translator.arena_state.deinit();
+    }
+
+    fn translateAvailable(translator: *Translator, reader: *std.Io.Reader, writer: *std.Io.Writer, parse_final: bool) !void {
+        while (true) {
+            _ = try reader.streamDelimiterEnding(&translator.line_buffer.writer, '\n');
+            const at_end = end: {
+                const byte = reader.takeByte() catch |err| switch (err) {
+                    error.EndOfStream => break :end true,
+                    else => return err,
+                };
+                std.debug.assert(byte == '\n');
+                break :end false;
+            };
+            if (at_end and (translator.line_buffer.written().len == 0 or !parse_final)) return;
+            _ = translator.arena_state.reset(.retain_capacity);
+            const line = std.mem.trimEnd(u8, translator.line_buffer.written(), "\r");
+            const events = try parseLine(translator.arena_state.allocator(), line);
+            for (events) |event| {
+                try writeEventJson(writer, event);
+                try writer.writeByte('\n');
+            }
+            try writer.flush();
+            translator.line_buffer.clearRetainingCapacity();
+            if (at_end) return;
         }
-        try writer.flush();
-        if (at_end) break;
+    }
+};
+
+pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    var translator: Translator = .init(gpa);
+    defer translator.deinit();
+    try translator.translateAvailable(reader, writer, true);
+}
+
+pub fn translateFollow(gpa: std.mem.Allocator, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
+    var translator: Translator = .init(gpa);
+    defer translator.deinit();
+    var input_buffer: [64 * 1024]u8 = undefined;
+    var offset: u64 = 0;
+    while (true) {
+        const read_len = try file.readPositionalAll(io, &input_buffer, offset);
+        if (read_len == 0) {
+            try std.Io.sleep(io, .fromMilliseconds(200), .awake);
+            continue;
+        }
+        offset += read_len;
+        var reader = std.Io.Reader.fixed(input_buffer[0..read_len]);
+        try translator.translateAvailable(&reader, writer, false);
     }
 }
 
@@ -605,6 +641,27 @@ test "event JSON output escapes all non-ASCII code points" {
     } });
     for (output.written()) |byte| try std.testing.expect(byte < 0x80);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\\u007f\\u009b\\u0085\\u2028\\u2029\\u202e") != null);
+}
+
+test "follow translation holds a final piece until its newline arrives" {
+    var translator: Translator = .init(std.testing.allocator);
+    defer translator.deinit();
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+
+    var first = std.Io.Reader.fixed(
+        "{\"type\":\"user\",\"message\":{\"content\":\"first\"}}\n" ++
+            "{\"type\":\"user\",\"message\":{\"content\":\"sec",
+    );
+    try translator.translateAvailable(&first, &output.writer, false);
+    try std.testing.expectEqual(1, std.mem.count(u8, output.written(), "\n"));
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "unknown") == null);
+
+    var second = std.Io.Reader.fixed("ond\"}}\n");
+    try translator.translateAvailable(&second, &output.writer, false);
+    try std.testing.expectEqual(2, std.mem.count(u8, output.written(), "\n"));
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "unknown") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "second") != null);
 }
 
 test "translate reuses its per-line arena" {
