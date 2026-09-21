@@ -63,12 +63,23 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             return events.items;
         }
         var text = content.string;
+        var context: []const u8 = "";
         const open = "<USER_REQUEST>";
         const close = "</USER_REQUEST>";
-        if (std.mem.startsWith(u8, text, open) and std.mem.endsWith(u8, text, close)) {
-            text = std.mem.trim(u8, text[open.len .. text.len - close.len], " \t\r\n");
+        const leading_trimmed = std.mem.trimStart(u8, text, " \t\r\n");
+        if (std.mem.startsWith(u8, leading_trimmed, open)) {
+            const request = leading_trimmed[open.len..];
+            if (std.mem.lastIndexOf(u8, request, close)) |end| {
+                text = std.mem.trim(u8, request[0..end], " \t\r\n");
+                context = std.mem.trim(u8, request[end + close.len ..], " \t\r\n");
+            } else {
+                text = std.mem.trim(u8, request, " \t\r\n");
+            }
         }
         try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
+        if (context.len != 0) {
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = context } });
+        }
         return events.items;
     }
 
@@ -218,13 +229,61 @@ test "USER_INPUT becomes a user message" {
     try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
 }
 
-test "USER_INPUT strips one outer request wrapper" {
+test "USER_INPUT strips request wrapper after leading whitespace" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const wrapped =
-        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>\n  hello  \n</USER_REQUEST>"}
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":" \n<USER_REQUEST>\n  hello  \n</USER_REQUEST> \n"}
     ;
     const events = try parseLine(arena_state.allocator(), wrapped);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
+}
+
+test "USER_INPUT keeps metadata and settings after request as context" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>hello</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>settings</USER_SETTINGS_CHANGE>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("context", events[1].system_message.kind);
+    try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>settings</USER_SETTINGS_CHANGE>", events[1].system_message.text);
+}
+
+test "USER_INPUT keeps metadata after request as context" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>hello</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>", events[1].system_message.text);
+}
+
+test "USER_INPUT keeps artifact tags inside request" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>use <ARTIFACT>file</ARTIFACT> here</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("use <ARTIFACT>file</ARTIFACT> here", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>", events[1].system_message.text);
+}
+
+test "USER_INPUT strips opening request tag without closing tag" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>\n hello \n"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
 }
