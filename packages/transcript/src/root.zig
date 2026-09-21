@@ -259,12 +259,14 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             if (rec.get("toolUseResult")) |tool_use_result| {
                 if (tool_use_result == .object) {
                     if (tool_use_result.object.get("answers")) |answers| {
-                        try events.append(arena, .{ .elicitation_result = .{
-                            .meta = meta,
-                            .tool_call_id = str(block.object, "tool_use_id"),
-                            .answers = try parseAnswers(arena, answers),
-                        } });
-                        continue;
+                        if (answers == .object) {
+                            try events.append(arena, .{ .elicitation_result = .{
+                                .meta = meta,
+                                .tool_call_id = str(block.object, "tool_use_id"),
+                                .answers = try parseAnswers(arena, answers),
+                            } });
+                            continue;
+                        }
                     }
                 }
             }
@@ -501,6 +503,18 @@ test "elicitation answer replaces tool call update" {
     try std.testing.expectEqualStrings("tool-3", events[0].elicitation_result.tool_call_id);
     try std.testing.expectEqualStrings("Pick one", events[0].elicitation_result.answers[0].question);
     try std.testing.expectEqualStrings("A", events[0].elicitation_result.answers[0].answer);
+}
+
+test "non-object elicitation answers keep the tool call update" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-3","content":"failed answer","is_error":true}]},"toolUseResult":{"answers":null}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqual(ToolStatus.failed, events[0].tool_call_update.status);
+    try std.testing.expectEqualStrings("failed answer", events[0].tool_call_update.content);
 }
 
 test "AskUserQuestion missing fields keeps false and empty defaults" {
