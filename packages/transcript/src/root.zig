@@ -199,6 +199,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = content.string } });
     }
     if (content != .array) return events.items;
+    var has_unknown = false;
     for (content.array.items) |block| {
         if (block != .object) continue;
         const block_type = str(block.object, "type");
@@ -265,8 +266,9 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .status = if (is_error) .failed else .completed,
                 .content = result_text,
             } });
-        } else {
+        } else if (!has_unknown) {
             try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            has_unknown = true;
         }
     }
     return events.items;
@@ -375,6 +377,18 @@ test "unknown content block becomes unknown" {
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+}
+
+test "many unknown blocks emit one unknown beside known events" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"assistant","sessionId":"s1","uuid":"u4","timestamp":"t","message":{"content":[{"type":"image"},{"type":"text","text":"kept"},{"type":"audio"}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+    try std.testing.expectEqualStrings("kept", events[1].agent_message_chunk.text);
 }
 
 test "assistant tool use becomes pending tool call" {
