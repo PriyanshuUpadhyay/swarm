@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const Format = enum { claude, codex, agy };
+
 pub const Meta = struct {
     session_id: []const u8,
     uuid: []const u8,
@@ -88,7 +90,7 @@ pub const Event = union(enum) {
     unknown: Unknown,
 };
 
-fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
+pub fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     const value = obj.get(key) orelse return "";
     return if (value == .string) value.string else "";
 }
@@ -135,9 +137,9 @@ fn parseAnswers(arena: std.mem.Allocator, value: std.json.Value) ![]Answer {
 }
 
 // The event object uses one of Stringify's 256 nesting levels, so input can use 255.
-const max_event_input_depth = 255;
+pub const max_event_input_depth = 255;
 
-fn valueFitsDepth(value: std.json.Value, remaining: usize) bool {
+pub fn valueFitsDepth(value: std.json.Value, remaining: usize) bool {
     switch (value) {
         .array => |array| {
             if (remaining == 0) return false;
@@ -157,15 +159,19 @@ fn valueFitsDepth(value: std.json.Value, remaining: usize) bool {
     return true;
 }
 
+pub fn unknownEvent(arena: std.mem.Allocator, meta: ?Meta, line: []const u8) !Event {
+    const raw = if (std.unicode.utf8ValidateSlice(line)) line else try std.fmt.allocPrint(arena, "{f}", .{std.unicode.fmtUtf8(line)});
+    return .{ .unknown = .{ .meta = meta, .raw = raw } };
+}
+
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     var events: std.ArrayList(Event) = .empty;
     const root = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
-        const raw = if (std.unicode.utf8ValidateSlice(line)) line else try std.fmt.allocPrint(arena, "{f}", .{std.unicode.fmtUtf8(line)});
-        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = raw } });
+        try events.append(arena, try unknownEvent(arena, null, line));
         return events.items;
     };
     if (root != .object) {
-        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = line } });
+        try events.append(arena, try unknownEvent(arena, null, line));
         return events.items;
     }
     const rec = root.object;
@@ -173,11 +179,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     const record_type = str(rec, "type");
     if (std.mem.eql(u8, record_type, "attachment")) {
         const attachment = rec.get("attachment") orelse {
-            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            try events.append(arena, try unknownEvent(arena, meta, line));
             return events.items;
         };
         if (attachment != .object) {
-            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            try events.append(arena, try unknownEvent(arena, meta, line));
             return events.items;
         }
         const kind = str(attachment.object, "type");
@@ -204,13 +210,13 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .decision = str(attachment.object, "decision"),
             } });
         } else {
-            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            try events.append(arena, try unknownEvent(arena, meta, line));
         }
         return events.items;
     }
     const is_user = std.mem.eql(u8, record_type, "user");
     if (!is_user and !std.mem.eql(u8, record_type, "assistant")) {
-        try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+        try events.append(arena, try unknownEvent(arena, meta, line));
         return events.items;
     }
     const message = rec.get("message") orelse return events.items;
@@ -233,7 +239,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             const input = block.object.get("input") orelse .null;
             if (!valueFitsDepth(input, max_event_input_depth)) {
                 if (!has_unknown) {
-                    try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+                    try events.append(arena, try unknownEvent(arena, meta, line));
                     has_unknown = true;
                 }
                 continue;
@@ -297,7 +303,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .content = result_text,
             } });
         } else if (!has_unknown) {
-            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            try events.append(arena, try unknownEvent(arena, meta, line));
             has_unknown = true;
         }
     }
@@ -328,11 +334,13 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
 const Translator = struct {
     line_buffer: std.Io.Writer.Allocating,
     arena_state: std.heap.ArenaAllocator,
+    format: Format,
 
-    fn init(gpa: std.mem.Allocator) Translator {
+    fn init(gpa: std.mem.Allocator, format: Format) Translator {
         return .{
             .line_buffer = .init(gpa),
             .arena_state = .init(gpa),
+            .format = format,
         };
     }
 
@@ -355,7 +363,11 @@ const Translator = struct {
             if (at_end and (translator.line_buffer.written().len == 0 or !parse_final)) return;
             _ = translator.arena_state.reset(.retain_capacity);
             const line = std.mem.trimEnd(u8, translator.line_buffer.written(), "\r");
-            const events = try parseLine(translator.arena_state.allocator(), line);
+            const events = try switch (translator.format) {
+                .claude => parseLine(translator.arena_state.allocator(), line),
+                .codex => @import("codex.zig").parseLine(translator.arena_state.allocator(), line),
+                .agy => @import("agy.zig").parseLine(translator.arena_state.allocator(), line),
+            };
             for (events) |event| {
                 try writeEventJson(writer, event);
                 try writer.writeByte('\n');
@@ -367,14 +379,14 @@ const Translator = struct {
     }
 };
 
-pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
-    var translator: Translator = .init(gpa);
+pub fn translate(gpa: std.mem.Allocator, format: Format, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    var translator: Translator = .init(gpa, format);
     defer translator.deinit();
     try translator.translateAvailable(reader, writer, true);
 }
 
-pub fn translateFollow(gpa: std.mem.Allocator, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
-    var translator: Translator = .init(gpa);
+pub fn translateFollow(gpa: std.mem.Allocator, format: Format, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
+    var translator: Translator = .init(gpa, format);
     defer translator.deinit();
     var input_buffer: [64 * 1024]u8 = undefined;
     var offset: u64 = 0;
@@ -644,7 +656,7 @@ test "event JSON output escapes all non-ASCII code points" {
 }
 
 test "follow translation holds a final piece until its newline arrives" {
-    var translator: Translator = .init(std.testing.allocator);
+    var translator: Translator = .init(std.testing.allocator, .claude);
     defer translator.deinit();
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
@@ -678,7 +690,7 @@ test "translate reuses its per-line arena" {
     var fixed = std.heap.FixedBufferAllocator.init(&fixed_buffer);
     var outer_arena: std.heap.ArenaAllocator = .init(fixed.allocator());
     defer outer_arena.deinit();
-    try translate(outer_arena.allocator(), &reader, &output.writer);
+    try translate(outer_arena.allocator(), .claude, &reader, &output.writer);
 
     try std.testing.expectEqual(32, std.mem.count(u8, output.written(), "\n"));
 }
@@ -726,7 +738,7 @@ test "translate flushes each input line" {
     output.init();
     defer output.deinit();
 
-    try translate(std.testing.allocator, &reader, &output.writer);
+    try translate(std.testing.allocator, .claude, &reader, &output.writer);
 
     try std.testing.expectEqualStrings(
         "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",
