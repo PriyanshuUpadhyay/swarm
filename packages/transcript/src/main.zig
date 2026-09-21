@@ -3,7 +3,7 @@ const transcript = @import("transcript");
 
 fn fail(init: std.process.Init, message: []const u8) noreturn {
     var buffer: [256]u8 = undefined;
-    var file_writer: std.Io.File.Writer = .init(.stderr(), init.io, &buffer);
+    var file_writer: std.Io.File.Writer = .initStreaming(.stderr(), init.io, &buffer);
     file_writer.interface.writeAll(message) catch {};
     file_writer.interface.flush() catch {};
     std.process.exit(1);
@@ -20,9 +20,9 @@ pub fn main(init: std.process.Init) !void {
     var input_buffer: [64 * 1024]u8 = undefined;
     var file_reader = file.reader(init.io, &input_buffer);
     var output_buffer: [4096]u8 = undefined;
-    var file_writer: std.Io.File.Writer = .init(.stdout(), init.io, &output_buffer);
+    var file_writer: std.Io.File.Writer = .initStreaming(.stdout(), init.io, &output_buffer);
 
     transcript.translate(init.gpa, &file_reader.interface, &file_writer.interface) catch
         fail(init, "error: failed to translate input file\n");
-    try file_writer.interface.flush();
+    file_writer.interface.flush() catch fail(init, "error: failed to write output\n");
 }
