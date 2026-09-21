@@ -331,6 +331,46 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
     try stringify.endObject();
 }
 
+pub fn writePageJson(writer: *std.Io.Writer, start_offset: u64, end_offset: u64) std.Io.Writer.Error!void {
+    var stringify: std.json.Stringify = .{ .writer = writer, .options = .{ .escape_unicode = true } };
+    try stringify.beginObject();
+    try stringify.objectField("type");
+    try stringify.write("page");
+    try stringify.objectField("start_offset");
+    try stringify.write(start_offset);
+    try stringify.objectField("end_offset");
+    try stringify.write(end_offset);
+    try stringify.endObject();
+}
+
+/// Returns the first byte of the last `line_count` lines in `[0, end_offset)`.
+/// A newline at `end_offset - 1` ends the last line and does not start an empty line.
+pub fn findTailStart(file: std.Io.File, io: std.Io, end_offset: u64, line_count: u64, buffer: []u8) !u64 {
+    std.debug.assert(line_count > 0);
+    std.debug.assert(buffer.len > 0);
+
+    var cursor = end_offset;
+    var boundaries: u64 = 0;
+    while (cursor > 0) {
+        const chunk_start = cursor - @min(cursor, @as(u64, @intCast(buffer.len)));
+        const chunk_len: usize = @intCast(cursor - chunk_start);
+        const read_len = try file.readPositionalAll(io, buffer[0..chunk_len], chunk_start);
+        if (read_len != chunk_len) return error.EndOfStream;
+
+        var index = read_len;
+        while (index > 0) {
+            index -= 1;
+            if (buffer[index] != '\n') continue;
+            const absolute = chunk_start + @as(u64, @intCast(index));
+            if (absolute + 1 == end_offset) continue;
+            boundaries += 1;
+            if (boundaries == line_count) return absolute + 1;
+        }
+        cursor = chunk_start;
+    }
+    return 0;
+}
+
 const Translator = struct {
     line_buffer: std.Io.Writer.Allocating,
     arena_state: std.heap.ArenaAllocator,
@@ -379,17 +419,72 @@ const Translator = struct {
     }
 };
 
+fn translateFileRange(
+    translator: *Translator,
+    file: std.Io.File,
+    io: std.Io,
+    start_offset: u64,
+    end_offset: u64,
+    writer: *std.Io.Writer,
+    input_buffer: []u8,
+    parse_final: bool,
+) !void {
+    var offset = start_offset;
+    while (offset < end_offset) {
+        const read_len: usize = @intCast(@min(end_offset - offset, @as(u64, @intCast(input_buffer.len))));
+        const actual = try file.readPositionalAll(io, input_buffer[0..read_len], offset);
+        if (actual != read_len) return error.EndOfStream;
+        offset += actual;
+        var reader = std.Io.Reader.fixed(input_buffer[0..actual]);
+        try translator.translateAvailable(&reader, writer, false);
+    }
+    if (parse_final) {
+        var reader = std.Io.Reader.fixed("");
+        try translator.translateAvailable(&reader, writer, true);
+    }
+}
+
 pub fn translate(gpa: std.mem.Allocator, format: Format, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
     var translator: Translator = .init(gpa, format);
     defer translator.deinit();
     try translator.translateAvailable(reader, writer, true);
 }
 
-pub fn translateFollow(gpa: std.mem.Allocator, format: Format, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
+/// Translates `[start_offset, end_offset)`, including a final line without a newline.
+pub fn translateWindow(
+    gpa: std.mem.Allocator,
+    format: Format,
+    file: std.Io.File,
+    io: std.Io,
+    start_offset: u64,
+    end_offset: u64,
+    writer: *std.Io.Writer,
+) !void {
     var translator: Translator = .init(gpa, format);
     defer translator.deinit();
     var input_buffer: [64 * 1024]u8 = undefined;
-    var offset: u64 = 0;
+    try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, true);
+}
+
+pub fn translateFollow(gpa: std.mem.Allocator, format: Format, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
+    try translateFollowWindow(gpa, format, file, io, 0, 0, writer);
+}
+
+/// Translates the initial window, holds its final partial line, and follows from `end_offset`.
+pub fn translateFollowWindow(
+    gpa: std.mem.Allocator,
+    format: Format,
+    file: std.Io.File,
+    io: std.Io,
+    start_offset: u64,
+    end_offset: u64,
+    writer: *std.Io.Writer,
+) !void {
+    var translator: Translator = .init(gpa, format);
+    defer translator.deinit();
+    var input_buffer: [64 * 1024]u8 = undefined;
+    try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, false);
+    var offset = end_offset;
     while (true) {
         const read_len = try file.readPositionalAll(io, &input_buffer, offset);
         if (read_len == 0) {
@@ -400,6 +495,46 @@ pub fn translateFollow(gpa: std.mem.Allocator, format: Format, file: std.Io.File
         var reader = std.Io.Reader.fixed(input_buffer[0..read_len]);
         try translator.translateAvailable(&reader, writer, false);
     }
+}
+
+fn expectTailStart(content: []const u8, end_offset: u64, line_count: u64, chunk_size: usize, expected: u64) !void {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const file = try tmp.dir.createFile(std.testing.io, "input.jsonl", .{ .read = true });
+    defer file.close(std.testing.io);
+    var write_buffer: [128]u8 = undefined;
+    var file_writer: std.Io.File.Writer = .init(file, std.testing.io, &write_buffer);
+    try file_writer.interface.writeAll(content);
+    try file_writer.interface.flush();
+
+    var scan_buffer: [128]u8 = undefined;
+    try std.testing.expectEqual(expected, try findTailStart(file, std.testing.io, end_offset, line_count, scan_buffer[0..chunk_size]));
+}
+
+test "backward scan handles smaller equal and larger line counts" {
+    const input = "one\ntwo\nthree\n";
+    try expectTailStart(input, input.len, 2, 64, 4);
+    try expectTailStart(input, input.len, 3, 64, 0);
+    try expectTailStart(input, input.len, 4, 64, 0);
+}
+
+test "backward scan counts a final line with or without a newline" {
+    try expectTailStart("one\ntwo\nthree\n", 14, 1, 64, 8);
+    try expectTailStart("one\ntwo\nthree", 13, 1, 64, 8);
+}
+
+test "backward scan crosses chunks within a long line" {
+    const input = "a\n123456789\nz\n";
+    try expectTailStart(input, input.len, 2, 4, 2);
+}
+
+test "backward scan treats a before offset in the middle as a line end" {
+    const input = "one\ntwo\nthree\n";
+    try expectTailStart(input, 6, 1, 3, 4);
+}
+
+test "backward scan handles an empty file" {
+    try expectTailStart("", 0, 1, 4, 0);
 }
 
 test "user string content becomes user_message_chunk" {
