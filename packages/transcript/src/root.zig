@@ -349,6 +349,7 @@ pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io
             try writeEventJson(writer, event);
             try writer.writeByte('\n');
         }
+        try writer.flush();
         if (at_end) break;
     }
 }
@@ -623,4 +624,55 @@ test "translate reuses its per-line arena" {
     try translate(outer_arena.allocator(), &reader, &output.writer);
 
     try std.testing.expectEqual(32, std.mem.count(u8, output.written(), "\n"));
+}
+
+test "translate flushes each input line" {
+    const BufferedSink = struct {
+        const Self = @This();
+
+        sink: std.Io.Writer.Allocating,
+        writer: std.Io.Writer,
+        buffer: [1024]u8,
+
+        fn init(self: *Self) void {
+            self.* = .{
+                .sink = .init(std.testing.allocator),
+                .writer = undefined,
+                .buffer = undefined,
+            };
+            self.writer = .{ .vtable = &.{ .drain = drain }, .buffer = &self.buffer };
+        }
+
+        fn deinit(self: *Self) void {
+            self.sink.deinit();
+        }
+
+        fn drain(writer: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+            const self: *Self = @fieldParentPtr("writer", writer);
+            try self.sink.writer.writeAll(writer.buffered());
+            writer.end = 0;
+            var written: usize = 0;
+            for (data[0 .. data.len - 1]) |slice| {
+                try self.sink.writer.writeAll(slice);
+                written += slice.len;
+            }
+            for (0..splat) |_| {
+                try self.sink.writer.writeAll(data[data.len - 1]);
+                written += data[data.len - 1].len;
+            }
+            return written;
+        }
+    };
+
+    var reader = std.Io.Reader.fixed("{\"type\":\"user\",\"message\":{\"content\":\"hello\"}}\n");
+    var output: BufferedSink = undefined;
+    output.init();
+    defer output.deinit();
+
+    try translate(std.testing.allocator, &reader, &output.writer);
+
+    try std.testing.expectEqualStrings(
+        "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",
+        output.sink.written(),
+    );
 }
