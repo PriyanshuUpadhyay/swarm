@@ -288,6 +288,18 @@ test "USER_INPUT strips opening request tag without closing tag" {
     try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
 }
 
+test "USER_INPUT uses last closing request tag" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>first</USER_REQUEST> second</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("first</USER_REQUEST> second", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>", events[1].system_message.text);
+}
+
 test "PLANNER_RESPONSE emits thought message and pending tool calls in order" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
