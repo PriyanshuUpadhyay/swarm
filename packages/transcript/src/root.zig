@@ -602,6 +602,19 @@ test "unknown content block becomes unknown" {
     try std.testing.expectEqualStrings(line, events[0].unknown.raw);
 }
 
+test "user text survives an image block" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"user","sessionId":"s1","message":{"content":[{"type":"text","text":"first"},{"type":"image","source":"x"},{"type":"text","text":"last"}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(3, events.len);
+    try std.testing.expectEqualStrings("first", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings(line, events[1].unknown.raw);
+    try std.testing.expectEqualStrings("last", events[2].user_message_chunk.text);
+}
+
 test "many unknown blocks emit one unknown beside known events" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
