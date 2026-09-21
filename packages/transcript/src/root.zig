@@ -142,6 +142,29 @@ fn isHookResultKind(kind: []const u8) bool {
         std.mem.eql(u8, kind, "hook_additional_context");
 }
 
+// The event object uses one of Stringify's 256 nesting levels, so input can use 255.
+const max_event_input_depth = 255;
+
+fn valueFitsDepth(value: std.json.Value, remaining: usize) bool {
+    switch (value) {
+        .array => |array| {
+            if (remaining == 0) return false;
+            for (array.items) |item| {
+                if (!valueFitsDepth(item, remaining - 1)) return false;
+            }
+        },
+        .object => |object| {
+            if (remaining == 0) return false;
+            var iterator = object.iterator();
+            while (iterator.next()) |entry| {
+                if (!valueFitsDepth(entry.value_ptr.*, remaining - 1)) return false;
+            }
+        },
+        else => {},
+    }
+    return true;
+}
+
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     var events: std.ArrayList(Event) = .empty;
     const root = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
@@ -210,6 +233,13 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = str(block.object, "thinking") } });
         } else if (std.mem.eql(u8, block_type, "tool_use") and !is_user) {
             const input = block.object.get("input") orelse .null;
+            if (!valueFitsDepth(input, max_event_input_depth)) {
+                if (!has_unknown) {
+                    try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+                    has_unknown = true;
+                }
+                continue;
+            }
             if (std.mem.eql(u8, str(block.object, "name"), "AskUserQuestion")) {
                 try events.append(arena, .{ .elicitation = .{
                     .meta = meta,
@@ -403,6 +433,22 @@ test "assistant tool use becomes pending tool call" {
     try std.testing.expectEqualStrings("Read", events[0].tool_call.name);
     try std.testing.expectEqual(ToolStatus.pending, events[0].tool_call.status);
     try std.testing.expectEqualStrings("a", str(events[0].tool_call.input.object, "path"));
+}
+
+test "tool input deeper than the JSON writer limit becomes unknown" {
+    var input: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer input.deinit();
+    try input.writer.writeAll("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"deep\",\"name\":\"Read\",\"input\":");
+    for (0..max_event_input_depth + 1) |_| try input.writer.writeByte('[');
+    try input.writer.writeByte('0');
+    for (0..max_event_input_depth + 1) |_| try input.writer.writeByte(']');
+    try input.writer.writeAll("}]}}");
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), input.written());
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(input.written(), events[0].unknown.raw);
 }
 
 test "tool result text array joins and defaults to completed" {
