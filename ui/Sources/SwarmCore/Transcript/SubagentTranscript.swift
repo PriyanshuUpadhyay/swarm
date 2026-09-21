@@ -60,16 +60,27 @@ public struct SubagentTranscript: Sendable, Equatable {
     /// `tasks/<task_id>.output`, and the whole of what it has to say is that text.
     public let printed: String
 
+    /// How many of `messages`, counting from the end, arrived on the read that produced this.
+    ///
+    /// **This is what lets a caller fold a new line onto the rows it already drew.** Equal to
+    /// `messages.count` whenever what it drew cannot be trusted: a first read, a file truncated
+    /// under us, and any read that dropped messages off the front to stay inside the limit. So a
+    /// caller takes the last `appended` and leaves the rest alone, and a caller that rebuilds
+    /// everything can ignore it. Defaults to all of them, which is the answer that is never wrong.
+    public let appended: Int
+
     public init(
         messages: [Message] = [],
         droppedRows: Int = 0,
         prompt: String = "",
-        printed: String = ""
+        printed: String = "",
+        appended: Int? = nil
     ) {
         self.messages = messages
         self.droppedRows = droppedRows
         self.prompt = prompt
         self.printed = printed
+        self.appended = appended ?? messages.count
     }
 
     public var isEmpty: Bool { messages.isEmpty && printed.isEmpty }
@@ -262,6 +273,10 @@ public actor TranscriptLogReader {
     private var droppedRows = 0
     private var used = Set<Int64>()
     private var nextSequence = 0
+    /// What the read in progress has appended, and whether it also moved the front of the list.
+    /// See `SubagentTranscript.appended`, which is where these two become one number.
+    private var appendedThisRead = 0
+    private var rebuiltThisRead = false
 
     public init(url: URL, format: Format, byteLimit: Int = TranscriptLogReader.byteLimit) {
         self.url = url
@@ -271,8 +286,9 @@ public actor TranscriptLogReader {
 
     public func read() throws -> SubagentTranscript {
         _ = try consumeAppended()
+        let visible = Array(messages.dropFirst(messageStart))
         return SubagentTranscript(
-            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
+            messages: visible, droppedRows: droppedRows, appended: visible.count
         )
     }
 
@@ -284,8 +300,10 @@ public actor TranscriptLogReader {
     /// is the same file the pane already has, so it says so rather than building it again.
     public func readIfChanged() throws -> SubagentTranscript? {
         guard try consumeAppended() else { return nil }
+        let visible = Array(messages.dropFirst(messageStart))
         return SubagentTranscript(
-            messages: Array(messages.dropFirst(messageStart)), droppedRows: droppedRows
+            messages: visible, droppedRows: droppedRows,
+            appended: rebuiltThisRead ? visible.count : min(appendedThisRead, visible.count)
         )
     }
 
@@ -296,8 +314,13 @@ public actor TranscriptLogReader {
         defer { try? handle.close() }
         let size = try handle.seekToEnd()
         var changed = false
+        appendedThisRead = 0
+        // A first read has nothing behind it to fold onto, and a truncated file invalidates
+        // everything a caller drew from the bytes that are gone.
+        rebuiltThisRead = offset == 0
         if size < offset {
             reset()
+            rebuiltThisRead = true
             changed = true
         }
         if offset == 0, size > UInt64(limit) {
@@ -371,6 +394,7 @@ public actor TranscriptLogReader {
             message.seq = nextSequence
             nextSequence += 1
             messages.append(message)
+            appendedThisRead += 1
         }
         records.append(LineRecord(bytes: bytes, messages: parsed.count))
         retainedBytes += bytes
@@ -401,6 +425,9 @@ public actor TranscriptLogReader {
             messageStart = 0
         }
         if trimmed { used = Set(messages.dropFirst(messageStart).map(\.id)) }
+        // The front moved, so every row a caller drew is now at a different place in the list and
+        // the oldest of them are not in it at all. Nothing can be folded onto that.
+        if trimmed { rebuiltThisRead = true }
     }
 }
 

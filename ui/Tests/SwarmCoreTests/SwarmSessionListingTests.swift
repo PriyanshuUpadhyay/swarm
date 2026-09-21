@@ -401,6 +401,69 @@ struct SwarmSessionListingTests {
         #expect(UserTurnPrompt.text(in: restarted.messages[0].payload) == "Restarted")
     }
 
+    @Test("a chair log read names how many lines are new, so rows can be folded on")
+    func chairLogReportsWhatArrived() async throws {
+        let path = TestScratch.path("appended-chair.jsonl")
+        func append(_ text: String) throws {
+            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(
+                #"{"type":"user","message":{"content":"\#(text)"}}"#.appending("\n").utf8
+            ))
+            try handle.close()
+        }
+        try #"{"type":"user","message":{"content":"First"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path), format: .claude(sessionID: SessionID("chair"))
+        )
+
+        // Nothing has been drawn yet, so the first read is all of it.
+        let first = try await reader.readIfChanged()
+        #expect(first?.messages.count == 1)
+        #expect(first?.appended == 1)
+
+        try append("Second")
+        try append("Third")
+        let grown = try await reader.readIfChanged()
+        #expect(grown?.messages.count == 3)
+        #expect(grown?.appended == 2)
+
+        // A caller that took the last two would have taken exactly the two that arrived.
+        let arrived = try #require(grown?.messages.suffix(2))
+        #expect(arrived.map { UserTurnPrompt.text(in: $0.payload) } == ["Second", "Third"])
+
+        // The file was rewritten under us, so nothing already drawn can be trusted.
+        try #"{"type":"user","message":{"content":"Restarted"}}"#.appending("\n")
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let restarted = try await reader.readIfChanged()
+        #expect(restarted?.messages.count == 1)
+        #expect(restarted?.appended == 1)
+    }
+
+    @Test("a chair log that drops its oldest lines asks for a rebuild rather than a fold")
+    func trimmedChairLogAsksForARebuild() async throws {
+        let path = TestScratch.path("trimmed-chair.jsonl")
+        let line = #"{"type":"user","message":{"content":"Line"}}"#
+        // Three lines against a byte limit that holds two, so the third pushes the first out.
+        try line.appending("\n").write(toFile: path, atomically: true, encoding: .utf8)
+        let reader = TranscriptLogReader(
+            url: URL(fileURLWithPath: path),
+            format: .claude(sessionID: SessionID("chair")),
+            byteLimit: (line.utf8.count + 1) * 2
+        )
+        _ = try await reader.readIfChanged()
+
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(line.appending("\n").appending(line).appending("\n").utf8))
+        try handle.close()
+
+        let trimmed = try #require(try await reader.readIfChanged())
+        #expect(trimmed.droppedRows > 0)
+        #expect(trimmed.appended == trimmed.messages.count)
+    }
+
     @Test("a chair log that has not grown is read as no change")
     func quietChairLogReportsNoChange() async throws {
         let path = TestScratch.path("quiet-chair.jsonl")

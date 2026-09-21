@@ -14,8 +14,17 @@ public final class PerfLog: @unchecked Sendable {
         case heartbeat(residentMemoryBytes: UInt64, uptimeSeconds: Double)
     }
 
+    /// The defaults key the General settings toggle writes, and the only thing that turns any of
+    /// this on.
+    ///
+    /// **Off by default, because the log is a cost of its own.** It is a diagnostic, so it is
+    /// switched on for the run that is being diagnosed and switched off again afterwards, rather
+    /// than kept because it might one day be read.
+    public static let enabledKey = "recordsPerformanceLog"
+
     public static let shared = PerfLog(
-        directory: Store.defaultDirectory.appendingPathComponent("diagnostics", isDirectory: true)
+        directory: Store.defaultDirectory.appendingPathComponent("diagnostics", isDirectory: true),
+        isRecording: { UserDefaults.standard.bool(forKey: PerfLog.enabledKey) }
     )
 
     private static let filePrefix = "perf-"
@@ -41,14 +50,20 @@ public final class PerfLog: @unchecked Sendable {
     private var writtenThisHour = 0
     private var droppedThisHour = 0
     private var dropFlushHour: Date?
+    private let isRecording: @Sendable () -> Bool
 
+    /// - Parameter isRecording: asked on every event rather than read once, so the switch takes
+    ///   effect on the pass after it is thrown rather than on the next launch. Defaults to on for
+    ///   a caller that made its own log, which is every test: only `shared` reads the setting.
     init(
         directory: URL, now: @escaping @Sendable () -> Date = Date.init,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        isRecording: @escaping @Sendable () -> Bool = { true }
     ) {
         self.directory = directory
         self.now = now
         self.calendar = calendar
+        self.isRecording = isRecording
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         self.encoder = encoder
@@ -63,8 +78,10 @@ public final class PerfLog: @unchecked Sendable {
         self.dayFormatter = dayFormatter
     }
 
-    /// Starts retention and heartbeat work. The app calls this once during launch.
+    /// Starts retention and heartbeat work. The app calls this during launch, and again when the
+    /// setting is switched on, which is why it does nothing rather than remembering it was asked.
     public func start() {
+        guard isRecording() else { return }
         queue.async { [self] in
             guard !started else { return }
             started = true
@@ -88,8 +105,15 @@ public final class PerfLog: @unchecked Sendable {
         }
     }
 
+    /// Where the log is written, for the settings pane that offers to reveal it.
+    public var directoryPath: String { directory.path }
+
     /// Enqueues one event and returns before any encoding or file I/O starts.
+    ///
+    /// Nothing is enqueued while the setting is off, so a call site costs one `UserDefaults` read
+    /// and can stay where it is rather than being wrapped by every caller.
     public func record(_ event: Event) {
+        guard isRecording() else { return }
         queue.async { [self] in write(event, at: now()) }
     }
 
@@ -247,6 +271,7 @@ public final class PerfLog: @unchecked Sendable {
     }
 
     private func writeHeartbeat() {
+        guard isRecording() else { return }
         let duration = processStarted.duration(to: .now).components
         let uptime = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
         write(.heartbeat(

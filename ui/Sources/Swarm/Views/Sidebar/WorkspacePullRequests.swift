@@ -75,7 +75,8 @@ final class WorkspacePullRequests {
         states[workspaceID] = nil
     }
 
-    /// Keeps one workspace's answer fresh for as long as its row is on screen.
+    /// Keeps one workspace's answer fresh for as long as its row is on screen and the app is in
+    /// front.
     ///
     /// - Parameter store: where a number found here is written down, so a merged pull request
     ///   whose branch has been deleted is still findable after a relaunch. See
@@ -83,6 +84,10 @@ final class WorkspacePullRequests {
     ///   the next poll records it.
     func track(_ workspace: Workspace, store: Store?) async {
         while !Task.isCancelled {
+            // A row nobody can see is a row nobody is waiting on an answer for, and the answer
+            // costs a `gh` process. See `AppActivity`.
+            await AppActivity.waitUntilActive()
+            if Task.isCancelled { return }
             await refresh(workspace, store: store)
             try? await Task.sleep(for: Self.refreshInterval)
         }

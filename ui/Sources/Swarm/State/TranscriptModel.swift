@@ -415,6 +415,11 @@ final class TranscriptModel {
     /// without both walking the whole transcript and still sometimes returning an older sequence.
     /// Outside observation because it is only a database cursor and nothing draws it.
     @ObservationIgnored private var highestSeenMessageSeq = -1
+
+    /// How many rows the last chair pass left behind, and the whole of how `readChairLog` knows
+    /// whether it may fold onto the list rather than rebuild it. A mismatch means something else
+    /// assigned `rows`, and the safe answer to that is the slow one.
+    @ObservationIgnored private var chairRowCount = -1
     /// When the current turn was handed to the runner, so a session row written before that can be
     /// recognised as belonging to the previous turn.
     private var turnStartedAt: Date?
@@ -534,6 +539,10 @@ final class TranscriptModel {
         switch result {
         case .success(let transcript):
             guard let transcript else { isLoaded = true; return }
+            // Read before the block below can clear it. A pending line means a bubble of our own
+            // is either in the row list or about to leave it, and neither is something the fold
+            // further down knows how to do.
+            let hadPending = pendingSentLine != nil
             var messages = transcript.messages
             if let pending = pendingSentLine {
                 let alreadyInLog = messages.contains { message in
@@ -551,7 +560,22 @@ final class TranscriptModel {
                     )
                 }
             }
-            await apply(messages: messages, decisions: [:])
+            // **Folded on rather than rebuilt, which is the difference between a chair line
+            // costing what the line is and costing what the whole conversation is.** `apply`
+            // re-parses every payload in the transcript and hands the window a new row list to
+            // draw from scratch; a settled 500 message chat measured 1.7 seconds of that to take
+            // in one new line, and the log grows four times a second while a turn runs.
+            //
+            // Only while this loop is the one thing that has touched the rows. `chairRowCount`
+            // is what the last pass left behind, so anything else assigning `rows` sends this one
+            // the long way round rather than onto a list it does not recognise.
+            if !hadPending, chairRowCount == rows.count,
+               transcript.appended < messages.count {
+                appendChairRows(messages.suffix(transcript.appended))
+            } else {
+                await apply(messages: messages, decisions: [:])
+            }
+            chairRowCount = rows.count
             // A turn is running while the last thing said is the reader's, which is what draws the
             // working mark and turns the send button into Stop.
             setRunning(pendingSentLine != nil || rows.last?.kind == .user)
@@ -661,6 +685,31 @@ final class TranscriptModel {
         contextUsage = ContextWindowUsage.latest(in: built.rows)
         SwitchTrace.mark("transcript.rows.built", workspace: workspace?.id)
         SwitchTrace.markOnScreen("transcript.rows.built", workspace: workspace?.id)
+    }
+
+    /// Folds the chair lines that arrived on one pass onto the rows already drawn.
+    ///
+    /// Deliberately not `absorb(_:)`. That one also tells `messageArrivals` a stored row has
+    /// landed and retires the bubble drawn for a message being sent, and neither is true here:
+    /// these rows come off a log Swarm does not write, and the chair's own pending bubble is
+    /// settled by the caller before this is reached.
+    private func appendChairRows(_ arrived: ArraySlice<Message>) {
+        // Bytes can arrive that hold no row: an attachment record is skipped whole. Redrawing the
+        // pane for one of those is the cost this whole path exists to avoid.
+        guard !arrived.isEmpty else { return }
+        let appendedFrom = rows.count
+        for message in arrived {
+            // A tool result changes the row its call is on rather than appending one, so the
+            // cache is invalidated at that row and not at the end of the list.
+            let changed = message.kind == .toolResult
+                ? message.refID.flatMap { indexByRefID[$0] } ?? rows.count
+                : rows.count
+            foldCache.invalidate(row: changed)
+            Self.absorb(message, decisions: [:], into: &rows, indexByRefID: &indexByRefID)
+            highestSeenMessageSeq = max(highestSeenMessageSeq, message.seq)
+        }
+        presentationRevision += 1
+        noteContextWindow(in: rows[min(appendedFrom, rows.count)...])
     }
 
     /// Folds a stored message into the row list, pairing tool results onto their tool call.

@@ -3,8 +3,9 @@ import SwarmCore
 
 /// CI for the current branch, grouped the way GitHub groups it.
 ///
-/// The list polls only while it is on screen. A dozen workspaces each asking gh for check runs
-/// every twenty seconds would be a dozen subprocesses a minute for panels nobody is looking at.
+/// The list polls only while it is on screen and the app is in front. A dozen workspaces each
+/// asking gh for check runs every twenty seconds would be a dozen subprocesses a minute for panels
+/// nobody is looking at, and an app left in the background overnight asked anyway.
 struct ChecksView: View {
     let model: WorkspaceModel
 
@@ -212,6 +213,10 @@ struct ChecksView: View {
 
     private func poll() async {
         while !Task.isCancelled {
+            // Nobody is looking, so nobody is asked. See `AppActivity`: this is where the night's
+            // subprocesses went.
+            await AppActivity.waitUntilActive()
+            if Task.isCancelled { return }
             // Asked every pass rather than once: gh can be signed in from a terminal while this
             // tab is open, and the answer is cached, so this costs a subprocess only when it
             // has actually expired.

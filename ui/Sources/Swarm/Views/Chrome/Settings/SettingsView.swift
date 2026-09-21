@@ -127,6 +127,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @AppStorage("confirmBeforeArchiving") private var confirmBeforeArchiving = true
+    @AppStorage(PerfLog.enabledKey) private var recordsPerformanceLog = false
     @State private var namesWorkspaces = WorkspaceNamingPreferences().isEnabled
 
     var body: some View {
@@ -172,7 +173,39 @@ struct GeneralSettingsView: View {
             }
 
             OpenInSettingsSection()
+
+            diagnostics
         }
         .settingsForm()
+    }
+
+    private var logLocation: String {
+        (PerfLog.shared.directoryPath as NSString).abbreviatingWithTildeInPath
+    }
+
+    @ViewBuilder private var diagnostics: some View {
+        Section("Diagnostics") {
+            Toggle(isOn: $recordsPerformanceLog) {
+                Text("Record a performance log")
+                Text("Writes slow frames, slow reads and every subprocess that took longer than a quarter second to \(logLocation). Kept for seven days. Off unless something is being diagnosed, because the log is work of its own.")
+            }
+            .onChange(of: recordsPerformanceLog) { _, value in
+                // Turning it on has to start the retention and heartbeat timers that launch
+                // skipped. Turning it off needs nothing: every writer asks the setting.
+                if value { PerfLog.shared.start() }
+            }
+            SettingsRow("Location") {
+                HStack(spacing: Metrics.gutter) {
+                    Text(logLocation)
+                        .font(Typo.codeSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                    Button("Reveal in Finder") { Reveal.inFinder(PerfLog.shared.directoryPath) }
+                }
+            }
+        }
     }
 }

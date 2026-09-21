@@ -4,7 +4,8 @@ import SwiftUI
 import SwarmCore
 
 /// Keeps one display-link clock beside the main window and records only gaps large enough to be
-/// visible. The view owns the link, so closing the window also stops the callbacks.
+/// visible to somebody who is looking. The view owns the link, so closing the window also stops
+/// the callbacks.
 @MainActor
 struct PerformanceStallMonitor: NSViewRepresentable {
     var app: AppModel
@@ -57,9 +58,22 @@ final class PerformanceStallView: NSView {
 
     @objc private func tick() {
         let current = CACurrentMediaTime()
-        defer { last = current }
-        guard last > 0 else { return }
-        let milliseconds = (current - last) * 1_000
+        // **A throttled frame is not a stall, and counting it as one hid the real ones.** macOS
+        // slows the display link for a window that is behind another one or belongs to an app in
+        // the background, so a Mac left alone overnight produced a steady run of 180ms "stalls" on
+        // a pane drawing nothing: 65 of the 149 recorded in one day, all from an app nobody was
+        // looking at. The clock restarts on the way back, because the gap across the whole of the
+        // background period is not a frame anybody waited for either.
+        guard NSApplication.shared.isActive,
+              window?.occlusionState.contains(.visible) == true
+        else {
+            last = 0
+            return
+        }
+        let previous = last
+        last = current
+        guard previous > 0 else { return }
+        let milliseconds = (current - previous) * 1_000
         guard milliseconds > 120 else { return }
         let screen = screenState()
         PerfLog.shared.record(.stall(

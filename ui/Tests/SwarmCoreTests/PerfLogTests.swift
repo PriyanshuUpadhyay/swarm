@@ -25,6 +25,23 @@ struct PerfLogTests {
         ))
     }
 
+    @Test("nothing is written, and no directory is made, while the switch is off")
+    func offWritesNothing() throws {
+        let directory = URL(fileURLWithPath: TestScratch.path("perf-off"), isDirectory: true)
+        let date = try #require(calendar().date(from: DateComponents(
+            year: 2026, month: 9, day: 18, hour: 12
+        )))
+        let log = PerfLog(
+            directory: directory, now: { date }, calendar: calendar(), isRecording: { false }
+        )
+        log.start()
+        log.record(.busRead(milliseconds: 999, sessionCount: 3))
+        log.flushForTesting()
+
+        #expect(log.entriesForTesting().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
     @Test("each event writes only its named detail fields")
     func detailPrivacy() throws {
         let directory = URL(fileURLWithPath: TestScratch.path("perf-details"), isDirectory: true)
