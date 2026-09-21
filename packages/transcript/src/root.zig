@@ -273,71 +273,23 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
 }
 
 pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!void {
+    var stringify: std.json.Stringify = .{ .writer = writer, .options = .{} };
+    try stringify.beginObject();
+    try stringify.objectField("type");
+    try stringify.write(@tagName(event));
     switch (event) {
-        .user_message_chunk => |value| try std.json.Stringify.value(.{
-            .type = "user_message_chunk",
-            .text = value.text,
-            .meta = value.meta,
-        }, .{}, writer),
-        .agent_message_chunk => |value| try std.json.Stringify.value(.{
-            .type = "agent_message_chunk",
-            .text = value.text,
-            .meta = value.meta,
-        }, .{}, writer),
-        .agent_thought_chunk => |value| try std.json.Stringify.value(.{
-            .type = "agent_thought_chunk",
-            .text = value.text,
-            .meta = value.meta,
-        }, .{}, writer),
-        .tool_call => |value| try std.json.Stringify.value(.{
-            .type = "tool_call",
-            .tool_call_id = value.tool_call_id,
-            .name = value.name,
-            .input = value.input,
-            .status = value.status,
-            .meta = value.meta,
-        }, .{}, writer),
-        .tool_call_update => |value| try std.json.Stringify.value(.{
-            .type = "tool_call_update",
-            .tool_call_id = value.tool_call_id,
-            .status = value.status,
-            .content = value.content,
-            .meta = value.meta,
-        }, .{}, writer),
-        .elicitation => |value| try std.json.Stringify.value(.{
-            .type = "elicitation",
-            .tool_call_id = value.tool_call_id,
-            .questions = value.questions,
-            .meta = value.meta,
-        }, .{}, writer),
-        .elicitation_result => |value| try std.json.Stringify.value(.{
-            .type = "elicitation_result",
-            .tool_call_id = value.tool_call_id,
-            .answers = value.answers,
-            .meta = value.meta,
-        }, .{}, writer),
-        .hook_result => |value| try std.json.Stringify.value(.{
-            .type = "hook_result",
-            .kind = value.kind,
-            .hook_event = value.hook_event,
-            .hook_name = value.hook_name,
-            .tool_call_id = value.tool_call_id,
-            .exit_code = value.exit_code,
-            .meta = value.meta,
-        }, .{}, writer),
-        .permission_decision => |value| try std.json.Stringify.value(.{
-            .type = "permission_decision",
-            .hook_event = value.hook_event,
-            .tool_call_id = value.tool_call_id,
-            .decision = value.decision,
-            .meta = value.meta,
-        }, .{}, writer),
-        .unknown => |value| try std.json.Stringify.value(.{
-            .type = "unknown",
-            .raw = value.raw,
-            .meta = value.meta,
-        }, .{}, writer),
+        inline else => |value| {
+            inline for (@typeInfo(@TypeOf(value)).@"struct".fields) |field| {
+                if (comptime !std.mem.eql(u8, field.name, "meta")) {
+                    try stringify.objectField(field.name);
+                    try stringify.write(@field(value, field.name));
+                }
+            }
+            try stringify.objectField("meta");
+            try stringify.write(value.meta);
+        },
     }
+    try stringify.endObject();
 }
 
 pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
