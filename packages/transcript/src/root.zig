@@ -30,18 +30,90 @@ pub const ToolCallUpdate = struct {
     content: []const u8,
 };
 
+pub const Option = struct {
+    label: []const u8,
+    description: []const u8,
+};
+
+pub const Question = struct {
+    question: []const u8,
+    header: []const u8,
+    multi_select: bool,
+    options: []Option,
+};
+
+pub const Answer = struct {
+    question: []const u8,
+    answer: []const u8,
+};
+
+pub const Elicitation = struct {
+    meta: Meta,
+    tool_call_id: []const u8,
+    questions: []Question,
+};
+
+pub const ElicitationResult = struct {
+    meta: Meta,
+    tool_call_id: []const u8,
+    answers: []Answer,
+};
+
 pub const Event = union(enum) {
     user_message_chunk: Text,
     agent_message_chunk: Text,
     agent_thought_chunk: Text,
     tool_call: ToolCall,
     tool_call_update: ToolCallUpdate,
+    elicitation: Elicitation,
+    elicitation_result: ElicitationResult,
     unknown: Unknown,
 };
 
 fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     const value = obj.get(key) orelse return "";
     return if (value == .string) value.string else "";
+}
+
+fn parseQuestions(arena: std.mem.Allocator, input: std.json.Value) ![]Question {
+    var questions: std.ArrayList(Question) = .empty;
+    if (input != .object) return questions.items;
+    const value = input.object.get("questions") orelse return questions.items;
+    if (value != .array) return questions.items;
+    for (value.array.items) |item| {
+        if (item != .object) continue;
+        var options: std.ArrayList(Option) = .empty;
+        if (item.object.get("options")) |option_value| {
+            if (option_value == .array) {
+                for (option_value.array.items) |option| {
+                    if (option != .object) continue;
+                    try options.append(arena, .{
+                        .label = str(option.object, "label"),
+                        .description = str(option.object, "description"),
+                    });
+                }
+            }
+        }
+        const multi_select = if (item.object.get("multiSelect")) |field| field == .bool and field.bool else false;
+        try questions.append(arena, .{
+            .question = str(item.object, "question"),
+            .header = str(item.object, "header"),
+            .multi_select = multi_select,
+            .options = options.items,
+        });
+    }
+    return questions.items;
+}
+
+fn parseAnswers(arena: std.mem.Allocator, value: std.json.Value) ![]Answer {
+    var answers: std.ArrayList(Answer) = .empty;
+    if (value != .object) return answers.items;
+    var iterator = value.object.iterator();
+    while (iterator.next()) |entry| {
+        if (entry.value_ptr.* != .string) continue;
+        try answers.append(arena, .{ .question = entry.key_ptr.*, .answer = entry.value_ptr.string });
+    }
+    return answers.items;
 }
 
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
@@ -78,14 +150,35 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         } else if (std.mem.eql(u8, block_type, "thinking")) {
             try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = str(block.object, "thinking") } });
         } else if (std.mem.eql(u8, block_type, "tool_use") and !is_user) {
-            try events.append(arena, .{ .tool_call = .{
-                .meta = meta,
-                .tool_call_id = str(block.object, "id"),
-                .name = str(block.object, "name"),
-                .input = block.object.get("input") orelse .null,
-                .status = .pending,
-            } });
+            const input = block.object.get("input") orelse .null;
+            if (std.mem.eql(u8, str(block.object, "name"), "AskUserQuestion")) {
+                try events.append(arena, .{ .elicitation = .{
+                    .meta = meta,
+                    .tool_call_id = str(block.object, "id"),
+                    .questions = try parseQuestions(arena, input),
+                } });
+            } else {
+                try events.append(arena, .{ .tool_call = .{
+                    .meta = meta,
+                    .tool_call_id = str(block.object, "id"),
+                    .name = str(block.object, "name"),
+                    .input = input,
+                    .status = .pending,
+                } });
+            }
         } else if (std.mem.eql(u8, block_type, "tool_result") and is_user) {
+            if (rec.get("toolUseResult")) |tool_use_result| {
+                if (tool_use_result == .object) {
+                    if (tool_use_result.object.get("answers")) |answers| {
+                        try events.append(arena, .{ .elicitation_result = .{
+                            .meta = meta,
+                            .tool_call_id = str(block.object, "tool_use_id"),
+                            .answers = try parseAnswers(arena, answers),
+                        } });
+                        continue;
+                    }
+                }
+            }
             const result_content = block.object.get("content") orelse .null;
             var result_text: []const u8 = "";
             if (result_content == .string) {
@@ -215,4 +308,43 @@ test "tool result with is_error becomes failed" {
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqual(ToolStatus.failed, events[0].tool_call_update.status);
     try std.testing.expectEqualStrings("bad", events[0].tool_call_update.content);
+}
+
+test "AskUserQuestion becomes elicitation" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"assistant","sessionId":"s1","uuid":"u8","timestamp":"t","message":{"content":[{"type":"tool_use","id":"tool-3","name":"AskUserQuestion","input":{"questions":[{"question":"Pick one","header":"Choice","multiSelect":true,"options":[{"label":"A","description":"first"},{"label":"B","description":"second"}]}]}}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("tool-3", events[0].elicitation.tool_call_id);
+    try std.testing.expectEqual(1, events[0].elicitation.questions.len);
+    try std.testing.expect(events[0].elicitation.questions[0].multi_select);
+    try std.testing.expectEqualStrings("B", events[0].elicitation.questions[0].options[1].label);
+}
+
+test "elicitation answer replaces tool call update" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"user","sessionId":"s1","uuid":"u9","timestamp":"t","message":{"content":[{"type":"tool_result","tool_use_id":"tool-3","content":"answer"}]},"toolUseResult":{"questions":[],"answers":{"Pick one":"A"},"annotations":{}}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("tool-3", events[0].elicitation_result.tool_call_id);
+    try std.testing.expectEqualStrings("Pick one", events[0].elicitation_result.answers[0].question);
+    try std.testing.expectEqualStrings("A", events[0].elicitation_result.answers[0].answer);
+}
+
+test "AskUserQuestion missing fields keeps false and empty defaults" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"assistant","sessionId":"s1","uuid":"u10","timestamp":"t","message":{"content":[{"type":"tool_use","id":"tool-4","name":"AskUserQuestion","input":{"questions":[{}]}}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expect(!events[0].elicitation.questions[0].multi_select);
+    try std.testing.expectEqual(0, events[0].elicitation.questions[0].options.len);
 }
