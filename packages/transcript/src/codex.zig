@@ -58,10 +58,18 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "compaction", .text = root.str(payload, "message") } });
         } else if (std.mem.eql(u8, payload_type, "error")) {
             try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(payload, "message") } });
+        } else if (std.mem.eql(u8, payload_type, "user_message")) {
+            const message = root.str(payload, "message");
+            if (message.len != 0) {
+                try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = message } });
+            } else {
+                try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "event_msg/user_message" } });
+            }
         } else if (root.oneOf(payload_type, &.{
-            "agent_message",           "user_message",        "exec_command_end",   "patch_apply_end",
-            "mcp_tool_call_end",       "web_search_end",      "item_completed",     "token_count",
-            "thread_settings_applied", "entered_review_mode", "exited_review_mode", "sub_agent_activity",
+            "agent_message",      "exec_command_end",        "patch_apply_end",
+            "mcp_tool_call_end",  "web_search_end",          "item_completed",
+            "token_count",        "thread_settings_applied", "entered_review_mode",
+            "exited_review_mode", "sub_agent_activity",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "event_msg/{s}", .{payload_type}) } });
         } else {
@@ -146,12 +154,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             if (is_context) {
                 try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = role_value.string, .text = text.string } });
             } else if (is_user) {
-                const trimmed = std.mem.trimStart(u8, text.string, " \t\r\n");
-                if (root.oneOfPrefix(trimmed, &.{ "<environment_context>", "<user_instructions>", "# AGENTS.md", "<permissions instructions>" })) {
-                    try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = text.string } });
-                } else {
-                    try events.append(arena, .{ .user_message_chunk = chunk });
-                }
+                try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = text.string } });
             } else {
                 try events.append(arena, .{ .agent_message_chunk = chunk });
             }
@@ -359,7 +362,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
     return events.items;
 }
 
-test "user message content becomes user chunks" {
+test "role user text parts become context messages" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
@@ -367,11 +370,44 @@ test "user message content becomes user chunks" {
     ;
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(2, events.len);
-    try std.testing.expectEqualStrings("one", events[0].user_message_chunk.text);
-    try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
-    try std.testing.expectEqualStrings("m1", events[0].user_message_chunk.meta.uuid);
+    try std.testing.expectEqualStrings("context", events[0].system_message.kind);
+    try std.testing.expectEqualStrings("one", events[0].system_message.text);
+    try std.testing.expectEqualStrings("", events[0].system_message.meta.session_id);
+    try std.testing.expectEqualStrings("m1", events[0].system_message.meta.uuid);
+    try std.testing.expectEqualStrings("t", events[0].system_message.meta.timestamp);
+    try std.testing.expectEqualStrings("context", events[1].system_message.kind);
+    try std.testing.expectEqualStrings("two", events[1].system_message.text);
+}
+
+test "event user message becomes one user chunk" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"event_msg","timestamp":"t","payload":{"type":"user_message","message":"hello","images":[]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
     try std.testing.expectEqualStrings("t", events[0].user_message_chunk.meta.timestamp);
-    try std.testing.expectEqualStrings("two", events[1].user_message_chunk.text);
+}
+
+test "event user message with no text stays ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const missing = try parseLine(arena_state.allocator(), "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\"}}");
+    const empty = try parseLine(arena_state.allocator(), "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"\"}}");
+    try std.testing.expectEqual(1, missing.len);
+    try std.testing.expectEqualStrings("event_msg/user_message", missing[0].ignored.kind);
+    try std.testing.expectEqual(1, empty.len);
+    try std.testing.expectEqualStrings("event_msg/user_message", empty[0].ignored.kind);
+}
+
+test "event agent message stays ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"event_msg\",\"payload\":{\"type\":\"agent_message\",\"message\":\"hello\"}}");
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("event_msg/agent_message", events[0].ignored.kind);
 }
 
 test "assistant message content becomes agent chunks" {
@@ -591,7 +627,8 @@ test "Codex user and tool images emit image events" {
     const user = try parseLine(arena_state.allocator(), "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_image\",\"media_type\":\"image/png\",\"image_url\":\"secret\"},{\"type\":\"input_text\",\"text\":\"look\"}]}}");
     const tool = try parseLine(arena_state.allocator(), "{\"type\":\"response_item\",\"payload\":{\"type\":\"custom_tool_call_output\",\"call_id\":\"c\",\"output\":[{\"type\":\"input_image\",\"image_url\":\"secret\"},{\"type\":\"input_text\",\"text\":\"ok\"}]}}");
     try std.testing.expect(user[0].image.role == .user);
-    try std.testing.expectEqualStrings("look", user[1].user_message_chunk.text);
+    try std.testing.expectEqualStrings("context", user[1].system_message.kind);
+    try std.testing.expectEqualStrings("look", user[1].system_message.text);
     try std.testing.expectEqualStrings("ok", tool[0].tool_call_update.content);
     try std.testing.expect(tool[1].image.role == .tool);
 }
