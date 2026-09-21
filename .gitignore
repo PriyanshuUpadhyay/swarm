@@ -1,2 +1,4 @@
 /target
 /.swarm-demo.*
+.zig-cache/
+zig-out/
