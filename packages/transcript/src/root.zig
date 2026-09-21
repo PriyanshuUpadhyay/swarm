@@ -273,7 +273,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
 }
 
 pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!void {
-    var stringify: std.json.Stringify = .{ .writer = writer, .options = .{} };
+    // Escape all non-ASCII code points so byte 0x0A is the only line separator.
+    var stringify: std.json.Stringify = .{ .writer = writer, .options = .{ .escape_unicode = true } };
     try stringify.beginObject();
     try stringify.objectField("type");
     try stringify.write(@tagName(event));
@@ -511,4 +512,15 @@ test "event JSON output uses a type and nested meta" {
         "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\"}}",
         output.written(),
     );
+}
+
+test "event JSON output escapes all non-ASCII code points" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try writeEventJson(&output.writer, .{ .agent_message_chunk = .{
+        .meta = .{ .session_id = "", .uuid = "", .timestamp = "" },
+        .text = "\x7f\u{009b}\u{0085}\u{2028}\u{2029}\u{202e}",
+    } });
+    for (output.written()) |byte| try std.testing.expect(byte < 0x80);
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\\u007f\\u009b\\u0085\\u2028\\u2029\\u202e") != null);
 }
