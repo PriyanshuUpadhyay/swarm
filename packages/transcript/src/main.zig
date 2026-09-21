@@ -54,6 +54,7 @@ pub fn main(init: std.process.Init) !void {
     if (index + 1 != args.len or std.mem.startsWith(u8, args[index], "-")) fail(init, usage);
     if ((before != null and tail == null) or (before != null and follow)) fail(init, usage);
     const path = args[index];
+    const session_id = if (format == .agy) transcript.agySessionIdFromPath(path) else "";
 
     const file = std.Io.Dir.cwd().openFile(init.io, path, .{}) catch
         fail(init, "error: cannot read input file\n");
@@ -72,19 +73,19 @@ pub fn main(init: std.process.Init) !void {
             fail(init, "error: failed to write output\n");
         file_writer.interface.writeByte('\n') catch fail(init, "error: failed to write output\n");
         if (follow) {
-            transcript.translateFollowWindow(init.gpa, format, file, init.io, start_offset, end_offset, &file_writer.interface) catch
+            transcript.translateFollowWindow(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface) catch
                 fail(init, "error: failed to translate input file\n");
         } else {
-            transcript.translateWindow(init.gpa, format, file, init.io, start_offset, end_offset, &file_writer.interface) catch
+            transcript.translateWindow(init.gpa, format, session_id, file, init.io, start_offset, end_offset, &file_writer.interface) catch
                 fail(init, "error: failed to translate input file\n");
         }
     } else if (follow) {
-        transcript.translateFollow(init.gpa, format, file, init.io, &file_writer.interface) catch
+        transcript.translateFollow(init.gpa, format, session_id, file, init.io, &file_writer.interface) catch
             fail(init, "error: failed to translate input file\n");
     } else {
         var input_buffer: [64 * 1024]u8 = undefined;
         var file_reader = file.reader(init.io, &input_buffer);
-        transcript.translate(init.gpa, format, &file_reader.interface, &file_writer.interface) catch
+        transcript.translate(init.gpa, format, session_id, &file_reader.interface, &file_writer.interface) catch
             fail(init, "error: failed to translate input file\n");
     }
     file_writer.interface.flush() catch fail(init, "error: failed to write output\n");
