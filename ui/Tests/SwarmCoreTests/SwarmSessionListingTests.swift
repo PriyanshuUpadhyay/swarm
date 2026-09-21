@@ -6,6 +6,76 @@ import Testing
 struct SwarmSessionListingTests {
     private let projectID = RepoID("project")
 
+    @Test("a session the app did not start is not listed")
+    func aSessionTheAppDidNotStartIsNotListed() async {
+        let outsideSession = fixture(id: "outside", cwd: "/work/project")
+
+        #expect(await listedChats(for: outsideSession, localChats: [:]).isEmpty)
+    }
+
+    @Test("a session the app started is listed")
+    func aSessionTheAppStartedIsListed() async {
+        let appSession = fixture(id: "app", cwd: "/work/project")
+        let appChat = SessionID("app-chat")
+
+        let chats = await listedChats(for: appSession, localChats: [appSession.id: appChat])
+
+        #expect(chats.map(\.id) == [appSession.id])
+        #expect(chats.first?.localSessionID == appChat)
+    }
+
+    @Test("a chat with no swarm link is not listed")
+    func aChatWithNoSwarmLinkIsNotListed() async throws {
+        let path = TestScratch.unique("swarm-link-migration") + ".sqlite"
+        let store = try Store(path: path)
+        let oldChat = try await store.upsert(Session(workspaceID: nil, title: "Old chat"))
+        let oldSwarm = fixture(id: "old", cwd: "/work/project")
+        try await SwarmChatSession.save(oldSwarm.id, sessionID: oldChat.id, in: store)
+
+        let raw = try SQLiteDatabase(path: path)
+        try raw.setUserVersion(try raw.readUserVersion() - 1)
+
+        let reopened = try Store(path: path)
+        #expect(try await reopened.session(id: oldChat.id) != nil)
+        #expect(try await reopened.setting("session.\(oldChat.id.rawValue).swarmSession") == "")
+        let oldLinks = await SwarmChatSession.loadAll(from: reopened)
+        #expect(await listedChats(for: oldSwarm, localChats: oldLinks).isEmpty)
+    }
+
+    @Test("a new chat still records its swarm session")
+    func aNewChatStillRecordsItsSwarmSession() async throws {
+        let store = try Store(path: ":memory:")
+        let newChat = try await store.upsert(Session(workspaceID: nil, title: "New chat"))
+        let newSwarm = fixture(id: "new", cwd: "/work/project")
+        try await SwarmChatSession.save(newSwarm.id, sessionID: newChat.id, in: store)
+
+        #expect(await SwarmChatSession.load(sessionID: newChat.id, from: store) == newSwarm.id)
+        let newLinks = await SwarmChatSession.loadAll(from: store)
+        let chats = await listedChats(for: newSwarm, localChats: newLinks)
+        #expect(chats.map(\.localSessionID) == [newChat.id])
+    }
+
+    @Test("not listing does not touch the session")
+    func notListingDoesNotTouchTheSession() async throws {
+        let outsideSession = fixture(id: "outside", cwd: "/work/project")
+        let store = try Store(path: ":memory:")
+        try await store.setSetting("outside-session", outsideSession.id.rawValue)
+
+        #expect(await listedChats(for: outsideSession, localChats: [:]).isEmpty)
+        #expect(try await store.setting("outside-session") == outsideSession.id.rawValue)
+    }
+
+    private func listedChats(
+        for session: SwarmSession, localChats: [SwarmSessionID: SessionID]
+    ) async -> [SwarmProjectSession] {
+        let repo = Repo(id: projectID, name: "Project", path: "/work/project")
+        let discovered = await SwarmSessionDiscovery().discover(
+            sessions: [session], repos: [repo], workspaces: [],
+            localChats: localChats, running: [], excluding: []
+        )
+        return discovered[projectID] ?? []
+    }
+
     @Test("matches linked worktrees by their common git directory")
     func matchesCommonDirectory() {
         let session = fixture(id: "10", cwd: "/work/repo/wt/feature")
@@ -419,6 +489,28 @@ struct SwarmSessionListingTests {
         #expect(!SwarmSessionInteraction.canSubmit(
             "  \n", adapter: "herdr", pane: "%1", target: .agent
         ))
+    }
+
+    @Test("a herdr session keeps its stored adapter")
+    func aHerdrSessionKeepsItsStoredAdapter() throws {
+        let herdrSession = fixture()
+
+        #expect(try SwarmSessionInteraction.adapter(for: herdrSession) == "herdr")
+    }
+
+    @Test("a session with no adapter still explains itself")
+    func aSessionWithNoAdapterStillExplainsItself() {
+        var unrecordedSession = fixture()
+        unrecordedSession.adapter = nil
+
+        #expect(throws: SwarmProfileError.failed(
+            SwarmSessionInteraction.missingAdapterSentence
+        )) { try SwarmSessionInteraction.adapter(for: unrecordedSession) }
+
+        unrecordedSession.adapter = "  "
+        #expect(throws: SwarmProfileError.failed(
+            SwarmSessionInteraction.missingAdapterSentence
+        )) { try SwarmSessionInteraction.adapter(for: unrecordedSession) }
     }
 
     private func fixture(

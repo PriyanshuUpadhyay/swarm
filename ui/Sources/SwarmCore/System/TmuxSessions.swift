@@ -102,6 +102,9 @@ public enum TmuxSessions {
         "swarmui-" + fingerprint(databasePath)
     }
 
+    /// Swarm agents share this server so one adapter can address every recorded pane.
+    public static let swarmSocketName = "swarm"
+
     /// FNV-1a rather than `Hashable`, whose seed changes every launch. This value names a socket
     /// that has to be found again tomorrow.
     static func fingerprint(_ value: String) -> String {
@@ -290,6 +293,10 @@ public struct TmuxCommand: Sendable, Equatable {
         self.executable = executable
         self.socketName = socketName
         self.configPath = configPath
+    }
+
+    public var swarmChair: TmuxCommand {
+        TmuxCommand(executable: executable, socketName: TmuxSessions.swarmSocketName, configPath: configPath)
     }
 
     /// `-u` forces UTF-8 rather than inferring it from a LANG that a GUI-launched app may not have

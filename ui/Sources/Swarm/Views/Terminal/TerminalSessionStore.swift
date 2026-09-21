@@ -100,6 +100,9 @@ final class TerminalSessionStore {
         if let workspaceID = paneOwner.removeValue(forKey: id) {
             let persistence = self.persistence
             Task { await persistence?.kill(workspaceID: workspaceID, paneIDs: [id]) }
+        } else {
+            let persistence = self.persistence
+            Task { await persistence?.kill(paneIDs: [id]) }
         }
         paneSession[id] = nil
         paneAgents[id] = nil
@@ -450,7 +453,7 @@ final class TerminalSessionStore {
             requiresTmux: requiresTmux
         )
             ?? .inProcess
-        if let command = persistence?.command, let session = decision.session {
+        if let session = decision.session, let command = persistence?.command(for: session) {
             paneSession[tab.id.rawValue] = session
             view.start(TerminalLaunch.tmux(
                 command: command, session: session, directory: start, extra: extra

@@ -11,6 +11,7 @@ final class SwarmSessionReaderModel {
 
     private(set) var agents: [SwarmSessionAgentDigest] = []
     private(set) var agentsFailure: String?
+    private(set) var attachability: [SwarmSessionID: Bool] = [:]
     private var inputFailures: [InputRoute: String] = [:]
     private var chairRoute: InputRoute?
 
@@ -105,9 +106,14 @@ final class SwarmSessionReaderModel {
                 }
             }
             var readings: [SessionReading] = []
+            var capabilities = attachability
             for session in sessions {
                 async let agents = bus.agents(in: session)
                 async let messages = bus.messages(in: session, after: 0)
+                if capabilities[session.id] == nil,
+                   let supported = try? await bus.attachable(in: session) {
+                    capabilities[session.id] = supported
+                }
                 let values = try await (agents, messages)
                 readings.append(SessionReading(
                     session: session, agents: values.0, messages: values.1
@@ -119,6 +125,7 @@ final class SwarmSessionReaderModel {
                 )
             }
             guard !Task.isCancelled else { return }
+            if attachability != capabilities { attachability = capabilities }
             if agents != digest { agents = digest }
             let chair = readings.compactMap { reading -> InputRoute? in
                 let chair = SwarmAgentID("orchestrator")

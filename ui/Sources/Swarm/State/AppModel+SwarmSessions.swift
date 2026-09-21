@@ -55,24 +55,9 @@ extension AppModel {
                     saved.insert(session)
                 }
             }
-            var running = Set(localChats.compactMap { swarm, chat in
+            let running = Set(localChats.compactMap { swarm, chat in
                 TerminalSessionStore.shared.interactiveState(for: chat) == .stopped ? nil : swarm
             })
-            let bus = swarmBus
-            await withTaskGroup(of: SwarmSessionID?.self) { group in
-                for session in sessions where localChats[session.id] == nil {
-                    group.addTask {
-                        let agents = try? await bus.agents(in: session)
-                        return agents?.contains {
-                            $0.id == SwarmAgentID("orchestrator")
-                                && $0.pane != nil && $0.alive != false
-                        } == true ? session.id : nil
-                    }
-                }
-                for await id in group {
-                    if let id { running.insert(id) }
-                }
-            }
             let discovered = await swarmSessionDiscovery.discover(
                 sessions: sessions, repos: repos, workspaces: workspaces,
                 localChats: localChats, running: running, excluding: saved

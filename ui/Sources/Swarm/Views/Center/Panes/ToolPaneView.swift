@@ -22,9 +22,6 @@ struct ToolPaneView: View {
     /// A swarm session's Panes tab asks for this. The chair splits its own tmux window for each
     /// seat, so its shell is where every worker is watched, and the flag that hides an ordinary
     /// chat's terminal must not hide a swarm.
-    var showsShell = false
-    /// The pane's own contextual menu, as an `NSMenu`, for the kinds of tab that take the right
-    /// click before SwiftUI is offered it. A browser is one; a terminal answers with its own.
     var paneMenu: (@MainActor () -> NSMenu)?
 
     /// The tab whose shell has had its environment and its port settled, or nothing.
@@ -41,16 +38,7 @@ struct ToolPaneView: View {
     /// The chat asked for the shell, for this tab, until it is asked back. Per pane rather than a
     /// setting, because looking at a worker is a thing a reader does for a minute.
     @State private var showsPanes = false
-    /// Watched rather than read once, so "Show the terminal" draws it on the same frame.
-    @AppStorage(InteractiveChatPane.terminalKey) private var showsAgentPane = false
-
-    /// Whether this pane draws a grid wider than itself, with a scroller under it.
-    ///
-    /// Both halves matter. The reader has to be looking at the shell, and the chair has to have
-    /// split its window for somebody, which is what a second agent on the bus means.
-    private var widePanes: Bool {
-        (showsShell || showsPanes) && model.swarmAgents.agents.count > 1
-    }
+    @State private var terminalToggleEpoch = 0
 
     /// Read for the setup strip's slide. See the `.animation` in `body`.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -61,11 +49,13 @@ struct ToolPaneView: View {
         case .terminal:
             // A chat is its conversation, whether or not its CLI is running. The pane it runs in
             // is a debug view now. See `InteractiveChatPane`.
-            if let sessionID = tab.agentSessionID,
+            if terminalToggleEpoch >= 0,
+               let sessionID = tab.agentSessionID,
                let session = model.sessions.first(where: { $0.id == sessionID }),
-               !showsAgentPane, !showsShell, !showsPanes {
+               !InteractiveChatPanePreferences.showsTerminal(for: session.id), !showsPanes {
                 InteractiveChatPane(
-                    model: model, session: session, onShowPanes: { showsPanes = true }
+                    model: model, session: session, onShowPanes: { showsPanes = true },
+                    onShowTerminal: { terminalToggleEpoch += 1 }
                 )
             } else {
                 VStack(spacing: 0) {
@@ -107,10 +97,6 @@ struct ToolPaneView: View {
                                 terminalLabel: tab.title,
                                 onAddToChat: terminalHandoff,
                                 requiresTmux: tab.agentSessionID != nil,
-                                // Wide only once a chair has workers to show. A chat on its own
-                                // fills its pane, because a chair drawn 400 columns wide would
-                                // wrap its own answers off the right edge of the view.
-                                fixedColumns: widePanes ? TmuxCommand.detachedColumns : 0,
                                 isTerminalChat: tab.agentSessionID != nil
                             )
                             .id(tab.id)

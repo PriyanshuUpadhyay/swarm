@@ -294,7 +294,7 @@ public actor SwarmSessionDiscovery {
                     localSessionID: local,
                     isRunning: sessions.contains { running.contains($0.id) }
                 )
-            }
+            }.filter { $0.localSessionID != nil }
         }
     }
 

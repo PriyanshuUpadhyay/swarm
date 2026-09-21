@@ -68,10 +68,10 @@ public struct SwarmCLIBus: SwarmBus {
     public func startChairSession(
         chair: SwarmChair?, directory: String
     ) async throws -> SwarmSessionID {
-        _ = try await call(["init"], adapter: "tmux", directory: directory)
+        _ = try await call(["init"], adapter: "tmux-solo", directory: directory)
         var arguments = ["session", "new", "lane"]
         if let chair { arguments += ["--chair", chair.argument] }
-        let created = try await call(arguments, adapter: "tmux", directory: directory)
+        let created = try await call(arguments, adapter: "tmux-solo", directory: directory)
         let value = created.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let number = Int(value), number > 0 else {
             throw SwarmProfileError.failed("swarm returned an invalid session id")
@@ -81,7 +81,7 @@ public struct SwarmCLIBus: SwarmBus {
 
     public func setChair(_ chair: SwarmChair, in session: SwarmSessionID) async throws {
         _ = try await call(
-            ["session", "chair", chair.argument], in: session, adapter: "tmux"
+            ["session", "chair", chair.argument], in: session, adapter: "tmux-solo"
         )
     }
 
@@ -114,16 +114,16 @@ public struct SwarmCLIBus: SwarmBus {
         in session: SwarmSessionID, adapter: String
     ) async throws -> [SwarmAgent] {
         guard let store, let liveness else {
-            return try await listAgents(in: session, adapter: adapter)
+            return try await listAgents(in: session, adapter: adapter).agents
         }
         let roster: [SwarmAgent]
         do {
             roster = try await store.agents(in: session)
         } catch {
-            return try await listAgents(in: session, adapter: adapter)
+            return try await listAgents(in: session, adapter: adapter).agents
         }
         let alive = await liveness.panes(in: session) {
-            try await listAgents(in: session, adapter: adapter)
+            try await listAgents(in: session, adapter: adapter).agents
         }
         return roster.map { agent in
             var agent = agent
@@ -150,10 +150,14 @@ public struct SwarmCLIBus: SwarmBus {
 
     private func listAgents(
         in session: SwarmSessionID, adapter: String
-    ) async throws -> [SwarmAgent] {
+    ) async throws -> SwarmAgentList {
         try await read(
             ["agents", "--json"], in: session, adapter: adapter, as: SwarmAgentList.self
-        ).agents
+        )
+    }
+
+    public func attachable(in session: SwarmSessionID, adapter: String) async throws -> Bool? {
+        try await listAgents(in: session, adapter: adapter).attachable
     }
 
     /// Still the CLI, and deliberately so.

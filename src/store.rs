@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
@@ -26,6 +26,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0008.sql"),
     include_str!("../migrations/0009.sql"),
     include_str!("../migrations/0010.sql"),
+    include_str!("../migrations/0011.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -130,16 +131,24 @@ pub fn send_message(
     kind: &str,
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
-    let tx = connection.transaction()?;
-    tx.execute(
-        "INSERT INTO message (session_id, sender_id, recipient_id, kind, body_path)
-         VALUES (?1, ?2, ?3, ?4, '')",
-        (session_id, sender_id, recipient_id, kind),
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let seq: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM message WHERE session_id = ?1",
+        [session_id],
+        |row| row.get(0),
     )?;
-    let seq = tx.last_insert_rowid();
-    let body_path = format!("runs/{session_id}/{seq}.txt");
-    tx.execute("UPDATE message SET body_path = ?1 WHERE seq = ?2", (&body_path, seq))?;
-    let file = root.join(body_path);
+    let mut body_path = format!("runs/{session_id}/{seq}.txt");
+    let mut suffix = 0;
+    while root.join(&body_path).exists() {
+        suffix += 1;
+        body_path = format!("runs/{session_id}/{seq}-{suffix}.txt");
+    }
+    tx.execute(
+        "INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        (session_id, seq, sender_id, recipient_id, kind, &body_path),
+    )?;
+    let file = root.join(&body_path);
     std::fs::create_dir_all(file.parent().ok_or("body path has no parent")?)?;
     write_atomic(&file, body)?;
     tx.commit()?;
@@ -162,13 +171,17 @@ pub fn inbox(
     connection.execute(
         "UPDATE message SET seen_at = unixepoch()
          WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
-           AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)",
+           AND NOT EXISTS (SELECT 1 FROM read_mark
+                           WHERE read_mark.session_id = message.session_id
+                             AND message_seq = message.seq AND agent_id = ?2)",
         (session_id, agent_id),
     )?;
     let mut statement = connection.prepare(
         "SELECT seq, sender_id, kind, body_path FROM message
          WHERE session_id = ?1 AND recipient_id = ?2
-           AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)
+           AND NOT EXISTS (SELECT 1 FROM read_mark
+                           WHERE read_mark.session_id = message.session_id
+                             AND message_seq = message.seq AND agent_id = ?2)
          ORDER BY seq",
     )?;
     let rows = statement.query_map((session_id, agent_id), |r| {
@@ -364,7 +377,8 @@ pub fn messages(
     let mut statement = connection.prepare(
         "SELECT message.seq, sender_id, recipient_id, kind, body_path, created_at,
                 EXISTS (SELECT 1 FROM read_mark
-                        WHERE message_seq = message.seq AND agent_id = message.recipient_id)
+                        WHERE read_mark.session_id = message.session_id
+                          AND message_seq = message.seq AND agent_id = message.recipient_id)
          FROM message
          WHERE session_id = ?1 AND seq > ?2
          ORDER BY seq
@@ -398,7 +412,8 @@ pub fn mark_unseen_for_rering(
            AND seen_at IS NULL
            AND NOT EXISTS (
                SELECT 1 FROM read_mark
-               WHERE message_seq = message.seq AND agent_id = ?2
+               WHERE read_mark.session_id = message.session_id
+                 AND message_seq = message.seq AND agent_id = ?2
            )",
         (session_id, agent_id, age_secs),
     )?;
@@ -460,17 +475,18 @@ pub fn orchestrator_of(connection: &Connection, session_id: i64) -> Result<Strin
 
 pub fn ack(connection: &Connection, session_id: i64, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let changed = connection.execute(
-        "INSERT INTO read_mark (message_seq, agent_id)
-         SELECT seq, recipient_id FROM message
+        "INSERT INTO read_mark (session_id, message_seq, agent_id)
+         SELECT session_id, seq, recipient_id FROM message
          WHERE session_id = ?1 AND seq = ?2 AND recipient_id = ?3
-         ON CONFLICT (message_seq, agent_id) DO NOTHING",
+         ON CONFLICT (session_id, message_seq, agent_id) DO NOTHING",
         (session_id, seq, agent_id),
     )?;
     if changed == 0
         && !connection.query_row(
             "SELECT EXISTS (
              SELECT 1 FROM read_mark
-             JOIN message ON message.seq = read_mark.message_seq
+             JOIN message ON message.session_id = read_mark.session_id
+                         AND message.seq = read_mark.message_seq
              WHERE message.session_id = ?1
                AND read_mark.message_seq = ?2
                AND read_mark.agent_id = ?3
@@ -867,5 +883,55 @@ mod tests {
             .query_row("SELECT created_at, seen_at FROM message WHERE seq = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap();
         assert_eq!(seen_at, created_at);
+    }
+
+    #[test]
+    fn migration_scopes_sequences_and_keeps_existing_bodies_and_receipts() {
+        let root = temp_root("session-sequence-migration");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        let connection = Connection::open(&db).unwrap();
+        for migration in &MIGRATIONS[..10] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.execute_batch(
+            "PRAGMA user_version = 10;
+             INSERT INTO session (id, talk_mode) VALUES (1, 'lane'), (2, 'lane');
+             INSERT INTO agent (id, session_id, role) VALUES
+                 ('chair', 1, 'orchestrator'), ('coder', 1, 'coder'),
+                 ('chair', 2, 'orchestrator'), ('coder', 2, 'coder');
+             INSERT INTO message (seq, session_id, sender_id, recipient_id, kind, body_path, created_at, rung_at, seen_at) VALUES
+                 (1, 2, 'chair', 'coder', 'ask', 'runs/2/1.txt', 30, NULL, NULL),
+                 (2, 1, 'chair', 'coder', 'ask', 'runs/1/2.txt', 20, 21, 22),
+                 (3, 1, 'chair', 'coder', 'ask', 'runs/1/3.txt', 10, 11, 12),
+                 (4, 2, 'chair', 'coder', 'ask', 'runs/2/4.txt', 40, NULL, NULL);
+             INSERT INTO read_mark (message_seq, agent_id) VALUES (1, 'coder'), (3, 'coder');",
+        ).unwrap();
+        for (path, body) in [("runs/2/1.txt", "second one"), ("runs/1/2.txt", "first two"),
+                             ("runs/1/3.txt", "first one"), ("runs/2/4.txt", "second two")] {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, body).unwrap();
+        }
+        drop(connection);
+
+        let mut connection = open(&db).unwrap();
+        assert_eq!(connection.query_row("SELECT count(*) FROM message", [], |row| row.get::<_, i64>(0)).unwrap(), 4);
+        assert_eq!(connection.query_row("SELECT count(*) FROM read_mark", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        let first = messages(&connection, 1, 0).unwrap();
+        assert_eq!(first.iter().map(|row| (row.seq, row.body_path.as_str(), row.read)).collect::<Vec<_>>(),
+                   [(1, "runs/1/3.txt", true), (2, "runs/1/2.txt", false)]);
+        let second = messages(&connection, 2, 0).unwrap();
+        assert_eq!(second.iter().map(|row| (row.seq, row.body_path.as_str(), row.read)).collect::<Vec<_>>(),
+                   [(1, "runs/2/1.txt", true), (2, "runs/2/4.txt", false)]);
+        assert_eq!(connection.query_row("SELECT rung_at, seen_at FROM message WHERE session_id = 1 AND seq = 1", [],
+                                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))).unwrap(), (11, 12));
+        assert_eq!(send_message(&mut connection, &root, 1, "chair", "coder", "ask", "next").unwrap(), 3);
+        let new_path: String = connection.query_row("SELECT body_path FROM message WHERE session_id = 1 AND seq = 3", [], |row| row.get(0)).unwrap();
+        assert_ne!(new_path, "runs/1/3.txt");
+        assert_eq!(std::fs::read_to_string(root.join("runs/1/3.txt")).unwrap(), "first one");
+        assert_eq!(std::fs::read_to_string(root.join(new_path)).unwrap(), "next");
+        assert!(connection.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

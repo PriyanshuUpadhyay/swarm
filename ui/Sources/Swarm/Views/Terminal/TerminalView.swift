@@ -514,15 +514,7 @@ final class TerminalHostView: NSView {
     override func layout() {
         super.layout()
         guard let terminal else { return }
-        guard fixedColumns > 0, columnWidth > 0 else {
-            terminal.frame = bounds
-            return
-        }
-        let wanted = columnWidth * CGFloat(fixedColumns)
-        terminal.frame = CGRect(
-            x: 0, y: 0, width: max(bounds.width, wanted), height: bounds.height
-        )
-        frame.size.width = terminal.frame.width
+        terminal.frame = bounds
     }
 
     override func viewDidMoveToWindow() {
@@ -548,43 +540,12 @@ final class TerminalHostView: NSView {
 
 /// The SwiftUI face of a terminal tab. It owns nothing: the live view comes from
 /// `TerminalSessionStore`, which is what keeps a shell running across tab and workspace switches.
-/// A terminal that may be wider than the pane it sits in, with a scroller under it.
-///
-/// It exists for one case. A swarm chair splits its own tmux window for every worker it spawns,
-/// and a window only as wide as this pane fits two of them before tmux answers "no space for a new
-/// pane". Drawing a wide grid gives tmux the room, and the scroller is how the reader reaches the
-/// workers that sit past the right edge.
-final class TerminalScrollHost: NSScrollView {
-    let host = TerminalHostView()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        documentView = host
-        hasHorizontalScroller = true
-        hasVerticalScroller = false
-        autohidesScrollers = true
-        drawsBackground = false
-        // The terminal owns the wheel. Its scrollback is what a reader expects it to move, and an
-        // enclosing scroller with give would take that gesture before the terminal saw it.
-        verticalScrollElasticity = .none
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override func layout() {
-        super.layout()
-        host.frame.size.height = contentSize.height
-        if host.fixedColumns == 0 { host.frame.size.width = contentSize.width }
-        host.layoutSubtreeIfNeeded()
-    }
-}
-
 struct TerminalView: NSViewRepresentable {
     var tab: TerminalTab
     var workspace: Workspace
     var repo: Repo?
     var port: Int
-    /// Columns to draw whatever the pane is worth, and 0 to follow the pane. See `TerminalScrollHost`.
+    /// Columns to draw whatever the pane is worth, and 0 to follow the pane.
     var fixedColumns = 0
     /// The folder this pane's shell starts in, empty for the worktree root. Every pane of a tab
     /// gets the tab's, so splitting a terminal opened on a folder stays in that folder, which is
@@ -604,14 +565,14 @@ struct TerminalView: NSViewRepresentable {
     var onExit: (@MainActor (TerminalExit) -> Void)?
     var onContextMenu: (@MainActor () -> NSMenu?)?
 
-    func makeNSView(context: Context) -> TerminalScrollHost {
-        let scroll = TerminalScrollHost()
-        configure(scroll.host)
-        return scroll
+    func makeNSView(context: Context) -> TerminalHostView {
+        let host = TerminalHostView()
+        configure(host)
+        return host
     }
 
-    func updateNSView(_ nsView: TerminalScrollHost, context: Context) {
-        configure(nsView.host)
+    func updateNSView(_ nsView: TerminalHostView, context: Context) {
+        configure(nsView)
     }
 
     private func configure(_ host: TerminalHostView) {

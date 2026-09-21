@@ -376,9 +376,13 @@ struct ComposerView: View {
 
         // A chat whose agent is a CLI reads these when it starts and never again, so the pane is
         // started again on the same conversation. See `WorkspaceModel.restartCLI`.
-        if transcript.usesInteractiveTerminal, let model {
+        if transcript.usesInteractiveTerminal {
             let changed = transcript.session
-            Task { await model.restartCLI(changed) }
+            if let model {
+                Task { await model.restartCLI(changed) }
+            } else {
+                Task { await transcript.restartCLI() }
+            }
         }
     }
 

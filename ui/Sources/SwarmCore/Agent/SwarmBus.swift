@@ -25,9 +25,11 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
 
 public struct SwarmAgentList: Sendable, Hashable, Codable {
     public var agents: [SwarmAgent]
+    public var attachable: Bool?
 
-    public init(agents: [SwarmAgent]) {
+    public init(agents: [SwarmAgent], attachable: Bool? = nil) {
         self.agents = agents
+        self.attachable = attachable
     }
 }
 
@@ -212,7 +214,7 @@ public enum SwarmChairLaunch {
         session: SwarmSessionID, home: String
     ) -> [String: String] {
         [
-            "SWARM_ADAPTER": "tmux",
+            "SWARM_ADAPTER": "tmux-solo",
             "SWARM_SESSION_ID": session.rawValue,
             "SWARM_AGENT_ID": "orchestrator",
             "SWARM_HOME": home,
@@ -328,6 +330,8 @@ public protocol SwarmBus: Sendable {
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
+    /// Whether this session's adapter supports `swarm attach`; nil if the CLI does not report it.
+    func attachable(in session: SwarmSessionID, adapter: String) async throws -> Bool?
     func messages(
         in session: SwarmSessionID, after seq: Int, adapter: String
     ) async throws -> [SwarmMessage]
@@ -352,6 +356,16 @@ public protocol SwarmBus: Sendable {
 }
 
 public extension SwarmBus {
+    func attachable(in session: SwarmSessionID, adapter: String) async throws -> Bool? {
+        throw SwarmProfileError.unavailable("swarm pane support is not available")
+    }
+
+    func attachable(in session: SwarmSession) async throws -> Bool? {
+        try await attachable(
+            in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
+
     func startChairSession(
         chair: SwarmChair?, directory: String
     ) async throws -> SwarmSessionID {

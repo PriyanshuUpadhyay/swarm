@@ -131,12 +131,10 @@ final class TranscriptModel {
     /// the file history. Each of those already guards on `store`, so none of them needed a second
     /// condition adding. What is left is the list, and the list is what the owner is looking at.
     @ObservationIgnored let chairLog: TranscriptLogReader?
-    /// How a swarm chair that Swarm did not start is typed at: its pane, through the bus. Nil for
-    /// every other chat, including a chair Swarm started, which is reached through its terminal.
-    @ObservationIgnored var chairInput: ((String) async -> Bool)?
-    /// What the reader has just said to a CLI, drawn until that CLI's own log holds it. See
-    /// `InteractiveChatTranscript.sentRow`.
-    private var chairEcho: String?
+    /// True when this chat is a chair in a swarm session (app-started or external).
+    let isChair: Bool
+    /// A sent line waiting for the chair log to catch up, drawn as sentRow until the log contains it.
+    private var pendingSentLine: String?
     /// Why the chair log could not be read, for a log-backed chat that has nothing to draw.
     /// Always nil for a stored one, which cannot fail this way.
     private(set) var chatLogFailure: String?
@@ -431,6 +429,7 @@ final class TranscriptModel {
         self.workspace = workspace
         self.cwd = workspace.path
         self.chairLog = nil
+        self.isChair = false
         self.app = app
         history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
     }
@@ -445,6 +444,7 @@ final class TranscriptModel {
         self.workspace = nil
         self.cwd = directory
         self.chairLog = nil
+        self.isChair = false
         self.app = app
         history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
     }
@@ -462,6 +462,7 @@ final class TranscriptModel {
         self.workspace = workspace
         self.cwd = directory
         self.chairLog = chairLog
+        self.isChair = true
         self.app = app
         history.report = { [unowned app] in app.notice = SwarmNotice(message: $0) }
     }
@@ -510,7 +511,7 @@ final class TranscriptModel {
             do {
                 // Four times a second while a turn is in flight, because that wait is the one a
                 // person is watching, and once a second when the chat is settled.
-                let waiting = chairEcho != nil || rows.last?.kind == .user
+                let waiting = pendingSentLine != nil || rows.last?.kind == .user
                 try await Task.sleep(
                     for: .seconds(waiting ? 0.25 : SubagentPane.refreshSeconds)
                 )
@@ -534,21 +535,26 @@ final class TranscriptModel {
         case .success(let transcript):
             guard let transcript else { isLoaded = true; return }
             var messages = transcript.messages
-            if let echo = chairEcho {
-                if messages.contains(where: {
-                    $0.kind == .user && UserTurnPrompt.text(in: $0.payload).contains(echo)
-                }) {
-                    chairEcho = nil
+            if let pending = pendingSentLine {
+                let alreadyInLog = messages.contains { message in
+                    message.kind == .user && (
+                        message.payload == TranscriptMapping.userLine(pending) ||
+                        UserTurnPrompt.text(in: message.payload) == pending
+                    )
+                }
+                if alreadyInLog {
+                    pendingSentLine = nil
                 } else {
-                    messages.append(InteractiveChatTranscript.sentRow(
-                        echo, sessionID: session.id, seq: (messages.last?.seq ?? -1) + 1
-                    ))
+                    let nextSeq = (messages.last?.seq ?? -1) + 1
+                    messages.append(
+                        InteractiveChatTranscript.sentRow(pending, sessionID: session.id, seq: nextSeq)
+                    )
                 }
             }
             await apply(messages: messages, decisions: [:])
             // A turn is running while the last thing said is the reader's, which is what draws the
             // working mark and turns the send button into Stop.
-            setRunning(rows.last?.kind == .user)
+            setRunning(pendingSentLine != nil || rows.last?.kind == .user)
             if chatLogFailure != nil { chatLogFailure = nil }
             if droppedRows != transcript.droppedRows { droppedRows = transcript.droppedRows }
             let duration = readStarted.duration(to: .now).components
@@ -859,59 +865,17 @@ final class TranscriptModel {
                 interactionMode: InteractionMode? = nil, sourcePlan: PlanArtefact? = nil) async -> Bool {
         guard !isWorkspaceArchiving else { return false }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let workspace = cliWorkspace {
+        if isChair {
             guard !body.isEmpty else { return false }
-            // A chat whose CLI is not there starts again with this message as its first prompt, so
-            // nobody has to press a Resume first. A chat that was closed opens again here too,
-            // because its swarm session is still open. See `WorkspaceModel.reopen`.
-            // On screen from the frame the key went down, for the reason `submit` gives above.
-            if chairLog != nil { chairEcho = body }
-            let isStopped = TerminalSessionStore.shared.interactiveState(for: session.id) == .stopped
-            guard let terminal = interactiveTerminal, !isStopped else {
-                Log.chat.notice(
-                    "send starts the CLI again for \(self.session.id.rawValue, privacy: .public)"
-                )
-                await app.model(for: workspace).resumeCLI(session, prompt: body)
+            let sent = await sendToChair(body)
+            if sent {
                 if SubmittedDraft.matching(current: draft, message: body, source: sourceDraft) != nil {
                     draft = ""
                     await saveDraft()
                 }
                 return true
             }
-            let sent = await TerminalSessionStore.shared.submitToAgent(
-                body, paneID: terminal.id, workspaceID: session.workspaceID
-            )
-            // **A pane that refuses is a pane that is not there.** `interactiveState` reads a
-            // process table that is a moment behind, so a CLI that has just ended still looks
-            // running to the guard above, and the message met a dead end with a red notice while
-            // the strip beside it said the CLI had stopped. Starting the chat again with this
-            // message as its prompt is what the guard would have done one second later.
-            guard sent else {
-                Log.chat.error(
-                    "pane \(terminal.id, privacy: .public) refused the message for chat \(self.session.id.rawValue, privacy: .public), so the CLI starts again"
-                )
-                await app.model(for: workspace).resumeCLI(session, prompt: body)
-                if SubmittedDraft.matching(current: draft, message: body, source: sourceDraft) != nil {
-                    draft = ""
-                    await saveDraft()
-                }
-                return true
-            }
-            Log.chat.notice(
-                "sent to pane \(terminal.id, privacy: .public) for chat \(self.session.id.rawValue, privacy: .public)"
-            )
-            if SubmittedDraft.matching(current: draft, message: body, source: sourceDraft) != nil {
-                draft = ""
-                await saveDraft()
-            }
-            return true
-        }
-        if let chairInput {
-            guard !body.isEmpty, await chairInput(body) else { return false }
-            if SubmittedDraft.matching(current: draft, message: body, source: sourceDraft) != nil {
-                draft = ""
-            }
-            return true
+            return false
         }
         guard !body.isEmpty, let store else { return false }
 
@@ -1526,6 +1490,9 @@ final class TranscriptModel {
     func stop() {
         steering = nil
         cancelTurn()
+        if isChair {
+            Task { await interruptInteractiveTerminal() }
+        }
 
         // **And the queue comes back with it.** Not draining after a Stop was right about the
         // messages not going and wrong about what became of them: they sat under the transcript
@@ -1662,9 +1629,13 @@ final class TranscriptModel {
         return runner
     }
 
-    var usesInteractiveTerminal: Bool { interactiveTerminal != nil }
+    var usesInteractiveTerminal: Bool { isChair || interactiveTerminal != nil }
 
     func interruptInteractiveTerminal() async {
+        if isChair {
+            _ = await interruptChair()
+            return
+        }
         guard let terminal = interactiveTerminal else { return }
         guard await TerminalSessionStore.shared.interruptAgent(
             paneID: terminal.id, workspaceID: session.workspaceID
@@ -1676,15 +1647,119 @@ final class TranscriptModel {
         }
     }
 
+    private func sendToChair(_ body: String) async -> Bool {
+        if let workspace = cliWorkspace {
+            let isStopped = TerminalSessionStore.shared.interactiveState(for: session.id) == .stopped
+            if isStopped || interactiveTerminal == nil {
+                Log.chat.notice(
+                    "send starts the CLI again for \(self.session.id.rawValue, privacy: .public)"
+                )
+                await app.model(for: workspace).resumeCLI(session, prompt: body)
+                return true
+            }
+        }
+        let sent = await typeToChair(body)
+        if !sent, let workspace = cliWorkspace {
+            Log.chat.error(
+                "swarm type refused the message for chat \(self.session.id.rawValue, privacy: .public), so the CLI starts again"
+            )
+            await app.model(for: workspace).resumeCLI(session, prompt: body)
+            return true
+        }
+        if sent {
+            pendingSentLine = body
+            let sentMessage = InteractiveChatTranscript.sentRow(
+                body,
+                sessionID: session.id,
+                seq: (highestSeenMessageSeq >= 0 ? highestSeenMessageSeq + 1 : 0)
+            )
+            absorb(sentMessage)
+            setRunning(true)
+        }
+        return sent
+    }
+
+    private func typeToChair(_ text: String) async -> Bool {
+        guard let swarmID = await resolveSwarmSessionID() else {
+            Log.chat.error("could not resolve swarm session ID for chat \(self.session.id.rawValue, privacy: .public)")
+            return false
+        }
+        let chair = SwarmAgentID("orchestrator")
+        let adapter = swarmAdapter(for: swarmID)
+        do {
+            try await app.swarmBus.type(text, to: chair, in: swarmID, adapter: adapter)
+            Log.chat.notice(
+                "typed to chair in swarm \(swarmID.rawValue, privacy: .public)"
+            )
+            return true
+        } catch {
+            Log.chat.error(
+                "swarm type failed for \(swarmID.rawValue, privacy: .public): \(error.readableMessage, privacy: .public)"
+            )
+            app.notice = SwarmNotice(
+                message: error.readableMessage.isEmpty
+                    ? "The chair's pane did not accept the message."
+                    : error.readableMessage
+            )
+            return false
+        }
+    }
+
+    private func interruptChair() async -> Bool {
+        guard let swarmID = await resolveSwarmSessionID() else { return false }
+        let chair = SwarmAgentID("orchestrator")
+        let adapter = swarmAdapter(for: swarmID)
+        do {
+            try await app.swarmBus.interrupt(chair, in: swarmID, adapter: adapter)
+            Log.chat.notice("interrupted chair in swarm \(swarmID.rawValue, privacy: .public)")
+            return true
+        } catch {
+            Log.chat.error(
+                "swarm interrupt failed for \(swarmID.rawValue, privacy: .public): \(error.readableMessage, privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    func restartCLI() async {
+        if let workspace = cliWorkspace {
+            await app.model(for: workspace).restartCLI(session)
+        }
+    }
+
+    private func swarmAdapter(for swarmID: SwarmSessionID) -> String {
+        app.swarmSessionsByRepo.values.lazy.flatMap { $0 }
+            .first { $0.id == swarmID }?
+            .sessions.first?
+            .adapter ?? SwarmSessionInteraction.workspaceAdapter
+    }
+
+    private func resolveSwarmSessionID() async -> SwarmSessionID? {
+        if session.id.rawValue.hasPrefix("swarm-") {
+            return SwarmSessionID(String(session.id.rawValue.dropFirst("swarm-".count)))
+        }
+        if let store = app.store,
+           let id = await SwarmChatSession.load(sessionID: session.id, from: store) {
+            return id
+        }
+        if let id = app.swarmSessionsByRepo.values.lazy.flatMap({ $0 })
+            .first(where: { $0.localSessionID == session.id || $0.id.rawValue == session.id.rawValue })?.id {
+            return id
+        }
+        return nil
+    }
+
     /// The workspace of a chat whose agent runs as a CLI in a pane, and nil for every other chat.
     ///
     /// A chat read from a CLI's log is one even while its pane is gone, which is what lets a send
     /// start it again. Ask Swarm and a managed chat answer nil and keep the delivery queue.
     private var cliWorkspace: Workspace? {
-        guard chairLog != nil || interactiveTerminal != nil, let id = session.workspaceID else {
-            return nil
+        guard isChair || interactiveTerminal != nil else { return nil }
+        if let id = session.workspaceID, let found = app.workspaces.first(where: { $0.id == id }) {
+            return found
         }
-        return app.workspaces.first { $0.id == id }
+        if let workspace { return workspace }
+        return app.workspaces.first { cwd.hasPrefix($0.path) }
     }
 
     private var interactiveTerminal: CenterTab? {

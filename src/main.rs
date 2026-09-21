@@ -241,7 +241,7 @@ fn deliver(
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
     let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
     if let Some(pane) = swarm::store::pane_of(connection, session_id, &recipient)? {
-        connection.execute("UPDATE message SET rung_at = unixepoch() WHERE seq = ?1", [seq])?;
+        connection.execute("UPDATE message SET rung_at = unixepoch() WHERE session_id = ?1 AND seq = ?2", (session_id, seq))?;
         let ring = swarm::adapter::load(root, adapter_name)
             .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
         if let Err(error) = ring {
@@ -519,7 +519,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 swarm::bus::Agent { id: row.id, role: row.role, pane: row.pane, alive }
             })
             .collect();
-        return print_json(&swarm::bus::AgentList { agents });
+        #[derive(serde::Serialize)]
+        struct AgentListOutput {
+            agents: Vec<swarm::bus::Agent>,
+            attachable: bool,
+        }
+        return print_json(&AgentListOutput {
+            agents,
+            attachable: adapter.attach.is_some(),
+        });
     }
     if let [cmd, rest @ ..] = args && cmd == "messages" {
         let after = match rest {

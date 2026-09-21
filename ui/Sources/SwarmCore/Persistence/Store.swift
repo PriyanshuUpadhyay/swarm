@@ -1167,6 +1167,9 @@ public actor Store {
                     ON workspace_done_watches(target_workspace_id, notified_at);
                 """)
             },
+
+            // Old app chats refer to panes that no longer exist, so they cannot claim live swarm sessions.
+            sql("UPDATE settings SET value = '' WHERE key GLOB 'session.*.swarmSession';"),
         ]
 
         let current = Int(try db.readUserVersion())

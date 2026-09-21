@@ -293,3 +293,80 @@ fn spawn_quotes_selected_account_and_rejects_unknown_before_spawn() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn account_rides_the_command_not_the_session() {
+    let root = temp_dir("profile-account-env");
+    let (routing, yelo) = fixtures(&root);
+    let swarm_home = root.join("home");
+    let spawn_env_log = root.join("spawn-env");
+    let ring_log = root.join("ring");
+
+    let init = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .arg("init")
+        .env("SWARM_HOME", &swarm_home)
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    std::fs::write(
+        swarm_home.join(".swarm/adapters/fake.conf"),
+        format!(
+            "self = printf self\nspawn = env > '{}'; printf pane-1\nring = printf '%s' \"$SWARM_TEXT\" > '{}'\nlist = true\nclose = true\ncapture = true\n",
+            spawn_env_log.display(),
+            ring_log.display()
+        ),
+    )
+    .unwrap();
+    let session = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args(["session", "new", "lane"])
+        .env("SWARM_HOME", &swarm_home)
+        .output()
+        .unwrap();
+    assert!(session.status.success());
+    let session = String::from_utf8(session.stdout).unwrap();
+
+    let spawned = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .args([
+            "spawn",
+            "worker",
+            "CODER",
+            "--account",
+            "codexWorkAccount",
+            "--",
+            "printf",
+            "%s",
+            "hello",
+        ])
+        .env("SWARM_HOME", &swarm_home)
+        .env("SWARM_SESSION_ID", session.trim())
+        .env("SWARM_ADAPTER", "fake")
+        .env("SWARM_ROUTING_CMD", &routing)
+        .env("SWARM_YELO_CMD", &yelo)
+        .output()
+        .unwrap();
+    assert!(
+        spawned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&spawned.stderr)
+    );
+
+    let command_line = std::fs::read_to_string(&ring_log).unwrap();
+    assert!(
+        command_line.starts_with(
+            "'env' '--' 'CODEX_HOME=/profiles/codex work' 'printf' '%s' 'hello'; "
+        ),
+        "expected command to carry account vars with env --, got: {command_line}"
+    );
+
+    let spawn_env = std::fs::read_to_string(&spawn_env_log).unwrap();
+    assert!(
+        !spawn_env.lines().any(|line| line.starts_with("CODEX_HOME=")),
+        "spawn session environment should not contain account variables"
+    );
+
+    std::fs::remove_dir_all(root).unwrap();
+}

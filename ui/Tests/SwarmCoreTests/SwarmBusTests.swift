@@ -47,17 +47,17 @@ struct SwarmBusTests {
         #expect(await runner.recordedCalls() == [
             call(
                 ["init"], cwd: "/workspace/project",
-                environment: ["SWARM_ADAPTER": "tmux", "PWD": "/workspace/project"]
+                environment: ["SWARM_ADAPTER": "tmux-solo", "PWD": "/workspace/project"]
             ),
             call(
                 ["session", "new", "lane", "--chair", "claude:chat-id"],
                 cwd: "/workspace/project",
-                environment: ["SWARM_ADAPTER": "tmux", "PWD": "/workspace/project"]
+                environment: ["SWARM_ADAPTER": "tmux-solo", "PWD": "/workspace/project"]
             ),
             call(
                 ["session", "chair", "codex:thread-id"],
                 environment: [
-                    "SWARM_ADAPTER": "tmux",
+                    "SWARM_ADAPTER": "tmux-solo",
                     "SWARM_SESSION_ID": "42",
                     "SWARM_AGENT_ID": "orchestrator",
                 ]
@@ -70,7 +70,7 @@ struct SwarmBusTests {
         #expect(SwarmChairLaunch.environment(
             session: workspaceSession, home: "/swarm-home"
         ) == [
-            "SWARM_ADAPTER": "tmux",
+            "SWARM_ADAPTER": "tmux-solo",
             "SWARM_SESSION_ID": "42",
             "SWARM_AGENT_ID": "orchestrator",
             "SWARM_HOME": "/swarm-home",

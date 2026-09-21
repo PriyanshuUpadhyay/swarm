@@ -56,5 +56,10 @@ let package = Package(
             dependencies: ["SwarmCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .testTarget(
+            name: "SwarmTests",
+            dependencies: ["Swarm"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
     ]
 )

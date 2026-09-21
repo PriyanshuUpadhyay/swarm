@@ -564,6 +564,97 @@ fn messages_json_pages_reads_bodies_and_caps_at_500() {
 }
 
 #[test]
+fn two_sessions_both_start_their_sequence_at_one() {
+    let fixture = fixture("two-session-sequences");
+    let root = fixture.home.join(".swarm");
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    let first_session: i64 = fixture.session.parse().unwrap();
+    let second_session = swarm::store::create_session(&connection, "lane", &fixture.root, None, None).unwrap();
+    swarm::store::add_agent(&connection, second_session, "second-chair", "orchestrator").unwrap();
+    assert_eq!(swarm::store::send_message(&mut connection, &root, first_session, "orchestrator", "orchestrator", "note", "first").unwrap(), 1);
+    assert_eq!(swarm::store::send_message(&mut connection, &root, second_session, "second-chair", "second-chair", "note", "second").unwrap(), 1);
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn ack_names_a_sequence_inside_its_own_session() {
+    let fixture = fixture("session-ack");
+    let root = fixture.home.join(".swarm");
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    let first_session: i64 = fixture.session.parse().unwrap();
+    let second_session = swarm::store::create_session(&connection, "lane", &fixture.root, None, None).unwrap();
+    for session in [first_session, second_session] {
+        swarm::store::add_agent(&connection, session, "coder", "coder").unwrap();
+    }
+    swarm::store::add_agent(&connection, second_session, "orchestrator", "orchestrator").unwrap();
+    for session in [first_session, second_session] {
+        assert_eq!(swarm::store::send_message(&mut connection, &root, session, "orchestrator", "coder", "ask", "work").unwrap(), 1);
+    }
+
+    let ack = command(&fixture, &["ack", "1"])
+        .env("SWARM_SESSION_ID", second_session.to_string())
+        .env("SWARM_AGENT_ID", "coder")
+        .output()
+        .unwrap();
+    assert!(ack.status.success(), "{}", String::from_utf8_lossy(&ack.stderr));
+    assert_eq!(swarm::store::inbox(&connection, first_session, "coder").unwrap().len(), 1);
+    assert!(swarm::store::inbox(&connection, second_session, "coder").unwrap().is_empty());
+    assert!(!swarm::store::messages(&connection, first_session, 0).unwrap()[0].read);
+    assert!(swarm::store::messages(&connection, second_session, 0).unwrap()[0].read);
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn messages_after_a_sequence_stay_inside_the_session() {
+    let fixture = fixture("session-messages-after");
+    let root = fixture.home.join(".swarm");
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    let first_session: i64 = fixture.session.parse().unwrap();
+    let second_session = swarm::store::create_session(&connection, "lane", &fixture.root, None, None).unwrap();
+    swarm::store::add_agent(&connection, second_session, "second-chair", "orchestrator").unwrap();
+    for (session, sender, body) in [(first_session, "orchestrator", "first"), (second_session, "second-chair", "second")] {
+        for index in 0..2 {
+            swarm::store::send_message(&mut connection, &root, session, sender, sender, "note", &format!("{body}-{index}")).unwrap();
+        }
+    }
+    for (session, body) in [(first_session, "first-1"), (second_session, "second-1")] {
+        let output = command(&fixture, &["messages", "--json", "--after", "1"])
+            .env("SWARM_SESSION_ID", session.to_string())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(json["messages"][0]["seq"], 2);
+        assert_eq!(json["messages"][0]["body"], body);
+    }
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
+fn deliver_rings_only_the_message_in_its_session() {
+    let fixture = fixture("session-deliver");
+    let root = fixture.home.join(".swarm");
+    let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+    let first_session: i64 = fixture.session.parse().unwrap();
+    let second_session = swarm::store::create_session(&connection, "lane", &fixture.root, None, None).unwrap();
+    swarm::store::add_agent(&connection, first_session, "coder", "coder").unwrap();
+    swarm::store::set_pane(&connection, first_session, "coder", "pane-1").unwrap();
+    swarm::store::add_agent(&connection, second_session, "orchestrator", "orchestrator").unwrap();
+    swarm::store::add_agent(&connection, second_session, "coder", "coder").unwrap();
+    swarm::store::send_message(&mut connection, &root, second_session, "orchestrator", "coder", "ask", "other").unwrap();
+
+    let sent = run_with_stdin(&fixture, &["send", "coder", "ask"], "work");
+    assert!(sent.status.success(), "{}", String::from_utf8_lossy(&sent.stderr));
+    assert_eq!(String::from_utf8_lossy(&sent.stdout), "1\n");
+    let first_rung: Option<i64> = connection.query_row("SELECT rung_at FROM message WHERE session_id = ?1 AND seq = 1", [first_session], |row| row.get(0)).unwrap();
+    let second_rung: Option<i64> = connection.query_row("SELECT rung_at FROM message WHERE session_id = ?1 AND seq = 1", [second_session], |row| row.get(0)).unwrap();
+    assert!(first_rung.is_some());
+    assert!(second_rung.is_none());
+    std::fs::remove_dir_all(fixture.root).unwrap();
+}
+
+#[test]
 fn launch_validates_resolution_and_sends_argv_to_the_pane() {
     let fixture = fixture("launch");
     let opened = fixture.root.join("opened");

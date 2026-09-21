@@ -4,6 +4,7 @@ import SwarmCore
 /// A discovered swarm session, with the chair chat and each agent's bus history.
 struct SwarmSessionView: View {
     var item: SwarmProjectSession
+    var bus: any SwarmBus
     @State private var reader: SwarmSessionReaderModel
     @State private var showsTerminal = false
     /// The document a link in this session was clicked on, drawn where the chat is. Nil for none.
@@ -35,6 +36,7 @@ struct SwarmSessionView: View {
 
     init(item: SwarmProjectSession, bus: any SwarmBus) {
         self.item = item
+        self.bus = bus
         _reader = State(initialValue: SwarmSessionReaderModel(item: item, bus: bus))
         _changes = State(initialValue: SwarmSessionChangesModel(cwd: item.session.cwd))
     }
@@ -65,7 +67,7 @@ struct SwarmSessionView: View {
                 // chair splits its own tmux window for each seat it spawns, so this one view is
                 // every worker's pane as well as the chair's. Hiding it hid the whole swarm, and
                 // the point of a swarm is that its workers are watchable.
-                if item.session.adapter == "tmux", localTab != nil {
+                if !reader.agents.isEmpty {
                     SessionHeaderTab(title: "Panes", isActive: showsTerminal) {
                         showsTerminal = true
                         preview = nil
@@ -106,10 +108,11 @@ struct SwarmSessionView: View {
 
             Hairline()
 
-            if showsTerminal, let localModel, let localTab {
-                ToolPaneView(
-                    model: localModel, tab: localTab,
-                    splitColumn: { _, _ in }, showsShell: true, paneMenu: nil
+            if showsTerminal {
+                SwarmSessionPaneStripView(
+                    item: item,
+                    reader: reader,
+                    bus: bus
                 )
             } else {
                 HSplitView {
@@ -168,25 +171,6 @@ struct SwarmSessionView: View {
                 directory: item.session.cwd,
                 app: app
             )
-            // A chair Swarm started is its session's chat, and the composer reaches its CLI through
-            // that session's terminal. The bus cannot: its tmux adapter runs a plain `tmux`, which
-            // is the default server rather than Swarm's, so `swarm type` failed with "can't find
-            // pane". Only a chair started elsewhere is typed at through the bus.
-            if localSession == nil {
-                let reader = reader
-                let app = app
-                let chair = SwarmAgentID("orchestrator")
-                model.chairInput = { text in
-                    guard await reader.type(text, to: chair, in: nil) else {
-                        app.notice = SwarmNotice(
-                            message: reader.inputFailure(for: chair, in: nil)
-                                ?? "The chair's pane did not accept the message."
-                        )
-                        return false
-                    }
-                    return true
-                }
-            }
             transcript = model
             await model.follow()
         }
@@ -312,7 +296,7 @@ struct SwarmSessionDocument: View {
 ///
 /// The composer is the one every other chat has, with its `/` menu of commands and skills. It
 /// sends through `TranscriptModel.submit`, which reaches a chair Swarm started through its
-/// terminal and any other chair through the bus. See `TranscriptModel.chairInput`.
+/// terminal and any other chair through the bus.
 private struct SwarmSessionChat: View {
     var reader: SwarmSessionReaderModel
     var transcript: TranscriptModel
@@ -501,4 +485,237 @@ private struct SessionHeaderTab: View {
         .onHoverChange { isHovered = $0 }
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
     }
+}
+
+/// The pane strip drawn when "Panes" is selected: chair terminal first, then seat panes two per column in LazyHGrid.
+struct SwarmSessionPaneStripView: View {
+    var item: SwarmProjectSession
+    var reader: SwarmSessionReaderModel
+    var bus: any SwarmBus
+
+    private var adapter: String { item.session.adapter ?? "" }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let fullWidth = geometry.size.width
+            let totalHeight = geometry.size.height
+            let seatHeight = max(140, (totalHeight - Metrics.spacing) / 2)
+            let seatWidth: CGFloat = max(420, fullWidth * 0.48)
+
+            ScrollView(.horizontal, showsIndicators: true) {
+                HStack(spacing: Metrics.spacing) {
+                    chairPlaceView
+                        .frame(width: fullWidth, height: totalHeight)
+
+                    if !reader.agents.isEmpty {
+                        LazyHGrid(
+                            rows: [
+                                GridItem(.fixed(seatHeight), spacing: Metrics.spacing),
+                                GridItem(.fixed(seatHeight), spacing: Metrics.spacing)
+                            ],
+                            spacing: Metrics.spacing
+                        ) {
+                            ForEach(reader.agents) { digest in
+                                seatPlaceView(digest: digest)
+                                    .frame(width: seatWidth, height: seatHeight)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.surfaceSunken)
+    }
+
+    @ViewBuilder
+    private var chairPlaceView: some View {
+        let place = SwarmPaneStripLayout.chairPlace(
+            adapter: adapter, attachable: reader.attachability[item.session.id]
+        )
+        placeCard(place: place, isChair: true, session: item.session.id, adapter: adapter)
+    }
+
+    @ViewBuilder
+    private func seatPlaceView(digest: SwarmSessionAgentDigest) -> some View {
+        let seatAdapter = item.sessions.first { $0.id == digest.sessionID }?.adapter ?? ""
+        let place = SwarmPaneStripLayout.place(
+            for: digest.agent, adapter: seatAdapter,
+            attachable: reader.attachability[digest.sessionID]
+        )
+        placeCard(place: place, isChair: false, session: digest.sessionID, adapter: seatAdapter)
+    }
+
+    @ViewBuilder
+    private func placeCard(
+        place: SwarmPanePlace, isChair: Bool, session: SwarmSessionID, adapter: String
+    ) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Metrics.spacingSmall) {
+                Text(isChair ? "Chair (\(place.agentID.rawValue))" : place.agentID.rawValue)
+                    .font(Typo.labelEmphasis)
+                    .foregroundStyle(Palette.textPrimary)
+                if !place.role.isEmpty, place.role != place.agentID.rawValue {
+                    Chip(text: place.role)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, Metrics.inset)
+            .frame(height: Metrics.barHeight)
+            .background(Palette.surface)
+            .overlay(alignment: .bottom) { Hairline() }
+
+            switch place.content {
+            case .terminal(let agentID):
+                SwarmAgentPaneTerminalView(
+                    agent: agentID,
+                    session: session,
+                    workspaceID: item.workspaceID,
+                    bus: bus
+                )
+            case .reason(let reason):
+                SwarmPaneReasonView(
+                    agentID: place.agentID.rawValue,
+                    reason: reason,
+                    adapter: adapter
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.surface)
+    }
+}
+
+struct SwarmPaneReasonView: View {
+    var agentID: String
+    var reason: String
+    var adapter: String
+    @State private var openFailure: String?
+
+    var body: some View {
+        VStack(spacing: Metrics.spacing) {
+            Image(systemName: glyph)
+                .font(.system(size: 28))
+                .foregroundStyle(Palette.textTertiary)
+            Text(agentID)
+                .font(Typo.labelEmphasis)
+                .foregroundStyle(Palette.textPrimary)
+            Text(reason)
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Metrics.inset)
+
+            if adapter.lowercased() == "herdr" {
+                Button("Open Herdr") {
+                    Task { @MainActor in
+                        do {
+                            try await Shell.check("/usr/bin/open", ["-a", "Herdr"])
+                            openFailure = nil
+                        } catch {
+                            openFailure = String(describing: error)
+                        }
+                    }
+                }
+                .controlSize(.small)
+                if let openFailure {
+                    Text(openFailure)
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.surfaceSunken)
+    }
+
+    private var glyph: String {
+        if reason == "Starting" { return "hourglass" }
+        if reason.localizedCaseInsensitiveContains("ended") { return "xmark.circle" }
+        return "info.circle"
+    }
+}
+
+// MARK: - Swarm Pane Strip & Place Logic
+
+/// One place in the pane strip.
+public struct SwarmPanePlace: Equatable, Sendable, Identifiable {
+    public enum Content: Equatable, Sendable {
+        case terminal(agent: SwarmAgentID)
+        case reason(String)
+    }
+
+    public var id: String { agentID.rawValue }
+    public var agentID: SwarmAgentID
+    public var role: String
+    public var isChair: Bool
+    public var content: Content
+
+    public init(agentID: SwarmAgentID, role: String, isChair: Bool, content: Content) {
+        self.agentID = agentID
+        self.role = role
+        self.isChair = isChair
+        self.content = content
+    }
+
+    public var reasonText: String? {
+        if case .reason(let text) = content {
+            return text
+        }
+        return nil
+    }
+}
+
+public enum SwarmPaneStripLayout {
+    /// Pure place selection for a seat agent.
+    public static func place(
+        for agent: SwarmAgent,
+        adapter: String,
+        attachable: Bool? = nil
+    ) -> SwarmPanePlace {
+        let content: SwarmPanePlace.Content
+        if agent.alive == false {
+            content = .reason("This agent has ended")
+        } else if agent.pane == nil || agent.pane?.isEmpty == true {
+            content = .reason("Starting")
+        } else if attachable == nil {
+            content = .reason("Pane support is unknown")
+        } else if attachable == false {
+            let name = adapter.lowercased() == "herdr" ? "Herdr" : adapter
+            content = .reason("This session runs in \(name), which cannot attach a pane")
+        } else {
+            content = .terminal(agent: agent.id)
+        }
+        return SwarmPanePlace(
+            agentID: agent.id,
+            role: agent.role,
+            isChair: false,
+            content: content
+        )
+    }
+
+    /// Pure place selection for the chair.
+    public static func chairPlace(
+        adapter: String,
+        attachable: Bool? = nil,
+        chairID: SwarmAgentID = SwarmAgentID("orchestrator")
+    ) -> SwarmPanePlace {
+        let content: SwarmPanePlace.Content
+        if attachable == nil {
+            content = .reason("Pane support is unknown")
+        } else if attachable == false {
+            let name = adapter.lowercased() == "herdr" ? "Herdr" : adapter
+            content = .reason("This session runs in \(name), which cannot attach a pane")
+        } else {
+            content = .terminal(agent: chairID)
+        }
+        return SwarmPanePlace(
+            agentID: chairID,
+            role: "orchestrator",
+            isChair: true,
+            content: content
+        )
+    }
+
 }

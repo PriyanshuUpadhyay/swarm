@@ -1,23 +1,23 @@
 import Foundation
 import SwarmCore
 
-/// The tmux server that holds shells for panes, so quitting Swarm no longer takes them with it.
+/// The tmux commands that hold shells and chairs after Swarm quits.
 ///
 /// One instance per database, owned by `TerminalSessionStore`. It knows three things: whether tmux
 /// is on the machine, which sessions exist, and how to kill one. The naming, the restore decision
 /// and the orphan rule are all in `TmuxSessions`, which is where the tests reach them.
 ///
-/// The server runs on a private socket with a configuration Swarm writes itself, so the user's own
-/// tmux, their `~/.tmux.conf` and their sessions are untouched by all of this.
+/// Plain shells use the app's private socket; chairs use the swarm socket. Neither uses the user's
+/// default tmux socket or their `~/.tmux.conf`.
 @MainActor
 final class TerminalPersistence {
     /// The Settings switch. Off by default: a shell that outlives the app is a real change in what
     /// quitting means, and nobody should get it without asking.
     static let defaultsKey = "terminal.persistSessions"
 
-    /// nil when tmux is not installed, which is the whole of the fallback: every caller then reads
-    /// `.inProcess` and gets exactly today's behaviour.
+    /// The app-socket command. Nil when tmux is not installed, so plain shells fall back to a pty.
     let command: TmuxCommand?
+    private var chairSessions: Set<String> = []
 
     /// Sessions as of the last refresh. Only ever used to tell a restore from a fresh start, never
     /// to decide what to exec, because `new-session -A` already resolves that against the server
@@ -39,6 +39,22 @@ final class TerminalPersistence {
     static var isSwitchedOn: Bool { UserDefaults.standard.bool(forKey: defaultsKey) }
 
     var isAvailable: Bool { command != nil }
+
+    /// The tab's owner pane is the chair. Other panes split from that tab are ordinary shells.
+    func command(for session: String) -> TmuxCommand? {
+        guard let command else { return nil }
+        if chairSessions.contains(session) { return command.swarmChair }
+        for (workspaceID, tabs) in CenterTabStore.shared.tabsByWorkspace {
+            if tabs.contains(where: {
+                $0.kind == .terminal && $0.agentSessionID != nil
+                    && TmuxSessions.sessionName(workspaceID: workspaceID, paneID: $0.id) == session
+            }) {
+                chairSessions.insert(session)
+                return command.swarmChair
+            }
+        }
+        return command
+    }
 
     /// **Synchronous disk work on the main actor, deliberately.** It writes tmux's configuration,
     /// and the path it writes to is handed to `TmuxCommand` in the same breath, so a terminal
@@ -90,7 +106,7 @@ final class TerminalPersistence {
     }
 
     func write(_ text: String, toAgentPaneOf session: String) async -> Bool {
-        guard let command else { return false }
+        guard let command = command(for: session) else { return false }
         let buffer = "swarm-input-\(UUID().uuidString)"
         guard let result = try? await Shell.run(
             command.executable,
@@ -105,27 +121,28 @@ final class TerminalPersistence {
         guard let command else {
             throw SwarmProfileError.unavailable("tmux is required to start a chat")
         }
+        chairSessions.insert(plan.tmuxSession)
+        let chair = command.swarmChair
         var result = try await Shell.run(
-            command.executable, command.launchDetached(plan), timeout: .seconds(10)
+            chair.executable, chair.launchDetached(plan), timeout: .seconds(10)
         )
         if !result.ok, result.stderr.contains("duplicate session") {
-            // The session outlived a quit, or the Terminal tab opened a shell in it. A chair still
-            // running there is left alone: the view can ask before the first poll has said so.
+            // The chair's session outlived a quit. Leave a running chair alone until the view
+            // can ask before the first poll has said so.
             if !replacing,
-               let shell = await panePIDSnapshot()?[plan.tmuxSession],
+               let shell = await panePIDSnapshot(using: chair)?[plan.tmuxSession],
                let table = await ProcessTable.current(),
                table.interactiveAgentProcess(ofShell: shell) != nil {
-                knownSessions.insert(plan.tmuxSession)
                 return
             }
             // A reused session keeps the environment it was born with, and the respawned pane
             // inherits it, so the update has to land before the respawn rather than after it.
             // See `TmuxSessions.setEnvironment`.
-            if let update = command.setEnvironment(plan) {
-                _ = try? await Shell.run(command.executable, update, timeout: .seconds(5))
+            if let update = chair.setEnvironment(plan) {
+                _ = try? await Shell.run(chair.executable, update, timeout: .seconds(5))
             }
             result = try await Shell.run(
-                command.executable, command.respawnAgent(plan), timeout: .seconds(10)
+                chair.executable, chair.respawnAgent(plan), timeout: .seconds(10)
             )
         }
         guard result.ok else {
@@ -133,13 +150,12 @@ final class TerminalPersistence {
             throw SwarmProfileError.failed(message.isEmpty ? "tmux could not start the chat" : message)
         }
         _ = try? await Shell.run(
-            command.executable, command.resizeWindow(plan), timeout: .seconds(5)
+            chair.executable, chair.resizeWindow(plan), timeout: .seconds(5)
         )
-        knownSessions.insert(plan.tmuxSession)
     }
 
     func send(_ key: TerminalKey, toAgentPaneOf session: String) async -> Bool {
-        guard let command,
+        guard let command = command(for: session),
               let result = try? await Shell.run(
                   command.executable,
                   command.send(key, toAgentPaneOf: session),
@@ -160,6 +176,13 @@ final class TerminalPersistence {
 
     private func sessionNames() async -> [String] {
         await sessions() ?? []
+    }
+
+    private func sessionNames(using command: TmuxCommand) async -> [String] {
+        guard let result = try? await Shell.run(
+            command.executable, command.listSessions, timeout: .seconds(5)
+        ) else { return [] }
+        return TmuxSessions.parseSessionList(result.stdout)
     }
 
     /// The sessions on our socket, or nil when the question could not be asked at all.
@@ -198,6 +221,13 @@ final class TerminalPersistence {
 
     func panePIDSnapshot() async -> [String: Int32]? {
         guard let command else { return [:] }
+        let app = await panePIDSnapshot(using: command)
+        let chairs = await panePIDSnapshot(using: command.swarmChair)
+        guard app != nil || chairs != nil else { return nil }
+        return (app ?? [:]).merging(chairs ?? [:]) { _, chair in chair }
+    }
+
+    private func panePIDSnapshot(using command: TmuxCommand) async -> [String: Int32]? {
         guard let result = try? await Shell.run(
             command.executable, command.listPanes, timeout: .seconds(5)
         ) else { return nil }
@@ -219,17 +249,37 @@ final class TerminalPersistence {
         })
     }
 
+    /// A restored tab can close before its view gives the pane an owner in this launch.
+    func kill(paneIDs: [String]) async {
+        guard let command, !paneIDs.isEmpty else { return }
+        let panes = Set(paneIDs)
+        for target in [command, command.swarmChair] {
+            let sessions = await sessionNames(using: target).filter {
+                TmuxSessions.paneID(ofSessionName: $0).map(panes.contains) == true
+            }
+            await kill(sessions: sessions, using: target)
+        }
+    }
+
     /// Everything one workspace owns, read off the session names rather than off Swarm's own
     /// bookkeeping. Archiving deletes the worktree, so this may not depend on a tab list that was
     /// never loaded or a split layout that was lost.
     func killEverything(workspaceID: WorkspaceID) async {
-        guard command != nil else { return }
-        let sessions = await sessionNames()
-        await kill(sessions: TmuxSessions.sessions(ofWorkspace: workspaceID, in: sessions))
+        guard let command else { return }
+        let app = await sessionNames(using: command)
+        let chairs = await sessionNames(using: command.swarmChair)
+        await kill(sessions: TmuxSessions.sessions(ofWorkspace: workspaceID, in: app), using: command)
+        await kill(sessions: TmuxSessions.sessions(ofWorkspace: workspaceID, in: chairs), using: command.swarmChair)
     }
 
     func kill(sessions: [String]) async {
         guard let command, !sessions.isEmpty else { return }
+        let chairs = Set(await sessionNames(using: command.swarmChair))
+        await kill(sessions: sessions.filter { !chairs.contains($0) }, using: command)
+        await kill(sessions: sessions.filter { chairs.contains($0) }, using: command.swarmChair)
+    }
+
+    private func kill(sessions: [String], using command: TmuxCommand) async {
         for session in sessions {
             _ = try? await Shell.run(
                 command.executable, command.killSession(session), timeout: .seconds(5)
@@ -244,12 +294,12 @@ final class TerminalPersistence {
     /// `doubtful` is the workspaces the census could not enumerate. They are handed straight
     /// through to `orphans`, which spares them: see its note on why silence is not unreachability.
     func sweepOrphans(livePaneIDs: Set<String>, doubtful: Set<WorkspaceID>) async {
-        guard command != nil else { return }
+        guard let command else { return }
         let sessions = await sessionNames()
         knownSessions = Set(sessions)
         let reachable = TmuxSessions.reachablePanes(livePaneIDs, persistenceEnabled: Self.isSwitchedOn)
         await kill(sessions: TmuxSessions.orphans(
             sessions: sessions, livePaneIDs: reachable, sparing: doubtful
-        ))
+        ), using: command)
     }
 }

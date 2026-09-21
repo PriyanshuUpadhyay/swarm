@@ -133,9 +133,18 @@ struct InteractiveChatPane: View {
     /// The transcript says "Three visible panes now exist" while the reader has no door to them,
     /// which is the whole promise of a swarm broken by the view that replaced the terminal.
     var onShowPanes: (() -> Void)?
+    var onShowTerminal: (() -> Void)?
 
     /// The debug switch that brings the raw pane back. Off, a CLI chat is a conversation.
     static let terminalKey = "terminal.showAgentPane"
+
+    static func terminalKey(for sessionID: SessionID) -> String {
+        InteractiveChatPanePreferences.terminalKey(for: sessionID)
+    }
+
+    static func showsTerminal(for sessionID: SessionID) -> Bool {
+        InteractiveChatPanePreferences.showsTerminal(for: sessionID)
+    }
 
     static var showsTerminal: Bool { UserDefaults.standard.bool(forKey: terminalKey) }
 
@@ -197,7 +206,8 @@ struct InteractiveChatPane: View {
                         .foregroundStyle(Palette.textSecondary)
                     Spacer()
                     Button("Show the terminal") {
-                        UserDefaults.standard.set(true, forKey: Self.terminalKey)
+                        InteractiveChatPanePreferences.setShowsTerminal(true, for: session.id)
+                        onShowTerminal?()
                     }
                     .controlSize(.small)
                     .help("Draws the pane this chat runs in, where a question can be answered")
@@ -249,5 +259,48 @@ struct InteractiveChatPane: View {
         )
         transcript = made
         await made.follow()
+    }
+}
+
+// MARK: - Interactive Chat Pane Preferences & Surfaces
+
+public enum SwarmChatSurface: Equatable, Sendable {
+    case chat
+    case terminal
+}
+
+public enum SwarmChatSurfaceDecision {
+    public static func surface(isTerminalToggleOn: Bool) -> SwarmChatSurface {
+        isTerminalToggleOn ? .terminal : .chat
+    }
+}
+
+public enum InteractiveChatPanePreferences {
+    public static func terminalKey(for sessionID: SessionID) -> String {
+        "terminal.showAgentPane.\(sessionID.rawValue)"
+    }
+
+    public static func showsTerminal(
+        for sessionID: SessionID,
+        in defaults: UserDefaults = .standard
+    ) -> Bool {
+        defaults.bool(forKey: terminalKey(for: sessionID))
+    }
+
+    public static func setShowsTerminal(
+        _ shows: Bool,
+        for sessionID: SessionID,
+        in defaults: UserDefaults = .standard
+    ) {
+        defaults.set(shows, forKey: terminalKey(for: sessionID))
+    }
+
+    public static func surface(
+        for sessionID: SessionID,
+        in defaults: UserDefaults = .standard
+    ) -> SwarmChatSurface {
+        SwarmChatSurfaceDecision.surface(
+            isTerminalToggleOn: showsTerminal(for: sessionID, in: defaults)
+        )
     }
 }
