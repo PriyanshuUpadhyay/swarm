@@ -15,7 +15,8 @@ pub const TurnStarted = struct { meta: Meta };
 pub const TurnEnded = struct { meta: Meta, duration_ms: ?i64, reason: enum { completed, aborted } };
 pub const ErrorEvent = struct { meta: Meta, message: []const u8 };
 pub const SystemMessage = struct { meta: Meta, kind: []const u8, text: []const u8 };
-pub const SessionInfo = struct { meta: Meta, kind: enum { title, agent_name, model, cwd }, value: []const u8 };
+pub const SessionInfoKind = enum { title, agent_name, model, cwd };
+pub const SessionInfo = struct { meta: Meta, kind: SessionInfoKind, value: []const u8 };
 pub const Image = struct { meta: Meta, role: enum { user, agent, tool }, media_type: []const u8 };
 
 pub const Unknown = struct {
@@ -110,7 +111,7 @@ pub fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     return if (value == .string) value.string else "";
 }
 
-fn oneOf(value: []const u8, choices: []const []const u8) bool {
+pub fn oneOf(value: []const u8, choices: []const []const u8) bool {
     for (choices) |choice| {
         if (std.mem.eql(u8, value, choice)) return true;
     }
@@ -127,7 +128,7 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     return "";
 }
 
-fn oneOfPrefix(value: []const u8, prefixes: []const []const u8) bool {
+pub fn oneOfPrefix(value: []const u8, prefixes: []const []const u8) bool {
     for (prefixes) |prefix| {
         if (std.mem.startsWith(u8, value, prefix)) return true;
     }
@@ -548,8 +549,10 @@ const Translator = struct {
             };
             if (translator.format == .codex) {
                 for (events) |event| {
-                    if (event != .unknown) continue;
-                    const meta = event.unknown.meta orelse continue;
+                    const meta = switch (event) {
+                        .unknown => |unknown| unknown.meta orelse continue,
+                        inline else => |value| value.meta,
+                    };
                     if (meta.session_id.len == 0) continue;
                     const session_id = try translator.gpa.dupe(u8, meta.session_id);
                     if (translator.owned_session_id) |old| translator.gpa.free(old);
