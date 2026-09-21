@@ -89,7 +89,6 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             return events.items;
         }
         var has_unknown = false;
-        var thought_count: usize = 0;
         for (summary.array.items) |part| {
             if (part != .object) {
                 if (!has_unknown) {
@@ -112,10 +111,10 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                 }
                 continue;
             }
-            try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = text.string } });
-            thought_count += 1;
+            if (text.string.len != 0) {
+                try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = text.string } });
+            }
         }
-        if (thought_count == 0 and !has_unknown) try events.append(arena, try root.unknownEvent(arena, meta, line));
         return events.items;
     }
 
@@ -255,15 +254,24 @@ test "reasoning summary becomes thought chunks" {
     try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
 }
 
-test "empty reasoning summary becomes unknown" {
+test "empty reasoning summary yields no events" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
         \\{"type":"response_item","payload":{"type":"reasoning","id":"r1","summary":[]}}
     ;
     const events = try parseLine(arena_state.allocator(), line);
-    try std.testing.expectEqual(1, events.len);
-    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+    try std.testing.expectEqual(0, events.len);
+}
+
+test "empty reasoning text yields no events" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"response_item","payload":{"type":"reasoning","summary":[{"text":""}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(0, events.len);
 }
 
 test "function call parses JSON arguments" {

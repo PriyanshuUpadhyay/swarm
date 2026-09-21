@@ -234,7 +234,10 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             const chunk: Text = .{ .meta = meta, .text = str(block.object, "text") };
             try events.append(arena, if (is_user) .{ .user_message_chunk = chunk } else .{ .agent_message_chunk = chunk });
         } else if (std.mem.eql(u8, block_type, "thinking")) {
-            try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = str(block.object, "thinking") } });
+            const thinking = str(block.object, "thinking");
+            if (thinking.len != 0) {
+                try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = thinking } });
+            }
         } else if (std.mem.eql(u8, block_type, "tool_use") and !is_user) {
             const input = block.object.get("input") orelse .null;
             if (!valueFitsDepth(input, max_event_input_depth)) {
@@ -559,6 +562,16 @@ test "assistant text and thinking blocks become two chunks" {
     try std.testing.expectEqual(2, events.len);
     try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
     try std.testing.expectEqualStrings("done", events[1].agent_message_chunk.text);
+}
+
+test "empty thinking blocks yield no events" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(0, events.len);
 }
 
 test "unknown record keeps raw line and meta" {
