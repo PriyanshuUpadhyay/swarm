@@ -8,10 +8,16 @@ pub const Meta = struct {
 
 pub const Text = struct { meta: Meta, text: []const u8 };
 
+pub const Unknown = struct {
+    meta: ?Meta,
+    raw: []const u8,
+};
+
 pub const Event = union(enum) {
     user_message_chunk: Text,
     agent_message_chunk: Text,
     agent_thought_chunk: Text,
+    unknown: Unknown,
 };
 
 fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
@@ -21,11 +27,22 @@ fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
 
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     var events: std.ArrayList(Event) = .empty;
-    const root = try std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{});
-    if (root != .object) return events.items;
+    const root = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
+        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = line } });
+        return events.items;
+    };
+    if (root != .object) {
+        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = line } });
+        return events.items;
+    }
     const rec = root.object;
     const meta: Meta = .{ .session_id = str(rec, "sessionId"), .uuid = str(rec, "uuid"), .timestamp = str(rec, "timestamp") };
-    const is_user = std.mem.eql(u8, str(rec, "type"), "user");
+    const record_type = str(rec, "type");
+    const is_user = std.mem.eql(u8, record_type, "user");
+    if (!is_user and !std.mem.eql(u8, record_type, "assistant")) {
+        try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+        return events.items;
+    }
     const message = rec.get("message") orelse return events.items;
     if (message != .object) return events.items;
     const content = message.object.get("content") orelse return events.items;
@@ -41,6 +58,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             try events.append(arena, if (is_user) .{ .user_message_chunk = chunk } else .{ .agent_message_chunk = chunk });
         } else if (std.mem.eql(u8, block_type, "thinking")) {
             try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = str(block.object, "thinking") } });
+        } else {
+            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
         }
     }
     return events.items;
@@ -68,4 +87,37 @@ test "assistant text and thinking blocks become two chunks" {
     try std.testing.expectEqual(2, events.len);
     try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
     try std.testing.expectEqualStrings("done", events[1].agent_message_chunk.text);
+}
+
+test "unknown record keeps raw line and meta" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"mode","sessionId":"s1","uuid":"u3","timestamp":"t","mode":"plan"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+    try std.testing.expectEqualStrings("s1", events[0].unknown.meta.?.session_id);
+}
+
+test "invalid JSON becomes unknown without meta" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line = "not json";
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+    try std.testing.expect(events[0].unknown.meta == null);
+}
+
+test "unknown content block becomes unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"assistant","sessionId":"s1","uuid":"u4","timestamp":"t","message":{"content":[{"type":"image","source":"x"}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
 }
