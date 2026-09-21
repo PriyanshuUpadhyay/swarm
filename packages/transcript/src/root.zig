@@ -331,8 +331,11 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
 pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
     var line_buffer: std.Io.Writer.Allocating = .init(gpa);
     defer line_buffer.deinit();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
     while (true) {
         line_buffer.clearRetainingCapacity();
+        _ = arena_state.reset(.retain_capacity);
         _ = try reader.streamDelimiterEnding(&line_buffer.writer, '\n');
         const at_end = end: {
             const byte = reader.takeByte() catch |err| switch (err) {
@@ -344,8 +347,6 @@ pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io
         };
         if (line_buffer.written().len == 0 and at_end) break;
         const line = std.mem.trimEnd(u8, line_buffer.written(), "\r");
-        var arena_state: std.heap.ArenaAllocator = .init(gpa);
-        defer arena_state.deinit();
         const events = try parseLine(arena_state.allocator(), line);
         for (events) |event| {
             try writeEventJson(writer, event);
@@ -606,4 +607,23 @@ test "event JSON output escapes all non-ASCII code points" {
     } });
     for (output.written()) |byte| try std.testing.expect(byte < 0x80);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\\u007f\\u009b\\u0085\\u2028\\u2029\\u202e") != null);
+}
+
+test "translate reuses its per-line arena" {
+    var input_storage: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer input_storage.deinit();
+    for (0..32) |_| {
+        try input_storage.writer.writeAll("{\"type\":\"user\",\"message\":{\"content\":\"hello\"}}\n");
+    }
+    var reader = std.Io.Reader.fixed(input_storage.written());
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+
+    var fixed_buffer: [16 * 1024]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&fixed_buffer);
+    var outer_arena: std.heap.ArenaAllocator = .init(fixed.allocator());
+    defer outer_arena.deinit();
+    try translate(outer_arena.allocator(), &reader, &output.writer);
+
+    try std.testing.expectEqual(32, std.mem.count(u8, output.written(), "\n"));
 }
