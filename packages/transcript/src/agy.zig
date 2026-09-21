@@ -134,13 +134,37 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                 has_unknown = true;
             }
         }
-        if (has_unknown or events.items.len == 0) {
+        if (has_unknown) {
             try events.append(arena, try root.unknownEvent(arena, meta, line));
+        } else if (events.items.len == 0) {
+            try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "PLANNER_RESPONSE" } });
         }
         return events.items;
     }
 
-    if (std.mem.eql(u8, record_type, "GENERIC")) {
+    if (std.mem.eql(u8, record_type, "ERROR_MESSAGE")) {
+        try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(rec, "error") } });
+        return events.items;
+    }
+
+    if (std.mem.eql(u8, record_type, "SYSTEM_MESSAGE") or std.mem.eql(u8, record_type, "CHECKPOINT")) {
+        try events.append(arena, .{ .system_message = .{
+            .meta = meta,
+            .kind = if (std.mem.eql(u8, record_type, "CHECKPOINT")) "compaction" else "system",
+            .text = root.str(rec, "content"),
+        } });
+        return events.items;
+    }
+
+    if (root.oneOf(record_type, &.{ "EPHEMERAL_MESSAGE", "CONVERSATION_HISTORY", "DIRECTORY_RULES" })) {
+        try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
+        return events.items;
+    }
+
+    if (root.oneOf(record_type, &.{
+        "GENERIC",        "VIEW_FILE",        "RUN_COMMAND", "GREP_SEARCH", "CODE_ACTION",
+        "LIST_DIRECTORY", "READ_URL_CONTENT", "SEARCH_WEB",  "MCP_TOOL",    "INVOKE_SUBAGENT",
+    })) {
         const content = rec.get("content") orelse {
             try events.append(arena, try root.unknownEvent(arena, meta, line));
             return events.items;
@@ -151,6 +175,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         }
         const status: root.ToolStatus = if (std.mem.eql(u8, status_value.string, "DONE"))
             .completed
+        else if (std.mem.eql(u8, status_value.string, "RUNNING"))
+            .pending
         else if (std.mem.eql(u8, status_value.string, "ERROR") or std.mem.eql(u8, status_value.string, "INVALID"))
             .failed
         else {
@@ -302,7 +328,7 @@ test "tool input deeper than the event writer limit becomes unknown" {
     try std.testing.expectEqualStrings(input.written(), events[0].unknown.raw);
 }
 
-test "RUNNING generic and bookkeeping records become unknown" {
+test "RUNNING generic is pending and checkpoint is compaction" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const running =
@@ -314,9 +340,35 @@ test "RUNNING generic and bookkeeping records become unknown" {
     const running_events = try parseLine(arena_state.allocator(), running);
     const checkpoint_events = try parseLine(arena_state.allocator(), checkpoint);
     try std.testing.expectEqual(1, running_events.len);
-    try std.testing.expectEqualStrings(running, running_events[0].unknown.raw);
+    try std.testing.expectEqual(root.ToolStatus.pending, running_events[0].tool_call_update.status);
     try std.testing.expectEqual(1, checkpoint_events.len);
-    try std.testing.expectEqualStrings(checkpoint, checkpoint_events[0].unknown.raw);
+    try std.testing.expectEqualStrings("compaction", checkpoint_events[0].system_message.kind);
+}
+
+test "AGY named tool results join planner calls by step index" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"VIEW_FILE\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":21,\"created_at\":\"t\",\"content\":\"file\"}");
+    try std.testing.expectEqualStrings("21", events[0].tool_call_update.tool_call_id);
+    try std.testing.expectEqualStrings("file", events[0].tool_call_update.content);
+}
+
+test "AGY error and system records become named events" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const err = try parseLine(arena_state.allocator(), "{\"type\":\"ERROR_MESSAGE\",\"status\":\"DONE\",\"source\":\"SYSTEM\",\"step_index\":1,\"created_at\":\"t\",\"error\":\"bad\"}");
+    const sys = try parseLine(arena_state.allocator(), "{\"type\":\"SYSTEM_MESSAGE\",\"status\":\"DONE\",\"source\":\"SYSTEM\",\"step_index\":2,\"created_at\":\"t\",\"content\":\"note\"}");
+    try std.testing.expectEqualStrings("bad", err[0].@"error".message);
+    try std.testing.expectEqualStrings("system", sys[0].system_message.kind);
+}
+
+test "AGY empty planner and bookkeeping become ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const planner = try parseLine(arena_state.allocator(), "{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":1,\"created_at\":\"t\"}");
+    const ephemeral = try parseLine(arena_state.allocator(), "{\"type\":\"EPHEMERAL_MESSAGE\",\"status\":\"DONE\",\"source\":\"SYSTEM\",\"step_index\":2,\"created_at\":\"t\"}");
+    try std.testing.expectEqualStrings("PLANNER_RESPONSE", planner[0].ignored.kind);
+    try std.testing.expectEqualStrings("EPHEMERAL_MESSAGE", ephemeral[0].ignored.kind);
 }
 
 test "null planner fields match absent fields" {

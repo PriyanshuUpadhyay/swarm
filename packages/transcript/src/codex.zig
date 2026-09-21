@@ -232,17 +232,18 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             .tool_call_id = root.str(payload, "call_id"),
             .name = if (is_web) "web_search" else "tool_search",
             .input = input,
-            .status = .completed,
+            .status = if (is_web) .completed else .pending,
         } });
         return events.items;
     }
 
     if (std.mem.eql(u8, payload_type, "tool_search_output")) {
         const tools = payload.get("tools") orelse .null;
-        const content = if (tools == .null or !root.valueFitsDepth(tools, root.max_event_input_depth))
-            ""
-        else
-            try std.json.Stringify.valueAlloc(arena, tools, .{});
+        if (!root.valueFitsDepth(tools, root.max_event_input_depth)) {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        }
+        const content = if (tools == .null) "" else try std.json.Stringify.valueAlloc(arena, tools, .{});
         try events.append(arena, .{ .tool_call_update = .{
             .meta = meta,
             .tool_call_id = root.str(payload, "call_id"),
@@ -395,7 +396,7 @@ test "reasoning summary becomes thought chunks" {
     try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
 }
 
-test "empty reasoning summary yields no events" {
+test "empty reasoning summary becomes ignored" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
@@ -406,7 +407,7 @@ test "empty reasoning summary yields no events" {
     try std.testing.expectEqualStrings("response_item/reasoning", events[0].ignored.kind);
 }
 
-test "empty reasoning text yields no events" {
+test "empty reasoning text becomes ignored" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
@@ -604,6 +605,7 @@ test "Codex web and tool search calls keep inputs and ids" {
     try std.testing.expectEqualStrings("web_search", web[0].tool_call.name);
     try std.testing.expect(web[0].tool_call.status == .completed);
     try std.testing.expectEqualStrings("c", search[0].tool_call.tool_call_id);
+    try std.testing.expect(search[0].tool_call.status == .pending);
     try std.testing.expectEqualStrings("c", output[0].tool_call_update.tool_call_id);
     try std.testing.expectEqualStrings("[{\"name\":\"t\"}]", output[0].tool_call_update.content);
 }
