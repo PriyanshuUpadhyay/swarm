@@ -59,6 +59,22 @@ pub const ElicitationResult = struct {
     answers: []Answer,
 };
 
+pub const HookResult = struct {
+    meta: Meta,
+    kind: []const u8,
+    hook_event: []const u8,
+    hook_name: []const u8,
+    tool_call_id: []const u8,
+    exit_code: ?i64,
+};
+
+pub const PermissionDecision = struct {
+    meta: Meta,
+    hook_event: []const u8,
+    tool_call_id: []const u8,
+    decision: []const u8,
+};
+
 pub const Event = union(enum) {
     user_message_chunk: Text,
     agent_message_chunk: Text,
@@ -67,6 +83,8 @@ pub const Event = union(enum) {
     tool_call_update: ToolCallUpdate,
     elicitation: Elicitation,
     elicitation_result: ElicitationResult,
+    hook_result: HookResult,
+    permission_decision: PermissionDecision,
     unknown: Unknown,
 };
 
@@ -116,6 +134,14 @@ fn parseAnswers(arena: std.mem.Allocator, value: std.json.Value) ![]Answer {
     return answers.items;
 }
 
+fn isHookResultKind(kind: []const u8) bool {
+    return std.mem.eql(u8, kind, "hook_success") or
+        std.mem.eql(u8, kind, "hook_non_blocking_error") or
+        std.mem.eql(u8, kind, "hook_blocking_error") or
+        std.mem.eql(u8, kind, "hook_cancelled") or
+        std.mem.eql(u8, kind, "hook_additional_context");
+}
+
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     var events: std.ArrayList(Event) = .empty;
     const root = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
@@ -129,6 +155,38 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     const rec = root.object;
     const meta: Meta = .{ .session_id = str(rec, "sessionId"), .uuid = str(rec, "uuid"), .timestamp = str(rec, "timestamp") };
     const record_type = str(rec, "type");
+    if (std.mem.eql(u8, record_type, "attachment")) {
+        const attachment = rec.get("attachment") orelse {
+            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            return events.items;
+        };
+        if (attachment != .object) {
+            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+            return events.items;
+        }
+        const kind = str(attachment.object, "type");
+        if (isHookResultKind(kind)) {
+            const exit_code = if (attachment.object.get("exitCode")) |value| if (value == .integer) value.integer else null else null;
+            try events.append(arena, .{ .hook_result = .{
+                .meta = meta,
+                .kind = kind,
+                .hook_event = str(attachment.object, "hookEvent"),
+                .hook_name = str(attachment.object, "hookName"),
+                .tool_call_id = str(attachment.object, "toolUseID"),
+                .exit_code = exit_code,
+            } });
+        } else if (std.mem.eql(u8, kind, "hook_permission_decision")) {
+            try events.append(arena, .{ .permission_decision = .{
+                .meta = meta,
+                .hook_event = str(attachment.object, "hookEvent"),
+                .tool_call_id = str(attachment.object, "toolUseID"),
+                .decision = str(attachment.object, "decision"),
+            } });
+        } else {
+            try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
+        }
+        return events.items;
+    }
     const is_user = std.mem.eql(u8, record_type, "user");
     if (!is_user and !std.mem.eql(u8, record_type, "assistant")) {
         try events.append(arena, .{ .unknown = .{ .meta = meta, .raw = line } });
@@ -347,4 +405,50 @@ test "AskUserQuestion missing fields keeps false and empty defaults" {
     try std.testing.expectEqual(1, events.len);
     try std.testing.expect(!events[0].elicitation.questions[0].multi_select);
     try std.testing.expectEqual(0, events[0].elicitation.questions[0].options.len);
+}
+
+test "hook attachment becomes hook result" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"attachment","sessionId":"s1","uuid":"u11","timestamp":"t","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","toolUseID":"tool-5","exitCode":0}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("hook_success", events[0].hook_result.kind);
+    try std.testing.expectEqualStrings("SessionStart", events[0].hook_result.hook_event);
+    try std.testing.expectEqual(@as(?i64, 0), events[0].hook_result.exit_code);
+}
+
+test "hook result permits a missing exit code" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"attachment","sessionId":"s1","uuid":"u12","timestamp":"t","attachment":{"type":"hook_cancelled","hookName":"PreToolUse","hookEvent":"PreToolUse","toolUseID":"tool-6"}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expect(events[0].hook_result.exit_code == null);
+}
+
+test "permission decision keeps an unknown decision string" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"attachment","sessionId":"s1","uuid":"u13","timestamp":"t","attachment":{"type":"hook_permission_decision","decision":"later","toolUseID":"tool-7","hookEvent":"PermissionRequest"}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("later", events[0].permission_decision.decision);
+}
+
+test "unknown attachment type becomes unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"attachment","sessionId":"s1","uuid":"u14","timestamp":"t","attachment":{"type":"other"}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
 }
