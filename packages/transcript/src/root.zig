@@ -168,7 +168,8 @@ fn valueFitsDepth(value: std.json.Value, remaining: usize) bool {
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     var events: std.ArrayList(Event) = .empty;
     const root = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
-        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = line } });
+        const raw = if (std.unicode.utf8ValidateSlice(line)) line else try std.fmt.allocPrint(arena, "{f}", .{std.unicode.fmtUtf8(line)});
+        try events.append(arena, .{ .unknown = .{ .meta = null, .raw = raw } });
         return events.items;
     };
     if (root != .object) {
@@ -398,6 +399,14 @@ test "invalid JSON becomes unknown without meta" {
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings(line, events[0].unknown.raw);
     try std.testing.expect(events[0].unknown.meta == null);
+}
+
+test "invalid UTF-8 becomes replacement text in unknown raw" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "caf\xc3");
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("caf\xef\xbf\xbd", events[0].unknown.raw);
 }
 
 test "unknown content block becomes unknown" {
