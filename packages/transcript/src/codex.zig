@@ -176,7 +176,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             var total: usize = 0;
             for (output.array.items) |part| {
                 if (part != .object or
-                    !std.mem.eql(u8, root.str(part.object, "type"), "text") or
+                    (!std.mem.eql(u8, root.str(part.object, "type"), "text") and
+                        !std.mem.eql(u8, root.str(part.object, "type"), "input_text")) or
                     part.object.get("text") == null or part.object.get("text").? != .string)
                 {
                     has_unknown = true;
@@ -188,7 +189,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             var offset: usize = 0;
             for (output.array.items) |part| {
                 if (part != .object or
-                    !std.mem.eql(u8, root.str(part.object, "type"), "text") or
+                    (!std.mem.eql(u8, root.str(part.object, "type"), "text") and
+                        !std.mem.eql(u8, root.str(part.object, "type"), "input_text")) or
                     part.object.get("text") == null or part.object.get("text").? != .string)
                 {
                     continue;
@@ -311,6 +313,25 @@ test "custom tool call output joins text parts" {
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings("onetwo", events[0].tool_call_update.content);
+}
+
+test "function and custom outputs join input_text parts by call id" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const function_line =
+        \\{"type":"response_item","payload":{"type":"function_call_output","call_id":"f1","output":[{"type":"input_text","text":"one"},{"type":"input_text","text":"two"}]}}
+    ;
+    const custom_line =
+        \\{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":[{"type":"input_text","text":"three"}]}}
+    ;
+    const function_events = try parseLine(arena_state.allocator(), function_line);
+    const custom_events = try parseLine(arena_state.allocator(), custom_line);
+    try std.testing.expectEqual(1, function_events.len);
+    try std.testing.expectEqualStrings("f1", function_events[0].tool_call_update.tool_call_id);
+    try std.testing.expectEqualStrings("onetwo", function_events[0].tool_call_update.content);
+    try std.testing.expectEqual(1, custom_events.len);
+    try std.testing.expectEqualStrings("c1", custom_events[0].tool_call_update.tool_call_id);
+    try std.testing.expectEqualStrings("three", custom_events[0].tool_call_update.content);
 }
 
 test "invalid JSON becomes unknown without meta" {
