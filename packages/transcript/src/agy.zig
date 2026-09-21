@@ -2,9 +2,166 @@ const std = @import("std");
 const root = @import("root.zig");
 
 pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
-    const events = try arena.alloc(root.Event, 1);
-    events[0] = try root.unknownEvent(arena, null, line);
-    return events;
+    var events: std.ArrayList(root.Event) = .empty;
+    const value = std.json.parseFromSliceLeaky(std.json.Value, arena, line, .{}) catch {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    };
+    if (value != .object) {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    }
+    const rec = value.object;
+    const step_value = rec.get("step_index") orelse {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    };
+    if (step_value != .integer or step_value.integer < 0) {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    }
+    const created_value = rec.get("created_at") orelse {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    };
+    if (created_value != .string) {
+        try events.append(arena, try root.unknownEvent(arena, null, line));
+        return events.items;
+    }
+    const step_index = step_value.integer;
+    const meta: root.Meta = .{
+        // AGY stores the session id in the containing directory, not in each record.
+        .session_id = "",
+        .uuid = try std.fmt.allocPrint(arena, "{d}", .{step_index}),
+        .timestamp = created_value.string,
+    };
+    const type_value = rec.get("type") orelse {
+        try events.append(arena, try root.unknownEvent(arena, meta, line));
+        return events.items;
+    };
+    const status_value = rec.get("status") orelse {
+        try events.append(arena, try root.unknownEvent(arena, meta, line));
+        return events.items;
+    };
+    const source_value = rec.get("source") orelse {
+        try events.append(arena, try root.unknownEvent(arena, meta, line));
+        return events.items;
+    };
+    if (type_value != .string or status_value != .string or source_value != .string) {
+        try events.append(arena, try root.unknownEvent(arena, meta, line));
+        return events.items;
+    }
+
+    const record_type = type_value.string;
+    if (std.mem.eql(u8, record_type, "USER_INPUT")) {
+        const content = rec.get("content") orelse {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        };
+        if (content != .string) {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        }
+        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = content.string } });
+        return events.items;
+    }
+
+    if (std.mem.eql(u8, record_type, "PLANNER_RESPONSE")) {
+        var has_unknown = false;
+        if (rec.get("thinking")) |thinking| {
+            if (thinking == .string) {
+                if (thinking.string.len != 0) {
+                    try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = thinking.string } });
+                }
+            } else if (thinking != .null) {
+                has_unknown = true;
+            }
+        }
+        if (rec.get("content")) |content| {
+            if (content == .string) {
+                if (content.string.len != 0) {
+                    try events.append(arena, .{ .agent_message_chunk = .{ .meta = meta, .text = content.string } });
+                }
+            } else if (content != .null) {
+                has_unknown = true;
+            }
+        }
+        if (rec.get("tool_calls")) |tool_calls| {
+            if (tool_calls == .array) {
+                for (tool_calls.array.items, 1..) |tool_call, call_number| {
+                    if (tool_call != .object) {
+                        has_unknown = true;
+                        continue;
+                    }
+                    const name = tool_call.object.get("name") orelse {
+                        has_unknown = true;
+                        continue;
+                    };
+                    const input = tool_call.object.get("args") orelse {
+                        has_unknown = true;
+                        continue;
+                    };
+                    if (name != .string or input != .object or !root.valueFitsDepth(input, root.max_event_input_depth)) {
+                        has_unknown = true;
+                        continue;
+                    }
+                    const offset = std.math.cast(i64, call_number) orelse {
+                        has_unknown = true;
+                        continue;
+                    };
+                    const call_id_index = std.math.add(i64, step_index, offset) catch {
+                        has_unknown = true;
+                        continue;
+                    };
+                    try events.append(arena, .{
+                        .tool_call = .{
+                            .meta = meta,
+                            // Observed AGY records pair calls with the next result steps in call order.
+                            .tool_call_id = try std.fmt.allocPrint(arena, "{d}", .{call_id_index}),
+                            .name = name.string,
+                            .input = input,
+                            .status = .pending,
+                        },
+                    });
+                }
+            } else if (tool_calls != .null) {
+                has_unknown = true;
+            }
+        }
+        if (has_unknown or events.items.len == 0) {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+        }
+        return events.items;
+    }
+
+    if (std.mem.eql(u8, record_type, "GENERIC")) {
+        const content = rec.get("content") orelse {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        };
+        if (content != .string) {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        }
+        const status: root.ToolStatus = if (std.mem.eql(u8, status_value.string, "DONE"))
+            .completed
+        else if (std.mem.eql(u8, status_value.string, "ERROR") or std.mem.eql(u8, status_value.string, "INVALID"))
+            .failed
+        else {
+            try events.append(arena, try root.unknownEvent(arena, meta, line));
+            return events.items;
+        };
+        try events.append(arena, .{ .tool_call_update = .{
+            .meta = meta,
+            .tool_call_id = meta.uuid,
+            .status = status,
+            .content = content.string,
+        } });
+        return events.items;
+    }
+
+    try events.append(arena, try root.unknownEvent(arena, meta, line));
+    return events.items;
 }
 
 test "agy translation makes the line unknown" {
@@ -14,4 +171,155 @@ test "agy translation makes the line unknown" {
     try root.translate(std.testing.allocator, .agy, &reader, &output.writer);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"type\":\"unknown\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"raw\":\"agy line\"") != null);
+}
+
+test "USER_INPUT becomes a user message" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"2026-09-21T10:00:00Z","content":"hello"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("12", events[0].user_message_chunk.meta.uuid);
+    try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
+}
+
+test "PLANNER_RESPONSE emits thought message and pending tool calls in order" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":20,"created_at":"t","thinking":"plan","content":"done","tool_calls":[{"name":"view_file","args":{"toolAction":"read","toolSummary":"Read file","AbsolutePath":"/tmp/a"}},{"name":"run_command","args":{"toolAction":"run","toolSummary":"Run command","CommandLine":"pwd"}}]}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(4, events.len);
+    try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
+    try std.testing.expectEqualStrings("done", events[1].agent_message_chunk.text);
+    try std.testing.expectEqualStrings("21", events[2].tool_call.tool_call_id);
+    try std.testing.expectEqualStrings("view_file", events[2].tool_call.name);
+    try std.testing.expectEqual(root.ToolStatus.pending, events[2].tool_call.status);
+    try std.testing.expectEqualStrings("22", events[3].tool_call.tool_call_id);
+}
+
+test "GENERIC final results become tool call updates" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const done =
+        \\{"type":"GENERIC","status":"DONE","source":"MODEL","step_index":21,"created_at":"t","content":"Created At: t\\nresult"}
+    ;
+    const failed =
+        \\{"type":"GENERIC","status":"INVALID","source":"MODEL","step_index":22,"created_at":"t","content":"Created At: t\\nbad"}
+    ;
+    const done_events = try parseLine(arena_state.allocator(), done);
+    const failed_events = try parseLine(arena_state.allocator(), failed);
+    try std.testing.expectEqual(1, done_events.len);
+    try std.testing.expectEqualStrings("21", done_events[0].tool_call_update.tool_call_id);
+    try std.testing.expectEqual(root.ToolStatus.completed, done_events[0].tool_call_update.status);
+    try std.testing.expectEqual(root.ToolStatus.failed, failed_events[0].tool_call_update.status);
+}
+
+test "invalid JSON becomes unknown without meta" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "not json");
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expect(events[0].unknown.meta == null);
+    try std.testing.expectEqualStrings("not json", events[0].unknown.raw);
+}
+
+test "wrong field type becomes one unknown event" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":23,"created_at":"t","content":true}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+}
+
+test "missing and negative step indexes become unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const missing =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","created_at":"t","content":"hello"}
+    ;
+    const negative =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":-1,"created_at":"t","content":"hello"}
+    ;
+    const missing_events = try parseLine(arena_state.allocator(), missing);
+    const negative_events = try parseLine(arena_state.allocator(), negative);
+    try std.testing.expectEqual(1, missing_events.len);
+    try std.testing.expect(missing_events[0].unknown.meta == null);
+    try std.testing.expectEqual(1, negative_events.len);
+    try std.testing.expect(negative_events[0].unknown.meta == null);
+}
+
+test "known planner parts survive malformed parts with one unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":30,"created_at":"t","thinking":"keep","content":false,"tool_calls":[false,{"name":"run_command","args":{"toolAction":"run","toolSummary":"Run"}},null]}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(3, events.len);
+    try std.testing.expectEqualStrings("keep", events[0].agent_thought_chunk.text);
+    try std.testing.expectEqualStrings("32", events[1].tool_call.tool_call_id);
+    try std.testing.expectEqualStrings(line, events[2].unknown.raw);
+}
+
+test "tool input deeper than the event writer limit becomes unknown" {
+    var input: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer input.deinit();
+    try input.writer.writeAll("{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":40,\"created_at\":\"t\",\"tool_calls\":[{\"name\":\"run_command\",\"args\":{\"value\":");
+    for (0..root.max_event_input_depth + 1) |_| try input.writer.writeByte('[');
+    try input.writer.writeByte('0');
+    for (0..root.max_event_input_depth + 1) |_| try input.writer.writeByte(']');
+    try input.writer.writeAll("}}]}");
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), input.written());
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(input.written(), events[0].unknown.raw);
+}
+
+test "RUNNING generic and bookkeeping records become unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const running =
+        \\{"type":"GENERIC","status":"RUNNING","source":"MODEL","step_index":41,"created_at":"t","content":"Created At: t"}
+    ;
+    const checkpoint =
+        \\{"type":"CHECKPOINT","status":"DONE","source":"SYSTEM","step_index":42,"created_at":"t","content":"saved"}
+    ;
+    const running_events = try parseLine(arena_state.allocator(), running);
+    const checkpoint_events = try parseLine(arena_state.allocator(), checkpoint);
+    try std.testing.expectEqual(1, running_events.len);
+    try std.testing.expectEqualStrings(running, running_events[0].unknown.raw);
+    try std.testing.expectEqual(1, checkpoint_events.len);
+    try std.testing.expectEqualStrings(checkpoint, checkpoint_events[0].unknown.raw);
+}
+
+test "null planner fields match absent fields" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":50,"created_at":"t","thinking":null,"content":null,"tool_calls":[{"name":"list_dir","args":{}}]}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("51", events[0].tool_call.tool_call_id);
+}
+
+test "tool call id overflow makes the call unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":9223372036854775807,"created_at":"t","tool_calls":[{"name":"list_dir","args":{}}]}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
 }
