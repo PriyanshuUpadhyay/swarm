@@ -10,6 +10,14 @@ pub const Meta = struct {
 
 pub const Text = struct { meta: Meta, text: []const u8 };
 
+pub const Ignored = struct { meta: Meta, kind: []const u8 };
+pub const TurnStarted = struct { meta: Meta };
+pub const TurnEnded = struct { meta: Meta, duration_ms: ?i64, reason: enum { completed, aborted } };
+pub const ErrorEvent = struct { meta: Meta, message: []const u8 };
+pub const SystemMessage = struct { meta: Meta, kind: []const u8, text: []const u8 };
+pub const SessionInfo = struct { meta: Meta, kind: enum { title, agent_name, model, cwd }, value: []const u8 };
+pub const Image = struct { meta: Meta, role: enum { user, agent, tool }, media_type: []const u8 };
+
 pub const Unknown = struct {
     meta: ?Meta,
     raw: []const u8,
@@ -78,6 +86,13 @@ pub const PermissionDecision = struct {
 };
 
 pub const Event = union(enum) {
+    ignored: Ignored,
+    turn_started: TurnStarted,
+    turn_ended: TurnEnded,
+    @"error": ErrorEvent,
+    system_message: SystemMessage,
+    session_info: SessionInfo,
+    image: Image,
     user_message_chunk: Text,
     agent_message_chunk: Text,
     agent_thought_chunk: Text,
@@ -392,6 +407,8 @@ const Translator = struct {
     format: Format,
     session_id: []const u8,
     owned_session_id: ?[]u8 = null,
+    offset: u64 = 0,
+    unknown_log: ?*std.Io.Writer = null,
 
     fn init(gpa: std.mem.Allocator, format: Format, session_id: []const u8) Translator {
         return .{
@@ -450,11 +467,39 @@ const Translator = struct {
                 }
                 try writeEventJson(writer, event.*);
                 try writer.writeByte('\n');
+                if (event.* == .unknown) translator.logUnknown(line);
             }
             try writer.flush();
+            translator.offset += translator.line_buffer.written().len + @intFromBool(!at_end);
             translator.line_buffer.clearRetainingCapacity();
             if (at_end) return;
         }
+    }
+
+    fn logUnknown(translator: *Translator, line: []const u8) void {
+        const log = translator.unknown_log orelse return;
+        var kind: []const u8 = "-";
+        const parsed = std.json.parseFromSliceLeaky(std.json.Value, translator.arena_state.allocator(), line, .{}) catch .null;
+        if (parsed == .object) {
+            const rec = parsed.object;
+            const record_type = str(rec, "type");
+            if (record_type.len != 0) kind = record_type;
+            if (translator.format == .claude and std.mem.eql(u8, record_type, "attachment")) {
+                if (rec.get("attachment")) |attachment| {
+                    if (attachment == .object and str(attachment.object, "type").len != 0) kind = str(attachment.object, "type");
+                }
+            } else if (translator.format == .codex and (std.mem.eql(u8, record_type, "response_item") or std.mem.eql(u8, record_type, "event_msg"))) {
+                if (rec.get("payload")) |payload| {
+                    if (payload == .object and str(payload.object, "type").len != 0) kind = str(payload.object, "type");
+                }
+            }
+        }
+        log.print("transcript: unknown format={s} offset={d} kind=", .{ @tagName(translator.format), translator.offset }) catch return;
+        for (kind) |byte| {
+            log.writeByte(if (std.ascii.isAlphanumeric(byte) or byte == '_' or byte == '-' or byte == '/') byte else '_') catch return;
+        }
+        log.writeByte('\n') catch return;
+        log.flush() catch {};
     }
 };
 
@@ -484,8 +529,13 @@ fn translateFileRange(
 }
 
 pub fn translate(gpa: std.mem.Allocator, format: Format, session_id: []const u8, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    try translateWithLog(gpa, format, session_id, reader, writer, null);
+}
+
+pub fn translateWithLog(gpa: std.mem.Allocator, format: Format, session_id: []const u8, reader: *std.Io.Reader, writer: *std.Io.Writer, unknown_log: ?*std.Io.Writer) !void {
     var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
+    translator.unknown_log = unknown_log;
     try translator.translateAvailable(reader, writer, true);
 }
 
@@ -500,14 +550,34 @@ pub fn translateWindow(
     end_offset: u64,
     writer: *std.Io.Writer,
 ) !void {
+    try translateWindowWithLog(gpa, format, session_id, file, io, start_offset, end_offset, writer, null);
+}
+
+pub fn translateWindowWithLog(
+    gpa: std.mem.Allocator,
+    format: Format,
+    session_id: []const u8,
+    file: std.Io.File,
+    io: std.Io,
+    start_offset: u64,
+    end_offset: u64,
+    writer: *std.Io.Writer,
+    unknown_log: ?*std.Io.Writer,
+) !void {
     var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
+    translator.offset = start_offset;
+    translator.unknown_log = unknown_log;
     var input_buffer: [64 * 1024]u8 = undefined;
     try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, true);
 }
 
 pub fn translateFollow(gpa: std.mem.Allocator, format: Format, session_id: []const u8, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
-    try translateFollowWindow(gpa, format, session_id, file, io, 0, 0, writer);
+    try translateFollowWithLog(gpa, format, session_id, file, io, writer, null);
+}
+
+pub fn translateFollowWithLog(gpa: std.mem.Allocator, format: Format, session_id: []const u8, file: std.Io.File, io: std.Io, writer: *std.Io.Writer, unknown_log: ?*std.Io.Writer) !void {
+    try translateFollowWindowWithLog(gpa, format, session_id, file, io, 0, 0, writer, unknown_log);
 }
 
 /// Translates the initial window, holds its final partial line, and follows from `end_offset`.
@@ -521,8 +591,24 @@ pub fn translateFollowWindow(
     end_offset: u64,
     writer: *std.Io.Writer,
 ) !void {
+    try translateFollowWindowWithLog(gpa, format, session_id, file, io, start_offset, end_offset, writer, null);
+}
+
+pub fn translateFollowWindowWithLog(
+    gpa: std.mem.Allocator,
+    format: Format,
+    session_id: []const u8,
+    file: std.Io.File,
+    io: std.Io,
+    start_offset: u64,
+    end_offset: u64,
+    writer: *std.Io.Writer,
+    unknown_log: ?*std.Io.Writer,
+) !void {
     var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
+    translator.offset = start_offset;
+    translator.unknown_log = unknown_log;
     var input_buffer: [64 * 1024]u8 = undefined;
     try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, false);
     var offset = end_offset;
@@ -887,6 +973,65 @@ test "event JSON output uses a type and nested meta" {
         "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\"}}",
         output.written(),
     );
+}
+
+test "ignored event writes its kind" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .ignored = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .kind = "mode" } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"kind\":\"mode\"") != null);
+}
+
+test "turn started event writes meta" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .turn_started = .{ .meta = .{ .session_id = "s", .uuid = "", .timestamp = "" } } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"type\":\"turn_started\"") != null);
+}
+
+test "turn ended event writes duration and reason" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .turn_ended = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .duration_ms = 42, .reason = .completed } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"duration_ms\":42,\"reason\":\"completed\"") != null);
+}
+
+test "error event writes message" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .@"error" = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .message = "bad" } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"type\":\"error\",\"message\":\"bad\"") != null);
+}
+
+test "system message writes kind and text" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .system_message = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .kind = "compaction", .text = "summary" } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"kind\":\"compaction\",\"text\":\"summary\"") != null);
+}
+
+test "session info writes enum kind and value" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .session_info = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .kind = .model, .value = "m" } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"kind\":\"model\",\"value\":\"m\"") != null);
+}
+
+test "image writes role and media type without source data" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeEventJson(&out.writer, .{ .image = .{ .meta = .{ .session_id = "", .uuid = "", .timestamp = "" }, .role = .user, .media_type = "image/png" } });
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "\"role\":\"user\",\"media_type\":\"image/png\"") != null);
+}
+
+test "unknown log gives format offset and kind" {
+    var reader = std.Io.Reader.fixed("{\"type\":\"user\",\"message\":{\"content\":\"ok\"}}\n{\"type\":\"new_record\"}\n");
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    var log: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer log.deinit();
+    try translateWithLog(std.testing.allocator, .claude, "", &reader, &out.writer, &log.writer);
+    try std.testing.expectEqualStrings("transcript: unknown format=claude offset=43 kind=new_record\n", log.written());
 }
 
 test "event JSON output escapes all non-ASCII code points" {
