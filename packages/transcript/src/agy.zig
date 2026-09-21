@@ -62,7 +62,13 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             try events.append(arena, try root.unknownEvent(arena, meta, line));
             return events.items;
         }
-        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = content.string } });
+        var text = content.string;
+        const open = "<USER_REQUEST>";
+        const close = "</USER_REQUEST>";
+        if (std.mem.startsWith(u8, text, open) and std.mem.endsWith(u8, text, close)) {
+            text = std.mem.trim(u8, text[open.len .. text.len - close.len], " \t\r\n");
+        }
+        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
         return events.items;
     }
 
@@ -184,6 +190,17 @@ test "USER_INPUT becomes a user message" {
     try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
     try std.testing.expectEqualStrings("12", events[0].user_message_chunk.meta.uuid);
     try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
+}
+
+test "USER_INPUT strips one outer request wrapper" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const wrapped =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":12,"created_at":"t","content":"<USER_REQUEST>\n  hello  \n</USER_REQUEST>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), wrapped);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
 }
 
 test "PLANNER_RESPONSE emits thought message and pending tool calls in order" {
