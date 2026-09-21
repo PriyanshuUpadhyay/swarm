@@ -110,6 +110,39 @@ pub fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     return if (value == .string) value.string else "";
 }
 
+fn oneOf(value: []const u8, choices: []const []const u8) bool {
+    for (choices) |choice| {
+        if (std.mem.eql(u8, value, choice)) return true;
+    }
+    return false;
+}
+
+fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
+    if (rec.get("isCompactSummary")) |flag| {
+        if (flag == .bool and flag.bool) return "compact_summary";
+    }
+    const trimmed = std.mem.trimStart(u8, text, " \t\r\n");
+    if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
+    if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>" })) return "command_output";
+    return "";
+}
+
+fn oneOfPrefix(value: []const u8, prefixes: []const []const u8) bool {
+    for (prefixes) |prefix| {
+        if (std.mem.startsWith(u8, value, prefix)) return true;
+    }
+    return false;
+}
+
+fn claudeTextEvent(meta: Meta, rec: std.json.ObjectMap, is_user: bool, value: []const u8) Event {
+    if (is_user) {
+        const kind = claudeTextKind(rec, value);
+        if (kind.len != 0) return .{ .system_message = .{ .meta = meta, .kind = kind, .text = value } };
+        return .{ .user_message_chunk = .{ .meta = meta, .text = value } };
+    }
+    return .{ .agent_message_chunk = .{ .meta = meta, .text = value } };
+}
+
 fn parseQuestions(arena: std.mem.Allocator, input: std.json.Value) ![]Question {
     var questions: std.ArrayList(Question) = .empty;
     if (input != .object) return questions.items;
@@ -224,9 +257,63 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .tool_call_id = str(attachment.object, "toolUseID"),
                 .decision = str(attachment.object, "decision"),
             } });
+        } else if (std.mem.eql(u8, kind, "queued_command")) {
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = str(attachment.object, "prompt") } });
+        } else if (std.mem.eql(u8, kind, "model")) {
+            const identity = attachment.object.get("identity") orelse .null;
+            const model = if (identity == .object) str(identity.object, "modelId") else "";
+            try events.append(arena, .{ .session_info = .{ .meta = meta, .kind = .model, .value = model } });
+        } else if (oneOf(kind, &.{
+            "total_tokens_reminder",  "bash_output_audience_note", "batching_reminder_sent",
+            "silent_turn_reminder",   "skill_listing",             "deferred_tools_delta",
+            "mcp_instructions_delta", "prompt_snapshot",           "edited_text_file",
+            "agent_listing_delta",    "auto_mode",                 "date",
+            "session_context",        "instructions",              "environment",
+            "deferred_tools_record",  "command_permissions",       "diagnostics",
+            "file",                   "remote_session_change",     "nested_memory",
+            "task_reminder",          "compact_file_reference",    "invoked_skills",
+            "date_change",            "dynamic_skill",             "task_status",
+            "plan_mode_exit",         "thinking_stripped",         "read_truncation_notice",
+            "plan_mode",
+        })) {
+            try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "attachment/{s}", .{kind}) } });
         } else {
             try events.append(arena, try unknownEvent(arena, meta, line));
         }
+        return events.items;
+    }
+    if (std.mem.eql(u8, record_type, "ai-title") or std.mem.eql(u8, record_type, "custom-title")) {
+        try events.append(arena, .{ .session_info = .{ .meta = meta, .kind = .title, .value = str(rec, if (std.mem.eql(u8, record_type, "ai-title")) "aiTitle" else "customTitle") } });
+        return events.items;
+    }
+    if (std.mem.eql(u8, record_type, "agent-name")) {
+        try events.append(arena, .{ .session_info = .{ .meta = meta, .kind = .agent_name, .value = str(rec, "agentName") } });
+        return events.items;
+    }
+    if (std.mem.eql(u8, record_type, "system")) {
+        const subtype = str(rec, "subtype");
+        if (std.mem.eql(u8, subtype, "turn_duration")) {
+            const duration = rec.get("durationMs") orelse .null;
+            try events.append(arena, .{ .turn_ended = .{ .meta = meta, .reason = .completed, .duration_ms = if (duration == .integer) duration.integer else null } });
+        } else if (oneOf(subtype, &.{ "compact_boundary", "away_summary", "informational", "local_command", "scheduled_task_fire", "stop_hook_summary", "model_refusal_fallback" })) {
+            const kind: []const u8 = if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
+            const content = str(rec, "content");
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = if (content.len != 0) content else str(rec, "summary") } });
+        } else {
+            try events.append(arena, try unknownEvent(arena, meta, line));
+        }
+        return events.items;
+    }
+    if (oneOf(record_type, &.{
+        "last-prompt",        "atis-latch",          "mode",                      "permission-mode",          "file-history-snapshot",
+        "file-history-delta", "queue-operation",     "pr-link",                   "bridge-session",           "cost-state",
+        "frame-link",         "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",
+    })) {
+        try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
+        return events.items;
+    }
+    if (record_type.len == 0 and rec.contains("sid") and rec.contains("from") and rec.contains("to") and rec.contains("ts")) {
+        try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "session-link" } });
         return events.items;
     }
     const is_user = std.mem.eql(u8, record_type, "user");
@@ -238,7 +325,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     if (message != .object) return events.items;
     const content = message.object.get("content") orelse return events.items;
     if (content == .string and is_user) {
-        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = content.string } });
+        try events.append(arena, claudeTextEvent(meta, rec, is_user, content.string));
     }
     if (content != .array) return events.items;
     var has_unknown = false;
@@ -246,8 +333,22 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         if (block != .object) continue;
         const block_type = str(block.object, "type");
         if (std.mem.eql(u8, block_type, "text")) {
-            const chunk: Text = .{ .meta = meta, .text = str(block.object, "text") };
-            try events.append(arena, if (is_user) .{ .user_message_chunk = chunk } else .{ .agent_message_chunk = chunk });
+            try events.append(arena, claudeTextEvent(meta, rec, is_user, str(block.object, "text")));
+        } else if (std.mem.eql(u8, block_type, "image")) {
+            const source = block.object.get("source") orelse .null;
+            const media_type = if (source == .object) str(source.object, "media_type") else "";
+            try events.append(arena, .{ .image = .{ .meta = meta, .role = if (is_user) .user else .agent, .media_type = media_type } });
+        } else if (std.mem.eql(u8, block_type, "fallback") and !is_user) {
+            const from = block.object.get("from") orelse .null;
+            const to = block.object.get("to") orelse .null;
+            try events.append(arena, .{ .system_message = .{
+                .meta = meta,
+                .kind = "model_fallback",
+                .text = try std.fmt.allocPrint(arena, "{s} -> {s}", .{
+                    if (from == .object) str(from.object, "model") else "",
+                    if (to == .object) str(to.object, "model") else "",
+                }),
+            } });
         } else if (std.mem.eql(u8, block_type, "thinking")) {
             const thinking = str(block.object, "thinking");
             if (thinking.len != 0) {
@@ -748,7 +849,7 @@ test "unknown record keeps raw line and meta" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
-        \\{"type":"mode","sessionId":"s1","uuid":"u3","timestamp":"t","mode":"plan"}
+        \\{"type":"future-kind","sessionId":"s1","uuid":"u3","timestamp":"t"}
     ;
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
@@ -778,7 +879,7 @@ test "unknown content block becomes unknown" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
-        \\{"type":"assistant","sessionId":"s1","uuid":"u4","timestamp":"t","message":{"content":[{"type":"image","source":"x"}]}}
+        \\{"type":"assistant","sessionId":"s1","uuid":"u4","timestamp":"t","message":{"content":[{"type":"audio","source":"x"}]}}
     ;
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
@@ -794,8 +895,72 @@ test "user text survives an image block" {
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(3, events.len);
     try std.testing.expectEqualStrings("first", events[0].user_message_chunk.text);
-    try std.testing.expectEqualStrings(line, events[1].unknown.raw);
+    try std.testing.expect(events[1].image.role == .user);
     try std.testing.expectEqualStrings("last", events[2].user_message_chunk.text);
+}
+
+test "Claude bookkeeping and session link are ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const mode = try parseLine(arena_state.allocator(), "{\"type\":\"mode\"}");
+    const link = try parseLine(arena_state.allocator(), "{\"sid\":\"s\",\"from\":\"a\",\"to\":\"b\",\"ts\":\"t\"}");
+    const attachment = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"attachment\":{\"type\":\"total_tokens_reminder\"}}");
+    try std.testing.expectEqualStrings("mode", mode[0].ignored.kind);
+    try std.testing.expectEqualStrings("session-link", link[0].ignored.kind);
+    try std.testing.expectEqualStrings("attachment/total_tokens_reminder", attachment[0].ignored.kind);
+}
+
+test "Claude titles agent name and model become session info" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const title = try parseLine(arena_state.allocator(), "{\"type\":\"ai-title\",\"aiTitle\":\"Title\"}");
+    const name = try parseLine(arena_state.allocator(), "{\"type\":\"agent-name\",\"agentName\":\"Agent\"}");
+    const model = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"attachment\":{\"type\":\"model\",\"identity\":{\"modelId\":\"model-1\"}}}");
+    try std.testing.expect(title[0].session_info.kind == .title);
+    try std.testing.expectEqualStrings("Title", title[0].session_info.value);
+    try std.testing.expect(name[0].session_info.kind == .agent_name);
+    try std.testing.expectEqualStrings("Agent", name[0].session_info.value);
+    try std.testing.expect(model[0].session_info.kind == .model);
+    try std.testing.expectEqualStrings("model-1", model[0].session_info.value);
+}
+
+test "Claude system records become system messages and turn end" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const compact = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"content\":\"summary\"}");
+    const duration = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"turn_duration\",\"durationMs\":123}");
+    const fallback = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"model_refusal_fallback\",\"content\":\"retry\"}");
+    try std.testing.expectEqualStrings("compaction", compact[0].system_message.kind);
+    try std.testing.expectEqual(@as(?i64, 123), duration[0].turn_ended.duration_ms);
+    try std.testing.expectEqualStrings("retry", fallback[0].system_message.text);
+}
+
+test "Claude command wrappers and compact summary are system text" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const command = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"  <command-name>run\"}}");
+    const output = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<local-command-stderr>bad\"}]}}");
+    const summary = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"content\":\"summary\"}}");
+    try std.testing.expectEqualStrings("command", command[0].system_message.kind);
+    try std.testing.expectEqualStrings("command_output", output[0].system_message.kind);
+    try std.testing.expectEqualStrings("compact_summary", summary[0].system_message.kind);
+}
+
+test "Claude queued command and fallback block become system messages" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const queued = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"attachment\":{\"type\":\"queued_command\",\"prompt\":\"go\"}}");
+    const fallback = try parseLine(arena_state.allocator(), "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"fallback\",\"from\":{\"model\":\"a\"},\"to\":{\"model\":\"b\"}}]}}");
+    try std.testing.expectEqualStrings("go", queued[0].system_message.text);
+    try std.testing.expectEqualStrings("model_fallback", fallback[0].system_message.kind);
+    try std.testing.expectEqualStrings("a -> b", fallback[0].system_message.text);
+}
+
+test "unseen Claude type stays unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"future-record\"}");
+    try std.testing.expect(events[0] == .unknown);
 }
 
 test "many unknown blocks emit one unknown beside known events" {
@@ -805,9 +970,10 @@ test "many unknown blocks emit one unknown beside known events" {
         \\{"type":"assistant","sessionId":"s1","uuid":"u4","timestamp":"t","message":{"content":[{"type":"image"},{"type":"text","text":"kept"},{"type":"audio"}]}}
     ;
     const events = try parseLine(arena_state.allocator(), line);
-    try std.testing.expectEqual(2, events.len);
-    try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+    try std.testing.expectEqual(3, events.len);
+    try std.testing.expect(events[0].image.role == .agent);
     try std.testing.expectEqualStrings("kept", events[1].agent_message_chunk.text);
+    try std.testing.expectEqualStrings(line, events[2].unknown.raw);
 }
 
 test "assistant tool use becomes pending tool call" {
