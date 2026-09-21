@@ -374,22 +374,39 @@ pub fn findTailStart(file: std.Io.File, io: std.Io, end_offset: u64, line_count:
     return 0;
 }
 
+pub fn agySessionIdFromPath(path: []const u8) []const u8 {
+    var parts = std.mem.splitScalar(u8, path, std.fs.path.sep);
+    while (parts.next()) |part| {
+        if (std.mem.eql(u8, part, "brain")) {
+            const session_id = parts.next() orelse return "";
+            if (session_id.len != 0 and parts.next() != null) return session_id;
+        }
+    }
+    return "";
+}
+
 const Translator = struct {
     line_buffer: std.Io.Writer.Allocating,
     arena_state: std.heap.ArenaAllocator,
+    gpa: std.mem.Allocator,
     format: Format,
+    session_id: []const u8,
+    owned_session_id: ?[]u8 = null,
 
-    fn init(gpa: std.mem.Allocator, format: Format) Translator {
+    fn init(gpa: std.mem.Allocator, format: Format, session_id: []const u8) Translator {
         return .{
             .line_buffer = .init(gpa),
             .arena_state = .init(gpa),
+            .gpa = gpa,
             .format = format,
+            .session_id = session_id,
         };
     }
 
     fn deinit(translator: *Translator) void {
         translator.line_buffer.deinit();
         translator.arena_state.deinit();
+        if (translator.owned_session_id) |session_id| translator.gpa.free(session_id);
     }
 
     fn translateAvailable(translator: *Translator, reader: *std.Io.Reader, writer: *std.Io.Writer, parse_final: bool) !void {
@@ -411,8 +428,27 @@ const Translator = struct {
                 .codex => @import("codex.zig").parseLine(translator.arena_state.allocator(), line),
                 .agy => @import("agy.zig").parseLine(translator.arena_state.allocator(), line),
             };
-            for (events) |event| {
-                try writeEventJson(writer, event);
+            if (translator.format == .codex) {
+                for (events) |event| {
+                    if (event != .unknown) continue;
+                    const meta = event.unknown.meta orelse continue;
+                    if (meta.session_id.len == 0) continue;
+                    const session_id = try translator.gpa.dupe(u8, meta.session_id);
+                    if (translator.owned_session_id) |old| translator.gpa.free(old);
+                    translator.owned_session_id = session_id;
+                    translator.session_id = session_id;
+                }
+            }
+            for (events) |*event| {
+                if (translator.format != .claude) {
+                    switch (event.*) {
+                        .unknown => |*unknown| {
+                            if (unknown.meta) |*meta| meta.session_id = translator.session_id;
+                        },
+                        inline else => |*value| value.meta.session_id = translator.session_id,
+                    }
+                }
+                try writeEventJson(writer, event.*);
                 try writer.writeByte('\n');
             }
             try writer.flush();
@@ -447,8 +483,8 @@ fn translateFileRange(
     }
 }
 
-pub fn translate(gpa: std.mem.Allocator, format: Format, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
-    var translator: Translator = .init(gpa, format);
+pub fn translate(gpa: std.mem.Allocator, format: Format, session_id: []const u8, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
     try translator.translateAvailable(reader, writer, true);
 }
@@ -457,33 +493,35 @@ pub fn translate(gpa: std.mem.Allocator, format: Format, reader: *std.Io.Reader,
 pub fn translateWindow(
     gpa: std.mem.Allocator,
     format: Format,
+    session_id: []const u8,
     file: std.Io.File,
     io: std.Io,
     start_offset: u64,
     end_offset: u64,
     writer: *std.Io.Writer,
 ) !void {
-    var translator: Translator = .init(gpa, format);
+    var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
     var input_buffer: [64 * 1024]u8 = undefined;
     try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, true);
 }
 
-pub fn translateFollow(gpa: std.mem.Allocator, format: Format, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
-    try translateFollowWindow(gpa, format, file, io, 0, 0, writer);
+pub fn translateFollow(gpa: std.mem.Allocator, format: Format, session_id: []const u8, file: std.Io.File, io: std.Io, writer: *std.Io.Writer) !void {
+    try translateFollowWindow(gpa, format, session_id, file, io, 0, 0, writer);
 }
 
 /// Translates the initial window, holds its final partial line, and follows from `end_offset`.
 pub fn translateFollowWindow(
     gpa: std.mem.Allocator,
     format: Format,
+    session_id: []const u8,
     file: std.Io.File,
     io: std.Io,
     start_offset: u64,
     end_offset: u64,
     writer: *std.Io.Writer,
 ) !void {
-    var translator: Translator = .init(gpa, format);
+    var translator: Translator = .init(gpa, format, session_id);
     defer translator.deinit();
     var input_buffer: [64 * 1024]u8 = undefined;
     try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, false);
@@ -538,6 +576,52 @@ test "backward scan treats a before offset in the middle as a line end" {
 
 test "backward scan handles an empty file" {
     try expectTailStart("", 0, 1, 4, 0);
+}
+
+test "AGY session id comes from brain directory" {
+    try std.testing.expectEqualStrings("conv-1", agySessionIdFromPath("/work/brain/conv-1/steps.jsonl"));
+    try std.testing.expectEqualStrings("conv-2", agySessionIdFromPath("brain/conv-2/logs/steps.jsonl"));
+    try std.testing.expectEqualStrings("", agySessionIdFromPath("/work/steps.jsonl"));
+}
+
+test "Codex session_meta fills later event ids" {
+    var reader = std.Io.Reader.fixed(
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-1\"}}\n" ++
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n",
+    );
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try translate(std.testing.allocator, .codex, "", &reader, &output.writer);
+    try std.testing.expectEqual(2, std.mem.count(u8, output.written(), "\"session_id\":\"codex-1\""));
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"text\":\"hello\"") != null);
+}
+
+test "AGY path id fills event meta" {
+    var reader = std.Io.Reader.fixed(
+        "{\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"source\":\"USER_EXPLICIT\",\"step_index\":1,\"created_at\":\"t\",\"content\":\"hello\"}\n",
+    );
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try translate(std.testing.allocator, .agy, agySessionIdFromPath("brain/agy-1/steps.jsonl"), &reader, &output.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"session_id\":\"agy-1\"") != null);
+}
+
+test "Codex input without session_meta leaves session id empty" {
+    var reader = std.Io.Reader.fixed(
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n",
+    );
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try translate(std.testing.allocator, .codex, "", &reader, &output.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"session_id\":\"\"") != null);
+}
+
+test "Claude translation keeps record session id" {
+    var reader = std.Io.Reader.fixed("{\"type\":\"user\",\"sessionId\":\"claude-1\",\"message\":{\"content\":\"hello\"}}\n");
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try translate(std.testing.allocator, .claude, "", &reader, &output.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"session_id\":\"claude-1\"") != null);
 }
 
 test "user string content becomes user_message_chunk" {
@@ -817,7 +901,7 @@ test "event JSON output escapes all non-ASCII code points" {
 }
 
 test "follow translation holds a final piece until its newline arrives" {
-    var translator: Translator = .init(std.testing.allocator, .claude);
+    var translator: Translator = .init(std.testing.allocator, .claude, "");
     defer translator.deinit();
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
@@ -851,7 +935,7 @@ test "translate reuses its per-line arena" {
     var fixed = std.heap.FixedBufferAllocator.init(&fixed_buffer);
     var outer_arena: std.heap.ArenaAllocator = .init(fixed.allocator());
     defer outer_arena.deinit();
-    try translate(outer_arena.allocator(), .claude, &reader, &output.writer);
+    try translate(outer_arena.allocator(), .claude, "", &reader, &output.writer);
 
     try std.testing.expectEqual(32, std.mem.count(u8, output.written(), "\n"));
 }
@@ -899,7 +983,7 @@ test "translate flushes each input line" {
     output.init();
     defer output.deinit();
 
-    try translate(std.testing.allocator, .claude, &reader, &output.writer);
+    try translate(std.testing.allocator, .claude, "", &reader, &output.writer);
 
     try std.testing.expectEqualStrings(
         "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",

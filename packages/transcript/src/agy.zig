@@ -174,7 +174,7 @@ test "agy translation makes the line unknown" {
     var reader = std.Io.Reader.fixed("agy line\n");
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
-    try root.translate(std.testing.allocator, .agy, &reader, &output.writer);
+    try root.translate(std.testing.allocator, .agy, "", &reader, &output.writer);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"type\":\"unknown\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"raw\":\"agy line\"") != null);
 }

@@ -14,9 +14,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
 
     const record = value.object;
     const payload_value = record.get("payload");
-    // A rollout line has no session ID, so Codex events leave it empty.
     const meta: root.Meta = .{
-        .session_id = "",
+        .session_id = if (std.mem.eql(u8, root.str(record, "type"), "session_meta") and payload_value != null and payload_value.? == .object)
+            root.str(payload_value.?.object, "id")
+        else
+            "",
         .uuid = if (payload_value) |payload| if (payload == .object) root.str(payload.object, "id") else "" else "",
         .timestamp = root.str(record, "timestamp"),
     };
@@ -405,7 +407,7 @@ test "codex translation makes the line unknown" {
     var reader = std.Io.Reader.fixed("codex line\n");
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
-    try root.translate(std.testing.allocator, .codex, &reader, &output.writer);
+    try root.translate(std.testing.allocator, .codex, "", &reader, &output.writer);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"type\":\"unknown\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"raw\":\"codex line\"") != null);
 }
