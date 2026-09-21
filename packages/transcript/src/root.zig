@@ -558,6 +558,7 @@ const Translator = struct {
                     if (translator.owned_session_id) |old| translator.gpa.free(old);
                     translator.owned_session_id = session_id;
                     translator.session_id = session_id;
+                    break;
                 }
             }
             for (events) |*event| {
@@ -583,6 +584,7 @@ const Translator = struct {
     fn logUnknown(translator: *Translator, line: []const u8) void {
         const log = translator.unknown_log orelse return;
         var kind: []const u8 = "-";
+        var detail: []const u8 = "";
         const parsed = std.json.parseFromSliceLeaky(std.json.Value, translator.arena_state.allocator(), line, .{}) catch .null;
         if (parsed == .object) {
             const rec = parsed.object;
@@ -590,17 +592,27 @@ const Translator = struct {
             if (record_type.len != 0) kind = record_type;
             if (translator.format == .claude and std.mem.eql(u8, record_type, "attachment")) {
                 if (rec.get("attachment")) |attachment| {
-                    if (attachment == .object and str(attachment.object, "type").len != 0) kind = str(attachment.object, "type");
+                    if (attachment == .object) detail = str(attachment.object, "type");
                 }
+            } else if (translator.format == .claude and std.mem.eql(u8, record_type, "system")) {
+                detail = str(rec, "subtype");
             } else if (translator.format == .codex and (std.mem.eql(u8, record_type, "response_item") or std.mem.eql(u8, record_type, "event_msg"))) {
                 if (rec.get("payload")) |payload| {
-                    if (payload == .object and str(payload.object, "type").len != 0) kind = str(payload.object, "type");
+                    if (payload == .object) detail = str(payload.object, "type");
                 }
+            } else if (translator.format == .agy) {
+                detail = str(rec, "status");
             }
         }
         log.print("transcript: unknown format={s} offset={d} kind=", .{ @tagName(translator.format), translator.offset }) catch return;
         for (kind) |byte| {
             log.writeByte(if (std.ascii.isAlphanumeric(byte) or byte == '_' or byte == '-' or byte == '/') byte else '_') catch return;
+        }
+        if (detail.len != 0) {
+            log.writeByte('/') catch return;
+            for (detail) |byte| {
+                log.writeByte(if (std.ascii.isAlphanumeric(byte) or byte == '_' or byte == '-' or byte == '/') byte else '_') catch return;
+            }
         }
         log.writeByte('\n') catch return;
         log.flush() catch {};
