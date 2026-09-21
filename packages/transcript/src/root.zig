@@ -272,6 +272,101 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     return events.items;
 }
 
+pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!void {
+    switch (event) {
+        .user_message_chunk => |value| try std.json.Stringify.value(.{
+            .type = "user_message_chunk",
+            .text = value.text,
+            .meta = value.meta,
+        }, .{}, writer),
+        .agent_message_chunk => |value| try std.json.Stringify.value(.{
+            .type = "agent_message_chunk",
+            .text = value.text,
+            .meta = value.meta,
+        }, .{}, writer),
+        .agent_thought_chunk => |value| try std.json.Stringify.value(.{
+            .type = "agent_thought_chunk",
+            .text = value.text,
+            .meta = value.meta,
+        }, .{}, writer),
+        .tool_call => |value| try std.json.Stringify.value(.{
+            .type = "tool_call",
+            .tool_call_id = value.tool_call_id,
+            .name = value.name,
+            .input = value.input,
+            .status = value.status,
+            .meta = value.meta,
+        }, .{}, writer),
+        .tool_call_update => |value| try std.json.Stringify.value(.{
+            .type = "tool_call_update",
+            .tool_call_id = value.tool_call_id,
+            .status = value.status,
+            .content = value.content,
+            .meta = value.meta,
+        }, .{}, writer),
+        .elicitation => |value| try std.json.Stringify.value(.{
+            .type = "elicitation",
+            .tool_call_id = value.tool_call_id,
+            .questions = value.questions,
+            .meta = value.meta,
+        }, .{}, writer),
+        .elicitation_result => |value| try std.json.Stringify.value(.{
+            .type = "elicitation_result",
+            .tool_call_id = value.tool_call_id,
+            .answers = value.answers,
+            .meta = value.meta,
+        }, .{}, writer),
+        .hook_result => |value| try std.json.Stringify.value(.{
+            .type = "hook_result",
+            .kind = value.kind,
+            .hook_event = value.hook_event,
+            .hook_name = value.hook_name,
+            .tool_call_id = value.tool_call_id,
+            .exit_code = value.exit_code,
+            .meta = value.meta,
+        }, .{}, writer),
+        .permission_decision => |value| try std.json.Stringify.value(.{
+            .type = "permission_decision",
+            .hook_event = value.hook_event,
+            .tool_call_id = value.tool_call_id,
+            .decision = value.decision,
+            .meta = value.meta,
+        }, .{}, writer),
+        .unknown => |value| try std.json.Stringify.value(.{
+            .type = "unknown",
+            .raw = value.raw,
+            .meta = value.meta,
+        }, .{}, writer),
+    }
+}
+
+pub fn translate(gpa: std.mem.Allocator, reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    var line_buffer: std.Io.Writer.Allocating = .init(gpa);
+    defer line_buffer.deinit();
+    while (true) {
+        line_buffer.clearRetainingCapacity();
+        _ = try reader.streamDelimiterEnding(&line_buffer.writer, '\n');
+        const at_end = end: {
+            const byte = reader.takeByte() catch |err| switch (err) {
+                error.EndOfStream => break :end true,
+                else => return err,
+            };
+            std.debug.assert(byte == '\n');
+            break :end false;
+        };
+        if (line_buffer.written().len == 0 and at_end) break;
+        const line = std.mem.trimEnd(u8, line_buffer.written(), "\r");
+        var arena_state: std.heap.ArenaAllocator = .init(gpa);
+        defer arena_state.deinit();
+        const events = try parseLine(arena_state.allocator(), line);
+        for (events) |event| {
+            try writeEventJson(writer, event);
+            try writer.writeByte('\n');
+        }
+        if (at_end) break;
+    }
+}
+
 test "user string content becomes user_message_chunk" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -451,4 +546,17 @@ test "unknown attachment type becomes unknown" {
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings(line, events[0].unknown.raw);
+}
+
+test "event JSON output uses a type and nested meta" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try writeEventJson(&output.writer, .{ .agent_message_chunk = .{
+        .meta = .{ .session_id = "s1", .uuid = "u1", .timestamp = "t" },
+        .text = "hello",
+    } });
+    try std.testing.expectEqualStrings(
+        "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\"}}",
+        output.written(),
+    );
 }
