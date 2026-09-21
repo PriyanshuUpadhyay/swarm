@@ -134,14 +134,6 @@ fn parseAnswers(arena: std.mem.Allocator, value: std.json.Value) ![]Answer {
     return answers.items;
 }
 
-fn isHookResultKind(kind: []const u8) bool {
-    return std.mem.eql(u8, kind, "hook_success") or
-        std.mem.eql(u8, kind, "hook_non_blocking_error") or
-        std.mem.eql(u8, kind, "hook_blocking_error") or
-        std.mem.eql(u8, kind, "hook_cancelled") or
-        std.mem.eql(u8, kind, "hook_additional_context");
-}
-
 // The event object uses one of Stringify's 256 nesting levels, so input can use 255.
 const max_event_input_depth = 255;
 
@@ -189,7 +181,12 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             return events.items;
         }
         const kind = str(attachment.object, "type");
-        if (isHookResultKind(kind)) {
+        const is_hook_result = std.mem.eql(u8, kind, "hook_success") or
+            std.mem.eql(u8, kind, "hook_non_blocking_error") or
+            std.mem.eql(u8, kind, "hook_blocking_error") or
+            std.mem.eql(u8, kind, "hook_cancelled") or
+            std.mem.eql(u8, kind, "hook_additional_context");
+        if (is_hook_result) {
             const exit_code = if (attachment.object.get("exitCode")) |value| if (value == .integer) value.integer else null else null;
             try events.append(arena, .{ .hook_result = .{
                 .meta = meta,
