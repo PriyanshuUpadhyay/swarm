@@ -1,7 +1,8 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-16
 deciders: [user]
+superseded-by: 0014
 related: []
 informed-by:
   - https://github.com/spatie/bloom
