@@ -420,6 +420,27 @@ pub fn has_rung_unread(
     Ok(found)
 }
 
+pub fn has_unrung_unread(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let found: bool = connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM message
+             WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM read_mark
+                   WHERE read_mark.session_id = message.session_id
+                     AND message_seq = message.seq AND agent_id = ?2
+               )
+         )",
+        (session_id, agent_id),
+        |row| row.get(0),
+    )?;
+    Ok(found)
+}
+
 pub fn rering_due(
     connection: &Connection,
     session_id: &str,
