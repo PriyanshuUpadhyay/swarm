@@ -39,6 +39,15 @@ struct SwarmSessionDetailTests {
             == .notice("This session's host has no attach"))
     }
 
+    @Test("The pane column exists only while a child agent is live")
+    func liveChildAgents() {
+        let value = session(adapter: "tmux-solo")
+        let ended = [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: false)]
+        let live = [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: true)]
+        #expect(!SwarmPanePolicy.hasLiveChildAgents(session: value, agents: ended))
+        #expect(SwarmPanePolicy.hasLiveChildAgents(session: value, agents: live))
+    }
+
     @Test("Agent creation time decodes from the CLI")
     func agentCreationTime() throws {
         let decoder = JSONDecoder()

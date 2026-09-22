@@ -122,6 +122,10 @@ public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
 public enum SwarmPanePolicy {
     public static let chair = SwarmAgentID("orchestrator")
 
+    public static func hasLiveChildAgents(session: SwarmSession, agents: [SwarmAgent]) -> Bool {
+        !cells(session: session, agents: agents).isEmpty
+    }
+
     public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
         agents
             .filter {
