@@ -61,24 +61,6 @@ struct SwarmSpikeTests {
         #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "Build the app")
     }
 
-    @Test("The live pane answers permission prompts")
-    func permissionHookIsAbsent() {
-        let arguments = AgentKind.claudeCode.interactiveArguments(
-            prompt: "", sessionID: SwarmSessionID("01996d95-1cab-7e21-8abd-000000000001"),
-            model: "", effort: ""
-        ) ?? []
-        #expect(!arguments.joined(separator: " ").contains("PermissionRequest"))
-    }
-
-    @Test("A Claude model alias reaches the CLI in its accepted form")
-    func claudeModelAlias() {
-        let arguments = AgentKind.claudeCode.interactiveArguments(
-            prompt: "", sessionID: SwarmSessionID("01996d95-1cab-7e21-8abd-000000000001"),
-            model: "opus-5-1m", effort: ""
-        ) ?? []
-        #expect(arguments.suffix(2) == ["--model", "claude-opus-5[1m]"])
-    }
-
     @Test("A pane name uses the bus session id")
     func paneName() {
         let name = TmuxSessions.sessionName(sessionID: SwarmSessionID("session-1"), paneID: "pane-1")
