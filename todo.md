@@ -25,3 +25,8 @@ Seen 2026-09-22 after U8: the selected session, the expanded rows and the width 
 the window reopened at 1257x450 in the screen centre after it had been 1800x1130 at the top left.
 The frame autosave does not record a frame set through accessibility; check whether a frame set
 by hand is saved, and save the frame explicitly at quit if not.
+
+## The transcript scrolls under the title bar
+
+Seen 2026-09-22 after U9: the first transcript row sits behind the window title when the list is
+scrolled to the top. The ScrollView ignores the toolbar's safe area; give it the top inset.
