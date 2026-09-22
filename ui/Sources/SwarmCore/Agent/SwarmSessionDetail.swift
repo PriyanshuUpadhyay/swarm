@@ -40,17 +40,44 @@ public enum ChairTranscriptSnapshot: Sendable, Equatable {
 /// Owns one live reader and resolves the log again on every poll until it appears.
 public actor SwarmChairTranscript {
     private let binary: URL?
+    private let profiles: any SwarmProfileSource
+    private let home: URL
+    private var discoveredSession: SwarmSessionID?
+    private var discoveredLog: URL?
     private var log: URL?
     private var reader: ToolTranscriptReader?
     private var rows: [TranscriptRow] = []
 
-    public init(binary: URL? = nil) { self.binary = binary }
+    public init(
+        binary: URL? = nil,
+        profiles: any SwarmProfileSource = SwarmCLIProfileSource(),
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
+        self.binary = binary
+        self.profiles = profiles
+        self.home = home
+    }
 
     public func poll(
         session: SwarmSession, chairProvider: String? = nil
     ) async -> ChairTranscriptSnapshot {
+        var resolved = session
+        let provider = session.chairProvider ?? chairProvider
+        if resolved.chairLog == nil, let provider, provider == "claude" || provider == "codex" {
+            if discoveredSession != session.id || discoveredLog == nil {
+                let accounts = try? await profiles.accounts(provider: provider)
+                let homes = (accounts?.accounts.map { URL(fileURLWithPath: $0.home) } ?? [])
+                    + [home.appendingPathComponent(provider == "codex" ? ".codex" : ".claude")]
+                discoveredLog = ChairLogDiscovery.path(
+                    provider: provider, cwd: session.cwd, createdAt: session.createdAt,
+                    homes: homes
+                )
+                discoveredSession = session.id
+            }
+            resolved.chairLog = discoveredLog?.path
+        }
         switch ChairTranscriptSource.resolve(
-            session: session, chairProvider: chairProvider,
+            session: resolved, chairProvider: chairProvider,
             logExists: FileManager.default.fileExists(atPath:)
         ) {
         case .waiting:

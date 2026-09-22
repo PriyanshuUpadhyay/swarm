@@ -23,10 +23,6 @@ public enum AgentKind: String, Sendable, Codable, CaseIterable, Identifiable {
     }
 }
 
-public enum SessionState: String, Sendable, Codable, CaseIterable, Hashable {
-    case idle, running, waiting, failed
-}
-
 public enum PermissionMode: String, Sendable, Codable, CaseIterable {
     case auto, acceptEdits, autoReview, bypassPermissions, plan
 
