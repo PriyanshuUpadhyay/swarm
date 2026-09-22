@@ -14,12 +14,14 @@ import Foundation
 public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     public var id: SwarmAgentID
     public var role: String
+    public var provider: String?
     public var pane: String?
     public var alive: Bool?
 
-    public init(id: SwarmAgentID, role: String, pane: String?, alive: Bool?) {
+    public init(id: SwarmAgentID, role: String, pane: String?, alive: Bool?, provider: String? = nil) {
         self.id = id
         self.role = role
+        self.provider = provider
         self.pane = pane
         self.alive = alive
     }
@@ -84,11 +86,13 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var agents: Int
     public var messages: Int
     public var lastMessageAt: Int?
+    public var archivedAt: Int?
 
     public init(
         id: SwarmSessionID, talkMode: String, adapter: String?, cwd: String, createdAt: Int,
         chairProvider: String? = nil, chairID: SwarmChairID? = nil,
-        chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?
+        chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?,
+        archivedAt: Int? = nil
     ) {
         self.id = id
         self.talkMode = talkMode
@@ -101,11 +105,12 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         self.agents = agents
         self.messages = messages
         self.lastMessageAt = lastMessageAt
+        self.archivedAt = archivedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, talkMode, adapter, cwd, createdAt, chairProvider, chairID = "chairId", chairLog
-        case agents, messages, lastMessageAt
+        case agents, messages, lastMessageAt, archivedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -121,6 +126,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         agents = try values.decode(Int.self, forKey: .agents)
         messages = try values.decode(Int.self, forKey: .messages)
         lastMessageAt = try values.decodeIfPresent(Int.self, forKey: .lastMessageAt)
+        archivedAt = try values.decodeIfPresent(Int.self, forKey: .archivedAt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -136,6 +142,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         try values.encode(agents, forKey: .agents)
         try values.encode(messages, forKey: .messages)
         try values.encodeIfPresent(lastMessageAt, forKey: .lastMessageAt)
+        try values.encodeIfPresent(archivedAt, forKey: .archivedAt)
     }
 }
 
