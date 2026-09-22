@@ -5,6 +5,11 @@ import Foundation
 public struct GitRepositoryPaths: Sendable, Equatable {
     public let gitDirectory: String
     public let commonDirectory: String
+
+    public init(gitDirectory: String, commonDirectory: String) {
+        self.gitDirectory = gitDirectory
+        self.commonDirectory = commonDirectory
+    }
 }
 
 extension Git {

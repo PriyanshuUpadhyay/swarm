@@ -264,25 +264,27 @@ public actor SwarmSessionDiscovery {
         }
     }
 
-    private func identity(for path: String) -> SwarmPathIdentity {
+    func identity(for path: String) -> SwarmPathIdentity {
         let normal = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
         if let cached = locations[normal] { return cached }
-
-        var directory = URL(fileURLWithPath: normal)
-        while true {
-            if let paths = Git.repositoryPaths(in: directory.path) {
-                let identity = SwarmPathIdentity.repository(commonDirectory: paths.commonDirectory)
-                locations[normal] = identity
-                return identity
-            }
-            let parent = directory.deletingLastPathComponent()
-            if parent.path == directory.path { break }
-            directory = parent
-        }
-
-        let identity = SwarmPathIdentity.folder(normal)
+        let identity = Self.identity(for: normal, repositoryPathsResolver: Git.repositoryPaths)
         locations[normal] = identity
         return identity
+    }
+
+    public static func identity(
+        for path: String, repositoryPathsResolver: (String) -> GitRepositoryPaths?
+    ) -> SwarmPathIdentity {
+        let normal = URL(fileURLWithPath: path).standardized.path
+        var directory = URL(fileURLWithPath: normal)
+        while true {
+            if let paths = repositoryPathsResolver(directory.path) {
+                return .repository(commonDirectory: paths.commonDirectory)
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path { return .folder(normal) }
+            directory = parent
+        }
     }
 
     private func title(for session: SwarmSession) -> String {
