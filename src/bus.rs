@@ -123,13 +123,18 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            let command = chair_hook_command("codex")?;
+            // Codex reads hooks from hooks.json only, so CLI hook settings do not run.
+            // Keep the hook out of argv until Codex supports a CLI hook flag.
             args.extend([
-                "--dangerously-bypass-hook-trust".into(),
                 "-c".into(),
                 format!(
-                    "hooks.SessionStart=[{{hooks=[{{type=\"command\",command={},timeout=3}}]}}]",
-                    serde_json::to_string(&command).expect("string serialization cannot fail")
+                    "projects.{}.trust_level=\"trusted\"",
+                    serde_json::to_string(
+                        &std::env::current_dir()
+                            .map_err(|error| format!("swarm: cannot find current directory: {error}"))?
+                            .to_string_lossy()
+                    )
+                    .expect("string serialization cannot fail")
                 ),
             ]);
             Ok(args)
@@ -239,12 +244,9 @@ mod tests {
                 "never"
             ]
         );
-        assert_eq!(
-            codex_args[13..15],
-            ["--dangerously-bypass-hook-trust", "-c"]
-        );
-        assert!(codex_args[15].starts_with("hooks.SessionStart="));
-        assert!(codex_args[15].contains("session chair codex:"));
+        assert_eq!(codex_args[13], "-c");
+        assert!(codex_args[14].starts_with("projects.\""));
+        assert!(codex_args[14].ends_with(".trust_level=\"trusted\""));
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
