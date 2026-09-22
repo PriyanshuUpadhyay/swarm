@@ -4,7 +4,7 @@ import Foundation
 public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var sessions: [SwarmSession]
     public var title: String
-    public var isRunning: Bool
+    public var isRunning: Bool?
 
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
@@ -14,7 +14,7 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
 
     public init(
         sessions: [SwarmSession], title: String,
-        isRunning: Bool = false
+        isRunning: Bool? = nil
     ) {
         precondition(!sessions.isEmpty)
         self.sessions = sessions

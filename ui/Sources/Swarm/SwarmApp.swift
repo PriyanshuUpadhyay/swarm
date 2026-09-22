@@ -36,7 +36,7 @@ final class SessionsTreeModel {
 
     func refresh() async throws {
         let sessions = try await bus.sessions()
-        tree = try await discovery.tree(sessions: sessions)
+        tree = try await discovery.tree(sessions: sessions, bus: bus)
         if let selectedID, let row = tree.session(selectedID) {
             pendingID = nil
             self.selectedID = row.id
