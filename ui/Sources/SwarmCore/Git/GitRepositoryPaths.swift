@@ -14,7 +14,10 @@ public struct GitRepositoryPaths: Sendable, Equatable {
 
 extension Git {
     public static func repositoryPaths(in worktree: String) -> GitRepositoryPaths? {
-        let dotGit = (worktree as NSString).appendingPathComponent(".git")
+        let dotGit = [".git", ".bare"]
+            .map { (worktree as NSString).appendingPathComponent($0) }
+            .first { FileManager.default.fileExists(atPath: $0) }
+        guard let dotGit else { return nil }
         var directory = ObjCBool(false)
         guard FileManager.default.fileExists(atPath: dotGit, isDirectory: &directory) else { return nil }
         let gitDirectory: String

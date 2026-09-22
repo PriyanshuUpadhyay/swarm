@@ -54,9 +54,9 @@ final class SwarmTerminalView: LocalProcessTerminalView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
         window?.makeFirstResponder(self)
         onFocus?()
+        super.mouseDown(with: event)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -148,7 +148,7 @@ private struct TerminalContainer: NSViewRepresentable {
     let terminal: SwarmTerminalView
 
     func makeNSView(context: Context) -> NSView {
-        let host = NSView()
+        let host = TerminalHostView()
         attach(to: host)
         return host
     }
@@ -163,5 +163,15 @@ private struct TerminalContainer: NSViewRepresentable {
         terminal.frame = host.bounds
         terminal.autoresizingMask = [.width, .height]
         host.addSubview(terminal)
+        host.nextKeyView = terminal
+    }
+}
+
+private final class TerminalHostView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if let terminal = subviews.first { window?.makeFirstResponder(terminal) }
+        super.mouseDown(with: event)
     }
 }

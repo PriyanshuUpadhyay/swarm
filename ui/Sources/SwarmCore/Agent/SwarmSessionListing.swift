@@ -5,6 +5,8 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var sessions: [SwarmSession]
     public var title: String
     public var isRunning: Bool?
+    public var liveAgents: Int?
+    public var totalAgents: Int
 
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
@@ -14,12 +16,14 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
 
     public init(
         sessions: [SwarmSession], title: String,
-        isRunning: Bool? = nil
+        isRunning: Bool? = nil, liveAgents: Int? = nil, totalAgents: Int? = nil
     ) {
         precondition(!sessions.isEmpty)
         self.sessions = sessions
         self.title = title
         self.isRunning = isRunning
+        self.liveAgents = liveAgents
+        self.totalAgents = totalAgents ?? sessions.reduce(0) { $0 + $1.agents }
     }
 }
 
@@ -71,7 +75,8 @@ public enum SwarmSessionListing {
             }
         }
         return (Array(grouped.values) + ungrouped)
-            .map { $0.sorted(by: newer) }
+            .map { $0.sorted { $0.createdAt == $1.createdAt
+                ? $0.id.rawValue > $1.id.rawValue : $0.createdAt > $1.createdAt } }
             .sorted { newer($0[0], $1[0]) }
     }
 

@@ -10,7 +10,13 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var kind: Kind
     public var text: String
     public var eventID: String
+    public var detail: String? = nil
     public var id: String { eventID }
+
+    public var isHiddenByDefault: Bool {
+        (kind == .notice && (text.hasPrefix("hook_success") || text.hasPrefix("title:")))
+            || (kind == .system && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     public var printLine: String {
         let first = text.components(separatedBy: .newlines).first ?? ""
@@ -31,7 +37,8 @@ public enum TranscriptRowBuilder {
             case .agentThoughtChunk(let text, let meta):
                 row = TranscriptRow(kind: .thought, text: text, eventID: meta.uuid)
             case .toolCall(let id, let name, let input, _, _):
-                row = TranscriptRow(kind: .toolUse, text: "\(name) \(input.compactJSON)", eventID: id + ":call")
+                row = TranscriptRow(kind: .toolUse, text: toolSummary(name: name, input: input), eventID: id + ":call")
+                row.detail = input.compactJSON
             case .toolCallUpdate(let id, _, let content, _):
                 row = TranscriptRow(kind: .toolResult, text: content, eventID: id + ":result")
             case .elicitation(let id, let questions, _):
@@ -74,5 +81,15 @@ public enum TranscriptRowBuilder {
 
     private static func key(_ meta: Meta, _ kind: String, _ index: Int) -> String {
         meta.uuid.isEmpty ? "event-\(index)" : "\(meta.uuid):\(kind)"
+    }
+
+    private static func toolSummary(name: String, input: JSONElement) -> String {
+        guard case .object(let fields) = input else { return name }
+        let description: String? = if case .string(let text) = fields["description"] { text } else { nil }
+        let command: String? = if case .string(let text) = fields["command"] { text } else { nil }
+        let detail = [description, command?.components(separatedBy: .newlines).first]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return detail.map { "\(name) · \($0)" } ?? name
     }
 }

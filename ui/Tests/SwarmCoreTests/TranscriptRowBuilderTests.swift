@@ -36,4 +36,29 @@ struct TranscriptRowBuilderTests {
         #expect(Set(rows.map(\.eventID)).count == rows.count)
         #expect(rows[1].text == "one\ntwo")
     }
+
+    @Test("Tool calls show a short label and keep input in detail")
+    func toolSummary() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "one", name: "exec", input: .object([
+                "description": .string("List files"), "command": .string("ls\npwd")
+            ]), status: .pending, meta: Meta()),
+            .toolCall(toolCallID: "two", name: "exec", input: .object([
+                "command": .string("pwd\nls")
+            ]), status: .pending, meta: Meta()),
+        ])
+        #expect(rows.map(\.text) == ["exec · List files", "exec · pwd"])
+        #expect(rows[0].detail?.contains("\"command\"") == true)
+    }
+
+    @Test("Low value notices and empty system rows are hidden by default")
+    func hiddenRows() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .sessionInfo(kind: "title", value: "Chat", meta: Meta()),
+            .hookResult(kind: "hook_success", hookEvent: "", hookName: "check", toolCallID: "", exitCode: 0, meta: Meta()),
+            .systemMessage(kind: "system", text: "  ", meta: Meta()),
+            .systemMessage(kind: "system", text: "Ready", meta: Meta()),
+        ])
+        #expect(rows.map(\.isHiddenByDefault) == [true, true, true, false])
+    }
 }

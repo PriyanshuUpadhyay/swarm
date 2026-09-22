@@ -39,10 +39,9 @@ final class SessionsTreeModel {
         tree = try await discovery.tree(sessions: sessions, bus: bus)
         if let selectedID, let row = tree.session(selectedID) {
             pendingID = nil
-            self.selectedID = row.id
             agents = try await bus.agents(in: row.session)
         } else if pendingID == nil {
-            selectedID = nil
+            selectedID = tree.retainedSelection(selectedID)
             agents = []
         }
         error = nil
@@ -79,7 +78,7 @@ private struct SessionsWindow: View {
                             }
                         }
                     } label: {
-                        rowLabel(project.name, directory: project.path)
+                        rowLabel(project.name, directory: project.launchDirectory)
                     }
                 }
             }
@@ -105,7 +104,10 @@ private struct SessionsWindow: View {
             }
         } detail: {
             if let row = model.selectedSession {
-                SessionDetailView(row: row, agents: model.agents, panes: panes)
+                SessionDetailView(
+                    row: row, title: model.tree.windowTitle(for: model.selectedID ?? row.id) ?? row.title,
+                    agents: model.agents, panes: panes
+                )
                     .id(row.id)
             } else if let error = model.error {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
