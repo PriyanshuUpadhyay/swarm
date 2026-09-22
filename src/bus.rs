@@ -88,6 +88,11 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
+            let command = chair_hook_command("claude")?;
+            args.extend([
+                "--settings".into(),
+                serde_json::json!({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]}}).to_string(),
+            ]);
             Ok(args)
         }
         "codex" => {
@@ -118,6 +123,15 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
+            let command = chair_hook_command("codex")?;
+            args.extend([
+                "--dangerously-bypass-hook-trust".into(),
+                "-c".into(),
+                format!(
+                    "hooks.SessionStart=[{{hooks=[{{type=\"command\",command={},timeout=3}}]}}]",
+                    serde_json::to_string(&command).expect("string serialization cannot fail")
+                ),
+            ]);
             Ok(args)
         }
         "agy" => {
@@ -145,6 +159,17 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
     }
 }
 
+fn chair_hook_command(provider: &str) -> Result<String, String> {
+    let exe = std::env::current_exe()
+        .map_err(|error| format!("swarm: cannot find executable: {error}"))?
+        .to_string_lossy()
+        .replace('\'', "'\\''");
+    // Both CLI SessionStart payloads include a top-level session_id string.
+    Ok(format!(
+        "id=$(sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9-]\\{{1,64\\}}\\)\".*/\\1/p'); [ -n \"$id\" ] && '{exe}' session chair {provider}:\"$id\""
+    ))
+}
+
 fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
     value
         .filter(|value| !value.is_empty())
@@ -170,9 +195,10 @@ mod tests {
     fn builds_each_provider_and_optional_flags() {
         let mut claude = role("claude");
         claude.permission = Some("acceptEdits".into());
+        let claude_args = argv("coder", &claude, "/home").unwrap();
         assert_eq!(
-            argv("coder", &claude, "/home"),
-            Ok(vec![
+            claude_args[..7],
+            [
                 "claude",
                 "--model",
                 "model-1",
@@ -181,17 +207,23 @@ mod tests {
                 "--permission-mode",
                 "acceptEdits"
             ]
-            .into_iter()
-            .map(String::from)
-            .collect())
+        );
+        assert_eq!(claude_args[7], "--settings");
+        let settings: serde_json::Value = serde_json::from_str(&claude_args[8]).unwrap();
+        assert!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap()
+                .contains("session chair claude:")
         );
 
         let mut codex = role("codex");
         codex.sandbox = Some("workspace-write".into());
         codex.approval = Some("never".into());
+        let codex_args = argv("coder", &codex, "/home x").unwrap();
         assert_eq!(
-            argv("coder", &codex, "/home x"),
-            Ok(vec![
+            codex_args[..13],
+            [
                 "codex",
                 "--model",
                 "model-1",
@@ -206,10 +238,13 @@ mod tests {
                 "--ask-for-approval",
                 "never"
             ]
-            .into_iter()
-            .map(String::from)
-            .collect())
         );
+        assert_eq!(
+            codex_args[13..15],
+            ["--dangerously-bypass-hook-trust", "-c"]
+        );
+        assert!(codex_args[15].starts_with("hooks.SessionStart="));
+        assert!(codex_args[15].contains("session chair codex:"));
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
@@ -238,13 +273,15 @@ mod tests {
         );
         agy.model = None;
         agy.permission = None;
+        let agy_args = argv("coder", &agy, "/home").unwrap();
         assert_eq!(
-            argv("coder", &agy, "/home"),
-            Ok(vec!["agy", "--effort", "high"]
+            agy_args,
+            vec!["agy", "--effort", "high"]
                 .into_iter()
                 .map(String::from)
-                .collect())
+                .collect::<Vec<_>>()
         );
+        assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
     }
 
     #[test]
