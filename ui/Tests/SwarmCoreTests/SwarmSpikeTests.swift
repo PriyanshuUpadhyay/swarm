@@ -104,6 +104,21 @@ struct SwarmSpikeTests {
         #expect(choice.roleID == nil)
     }
 
+    @Test("Launch roles follow the selected provider, including AGY")
+    func providerRoles() {
+        let roles = [
+            SwarmRole(role: "claude-role", runner: "x", provider: "claude", model: "opus", effort: nil, sandbox: nil, fallbacks: []),
+            SwarmRole(role: "agy-role", runner: "y", provider: "agy", model: "gemini", effort: nil, sandbox: nil, fallbacks: []),
+        ]
+        #expect(SwarmLaunchChoice.roles(roles, for: "claude").map(\.id) == ["claude-role"])
+        #expect(SwarmLaunchChoice.roles(roles, for: "agy").map(\.id) == ["agy-role"])
+        var choice = SwarmLaunchChoice()
+        let accepted = choice.selectRole(roles[1])
+        #expect(accepted)
+        #expect(SwarmChatLaunchPlan(directory: "/work", role: roles[1], account: .auto)?.account == nil)
+        #expect(SwarmChatLaunchPlan(directory: "/work", role: roles[0], account: .auto)?.account == "auto")
+    }
+
     private func session(_ id: String, cwd: String, chair: String?) -> SwarmSession {
         SwarmSession(
             id: SwarmSessionID(id), talkMode: "lane", adapter: "tmux-solo", cwd: cwd,

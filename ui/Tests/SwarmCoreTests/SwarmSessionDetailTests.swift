@@ -29,6 +29,9 @@ struct SwarmSessionDetailTests {
             == .ready(log: URL(fileURLWithPath: value.chairLog!), format: "claude"))
         let reader = SwarmChairTranscript()
         #expect(await reader.poll(session: value) == .waiting)
+        value.chairProvider = nil
+        #expect(await reader.poll(session: value, chairProvider: "agy")
+            == .notice("No transcript reader for this provider yet"))
     }
 
     @Test("The real transcript tool makes rows from a chair log")

@@ -7,10 +7,13 @@ public enum ChairTranscriptSource: Sendable, Equatable {
     case unsupported
 
     public static func resolve(
-        session: SwarmSession, logExists: (String) -> Bool
+        session: SwarmSession, chairProvider: String? = nil,
+        logExists: (String) -> Bool
     ) -> ChairTranscriptSource {
+        let provider = session.chairProvider ?? chairProvider
+        if provider == "agy" { return .unsupported }
         guard let path = session.chairLog, !path.isEmpty, logExists(path) else { return .waiting }
-        switch session.chairProvider {
+        switch provider {
         case "claude": return .ready(log: URL(fileURLWithPath: path), format: "claude")
         case "codex": return .ready(log: URL(fileURLWithPath: path), format: "codex")
         default: return .unsupported
@@ -21,12 +24,14 @@ public enum ChairTranscriptSource: Sendable, Equatable {
 public enum ChairTranscriptSnapshot: Sendable, Equatable {
     case waiting
     case rows([TranscriptRow])
+    case notice(String)
     case unavailable(String)
 
     public var printText: String {
         switch self {
         case .waiting: "notice The chair has not written its log yet"
         case .rows(let rows): rows.map(\.printLine).joined(separator: "\n")
+        case .notice(let message): "notice \(message)"
         case .unavailable(let message): "error \(message)"
         }
     }
@@ -41,9 +46,12 @@ public actor SwarmChairTranscript {
 
     public init(binary: URL? = nil) { self.binary = binary }
 
-    public func poll(session: SwarmSession) async -> ChairTranscriptSnapshot {
+    public func poll(
+        session: SwarmSession, chairProvider: String? = nil
+    ) async -> ChairTranscriptSnapshot {
         switch ChairTranscriptSource.resolve(
-            session: session, logExists: FileManager.default.fileExists(atPath:)
+            session: session, chairProvider: chairProvider,
+            logExists: FileManager.default.fileExists(atPath:)
         ) {
         case .waiting:
             reader = nil
@@ -51,7 +59,7 @@ public actor SwarmChairTranscript {
             rows = []
             return .waiting
         case .unsupported:
-            return .unavailable("This chair's log format is not supported")
+            return .notice("No transcript reader for this provider yet")
         case .ready(let path, let format):
             guard let binary = binary ?? TranscriptToolProcess.bundled else {
                 return .unavailable("The transcript tool is not available")

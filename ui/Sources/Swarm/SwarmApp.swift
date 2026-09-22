@@ -10,6 +10,7 @@ final class SessionsTreeModel {
 
     var tree = SessionsTree(projects: [])
     var selectedID: SwarmSessionID?
+    private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var error: String?
 
@@ -18,17 +19,29 @@ final class SessionsTreeModel {
     }
 
     func select(_ id: SwarmSessionID) {
+        pendingID = nil
         selectedID = id
         agents = []
+    }
+
+    func startChat(_ plan: SwarmChatLaunchPlan) async throws -> SwarmSessionID {
+        try await SwarmChatLauncher.start(plan, bus: bus) { id in
+            await MainActor.run {
+                self.pendingID = id
+                self.selectedID = id
+                self.agents = []
+            }
+        }
     }
 
     func refresh() async throws {
         let sessions = try await bus.sessions()
         tree = try await discovery.tree(sessions: sessions)
         if let selectedID, let row = tree.session(selectedID) {
+            pendingID = nil
             self.selectedID = row.id
             agents = try await bus.agents(in: row.session)
-        } else {
+        } else if pendingID == nil {
             selectedID = nil
             agents = []
         }
@@ -47,6 +60,7 @@ final class SessionsTreeModel {
 private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
+    @State private var newChatDirectory: String?
 
     var body: some View {
         NavigationSplitView {
@@ -58,15 +72,32 @@ private struct SessionsWindow: View {
                             DisclosureGroup {
                                 ForEach(worktree.sessions) { row in sessionButton(row) }
                             } label: {
-                                Text(URL(fileURLWithPath: worktree.entry.path).lastPathComponent)
+                                rowLabel(
+                                    URL(fileURLWithPath: worktree.entry.path).lastPathComponent,
+                                    directory: worktree.entry.path
+                                )
                             }
                         }
                     } label: {
-                        Text(project.name)
+                        rowLabel(project.name, directory: project.path)
                     }
                 }
             }
             .navigationTitle("Sessions")
+            .simultaneousGesture(TapGesture().onEnded {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                panes.clearFocus()
+            })
+            .toolbar {
+                Button("New chat", systemImage: "plus") {
+                    if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
+                       let selectedID = model.selectedID {
+                        newChatDirectory = model.tree.launchDirectory(for: selectedID)
+                    }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(model.selectedID == nil)
+            }
         } detail: {
             if let row = model.selectedSession {
                 SessionDetailView(row: row, agents: model.agents, panes: panes)
@@ -85,16 +116,41 @@ private struct SessionsWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             panes.stopAll()
         }
+        .sheet(item: Binding(
+            get: { newChatDirectory.map(LaunchTarget.init) },
+            set: { newChatDirectory = $0?.directory }
+        )) { target in
+            NewChatSheet(directory: target.directory, launch: model.startChat) { _ in
+                Task { try? await model.refresh() }
+            }
+        }
+    }
+
+    private func rowLabel(_ name: String, directory: String) -> some View {
+        HStack {
+            Text(name)
+            Spacer()
+            Button("New chat", systemImage: "plus") { newChatDirectory = directory }
+                .buttonStyle(.borderless)
+                .help("New chat in \(directory)")
+        }
     }
 
     private func sessionButton(_ row: SwarmProjectSession) -> some View {
         Button {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            panes.clearFocus()
             model.select(row.id)
         } label: {
             Text(SessionsTree.rowText(row, now: Int(Date().timeIntervalSince1970)))
         }
         .buttonStyle(.plain)
     }
+}
+
+private struct LaunchTarget: Identifiable {
+    let directory: String
+    var id: String { directory }
 }
 
 struct SwarmApp: App {
@@ -122,15 +178,40 @@ enum SwarmExecutable {
             await printTranscript(prefix: arguments[1])
         } else if arguments.count == 3, arguments[0] == "--attach-check" {
             await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
+        } else if arguments.count == 4, arguments[0] == "--launch-check" {
+            await launchCheck(directory: arguments[1], provider: arguments[2], roleID: arguments[3])
         } else {
             SwarmApp.main()
+        }
+    }
+
+    private static func launchCheck(directory: String, provider: String, roleID: String) async {
+        do {
+            await LoginShellPath.ready()
+            let roles = try await SwarmCLIProfileSource().roles()
+            guard let role = SwarmLaunchChoice.roles(roles, for: provider).first(where: { $0.id == roleID }),
+                  let plan = SwarmChatLaunchPlan(directory: directory, role: role, account: .auto) else {
+                throw SwarmProfileError.failed("Provider, role, or directory is invalid")
+            }
+            let id = try await SessionsTreeModel().startChat(plan)
+            let agent = try await SwarmChatLauncher.waitForChairPane(in: id, bus: SwarmCLIBus())
+            print("session: \(id.rawValue)")
+            print("agent: \(agent.id.rawValue)")
+            print("pane: \(agent.pane ?? "")")
+        } catch {
+            fputs("\((error as? SwarmProfileError)?.message ?? String(describing: error))\n", stderr)
+            exit(1)
         }
     }
 
     private static func printTranscript(prefix: String) async {
         do {
             let session = try await matchingSession(prefix: prefix)
-            let snapshot = await SwarmChairTranscript().poll(session: session)
+            let agents = try await SwarmCLIBus().agents(in: session)
+            let provider = agents.first { $0.id == SwarmPanePolicy.chair }?.provider
+            let snapshot = await SwarmChairTranscript().poll(
+                session: session, chairProvider: provider
+            )
             print(snapshot.printText)
             if case .unavailable = snapshot { exit(1) }
         } catch {

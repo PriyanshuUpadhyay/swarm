@@ -1,16 +1,13 @@
 import Foundation
 
-public extension SwarmRole {
-    var launchAgentKind: AgentKind? {
-        switch provider {
-        case "claude": .claudeCode
-        case "codex": .codex
-        default: nil
-        }
-    }
-}
-
 public struct SwarmLaunchChoice: Sendable, Equatable {
+    public static let providers = ["claude", "codex", "agy"]
+
+    public static func roles(_ roles: [SwarmRole], for provider: String) -> [SwarmRole] {
+        guard providers.contains(provider) else { return [] }
+        return roles.filter { $0.provider == provider }
+    }
+
     public private(set) var roleID: String?
     public private(set) var model: String = ""
     public private(set) var effort: String = ""
@@ -20,7 +17,7 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
 
     @discardableResult
     public mutating func selectRole(_ role: SwarmRole?) -> Bool {
-        guard role == nil || role?.launchAgentKind != nil else { return false }
+        guard role == nil || Self.providers.contains(role!.provider) else { return false }
         roleID = role?.id
         model = role?.model ?? ""
         effort = role?.effort ?? ""
