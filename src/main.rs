@@ -635,6 +635,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         };
         let resolved = resolve_role(role)?;
         let provider = resolved.provider.clone();
+        if provider.as_deref() == Some("codex") {
+            if let Some(account_name) = account {
+                let accounts = load_accounts("codex", true)?;
+                let account = swarm::profiles::resolve_account(&accounts, account_name)
+                    .map_err(|error| format!("swarm: {error}"))?;
+                swarm::bus::ensure_codex_trust(
+                    std::path::Path::new(&account.home),
+                    &std::env::current_dir()?,
+                )?;
+            }
+        }
         let command = swarm::bus::argv(role, &resolved, &swarm::paths::home()?)?;
         return spawn_agent(
             &connection,

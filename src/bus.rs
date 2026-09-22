@@ -123,20 +123,6 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            // Codex reads hooks from hooks.json only, so CLI hook settings do not run.
-            // Keep the hook out of argv until Codex supports a CLI hook flag.
-            args.extend([
-                "-c".into(),
-                format!(
-                    "projects.{}.trust_level=\"trusted\"",
-                    serde_json::to_string(
-                        &std::env::current_dir()
-                            .map_err(|error| format!("swarm: cannot find current directory: {error}"))?
-                            .to_string_lossy()
-                    )
-                    .expect("string serialization cannot fail")
-                ),
-            ]);
             Ok(args)
         }
         "agy" => {
@@ -162,6 +148,31 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             "swarm: role {role} uses unsupported provider {provider}"
         )),
     }
+}
+
+/// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
+/// Keep the existing file byte-identical when the project table is already present.
+pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
+    let path = home.join("config.toml");
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let table = format!(
+        "[projects.{}]",
+        serde_json::to_string(&cwd.to_string_lossy()).expect("string serialization cannot fail")
+    );
+    if existing.lines().any(|line| line.trim() == table) {
+        return Ok(());
+    }
+    let mut addition = String::new();
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        addition.push('\n');
+    }
+    addition.push_str(&format!("{table}\ntrust_level = \"trusted\"\n"));
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, addition.as_bytes()))
+        .map_err(|error| format!("cannot update Codex config: {error}"))
 }
 
 fn chair_hook_command(provider: &str) -> Result<String, String> {
@@ -244,9 +255,7 @@ mod tests {
                 "never"
             ]
         );
-        assert_eq!(codex_args[13], "-c");
-        assert!(codex_args[14].starts_with("projects.\""));
-        assert!(codex_args[14].ends_with(".trust_level=\"trusted\""));
+        assert_eq!(codex_args.len(), 13);
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
@@ -284,6 +293,20 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
+    }
+
+    #[test]
+    fn codex_trust_is_appended_once_per_cwd() {
+        let root = std::env::temp_dir().join(format!("swarm-trust-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let config = root.join("config.toml");
+        ensure_codex_trust(&root, std::path::Path::new("/one")).unwrap();
+        let once = std::fs::read_to_string(&config).unwrap();
+        ensure_codex_trust(&root, std::path::Path::new("/one")).unwrap();
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), once);
+        ensure_codex_trust(&root, std::path::Path::new("/two")).unwrap();
+        assert_eq!(std::fs::read_to_string(&config).unwrap().matches("trust_level = \"trusted\"").count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
