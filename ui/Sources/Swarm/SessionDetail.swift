@@ -53,8 +53,10 @@ struct SessionDetailView: View {
         HSplitView {
             transcriptColumn
                 .frame(minWidth: 320)
-            paneColumn
-                .frame(minWidth: 640)
+            if SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
+                paneColumn
+                    .frame(minWidth: 640)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
@@ -166,20 +168,14 @@ struct SessionDetailView: View {
     private var paneColumn: some View {
         let cells = SwarmPanePolicy.cells(session: row.session, agents: agents)
         return Group {
-            if cells.isEmpty {
-                Text("No live child agents")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(cells) { cell in
-                            AgentCellView(session: row.session, cell: cell, panes: panes)
-                                .frame(height: 320)
-                        }
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(cells) { cell in
+                        AgentCellView(session: row.session, cell: cell, panes: panes)
+                            .frame(height: 320)
                     }
-                    .padding(8)
                 }
+                .padding(8)
             }
         }
     }
