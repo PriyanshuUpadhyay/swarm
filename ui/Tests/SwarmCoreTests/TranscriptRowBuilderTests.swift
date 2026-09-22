@@ -22,4 +22,18 @@ struct TranscriptRowBuilderTests {
         let second = TranscriptEvent.agentMessageChunk(text: "B", meta: Meta(uuid: "two"))
         #expect(TranscriptRowBuilder.rows(from: [first, second]).map(\.text) == ["A", "B"])
     }
+
+    @Test("Tool output, permission and errors become distinct rows")
+    func actionRows() {
+        let meta = Meta(uuid: "event-1")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "call-1", name: "ls", input: .object([:]), status: .pending, meta: meta),
+            .toolCallUpdate(toolCallID: "call-1", status: .completed, content: "one\ntwo", meta: meta),
+            .elicitation(toolCallID: "ask-1", questions: [Question(question: "Proceed?")], meta: meta),
+            .error(message: "failed", meta: meta),
+        ])
+        #expect(rows.map(\.kind) == [.toolUse, .toolResult, .permission, .error])
+        #expect(Set(rows.map(\.eventID)).count == rows.count)
+        #expect(rows[1].text == "one\ntwo")
+    }
 }

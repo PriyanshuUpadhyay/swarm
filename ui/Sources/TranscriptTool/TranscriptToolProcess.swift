@@ -131,6 +131,11 @@ public final class TranscriptToolProcess: Sendable {
                 return candidate
             }
         }
+        let checkoutTool = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("packages/transcript/zig-out/bin/transcript")
+        if FileManager.default.fileExists(atPath: checkoutTool.path) { return checkoutTool }
         return nil
     }
 }
