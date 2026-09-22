@@ -185,11 +185,27 @@ private struct WindowFrameRestorer: NSViewRepresentable {
 }
 
 private final class WindowFrameView: NSView {
+    private let frameName = "SwarmSessionsWindow"
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, window.frameAutosaveName != "SwarmSessionsWindow" else { return }
-        window.setFrameAutosaveName("SwarmSessionsWindow")
-        window.setFrameUsingName("SwarmSessionsWindow")
+        guard let window, window.frameAutosaveName != frameName else { return }
+        window.setFrameAutosaveName(frameName)
+        if !window.setFrameUsingName(frameName) {
+            window.setFrame(window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame, display: true)
+        }
+        let notifications = NotificationCenter.default
+        notifications.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didEndLiveResizeNotification, object: window)
+        notifications.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didMoveNotification, object: window)
+        notifications.addObserver(self, selector: #selector(saveFrame), name: NSApplication.willTerminateNotification, object: nil)
+    }
+
+    @objc private func saveFrame() {
+        window?.saveFrame(usingName: frameName)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
