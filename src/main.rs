@@ -264,6 +264,37 @@ fn deliver(
     Ok(seq)
 }
 
+fn ack(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    agent_id: &str,
+    seq: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    swarm::store::ack(connection, session_id, seq, agent_id)?;
+    if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
+        if swarm::store::has_unrung_unread(connection, session_id, agent_id)? {
+            connection.execute(
+                "UPDATE message SET rung_at = unixepoch(), rings = 1
+                 WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM read_mark
+                       WHERE read_mark.session_id = message.session_id
+                         AND message_seq = message.seq AND agent_id = ?2
+                   )",
+                (session_id, agent_id),
+            )?;
+            let ring = swarm::adapter::load(root, adapter_name)
+                .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+            if let Err(error) = ring {
+                eprintln!("swarm: ring failed: {error}");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn add_agent(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -719,7 +750,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, seq] if cmd == "ack" => {
             let seq: i64 = seq.parse().map_err(|_| format!("swarm: bad seq {seq}"))?;
-            swarm::store::ack(&connection, &session_id, seq, &agent_id)
+            ack(&mut connection, &root, &adapter_name(), &session_id, &agent_id, seq)
         }
         _ => Err(USAGE.into()),
     }
@@ -836,10 +867,12 @@ mod tests {
         let ring = format!("%2:{}\n", ring_text(&root));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
 
-        swarm::store::ack(&connection, &session, first, CODER).unwrap();
-        swarm::store::ack(&connection, &session, second, CODER).unwrap();
-        deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "third").unwrap();
+        ack(&mut connection, &root, "fake", &session, CODER, first).unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
+        ack(&mut connection, &root, "fake", &session, CODER, second).unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
+        deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "third").unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(3));
     }
 
     #[test]
