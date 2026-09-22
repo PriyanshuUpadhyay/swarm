@@ -108,16 +108,40 @@ public actor SwarmChairTranscript {
     }
 }
 
+public enum SwarmAgentCellKind: Sendable, Equatable {
+    case attach
+    case notice(String)
+    case ended
+}
+
+public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
+    public let agent: SwarmAgent
+    public let kind: SwarmAgentCellKind
+    public var id: SwarmAgentID { agent.id }
+}
+
 public enum SwarmPanePolicy {
     public static let chair = SwarmAgentID("orchestrator")
 
-    public static func selectedAgent(
-        in agents: [SwarmAgent], preferred: SwarmAgentID
-    ) -> SwarmAgent? {
-        let live = agents.filter { $0.alive != false }
-        return live.first { $0.id == preferred }
-            ?? live.first { $0.id == chair }
-            ?? live.first
+    public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
+        agents
+            .filter { $0.id != chair && $0.id.rawValue != session.chairID?.rawValue }
+            .sorted {
+                if ($0.alive == false) != ($1.alive == false) { return $1.alive == false }
+                if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }
+                return $0.id.rawValue < $1.id.rawValue
+            }
+            .map { agent in
+                let kind: SwarmAgentCellKind
+                if agent.alive == false {
+                    kind = .ended
+                } else if let reason = unavailableReason(session: session, agent: agent) {
+                    kind = .notice(reason)
+                } else {
+                    kind = .attach
+                }
+                return SwarmAgentCell(agent: agent, kind: kind)
+            }
     }
 
     public static func unavailableReason(session: SwarmSession, agent: SwarmAgent) -> String? {

@@ -43,7 +43,6 @@ struct SessionDetailView: View {
     let panes: AgentPaneStore
 
     @State private var model = SessionDetailModel()
-    @State private var agentID = SwarmPanePolicy.chair
     @State private var followsTail = true
     @State private var atBottom = true
     @State private var userScrolling = false
@@ -55,7 +54,7 @@ struct SessionDetailView: View {
             transcriptColumn
                 .frame(minWidth: 320)
             paneColumn
-                .frame(minWidth: 320)
+                .frame(minWidth: 640)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
@@ -165,36 +164,54 @@ struct SessionDetailView: View {
     }
 
     private var paneColumn: some View {
-        VStack(spacing: 0) {
-            Picker("Agent", selection: $agentID) {
-                ForEach(agents) { agent in
-                    Text(agent.id.rawValue).tag(agent.id)
-                        .disabled(agent.alive == false || agent.pane == nil)
-                        .foregroundStyle(agent.alive == false ? .secondary : .primary)
+        let cells = SwarmPanePolicy.cells(session: row.session, agents: agents)
+        return Group {
+            if cells.isEmpty {
+                Text("No child agents yet")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(cells) { cell in
+                            AgentCellView(session: row.session, cell: cell, panes: panes)
+                                .frame(height: 320)
+                        }
+                    }
+                    .padding(8)
                 }
             }
-            .onChange(of: agents) { _, agents in
-                agentID = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID)?.id
-                    ?? SwarmPanePolicy.chair
-            }
-            .pickerStyle(.segmented)
-            .padding(8)
-            .simultaneousGesture(TapGesture().onEnded { panes.clearFocus() })
-            Divider()
+        }
+    }
+}
+
+private struct AgentCellView: View {
+    let session: SwarmSession
+    let cell: SwarmAgentCell
+    let panes: AgentPaneStore
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("\(cell.agent.id.rawValue) · \(cell.agent.role) · \(cell.agent.provider ?? "unknown") · \(cell.agent.alive == false ? "ended" : "live")")
+                .font(.caption)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Group {
-                if let agent = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID) {
-                    if let reason = SwarmPanePolicy.unavailableReason(session: row.session, agent: agent) {
-                        ContentUnavailableView(reason, systemImage: "terminal")
-                    } else {
-                        AgentTerminalView(session: row.session, agent: agent, store: panes)
-                            .id(panes.key(session: row.session, agent: agent))
-                    }
-                } else {
-                    ContentUnavailableView("No agents", systemImage: "terminal")
+                switch cell.kind {
+                case .attach:
+                    AgentTerminalView(session: session, agent: cell.agent, store: panes)
+                case .notice(let reason):
+                    ContentUnavailableView(reason, systemImage: "terminal")
+                case .ended:
+                    Text("ended").foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(6)
+        .background(.background)
+        .overlay { RoundedRectangle(cornerRadius: 4).stroke(.separator) }
     }
 }
 
