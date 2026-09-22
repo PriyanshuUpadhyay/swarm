@@ -84,17 +84,22 @@ private struct SessionsWindow: View {
                 }
             }
             .navigationTitle("Sessions")
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300)
             .simultaneousGesture(TapGesture().onEnded {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
             })
             .toolbar {
-                Button("New chat", systemImage: "plus") {
+                Button {
                     if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
                        let selectedID = model.selectedID {
                         newChatDirectory = model.tree.launchDirectory(for: selectedID)
                     }
+                } label: {
+                    Image(systemName: "plus.circle")
                 }
+                .help("New chat")
+                .accessibilityLabel("New chat")
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(model.selectedID == nil)
             }
@@ -129,10 +134,15 @@ private struct SessionsWindow: View {
     private func rowLabel(_ name: String, directory: String) -> some View {
         HStack {
             Text(name)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer()
-            Button("New chat", systemImage: "plus") { newChatDirectory = directory }
-                .buttonStyle(.borderless)
-                .help("New chat in \(directory)")
+            Button { newChatDirectory = directory } label: {
+                Image(systemName: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("New chat")
+            .accessibilityLabel("New chat")
         }
     }
 
@@ -143,6 +153,8 @@ private struct SessionsWindow: View {
             model.select(row.id)
         } label: {
             Text(SessionsTree.rowText(row, now: Int(Date().timeIntervalSince1970)))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .buttonStyle(.plain)
     }
