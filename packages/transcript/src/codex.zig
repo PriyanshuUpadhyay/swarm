@@ -164,8 +164,6 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                     "<subagent_notification>",
                     "<no retained transcript delta entries>",
                     "# AGENTS.md",
-                    "# Context",
-                    "# Validator",
                 };
                 var is_tagged_context = false;
                 for (context_prefixes) |prefix| {
@@ -390,7 +388,7 @@ test "role user text parts become user chunks unless tagged context" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
-        \\{"type":"response_item","timestamp":"t","payload":{"type":"message","id":"m1","role":"user","content":[{"type":"input_text","text":"one"},{"type":"input_text","text":"  # Context rules"},{"type":"text","text":"<new_tag> two"}]}}
+        \\{"type":"response_item","timestamp":"t","payload":{"type":"message","id":"m1","role":"user","content":[{"type":"input_text","text":"one"},{"type":"input_text","text":"  # AGENTS.md rules"},{"type":"text","text":"<new_tag> two"}]}}
     ;
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(3, events.len);
@@ -399,8 +397,20 @@ test "role user text parts become user chunks unless tagged context" {
     try std.testing.expectEqualStrings("m1", events[0].user_message_chunk.meta.uuid);
     try std.testing.expectEqualStrings("t", events[0].user_message_chunk.meta.timestamp);
     try std.testing.expectEqualStrings("context", events[1].system_message.kind);
-    try std.testing.expectEqualStrings("  # Context rules", events[1].system_message.text);
+    try std.testing.expectEqualStrings("  # AGENTS.md rules", events[1].system_message.text);
     try std.testing.expectEqualStrings("<new_tag> two", events[2].user_message_chunk.text);
+}
+
+test "markdown headings stay user chunks" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"response_item","timestamp":"t","payload":{"type":"message","id":"m1","role":"user","content":[{"type":"input_text","text":"# Context from my IDE"},{"type":"input_text","text":"# Validator task"}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("# Context from my IDE", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("# Validator task", events[1].user_message_chunk.text);
 }
 
 test "event user message stays ignored when it has text" {
