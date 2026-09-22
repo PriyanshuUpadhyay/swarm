@@ -50,12 +50,13 @@ struct SessionDetailView: View {
     @FocusState private var composerFocused: Bool
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             transcriptColumn
-                .frame(minWidth: 320)
+                .frame(minWidth: 320, maxWidth: .infinity)
             if SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
                 paneColumn
-                    .frame(minWidth: 640)
+                    .frame(minWidth: 360, maxWidth: .infinity)
+                    .id(row.session.id.rawValue)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
