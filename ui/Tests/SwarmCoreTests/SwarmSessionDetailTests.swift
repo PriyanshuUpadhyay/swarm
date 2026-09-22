@@ -19,7 +19,7 @@ struct SwarmSessionDetailTests {
             == "This agent has no pane")
     }
 
-    @Test("The grid excludes the chair and sorts live agents by creation time")
+    @Test("The grid includes only live agents and sorts by creation time")
     func agentCells() {
         var value = session(adapter: "tmux-solo")
         value.chairID = .init("other-chair")
@@ -32,10 +32,8 @@ struct SwarmSessionDetailTests {
             SwarmAgent(id: .init("no-pane"), role: "code", pane: nil, alive: nil, createdAt: 4),
         ]
         let cells = SwarmPanePolicy.cells(session: value, agents: agents)
-        #expect(cells.map(\.id.rawValue) == ["early", "later", "no-pane", "dead"])
-        #expect(cells.map(\.kind) == [
-            .attach, .attach, .notice("This agent has no pane"), .ended,
-        ])
+        #expect(cells.map(\.id.rawValue) == ["early", "later"])
+        #expect(cells.map(\.kind) == [.attach, .attach])
         value.adapter = "herdr"
         #expect(SwarmPanePolicy.cells(session: value, agents: agents).first?.kind
             == .notice("This session's host has no attach"))

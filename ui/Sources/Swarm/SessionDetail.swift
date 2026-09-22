@@ -167,7 +167,7 @@ struct SessionDetailView: View {
         let cells = SwarmPanePolicy.cells(session: row.session, agents: agents)
         return Group {
             if cells.isEmpty {
-                Text("No child agents yet")
+                Text("No live child agents")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -202,9 +202,6 @@ private struct AgentCellView: View {
                     AgentTerminalView(session: session, agent: cell.agent, store: panes)
                 case .notice(let reason):
                     ContentUnavailableView(reason, systemImage: "terminal")
-                case .ended:
-                    Text("ended").foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
