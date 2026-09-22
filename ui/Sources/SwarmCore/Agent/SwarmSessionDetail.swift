@@ -111,7 +111,6 @@ public actor SwarmChairTranscript {
 public enum SwarmAgentCellKind: Sendable, Equatable {
     case attach
     case notice(String)
-    case ended
 }
 
 public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
@@ -125,17 +124,16 @@ public enum SwarmPanePolicy {
 
     public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
         agents
-            .filter { $0.id != chair && $0.id.rawValue != session.chairID?.rawValue }
+            .filter {
+                $0.alive == true && $0.id != chair && $0.id.rawValue != session.chairID?.rawValue
+            }
             .sorted {
-                if ($0.alive == false) != ($1.alive == false) { return $1.alive == false }
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }
                 return $0.id.rawValue < $1.id.rawValue
             }
             .map { agent in
                 let kind: SwarmAgentCellKind
-                if agent.alive == false {
-                    kind = .ended
-                } else if let reason = unavailableReason(session: session, agent: agent) {
+                if let reason = unavailableReason(session: session, agent: agent) {
                     kind = .notice(reason)
                 } else {
                     kind = .attach
