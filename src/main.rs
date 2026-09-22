@@ -59,11 +59,16 @@ fn deliver(
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
     let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
     if let Some(pane) = swarm::store::pane_of(connection, session_id, &recipient)? {
-        connection.execute("UPDATE message SET rung_at = unixepoch() WHERE seq = ?1", [seq])?;
-        let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
-        if let Err(error) = ring {
-            eprintln!("swarm: ring failed: {error}");
+        if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+            connection.execute(
+                "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE seq = ?1",
+                [seq],
+            )?;
+            let ring = swarm::adapter::load(root, adapter_name)
+                .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+            if let Err(error) = ring {
+                eprintln!("swarm: ring failed: {error}");
+            }
         }
     }
     Ok(seq)
@@ -118,12 +123,12 @@ fn sweep_once(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
-            if swarm::store::has_unread_older_than(connection, session_id, &child, RERING_AFTER_SECS)? {
+            if swarm::store::rering_due(connection, session_id, &child, RERING_AFTER_SECS)? {
                 connection.execute(
-                    "UPDATE message SET rung_at = unixepoch()
+                    "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
                      WHERE session_id = ?1 AND recipient_id = ?2
-                       AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)",
-                    (session_id, &child, RERING_AFTER_SECS),
+                       AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)",
+                    (session_id, &child),
                 )?;
                 match adapter.run("ring", &[("pane", &pane), ("text", &ring_text(root))]) {
                     Ok(_) => eprintln!("swarm: re-ringed {child}"),
@@ -321,7 +326,43 @@ mod tests {
         connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
         sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
 
-        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), ring.repeat(2));
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
+        connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
+        sweep_once(&mut connection, &root, &adapter, session, "orchestrator").unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
+    }
+
+    #[test]
+    fn deliver_rings_only_when_no_unread_is_rung() {
+        let root = std::env::temp_dir().join(format!("swarm-deliver-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        let ring_log = root.join("rings");
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            format!(
+                "self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE:$SWARM_TEXT\" >> '{}'\nlist = true\nclose = true\ncapture = true\n",
+                ring_log.display()
+            ),
+        )
+        .unwrap();
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane").unwrap();
+        swarm::store::add_agent(&connection, session, "orchestrator", "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, session, "child", "coder").unwrap();
+        swarm::store::set_pane(&connection, session, "child", "%2").unwrap();
+
+        let seq1 = deliver(&mut connection, &root, "fake", session, "orchestrator", "child", "ask", "first").unwrap();
+        let seq2 = deliver(&mut connection, &root, "fake", session, "orchestrator", "child", "ask", "second").unwrap();
+
+        let ring = format!("%2:{}\n", ring_text(&root));
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
+
+        swarm::store::ack(&connection, session, seq1, "child").unwrap();
+        swarm::store::ack(&connection, session, seq2, "child").unwrap();
+
+        deliver(&mut connection, &root, "fake", session, "orchestrator", "child", "ask", "third").unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
     }
 
     #[test]
