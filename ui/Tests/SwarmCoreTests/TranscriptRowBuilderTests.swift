@@ -4,6 +4,14 @@ import TranscriptTool
 
 @Suite("Transcript rows")
 struct TranscriptRowBuilderTests {
+    @Test("New rows keep following until the user scrolls away")
+    func tailFollow() {
+        #expect(TranscriptTail.follows(current: true, atBottom: false, userScrolled: false))
+        #expect(!TranscriptTail.follows(current: true, atBottom: false, userScrolled: true))
+        #expect(!TranscriptTail.follows(current: false, atBottom: true, userScrolled: false))
+        #expect(TranscriptTail.follows(current: false, atBottom: true, userScrolled: true))
+    }
+
     @Test("Agent chunks with one UUID form one row")
     func agentChunksFold() {
         let first = TranscriptEvent.agentMessageChunk(

@@ -9,7 +9,10 @@ final class SessionsTreeModel {
     private let discovery = SwarmSessionDiscovery()
 
     var tree = SessionsTree(projects: [])
-    var selectedID: SwarmSessionID?
+    var selectedID: SwarmSessionID? = UserDefaults.standard.string(forKey: "selectedSessionID")
+        .map(SwarmSessionID.init) {
+        didSet { UserDefaults.standard.set(selectedID?.rawValue, forKey: "selectedSessionID") }
+    }
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var error: String?
@@ -60,15 +63,17 @@ private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
+    @State private var expandedProjects = Set(UserDefaults.standard.stringArray(forKey: "expandedProjects") ?? [])
+    @State private var expandedWorktrees = Set(UserDefaults.standard.stringArray(forKey: "expandedWorktrees") ?? [])
 
     var body: some View {
         NavigationSplitView {
             List {
                 ForEach(model.tree.projects) { project in
-                    DisclosureGroup {
+                    DisclosureGroup(isExpanded: expansion(project.path, in: $expandedProjects, key: "expandedProjects")) {
                         ForEach(project.sessions) { row in sessionButton(row) }
                         ForEach(project.worktrees) { worktree in
-                            DisclosureGroup {
+                            DisclosureGroup(isExpanded: expansion(worktree.id, in: $expandedWorktrees, key: "expandedWorktrees")) {
                                 ForEach(worktree.sessions) { row in sessionButton(row) }
                             } label: {
                                 rowLabel(
@@ -115,6 +120,7 @@ private struct SessionsWindow: View {
                 ContentUnavailableView("Select a session", systemImage: "square.stack")
             }
         }
+        .background(WindowFrameRestorer())
         .task {
             LoginShellPath.begin()
             await model.run()
@@ -148,6 +154,17 @@ private struct SessionsWindow: View {
         }
     }
 
+    private func expansion(_ id: String, in values: Binding<Set<String>>, key: String) -> Binding<Bool> {
+        Binding(
+            get: { values.wrappedValue.contains(id) },
+            set: { expanded in
+                if expanded { values.wrappedValue.insert(id) }
+                else { values.wrappedValue.remove(id) }
+                UserDefaults.standard.set(Array(values.wrappedValue), forKey: key)
+            }
+        )
+    }
+
     private func sessionButton(_ row: SwarmProjectSession) -> some View {
         Button {
             NSApp.keyWindow?.makeFirstResponder(nil)
@@ -159,6 +176,20 @@ private struct SessionsWindow: View {
                 .truncationMode(.middle)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct WindowFrameRestorer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowFrameView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private final class WindowFrameView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, window.frameAutosaveName != "SwarmSessionsWindow" else { return }
+        window.setFrameAutosaveName("SwarmSessionsWindow")
+        window.setFrameUsingName("SwarmSessionsWindow")
     }
 }
 

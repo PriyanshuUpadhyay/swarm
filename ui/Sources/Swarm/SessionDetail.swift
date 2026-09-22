@@ -45,6 +45,8 @@ struct SessionDetailView: View {
     @State private var model = SessionDetailModel()
     @State private var agentID = SwarmPanePolicy.chair
     @State private var followsTail = true
+    @State private var atBottom = true
+    @State private var userScrolling = false
     @State private var showHiddenRows = false
     @FocusState private var composerFocused: Bool
 
@@ -69,45 +71,68 @@ struct SessionDetailView: View {
     private var transcriptColumn: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        switch model.snapshot {
-                        case .waiting:
-                            Text("The chair has not written its log yet")
-                                .foregroundStyle(.secondary)
-                        case .notice(let message):
-                            Text(verbatim: message).foregroundStyle(.secondary)
-                        case .unavailable(let message):
-                            Text(verbatim: message).foregroundStyle(.red)
-                        case .rows(let rows):
-                            let hidden = rows.filter(\.isHiddenByDefault).count
-                            if hidden > 0 {
-                                Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
-                                    showHiddenRows.toggle()
+                VStack(spacing: 0) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            switch model.snapshot {
+                            case .waiting:
+                                Text("The chair has not written its log yet")
+                                    .foregroundStyle(.secondary)
+                            case .notice(let message):
+                                Text(verbatim: message).foregroundStyle(.secondary)
+                            case .unavailable(let message):
+                                Text(verbatim: message).foregroundStyle(.red)
+                            case .rows(let rows):
+                                let hidden = rows.filter(\.isHiddenByDefault).count
+                                if hidden > 0 {
+                                    Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
+                                        showHiddenRows.toggle()
+                                    }
+                                }
+                                ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { row in
+                                    TranscriptRowView(row: row)
                                 }
                             }
-                            ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { row in
-                                TranscriptRowView(row: row)
-                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                    }
+                    .frame(maxHeight: .infinity)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        panes.clearFocus()
+                    })
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        geometry.contentOffset.y + geometry.containerSize.height
+                            >= geometry.contentSize.height - 32
+                    } action: { _, atBottom in
+                        self.atBottom = atBottom
+                        followsTail = TranscriptTail.follows(
+                            current: followsTail, atBottom: atBottom, userScrolled: userScrolling
+                        )
+                    }
+                    .onScrollPhaseChange { oldPhase, phase in
+                        if oldPhase == .interacting || oldPhase == .decelerating {
+                            followsTail = TranscriptTail.follows(
+                                current: followsTail, atBottom: atBottom, userScrolled: true
+                            )
+                        }
+                        userScrolling = phase == .interacting || phase == .decelerating
+                    }
+                    .onChange(of: model.rows) {
+                        if followsTail,
+                           let last = model.rows.last(where: { showHiddenRows || !$0.isHiddenByDefault }) {
+                            Task { @MainActor in proxy.scrollTo(last.eventID, anchor: .bottom) }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                }
-                .frame(maxHeight: .infinity)
-                .simultaneousGesture(TapGesture().onEnded {
-                    NSApp.keyWindow?.makeFirstResponder(nil)
-                    panes.clearFocus()
-                })
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.containerSize.height
-                        >= geometry.contentSize.height - 32
-                } action: { _, atBottom in
-                    followsTail = atBottom
-                }
-                .onChange(of: model.rows) {
-                    if followsTail, let last = model.rows.last {
-                        proxy.scrollTo(last.eventID, anchor: .bottom)
+                    if !followsTail {
+                        Button("Jump to latest") {
+                            followsTail = true
+                            if let last = model.rows.last(where: { showHiddenRows || !$0.isHiddenByDefault }) {
+                                proxy.scrollTo(last.eventID, anchor: .bottom)
+                            }
+                        }
+                        .padding(6)
                     }
                 }
             }
@@ -189,6 +214,14 @@ private struct TranscriptRowView: View {
                     Text(verbatim: row.detail ?? "").font(.system(.body, design: .monospaced))
                 } label: {
                     Text(verbatim: row.text).font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                }
+            case .system where row.text.components(separatedBy: .newlines).count > 3:
+                DisclosureGroup {
+                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
+                } label: {
+                    Text(verbatim: String(row.text.prefix(while: { !$0.isNewline })))
+                        .font(.system(.body, design: .monospaced))
                         .lineLimit(1)
                 }
             case .error:

@@ -11,6 +11,7 @@ final class SwarmTerminalView: LocalProcessTerminalView {
     var onFocus: (() -> Void)?
     private(set) var ended = false
     private var stopping = false
+    private var scrolledOnAttach = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -38,6 +39,12 @@ final class SwarmTerminalView: LocalProcessTerminalView {
         let pid = process.shellPid
         if pid > 0 { _ = Darwin.kill(-pid, SIGHUP) }
         terminate()
+    }
+
+    func showLatestOnFirstAttach() {
+        guard !scrolledOnAttach else { return }
+        scrolledOnAttach = true
+        scroll(toPosition: 1)
     }
 
     override func processTerminated(_ source: LocalProcess, exitCode: Int32?) {
@@ -164,6 +171,7 @@ private struct TerminalContainer: NSViewRepresentable {
         terminal.autoresizingMask = [.width, .height]
         host.addSubview(terminal)
         host.nextKeyView = terminal
+        terminal.showLatestOnFirstAttach()
     }
 }
 
