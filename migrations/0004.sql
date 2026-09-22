@@ -1,1 +1,0 @@
-ALTER TABLE message ADD COLUMN rung_at INTEGER;

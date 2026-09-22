@@ -13,6 +13,9 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and the shi
 
 ## Environment
 
+Development builds use `SWARM_HOME=~/.swarm-<branch>` to keep their data separate.
+The binary installed from main uses `~/.swarm`.
+
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Root for `.swarm/`. Defaults to `$HOME`. |
@@ -29,7 +32,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 |---|---|---|
 | `init` | any | Create `.swarm/`, the db, `runs/`, and the shipped adapter files. |
 | `adapter check <name>` | any | Parse `.swarm/adapters/<name>.conf`, print `ok <name>`. |
-| `session new <lane\|relay\|open>` | any | Create a session, print its id. |
+| `session new <lane\|relay\|open>` | any | Create a session for the caller's physical current directory (`pwd -P`) and print its UUID v7 id. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent without a pane. |
 | `spawn <id> <role> [-- <cmd>...]` | session | Register, split a pane, run `<cmd>; swarm exited` in it, print the pane id. |
@@ -61,11 +64,11 @@ swarm agent add orchestrator orchestrator
 swarm spawn coder coder -- my-agent --task "write the parser"   # prints the pane id, e.g. %3
 
 # in the coder pane, SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
-echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 1
+echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
 
 # back in the orchestrator pane
-swarm inbox                                            # 1 coder summary runs/1/1.txt
-swarm ack 1
+swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
+swarm ack 0
 swarm close coder
 
 # a child that exits without finish gets a fallback summary and a summarize job
