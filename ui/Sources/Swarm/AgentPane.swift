@@ -8,6 +8,7 @@ import SwarmCore
 @MainActor
 final class SwarmTerminalView: LocalProcessTerminalView {
     var onEnded: (() -> Void)?
+    var onFocus: (() -> Void)?
     private(set) var ended = false
     private var stopping = false
 
@@ -52,6 +53,12 @@ final class SwarmTerminalView: LocalProcessTerminalView {
         super.send(source: source, data: data)
     }
 
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        window?.makeFirstResponder(self)
+        onFocus?()
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applySystemColors()
@@ -78,6 +85,9 @@ final class AgentPaneStore {
     private let bus = SwarmCLIBus()
     private var terminals: [String: SwarmTerminalView] = [:]
     private(set) var ended: Set<String> = []
+    private(set) var focusedKey: String?
+
+    func clearFocus() { focusedKey = nil }
 
     func key(session: SwarmSession, agent: SwarmAgent) -> String {
         session.id.rawValue + ":" + agent.id.rawValue
@@ -88,6 +98,7 @@ final class AgentPaneStore {
         if let terminal = terminals[key] { return terminal }
         let terminal = SwarmTerminalView(frame: CGRect(x: 0, y: 0, width: 900, height: 400))
         terminal.onEnded = { [weak self] in self?.ended.insert(key) }
+        terminal.onFocus = { [weak self] in self?.focusedKey = key }
         let command = SwarmPanePolicy.attachCommand(bus: bus, session: session, agent: agent.id)
         terminal.start(SwarmAttachLaunch(command: command, directory: session.cwd))
         terminals[key] = terminal
@@ -98,6 +109,7 @@ final class AgentPaneStore {
         for terminal in terminals.values { terminal.willStop() }
         terminals.removeAll()
         ended.removeAll()
+        focusedKey = nil
     }
 }
 
@@ -118,6 +130,12 @@ struct AgentTerminalView: View {
                     .padding(8)
                     .background(.regularMaterial)
             }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 2)
+                .stroke(store.focusedKey == store.key(session: session, agent: agent)
+                    ? Color.accentColor : Color.clear, lineWidth: 2)
+                .allowsHitTesting(false)
         }
         .task(id: store.key(session: session, agent: agent)) {
             terminal = store.terminal(session: session, agent: agent)

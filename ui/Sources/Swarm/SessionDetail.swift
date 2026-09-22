@@ -17,9 +17,9 @@ final class SessionDetailModel {
         return []
     }
 
-    func poll(session: SwarmSession) async {
+    func poll(session: SwarmSession, chairProvider: String?) async {
         while !Task.isCancelled {
-            snapshot = await transcript.poll(session: session)
+            snapshot = await transcript.poll(session: session, chairProvider: chairProvider)
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -53,9 +53,13 @@ struct SessionDetailView: View {
                 .frame(minWidth: 320)
         }
         .navigationTitle(row.id.rawValue)
-        .task(id: row.id.rawValue + (row.session.chairLog ?? "")) {
-            await model.poll(session: row.session)
+        .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
+            await model.poll(session: row.session, chairProvider: chairProvider)
         }
+    }
+
+    private var chairProvider: String? {
+        agents.first { $0.id == SwarmPanePolicy.chair }?.provider
     }
 
     private var transcriptColumn: some View {
@@ -67,6 +71,8 @@ struct SessionDetailView: View {
                         case .waiting:
                             Text("The chair has not written its log yet")
                                 .foregroundStyle(.secondary)
+                        case .notice(let message):
+                            Text(verbatim: message).foregroundStyle(.secondary)
                         case .unavailable(let message):
                             Text(verbatim: message).foregroundStyle(.red)
                         case .rows(let rows):
@@ -76,7 +82,10 @@ struct SessionDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
-                .onTapGesture { NSApp.keyWindow?.makeFirstResponder(nil) }
+                .simultaneousGesture(TapGesture().onEnded {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    panes.clearFocus()
+                })
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height
                         >= geometry.contentSize.height - 32
@@ -92,7 +101,19 @@ struct SessionDetailView: View {
             Divider()
             TextField("Type to chair", text: $model.draft)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { Task { await model.send(session: row.session) } }
+                .simultaneousGesture(TapGesture().onEnded { panes.clearFocus() })
+                .onKeyPress(.escape) {
+                    guard KeyRouting.route(focus: .composer, key: .escape) == .clearComposer else {
+                        return .ignored
+                    }
+                    model.draft = ""
+                    return .handled
+                }
+                .onSubmit {
+                    if KeyRouting.route(focus: .composer, key: .return) == .sendComposer {
+                        Task { await model.send(session: row.session) }
+                    }
+                }
                 .padding(8)
             if let error = model.sendError {
                 Text(verbatim: error).foregroundStyle(.red).padding(.horizontal, 8)
@@ -109,6 +130,7 @@ struct SessionDetailView: View {
             }
             .pickerStyle(.segmented)
             .padding(8)
+            .simultaneousGesture(TapGesture().onEnded { panes.clearFocus() })
             Divider()
             if let agent = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID) {
                 if let reason = SwarmPanePolicy.unavailableReason(session: row.session, agent: agent) {

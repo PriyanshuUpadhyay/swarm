@@ -19,6 +19,7 @@ struct SessionsTreeTests {
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
         #expect(tree.projects[0].worktrees.map(\.sessions.count) == [1, 1])
+        #expect(tree.launchDirectory(for: SwarmSessionID("22222222-b")) == "/repo/wt/feature")
         #expect(tree.text(now: 61).contains("main\n    no chair 11111111 · 1m · 1 agents"))
     }
 
@@ -28,6 +29,7 @@ struct SessionsTreeTests {
         #expect(tree.projects[0].path == "/outside")
         #expect(tree.projects[0].worktrees.isEmpty)
         #expect(tree.projects[0].sessions.count == 1)
+        #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
     @Test("Archived sessions and empty worktrees are hidden")

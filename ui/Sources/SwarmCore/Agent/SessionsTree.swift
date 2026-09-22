@@ -83,6 +83,18 @@ public struct SessionsTree: Sendable, Hashable {
         return nil
     }
 
+    public func launchDirectory(for id: SwarmSessionID) -> String? {
+        for project in projects {
+            if SwarmSessionListing.chat(id, in: project.sessions) != nil { return project.path }
+            for worktree in project.worktrees {
+                if SwarmSessionListing.chat(id, in: worktree.sessions) != nil {
+                    return worktree.entry.path
+                }
+            }
+        }
+        return nil
+    }
+
     public func text(now: Int = Int(Date().timeIntervalSince1970)) -> String {
         var lines: [String] = []
         for project in projects {
