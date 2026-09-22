@@ -19,13 +19,6 @@ Seen 2026-09-22: `swarm send <seat> ask` a second after `swarm spawn` returned
 Either spawn returns before the agent row is committed, or the send opens the database before
 the spawn's write lands. Make spawn return only when the agent row is visible to a new connection.
 
-## The window frame does not come back after quit
-
-Seen 2026-09-22 after U8: the selected session, the expanded rows and the width came back, but
-the window reopened at 1257x450 in the screen centre after it had been 1800x1130 at the top left.
-The frame autosave does not record a frame set through accessibility; check whether a frame set
-by hand is saved, and save the frame explicitly at quit if not.
-
 ## The transcript scrolls under the title bar
 
 Seen 2026-09-22 after U9: the first transcript row sits behind the window title when the list is
