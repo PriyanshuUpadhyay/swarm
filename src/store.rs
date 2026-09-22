@@ -21,6 +21,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
+    include_str!("../migrations/0006.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -210,27 +211,43 @@ pub fn pane_of(
     Ok(pane)
 }
 
-pub fn has_unread_older_than(
+pub fn has_rung_unread(
     connection: &Connection,
     session_id: i64,
     agent_id: &str,
-    age_secs: i64,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let found: bool = connection.query_row(
         "SELECT EXISTS (
              SELECT 1 FROM message
              WHERE session_id = ?1 AND recipient_id = ?2
-               AND created_at <= unixepoch() - ?3
-               AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3)
-               AND NOT EXISTS (
-                   SELECT 1 FROM read_mark
-                   WHERE message_seq = message.seq AND agent_id = ?2
-               )
+               AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)
+               AND rings > 0
          )",
-        (session_id, agent_id, age_secs),
+        (session_id, agent_id),
         |r| r.get(0),
     )?;
     Ok(found)
+}
+
+pub fn rering_due(
+    connection: &Connection,
+    session_id: i64,
+    agent_id: &str,
+    age_secs: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let due: bool = connection.query_row(
+        "SELECT
+             COUNT(*) > 0
+             AND MIN(created_at) <= unixepoch() - ?3
+             AND (MAX(rung_at) IS NULL OR MAX(rung_at) <= unixepoch() - ?3)
+             AND MAX(rings) < 2
+         FROM message
+         WHERE session_id = ?1 AND recipient_id = ?2
+           AND seq NOT IN (SELECT message_seq FROM read_mark WHERE agent_id = ?2)",
+        (session_id, agent_id, age_secs),
+        |r| r.get(0),
+    )?;
+    Ok(due)
 }
 
 pub fn clear_pane(connection: &Connection, session_id: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -559,11 +576,25 @@ mod tests {
         send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "new").unwrap();
         connection.execute("UPDATE message SET created_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
 
-        assert!(has_unread_older_than(&connection, SESSION, CODER, 60).unwrap());
-        assert!(!has_unread_older_than(&connection, SESSION, CODER, 62).unwrap());
-        assert!(!has_unread_older_than(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+        assert!(!has_rung_unread(&connection, SESSION, CODER).unwrap());
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!rering_due(&connection, SESSION, CODER, 62).unwrap());
+        assert!(!rering_due(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
+
+        connection.execute("UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE seq = 1", []).unwrap();
+        assert!(has_rung_unread(&connection, SESSION, CODER).unwrap());
+        assert!(!has_rung_unread(&connection, OTHER_SESSION, OUTSIDER).unwrap());
+        assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
+
+        connection.execute("UPDATE message SET rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+
+        connection.execute("UPDATE message SET rings = 2 WHERE seq = 1", []).unwrap();
+        assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
+
         ack(&connection, SESSION, 1, CODER).unwrap();
-        assert!(!has_unread_older_than(&connection, SESSION, CODER, 60).unwrap());
+        assert!(!has_rung_unread(&connection, SESSION, CODER).unwrap());
+        assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
     }
 
     #[test]
@@ -636,7 +667,7 @@ mod tests {
         assert!(inbox(&connection, SESSION, CODER).unwrap().is_empty());
         assert_eq!(job(&connection, 7).unwrap(), (SESSION, CODER.to_string(), "build".to_string(), 2));
         assert_eq!(connection.query_row("SELECT count(*) FROM agent", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 5);
+        assert_eq!(connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 6);
         let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check").unwrap();
         assert!(foreign_key_check.query([]).unwrap().next().unwrap().is_none());
     }

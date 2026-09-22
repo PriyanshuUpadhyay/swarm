@@ -37,7 +37,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
 | `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, report a missing summary. |
-| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
+| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. Re-ring an unread child at most once after 60 s, then wait for an ack. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
 
