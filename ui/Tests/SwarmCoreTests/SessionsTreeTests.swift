@@ -32,6 +32,28 @@ struct SessionsTreeTests {
         #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
+    @Test("Rows with only dead agents say ended in the sidebar and tree text")
+    func ended() {
+        let dead = session("dead-session", cwd: "/outside")
+        let agent = SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: false
+        )
+        let tree = build([dead], agentsBySession: [dead.id: [agent]])
+        let row = tree.projects[0].sessions[0]
+        #expect(SessionsTree.rowText(row, now: 61).hasPrefix("ended dead-ses"))
+        #expect(tree.text(now: 61).contains("ended dead-ses"))
+
+        let empty = build([dead], agentsBySession: [dead.id: []])
+        #expect(SessionsTree.rowText(empty.projects[0].sessions[0], now: 61)
+            .hasPrefix("ended dead-ses"))
+
+        let running = build([dead], agentsBySession: [dead.id: [agent, SwarmAgent(
+            id: .init("worker"), role: "code", pane: "%2", alive: true
+        )]])
+        #expect(SessionsTree.rowText(running.projects[0].sessions[0], now: 61)
+            .hasPrefix("no chair dead-ses"))
+    }
+
     @Test("Archived sessions and empty worktrees are hidden")
     func archived() {
         let tree = build([
@@ -72,9 +94,11 @@ struct SessionsTreeTests {
         #expect(list.agents[0].alive == true)
     }
 
-    private func build(_ sessions: [SwarmSession]) -> SessionsTree {
+    private func build(
+        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
+    ) -> SessionsTree {
         SessionsTree.build(
-            sessions: sessions,
+            sessions: sessions, agentsBySession: agentsBySession,
             repositoryPathsResolver: { path in
                 guard worktrees.contains(where: { $0.path == path }) else { return nil }
                 return GitRepositoryPaths(gitDirectory: common + "/worktrees/test", commonDirectory: common)
