@@ -46,6 +46,7 @@ final class SessionsTreeModel {
 
 private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
+    @State private var panes = AgentPaneStore()
 
     var body: some View {
         NavigationSplitView {
@@ -68,31 +69,22 @@ private struct SessionsWindow: View {
             .navigationTitle("Sessions")
         } detail: {
             if let row = model.selectedSession {
-                List {
-                    LabeledContent("ID", value: row.id.rawValue)
-                    LabeledContent("Cwd", value: row.session.cwd)
-                    LabeledContent("Chair", value: row.session.chairProvider ?? "No chair")
-                    LabeledContent("Created") {
-                        Text(Date(timeIntervalSince1970: TimeInterval(row.session.createdAt))
-                            .formatted(date: .abbreviated, time: .standard))
-                    }
-                    Section("Agents") {
-                        ForEach(model.agents) { agent in
-                            VStack(alignment: .leading) {
-                                Text(agent.id.rawValue)
-                                Text("\(agent.role) · \(agent.provider ?? "unknown") · \(agent.alive == true ? "pane alive" : "pane not alive")")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
+                SessionDetailView(row: row, agents: model.agents, panes: panes)
+                    .id(row.id)
             } else if let error = model.error {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {
                 ContentUnavailableView("Select a session", systemImage: "square.stack")
             }
         }
-        .task { await model.run() }
+        .task {
+            LoginShellPath.begin()
+            await model.run()
+        }
+        .onDisappear { panes.stopAll() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            panes.stopAll()
+        }
     }
 
     private func sessionButton(_ row: SwarmProjectSession) -> some View {
@@ -112,9 +104,11 @@ struct SwarmApp: App {
 }
 
 @main
+@MainActor
 enum SwarmExecutable {
     static func main() async {
-        if CommandLine.arguments.contains("--print-tree") {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments == ["--print-tree"] {
             let model = SessionsTreeModel()
             do {
                 try await model.refresh()
@@ -124,8 +118,57 @@ enum SwarmExecutable {
                 fputs("\(error)\n", stderr)
                 exit(1)
             }
+        } else if arguments.count == 2, arguments[0] == "--print-transcript" {
+            await printTranscript(prefix: arguments[1])
+        } else if arguments.count == 3, arguments[0] == "--attach-check" {
+            await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
         } else {
             SwarmApp.main()
         }
+    }
+
+    private static func printTranscript(prefix: String) async {
+        do {
+            let session = try await matchingSession(prefix: prefix)
+            let snapshot = await SwarmChairTranscript().poll(session: session)
+            print(snapshot.printText)
+            if case .unavailable = snapshot { exit(1) }
+        } catch {
+            fputs("\(error)\n", stderr)
+            exit(1)
+        }
+    }
+
+    private static func attachCheck(prefix: String, agentID: SwarmAgentID) async {
+        do {
+            let session = try await matchingSession(prefix: prefix)
+            let bus = SwarmCLIBus()
+            guard let agent = try await bus.agents(in: session).first(where: { $0.id == agentID }) else {
+                throw SwarmProfileError.failed("agent not found")
+            }
+            if let reason = SwarmPanePolicy.unavailableReason(session: session, agent: agent) {
+                throw SwarmProfileError.failed(reason)
+            }
+            await LoginShellPath.ready()
+            let store = AgentPaneStore()
+            let terminal = store.terminal(session: session, agent: agent)
+            try await Task.sleep(for: .seconds(2))
+            let alive = terminal.process.running
+            print("child alive: \(alive)")
+            print("first screen line: \(terminal.firstScreenLine)")
+            store.stopAll()
+            if !alive { exit(1) }
+        } catch {
+            fputs("\(error)\n", stderr)
+            exit(1)
+        }
+    }
+
+    private static func matchingSession(prefix: String) async throws -> SwarmSession {
+        let sessions = try await SwarmCLIBus().sessions().filter { $0.id.rawValue.hasPrefix(prefix) }
+        guard sessions.count == 1, let session = sessions.first else {
+            throw SwarmProfileError.failed("session prefix does not name one session")
+        }
+        return session
     }
 }
