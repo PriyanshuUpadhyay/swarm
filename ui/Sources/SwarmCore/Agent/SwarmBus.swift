@@ -17,13 +17,18 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     public var provider: String?
     public var pane: String?
     public var alive: Bool?
+    public var createdAt: Int?
 
-    public init(id: SwarmAgentID, role: String, pane: String?, alive: Bool?, provider: String? = nil) {
+    public init(
+        id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
+        provider: String? = nil, createdAt: Int? = nil
+    ) {
         self.id = id
         self.role = role
         self.provider = provider
         self.pane = pane
         self.alive = alive
+        self.createdAt = createdAt
     }
 }
 

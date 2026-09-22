@@ -19,14 +19,36 @@ struct SwarmSessionDetailTests {
             == "This agent has no pane")
     }
 
-    @Test("The picker keeps only live agents and defaults to the chair")
-    func liveSelection() {
-        let dead = SwarmAgent(id: .init("dead"), role: "code", pane: "%1", alive: false)
-        let worker = SwarmAgent(id: .init("worker"), role: "code", pane: "%2", alive: true)
-        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%3", alive: true)
-        #expect(SwarmPanePolicy.selectedAgent(in: [dead, worker, chair], preferred: dead.id)?.id == chair.id)
-        #expect(SwarmPanePolicy.selectedAgent(in: [dead, worker], preferred: dead.id)?.id == worker.id)
-        #expect(SwarmPanePolicy.selectedAgent(in: [dead], preferred: dead.id) == nil)
+    @Test("The grid excludes the chair and sorts live agents by creation time")
+    func agentCells() {
+        var value = session(adapter: "tmux-solo")
+        value.chairID = .init("other-chair")
+        let agents = [
+            SwarmAgent(id: .init("dead"), role: "code", pane: "%1", alive: false, createdAt: 1),
+            SwarmAgent(id: .init("later"), role: "code", pane: "%2", alive: true, createdAt: 3),
+            SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%3", alive: true),
+            SwarmAgent(id: .init("early"), role: "code", pane: "%4", alive: true, createdAt: 2),
+            SwarmAgent(id: .init("other-chair"), role: "chair", pane: "%5", alive: true),
+            SwarmAgent(id: .init("no-pane"), role: "code", pane: nil, alive: nil, createdAt: 4),
+        ]
+        let cells = SwarmPanePolicy.cells(session: value, agents: agents)
+        #expect(cells.map(\.id.rawValue) == ["early", "later", "no-pane", "dead"])
+        #expect(cells.map(\.kind) == [
+            .attach, .attach, .notice("This agent has no pane"), .ended,
+        ])
+        value.adapter = "herdr"
+        #expect(SwarmPanePolicy.cells(session: value, agents: agents).first?.kind
+            == .notice("This session's host has no attach"))
+    }
+
+    @Test("Agent creation time decodes from the CLI")
+    func agentCreationTime() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let agent = try decoder.decode(SwarmAgent.self, from: Data(
+            #"{"id":"coder","role":"code","pane":"%2","alive":true,"created_at":42}"#.utf8
+        ))
+        #expect(agent.createdAt == 42)
     }
 
     @Test("A missing chair log stays in retry state")
