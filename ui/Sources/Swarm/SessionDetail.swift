@@ -52,6 +52,7 @@ struct SessionDetailView: View {
             paneColumn
                 .frame(minWidth: 320)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(row.id.rawValue)
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
             await model.poll(session: row.session, chairProvider: chairProvider)
@@ -82,6 +83,7 @@ struct SessionDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
+                .frame(maxHeight: .infinity)
                 .simultaneousGesture(TapGesture().onEnded {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                     panes.clearFocus()
@@ -98,6 +100,7 @@ struct SessionDetailView: View {
                     }
                 }
             }
+            .frame(maxHeight: .infinity)
             Divider()
             TextField("Type to chair", text: $model.draft)
                 .textFieldStyle(.roundedBorder)
@@ -132,16 +135,19 @@ struct SessionDetailView: View {
             .padding(8)
             .simultaneousGesture(TapGesture().onEnded { panes.clearFocus() })
             Divider()
-            if let agent = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID) {
-                if let reason = SwarmPanePolicy.unavailableReason(session: row.session, agent: agent) {
-                    ContentUnavailableView(reason, systemImage: "terminal")
+            Group {
+                if let agent = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID) {
+                    if let reason = SwarmPanePolicy.unavailableReason(session: row.session, agent: agent) {
+                        ContentUnavailableView(reason, systemImage: "terminal")
+                    } else {
+                        AgentTerminalView(session: row.session, agent: agent, store: panes)
+                            .id(panes.key(session: row.session, agent: agent))
+                    }
                 } else {
-                    AgentTerminalView(session: row.session, agent: agent, store: panes)
-                        .id(panes.key(session: row.session, agent: agent))
+                    ContentUnavailableView("No agents", systemImage: "terminal")
                 }
-            } else {
-                ContentUnavailableView("No agents", systemImage: "terminal")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

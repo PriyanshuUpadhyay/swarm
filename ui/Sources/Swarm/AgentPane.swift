@@ -131,6 +131,7 @@ struct AgentTerminalView: View {
                     .background(.regularMaterial)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             RoundedRectangle(cornerRadius: 2)
                 .stroke(store.focusedKey == store.key(session: session, agent: agent)
