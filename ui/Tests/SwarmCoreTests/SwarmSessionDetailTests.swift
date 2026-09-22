@@ -19,6 +19,16 @@ struct SwarmSessionDetailTests {
             == "This agent has no pane")
     }
 
+    @Test("The picker keeps only live agents and defaults to the chair")
+    func liveSelection() {
+        let dead = SwarmAgent(id: .init("dead"), role: "code", pane: "%1", alive: false)
+        let worker = SwarmAgent(id: .init("worker"), role: "code", pane: "%2", alive: true)
+        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%3", alive: true)
+        #expect(SwarmPanePolicy.selectedAgent(in: [dead, worker, chair], preferred: dead.id)?.id == chair.id)
+        #expect(SwarmPanePolicy.selectedAgent(in: [dead, worker], preferred: dead.id)?.id == worker.id)
+        #expect(SwarmPanePolicy.selectedAgent(in: [dead], preferred: dead.id) == nil)
+    }
+
     @Test("A missing chair log stays in retry state")
     func missingLog() async {
         var value = session(adapter: "herdr")

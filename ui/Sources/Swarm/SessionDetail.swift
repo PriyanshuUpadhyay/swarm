@@ -38,12 +38,15 @@ final class SessionDetailModel {
 
 struct SessionDetailView: View {
     let row: SwarmProjectSession
+    let title: String
     let agents: [SwarmAgent]
     let panes: AgentPaneStore
 
     @State private var model = SessionDetailModel()
     @State private var agentID = SwarmPanePolicy.chair
     @State private var followsTail = true
+    @State private var showHiddenRows = false
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         HSplitView {
@@ -53,7 +56,7 @@ struct SessionDetailView: View {
                 .frame(minWidth: 320)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(row.id.rawValue)
+        .navigationTitle(title)
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
             await model.poll(session: row.session, chairProvider: chairProvider)
         }
@@ -77,7 +80,15 @@ struct SessionDetailView: View {
                         case .unavailable(let message):
                             Text(verbatim: message).foregroundStyle(.red)
                         case .rows(let rows):
-                            ForEach(rows) { row in TranscriptRowView(row: row) }
+                            let hidden = rows.filter(\.isHiddenByDefault).count
+                            if hidden > 0 {
+                                Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
+                                    showHiddenRows.toggle()
+                                }
+                            }
+                            ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { row in
+                                TranscriptRowView(row: row)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,7 +115,11 @@ struct SessionDetailView: View {
             Divider()
             TextField("Type to chair", text: $model.draft)
                 .textFieldStyle(.roundedBorder)
-                .simultaneousGesture(TapGesture().onEnded { panes.clearFocus() })
+                .focused($composerFocused)
+                .simultaneousGesture(TapGesture().onEnded {
+                    composerFocused = true
+                    panes.clearFocus()
+                })
                 .onKeyPress(.escape) {
                     guard KeyRouting.route(focus: .composer, key: .escape) == .clearComposer else {
                         return .ignored
@@ -128,8 +143,14 @@ struct SessionDetailView: View {
         VStack(spacing: 0) {
             Picker("Agent", selection: $agentID) {
                 ForEach(agents) { agent in
-                    Text(agent.id.rawValue).tag(agent.id).disabled(agent.pane == nil)
+                    Text(agent.id.rawValue).tag(agent.id)
+                        .disabled(agent.alive == false || agent.pane == nil)
+                        .foregroundStyle(agent.alive == false ? .secondary : .primary)
                 }
+            }
+            .onChange(of: agents) { _, agents in
+                agentID = SwarmPanePolicy.selectedAgent(in: agents, preferred: agentID)?.id
+                    ?? SwarmPanePolicy.chair
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -164,8 +185,12 @@ private struct TranscriptRowView: View {
                     Text(verbatim: row.text).font(.system(.body, design: .monospaced))
                 }
             case .toolUse:
-                Text(verbatim: row.text).font(.system(.body, design: .monospaced))
-                    .lineLimit(1)
+                DisclosureGroup {
+                    Text(verbatim: row.detail ?? "").font(.system(.body, design: .monospaced))
+                } label: {
+                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                }
             case .error:
                 Text(verbatim: row.text).foregroundStyle(.red)
             default:

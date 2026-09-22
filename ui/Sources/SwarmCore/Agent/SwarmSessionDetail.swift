@@ -114,9 +114,10 @@ public enum SwarmPanePolicy {
     public static func selectedAgent(
         in agents: [SwarmAgent], preferred: SwarmAgentID
     ) -> SwarmAgent? {
-        agents.first { $0.id == preferred }
-            ?? agents.first { $0.id == chair }
-            ?? agents.first
+        let live = agents.filter { $0.alive != false }
+        return live.first { $0.id == preferred }
+            ?? live.first { $0.id == chair }
+            ?? live.first
     }
 
     public static func unavailableReason(session: SwarmSession, agent: SwarmAgent) -> String? {

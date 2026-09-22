@@ -14,17 +14,19 @@ public struct WorktreeNode: Sendable, Hashable, Identifiable {
 public struct ProjectNode: Sendable, Hashable, Identifiable {
     public let id: SwarmPathIdentity
     public let path: String
+    public let launchDirectory: String
     public let worktrees: [WorktreeNode]
     public let sessions: [SwarmProjectSession]
 
     public var name: String { URL(fileURLWithPath: path).lastPathComponent }
 
     public init(
-        id: SwarmPathIdentity, path: String,
+        id: SwarmPathIdentity, path: String, launchDirectory: String,
         worktrees: [WorktreeNode], sessions: [SwarmProjectSession]
     ) {
         self.id = id
         self.path = path
+        self.launchDirectory = launchDirectory
         self.worktrees = worktrees
         self.sessions = sessions
     }
@@ -60,21 +62,30 @@ public struct SessionsTree: Sendable, Hashable {
             switch identity {
             case .folder(let path):
                 return ProjectNode(
-                    id: identity, path: path, worktrees: [],
+                    id: identity, path: path, launchDirectory: path, worktrees: [],
                     sessions: rows(sessions, agentsBySession: agentsBySession)
                 )
             case .repository(let commonDirectory):
-                let worktrees = worktreeLister(commonDirectory).compactMap { entry -> WorktreeNode? in
+                let listed = worktreeLister(commonDirectory)
+                let worktrees = listed.compactMap { entry -> WorktreeNode? in
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
                     guard !matches.isEmpty else { return nil }
                     return WorktreeNode(entry: entry, sessions: rows(matches, agentsBySession: agentsBySession))
                 }
-                guard !worktrees.isEmpty else { return nil }
+                let projectSessions = sessions.filter { session in
+                    !listed.contains { !$0.isBare && contains(session.cwd, in: $0.path) }
+                }
+                guard !worktrees.isEmpty || !projectSessions.isEmpty else { return nil }
                 let path = [".git", ".bare"].contains(URL(fileURLWithPath: commonDirectory).lastPathComponent)
                     ? URL(fileURLWithPath: commonDirectory).deletingLastPathComponent().path
                     : commonDirectory
-                return ProjectNode(id: identity, path: path, worktrees: worktrees, sessions: [])
+                let launchDirectory = listed.first { $0.branch == "main" && !$0.isBare }?.path
+                    ?? listed.first { !$0.isBare }?.path ?? path
+                return ProjectNode(
+                    id: identity, path: path, launchDirectory: launchDirectory,
+                    worktrees: worktrees, sessions: rows(projectSessions, agentsBySession: agentsBySession)
+                )
             }
         }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
@@ -90,9 +101,25 @@ public struct SessionsTree: Sendable, Hashable {
         return nil
     }
 
+    public func retainedSelection(_ id: SwarmSessionID?) -> SwarmSessionID? {
+        guard let id else { return nil }
+        return session(id) == nil ? nil : id
+    }
+
+    public func windowTitle(for id: SwarmSessionID) -> String? {
+        for project in projects {
+            guard let row = SwarmSessionListing.chat(id, in: project.sessions)
+                ?? project.worktrees.lazy.compactMap({ SwarmSessionListing.chat(id, in: $0.sessions) }).first
+            else { continue }
+            let session = row.sessions.first { $0.id == id } ?? row.session
+            return "\(project.name) · \(session.chairProvider ?? "no chair") \(id.rawValue.prefix(8))"
+        }
+        return nil
+    }
+
     public func launchDirectory(for id: SwarmSessionID) -> String? {
         for project in projects {
-            if SwarmSessionListing.chat(id, in: project.sessions) != nil { return project.path }
+            if SwarmSessionListing.chat(id, in: project.sessions) != nil { return project.launchDirectory }
             for worktree in project.worktrees {
                 if SwarmSessionListing.chat(id, in: worktree.sessions) != nil {
                     return worktree.entry.path
@@ -123,9 +150,14 @@ public struct SessionsTree: Sendable, Hashable {
         else if age < 3_600 { ageText = "\(age / 60)m" }
         else if age < 86_400 { ageText = "\(age / 3_600)h" }
         else { ageText = "\(age / 86_400)d" }
-        let count = row.sessions.reduce(0) { $0 + $1.agents }
+        let count: String
+        if let live = row.liveAgents {
+            count = live == row.totalAgents ? "\(live) live" : "\(live) live · \(row.totalAgents) total"
+        } else {
+            count = "\(row.totalAgents) total"
+        }
         let state = row.isRunning == false ? "ended" : (session.chairProvider ?? "no chair")
-        return "\(state) \(session.id.rawValue.prefix(8)) · \(ageText) · \(count) agents"
+        return "\(state) \(session.id.rawValue.prefix(8)) · \(ageText) · \(count)"
     }
 
     private static func rows(
@@ -135,7 +167,11 @@ public struct SessionsTree: Sendable, Hashable {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
             let agents = $0.flatMap { agentsBySession[$0.id] ?? [] }
             let running = known ? agents.contains(where: { $0.alive == true }) : nil
-            return SwarmProjectSession(sessions: $0, title: "Chat", isRunning: running)
+            return SwarmProjectSession(
+                sessions: $0, title: "Chat", isRunning: running,
+                liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
+                totalAgents: known ? agents.count : nil
+            )
         }
     }
 

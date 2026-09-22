@@ -145,6 +145,7 @@ struct NewChatSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .accessibilityLabel("Cancel")
                 Button(model.isStarting ? "Starting…" : "Start") {
                     Task {
                         if let id = await model.start(directory: directory, launch: launch) {
@@ -153,6 +154,7 @@ struct NewChatSheet: View {
                         }
                     }
                 }
+                .accessibilityLabel("Start")
                 .disabled(!model.canStart)
             }
         }
