@@ -111,8 +111,7 @@ public struct SessionsTree: Sendable, Hashable {
             guard let row = SwarmSessionListing.chat(id, in: project.sessions)
                 ?? project.worktrees.lazy.compactMap({ SwarmSessionListing.chat(id, in: $0.sessions) }).first
             else { continue }
-            let session = row.sessions.first { $0.id == id } ?? row.session
-            return "\(project.name) · \(session.chairProvider ?? "no chair") \(id.rawValue.prefix(8))"
+            return "\(project.name) · \(row.provider ?? "no chair") \(id.rawValue.prefix(8))"
         }
         return nil
     }
@@ -156,7 +155,7 @@ public struct SessionsTree: Sendable, Hashable {
         } else {
             count = "\(row.totalAgents) total"
         }
-        let state = row.isRunning == false ? "ended" : (session.chairProvider ?? "no chair")
+        let state = row.isRunning == false ? "ended" : (row.provider ?? "no chair")
         return "\(state) \(session.id.rawValue.prefix(8)) · \(ageText) · \(count)"
     }
 
@@ -167,10 +166,13 @@ public struct SessionsTree: Sendable, Hashable {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
             let agents = $0.flatMap { agentsBySession[$0.id] ?? [] }
             let running = known ? agents.contains(where: { $0.alive == true }) : nil
+            let provider = $0[0].chairProvider
+                ?? agents.first(where: { $0.id == SwarmPanePolicy.chair })?.provider
+                ?? agents.first?.provider
             return SwarmProjectSession(
                 sessions: $0, title: "Chat", isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
-                totalAgents: known ? agents.count : nil
+                totalAgents: known ? agents.count : nil, provider: provider
             )
         }
     }

@@ -57,6 +57,19 @@ struct SessionsTreeTests {
             .contains("1 live · 2 total"))
     }
 
+    @Test("A missing session provider comes from the chair, then the first agent")
+    func providerFallback() {
+        let item = session("provider-session", cwd: "/outside")
+        let worker = SwarmAgent(id: .init("worker"), role: "code", pane: "%2", alive: true, provider: "claude")
+        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, provider: "codex")
+        let withChair = build([item], agentsBySession: [item.id: [worker, chair]])
+        #expect(SessionsTree.rowText(withChair.projects[0].sessions[0], now: 61).hasPrefix("codex "))
+        #expect(withChair.windowTitle(for: item.id) == "outside · codex provider")
+
+        let withoutChair = build([item], agentsBySession: [item.id: [worker]])
+        #expect(SessionsTree.rowText(withoutChair.projects[0].sessions[0], now: 61).hasPrefix("claude "))
+    }
+
     @Test("Archived sessions and empty worktrees are hidden")
     func archived() {
         let tree = build([

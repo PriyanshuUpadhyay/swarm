@@ -1,6 +1,12 @@
 import Foundation
 import TranscriptTool
 
+public enum TranscriptTail {
+    public static func follows(current: Bool, atBottom: Bool, userScrolled: Bool) -> Bool {
+        userScrolled ? atBottom : current
+    }
+}
+
 /// The text rows a chat can draw from typed transcript events.
 public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Hashable {
