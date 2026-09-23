@@ -92,11 +92,13 @@ struct ComposerView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("⌘. stops")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if showsStop {
+                Text("⌘. stops")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
             Spacer()
-            if isRunning {
+            if showsStop {
                 Button(action: stop) {
                     Image(systemName: "stop.fill")
                         .frame(width: 26, height: 26)
@@ -283,8 +285,11 @@ struct ComposerView: View {
         focus.wrappedValue = true
     }
 
+    // Text in the box always offers Send, so a turn that never reports its end cannot lock the composer.
+    private var showsStop: Bool { isRunning && Composer.outgoing(draft.wrappedValue) == nil }
+
     private func submit() {
-        guard !isRunning, !isSending, let message = Composer.outgoing(draft.wrappedValue) else {
+        guard !isSending, let message = Composer.outgoing(draft.wrappedValue) else {
             return
         }
         Task {

@@ -103,4 +103,19 @@ struct TranscriptDebugDataTests {
         #expect(entries[0].rawLine == records[0].rawLine)
         #expect(entries[0].displayText.contains("\n"))
     }
+
+    @Test("A turn is active from the user's last message until a turn ends")
+    func chairTurn() {
+        let question = TranscriptRow(kind: .user, text: "hi", eventID: "question")
+        let answer = TranscriptRow(kind: .assistant, text: "hello", eventID: "answer")
+        var ended = TranscriptRow(kind: .result, text: "completed", eventID: "ended")
+        ended.endsTurn = true
+        let decision = TranscriptRow(kind: .result, text: "allow", eventID: "decision")
+
+        #expect(!ChairTurn.isActive([]))
+        #expect(ChairTurn.isActive([question, answer]))
+        #expect(ChairTurn.isActive([question, decision]))
+        #expect(!ChairTurn.isActive([question, answer, ended]))
+        #expect(ChairTurn.isActive([question, answer, ended, question]))
+    }
 }
