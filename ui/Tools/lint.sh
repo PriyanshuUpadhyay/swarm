@@ -11,4 +11,9 @@ if rg -n --glob '*.swift' 'Process\(\)|CapturedProcess|Shell\.run' \
     "$root/Sources/Swarm"; then
   failed=1
 fi
+if rg -n --glob '*.swift' \
+    'SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail' \
+    "$root/Sources/Swarm/Composer"; then
+  failed=1
+fi
 exit "$failed"
