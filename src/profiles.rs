@@ -109,21 +109,31 @@ pub fn empty_accounts(provider: &str) -> AccountList {
 ///
 /// `CLAUDE_CONFIG_DIR` alone is not enough: Claude Code keeps the credentials in a second tree,
 /// so a pane that gets only the config dir starts at "Not logged in · Run /login".
-fn account_environment(provider: &str, name: &str, dir: &str) -> BTreeMap<String, String> {
+fn account_environment_with_env(
+    provider: &str,
+    name: &str,
+    dir: &str,
+    env_var: impl FnOnce(&str) -> Option<std::ffi::OsString>,
+) -> BTreeMap<String, String> {
     match provider {
         "claude" => {
-            let home = crate::paths::home().unwrap_or_default();
+            let home = env_var("HOME").unwrap_or_default();
+            let home = std::path::PathBuf::from(home);
             BTreeMap::from([
                 ("AGENT_PROFILE_LABEL".to_string(), name.to_string()),
                 ("CLAUDE_CONFIG_DIR".to_string(), dir.to_string()),
                 (
                     "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_string(),
-                    format!("{home}/.claude-{name}"),
+                    home.join(format!(".claude-{name}")).to_string_lossy().into_owned(),
                 ),
             ])
         }
         _ => BTreeMap::from([("CODEX_HOME".to_string(), dir.to_string())]),
     }
+}
+
+fn account_environment(provider: &str, name: &str, dir: &str) -> BTreeMap<String, String> {
+    account_environment_with_env(provider, name, dir, |variable| std::env::var_os(variable))
 }
 
 pub fn translate_accounts(
@@ -314,6 +324,22 @@ mod tests {
             resolve_account(&result, "missing").unwrap_err(),
             "unknown claude account missing"
         );
+    }
+
+    #[test]
+    fn claude_secure_storage_uses_home_and_ignores_swarm_home() {
+        let requested = std::cell::RefCell::new(Vec::new());
+        let environment = account_environment_with_env("claude", "work", "/profiles/work", |name| {
+            requested.borrow_mut().push(name.to_string());
+            match name {
+                "HOME" => Some("/login-home".into()),
+                "SWARM_HOME" => Some("/swarm-home".into()),
+                _ => None,
+            }
+        });
+
+        assert_eq!(environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"], "/login-home/.claude-work");
+        assert_eq!(*requested.borrow(), ["HOME"]);
     }
 
     #[test]

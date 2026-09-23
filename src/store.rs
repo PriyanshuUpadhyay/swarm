@@ -314,6 +314,18 @@ pub fn add_agent(
     Ok(())
 }
 
+pub fn remove_agent(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "DELETE FROM agent WHERE session_id = ?1 AND id = ?2",
+        (session_id, agent_id),
+    )?;
+    Ok(())
+}
+
 pub fn set_provider(connection: &Connection, session_id: &str, agent_id: &str, provider: &str) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "UPDATE agent SET provider = ?3 WHERE session_id = ?1 AND id = ?2",
@@ -335,16 +347,19 @@ pub fn set_pane(
     if pane_id.trim().is_empty() {
         return Err(format!("swarm: adapter gave no pane for {agent_id}").into());
     }
+    let moves_orchestrator = orchestrator_of(connection, session_id)
+        .is_ok_and(|orchestrator| orchestrator == agent_id);
     connection.execute(
-        "UPDATE agent
-         SET pane_id = CASE WHEN session_id = ?2 AND id = ?3 THEN ?1 ELSE NULL END
-         WHERE (session_id = ?2 AND id = ?3)
-            OR (pane_id = ?1 AND session_id != ?2 AND EXISTS (
-                SELECT 1 FROM agent AS target
-                WHERE target.session_id = ?2 AND target.id = ?3
-                  AND target.role = 'orchestrator'
+        "UPDATE agent AS existing
+         SET pane_id = CASE WHEN existing.session_id = ?2 AND existing.id = ?3 THEN ?1 ELSE NULL END
+         WHERE (existing.session_id = ?2 AND existing.id = ?3)
+            OR (?4 AND existing.pane_id = ?1 AND existing.session_id != ?2 AND EXISTS (
+                SELECT 1 FROM session AS previous
+                JOIN session AS target ON target.id = ?2
+                WHERE previous.id = existing.session_id
+                  AND previous.adapter IS target.adapter
             ))",
-        (pane_id, session_id, agent_id),
+        (pane_id, session_id, agent_id, moves_orchestrator),
     )?;
     Ok(())
 }
@@ -536,7 +551,13 @@ pub fn route(
 
 pub fn orchestrator_of(connection: &Connection, session_id: &str) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
-        .query_row("SELECT id FROM agent WHERE session_id = ?1 AND role = 'orchestrator'", [session_id], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM agent
+             WHERE session_id = ?1 AND (role = 'orchestrator' OR id = 'orchestrator')
+             ORDER BY id = 'orchestrator' DESC LIMIT 1",
+            [session_id],
+            |r| r.get(0),
+        )
         .map_err(|_| format!("session {session_id} has no orchestrator"))?;
     Ok(id)
 }
@@ -784,6 +805,27 @@ mod tests {
         assert_eq!(pane_of(&connection, &second, ORCHESTRATOR).unwrap().as_deref(), Some("%2"));
     }
 
+    #[test]
+    fn an_orchestrator_pane_moves_only_within_one_adapter() {
+        let connection = open(Path::new(":memory:")).unwrap();
+        let tmux = create_session(&connection, "lane", Path::new("/tmux"), None, Some("tmux")).unwrap();
+        let same = create_session(&connection, "lane", Path::new("/same"), None, Some("tmux")).unwrap();
+        let solo = create_session(&connection, "lane", Path::new("/solo"), None, Some("tmux-solo")).unwrap();
+        for session in [&tmux, &same, &solo] {
+            add_agent(&connection, session, ORCHESTRATOR, "code.complex").unwrap();
+        }
+
+        set_pane(&connection, &tmux, ORCHESTRATOR, "%0").unwrap();
+        set_pane(&connection, &solo, ORCHESTRATOR, "%0").unwrap();
+        assert_eq!(pane_of(&connection, &tmux, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+        assert_eq!(pane_of(&connection, &solo, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+
+        set_pane(&connection, &same, ORCHESTRATOR, "%0").unwrap();
+        assert_eq!(pane_of(&connection, &tmux, ORCHESTRATOR).unwrap(), None);
+        assert_eq!(pane_of(&connection, &same, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+        assert_eq!(pane_of(&connection, &solo, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+    }
+
     /// A stale adapter answered `self` with nothing. The empty answer was stored, and the chat
     /// said `no pane recorded` at the first message rather than at registration.
     #[test]
@@ -860,6 +902,11 @@ mod tests {
     #[test]
     fn finds_the_session_orchestrator() {
         let connection = seed(0);
+        assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
+        connection.execute(
+            "UPDATE agent SET role = 'code.complex' WHERE session_id = ?1 AND id = ?2",
+            (SESSION, ORCHESTRATOR),
+        ).unwrap();
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
         assert_eq!(orchestrator_of(&connection, OTHER_SESSION).unwrap_err().to_string(), format!("session {OTHER_SESSION} has no orchestrator"));
     }

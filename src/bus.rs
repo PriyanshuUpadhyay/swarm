@@ -72,7 +72,7 @@ pub fn valid_agent_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
 }
 
-pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec<String>, String> {
+pub fn argv(agent_id: &str, role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec<String>, String> {
     let provider = required(role, "provider", resolved.provider.as_deref())?;
     let effort = || required(role, "effort", resolved.effort.as_deref());
     let model = || required(role, "model", resolved.model.as_deref());
@@ -88,11 +88,13 @@ pub fn argv(role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
-            let command = chair_hook_command("claude")?;
-            args.extend([
-                "--settings".into(),
-                serde_json::json!({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]}}).to_string(),
-            ]);
+            if agent_id == "orchestrator" {
+                let command = chair_hook_command("claude")?;
+                args.extend([
+                    "--settings".into(),
+                    serde_json::json!({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]}}).to_string(),
+                ]);
+            }
             Ok(args)
         }
         "codex" => {
@@ -167,6 +169,8 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
         addition.push('\n');
     }
     addition.push_str(&format!("{table}\ntrust_level = \"trusted\"\n"));
+    std::fs::create_dir_all(home)
+        .map_err(|error| format!("cannot create Codex home: {error}"))?;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -211,7 +215,7 @@ mod tests {
     fn builds_each_provider_and_optional_flags() {
         let mut claude = role("claude");
         claude.permission = Some("acceptEdits".into());
-        let claude_args = argv("coder", &claude, "/home").unwrap();
+        let claude_args = argv("orchestrator", "code.complex", &claude, "/home").unwrap();
         assert_eq!(
             claude_args[..7],
             [
@@ -236,7 +240,7 @@ mod tests {
         let mut codex = role("codex");
         codex.sandbox = Some("workspace-write".into());
         codex.approval = Some("never".into());
-        let codex_args = argv("coder", &codex, "/home x").unwrap();
+        let codex_args = argv("coder", "coder", &codex, "/home x").unwrap();
         assert_eq!(
             codex_args[..13],
             [
@@ -260,7 +264,7 @@ mod tests {
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
         assert_eq!(
-            argv("coder", &agy, "/home"),
+            argv("coder", "coder", &agy, "/home"),
             Ok(vec![
                 "agy",
                 "--model",
@@ -276,7 +280,7 @@ mod tests {
         agy.model = Some("default".into());
         agy.permission = Some("plan".into());
         assert_eq!(
-            argv("coder", &agy, "/home"),
+            argv("coder", "coder", &agy, "/home"),
             Ok(vec!["agy", "--effort", "high", "--mode", "plan"]
                 .into_iter()
                 .map(String::from)
@@ -284,7 +288,7 @@ mod tests {
         );
         agy.model = None;
         agy.permission = None;
-        let agy_args = argv("coder", &agy, "/home").unwrap();
+        let agy_args = argv("coder", "coder", &agy, "/home").unwrap();
         assert_eq!(
             agy_args,
             vec!["agy", "--effort", "high"]
@@ -293,6 +297,9 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
+
+        let child_claude_args = argv("coder", "coder", &claude, "/home").unwrap();
+        assert!(!child_claude_args.iter().any(|arg| arg.contains("SessionStart")));
     }
 
     #[test]
@@ -314,24 +321,24 @@ mod tests {
         let mut missing = role("claude");
         missing.provider = None;
         assert_eq!(
-            argv("reviewer", &missing, "/home").unwrap_err(),
+            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
             "swarm: role reviewer has no provider"
         );
         missing.provider = Some("claude".into());
         missing.model = None;
         assert_eq!(
-            argv("reviewer", &missing, "/home").unwrap_err(),
+            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
             "swarm: role reviewer has no model"
         );
         missing.model = Some("model".into());
         missing.effort = None;
         assert_eq!(
-            argv("reviewer", &missing, "/home").unwrap_err(),
+            argv("reviewer", "reviewer", &missing, "/home").unwrap_err(),
             "swarm: role reviewer has no effort"
         );
         let unsupported = role("other");
         assert_eq!(
-            argv("reviewer", &unsupported, "/home").unwrap_err(),
+            argv("reviewer", "reviewer", &unsupported, "/home").unwrap_err(),
             "swarm: role reviewer uses unsupported provider other"
         );
     }
