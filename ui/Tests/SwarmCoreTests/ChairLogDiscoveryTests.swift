@@ -42,7 +42,7 @@ struct ChairLogDiscoveryTests {
         #expect(ChairLogDiscovery.path(
             provider: "codex", chairID: nil, cwd: cwd, createdAt: cutoff, homes: [first]
         )?.lastPathComponent == earlier.lastPathComponent)
-        guard case .rows(let rows) = await reader.poll(session: session) else {
+        guard case .rows(let rows, _) = await reader.poll(session: session) else {
             Issue.record("The reader did not retry after the log appeared")
             return
         }

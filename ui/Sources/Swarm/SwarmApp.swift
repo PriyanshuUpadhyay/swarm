@@ -3,6 +3,23 @@ import Observation
 import SwiftUI
 import SwarmCore
 
+struct PaneFindActions {
+    var open: () -> Void
+    var next: () -> Void
+    var previous: () -> Void
+}
+
+private struct PaneFindActionsKey: FocusedValueKey {
+    typealias Value = PaneFindActions
+}
+
+extension FocusedValues {
+    var paneFindActions: PaneFindActions? {
+        get { self[PaneFindActionsKey.self] }
+        set { self[PaneFindActionsKey.self] = newValue }
+    }
+}
+
 @MainActor @Observable
 final class SessionsTreeModel {
     private let bus = SwarmCLIBus()
@@ -304,6 +321,53 @@ private struct LaunchTarget: Identifiable {
 struct SwarmApp: App {
     var body: some Scene {
         WindowGroup { SessionsWindow() }
+            .commands {
+                DebugCommands()
+                PaneFindCommands()
+            }
+    }
+}
+
+private struct DebugCommands: Commands {
+    @AppStorage("showRawData") private var showRawData = false
+
+    var body: some Commands {
+        CommandMenu("Debug") {
+            Toggle("Show Raw Data", isOn: $showRawData)
+                .keyboardShortcut("r", modifiers: [.command, .option])
+        }
+    }
+}
+
+private struct PaneFindCommands: Commands {
+    @FocusedValue(\.paneFindActions) private var actions
+
+    var body: some Commands {
+        CommandGroup(after: .textEditing) {
+            Divider()
+            Button("Find…") { route(.commandF, action: .showFindPanel) }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("Find Next") { route(.commandG, action: .next) }
+                .keyboardShortcut("g", modifiers: .command)
+            Button("Find Previous") { route(.shiftCommandG, action: .previous) }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+        }
+    }
+
+    private func route(_ key: RoutedKey, action: NSFindPanelAction) {
+        let focus: FocusedSurface = actions == nil ? .terminal : .transcript
+        switch KeyRouting.route(focus: focus, key: key) {
+        case .openFind: actions?.open()
+        case .findNext: actions?.next()
+        case .findPrevious: actions?.previous()
+        case .terminal:
+            let item = NSMenuItem()
+            item.tag = Int(action.rawValue)
+            NSApp.sendAction(
+                #selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item
+            )
+        default: break
+        }
     }
 }
 
@@ -323,7 +387,10 @@ enum SwarmExecutable {
                 exit(1)
             }
         } else if arguments.count == 2, arguments[0] == "--print-transcript" {
-            await printTranscript(prefix: arguments[1])
+            await printTranscript(prefix: arguments[1], raw: false)
+        } else if arguments.count == 3, arguments[0] == "--print-transcript",
+                  arguments[2] == "--raw" {
+            await printTranscript(prefix: arguments[1], raw: true)
         } else if arguments.count == 3, arguments[0] == "--attach-check" {
             await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
         } else if arguments.count == 4, arguments[0] == "--launch-check" {
@@ -352,7 +419,7 @@ enum SwarmExecutable {
         }
     }
 
-    private static func printTranscript(prefix: String) async {
+    private static func printTranscript(prefix: String, raw: Bool) async {
         do {
             let session = try await matchingSession(prefix: prefix)
             let agents = try await SwarmCLIBus().agents(in: session)
@@ -360,7 +427,13 @@ enum SwarmExecutable {
             let snapshot = await SwarmChairTranscript().poll(
                 session: session, chairProvider: provider
             )
-            print(snapshot.printText)
+            if raw, case .rows(_, let entries) = snapshot {
+                print(TranscriptDebugData.printText(
+                    session: session, agents: agents, entries: entries
+                ))
+            } else {
+                print(snapshot.printText)
+            }
             if case .unavailable = snapshot { exit(1) }
         } catch {
             fputs("\(error)\n", stderr)
