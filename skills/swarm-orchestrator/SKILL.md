@@ -37,6 +37,8 @@ swarm ack <seq>
 ```
 
 A child ends its turn after it answers. Ring it by sending; do not poll its pane.
+A child's `finish` or `send` rings your own pane with `swarm: new message`; on that prompt run `swarm inbox`, read the message, and `ack` it.
+When running rounds, put `round: N` on the first line of every ask and discard a summary whose first line does not match the current round.
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
 
