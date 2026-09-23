@@ -18,8 +18,3 @@ Seen 2026-09-22: `swarm send <seat> ask` a second after `swarm spawn` returned
 "FOREIGN KEY constraint failed" for two fresh seats; the same send a few seconds later worked.
 Either spawn returns before the agent row is committed, or the send opens the database before
 the spawn's write lands. Make spawn return only when the agent row is visible to a new connection.
-
-## The transcript scrolls under the title bar
-
-Seen 2026-09-22 after U9: the first transcript row sits behind the window title when the list is
-scrolled to the top. The ScrollView ignores the toolbar's safe area; give it the top inset.

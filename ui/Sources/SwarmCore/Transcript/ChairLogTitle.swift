@@ -27,7 +27,8 @@ public enum ChairLogTitle {
             } else {
                 text = nil
             }
-            if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !text.isEmpty, !text.hasPrefix("<"), !text.hasPrefix("# AGENTS.md") {
                 return text
             }
         }

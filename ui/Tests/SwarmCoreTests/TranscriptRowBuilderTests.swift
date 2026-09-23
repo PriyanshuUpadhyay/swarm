@@ -4,6 +4,14 @@ import TranscriptTool
 
 @Suite("Transcript rows")
 struct TranscriptRowBuilderTests {
+    @Test("Rows use conversation labels")
+    func labels() {
+        #expect(TranscriptRow(kind: .user, text: "", eventID: "1").label(chair: "claude") == "You")
+        #expect(TranscriptRow(kind: .assistant, text: "", eventID: "2").label(chair: "claude") == "Claude")
+        #expect(TranscriptRow(kind: .assistant, text: "", eventID: "3").label(chair: nil) == "Chair")
+        #expect(TranscriptRow(kind: .toolUse, text: "", eventID: "4").label(chair: nil) == "Tool")
+    }
+
     @Test("New rows keep following until the user scrolls away")
     func tailFollow() {
         #expect(TranscriptTail.follows(current: true, atBottom: false, userScrolled: false))
