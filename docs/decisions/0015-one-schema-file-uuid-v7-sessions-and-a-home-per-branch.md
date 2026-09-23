@@ -34,8 +34,9 @@ Chosen: one schema file, because the database has no reader of its history any m
 at `user_version` 0 is created, at 1 is opened, and at anything else stops with "database made by
 another swarm build; use another SWARM_HOME or delete it". Session ids are UUID v7 strings from the
 `uuid` crate, message `seq` counts from 0 per session, `session.cwd` is required, and an agent
-records its provider. The binary installed from main uses `~/.swarm`; a development build uses
-`SWARM_HOME=~/.swarm-<branch>`.
+records its provider. `SWARM_HOME` is set by hand for each process and defaults to `HOME`; nothing
+sets it from the branch or build. It is the parent of the data directory, so swarm stores data in
+`$SWARM_HOME/.swarm`. A development process can use `SWARM_HOME=~/.swarm-<branch>`.
 
 ### Consequences
 

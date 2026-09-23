@@ -156,6 +156,22 @@ fn env_chair() -> Option<(String, String)> {
     None
 }
 
+fn default_codex_home_with_env(
+    mut env_var: impl FnMut(&str) -> Option<std::ffi::OsString>,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(home) = env_var("CODEX_HOME") {
+        return Ok(home.into());
+    }
+    env_var("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|home| home.join(".codex"))
+        .ok_or_else(|| "swarm: HOME not set".to_string())
+}
+
+fn default_codex_home() -> Result<std::path::PathBuf, String> {
+    default_codex_home_with_env(|variable| std::env::var_os(variable))
+}
+
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
     let config = env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
@@ -328,6 +344,31 @@ fn add_agent(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn register_spawned_pane(
+    connection: &rusqlite::Connection,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+    agent_id: &str,
+    role: &str,
+    provider: Option<&str>,
+    vars: &[(&str, &str)],
+) -> Result<String, Box<dyn std::error::Error>> {
+    swarm::store::add_agent(connection, session_id, agent_id, role)?;
+    if let Some(provider) = provider {
+        swarm::store::set_provider(connection, session_id, agent_id, provider)?;
+    }
+    let pane = match adapter.run("spawn", vars) {
+        Ok(pane) => pane,
+        Err(error) => {
+            swarm::store::remove_agent(connection, session_id, agent_id)?;
+            return Err(error);
+        }
+    };
+    swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
+    Ok(pane)
+}
+
 fn spawn_agent(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -351,19 +392,23 @@ fn spawn_agent(
         None
     };
     let session_id = session_id()?;
-    swarm::store::add_agent(connection, &session_id, agent_id, role)?;
-    if let Some(provider) = options.provider.or_else(|| options.command.first().map(String::as_str))
+    let provider = options.provider.or_else(|| options.command.first().map(String::as_str))
         .filter(|provider| matches!(*provider, "claude" | "codex" | "agy"))
-    {
-        swarm::store::set_provider(connection, &session_id, agent_id, provider)?;
-    }
+        .map(str::to_string);
     let adapter = swarm::adapter::load(root, &adapter_name())?;
     let session = session_id.to_string();
     let home = swarm::paths::home()?;
     let current_adapter = adapter_name();
     let vars = [("session_id", session.as_str()), ("agent_id", agent_id), ("home", home.as_str()), ("adapter", current_adapter.as_str())];
-    let pane = adapter.run("spawn", &vars)?;
-    swarm::store::set_pane(connection, &session_id, agent_id, &pane)?;
+    let pane = register_spawned_pane(
+        connection,
+        &adapter,
+        &session_id,
+        agent_id,
+        role,
+        provider.as_deref(),
+        &vars,
+    )?;
     if !options.command.is_empty() {
         let exe = env::current_exe()?.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
@@ -391,21 +436,22 @@ fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error
     swarm::adapter::load(&root, &adapter_name())?.attach(&[("pane", &pane)])
 }
 
-/// A child ended without `swarm finish`: send a fallback summary in its name and queue a
-/// summarize job, unless it already sent one (R19). Then forget its pane.
+/// A child ended without `swarm finish`: forget its pane, then send a fallback summary in its
+/// name and queue a summarize job unless it already sent one (R19).
 fn report_dead(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
     session_id: &str,
     child: &str,
-    orchestrator: &str,
     note: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    swarm::store::clear_pane(connection, &session_id, child)?;
     if !swarm::store::has_summary(connection, &session_id, child)? {
-        deliver(connection, root, &adapter_name(), &session_id, child, orchestrator, "summary", note)?;
+        let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
+        deliver(connection, root, &adapter_name(), &session_id, child, &orchestrator, "summary", note)?;
         swarm::store::enqueue_job(connection, &session_id, child, "summarize")?;
     }
-    swarm::store::clear_pane(connection, &session_id, child)
+    Ok(())
 }
 
 /// One sweep pass: re-ring unseen messages and report each child whose pane is gone.
@@ -435,22 +481,68 @@ fn sweep_once(
             continue;
         }
         let note = format!("agent {child} died without a summary");
-        report_dead(connection, root, &session_id, &child, agent_id, &note)?;
+        report_dead(connection, root, &session_id, &child, &note)?;
         println!("dead {child}");
     }
     Ok(())
 }
 
 /// Feed the agent's captured log to the summarizer shell command and return its output.
-/// The log is removed only after a successful run, so a retry still has its input.
 fn summarize_log(log: &std::path::Path, summarizer: &str) -> Result<String, Box<dyn std::error::Error>> {
     let input = std::fs::File::open(log).map_err(|e| format!("{}: {e}", log.display()))?;
     let output = std::process::Command::new("sh").arg("-c").arg(summarizer).stdin(input).output()?;
     if !output.status.success() {
         return Err(format!("summarizer failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
     }
-    std::fs::remove_file(log)?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn process_summary_job(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    summarizer: &str,
+    job_id: i64,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (session, agent, kind, attempts) = swarm::store::job(connection, job_id)?;
+    if kind != "summarize" {
+        swarm::store::park_job(connection, job_id)?;
+        return Ok(format!("parked {job_id} unknown kind {kind}"));
+    }
+    let log = root.join(format!("runs/{session}/{agent}.log"));
+    let result = (|| {
+        let summary = summarize_log(&log, summarizer)?;
+        let orchestrator = swarm::store::orchestrator_of(connection, &session)?;
+        deliver(connection, root, adapter_name, &session, &agent, &orchestrator, "summary", &summary)?;
+        std::fs::remove_file(&log)?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })();
+    match result {
+        Ok(()) => {
+            swarm::store::finish_job(connection, job_id)?;
+            Ok(format!("done {job_id}"))
+        }
+        Err(error) if attempts < 3 => {
+            swarm::store::release_job(connection, job_id, 30)?;
+            Ok(format!("retry {job_id}: {error}"))
+        }
+        Err(error) => {
+            swarm::store::park_job(connection, job_id)?;
+            Ok(format!("parked {job_id}: {error}"))
+        }
+    }
+}
+
+fn set_chair_for_caller(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    caller: &str,
+    chair: Option<(&str, &str)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if swarm::store::orchestrator_of(connection, session_id)? != caller {
+        return Err("swarm: only the orchestrator can set the session chair".into());
+    }
+    swarm::store::set_chair(connection, session_id, chair)
 }
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -529,7 +621,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let [cmd, sub, value] = args && cmd == "session" && sub == "chair" {
-        swarm::store::set_chair(&connection, &session_id()?, parse_chair(value)?)?;
+        let (session_id, agent_id) = identity()?;
+        set_chair_for_caller(&connection, &session_id, &agent_id, parse_chair(value)?)?;
         return Ok(());
     }
     if let [cmd, sub, ids @ ..] = args
@@ -639,17 +732,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let resolved = resolve_role(role)?;
         let provider = resolved.provider.clone();
         if provider.as_deref() == Some("codex") {
-            if let Some(account_name) = account {
+            let home = if let Some(account_name) = account {
                 let accounts = load_accounts("codex", true)?;
                 let account = swarm::profiles::resolve_account(&accounts, account_name)
                     .map_err(|error| format!("swarm: {error}"))?;
-                swarm::bus::ensure_codex_trust(
-                    std::path::Path::new(&account.home),
-                    &std::env::current_dir()?,
-                )?;
-            }
+                std::path::PathBuf::from(&account.home)
+            } else {
+                default_codex_home()?
+            };
+            swarm::bus::ensure_codex_trust(&home, &std::env::current_dir()?)?;
         }
-        let command = swarm::bus::argv(role, &resolved, &swarm::paths::home()?)?;
+        let command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
         return spawn_agent(
             &connection,
             &root,
@@ -665,29 +758,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd] = args && cmd == "drain" {
         let summarizer = env_var("SWARM_SUMMARIZER")?;
         while let Some(job_id) = swarm::store::claim_next(&connection)? {
-            let (session, agent, kind, attempts) = swarm::store::job(&connection, job_id)?;
-            if kind != "summarize" {
-                swarm::store::park_job(&connection, job_id)?;
-                println!("parked {job_id} unknown kind {kind}");
-                continue;
-            }
-            let log = root.join(format!("runs/{session}/{agent}.log"));
-            match summarize_log(&log, &summarizer) {
-                Ok(summary) => {
-                    let orchestrator = swarm::store::orchestrator_of(&connection, &session)?;
-                    deliver(&mut connection, &root, &adapter_name(), &session, &agent, &orchestrator, "summary", &summary)?;
-                    swarm::store::finish_job(&connection, job_id)?;
-                    println!("done {job_id}");
-                }
-                Err(error) if attempts < 3 => {
-                    swarm::store::release_job(&connection, job_id, 30)?;
-                    println!("retry {job_id}: {error}");
-                }
-                Err(error) => {
-                    swarm::store::park_job(&connection, job_id)?;
-                    println!("parked {job_id}: {error}");
-                }
-            }
+            println!("{}", process_summary_job(&mut connection, &root, &adapter_name(), &summarizer, job_id)?);
         }
         return Ok(());
     }
@@ -735,9 +806,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let run_dir = root.join(format!("runs/{session_id}"));
             std::fs::create_dir_all(&run_dir)?;
             swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
-            let orchestrator = swarm::store::orchestrator_of(&connection, &session_id)?;
             let note = format!("agent {agent_id} exited without a summary");
-            report_dead(&mut connection, &root, &session_id, &agent_id, &orchestrator, &note)
+            report_dead(&mut connection, &root, &session_id, &agent_id, &note)
         }
         [cmd, rest @ ..] if cmd == "sweep" => {
             let every = match rest {
@@ -913,6 +983,126 @@ mod tests {
 
         assert_eq!(swarm::store::pane_of(&connection, &session, ORCHESTRATOR).unwrap().as_deref(), Some("%9"));
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+    }
+
+    #[test]
+    fn a_routing_role_chair_receives_a_child_finish() {
+        let root = std::env::temp_dir().join(format!("swarm-routing-chair-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        let ring_log = root.join("rings");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            format!(
+                "self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE:$SWARM_TEXT\" >> '{}'\nlist = true\nclose = true\ncapture = true\n",
+                ring_log.display()
+            ),
+        )
+        .unwrap();
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, Some("fake")).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "code.complex").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%9").unwrap();
+
+        let chair = swarm::store::orchestrator_of(&connection, &session).unwrap();
+        deliver(&mut connection, &root, "fake", &session, CODER, &chair, "summary", "done").unwrap();
+
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+    }
+
+    #[test]
+    fn only_the_orchestrator_can_set_the_session_chair() {
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "code.complex").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+
+        let error = set_chair_for_caller(&connection, &session, CODER, Some(("claude", "wrong")))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "swarm: only the orchestrator can set the session chair");
+        set_chair_for_caller(&connection, &session, ORCHESTRATOR, Some(("claude", "right"))).unwrap();
+        let stored = swarm::store::sessions(&connection).unwrap();
+        assert_eq!(stored[0].chair_id.as_deref(), Some("right"));
+    }
+
+    #[test]
+    fn a_failed_adapter_spawn_rolls_back_the_agent() {
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let failed = swarm::adapter::parse(
+            "failed",
+            "self = true\nspawn = echo refused >&2; exit 1\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        )
+        .unwrap();
+
+        assert!(register_spawned_pane(&connection, &failed, &session, CODER, "coder", None, &[]).is_err());
+        assert!(swarm::store::agents(&connection, &session).unwrap().is_empty());
+
+        let working = swarm::adapter::parse(
+            "working",
+            "self = true\nspawn = printf '%s' '%2'\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            register_spawned_pane(&connection, &working, &session, CODER, "coder", None, &[]).unwrap(),
+            "%2"
+        );
+    }
+
+    #[test]
+    fn a_failed_dead_agent_report_still_clears_its_pane() {
+        let root = std::env::temp_dir().join(format!("swarm-dead-report-test-{}", std::process::id()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
+
+        assert!(report_dead(&mut connection, &root, &session, CODER, "dead").is_err());
+        assert_eq!(swarm::store::pane_of(&connection, &session, CODER).unwrap(), None);
+    }
+
+    #[test]
+    fn a_failed_summary_delivery_keeps_the_log_and_releases_the_job() {
+        let root = std::env::temp_dir().join(format!("swarm-summary-retry-test-{}", std::process::id()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        let log = root.join(format!("runs/{session}/{CODER}.log"));
+        std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+        std::fs::write(&log, "captured output").unwrap();
+        let job = swarm::store::enqueue_job(&connection, &session, CODER, "summarize").unwrap();
+        assert_eq!(swarm::store::claim_next(&connection).unwrap(), Some(job));
+
+        let result = process_summary_job(&mut connection, &root, "fake", "cat", job).unwrap();
+
+        assert!(result.contains("orchestrator has no pane"));
+        assert!(log.exists());
+        let state: String = connection.query_row("SELECT state FROM job WHERE id = ?1", [job], |row| row.get(0)).unwrap();
+        assert_eq!(state, "queued");
+    }
+
+    #[test]
+    fn default_codex_trust_uses_codex_home_or_login_home() {
+        let root = std::env::temp_dir().join(format!("swarm-default-codex-test-{}", std::process::id()));
+        let login = root.join("login");
+        let codex = default_codex_home_with_env(|name| match name {
+            "HOME" => Some(login.clone().into_os_string()),
+            _ => None,
+        })
+        .unwrap();
+        swarm::bus::ensure_codex_trust(&codex, std::path::Path::new("/project")).unwrap();
+        assert!(login.join(".codex/config.toml").exists());
+
+        let override_home = root.join("override");
+        assert_eq!(
+            default_codex_home_with_env(|name| (name == "CODEX_HOME").then(|| override_home.clone().into_os_string())).unwrap(),
+            override_home
+        );
     }
 
     #[test]
