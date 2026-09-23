@@ -233,8 +233,8 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     Ok(SpawnOptions { provider, account, command: &[] })
 }
 
-/// Store the message, then ring the recipient's pane when it has one. The bell is a hint (R9),
-/// so a ring failure only warns.
+/// Refuse a recipient without a pane, then store the message and ring it. The bell is a hint
+/// (R9), so a ring failure only warns.
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     connection: &mut rusqlite::Connection,
@@ -247,18 +247,18 @@ fn deliver(
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let (recipient, kind) = swarm::store::route(connection, &session_id, sender, recipient, kind)?;
+    let pane = swarm::store::pane_of(connection, &session_id, &recipient)?
+        .ok_or_else(|| format!("swarm: {recipient} has no pane; nothing would ring it"))?;
     let seq = swarm::store::send_message(connection, root, &session_id, sender, &recipient, &kind, body)?;
-    if let Some(pane) = swarm::store::pane_of(connection, &session_id, &recipient)? {
-        if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
-            connection.execute(
-                "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
-                (session_id, seq),
-            )?;
-            let ring = swarm::adapter::load(root, adapter_name)
-                .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
-            if let Err(error) = ring {
-                eprintln!("swarm: ring failed: {error}");
-            }
+    if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+        connection.execute(
+            "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
+            (session_id, seq),
+        )?;
+        let ring = swarm::adapter::load(root, adapter_name)
+            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+        if let Err(error) = ring {
+            eprintln!("swarm: ring failed: {error}");
         }
     }
     Ok(seq)
@@ -308,20 +308,22 @@ fn add_agent(
     } else {
         None
     };
+    let transaction = connection.unchecked_transaction()?;
     // A chair registers again each time its CLI starts, from a pane that may be new. Any other
     // clash is still an error, so a second agent cannot take an existing agent's name.
     let rejoins = pane.is_some()
-        && swarm::store::agents(connection, &session_id)?
+        && swarm::store::agents(&transaction, &session_id)?
             .iter()
             .any(|agent| agent.id == agent_id && agent.role == role);
     if !rejoins {
-        swarm::store::add_agent(connection, &session_id, agent_id, role)?;
+        swarm::store::add_agent(&transaction, &session_id, agent_id, role)?;
     }
     // An orchestrator that cannot say which pane it is in is refused, because the alternative is
     // a chat that starts, looks healthy, and drops the first message somebody types into it.
     if let Some(pane) = pane {
-        swarm::store::set_pane(connection, &session_id, agent_id, &pane)?;
+        swarm::store::set_pane(&transaction, &session_id, agent_id, &pane)?;
     }
+    transaction.commit()?;
     Ok(())
 }
 
@@ -838,6 +840,7 @@ mod tests {
         let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
         let adapter = swarm::adapter::parse(
             "fake",
@@ -909,5 +912,45 @@ mod tests {
 
         assert_eq!(swarm::store::pane_of(&connection, &session, ORCHESTRATOR).unwrap().as_deref(), Some("%9"));
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+    }
+
+    #[test]
+    fn refused_orchestrator_registration_leaves_no_agent() {
+        let root = std::env::temp_dir().join(format!("swarm-empty-chair-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        )
+        .unwrap();
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+
+        let error = add_agent(&connection, &root, "fake", &session, ORCHESTRATOR, "orchestrator")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error, "swarm: adapter gave no pane for orchestrator");
+        assert!(swarm::store::agents(&connection, &session).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deliver_to_agent_without_pane_writes_no_message() {
+        let root = std::env::temp_dir().join(format!("swarm-no-pane-test-{}", std::process::id()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+
+        let error = deliver(
+            &mut connection, &root, "fake", &session, CODER, ORCHESTRATOR, "summary", "done",
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(error, "swarm: orchestrator has no pane; nothing would ring it");
+        assert_eq!(swarm::store::messages(&connection, &session, -1).unwrap().len(), 0);
     }
 }
