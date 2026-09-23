@@ -32,6 +32,17 @@ struct SessionsTreeTests {
         #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
+    @Test("Resolved titles name their rows and missing titles fall back")
+    func resolvedTitles() {
+        let named = session("named", cwd: "/outside")
+        let fallback = session("fallback", cwd: "/outside")
+        let tree = build([named, fallback], titles: [named.id: "Repair the sidebar"])
+        let titles = Dictionary(uniqueKeysWithValues: tree.projects[0].sessions.map {
+            ($0.id, $0.title)
+        })
+        #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat"])
+    }
+
     @Test("Session rows have clear titles, captions, and states")
     func rowPresentation() {
         let live = projectSession("live-title", title: "Build sidebar", provider: "claude", running: true)
@@ -205,10 +216,11 @@ struct SessionsTreeTests {
     }
 
     private func build(
-        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
+        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
+        titles: [SwarmSessionID: String] = [:]
     ) -> SessionsTree {
         SessionsTree.build(
-            sessions: sessions, agentsBySession: agentsBySession,
+            sessions: sessions, agentsBySession: agentsBySession, titles: titles,
             repositoryPathsResolver: { path in
                 guard path == "/repo" || worktrees.contains(where: { $0.path == path }) else { return nil }
                 return GitRepositoryPaths(gitDirectory: common + "/worktrees/test", commonDirectory: common)

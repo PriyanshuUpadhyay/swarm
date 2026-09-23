@@ -69,23 +69,32 @@ private struct SessionsWindow: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedID) {
-                ForEach(model.tree.projects) { project in
-                    DisclosureGroup(isExpanded: expansion(project.path, in: $expandedProjects, key: "expandedProjects")) {
-                        ForEach(project.sessions) { row in sessionRow(row).tag(row.id) }
-                        ForEach(project.worktrees) { worktree in
-                            DisclosureGroup(isExpanded: expansion(worktree.id, in: $expandedWorktrees, key: "expandedWorktrees")) {
-                                ForEach(worktree.sessions) { row in sessionRow(row).tag(row.id) }
-                            } label: {
-                                TreeRowLabel(
-                                    name: worktree.entry.branch
-                                        ?? URL(fileURLWithPath: worktree.entry.path).lastPathComponent
-                                ) { newChatDirectory = worktree.entry.path }
-                            }
-                        }
-                    } label: {
-                        TreeRowLabel(name: project.name) {
+                ForEach(sidebarRows) { entry in
+                    switch entry {
+                    case .project(let project):
+                        TreeRowLabel(
+                            name: project.name,
+                            isExpanded: expansion(
+                                project.path, in: $expandedProjects, key: "expandedProjects"
+                            )
+                        ) {
                             newChatDirectory = project.launchDirectory
                         }
+                    case .worktree(let worktree):
+                        TreeRowLabel(
+                            name: worktree.entry.branch
+                                ?? URL(fileURLWithPath: worktree.entry.path).lastPathComponent,
+                            isExpanded: expansion(
+                                worktree.id, in: $expandedWorktrees, key: "expandedWorktrees"
+                            )
+                        ) {
+                            newChatDirectory = worktree.entry.path
+                        }
+                        .padding(.leading, 16)
+                    case .session(let row, let depth):
+                        sessionRow(row)
+                            .padding(.leading, CGFloat(depth * 16))
+                            .tag(row.id)
                     }
                 }
             }
@@ -178,18 +187,42 @@ private struct SessionsWindow: View {
             }
         }
     }
+
+    private var sidebarRows: [SidebarRow] {
+        var rows: [SidebarRow] = []
+        for project in model.tree.projects {
+            rows.append(.project(project))
+            guard expandedProjects.contains(project.path) else { continue }
+            rows += project.sessions.map { .session($0, depth: 1) }
+            for worktree in project.worktrees {
+                rows.append(.worktree(worktree))
+                guard expandedWorktrees.contains(worktree.id) else { continue }
+                rows += worktree.sessions.map { .session($0, depth: 2) }
+            }
+        }
+        return rows
+    }
 }
 
 private struct TreeRowLabel: View {
     let name: String
+    @Binding var isExpanded: Bool
     let onNewChat: () -> Void
     @State private var hovered = false
 
     var body: some View {
         HStack {
-            Text(name)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Button { isExpanded.toggle() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    Text(name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(name)")
             Spacer()
             Button(action: onNewChat) {
                 Image(systemName: "plus.circle")
@@ -200,8 +233,21 @@ private struct TreeRowLabel: View {
             .opacity(hovered ? 1 : 0)
             .allowsHitTesting(hovered)
         }
-        .contentShape(Rectangle())
         .onHover { hovered = $0 }
+    }
+}
+
+private enum SidebarRow: Identifiable {
+    case project(ProjectNode)
+    case worktree(WorktreeNode)
+    case session(SwarmProjectSession, depth: Int)
+
+    var id: String {
+        switch self {
+        case .project(let project): "project:\(project.path)"
+        case .worktree(let worktree): "worktree:\(worktree.id)"
+        case .session(let session, _): "session:\(session.id.rawValue)"
+        }
     }
 }
 
