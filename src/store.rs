@@ -725,7 +725,7 @@ mod tests {
             .query_row("SELECT count(*) FROM message", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
-        assert!(!root.join(&format!("runs/{SESSION}/1.txt")).exists());
+        assert!(!root.join(format!("runs/{SESSION}/1.txt")).exists());
     }
 
     #[test]
