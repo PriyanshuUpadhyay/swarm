@@ -4,6 +4,7 @@ import SwiftUI
 import SwarmCore
 
 struct PaneFindActions {
+    var terminalFocused: Bool
     var open: () -> Void
     var next: () -> Void
     var previous: () -> Void
@@ -355,7 +356,7 @@ private struct PaneFindCommands: Commands {
     }
 
     private func route(_ key: RoutedKey, action: NSFindPanelAction) {
-        let focus: FocusedSurface = actions == nil ? .terminal : .transcript
+        let focus: FocusedSurface = actions?.terminalFocused == false ? .transcript : .terminal
         switch KeyRouting.route(focus: focus, key: key) {
         case .openFind: actions?.open()
         case .findNext: actions?.next()

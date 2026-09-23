@@ -262,8 +262,11 @@ struct SessionDetailView: View {
             .padding(12)
         }
         .focusable()
+        .focusEffectDisabled()
         .focused($transcriptFocused)
-        .focusedValue(\.paneFindActions, PaneFindActions(
+        // Scene-wide, so the menu finds the transcript without it holding keyboard focus.
+        .focusedSceneValue(\.paneFindActions, PaneFindActions(
+            terminalFocused: panes.focusedKey != nil,
             open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
         ))
         .onChange(of: findMatches) { previousMatches, newMatches in
@@ -383,6 +386,7 @@ struct SessionDetailView: View {
     }
 
     private func matchBackground(_ id: String) -> some ShapeStyle {
+        guard findPresented else { return Color.clear }
         if currentMatchID == id { return Color.accentColor.opacity(0.28) }
         if findMatches.contains(id) { return Color.yellow.opacity(0.14) }
         return Color.clear
