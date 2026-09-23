@@ -321,6 +321,7 @@ fn add_agent(
     // An orchestrator that cannot say which pane it is in is refused, because the alternative is
     // a chat that starts, looks healthy, and drops the first message somebody types into it.
     if let Some(pane) = pane {
+        swarm::store::set_adapter(&transaction, &session_id, adapter_name)?;
         swarm::store::set_pane(&transaction, &session_id, agent_id, &pane)?;
     }
     transaction.commit()?;
@@ -912,6 +913,53 @@ mod tests {
 
         assert_eq!(swarm::store::pane_of(&connection, &session, ORCHESTRATOR).unwrap().as_deref(), Some("%9"));
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+    }
+
+    #[test]
+    fn a_chair_pane_moves_to_the_new_session() {
+        let root = std::env::temp_dir().join(format!("swarm-chair-move-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            "self = printf '%s' '%1'\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        )
+        .unwrap();
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let first = swarm::store::create_session(&connection, "lane", std::path::Path::new("/first"), None, None).unwrap();
+        let second = swarm::store::create_session(&connection, "lane", std::path::Path::new("/second"), None, None).unwrap();
+
+        add_agent(&connection, &root, "fake", &first, ORCHESTRATOR, "orchestrator").unwrap();
+        add_agent(&connection, &root, "fake", &second, ORCHESTRATOR, "orchestrator").unwrap();
+
+        assert_eq!(swarm::store::pane_of(&connection, &first, ORCHESTRATOR).unwrap(), None);
+        assert_eq!(swarm::store::pane_of(&connection, &second, ORCHESTRATOR).unwrap().as_deref(), Some("%1"));
+    }
+
+    #[test]
+    fn orchestrator_registration_sets_the_session_adapter() {
+        let root = std::env::temp_dir().join(format!("swarm-chair-adapter-test-{}", std::process::id()));
+        let adapters = root.join("adapters");
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(
+            adapters.join("fake.conf"),
+            "self = printf '%s' '%1'\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+        )
+        .unwrap();
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            Some("tmux"),
+        )
+        .unwrap();
+
+        add_agent(&connection, &root, "fake", &session, ORCHESTRATOR, "orchestrator").unwrap();
+
+        let stored = swarm::store::sessions(&connection).unwrap();
+        assert_eq!(stored[0].adapter.as_deref(), Some("fake"));
     }
 
     #[test]

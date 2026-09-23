@@ -27,6 +27,12 @@ public enum ChairTranscriptSnapshot: Sendable, Equatable {
     case notice(String)
     case unavailable(String)
 
+    public static func waitingMessage(isRunning: Bool?) -> String {
+        isRunning == false
+            ? "This chat ended before its log was found"
+            : "The chair has not written its log yet"
+    }
+
     public var printText: String {
         switch self {
         case .waiting: "notice The chair has not written its log yet"

@@ -182,7 +182,7 @@ public struct SessionsTree: Sendable, Hashable {
             guard let row = project.chats.first(where: {
                 $0.session.sessions.contains { $0.id == id }
             }) else { continue }
-            return "\(project.name) · \(row.session.provider ?? "no chair") \(row.id.rawValue.prefix(8))"
+            return "\(project.name) · \(row.session.title)"
         }
         return nil
     }

@@ -79,13 +79,27 @@ struct ChairLogDiscoveryTests {
         ) == nil)
     }
 
-    @Test("Rejects a rollout that starts before the session")
+    @Test("Finds a rollout that starts three minutes before the session")
+    func codexBeforeSession() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let early = try fixture.codexLog(
+            home: home, name: "early", cwd: "/work", at: "2026-09-22T12:23:01Z"
+        )
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+        )?.lastPathComponent == early.lastPathComponent)
+    }
+
+    @Test("Rejects a rollout that starts twenty minutes before the session")
     func codexTooEarly() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let home = fixture.root.appendingPathComponent(".codex")
         try fixture.codexLog(
-            home: home, name: "early", cwd: "/work", at: "2026-09-22T12:26:00Z"
+            home: home, name: "early", cwd: "/work", at: "2026-09-22T12:06:01Z"
         )
 
         #expect(ChairLogDiscovery.path(

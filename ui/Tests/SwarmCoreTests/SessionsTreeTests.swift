@@ -43,6 +43,7 @@ struct SessionsTreeTests {
             ($0.id, $0.title)
         })
         #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat"])
+        #expect(tree.windowTitle(for: named.id) == "outside · Repair the sidebar")
     }
 
     @Test("Session rows have clear titles, captions, and states")
@@ -108,7 +109,7 @@ struct SessionsTreeTests {
         #expect(SessionRowPresentation.make(
             withChair.projects[0].chats[0], now: 61
         ).caption == "outside · codex")
-        #expect(withChair.windowTitle(for: item.id) == "outside · codex provider")
+        #expect(withChair.windowTitle(for: item.id) == "outside · Chat")
 
         let withoutChair = build([item], agentsBySession: [item.id: [worker]])
         #expect(SessionRowPresentation.make(
@@ -172,7 +173,7 @@ struct SessionsTreeTests {
         #expect(tree.session(rows[0].id)?.id == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("newer")) == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("gone")) == nil)
-        #expect(tree.windowTitle(for: rows[0].id) == "repo · codex older")
+        #expect(tree.windowTitle(for: rows[0].id) == "repo · Chat")
     }
 
     @Test("A new session remains the chat row when an older session has later activity")
