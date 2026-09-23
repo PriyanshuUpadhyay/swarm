@@ -300,12 +300,14 @@ public actor SwarmSessionDiscovery {
                provider == "claude" || provider == "codex" {
                 if homesByProvider[provider] == nil {
                     let accounts = try? await profileSource.accounts(provider: provider)
-                    homesByProvider[provider] = (accounts?.accounts.map {
-                        URL(fileURLWithPath: $0.home)
-                    } ?? []) + [home.appendingPathComponent(provider == "codex" ? ".codex" : ".claude")]
+                    homesByProvider[provider] = ChairLogDiscovery.homes(
+                        provider: provider,
+                        accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+                    )
                 }
                 log = ChairLogDiscovery.path(
-                    provider: provider, cwd: session.cwd, createdAt: session.createdAt,
+                    provider: provider, chairID: session.chairID?.rawValue,
+                    cwd: session.cwd, createdAt: session.createdAt,
                     homes: homesByProvider[provider] ?? []
                 )?.path
             }

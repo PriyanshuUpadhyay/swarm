@@ -72,10 +72,13 @@ public actor SwarmChairTranscript {
         if resolved.chairLog == nil, let provider, provider == "claude" || provider == "codex" {
             if discoveredSession != session.id || discoveredLog == nil {
                 let accounts = try? await profiles.accounts(provider: provider)
-                let homes = (accounts?.accounts.map { URL(fileURLWithPath: $0.home) } ?? [])
-                    + [home.appendingPathComponent(provider == "codex" ? ".codex" : ".claude")]
+                let homes = ChairLogDiscovery.homes(
+                    provider: provider,
+                    accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+                )
                 discoveredLog = ChairLogDiscovery.path(
-                    provider: provider, cwd: session.cwd, createdAt: session.createdAt,
+                    provider: provider, chairID: session.chairID?.rawValue,
+                    cwd: session.cwd, createdAt: session.createdAt,
                     homes: homes
                 )
                 discoveredSession = session.id

@@ -1,43 +1,36 @@
 import Foundation
 
-/// Finds a provider log when Swarm has not received the chair's native session id.
+/// Finds a provider log by its chair id or session start time.
 public enum ChairLogDiscovery {
     public static func path(
-        provider: String, cwd: String, createdAt: Int,
+        provider: String, chairID: String?, cwd: String, createdAt: Int,
         homes: [URL]
     ) -> URL? {
         let manager = FileManager.default
-        let roots = Array(Set(homes.map(\.standardizedFileURL)))
+        var seen: Set<String> = []
+        let roots = homes.map(\.standardizedFileURL).filter { seen.insert($0.path).inserted }
+
+        if let chairID {
+            for home in roots {
+                if let match = candidates(provider: provider, home: home, manager: manager)
+                    .sorted(by: { $0.path < $1.path })
+                    .first(where: { candidate in
+                        switch provider {
+                        case "claude": candidate.lastPathComponent == "\(chairID).jsonl"
+                        case "codex": candidate.lastPathComponent.hasSuffix("-\(chairID).jsonl")
+                        default: false
+                        }
+                    }) {
+                    return match
+                }
+            }
+            return nil
+        }
+
         var closest: (path: URL, distance: TimeInterval)?
 
         for home in roots {
-            let candidates: [URL]
-            switch provider {
-            case "claude":
-                let projects = home.appendingPathComponent("projects", isDirectory: true)
-                let directories = (try? manager.contentsOfDirectory(
-                    at: projects, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-                )) ?? []
-                candidates = directories.flatMap { directory in
-                    (try? manager.contentsOfDirectory(
-                        at: directory, includingPropertiesForKeys: nil,
-                        options: [.skipsHiddenFiles]
-                    )) ?? []
-                }.filter { $0.pathExtension == "jsonl" }
-            case "codex":
-                let sessions = home.appendingPathComponent("sessions", isDirectory: true)
-                let files = manager.enumerator(
-                    at: sessions, includingPropertiesForKeys: [.isRegularFileKey],
-                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
-                )
-                candidates = (files?.allObjects as? [URL] ?? []).filter {
-                    $0.lastPathComponent.hasPrefix("rollout-") && $0.pathExtension == "jsonl"
-                }
-            default:
-                return nil
-            }
-
-            for candidate in candidates {
+            for candidate in candidates(provider: provider, home: home, manager: manager) {
                 guard let record = firstRecord(in: candidate),
                       record.cwd == URL(fileURLWithPath: cwd).standardizedFileURL.path else { continue }
                 let delay = record.date.timeIntervalSince1970 - TimeInterval(createdAt)
@@ -50,6 +43,41 @@ public enum ChairLogDiscovery {
             }
         }
         return closest?.path
+    }
+
+    static func homes(provider: String, accountHomes: [String], userHome: URL) -> [URL] {
+        accountHomes.map(URL.init(fileURLWithPath:)) + [
+            userHome.appendingPathComponent(provider == "codex" ? ".codex" : ".claude")
+        ]
+    }
+
+    private static func candidates(
+        provider: String, home: URL, manager: FileManager
+    ) -> [URL] {
+        switch provider {
+        case "claude":
+            let projects = home.appendingPathComponent("projects", isDirectory: true)
+            let directories = (try? manager.contentsOfDirectory(
+                at: projects, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            )) ?? []
+            return directories.flatMap { directory in
+                (try? manager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )) ?? []
+            }.filter { $0.pathExtension == "jsonl" }
+        case "codex":
+            let sessions = home.appendingPathComponent("sessions", isDirectory: true)
+            let files = manager.enumerator(
+                at: sessions, includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            )
+            return (files?.allObjects as? [URL] ?? []).filter {
+                $0.lastPathComponent.hasPrefix("rollout-") && $0.pathExtension == "jsonl"
+            }
+        default:
+            return []
+        }
     }
 
     private static func firstRecord(in path: URL) -> (cwd: String, date: Date)? {

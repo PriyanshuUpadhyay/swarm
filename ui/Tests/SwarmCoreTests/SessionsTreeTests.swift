@@ -86,7 +86,7 @@ struct SessionsTreeTests {
         #expect(tree.text(now: 61).contains("Chat · outside · ended · 1m"))
 
         let empty = build([dead], agentsBySession: [dead.id: []])
-        #expect(empty.projects[0].chats.isEmpty)
+        #expect(empty.projects.isEmpty)
 
         let running = build([dead], agentsBySession: [dead.id: [agent, SwarmAgent(
             id: .init("worker"), role: "code", pane: "%2", alive: true
