@@ -80,7 +80,7 @@ struct SessionDetailView: View {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             switch model.snapshot {
                             case .waiting:
-                                Text("The chair has not written its log yet")
+                                Text(ChairTranscriptSnapshot.waitingMessage(isRunning: row.isRunning))
                                     .foregroundStyle(.secondary)
                             case .notice(let message):
                                 Text(verbatim: message).foregroundStyle(.secondary)

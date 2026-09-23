@@ -219,6 +219,21 @@ pub fn set_chair_log(
     Ok(())
 }
 
+pub fn set_adapter(
+    connection: &Connection,
+    session_id: &str,
+    adapter: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE session SET adapter = ?2 WHERE id = ?1",
+        (session_id, adapter),
+    )?;
+    if changed != 1 {
+        return Err(format!("session {session_id} not found").into());
+    }
+    Ok(())
+}
+
 pub fn archive_sessions(
     connection: &mut Connection,
     session_ids: &[String],
@@ -321,7 +336,14 @@ pub fn set_pane(
         return Err(format!("swarm: adapter gave no pane for {agent_id}").into());
     }
     connection.execute(
-        "UPDATE agent SET pane_id = ?1 WHERE session_id = ?2 AND id = ?3",
+        "UPDATE agent
+         SET pane_id = CASE WHEN session_id = ?2 AND id = ?3 THEN ?1 ELSE NULL END
+         WHERE (session_id = ?2 AND id = ?3)
+            OR (pane_id = ?1 AND session_id != ?2 AND EXISTS (
+                SELECT 1 FROM agent AS target
+                WHERE target.session_id = ?2 AND target.id = ?3
+                  AND target.role = 'orchestrator'
+            ))",
         (pane_id, session_id, agent_id),
     )?;
     Ok(())

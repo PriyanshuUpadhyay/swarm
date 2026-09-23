@@ -73,6 +73,14 @@ struct SwarmSessionDetailTests {
             == .notice("No transcript reader for this provider yet"))
     }
 
+    @Test("A missing log explains whether the chat ended")
+    func missingLogMessage() {
+        #expect(ChairTranscriptSnapshot.waitingMessage(isRunning: true)
+            == "The chair has not written its log yet")
+        #expect(ChairTranscriptSnapshot.waitingMessage(isRunning: false)
+            == "This chat ended before its log was found")
+    }
+
     @Test("The real transcript tool makes rows from a chair log")
     func fixtureLog() async throws {
         let binary = try #require(TranscriptToolProcess.bundled, "tool not built")

@@ -8,7 +8,7 @@ public enum ChairLogDiscovery {
     ) -> URL? {
         let manager = FileManager.default
         let roots = Array(Set(homes.map(\.standardizedFileURL)))
-        var earliest: (path: URL, date: Date)?
+        var closest: (path: URL, distance: TimeInterval)?
 
         for home in roots {
             let candidates: [URL]
@@ -41,14 +41,15 @@ public enum ChairLogDiscovery {
                 guard let record = firstRecord(in: candidate),
                       record.cwd == URL(fileURLWithPath: cwd).standardizedFileURL.path else { continue }
                 let delay = record.date.timeIntervalSince1970 - TimeInterval(createdAt)
-                guard delay >= 0, delay <= 10 * 60 else { continue }
-                if earliest == nil || record.date < earliest!.date
-                    || (record.date == earliest!.date && candidate.path > earliest!.path.path) {
-                    earliest = (candidate, record.date)
+                let distance = abs(delay)
+                guard distance <= 10 * 60 else { continue }
+                if closest == nil || distance < closest!.distance
+                    || (distance == closest!.distance && candidate.path > closest!.path.path) {
+                    closest = (candidate, distance)
                 }
             }
         }
-        return earliest?.path
+        return closest?.path
     }
 
     private static func firstRecord(in path: URL) -> (cwd: String, date: Date)? {
