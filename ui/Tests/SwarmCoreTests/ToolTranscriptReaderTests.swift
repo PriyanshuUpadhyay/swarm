@@ -35,6 +35,7 @@ struct ToolTranscriptReaderTests {
 
         let initialTranscript = try await reader.read()
         #expect(initialTranscript.count >= 2)
+        #expect(!initialTranscript.contains { if case .page = $0.event { return true }; return false })
 
         let appendedLine = """
         {"type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"fileA.swift\\nfileB.swift"}}
@@ -45,7 +46,7 @@ struct ToolTranscriptReaderTests {
         try fileHandle.write(contentsOf: Data(appendedLine.utf8))
         try fileHandle.close()
 
-        var changedTranscript: [TranscriptEvent]?
+        var changedTranscript: [TranscriptRecord]?
         for _ in 0..<40 {
             if let update = try await reader.readIfChanged() {
                 changedTranscript = update
@@ -55,7 +56,11 @@ struct ToolTranscriptReaderTests {
         }
 
         let updated = try #require(changedTranscript)
-        #expect(updated.contains { if case .toolCallUpdate(let id, _, _, _) = $0 { return id == "call-1" }; return false })
+        #expect(updated.contains {
+            if case .toolCallUpdate(let id, _, _, _) = $0.event { return id == "call-1" }
+            return false
+        })
+        #expect(updated.last?.rawLine.contains("\"type\":\"tool_call_update\"") == true)
     }
 
     @Test("Dropping a reader stops and reaps its follow process")

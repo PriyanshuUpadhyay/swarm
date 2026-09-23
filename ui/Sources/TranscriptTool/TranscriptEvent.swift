@@ -360,3 +360,14 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
         }
     }
 }
+
+/// One decoded event and the exact JSON line emitted by the transcript tool.
+public struct TranscriptRecord: Sendable, Hashable {
+    public var event: TranscriptEvent
+    public var rawLine: String
+
+    public init(event: TranscriptEvent, rawLine: String) {
+        self.event = event
+        self.rawLine = rawLine
+    }
+}
