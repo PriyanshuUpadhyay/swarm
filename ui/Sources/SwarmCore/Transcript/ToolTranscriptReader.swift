@@ -47,6 +47,7 @@ public actor ToolTranscriptReader: TranscriptReading {
     deinit {
         streamTask?.cancel()
         catchUpTimer?.cancel()
+        process?.stop()
     }
 
     private func scheduleCatchUpCompletion(delayMilliseconds: UInt64 = 80) {
@@ -73,15 +74,19 @@ public actor ToolTranscriptReader: TranscriptReading {
         self.process = proc
 
         streamTask = Task { [weak self] in
-            do {
-                for try await event in proc.stream {
-                    guard !Task.isCancelled else { break }
-                    await self?.ingest(event)
+            await withTaskCancellationHandler {
+                do {
+                    for try await event in proc.stream {
+                        guard !Task.isCancelled else { break }
+                        await self?.ingest(event)
+                    }
+                } catch {
+                    // Stream ended or process failed.
                 }
-            } catch {
-                // Stream ended or process failed.
+                await self?.finishInitialCatchUp()
+            } onCancel: {
+                proc.stop()
             }
-            await self?.finishInitialCatchUp()
         }
 
         // Wait for initial events from --tail to settle into messages.
@@ -150,5 +155,9 @@ public actor ToolTranscriptReader: TranscriptReading {
         appendedThisRead = 0
         rebuiltThisRead = false
         return visible
+    }
+
+    func processIdentifier() -> Int32? {
+        process?.processIdentifier
     }
 }

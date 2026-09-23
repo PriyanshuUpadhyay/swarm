@@ -61,24 +61,30 @@ struct SwarmSpikeTests {
         #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "Build the app")
     }
 
-    @Test("Chair titles skip injected user context")
+    @Test("Chair titles use pasted text and skip command and AGENTS context")
     func chairLogTitleSkipsInjectedContext() throws {
         let log = FileManager.default.temporaryDirectory
             .appendingPathComponent("swarm-chair-injected-\(UUID().uuidString).jsonl")
-        let injected = FileManager.default.temporaryDirectory
-            .appendingPathComponent("swarm-chair-only-injected-\(UUID().uuidString).jsonl")
+        let command = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-chair-command-\(UUID().uuidString).jsonl")
+        let agents = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-chair-agents-\(UUID().uuidString).jsonl")
         defer {
             try? FileManager.default.removeItem(at: log)
-            try? FileManager.default.removeItem(at: injected)
+            try? FileManager.default.removeItem(at: command)
+            try? FileManager.default.removeItem(at: agents)
         }
-        let pasted = #"{"type":"user","message":{"content":"<pasted_content id=\"1\">x</pasted_content>"}}"#
-        let agents = ##"{"type":"user","message":{"content":"# AGENTS.md instructions"}}"##
+        let pasted = #"{"type":"user","message":{"content":"\n\n<pasted_content id=\"c845\">\nThe whole setup is funny\n</pasted_content id=\"c845\">"}}"#
+        let compact = #"{"type":"user","message":{"content":"<command-name>/compact </command-name>"}}"#
+        let instructions = ##"{"type":"user","message":{"content":"# AGENTS.md instructions for /x"}}"##
         let prompt = #"{"type":"user","message":{"content":"fix the build"}}"#
-        try Data([pasted, agents, prompt].joined(separator: "\n").utf8).write(to: log)
-        try Data([pasted, agents].joined(separator: "\n").utf8).write(to: injected)
+        try Data(pasted.utf8).write(to: log)
+        try Data([compact, prompt].joined(separator: "\n").utf8).write(to: command)
+        try Data(instructions.utf8).write(to: agents)
 
-        #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "fix the build")
-        #expect(ChairLogTitle.firstUserPrompt(path: injected.path) == nil)
+        #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "The whole setup is funny")
+        #expect(ChairLogTitle.firstUserPrompt(path: command.path) == "fix the build")
+        #expect(ChairLogTitle.firstUserPrompt(path: agents.path) == nil)
     }
 
     @Test("A pane name uses the bus session id")
