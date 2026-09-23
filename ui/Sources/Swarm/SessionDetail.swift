@@ -24,14 +24,16 @@ final class SessionDetailModel {
         }
     }
 
-    func send(session: SwarmSession) async {
-        guard let text = SwarmPanePolicy.typedText(draft) else { return }
+    func send(session: SwarmSession) async -> Bool {
+        guard let text = Composer.outgoing(draft) else { return false }
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)
             draft = ""
             sendError = nil
+            return true
         } catch {
             sendError = String(describing: error)
+            return false
         }
     }
 }
@@ -140,29 +142,71 @@ struct SessionDetailView: View {
             }
             .frame(maxHeight: .infinity)
             Divider()
-            TextField("Type to chair", text: $model.draft)
-                .textFieldStyle(.roundedBorder)
-                .focused($composerFocused)
-                .simultaneousGesture(TapGesture().onEnded {
-                    composerFocused = true
-                    panes.clearFocus()
-                })
-                .onKeyPress(.escape) {
-                    guard KeyRouting.route(focus: .composer, key: .escape) == .clearComposer else {
-                        return .ignored
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .bottom) {
+                    TextField("Message the chair", text: $model.draft, axis: .vertical)
+                        .lineLimit(1...8)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .focused($composerFocused)
+                        .simultaneousGesture(TapGesture().onEnded {
+                            composerFocused = true
+                            panes.clearFocus()
+                        })
+                        .onKeyPress(.return, phases: .down) { press in
+                            guard press.modifiers.contains(.shift),
+                                  KeyRouting.route(focus: .composer, key: .shiftReturn) == .insertNewline
+                            else { return .ignored }
+                            model.draft.append("\n")
+                            return .handled
+                        }
+                        .onKeyPress(.escape) {
+                            guard KeyRouting.route(focus: .composer, key: .escape) == .clearComposer else {
+                                return .ignored
+                            }
+                            model.draft = ""
+                            return .handled
+                        }
+                        .onSubmit {
+                            if KeyRouting.route(focus: .composer, key: .return) == .sendComposer {
+                                send()
+                            }
+                        }
+                    Button(action: send) {
+                        Group {
+                            if Composer.outgoing(model.draft) == nil {
+                                Image(systemName: "arrow.up.circle.fill").foregroundStyle(.tertiary)
+                            } else {
+                                Image(systemName: "arrow.up.circle.fill").foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .font(.title2)
                     }
-                    model.draft = ""
-                    return .handled
+                    .buttonStyle(.plain)
+                    .disabled(Composer.outgoing(model.draft) == nil)
+                    .accessibilityLabel("Send")
                 }
-                .onSubmit {
-                    if KeyRouting.route(focus: .composer, key: .return) == .sendComposer {
-                        Task { await model.send(session: row.session) }
-                    }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background {
+                    RoundedRectangle(cornerRadius: 10).fill(.background)
                 }
-                .padding(8)
-            if let error = model.sendError {
-                Text(verbatim: error).foregroundStyle(.red).padding(.horizontal, 8)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10).stroke(.separator, lineWidth: 1)
+                }
+                if let error = model.sendError {
+                    Text(verbatim: error)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
             }
+            .padding(12)
+        }
+    }
+
+    private func send() {
+        Task {
+            if await model.send(session: row.session) { composerFocused = true }
         }
     }
 

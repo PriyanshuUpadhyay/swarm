@@ -162,10 +162,6 @@ public enum SwarmPanePolicy {
         command.environment["SWARM_ADAPTER"] = session.adapter ?? ""
         return command
     }
-
-    public static func typedText(_ text: String) -> String? {
-        text.contains { !$0.isWhitespace } ? text : nil
-    }
 }
 
 public struct SwarmAttachLaunch: Sendable, Hashable {
