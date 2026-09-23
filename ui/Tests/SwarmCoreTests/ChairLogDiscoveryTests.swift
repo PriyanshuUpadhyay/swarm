@@ -5,7 +5,7 @@ import TranscriptTool
 
 @Suite("Chair log discovery")
 struct ChairLogDiscoveryTests {
-    @Test("Finds the newest matching Codex home and retries until a log exists")
+    @Test("Finds the earliest matching Codex home and retries until a log exists")
     func codex() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -32,12 +32,12 @@ struct ChairLogDiscoveryTests {
         let earlier = try fixture.codexLog(
             home: first, name: "earlier", cwd: cwd, at: "2026-09-22T12:26:02Z"
         )
-        let latest = try fixture.codexLog(
+        _ = try fixture.codexLog(
             home: second, name: "latest", cwd: cwd, at: "2026-09-22T12:27:01.500Z"
         )
         #expect(ChairLogDiscovery.path(
             provider: "codex", cwd: cwd, createdAt: cutoff, homes: [first, second]
-        )?.lastPathComponent == latest.lastPathComponent)
+        )?.lastPathComponent == earlier.lastPathComponent)
         #expect(ChairLogDiscovery.path(
             provider: "codex", cwd: cwd, createdAt: cutoff, homes: [first]
         )?.lastPathComponent == earlier.lastPathComponent)
@@ -46,6 +46,51 @@ struct ChairLogDiscoveryTests {
             return
         }
         #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
+    }
+
+    @Test("Chooses the chair rollout instead of a later rollout in the same folder")
+    func codexChairWindow() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let chair = try fixture.codexLog(
+            home: home, name: "chair", cwd: "/work", at: "2026-09-22T12:26:06Z"
+        )
+        _ = try fixture.codexLog(
+            home: home, name: "later-agent", cwd: "/work", at: "2026-09-22T14:26:01Z"
+        )
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+        )?.lastPathComponent == chair.lastPathComponent)
+    }
+
+    @Test("Rejects a rollout that starts twenty minutes after the session")
+    func codexTooLate() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        try fixture.codexLog(
+            home: home, name: "late", cwd: "/work", at: "2026-09-22T12:46:01Z"
+        )
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+        ) == nil)
+    }
+
+    @Test("Rejects a rollout that starts before the session")
+    func codexTooEarly() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        try fixture.codexLog(
+            home: home, name: "early", cwd: "/work", at: "2026-09-22T12:26:00Z"
+        )
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+        ) == nil)
     }
 
     @Test("Finds a Claude project log for the same cwd")
