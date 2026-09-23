@@ -1,6 +1,6 @@
 # Swarm UI
 
-Swarm is a macOS chat app for the swarm bus. The sidebar lists workspaces under each repository; agents stay in the selected workspace detail. ADR 0014 sets its scope to projects, worktrees, sessions, a chair transcript, and a live pane.
+Swarm is a macOS chat app for the swarm bus. The sidebar lists chats under each project; agents stay in the selected chat detail. ADR 0014 sets its scope to projects, worktrees, sessions, a chair transcript, and a live pane.
 
 The `Swarm` target owns views and focus.
 `SwarmCore` owns bus calls, rules, and process work.

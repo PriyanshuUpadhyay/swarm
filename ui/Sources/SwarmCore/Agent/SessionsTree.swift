@@ -5,32 +5,45 @@ public struct SessionRowPresentation: Sendable, Hashable {
 
     public var title: String
     public var caption: String
+    public var age: String
     public var state: State
+    public var provider: String?
 
-    public static func make(_ row: SwarmProjectSession, now: Int) -> SessionRowPresentation {
-        let state = state(of: row)
-        let age = max(0, now - row.session.createdAt)
+    public static func make(_ row: ChatRow, now: Int) -> SessionRowPresentation {
+        let state = state(of: row.session)
+        let age = max(0, now - row.session.lastActivity)
         let ageText: String
         if age < 60 { ageText = "\(age)s" }
         else if age < 3_600 { ageText = "\(age / 60)m" }
         else if age < 86_400 { ageText = "\(age / 3_600)h" }
         else { ageText = "\(age / 86_400)d" }
 
-        let fallback = "\(row.provider ?? "Chat") \(row.id.rawValue.prefix(8))"
-        let title = row.title.isEmpty ? fallback : row.title
-        var caption = "\(state == .ended ? "ended" : row.provider ?? "no chair") · \(ageText)"
-        if let liveAgents = row.liveAgents {
-            let children = state == .live && row.isRunning == true
-                ? max(0, liveAgents - 1) : liveAgents
-            if children > 0 { caption += " · \(children) \(children == 1 ? "agent" : "agents")" }
-        }
-        return SessionRowPresentation(title: title, caption: caption, state: state)
+        let fallback = "\(row.session.provider ?? "Chat") \(row.id.rawValue.prefix(8))"
+        let title = row.session.title.isEmpty ? fallback : row.session.title
+        let status = state == .ended ? "ended" : row.session.provider ?? "no chair"
+        return SessionRowPresentation(
+            title: title, caption: "\(row.workspace) · \(status)", age: ageText,
+            state: state, provider: row.session.provider
+        )
     }
 
     fileprivate static func state(of row: SwarmProjectSession) -> State {
         if row.isRunning == false { return .ended }
         if row.provider == nil { return .noChair }
         return .live
+    }
+}
+
+public struct ChatRow: Sendable, Hashable, Identifiable {
+    public var id: SwarmSessionID { session.id }
+    public let session: SwarmProjectSession
+    public let workspace: String
+    public let workspacePath: String
+
+    public init(session: SwarmProjectSession, workspace: String, workspacePath: String) {
+        self.session = session
+        self.workspace = workspace
+        self.workspacePath = workspacePath
     }
 }
 
@@ -58,6 +71,16 @@ public struct ProjectNode: Sendable, Hashable, Identifiable {
     public let workspaces: [WorkspaceNode]
 
     public var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    public var chats: [ChatRow] {
+        SessionsTree.ordered(workspaces.flatMap { workspace in
+            workspace.sessions.compactMap { session in
+                guard session.totalAgents != 0 else { return nil }
+                return ChatRow(
+                    session: session, workspace: workspace.name, workspacePath: workspace.path
+                )
+            }
+        })
+    }
 
     public init(
         id: SwarmPathIdentity, path: String, launchDirectory: String,
@@ -145,45 +168,36 @@ public struct SessionsTree: Sendable, Hashable {
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
     }
 
-    public func workspace(_ id: String) -> WorkspaceNode? {
-        for project in projects {
-            if let workspace = project.workspaces.first(where: { $0.id == id }) { return workspace }
-        }
-        return nil
+    public func session(_ id: SwarmSessionID) -> SwarmProjectSession? {
+        chat(id)?.session
     }
 
-    public func session(_ id: String) -> SwarmProjectSession? {
-        workspace(id)?.current
-    }
-
-    public func retainedSelection(_ id: String?) -> String? {
+    public func retainedSelection(_ id: SwarmSessionID?) -> SwarmSessionID? {
         guard let id else { return nil }
-        return workspace(id) == nil ? nil : id
+        return chat(id)?.id
     }
 
-    public func windowTitle(for id: String) -> String? {
+    public func windowTitle(for id: SwarmSessionID) -> String? {
         for project in projects {
-            guard let workspace = project.workspaces.first(where: { $0.id == id }),
-                  let row = workspace.current else { continue }
-            return "\(project.name) · \(row.provider ?? "no chair") \(row.id.rawValue.prefix(8))"
+            guard let row = project.chats.first(where: {
+                $0.session.sessions.contains { $0.id == id }
+            }) else { continue }
+            return "\(project.name) · \(row.session.provider ?? "no chair") \(row.id.rawValue.prefix(8))"
         }
         return nil
     }
 
-    public func launchDirectory(for id: String) -> String? {
-        workspace(id)?.path
+    public func launchDirectory(for id: SwarmSessionID) -> String? {
+        chat(id)?.workspacePath
     }
 
     public func text(now: Int = Int(Date().timeIntervalSince1970)) -> String {
         var lines: [String] = []
         for project in projects {
             lines.append(project.name)
-            for workspace in project.workspaces {
-                if let row = workspace.current {
-                    lines.append("  \(workspace.name) · \(SessionRowPresentation.make(row, now: now).caption)")
-                } else {
-                    lines.append("  \(workspace.name)")
-                }
+            for row in project.chats {
+                let presentation = SessionRowPresentation.make(row, now: now)
+                lines.append("  \(presentation.title) · \(presentation.caption) · \(presentation.age)")
             }
         }
         return lines.joined(separator: "\n")
@@ -194,6 +208,15 @@ public struct SessionsTree: Sendable, Hashable {
             let left = order(SessionRowPresentation.state(of: lhs))
             let right = order(SessionRowPresentation.state(of: rhs))
             return left == right ? lhs.lastActivity > rhs.lastActivity : left < right
+        }
+    }
+
+    public static func ordered(_ rows: [ChatRow]) -> [ChatRow] {
+        rows.sorted { lhs, rhs in
+            let left = order(SessionRowPresentation.state(of: lhs.session))
+            let right = order(SessionRowPresentation.state(of: rhs.session))
+            return left == right
+                ? lhs.session.lastActivity > rhs.session.lastActivity : left < right
         }
     }
 
@@ -234,6 +257,12 @@ public struct SessionsTree: Sendable, Hashable {
         case .live: 0
         case .noChair: 1
         case .ended: 2
+        }
+    }
+
+    private func chat(_ id: SwarmSessionID) -> ChatRow? {
+        projects.lazy.flatMap(\.chats).first {
+            $0.session.sessions.contains { $0.id == id }
         }
     }
 
