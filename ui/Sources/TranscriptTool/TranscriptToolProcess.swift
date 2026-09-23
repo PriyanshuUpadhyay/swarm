@@ -11,6 +11,53 @@ public enum TranscriptToolError: Error, Sendable, CustomStringConvertible {
     }
 }
 
+private final class TranscriptProcessLifecycle: @unchecked Sendable {
+    private let lock = NSLock()
+    private let process: Process
+    private var started = false
+    private var stopped = false
+    private var reaped = false
+
+    init(binary: URL, arguments: [String], stdout: Pipe, stderr: Pipe) {
+        process = Process()
+        process.executableURL = binary
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+    }
+
+    func start() throws -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopped else { return false }
+        try process.run()
+        started = true
+        return true
+    }
+
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+        stopped = true
+        guard started, !reaped else { return }
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+        reaped = true
+    }
+
+    var processIdentifier: Int32? {
+        lock.lock()
+        defer { lock.unlock() }
+        return started && !reaped ? process.processIdentifier : nil
+    }
+
+    var terminationStatus: Int32? {
+        lock.lock()
+        defer { lock.unlock() }
+        return reaped ? process.terminationStatus : nil
+    }
+}
+
 /// Spawns and supervises the Zig transcript CLI process.
 ///
 /// The process runs long-lived with `--follow` to stream transcript updates as the CLI writes
@@ -22,8 +69,10 @@ public final class TranscriptToolProcess: Sendable {
     public let tail: Int?
     public let follow: Bool
     public let stream: AsyncThrowingStream<TranscriptEvent, Error>
+    private let lifecycle: TranscriptProcessLifecycle
 
     public var events: AsyncThrowingStream<TranscriptEvent, Error> { stream }
+    public var processIdentifier: Int32? { lifecycle.processIdentifier }
 
     public init(binary: URL, format: String, log: URL, tail: Int? = nil, follow: Bool) {
         self.binary = binary
@@ -41,25 +90,31 @@ public final class TranscriptToolProcess: Sendable {
         }
         arguments.append(log.standardizedFileURL.path)
 
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        let lifecycle = TranscriptProcessLifecycle(
+            binary: binary, arguments: arguments, stdout: stdoutPipe, stderr: stderrPipe
+        )
+        self.lifecycle = lifecycle
         self.stream = AsyncThrowingStream { continuation in
-            let process = Process()
-            process.executableURL = binary
-            process.arguments = arguments
-
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
 
             continuation.onTermination = { @Sendable _ in
-                if process.isRunning {
-                    process.terminate()
-                }
+                lifecycle.stop()
             }
 
             Task {
                 let stdoutHandle = stdoutPipe.fileHandleForReading
                 let stderrHandle = stderrPipe.fileHandleForReading
+
+                do {
+                    guard try lifecycle.start() else {
+                        continuation.finish()
+                        return
+                    }
+                } catch {
+                    continuation.finish(throwing: error)
+                    return
+                }
 
                 // Consume stderr concurrently to prevent pipe buffer deadlocks.
                 let stderrTask = Task {
@@ -70,13 +125,6 @@ public final class TranscriptToolProcess: Sendable {
                         buffer.append(chunk)
                     }
                     return buffer
-                }
-
-                do {
-                    try process.run()
-                } catch {
-                    continuation.finish(throwing: error)
-                    return
                 }
 
                 var pending = Data()
@@ -100,14 +148,14 @@ public final class TranscriptToolProcess: Sendable {
                     }
                 }
 
-                process.waitUntilExit()
+                lifecycle.stop()
                 let stderrBuffer = await stderrTask.value
 
-                if process.terminationStatus != 0 {
+                if let status = lifecycle.terminationStatus, status != 0 {
                     let stderrText = String(decoding: stderrBuffer, as: UTF8.self)
                     continuation.finish(
                         throwing: TranscriptToolError.processExited(
-                            status: process.terminationStatus, stderr: stderrText
+                            status: status, stderr: stderrText
                         )
                     )
                 } else {
@@ -115,6 +163,12 @@ public final class TranscriptToolProcess: Sendable {
                 }
             }
         }
+    }
+
+    deinit { stop() }
+
+    public func stop() {
+        lifecycle.stop()
     }
 
     /// Locates the bundled transcript binary or the test override from the environment.

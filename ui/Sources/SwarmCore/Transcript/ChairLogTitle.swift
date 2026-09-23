@@ -23,13 +23,23 @@ public enum ChairLogTitle {
             if let string = content as? String {
                 text = string
             } else if let blocks = content as? [[String: Any]] {
-                text = blocks.compactMap { $0["text"] as? String }.first
+                text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
             } else {
                 text = nil
             }
-            if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !text.isEmpty, !text.hasPrefix("<"), !text.hasPrefix("# AGENTS.md") {
-                return text
+            guard var text else { continue }
+            text = text.replacingOccurrences(
+                of: #"(?s)<command-name>.*?</command-name>"#,
+                with: "", options: .regularExpression
+            )
+            text = text.replacingOccurrences(
+                of: #"<[^>]+>"#, with: "", options: .regularExpression
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !text.hasPrefix("# AGENTS.md") else { continue }
+            if let firstLine = text.components(separatedBy: .newlines).first(where: {
+                !$0.trimmingCharacters(in: .whitespaces).isEmpty
+            }) {
+                return firstLine.trimmingCharacters(in: .whitespaces)
             }
         }
         return nil
