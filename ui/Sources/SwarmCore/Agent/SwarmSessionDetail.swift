@@ -23,7 +23,7 @@ public enum ChairTranscriptSource: Sendable, Equatable {
 
 public enum ChairTranscriptSnapshot: Sendable, Equatable {
     case waiting
-    case rows([TranscriptRow])
+    case rows([TranscriptRow], raw: [RawTranscriptEntry])
     case notice(String)
     case unavailable(String)
 
@@ -36,7 +36,7 @@ public enum ChairTranscriptSnapshot: Sendable, Equatable {
     public var printText: String {
         switch self {
         case .waiting: "notice The chair has not written its log yet"
-        case .rows(let rows): rows.map(\.printLine).joined(separator: "\n")
+        case .rows(let rows, _): rows.map(\.printLine).joined(separator: "\n")
         case .notice(let message): "notice \(message)"
         case .unavailable(let message): "error \(message)"
         }
@@ -56,6 +56,7 @@ public actor SwarmChairTranscript {
     private var log: URL?
     private var reader: ToolTranscriptReader?
     private var rows: [TranscriptRow] = []
+    private var rawEntries: [RawTranscriptEntry] = []
 
     public init(
         binary: URL? = nil,
@@ -84,6 +85,7 @@ public actor SwarmChairTranscript {
             reader = nil
             log = nil
             rows = []
+            rawEntries = []
             return .waiting
         case .unsupported:
             return .notice("No transcript reader for this provider yet")
@@ -95,12 +97,14 @@ public actor SwarmChairTranscript {
                 log = path
                 reader = ToolTranscriptReader(binary: binary, format: format, log: path)
                 rows = []
+                rawEntries = []
             }
             do {
-                if let events = try await reader?.readIfChanged() {
-                    rows = TranscriptRowBuilder.rows(from: events)
+                if let records = try await reader?.readIfChanged() {
+                    rows = TranscriptRowBuilder.rows(from: records)
+                    rawEntries = TranscriptDebugData.entries(from: records)
                 }
-                return .rows(rows)
+                return .rows(rows, raw: rawEntries)
             } catch {
                 return .unavailable(String(describing: error))
             }

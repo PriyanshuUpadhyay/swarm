@@ -78,3 +78,29 @@ struct TranscriptRowBuilderTests {
         #expect(rows.map(\.isHiddenByDefault) == [true, true, true, false])
     }
 }
+
+@Suite("Transcript debug data")
+struct TranscriptDebugDataTests {
+    @Test("Keeps raw lines and labels rendered, hidden, and omitted events")
+    func entries() {
+        let records = [
+            TranscriptRecord(
+                event: .userMessageChunk(text: "Hello", meta: Meta(uuid: "one")),
+                rawLine: #"{"type":"user_message_chunk","text":"Hello"}"#
+            ),
+            TranscriptRecord(
+                event: .sessionInfo(kind: "title", value: "Chat", meta: Meta(uuid: "two")),
+                rawLine: #"{"type":"session_info","kind":"title","value":"Chat"}"#
+            ),
+            TranscriptRecord(
+                event: .turnStarted(meta: Meta(uuid: "three")),
+                rawLine: #"{"type":"turn_started"}"#
+            ),
+        ]
+
+        let entries = TranscriptDebugData.entries(from: records)
+        #expect(entries.map(\.rowKind) == ["user", "hidden", "no row"])
+        #expect(entries[0].rawLine == records[0].rawLine)
+        #expect(entries[0].displayText.contains("\n"))
+    }
+}

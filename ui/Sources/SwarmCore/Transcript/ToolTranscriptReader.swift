@@ -3,8 +3,8 @@ import TranscriptTool
 
 /// Protocol representing an actor capable of reading and streaming transcript events.
 public protocol TranscriptReading: Actor {
-    func read() async throws -> [TranscriptEvent]
-    func readIfChanged() async throws -> [TranscriptEvent]?
+    func read() async throws -> [TranscriptRecord]
+    func readIfChanged() async throws -> [TranscriptRecord]?
 }
 
 /// Reads interactive CLI transcripts via the external Zig transcript subprocess.
@@ -23,7 +23,7 @@ public actor ToolTranscriptReader: TranscriptReading {
     private var streamTask: Task<Void, Never>?
     private var catchUpTimer: Task<Void, Never>?
 
-    private var events: [TranscriptEvent] = []
+    private var records: [TranscriptRecord] = []
     private var messageStart = 0
 
     private var appendedThisRead = 0
@@ -76,9 +76,9 @@ public actor ToolTranscriptReader: TranscriptReading {
         streamTask = Task { [weak self] in
             await withTaskCancellationHandler {
                 do {
-                    for try await event in proc.stream {
+                    for try await record in proc.stream {
                         guard !Task.isCancelled else { break }
-                        await self?.ingest(event)
+                        await self?.ingest(record)
                     }
                 } catch {
                     // Stream ended or process failed.
@@ -107,32 +107,32 @@ public actor ToolTranscriptReader: TranscriptReading {
         }
     }
 
-    private func ingest(_ event: TranscriptEvent) {
+    private func ingest(_ record: TranscriptRecord) {
         if isCatchingUp {
-            if case .page(let start, let end) = event, start == end {
+            if case .page(let start, let end) = record.event, start == end {
                 finishInitialCatchUp()
                 return
             }
             scheduleCatchUpCompletion(delayMilliseconds: 80)
         }
 
-        if case .page = event {
+        if case .page = record.event {
             return
         }
 
-        events.append(event)
+        records.append(record)
         appendedThisRead += 1
         trim()
     }
 
     private func trim() {
         var trimmed = false
-        while events.count - messageStart > limit {
+        while records.count - messageStart > limit {
             messageStart += 1
             trimmed = true
         }
-        if messageStart > 1024, messageStart * 2 > events.count {
-            events.removeFirst(messageStart)
+        if messageStart > 1024, messageStart * 2 > records.count {
+            records.removeFirst(messageStart)
             messageStart = 0
         }
         if trimmed {
@@ -140,18 +140,18 @@ public actor ToolTranscriptReader: TranscriptReading {
         }
     }
 
-    public func read() async throws -> [TranscriptEvent] {
+    public func read() async throws -> [TranscriptRecord] {
         await startIfNeeded()
-        let visible = Array(events.dropFirst(messageStart))
+        let visible = Array(records.dropFirst(messageStart))
         appendedThisRead = 0
         rebuiltThisRead = false
         return visible
     }
 
-    public func readIfChanged() async throws -> [TranscriptEvent]? {
+    public func readIfChanged() async throws -> [TranscriptRecord]? {
         await startIfNeeded()
         guard appendedThisRead > 0 || rebuiltThisRead else { return nil }
-        let visible = Array(events.dropFirst(messageStart))
+        let visible = Array(records.dropFirst(messageStart))
         appendedThisRead = 0
         rebuiltThisRead = false
         return visible

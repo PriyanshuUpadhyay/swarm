@@ -97,7 +97,7 @@ struct SwarmSessionDetailTests {
             {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List files"}]}}
             """.appending("\n").utf8).write(to: log)
         let snapshot = await reader.poll(session: value)
-        guard case .rows(let rows) = snapshot else {
+        guard case .rows(let rows, _) = snapshot else {
             Issue.record("The tool did not return rows")
             return
         }
