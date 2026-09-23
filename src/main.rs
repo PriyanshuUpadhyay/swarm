@@ -262,10 +262,10 @@ fn deliver(
     kind: &str,
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
-    let (recipient, kind) = swarm::store::route(connection, &session_id, sender, recipient, kind)?;
-    let pane = swarm::store::pane_of(connection, &session_id, &recipient)?
+    let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
+    let pane = swarm::store::pane_of(connection, session_id, &recipient)?
         .ok_or_else(|| format!("swarm: {recipient} has no pane; nothing would ring it"))?;
-    let seq = swarm::store::send_message(connection, root, &session_id, sender, &recipient, &kind, body)?;
+    let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
     if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
         connection.execute(
             "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
@@ -289,8 +289,8 @@ fn ack(
     seq: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     swarm::store::ack(connection, session_id, seq, agent_id)?;
-    if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
-        if swarm::store::has_unrung_unread(connection, session_id, agent_id)? {
+    if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)?
+        && swarm::store::has_unrung_unread(connection, session_id, agent_id)? {
             connection.execute(
                 "UPDATE message SET rung_at = unixepoch(), rings = 1
                  WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
@@ -307,7 +307,6 @@ fn ack(
                 eprintln!("swarm: ring failed: {error}");
             }
         }
-    }
     Ok(())
 }
 
@@ -328,17 +327,17 @@ fn add_agent(
     // A chair registers again each time its CLI starts, from a pane that may be new. Any other
     // clash is still an error, so a second agent cannot take an existing agent's name.
     let rejoins = pane.is_some()
-        && swarm::store::agents(&transaction, &session_id)?
+        && swarm::store::agents(&transaction, session_id)?
             .iter()
             .any(|agent| agent.id == agent_id && agent.role == role);
     if !rejoins {
-        swarm::store::add_agent(&transaction, &session_id, agent_id, role)?;
+        swarm::store::add_agent(&transaction, session_id, agent_id, role)?;
     }
     // An orchestrator that cannot say which pane it is in is refused, because the alternative is
     // a chat that starts, looks healthy, and drops the first message somebody types into it.
     if let Some(pane) = pane {
-        swarm::store::set_adapter(&transaction, &session_id, adapter_name)?;
-        swarm::store::set_pane(&transaction, &session_id, agent_id, &pane)?;
+        swarm::store::set_adapter(&transaction, session_id, adapter_name)?;
+        swarm::store::set_pane(&transaction, session_id, agent_id, &pane)?;
     }
     transaction.commit()?;
     Ok(())
@@ -445,11 +444,11 @@ fn report_dead(
     child: &str,
     note: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    swarm::store::clear_pane(connection, &session_id, child)?;
-    if !swarm::store::has_summary(connection, &session_id, child)? {
+    swarm::store::clear_pane(connection, session_id, child)?;
+    if !swarm::store::has_summary(connection, session_id, child)? {
         let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
-        deliver(connection, root, &adapter_name(), &session_id, child, &orchestrator, "summary", note)?;
-        swarm::store::enqueue_job(connection, &session_id, child, "summarize")?;
+        deliver(connection, root, &adapter_name(), session_id, child, &orchestrator, "summary", note)?;
+        swarm::store::enqueue_job(connection, session_id, child, "summarize")?;
     }
     Ok(())
 }
@@ -462,7 +461,7 @@ fn sweep_once(
     session_id: &str,
     agent_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for (child, pane) in swarm::store::live_children(connection, &session_id, agent_id)? {
+    for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
             if swarm::store::rering_due(connection, session_id, &child, RERING_UNSEEN_AFTER_SECS)? {
                 connection.execute(
@@ -481,7 +480,7 @@ fn sweep_once(
             continue;
         }
         let note = format!("agent {child} died without a summary");
-        report_dead(connection, root, &session_id, &child, &note)?;
+        report_dead(connection, root, session_id, &child, &note)?;
         println!("dead {child}");
     }
     Ok(())
