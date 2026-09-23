@@ -16,7 +16,12 @@ final class SessionDetailModel {
     var isSending: Bool { sendState.isSending }
 
     var rows: [TranscriptRow] {
-        if case .rows(let rows) = snapshot { return rows }
+        if case .rows(let rows, _) = snapshot { return rows }
+        return []
+    }
+
+    var rawEntries: [RawTranscriptEntry] {
+        if case .rows(_, let raw) = snapshot { return raw }
         return []
     }
 
@@ -53,7 +58,14 @@ struct SessionDetailView: View {
     @State private var atBottom = true
     @State private var userScrolling = false
     @State private var showHiddenRows = false
+    @AppStorage("showRawData") private var showRawData = false
+    @State private var findPresented = false
+    @State private var findQuery = ""
+    @State private var findMatchID: String?
+    @State private var pendingScrollID: String?
     @FocusState private var composerFocused: Bool
+    @FocusState private var findFieldFocused: Bool
+    @FocusState private var transcriptFocused: Bool
 
     var body: some View {
         HStack(spacing: 0) {
@@ -70,6 +82,13 @@ struct SessionDetailView: View {
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
             await model.poll(session: row.session, chairProvider: chairProvider)
         }
+        .onAppear { transcriptFocused = true }
+        .onChange(of: panes.focusedKey) { _, key in
+            guard key != nil else { return }
+            transcriptFocused = false
+            composerFocused = false
+            findFieldFocused = false
+        }
     }
 
     private var chairProvider: String? {
@@ -78,6 +97,22 @@ struct SessionDetailView: View {
 
     private var transcriptColumn: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text("Transcript").font(.headline)
+                Spacer()
+                if showRawData {
+                    Text("RAW")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.2)))
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Divider()
+            if findPresented { findBar }
             ScrollViewReader { proxy in
                 VStack(spacing: 0) {
                     ScrollView {
@@ -90,17 +125,27 @@ struct SessionDetailView: View {
                                 Text(verbatim: message).foregroundStyle(.secondary)
                             case .unavailable(let message):
                                 Text(verbatim: message).foregroundStyle(.red)
-                            case .rows(let rows):
-                                let hidden = rows.filter(\.isHiddenByDefault).count
-                                if hidden > 0 {
-                                    Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
-                                        showHiddenRows.toggle()
+                            case .rows(let rows, let raw):
+                                if showRawData {
+                                    rawSessionBlock
+                                    ForEach(raw) { entry in
+                                        rawEntry(entry)
                                     }
-                                }
-                                ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { transcriptRow in
-                                    TranscriptRowView(
-                                        row: transcriptRow, chair: self.row.provider ?? chairProvider
-                                    )
+                                } else {
+                                    let hidden = rows.filter(\.isHiddenByDefault).count
+                                    if hidden > 0 {
+                                        Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
+                                            showHiddenRows.toggle()
+                                        }
+                                    }
+                                    ForEach(visibleRows) { transcriptRow in
+                                        TranscriptRowView(
+                                            row: transcriptRow,
+                                            chair: self.row.provider ?? chairProvider
+                                        )
+                                        .padding(3)
+                                        .background(matchBackground(transcriptRow.eventID))
+                                    }
                                 }
                             }
                         }
@@ -110,7 +155,7 @@ struct SessionDetailView: View {
                     .contentMargins(.top, 8, for: .scrollContent)
                     .frame(maxHeight: .infinity)
                     .simultaneousGesture(TapGesture().onEnded {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        transcriptFocused = true
                         panes.clearFocus()
                     })
                     .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -131,17 +176,24 @@ struct SessionDetailView: View {
                         userScrolling = phase == .interacting || phase == .decelerating
                     }
                     .onChange(of: model.rows) {
-                        if followsTail,
-                           let last = model.rows.last(where: { showHiddenRows || !$0.isHiddenByDefault }) {
+                        if followsTail, !showRawData, let last = visibleRows.last {
                             Task { @MainActor in proxy.scrollTo(last.eventID, anchor: .bottom) }
                         }
+                    }
+                    .onChange(of: model.rawEntries) {
+                        if followsTail, showRawData, let last = model.rawEntries.last {
+                            Task { @MainActor in proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
+                    }
+                    .onChange(of: pendingScrollID) { _, id in
+                        guard let id else { return }
+                        proxy.scrollTo(id, anchor: .center)
+                        pendingScrollID = nil
                     }
                     if !followsTail {
                         Button("Jump to latest") {
                             followsTail = true
-                            if let last = model.rows.last(where: { showHiddenRows || !$0.isHiddenByDefault }) {
-                                proxy.scrollTo(last.eventID, anchor: .bottom)
-                            }
+                            if let id = lastVisibleID { proxy.scrollTo(id, anchor: .bottom) }
                         }
                         .padding(6)
                     }
@@ -209,6 +261,158 @@ struct SessionDetailView: View {
             }
             .padding(12)
         }
+        .focusable()
+        .focused($transcriptFocused)
+        .focusedValue(\.paneFindActions, PaneFindActions(
+            open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
+        ))
+        .onChange(of: findMatches) { previousMatches, newMatches in
+            let index = PaneSearch.reconcile(
+                current: findMatchID.flatMap { previousMatches.firstIndex(of: $0) },
+                previousMatches: previousMatches,
+                newMatches: newMatches
+            )
+            findMatchID = index.map { newMatches[$0] }
+        }
+        .onChange(of: findQuery) {
+            resetFindSelection()
+        }
+        .onChange(of: showRawData) {
+            resetFindSelection()
+        }
+    }
+
+    private var findBar: some View {
+        HStack(spacing: 8) {
+            TextField("Find", text: $findQuery)
+                .textFieldStyle(.roundedBorder)
+                .focused($findFieldFocused)
+                .onSubmit { stepFind(1) }
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.shift) else { return .ignored }
+                    stepFind(-1)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    closeFind()
+                    return .handled
+                }
+            Text(findCountText)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 48)
+            Button { stepFind(-1) } label: { Image(systemName: "chevron.up") }
+                .help("Previous match")
+                .disabled(findMatches.isEmpty)
+            Button { stepFind(1) } label: { Image(systemName: "chevron.down") }
+                .help("Next match")
+                .disabled(findMatches.isEmpty)
+            Button(action: closeFind) { Image(systemName: "xmark") }
+                .help("Close find")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var visibleRows: [TranscriptRow] {
+        model.rows.filter { showHiddenRows || !$0.isHiddenByDefault }
+    }
+
+    private var rawSessionJSON: String {
+        TranscriptDebugData.sessionJSON(session: row.session, agents: agents)
+    }
+
+    private var searchItems: [PaneSearchItem] {
+        if showRawData {
+            return [PaneSearchItem(id: "raw-session", text: rawSessionJSON)]
+                + model.rawEntries.map { PaneSearchItem(id: $0.id, text: $0.displayText) }
+        }
+        return visibleRows.map {
+            PaneSearchItem(id: $0.eventID, text: [$0.text, $0.detail].compactMap { $0 }.joined(separator: "\n"))
+        }
+    }
+
+    private var findMatches: [String] {
+        PaneSearch.matches(query: findQuery, in: searchItems)
+    }
+
+    private var currentMatchID: String? {
+        guard let findMatchID, findMatches.contains(findMatchID) else { return nil }
+        return findMatchID
+    }
+
+    private var findIndex: Int? {
+        findMatchID.flatMap { findMatches.firstIndex(of: $0) }
+    }
+
+    private var findCountText: String {
+        guard let findIndex, !findMatches.isEmpty else { return "0 of 0" }
+        return "\(findIndex + 1) of \(findMatches.count)"
+    }
+
+    private var lastVisibleID: String? {
+        showRawData ? model.rawEntries.last?.id : visibleRows.last?.eventID
+    }
+
+    private var rawSessionBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Session and agents").font(.caption).foregroundStyle(.secondary)
+            Text(verbatim: rawSessionJSON)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+        }
+        .id("raw-session")
+        .padding(8)
+        .background(matchBackground("raw-session"))
+    }
+
+    private func rawEntry(_ entry: RawTranscriptEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("[\(entry.index)] \(entry.rowKind)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            Text(verbatim: entry.displayText)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+        }
+        .id(entry.id)
+        .padding(8)
+        .background(matchBackground(entry.id))
+    }
+
+    private func matchBackground(_ id: String) -> some ShapeStyle {
+        if currentMatchID == id { return Color.accentColor.opacity(0.28) }
+        if findMatches.contains(id) { return Color.yellow.opacity(0.14) }
+        return Color.clear
+    }
+
+    private func openFind() {
+        guard KeyRouting.route(focus: .transcript, key: .commandF) == .openFind else { return }
+        findPresented = true
+        resetFindSelection()
+        Task { @MainActor in findFieldFocused = true }
+    }
+
+    private func closeFind() {
+        findPresented = false
+        findFieldFocused = false
+        transcriptFocused = true
+    }
+
+    private func stepFind(_ delta: Int) {
+        let key: RoutedKey = delta < 0 ? .shiftCommandG : .commandG
+        let expected: KeyRoute = delta < 0 ? .findPrevious : .findNext
+        guard KeyRouting.route(focus: .transcript, key: key) == expected else { return }
+        let index = PaneSearch.step(current: findIndex, count: findMatches.count, delta: delta)
+        findMatchID = index.map { findMatches[$0] }
+        pendingScrollID = currentMatchID
+    }
+
+    private func resetFindSelection() {
+        findMatchID = findMatches.first
+        pendingScrollID = findMatches.first
     }
 
     private func send() {

@@ -68,10 +68,10 @@ public final class TranscriptToolProcess: Sendable {
     public let log: URL
     public let tail: Int?
     public let follow: Bool
-    public let stream: AsyncThrowingStream<TranscriptEvent, Error>
+    public let stream: AsyncThrowingStream<TranscriptRecord, Error>
     private let lifecycle: TranscriptProcessLifecycle
 
-    public var events: AsyncThrowingStream<TranscriptEvent, Error> { stream }
+    public var events: AsyncThrowingStream<TranscriptRecord, Error> { stream }
     public var processIdentifier: Int32? { lifecycle.processIdentifier }
 
     public init(binary: URL, format: String, log: URL, tail: Int? = nil, follow: Bool) {
@@ -136,7 +136,9 @@ public final class TranscriptToolProcess: Sendable {
                         let lineData = pending[pending.startIndex..<newlineIndex]
                         pending = Data(pending[pending.index(after: newlineIndex)...])
                         let line = String(decoding: lineData, as: UTF8.self)
-                        continuation.yield(TranscriptEvent.decode(line: line))
+                        continuation.yield(TranscriptRecord(
+                            event: TranscriptEvent.decode(line: line), rawLine: line
+                        ))
                     }
                 }
 
@@ -144,7 +146,9 @@ public final class TranscriptToolProcess: Sendable {
                     let line = String(decoding: pending, as: UTF8.self)
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
-                        continuation.yield(TranscriptEvent.decode(line: line))
+                        continuation.yield(TranscriptRecord(
+                            event: TranscriptEvent.decode(line: line), rawLine: line
+                        ))
                     }
                 }
 
