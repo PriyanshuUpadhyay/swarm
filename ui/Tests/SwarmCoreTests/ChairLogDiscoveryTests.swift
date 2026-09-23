@@ -36,10 +36,11 @@ struct ChairLogDiscoveryTests {
             home: second, name: "latest", cwd: cwd, at: "2026-09-22T12:27:01.500Z"
         )
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: cwd, createdAt: cutoff, homes: [first, second]
+            provider: "codex", chairID: nil, cwd: cwd, createdAt: cutoff,
+            homes: [first, second]
         )?.lastPathComponent == earlier.lastPathComponent)
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: cwd, createdAt: cutoff, homes: [first]
+            provider: "codex", chairID: nil, cwd: cwd, createdAt: cutoff, homes: [first]
         )?.lastPathComponent == earlier.lastPathComponent)
         guard case .rows(let rows) = await reader.poll(session: session) else {
             Issue.record("The reader did not retry after the log appeared")
@@ -61,7 +62,8 @@ struct ChairLogDiscoveryTests {
         )
 
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+            provider: "codex", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
         )?.lastPathComponent == chair.lastPathComponent)
     }
 
@@ -75,7 +77,8 @@ struct ChairLogDiscoveryTests {
         )
 
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+            provider: "codex", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
         ) == nil)
     }
 
@@ -89,7 +92,8 @@ struct ChairLogDiscoveryTests {
         )
 
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+            provider: "codex", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
         )?.lastPathComponent == early.lastPathComponent)
     }
 
@@ -103,7 +107,8 @@ struct ChairLogDiscoveryTests {
         )
 
         #expect(ChairLogDiscovery.path(
-            provider: "codex", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+            provider: "codex", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
         ) == nil)
     }
 
@@ -120,8 +125,57 @@ struct ChairLogDiscoveryTests {
             {"timestamp":"2026-09-22T12:27:01Z","cwd":"/work","type":"user"}
             """.utf8).write(to: log)
         #expect(ChairLogDiscovery.path(
-            provider: "claude", cwd: "/work", createdAt: 1_790_079_961, homes: [home]
+            provider: "claude", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
         )?.lastPathComponent == log.lastPathComponent)
+    }
+
+    @Test("Finds a Claude chair id outside the session time window")
+    func claudeChairID() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".claude/.profiles/work")
+        let project = home.appendingPathComponent("projects/repo")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let log = project.appendingPathComponent("990e96ab-chair.jsonl")
+        try Data(#"{"timestamp":"2026-09-22T07:27:01Z","cwd":"/work"}"#.utf8).write(to: log)
+
+        #expect(ChairLogDiscovery.path(
+            provider: "claude", chairID: "990e96ab-chair", cwd: "/work",
+            createdAt: 1_790_079_961, homes: [home]
+        )?.standardizedFileURL == log.standardizedFileURL)
+    }
+
+    @Test("Uses the time window when no chair id is available")
+    func noChairIDUsesWindow() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".claude")
+        let project = home.appendingPathComponent("projects/repo")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let log = project.appendingPathComponent("native-id.jsonl")
+        try Data(#"{"timestamp":"2026-09-22T12:27:01Z","cwd":"/work"}"#.utf8).write(to: log)
+
+        #expect(ChairLogDiscovery.path(
+            provider: "claude", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
+        )?.lastPathComponent == log.lastPathComponent)
+    }
+
+    @Test("Finds a Codex chair id in nested session folders")
+    func codexChairID() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let directory = home.appendingPathComponent("sessions/first/second")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let log = directory.appendingPathComponent("rollout-prefix-990e96ab-chair.jsonl")
+        try Data().write(to: log)
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", chairID: "990e96ab-chair", cwd: "/other",
+            createdAt: 1, homes: [home]
+        )?.standardizedFileURL == log.standardizedFileURL)
     }
 
     private func account(_ name: String, home: URL) -> SwarmAccount {

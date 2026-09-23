@@ -164,7 +164,8 @@ public struct SessionsTree: Sendable, Hashable {
                     workspaces: ordered(workspaces)
                 )
             }
-        }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        }.filter { !$0.chats.isEmpty }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
     }
 
