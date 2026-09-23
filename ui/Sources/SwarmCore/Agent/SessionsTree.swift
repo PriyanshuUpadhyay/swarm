@@ -34,13 +34,19 @@ public struct SessionRowPresentation: Sendable, Hashable {
     }
 }
 
-public struct WorktreeNode: Sendable, Hashable, Identifiable {
-    public var id: String { entry.path }
-    public let entry: WorktreeEntry
+public struct WorkspaceNode: Sendable, Hashable, Identifiable {
+    public var id: String { path }
+    public let path: String
+    public let name: String
     public let sessions: [SwarmProjectSession]
+    public var current: SwarmProjectSession? { sessions.first }
+    public var state: SessionRowPresentation.State? {
+        current.map(SessionRowPresentation.state)
+    }
 
-    public init(entry: WorktreeEntry, sessions: [SwarmProjectSession]) {
-        self.entry = entry
+    public init(path: String, name: String, sessions: [SwarmProjectSession]) {
+        self.path = path
+        self.name = name
         self.sessions = sessions
     }
 }
@@ -49,20 +55,18 @@ public struct ProjectNode: Sendable, Hashable, Identifiable {
     public let id: SwarmPathIdentity
     public let path: String
     public let launchDirectory: String
-    public let worktrees: [WorktreeNode]
-    public let sessions: [SwarmProjectSession]
+    public let workspaces: [WorkspaceNode]
 
     public var name: String { URL(fileURLWithPath: path).lastPathComponent }
 
     public init(
         id: SwarmPathIdentity, path: String, launchDirectory: String,
-        worktrees: [WorktreeNode], sessions: [SwarmProjectSession]
+        workspaces: [WorkspaceNode]
     ) {
         self.id = id
         self.path = path
         self.launchDirectory = launchDirectory
-        self.worktrees = worktrees
-        self.sessions = sessions
+        self.workspaces = workspaces
     }
 }
 
@@ -97,92 +101,92 @@ public struct SessionsTree: Sendable, Hashable {
             switch identity {
             case .folder(let path):
                 return ProjectNode(
-                    id: identity, path: path, launchDirectory: path, worktrees: [],
-                    sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles)
+                    id: identity, path: path, launchDirectory: path,
+                    workspaces: [WorkspaceNode(
+                        path: path, name: URL(fileURLWithPath: path).lastPathComponent,
+                        sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles)
+                    )]
                 )
             case .repository(let commonDirectory):
                 let listed = worktreeLister(commonDirectory)
-                let worktrees = listed.compactMap { entry -> WorktreeNode? in
+                var workspaces = listed.compactMap { entry -> WorkspaceNode? in
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
                     guard !matches.isEmpty else { return nil }
-                    return WorktreeNode(
-                        entry: entry,
+                    return WorkspaceNode(
+                        path: entry.path,
+                        name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,
                         sessions: rows(matches, agentsBySession: agentsBySession, titles: titles)
                     )
                 }
-                let projectSessions = sessions.filter { session in
+                let hubSessions = sessions.filter { session in
                     !listed.contains { !$0.isBare && contains(session.cwd, in: $0.path) }
                 }
-                guard !worktrees.isEmpty || !projectSessions.isEmpty else { return nil }
                 let path = [".git", ".bare"].contains(URL(fileURLWithPath: commonDirectory).lastPathComponent)
                     ? URL(fileURLWithPath: commonDirectory).deletingLastPathComponent().path
                     : commonDirectory
+                if !hubSessions.isEmpty {
+                    let hubPath = URL(fileURLWithPath: commonDirectory).lastPathComponent == ".bare"
+                        ? commonDirectory : path
+                    workspaces.append(WorkspaceNode(
+                        path: hubPath, name: URL(fileURLWithPath: hubPath).lastPathComponent,
+                        sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles)
+                    ))
+                }
+                guard !workspaces.isEmpty else { return nil }
                 let launchDirectory = listed.first { $0.branch == "main" && !$0.isBare }?.path
                     ?? listed.first { !$0.isBare }?.path ?? path
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: launchDirectory,
-                    worktrees: worktrees,
-                    sessions: rows(projectSessions, agentsBySession: agentsBySession, titles: titles)
+                    workspaces: ordered(workspaces)
                 )
             }
         }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
     }
 
-    public func session(_ id: SwarmSessionID) -> SwarmProjectSession? {
+    public func workspace(_ id: String) -> WorkspaceNode? {
         for project in projects {
-            if let row = SwarmSessionListing.chat(id, in: project.sessions) { return row }
-            for worktree in project.worktrees {
-                if let row = SwarmSessionListing.chat(id, in: worktree.sessions) { return row }
-            }
+            if let workspace = project.workspaces.first(where: { $0.id == id }) { return workspace }
         }
         return nil
     }
 
-    public func retainedSelection(_ id: SwarmSessionID?) -> SwarmSessionID? {
+    public func session(_ id: String) -> SwarmProjectSession? {
+        workspace(id)?.current
+    }
+
+    public func retainedSelection(_ id: String?) -> String? {
         guard let id else { return nil }
-        return session(id) == nil ? nil : id
+        return workspace(id) == nil ? nil : id
     }
 
-    public func windowTitle(for id: SwarmSessionID) -> String? {
+    public func windowTitle(for id: String) -> String? {
         for project in projects {
-            guard let row = SwarmSessionListing.chat(id, in: project.sessions)
-                ?? project.worktrees.lazy.compactMap({ SwarmSessionListing.chat(id, in: $0.sessions) }).first
-            else { continue }
-            return "\(project.name) · \(row.provider ?? "no chair") \(id.rawValue.prefix(8))"
+            guard let workspace = project.workspaces.first(where: { $0.id == id }),
+                  let row = workspace.current else { continue }
+            return "\(project.name) · \(row.provider ?? "no chair") \(row.id.rawValue.prefix(8))"
         }
         return nil
     }
 
-    public func launchDirectory(for id: SwarmSessionID) -> String? {
-        for project in projects {
-            if SwarmSessionListing.chat(id, in: project.sessions) != nil { return project.launchDirectory }
-            for worktree in project.worktrees {
-                if SwarmSessionListing.chat(id, in: worktree.sessions) != nil {
-                    return worktree.entry.path
-                }
-            }
-        }
-        return nil
+    public func launchDirectory(for id: String) -> String? {
+        workspace(id)?.path
     }
 
     public func text(now: Int = Int(Date().timeIntervalSince1970)) -> String {
         var lines: [String] = []
         for project in projects {
             lines.append(project.name)
-            for row in project.sessions { lines.append("  " + Self.rowText(row, now: now)) }
-            for worktree in project.worktrees {
-                lines.append("  " + URL(fileURLWithPath: worktree.entry.path).lastPathComponent)
-                for row in worktree.sessions { lines.append("    " + Self.rowText(row, now: now)) }
+            for workspace in project.workspaces {
+                if let row = workspace.current {
+                    lines.append("  \(workspace.name) · \(SessionRowPresentation.make(row, now: now).caption)")
+                } else {
+                    lines.append("  \(workspace.name)")
+                }
             }
         }
         return lines.joined(separator: "\n")
-    }
-
-    public static func rowText(_ row: SwarmProjectSession, now: Int) -> String {
-        let presentation = SessionRowPresentation.make(row, now: now)
-        return "\(presentation.title) · \(presentation.caption)"
     }
 
     public static func ordered(_ rows: [SwarmProjectSession]) -> [SwarmProjectSession] {
@@ -190,6 +194,18 @@ public struct SessionsTree: Sendable, Hashable {
             let left = order(SessionRowPresentation.state(of: lhs))
             let right = order(SessionRowPresentation.state(of: rhs))
             return left == right ? lhs.lastActivity > rhs.lastActivity : left < right
+        }
+    }
+
+    public static func ordered(_ workspaces: [WorkspaceNode]) -> [WorkspaceNode] {
+        workspaces.sorted { lhs, rhs in
+            let left = lhs.state.map(order) ?? 3
+            let right = rhs.state.map(order) ?? 3
+            if left != right { return left < right }
+            let leftActivity = lhs.current?.lastActivity ?? 0
+            let rightActivity = rhs.current?.lastActivity ?? 0
+            if leftActivity != rightActivity { return leftActivity > rightActivity }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
     }
 

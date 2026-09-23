@@ -9,21 +9,22 @@ final class SessionsTreeModel {
     private let discovery = SwarmSessionDiscovery()
 
     var tree = SessionsTree(projects: [])
-    var selectedID: SwarmSessionID? = UserDefaults.standard.string(forKey: "selectedSessionID")
-        .map(SwarmSessionID.init) {
-        didSet { UserDefaults.standard.set(selectedID?.rawValue, forKey: "selectedSessionID") }
+    var selectedWorkspace = UserDefaults.standard.string(forKey: "selectedWorkspace") {
+        didSet { UserDefaults.standard.set(selectedWorkspace, forKey: "selectedWorkspace") }
     }
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var error: String?
 
-    var selectedSession: SwarmProjectSession? {
-        selectedID.flatMap { tree.session($0) }
+    var workspace: WorkspaceNode? {
+        selectedWorkspace.flatMap { tree.workspace($0) }
     }
 
-    func select(_ id: SwarmSessionID) {
+    var selectedSession: SwarmProjectSession? { workspace?.current }
+
+    func select(_ id: String) {
         pendingID = nil
-        selectedID = id
+        selectedWorkspace = id
         agents = []
     }
 
@@ -31,7 +32,7 @@ final class SessionsTreeModel {
         try await SwarmChatLauncher.start(plan, bus: bus) { id in
             await MainActor.run {
                 self.pendingID = id
-                self.selectedID = id
+                self.selectedWorkspace = plan.directory
                 self.agents = []
             }
         }
@@ -40,11 +41,11 @@ final class SessionsTreeModel {
     func refresh() async throws {
         let sessions = try await bus.sessions()
         tree = try await discovery.tree(sessions: sessions, bus: bus)
-        if let selectedID, let row = tree.session(selectedID) {
+        if let selectedWorkspace, let row = tree.session(selectedWorkspace) {
             pendingID = nil
             agents = try await bus.agents(in: row.session)
         } else if pendingID == nil {
-            selectedID = tree.retainedSelection(selectedID)
+            selectedWorkspace = tree.retainedSelection(selectedWorkspace)
             agents = []
         }
         error = nil
@@ -63,45 +64,27 @@ private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
-    @State private var expandedProjects = Set(UserDefaults.standard.stringArray(forKey: "expandedProjects") ?? [])
-    @State private var expandedWorktrees = Set(UserDefaults.standard.stringArray(forKey: "expandedWorktrees") ?? [])
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $model.selectedID) {
+            List(selection: $model.selectedWorkspace) {
                 ForEach(sidebarRows) { entry in
                     switch entry {
                     case .project(let project):
-                        TreeRowLabel(
-                            name: project.name,
-                            isExpanded: expansion(
-                                project.path, in: $expandedProjects, key: "expandedProjects"
-                            )
-                        ) {
+                        ProjectRowLabel(name: project.name) {
                             newChatDirectory = project.launchDirectory
                         }
-                    case .worktree(let worktree):
-                        TreeRowLabel(
-                            name: worktree.entry.branch
-                                ?? URL(fileURLWithPath: worktree.entry.path).lastPathComponent,
-                            isExpanded: expansion(
-                                worktree.id, in: $expandedWorktrees, key: "expandedWorktrees"
-                            )
-                        ) {
-                            newChatDirectory = worktree.entry.path
-                        }
+                    case .workspace(let workspace):
+                        workspaceRow(workspace)
                         .padding(.leading, 16)
-                    case .session(let row, let depth):
-                        sessionRow(row)
-                            .padding(.leading, CGFloat(depth * 16))
-                            .tag(row.id)
+                        .tag(workspace.id)
                     }
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("Sessions")
+            .navigationTitle("Workspaces")
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
-            .onChange(of: model.selectedID) { oldID, id in
+            .onChange(of: model.selectedWorkspace) { oldID, id in
                 guard oldID != id else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
@@ -110,8 +93,8 @@ private struct SessionsWindow: View {
             .toolbar {
                 Button {
                     if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
-                       let selectedID = model.selectedID {
-                        newChatDirectory = model.tree.launchDirectory(for: selectedID)
+                       let path = model.workspace?.path {
+                        newChatDirectory = path
                     }
                 } label: {
                     Image(systemName: "plus.circle")
@@ -119,19 +102,26 @@ private struct SessionsWindow: View {
                 .help("New chat")
                 .accessibilityLabel("New chat")
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(model.selectedID == nil)
+                .disabled(model.workspace == nil)
             }
         } detail: {
             if let row = model.selectedSession {
                 SessionDetailView(
-                    row: row, title: model.tree.windowTitle(for: model.selectedID ?? row.id) ?? row.title,
+                    row: row,
+                    title: model.selectedWorkspace.flatMap(model.tree.windowTitle) ?? row.title,
                     agents: model.agents, panes: panes
                 )
                     .id(row.id)
+            } else if let workspace = model.workspace {
+                ContentUnavailableView {
+                    Label("No chat yet", systemImage: "bubble.left")
+                } actions: {
+                    Button("New chat") { newChatDirectory = workspace.path }
+                }
             } else if let error = model.error {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {
-                ContentUnavailableView("Select a session", systemImage: "square.stack")
+                ContentUnavailableView("Select a workspace", systemImage: "square.stack")
             }
         }
         .background(WindowFrameRestorer())
@@ -153,37 +143,33 @@ private struct SessionsWindow: View {
         }
     }
 
-    private func expansion(_ id: String, in values: Binding<Set<String>>, key: String) -> Binding<Bool> {
-        Binding(
-            get: { values.wrappedValue.contains(id) },
-            set: { expanded in
-                if expanded { values.wrappedValue.insert(id) }
-                else { values.wrappedValue.remove(id) }
-                UserDefaults.standard.set(Array(values.wrappedValue), forKey: key)
-            }
-        )
-    }
-
-    private func sessionRow(_ row: SwarmProjectSession) -> some View {
-        let presentation = SessionRowPresentation.make(row, now: Int(Date().timeIntervalSince1970))
+    private func workspaceRow(_ workspace: WorkspaceNode) -> some View {
+        let presentation = workspace.current.map {
+            SessionRowPresentation.make($0, now: Int(Date().timeIntervalSince1970))
+        }
         return HStack(spacing: 8) {
-            Group {
-                switch presentation.state {
-                case .live: Circle().fill(.green)
-                case .noChair: Circle().fill(.orange)
-                case .ended: Circle().fill(.tertiary)
+            if let state = presentation?.state {
+                Group {
+                    switch state {
+                    case .live: Circle().fill(.green)
+                    case .noChair: Circle().fill(.orange)
+                    case .ended: Circle().fill(.tertiary)
+                    }
                 }
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
             }
-            .frame(width: 7, height: 7)
-            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(presentation.title)
-                    .foregroundStyle(presentation.state == .ended ? Color.secondary : Color.primary)
+                Text(workspace.name)
+                    .font(.body)
+                    .foregroundStyle(presentation?.state == .ended ? Color.secondary : Color.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(presentation.caption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let caption = presentation?.caption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -192,37 +178,22 @@ private struct SessionsWindow: View {
         var rows: [SidebarRow] = []
         for project in model.tree.projects {
             rows.append(.project(project))
-            guard expandedProjects.contains(project.path) else { continue }
-            rows += project.sessions.map { .session($0, depth: 1) }
-            for worktree in project.worktrees {
-                rows.append(.worktree(worktree))
-                guard expandedWorktrees.contains(worktree.id) else { continue }
-                rows += worktree.sessions.map { .session($0, depth: 2) }
-            }
+            rows += project.workspaces.map(SidebarRow.workspace)
         }
         return rows
     }
 }
 
-private struct TreeRowLabel: View {
+private struct ProjectRowLabel: View {
     let name: String
-    @Binding var isExpanded: Bool
     let onNewChat: () -> Void
     @State private var hovered = false
 
     var body: some View {
         HStack {
-            Button { isExpanded.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Text(name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(name)")
+            Text(name)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer()
             Button(action: onNewChat) {
                 Image(systemName: "plus.circle")
@@ -239,14 +210,12 @@ private struct TreeRowLabel: View {
 
 private enum SidebarRow: Identifiable {
     case project(ProjectNode)
-    case worktree(WorktreeNode)
-    case session(SwarmProjectSession, depth: Int)
+    case workspace(WorkspaceNode)
 
     var id: String {
         switch self {
         case .project(let project): "project:\(project.path)"
-        case .worktree(let worktree): "worktree:\(worktree.id)"
-        case .session(let session, _): "session:\(session.id.rawValue)"
+        case .workspace(let workspace): "workspace:\(workspace.id)"
         }
     }
 }
