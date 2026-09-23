@@ -93,14 +93,17 @@ struct SessionDetailView: View {
                                         showHiddenRows.toggle()
                                     }
                                 }
-                                ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { row in
-                                    TranscriptRowView(row: row)
+                                ForEach(rows.filter { showHiddenRows || !$0.isHiddenByDefault }) { transcriptRow in
+                                    TranscriptRowView(
+                                        row: transcriptRow, chair: self.row.provider ?? chairProvider
+                                    )
                                 }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     }
+                    .contentMargins(.top, 8, for: .scrollContent)
                     .frame(maxHeight: .infinity)
                     .simultaneousGesture(TapGesture().onEnded {
                         NSApp.keyWindow?.makeFirstResponder(nil)
@@ -255,10 +258,29 @@ private struct AgentCellView: View {
 
 private struct TranscriptRowView: View {
     let row: TranscriptRow
+    let chair: String?
 
     var body: some View {
+        Group {
+            if row.kind == .user {
+                rowBody
+                    .padding(10)
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .background { RoundedRectangle(cornerRadius: 10).fill(.quaternary) }
+            } else if row.kind == .assistant {
+                rowBody.frame(maxWidth: 720, alignment: .leading)
+            } else {
+                rowBody
+            }
+        }
+        .id(row.eventID)
+    }
+
+    private var rowBody: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(row.kind.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+            Text(row.label(chair: chair))
+                .font(labelFont)
+                .foregroundStyle(.secondary)
             switch row.kind {
             case .thought, .toolResult:
                 DisclosureGroup("Show text") {
@@ -281,10 +303,20 @@ private struct TranscriptRowView: View {
                 }
             case .error:
                 Text(verbatim: row.text).foregroundStyle(.red)
+            case .user, .assistant:
+                Text(verbatim: row.text).font(.body)
             default:
                 Text(verbatim: row.text)
             }
         }
-        .id(row.eventID)
+    }
+
+    private var labelFont: Font {
+        switch row.kind {
+        case .thought, .toolUse, .toolResult, .result, .system:
+            .system(.callout, design: .monospaced)
+        default:
+            .caption
+        }
     }
 }

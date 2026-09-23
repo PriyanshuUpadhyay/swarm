@@ -61,6 +61,26 @@ struct SwarmSpikeTests {
         #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "Build the app")
     }
 
+    @Test("Chair titles skip injected user context")
+    func chairLogTitleSkipsInjectedContext() throws {
+        let log = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-chair-injected-\(UUID().uuidString).jsonl")
+        let injected = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-chair-only-injected-\(UUID().uuidString).jsonl")
+        defer {
+            try? FileManager.default.removeItem(at: log)
+            try? FileManager.default.removeItem(at: injected)
+        }
+        let pasted = #"{"type":"user","message":{"content":"<pasted_content id=\"1\">x</pasted_content>"}}"#
+        let agents = ##"{"type":"user","message":{"content":"# AGENTS.md instructions"}}"##
+        let prompt = #"{"type":"user","message":{"content":"fix the build"}}"#
+        try Data([pasted, agents, prompt].joined(separator: "\n").utf8).write(to: log)
+        try Data([pasted, agents].joined(separator: "\n").utf8).write(to: injected)
+
+        #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "fix the build")
+        #expect(ChairLogTitle.firstUserPrompt(path: injected.path) == nil)
+    }
+
     @Test("A pane name uses the bus session id")
     func paneName() {
         let name = TmuxSessions.sessionName(sessionID: SwarmSessionID("session-1"), paneID: "pane-1")

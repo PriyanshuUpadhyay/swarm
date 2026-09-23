@@ -19,6 +19,21 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var detail: String? = nil
     public var id: String { eventID }
 
+    public func label(chair: String?) -> String {
+        switch kind {
+        case .user: "You"
+        case .assistant: chair?.capitalized ?? "Chair"
+        case .thought: "Thinking"
+        case .toolUse: "Tool"
+        case .toolResult: "Result"
+        case .permission: "Permission"
+        case .error: "Error"
+        case .notice: "Notice"
+        case .system: "System"
+        case .result: "Turn"
+        }
+    }
+
     public var isHiddenByDefault: Bool {
         (kind == .notice && (text.hasPrefix("hook_success") || text.hasPrefix("title:")))
             || (kind == .system && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
