@@ -68,31 +68,36 @@ private struct SessionsWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            List {
+            List(selection: $model.selectedID) {
                 ForEach(model.tree.projects) { project in
                     DisclosureGroup(isExpanded: expansion(project.path, in: $expandedProjects, key: "expandedProjects")) {
-                        ForEach(project.sessions) { row in sessionButton(row) }
+                        ForEach(project.sessions) { row in sessionRow(row).tag(row.id) }
                         ForEach(project.worktrees) { worktree in
                             DisclosureGroup(isExpanded: expansion(worktree.id, in: $expandedWorktrees, key: "expandedWorktrees")) {
-                                ForEach(worktree.sessions) { row in sessionButton(row) }
+                                ForEach(worktree.sessions) { row in sessionRow(row).tag(row.id) }
                             } label: {
-                                rowLabel(
-                                    URL(fileURLWithPath: worktree.entry.path).lastPathComponent,
-                                    directory: worktree.entry.path
-                                )
+                                TreeRowLabel(
+                                    name: worktree.entry.branch
+                                        ?? URL(fileURLWithPath: worktree.entry.path).lastPathComponent
+                                ) { newChatDirectory = worktree.entry.path }
                             }
                         }
                     } label: {
-                        rowLabel(project.name, directory: project.launchDirectory)
+                        TreeRowLabel(name: project.name) {
+                            newChatDirectory = project.launchDirectory
+                        }
                     }
                 }
             }
+            .listStyle(.sidebar)
             .navigationTitle("Sessions")
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
-            .simultaneousGesture(TapGesture().onEnded {
+            .onChange(of: model.selectedID) { oldID, id in
+                guard oldID != id else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
-            })
+                if let id { model.select(id) }
+            }
             .toolbar {
                 Button {
                     if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
@@ -139,21 +144,6 @@ private struct SessionsWindow: View {
         }
     }
 
-    private func rowLabel(_ name: String, directory: String) -> some View {
-        HStack {
-            Text(name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Button { newChatDirectory = directory } label: {
-                Image(systemName: "plus.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("New chat")
-            .accessibilityLabel("New chat")
-        }
-    }
-
     private func expansion(_ id: String, in values: Binding<Set<String>>, key: String) -> Binding<Bool> {
         Binding(
             get: { values.wrappedValue.contains(id) },
@@ -165,17 +155,53 @@ private struct SessionsWindow: View {
         )
     }
 
-    private func sessionButton(_ row: SwarmProjectSession) -> some View {
-        Button {
-            NSApp.keyWindow?.makeFirstResponder(nil)
-            panes.clearFocus()
-            model.select(row.id)
-        } label: {
-            Text(SessionsTree.rowText(row, now: Int(Date().timeIntervalSince1970)))
+    private func sessionRow(_ row: SwarmProjectSession) -> some View {
+        let presentation = SessionRowPresentation.make(row, now: Int(Date().timeIntervalSince1970))
+        return HStack(spacing: 8) {
+            Group {
+                switch presentation.state {
+                case .live: Circle().fill(.green)
+                case .noChair: Circle().fill(.orange)
+                case .ended: Circle().fill(.tertiary)
+                }
+            }
+            .frame(width: 7, height: 7)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presentation.title)
+                    .foregroundStyle(presentation.state == .ended ? Color.secondary : Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(presentation.caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct TreeRowLabel: View {
+    let name: String
+    let onNewChat: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        HStack {
+            Text(name)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            Spacer()
+            Button(action: onNewChat) {
+                Image(systemName: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("New chat")
+            .accessibilityLabel("New chat")
+            .opacity(hovered ? 1 : 0)
+            .allowsHitTesting(hovered)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 }
 

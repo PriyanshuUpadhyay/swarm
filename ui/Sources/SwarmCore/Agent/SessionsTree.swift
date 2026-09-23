@@ -1,5 +1,39 @@
 import Foundation
 
+public struct SessionRowPresentation: Sendable, Hashable {
+    public enum State: Sendable, Hashable { case live, ended, noChair }
+
+    public var title: String
+    public var caption: String
+    public var state: State
+
+    public static func make(_ row: SwarmProjectSession, now: Int) -> SessionRowPresentation {
+        let state = state(of: row)
+        let age = max(0, now - row.session.createdAt)
+        let ageText: String
+        if age < 60 { ageText = "\(age)s" }
+        else if age < 3_600 { ageText = "\(age / 60)m" }
+        else if age < 86_400 { ageText = "\(age / 3_600)h" }
+        else { ageText = "\(age / 86_400)d" }
+
+        let fallback = "\(row.provider ?? "Chat") \(row.id.rawValue.prefix(8))"
+        let title = row.title.isEmpty ? fallback : row.title
+        var caption = "\(state == .ended ? "ended" : row.provider ?? "no chair") · \(ageText)"
+        if let liveAgents = row.liveAgents {
+            let children = state == .live && row.isRunning == true
+                ? max(0, liveAgents - 1) : liveAgents
+            if children > 0 { caption += " · \(children) \(children == 1 ? "agent" : "agents")" }
+        }
+        return SessionRowPresentation(title: title, caption: caption, state: state)
+    }
+
+    fileprivate static func state(of row: SwarmProjectSession) -> State {
+        if row.isRunning == false { return .ended }
+        if row.provider == nil { return .noChair }
+        return .live
+    }
+}
+
 public struct WorktreeNode: Sendable, Hashable, Identifiable {
     public var id: String { entry.path }
     public let entry: WorktreeEntry
@@ -142,27 +176,22 @@ public struct SessionsTree: Sendable, Hashable {
     }
 
     public static func rowText(_ row: SwarmProjectSession, now: Int) -> String {
-        let session = row.session
-        let age = max(0, now - session.createdAt)
-        let ageText: String
-        if age < 60 { ageText = "\(age)s" }
-        else if age < 3_600 { ageText = "\(age / 60)m" }
-        else if age < 86_400 { ageText = "\(age / 3_600)h" }
-        else { ageText = "\(age / 86_400)d" }
-        let count: String
-        if let live = row.liveAgents {
-            count = live == row.totalAgents ? "\(live) live" : "\(live) live · \(row.totalAgents) total"
-        } else {
-            count = "\(row.totalAgents) total"
+        let presentation = SessionRowPresentation.make(row, now: now)
+        return "\(presentation.title) · \(presentation.caption)"
+    }
+
+    public static func ordered(_ rows: [SwarmProjectSession]) -> [SwarmProjectSession] {
+        rows.sorted { lhs, rhs in
+            let left = order(SessionRowPresentation.state(of: lhs))
+            let right = order(SessionRowPresentation.state(of: rhs))
+            return left == right ? lhs.lastActivity > rhs.lastActivity : left < right
         }
-        let state = row.isRunning == false ? "ended" : (row.provider ?? "no chair")
-        return "\(state) \(session.id.rawValue.prefix(8)) · \(ageText) · \(count)"
     }
 
     private static func rows(
         _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]
     ) -> [SwarmProjectSession] {
-        SwarmSessionListing.chatGroups(sessions).map {
+        ordered(SwarmSessionListing.chatGroups(sessions).map {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
             let agents = $0.flatMap { agentsBySession[$0.id] ?? [] }
             let running = known ? agents.contains(where: { $0.alive == true }) : nil
@@ -174,6 +203,14 @@ public struct SessionsTree: Sendable, Hashable {
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider
             )
+        })
+    }
+
+    private static func order(_ state: SessionRowPresentation.State) -> Int {
+        switch state {
+        case .live: 0
+        case .noChair: 1
+        case .ended: 2
         }
     }
 
