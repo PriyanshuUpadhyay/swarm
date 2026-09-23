@@ -10,18 +10,19 @@ struct SessionsTreeTests {
         WorktreeEntry(path: "/repo/wt/feature", branch: "feature"),
     ]
 
-    @Test("One repository shows two worktrees and its hub as workspaces")
+    @Test("One repository keeps workspaces and exposes their chats")
     func repositoryAndWorktrees() {
-        let tree = build([
-            session("11111111-a", cwd: "/repo/wt/main/src"),
-            session("22222222-b", cwd: "/repo/wt/feature"),
-            session("33333333-c", cwd: "/repo/.bare"),
-        ])
+        var older = session("11111111-a", cwd: "/repo/wt/main/src")
+        older.lastMessageAt = 10
+        var newer = session("22222222-b", cwd: "/repo/wt/feature")
+        newer.lastMessageAt = 20
+        let tree = build([older, newer, session("33333333-c", cwd: "/repo/.bare")])
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
-        #expect(tree.projects[0].workspaces.map(\.name) == [".bare", "feature", "main"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", ".bare"])
         #expect(tree.projects[0].workspaces.map(\.sessions.count) == [1, 1, 1])
-        #expect(tree.launchDirectory(for: "/repo/wt/feature") == "/repo/wt/feature")
+        #expect(tree.projects[0].chats.map(\.id) == [newer.id, older.id, SwarmSessionID("33333333-c")])
+        #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
     }
 
     @Test("A folder is one workspace")
@@ -30,7 +31,7 @@ struct SessionsTreeTests {
         #expect(tree.projects[0].path == "/outside")
         #expect(tree.projects[0].workspaces.map(\.name) == ["outside"])
         #expect(tree.projects[0].workspaces[0].sessions.count == 1)
-        #expect(tree.launchDirectory(for: "/outside") == "/outside")
+        #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
     @Test("Resolved titles name their rows and missing titles fall back")
@@ -47,26 +48,28 @@ struct SessionsTreeTests {
     @Test("Session rows have clear titles, captions, and states")
     func rowPresentation() {
         let live = projectSession("live-title", title: "Build sidebar", provider: "claude", running: true)
-        #expect(SessionRowPresentation.make(live, now: 7_201)
-            == SessionRowPresentation(title: "Build sidebar", caption: "claude · 2h", state: .live))
+        #expect(SessionRowPresentation.make(chat(live), now: 7_201) == SessionRowPresentation(
+            title: "Build sidebar", caption: "outside · claude", age: "2h",
+            state: .live, provider: "claude"
+        ))
 
         let untitled = projectSession("abcdefgh-more", title: "", provider: "codex", running: true)
-        #expect(SessionRowPresentation.make(untitled, now: 7_201)
-            == SessionRowPresentation(title: "codex abcdefgh", caption: "codex · 2h", state: .live))
+        #expect(SessionRowPresentation.make(chat(untitled), now: 7_201) == SessionRowPresentation(
+            title: "codex abcdefgh", caption: "outside · codex", age: "2h",
+            state: .live, provider: "codex"
+        ))
 
         let ended = projectSession("ended-session", title: "", provider: "codex", running: false)
-        #expect(SessionRowPresentation.make(ended, now: 7_201)
-            == SessionRowPresentation(title: "codex ended-se", caption: "ended · 2h", state: .ended))
+        #expect(SessionRowPresentation.make(chat(ended), now: 7_201) == SessionRowPresentation(
+            title: "codex ended-se", caption: "outside · ended", age: "2h",
+            state: .ended, provider: "codex"
+        ))
 
         let noChair = projectSession("missing-chair", title: "", provider: nil, running: true)
-        #expect(SessionRowPresentation.make(noChair, now: 7_201)
-            == SessionRowPresentation(title: "Chat missing-", caption: "no chair · 2h", state: .noChair))
-
-        let children = projectSession(
-            "child-agents", title: "Team", provider: "claude", running: true, liveAgents: 3
-        )
-        #expect(SessionRowPresentation.make(children, now: 7_201)
-            == SessionRowPresentation(title: "Team", caption: "claude · 2h · 2 agents", state: .live))
+        #expect(SessionRowPresentation.make(chat(noChair), now: 7_201) == SessionRowPresentation(
+            title: "Chat missing-", caption: "outside · no chair", age: "2h",
+            state: .noChair, provider: nil
+        ))
     }
 
     @Test("Agent state feeds the sidebar presentation and tree text")
@@ -77,21 +80,19 @@ struct SessionsTreeTests {
         )
         let tree = build([dead], agentsBySession: [dead.id: [agent]])
         #expect(SessionRowPresentation.make(
-            tree.projects[0].workspaces[0].sessions[0], now: 61
-        ).caption == "ended · 1m")
-        #expect(tree.text(now: 61).contains("outside · ended · 1m"))
+            tree.projects[0].chats[0], now: 61
+        ).caption == "outside · ended")
+        #expect(tree.text(now: 61).contains("Chat · outside · ended · 1m"))
 
         let empty = build([dead], agentsBySession: [dead.id: []])
-        #expect(SessionRowPresentation.make(
-            empty.projects[0].workspaces[0].sessions[0], now: 61
-        ).caption == "ended · 1m")
+        #expect(empty.projects[0].chats.isEmpty)
 
         let running = build([dead], agentsBySession: [dead.id: [agent, SwarmAgent(
             id: .init("worker"), role: "code", pane: "%2", alive: true
         )]])
         #expect(SessionRowPresentation.make(
-            running.projects[0].workspaces[0].sessions[0], now: 61
-        ).caption == "no chair · 1m · 1 agent")
+            running.projects[0].chats[0], now: 61
+        ).caption == "outside · no chair")
     }
 
     @Test("A missing session provider comes from the chair, then the first agent")
@@ -105,14 +106,14 @@ struct SessionsTreeTests {
         )
         let withChair = build([item], agentsBySession: [item.id: [worker, chair]])
         #expect(SessionRowPresentation.make(
-            withChair.projects[0].workspaces[0].sessions[0], now: 61
-        ).caption == "codex · 1m · 1 agent")
-        #expect(withChair.windowTitle(for: "/outside") == "outside · codex provider")
+            withChair.projects[0].chats[0], now: 61
+        ).caption == "outside · codex")
+        #expect(withChair.windowTitle(for: item.id) == "outside · codex provider")
 
         let withoutChair = build([item], agentsBySession: [item.id: [worker]])
         #expect(SessionRowPresentation.make(
-            withoutChair.projects[0].workspaces[0].sessions[0], now: 61
-        ).caption == "claude · 1m")
+            withoutChair.projects[0].chats[0], now: 61
+        ).caption == "outside · claude")
     }
 
     @Test("Live, no-chair, and ended rows sort by state then recent activity")
@@ -155,7 +156,7 @@ struct SessionsTreeTests {
             session("archived", cwd: "/repo/wt/feature", archivedAt: 50),
         ])
         #expect(tree.projects[0].workspaces.map(\.path) == ["/repo/wt/main"])
-        #expect(tree.session("/repo/wt/feature") == nil)
+        #expect(tree.session(SwarmSessionID("archived")) == nil)
     }
 
     @Test("Repeated sessions in one chair make one row")
@@ -168,10 +169,10 @@ struct SessionsTreeTests {
         let rows = workspace.sessions
         #expect(rows.count == 1)
         #expect(rows[0].sessions.count == 2)
-        #expect(tree.session(workspace.id)?.id == rows[0].id)
-        #expect(tree.retainedSelection(workspace.id) == workspace.id)
-        #expect(tree.retainedSelection("/gone") == nil)
-        #expect(tree.windowTitle(for: workspace.id) == "repo · codex older")
+        #expect(tree.session(rows[0].id)?.id == rows[0].id)
+        #expect(tree.retainedSelection(SwarmSessionID("newer")) == rows[0].id)
+        #expect(tree.retainedSelection(SwarmSessionID("gone")) == nil)
+        #expect(tree.windowTitle(for: rows[0].id) == "repo · codex older")
     }
 
     @Test("A new session remains the chat row when an older session has later activity")
@@ -181,8 +182,8 @@ struct SessionsTreeTests {
         var newer = session("newer", cwd: "/repo/wt/main", chair: "chair")
         newer.createdAt = 50
         let tree = build([older, newer])
-        #expect(tree.session("/repo/wt/main")?.id == newer.id)
-        #expect(tree.session("/repo/wt/main")?.session == newer)
+        #expect(tree.session(older.id)?.id == newer.id)
+        #expect(tree.session(newer.id)?.session == newer)
     }
 
     @Test("The bare repository is one project for its linked worktrees")
@@ -203,10 +204,10 @@ struct SessionsTreeTests {
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].workspaces.map(\.name) == [".bare", "main"])
         #expect(tree.projects[0].launchDirectory == "/repo/wt/main")
-        #expect(tree.launchDirectory(for: "/repo/.bare") == "/repo/.bare")
+        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo/.bare")
     }
 
-    @Test("Tree text prints projects and workspace captions only")
+    @Test("Tree text prints project and chat presentation")
     func treeText() {
         let tree = build([
             session("hub", cwd: "/repo/.bare"),
@@ -214,8 +215,8 @@ struct SessionsTreeTests {
         ])
         #expect(tree.text(now: 61) == """
             repo
-              .bare · no chair · 1m
-              main · no chair · 1m
+              Chat · .bare · no chair · 1m
+              Chat · main · no chair · 1m
             """)
     }
 
@@ -288,5 +289,9 @@ struct SessionsTreeTests {
             sessions: [item], title: title, isRunning: running,
             liveAgents: liveAgents, provider: provider
         )
+    }
+
+    private func chat(_ session: SwarmProjectSession) -> ChatRow {
+        ChatRow(session: session, workspace: "outside", workspacePath: "/outside")
     }
 }

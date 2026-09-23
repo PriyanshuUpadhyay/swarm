@@ -9,22 +9,20 @@ final class SessionsTreeModel {
     private let discovery = SwarmSessionDiscovery()
 
     var tree = SessionsTree(projects: [])
-    var selectedWorkspace = UserDefaults.standard.string(forKey: "selectedWorkspace") {
-        didSet { UserDefaults.standard.set(selectedWorkspace, forKey: "selectedWorkspace") }
+    var selectedSessionID = UserDefaults.standard.string(forKey: "selectedSessionID").map(SwarmSessionID.init) {
+        didSet {
+            UserDefaults.standard.set(selectedSessionID?.rawValue, forKey: "selectedSessionID")
+        }
     }
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var error: String?
 
-    var workspace: WorkspaceNode? {
-        selectedWorkspace.flatMap { tree.workspace($0) }
-    }
+    var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
-    var selectedSession: SwarmProjectSession? { workspace?.current }
-
-    func select(_ id: String) {
+    func select(_ id: SwarmSessionID) {
         pendingID = nil
-        selectedWorkspace = id
+        selectedSessionID = id
         agents = []
     }
 
@@ -32,7 +30,7 @@ final class SessionsTreeModel {
         try await SwarmChatLauncher.start(plan, bus: bus) { id in
             await MainActor.run {
                 self.pendingID = id
-                self.selectedWorkspace = plan.directory
+                self.selectedSessionID = id
                 self.agents = []
             }
         }
@@ -41,14 +39,28 @@ final class SessionsTreeModel {
     func refresh() async throws {
         let sessions = try await bus.sessions()
         tree = try await discovery.tree(sessions: sessions, bus: bus)
-        if let selectedWorkspace, let row = tree.session(selectedWorkspace) {
+        if let selectedSessionID, let row = tree.session(selectedSessionID) {
             pendingID = nil
+            self.selectedSessionID = row.id
             agents = try await bus.agents(in: row.session)
         } else if pendingID == nil {
-            selectedWorkspace = tree.retainedSelection(selectedWorkspace)
+            selectedSessionID = tree.retainedSelection(selectedSessionID)
             agents = []
         }
         error = nil
+    }
+
+    func archive(_ id: SwarmSessionID) async throws {
+        try await bus.archive([id])
+        clearSelection(if: id)
+        try await refresh()
+    }
+
+    func close(_ id: SwarmSessionID) async throws {
+        try await bus.close(SwarmPanePolicy.chair, in: id)
+        try await bus.archive([id])
+        clearSelection(if: id)
+        try await refresh()
     }
 
     func run() async {
@@ -57,6 +69,12 @@ final class SessionsTreeModel {
             catch { self.error = String(describing: error) }
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    private func clearSelection(if id: SwarmSessionID) {
+        guard selectedSessionID == id else { return }
+        selectedSessionID = nil
+        agents = []
     }
 }
 
@@ -67,24 +85,25 @@ private struct SessionsWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $model.selectedWorkspace) {
+            List(selection: $model.selectedSessionID) {
                 ForEach(sidebarRows) { entry in
                     switch entry {
                     case .project(let project):
                         ProjectRowLabel(name: project.name) {
                             newChatDirectory = project.launchDirectory
                         }
-                    case .workspace(let workspace):
-                        workspaceRow(workspace)
+                    case .chat(let row):
+                        chatRow(row)
                         .padding(.leading, 16)
-                        .tag(workspace.id)
+                        .tag(row.id)
+                        .contextMenu { chatMenu(row) }
                     }
                 }
             }
             .listStyle(.sidebar)
             .navigationTitle("Workspaces")
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
-            .onChange(of: model.selectedWorkspace) { oldID, id in
+            .onChange(of: model.selectedSessionID) { oldID, id in
                 guard oldID != id else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
@@ -93,7 +112,8 @@ private struct SessionsWindow: View {
             .toolbar {
                 Button {
                     if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
-                       let path = model.workspace?.path {
+                       let id = model.selectedSessionID,
+                       let path = model.tree.launchDirectory(for: id) {
                         newChatDirectory = path
                     }
                 } label: {
@@ -102,26 +122,20 @@ private struct SessionsWindow: View {
                 .help("New chat")
                 .accessibilityLabel("New chat")
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(model.workspace == nil)
+                .disabled(model.selectedSession == nil)
             }
         } detail: {
             if let row = model.selectedSession {
                 SessionDetailView(
                     row: row,
-                    title: model.selectedWorkspace.flatMap(model.tree.windowTitle) ?? row.title,
+                    title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
                     agents: model.agents, panes: panes
                 )
                     .id(row.id)
-            } else if let workspace = model.workspace {
-                ContentUnavailableView {
-                    Label("No chat yet", systemImage: "bubble.left")
-                } actions: {
-                    Button("New chat") { newChatDirectory = workspace.path }
-                }
             } else if let error = model.error {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {
-                ContentUnavailableView("Select a workspace", systemImage: "square.stack")
+                ContentUnavailableView("Select a chat", systemImage: "bubble.left")
             }
         }
         .background(WindowFrameRestorer())
@@ -143,34 +157,64 @@ private struct SessionsWindow: View {
         }
     }
 
-    private func workspaceRow(_ workspace: WorkspaceNode) -> some View {
-        let presentation = workspace.current.map {
-            SessionRowPresentation.make($0, now: Int(Date().timeIntervalSince1970))
-        }
+    private func chatRow(_ row: ChatRow) -> some View {
+        let presentation = SessionRowPresentation.make(
+            row, now: Int(Date().timeIntervalSince1970)
+        )
         return HStack(spacing: 8) {
-            if let state = presentation?.state {
-                Group {
-                    switch state {
-                    case .live: Circle().fill(.green)
-                    case .noChair: Circle().fill(.orange)
-                    case .ended: Circle().fill(.tertiary)
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(presentation.state == .live ? Color.green : Color.clear)
+                .frame(width: 3)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(presentation.title)
+                        .font(.body)
+                        .foregroundStyle(
+                            presentation.state == .ended ? Color.secondary : Color.primary
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let provider = presentation.provider {
+                        Text(providerBadge(provider))
+                            .font(.caption2)
+                            .frame(width: 16, height: 16)
+                            .background(Circle().fill(.quaternary))
+                            .accessibilityLabel(provider)
                     }
                 }
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(workspace.name)
-                    .font(.body)
-                    .foregroundStyle(presentation?.state == .ended ? Color.secondary : Color.primary)
+                Text(presentation.caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                if let caption = presentation?.caption {
-                    Text(caption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
+            Spacer()
+            Text(presentation.age)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func chatMenu(_ row: ChatRow) -> some View {
+        let presentation = SessionRowPresentation.make(
+            row, now: Int(Date().timeIntervalSince1970)
+        )
+        Button("New chat here") { newChatDirectory = row.workspacePath }
+        Button("Close chat") {
+            Task { try? await model.close(row.id) }
+        }
+        .disabled(presentation.state != .live)
+        Button("Archive") {
+            Task { try? await model.archive(row.id) }
+        }
+    }
+
+    private func providerBadge(_ provider: String) -> String {
+        switch provider.lowercased() {
+        case "codex": "X"
+        case "agy": "A"
+        default: provider.prefix(1).uppercased()
         }
     }
 
@@ -178,7 +222,7 @@ private struct SessionsWindow: View {
         var rows: [SidebarRow] = []
         for project in model.tree.projects {
             rows.append(.project(project))
-            rows += project.workspaces.map(SidebarRow.workspace)
+            rows += project.chats.map(SidebarRow.chat)
         }
         return rows
     }
@@ -192,6 +236,8 @@ private struct ProjectRowLabel: View {
     var body: some View {
         HStack {
             Text(name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
@@ -210,12 +256,12 @@ private struct ProjectRowLabel: View {
 
 private enum SidebarRow: Identifiable {
     case project(ProjectNode)
-    case workspace(WorkspaceNode)
+    case chat(ChatRow)
 
     var id: String {
         switch self {
         case .project(let project): "project:\(project.path)"
-        case .workspace(let workspace): "workspace:\(workspace.id)"
+        case .chat(let row): "chat:\(row.id.rawValue)"
         }
     }
 }
