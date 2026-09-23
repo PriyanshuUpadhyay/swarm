@@ -11,6 +11,9 @@ final class SessionDetailModel {
     var snapshot: ChairTranscriptSnapshot = .waiting
     var draft = ""
     var sendError: String?
+    private var sendState = ComposerSendState()
+
+    var isSending: Bool { sendState.isSending }
 
     var rows: [TranscriptRow] {
         if case .rows(let rows) = snapshot { return rows }
@@ -25,13 +28,14 @@ final class SessionDetailModel {
     }
 
     func send(session: SwarmSession) async -> Bool {
-        guard let text = Composer.outgoing(draft) else { return false }
+        guard let text = sendState.begin(draft) else { return false }
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)
-            draft = ""
+            draft = sendState.finish(currentDraft: draft, succeeded: true)
             sendError = nil
             return true
         } catch {
+            draft = sendState.finish(currentDraft: draft, succeeded: false)
             sendError = String(describing: error)
             return false
         }
@@ -186,7 +190,7 @@ struct SessionDetailView: View {
                         .font(.title2)
                     }
                     .buttonStyle(.plain)
-                    .disabled(Composer.outgoing(model.draft) == nil)
+                    .disabled(Composer.outgoing(model.draft) == nil || model.isSending)
                     .accessibilityLabel("Send")
                 }
                 .padding(.horizontal, 10)

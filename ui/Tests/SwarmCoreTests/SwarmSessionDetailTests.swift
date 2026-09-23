@@ -116,6 +116,27 @@ struct SwarmSessionDetailTests {
         #expect(command.environment["SWARM_ADAPTER"] == "tmux")
     }
 
+    @Test("Close uses the session adapter and closes live children before the chair")
+    func closeOrderAndAdapter() async throws {
+        let calls = CloseCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            await calls.reply(arguments: arguments, environment: environment)
+        }
+        let value = session(adapter: "herdr")
+
+        try await SwarmSessionCloser.close(value, bus: bus)
+
+        #expect(await calls.arguments == [
+            ["agents", "--json"],
+            ["close", "child-b"],
+            ["close", "child-a"],
+            ["close", "orchestrator"],
+            ["session", "archive", value.id.rawValue],
+        ])
+        #expect(await calls.adapters == ["herdr", "herdr", "herdr", "herdr", "tmux-solo"])
+    }
+
     private func session(adapter: String) -> SwarmSession {
         SwarmSession(
             id: .init("01a0c8e6-7afc-7544-95cc-37c77567c776"),
@@ -123,5 +144,26 @@ struct SwarmSessionDetailTests {
             chairProvider: "claude", chairID: nil, chairLog: nil,
             agents: 1, messages: 0, lastMessageAt: nil
         )
+    }
+}
+
+private actor CloseCalls {
+    private(set) var arguments: [[String]] = []
+    private(set) var adapters: [String] = []
+
+    func reply(arguments: [String], environment: [String: String]) -> ShellResult {
+        self.arguments.append(arguments)
+        adapters.append(environment["SWARM_ADAPTER"] ?? "")
+        if arguments == ["agents", "--json"] {
+            return ShellResult(status: 0, stdout: """
+                {"agents":[
+                  {"id":"orchestrator","role":"chair","pane":"%1","alive":true},
+                  {"id":"child-b","role":"code","pane":"%2","alive":true},
+                  {"id":"dead","role":"test","pane":null,"alive":false},
+                  {"id":"child-a","role":"review","pane":"%3","alive":true}
+                ]}
+                """, stderr: "")
+        }
+        return ShellResult(status: 0, stdout: "", stderr: "")
     }
 }

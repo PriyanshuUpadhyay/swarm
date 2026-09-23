@@ -3,9 +3,9 @@ import Foundation
 // The agents Swarm starts through swarm, and the messages it exchanges with them.
 //
 // Swarm is the chair of every agent it starts (docs/decisions/0007 at the root of the swarm
-// repository). The commands and JSON are fixed in `docs/bus-contract.md` beside it, and a change
-// to a shape changes that file, swarm's output and these types together. The JSON keys are
-// snake_case; decode with `.convertFromSnakeCase`.
+// repository). `src/bus.rs` and `src/main.rs` own the commands and JSON, so a shape change must
+// update swarm's output and these types together. The JSON keys are snake_case; decode with
+// `.convertFromSnakeCase`.
 
 /// One agent in a swarm session. `pane` is nil for an agent that was registered and
 /// never spawned, and for one that was closed or reported dead; `alive` is nil whenever `pane` is,
@@ -206,8 +206,6 @@ public struct SwarmAttachCommand: Sendable, Hashable {
 /// and previews hand in their own. Failures are `SwarmProfileError`, the same two kinds the
 /// profile source throws.
 public protocol SwarmBus: Sendable {
-    /// `swarm init`, `swarm session new lane` and `swarm agent add orchestrator orchestrator`.
-    func startSession() async throws -> SwarmSessionID
     /// Creates the session whose chair is the app's interactive CLI. The chair registers from its
     /// tmux pane immediately before that CLI starts.
     func startChairSession(
@@ -231,8 +229,6 @@ public protocol SwarmBus: Sendable {
     func sessions() async throws -> [SwarmSession]
     /// `swarm session archive <id>...`, with no session selected in the environment.
     func archive(_ sessions: [SwarmSessionID]) async throws
-    /// `swarm send <agent> ask` with `body` on stdin. Returns the new message's seq.
-    func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int
     /// `swarm type <agent>` with `text` on stdin.
     func type(
         _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
@@ -241,9 +237,9 @@ public protocol SwarmBus: Sendable {
     func interrupt(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws
-    func ack(_ seq: Int, in session: SwarmSessionID) async throws
-    func sweep(in session: SwarmSessionID) async throws
-    func close(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws
+    func close(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws
     func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand
 }
 
@@ -304,6 +300,12 @@ public extension SwarmBus {
             agent, in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session)
         )
     }
+
+    func close(_ agent: SwarmAgentID, in session: SwarmSession) async throws {
+        try await close(
+            agent, in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
 }
 
 /// The bus before swarm is connected. Every call fails as unavailable, so a view shows its empty
@@ -312,8 +314,6 @@ public struct UnavailableSwarmBus: SwarmBus {
     public init() {}
 
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
-
-    public func startSession() async throws -> SwarmSessionID { throw notConnected }
 
     public func launch(
         _ agent: SwarmAgentID, role: String, account: String?,
@@ -334,10 +334,6 @@ public struct UnavailableSwarmBus: SwarmBus {
 
     public func sessions() async throws -> [SwarmSession] { throw notConnected }
 
-    public func send(_ body: String, to agent: SwarmAgentID, in session: SwarmSessionID) async throws -> Int {
-        throw notConnected
-    }
-
     public func type(
         _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws {
@@ -350,11 +346,9 @@ public struct UnavailableSwarmBus: SwarmBus {
         throw notConnected
     }
 
-    public func ack(_ seq: Int, in session: SwarmSessionID) async throws { throw notConnected }
-
-    public func sweep(in session: SwarmSessionID) async throws { throw notConnected }
-
-    public func close(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws { throw notConnected }
+    public func close(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws { throw notConnected }
 
     public func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand {
         SwarmAttachCommand(executable: "swarm", arguments: ["attach", agent.rawValue], environment: [:])

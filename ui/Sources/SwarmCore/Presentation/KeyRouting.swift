@@ -32,3 +32,23 @@ public enum Composer {
         return text.isEmpty ? nil : text
     }
 }
+
+public struct ComposerSendState: Sendable, Equatable {
+    private var submittedDraft: String?
+
+    public init() {}
+
+    public var isSending: Bool { submittedDraft != nil }
+
+    public mutating func begin(_ draft: String) -> String? {
+        guard submittedDraft == nil, let message = Composer.outgoing(draft) else { return nil }
+        submittedDraft = draft
+        return message
+    }
+
+    public mutating func finish(currentDraft: String, succeeded: Bool) -> String {
+        defer { submittedDraft = nil }
+        guard succeeded, currentDraft == submittedDraft else { return currentDraft }
+        return ""
+    }
+}

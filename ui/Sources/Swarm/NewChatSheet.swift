@@ -73,7 +73,7 @@ final class NewChatModel {
     ) async -> SwarmSessionID? {
         guard canStart, let role = selectedRole,
               let plan = SwarmChatLaunchPlan(
-                directory: directory, role: role, account: accountSelection ?? .auto
+                directory: directory, role: role, account: accountSelection
               ) else { return nil }
         isStarting = true
         errorMessage = nil

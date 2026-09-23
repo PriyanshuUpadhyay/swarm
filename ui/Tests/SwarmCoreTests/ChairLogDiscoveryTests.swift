@@ -5,7 +5,7 @@ import TranscriptTool
 
 @Suite("Chair log discovery")
 struct ChairLogDiscoveryTests {
-    @Test("Finds the earliest matching Codex home and retries until a log exists")
+    @Test("Finds the nearest matching Codex home and retries until a log exists")
     func codex() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -47,6 +47,49 @@ struct ChairLogDiscoveryTests {
             return
         }
         #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
+    }
+
+    @Test("A nearer log replaces the discovered transcript and title")
+    func nearerLogReplacesCachedLog() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let cwd = "/work/\(UUID().uuidString)"
+        let cutoff = 1_790_079_961
+        let home = fixture.root.appendingPathComponent(".codex-test")
+        let accounts = SwarmAccountList(
+            provider: "codex", source: "fixture",
+            accounts: [account("test", home: home)], auto: "test"
+        )
+        let profiles = FixtureProfiles(accountList: accounts)
+        let session = SwarmSession(
+            id: .init("changing-log"), talkMode: "lane", adapter: "tmux-solo",
+            cwd: cwd, createdAt: cutoff, chairProvider: "codex", chairID: nil,
+            chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
+        )
+        let agents = [session.id: [SwarmAgent(
+            id: SwarmPanePolicy.chair, role: "chair", pane: "%1", alive: true,
+            provider: "codex"
+        )]]
+        let transcript = SwarmChairTranscript(profiles: profiles, home: fixture.root)
+        let discovery = SwarmSessionDiscovery(profiles: profiles, home: fixture.root)
+
+        let firstLog = try fixture.codexLog(
+            home: home, name: "chat-a", cwd: cwd, at: "2026-09-22T12:26:05Z",
+            prompt: "Chat A"
+        )
+        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL
+            == firstLog.standardizedFileURL)
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
+            == "Chat A")
+
+        let secondLog = try fixture.codexLog(
+            home: home, name: "chat-b", cwd: cwd, at: "2026-09-22T12:26:02Z",
+            prompt: "Chat B"
+        )
+        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL
+            == secondLog.standardizedFileURL)
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
+            == "Chat B")
     }
 
     @Test("Chooses the chair rollout instead of a later rollout in the same folder")
@@ -204,13 +247,16 @@ private struct Fixture {
     func remove() { try? FileManager.default.removeItem(at: root) }
 
     @discardableResult
-    func codexLog(home: URL, name: String, cwd: String, at timestamp: String) throws -> URL {
+    func codexLog(
+        home: URL, name: String, cwd: String, at timestamp: String,
+        prompt: String = "List files"
+    ) throws -> URL {
         let directory = home.appendingPathComponent("sessions/2026/09/22")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let path = directory.appendingPathComponent("rollout-\(name).jsonl")
         let lines = """
             {"type":"session_meta","timestamp":"\(timestamp)","payload":{"cwd":"\(cwd)"}}
-            {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List files"}]}}
+            {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"\(prompt)"}]}}
 
             """
         try Data(lines.utf8).write(to: path)
