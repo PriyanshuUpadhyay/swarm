@@ -20,7 +20,7 @@ struct SessionsTreeTests {
         #expect(tree.projects[0].name == "repo")
         #expect(tree.projects[0].worktrees.map(\.sessions.count) == [1, 1])
         #expect(tree.launchDirectory(for: SwarmSessionID("22222222-b")) == "/repo/wt/feature")
-        #expect(tree.text(now: 61).contains("main\n    no chair 11111111 · 1m · 1 total"))
+        #expect(tree.text(now: 61).contains("main\n    Chat · no chair · 1m"))
     }
 
     @Test("A folder has session rows directly under it")
@@ -32,42 +32,84 @@ struct SessionsTreeTests {
         #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
-    @Test("Rows with only dead agents say ended in the sidebar and tree text")
-    func ended() {
+    @Test("Session rows have clear titles, captions, and states")
+    func rowPresentation() {
+        let live = projectSession("live-title", title: "Build sidebar", provider: "claude", running: true)
+        #expect(SessionRowPresentation.make(live, now: 7_201)
+            == SessionRowPresentation(title: "Build sidebar", caption: "claude · 2h", state: .live))
+
+        let untitled = projectSession("abcdefgh-more", title: "", provider: "codex", running: true)
+        #expect(SessionRowPresentation.make(untitled, now: 7_201)
+            == SessionRowPresentation(title: "codex abcdefgh", caption: "codex · 2h", state: .live))
+
+        let ended = projectSession("ended-session", title: "", provider: "codex", running: false)
+        #expect(SessionRowPresentation.make(ended, now: 7_201)
+            == SessionRowPresentation(title: "codex ended-se", caption: "ended · 2h", state: .ended))
+
+        let noChair = projectSession("missing-chair", title: "", provider: nil, running: true)
+        #expect(SessionRowPresentation.make(noChair, now: 7_201)
+            == SessionRowPresentation(title: "Chat missing-", caption: "no chair · 2h", state: .noChair))
+
+        let children = projectSession(
+            "child-agents", title: "Team", provider: "claude", running: true, liveAgents: 3
+        )
+        #expect(SessionRowPresentation.make(children, now: 7_201)
+            == SessionRowPresentation(title: "Team", caption: "claude · 2h · 2 agents", state: .live))
+        #expect(SessionsTree.rowText(children, now: 7_201) == "Team · claude · 2h · 2 agents")
+    }
+
+    @Test("Agent state feeds the sidebar presentation and tree text")
+    func agentState() {
         let dead = session("dead-session", cwd: "/outside")
         let agent = SwarmAgent(
             id: .init("orchestrator"), role: "chair", pane: "%1", alive: false
         )
         let tree = build([dead], agentsBySession: [dead.id: [agent]])
-        let row = tree.projects[0].sessions[0]
-        #expect(SessionsTree.rowText(row, now: 61).hasPrefix("ended dead-ses"))
-        #expect(SessionsTree.rowText(row, now: 61).contains("0 live · 1 total"))
-        #expect(tree.text(now: 61).contains("ended dead-ses"))
+        #expect(SessionsTree.rowText(tree.projects[0].sessions[0], now: 61)
+            == "Chat · ended · 1m")
+        #expect(tree.text(now: 61).contains("Chat · ended · 1m"))
 
         let empty = build([dead], agentsBySession: [dead.id: []])
         #expect(SessionsTree.rowText(empty.projects[0].sessions[0], now: 61)
-            .hasPrefix("ended dead-ses"))
+            == "Chat · ended · 1m")
 
         let running = build([dead], agentsBySession: [dead.id: [agent, SwarmAgent(
             id: .init("worker"), role: "code", pane: "%2", alive: true
         )]])
         #expect(SessionsTree.rowText(running.projects[0].sessions[0], now: 61)
-            .hasPrefix("no chair dead-ses"))
-        #expect(SessionsTree.rowText(running.projects[0].sessions[0], now: 61)
-            .contains("1 live · 2 total"))
+            == "Chat · no chair · 1m · 1 agent")
     }
 
     @Test("A missing session provider comes from the chair, then the first agent")
     func providerFallback() {
         let item = session("provider-session", cwd: "/outside")
-        let worker = SwarmAgent(id: .init("worker"), role: "code", pane: "%2", alive: true, provider: "claude")
-        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, provider: "codex")
+        let worker = SwarmAgent(
+            id: .init("worker"), role: "code", pane: "%2", alive: true, provider: "claude"
+        )
+        let chair = SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, provider: "codex"
+        )
         let withChair = build([item], agentsBySession: [item.id: [worker, chair]])
-        #expect(SessionsTree.rowText(withChair.projects[0].sessions[0], now: 61).hasPrefix("codex "))
+        #expect(SessionsTree.rowText(withChair.projects[0].sessions[0], now: 61)
+            == "Chat · codex · 1m · 1 agent")
         #expect(withChair.windowTitle(for: item.id) == "outside · codex provider")
 
         let withoutChair = build([item], agentsBySession: [item.id: [worker]])
-        #expect(SessionsTree.rowText(withoutChair.projects[0].sessions[0], now: 61).hasPrefix("claude "))
+        #expect(SessionsTree.rowText(withoutChair.projects[0].sessions[0], now: 61)
+            == "Chat · claude · 1m")
+    }
+
+    @Test("Live, no-chair, and ended rows sort by state then recent activity")
+    func rowOrdering() {
+        let rows = [
+            projectSession("ended-new", provider: "codex", running: false, activity: 50),
+            projectSession("no-chair", provider: nil, running: true, activity: 40),
+            projectSession("live-old", provider: "codex", running: true, activity: 10),
+            projectSession("ended-old", provider: "codex", running: false, activity: 20),
+            projectSession("live-new", provider: "codex", running: true, activity: 30),
+        ]
+        #expect(SessionsTree.ordered(rows).map(\.id.rawValue)
+            == ["live-new", "live-old", "no-chair", "ended-new", "ended-old"])
     }
 
     @Test("Archived sessions and empty worktrees are hidden")
@@ -183,6 +225,18 @@ struct SessionsTreeTests {
             createdAt: 1, chairProvider: chair == nil ? nil : "codex",
             chairID: chair.map(SwarmChairID.init), chairLog: nil,
             agents: 1, messages: 0, lastMessageAt: nil, archivedAt: archivedAt
+        )
+    }
+
+    private func projectSession(
+        _ id: String, title: String = "Chat", provider: String?, running: Bool?,
+        liveAgents: Int? = nil, activity: Int? = nil
+    ) -> SwarmProjectSession {
+        var item = session(id, cwd: "/outside")
+        item.lastMessageAt = activity
+        return SwarmProjectSession(
+            sessions: [item], title: title, isRunning: running,
+            liveAgents: liveAgents, provider: provider
         )
     }
 }
