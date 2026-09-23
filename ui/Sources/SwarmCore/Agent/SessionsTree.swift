@@ -81,6 +81,7 @@ public struct SessionsTree: Sendable, Hashable {
     public static func build(
         sessions: [SwarmSession],
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
+        titles: [SwarmSessionID: String] = [:],
         repositoryPathsResolver: (String) -> GitRepositoryPaths?,
         worktreeLister: (String) -> [WorktreeEntry]
     ) -> SessionsTree {
@@ -97,7 +98,7 @@ public struct SessionsTree: Sendable, Hashable {
             case .folder(let path):
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: path, worktrees: [],
-                    sessions: rows(sessions, agentsBySession: agentsBySession)
+                    sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles)
                 )
             case .repository(let commonDirectory):
                 let listed = worktreeLister(commonDirectory)
@@ -105,7 +106,10 @@ public struct SessionsTree: Sendable, Hashable {
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
                     guard !matches.isEmpty else { return nil }
-                    return WorktreeNode(entry: entry, sessions: rows(matches, agentsBySession: agentsBySession))
+                    return WorktreeNode(
+                        entry: entry,
+                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles)
+                    )
                 }
                 let projectSessions = sessions.filter { session in
                     !listed.contains { !$0.isBare && contains(session.cwd, in: $0.path) }
@@ -118,7 +122,8 @@ public struct SessionsTree: Sendable, Hashable {
                     ?? listed.first { !$0.isBare }?.path ?? path
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: launchDirectory,
-                    worktrees: worktrees, sessions: rows(projectSessions, agentsBySession: agentsBySession)
+                    worktrees: worktrees,
+                    sessions: rows(projectSessions, agentsBySession: agentsBySession, titles: titles)
                 )
             }
         }.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
@@ -189,7 +194,8 @@ public struct SessionsTree: Sendable, Hashable {
     }
 
     private static func rows(
-        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]
+        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]],
+        titles: [SwarmSessionID: String]
     ) -> [SwarmProjectSession] {
         ordered(SwarmSessionListing.chatGroups(sessions).map {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
@@ -199,7 +205,8 @@ public struct SessionsTree: Sendable, Hashable {
                 ?? agents.first(where: { $0.id == SwarmPanePolicy.chair })?.provider
                 ?? agents.first?.provider
             return SwarmProjectSession(
-                sessions: $0, title: "Chat", isRunning: running,
+                sessions: $0, title: $0.lazy.compactMap { titles[$0.id] }.first ?? "Chat",
+                isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider
             )
@@ -236,8 +243,9 @@ extension SwarmSessionDiscovery {
             }
             listings[common] = try await Git.worktrees(of: common)
         }
+        let titles = await resolvedTitles(sessions: sessions, agentsBySession: agentsBySession)
         return SessionsTree.build(
-            sessions: sessions, agentsBySession: agentsBySession,
+            sessions: sessions, agentsBySession: agentsBySession, titles: titles,
             repositoryPathsResolver: Git.repositoryPaths,
             worktreeLister: { listings[$0] ?? [] }
         )

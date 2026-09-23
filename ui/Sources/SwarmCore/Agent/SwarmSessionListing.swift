@@ -248,6 +248,7 @@ public enum SwarmSessionAgents {
 public actor SwarmSessionDiscovery {
     private var locations: [String: SwarmPathIdentity] = [:]
     private var titles: [SwarmSessionID: String] = [:]
+    private var titleMisses: [SwarmSessionID: Date] = [:]
 
     public init() {}
 
@@ -278,6 +279,46 @@ public actor SwarmSessionDiscovery {
         let identity = Self.identity(for: normal, repositoryPathsResolver: Git.repositoryPaths)
         locations[normal] = identity
         return identity
+    }
+
+    func resolvedTitles(
+        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) async -> [SwarmSessionID: String] {
+        let now = Date()
+        let profileSource = SwarmCLIProfileSource()
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var homesByProvider: [String: [URL]] = [:]
+
+        for session in sessions where session.archivedAt == nil && titles[session.id] == nil {
+            if let missedAt = titleMisses[session.id], now.timeIntervalSince(missedAt) < 30 {
+                continue
+            }
+            var log = session.chairLog
+            if log == nil,
+               let provider = agentsBySession[session.id]?
+                .first(where: { $0.id == SwarmPanePolicy.chair })?.provider,
+               provider == "claude" || provider == "codex" {
+                if homesByProvider[provider] == nil {
+                    let accounts = try? await profileSource.accounts(provider: provider)
+                    homesByProvider[provider] = (accounts?.accounts.map {
+                        URL(fileURLWithPath: $0.home)
+                    } ?? []) + [home.appendingPathComponent(provider == "codex" ? ".codex" : ".claude")]
+                }
+                log = ChairLogDiscovery.path(
+                    provider: provider, cwd: session.cwd, createdAt: session.createdAt,
+                    homes: homesByProvider[provider] ?? []
+                )?.path
+            }
+            guard let prompt = log.flatMap(ChairLogTitle.firstUserPrompt) else {
+                titleMisses[session.id] = now
+                continue
+            }
+            titles[session.id] = SwarmSessionTitle.make(
+                sessionID: session.id, firstUserPrompt: prompt
+            )
+            titleMisses[session.id] = nil
+        }
+        return titles
     }
 
     public static func identity(
