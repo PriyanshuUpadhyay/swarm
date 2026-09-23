@@ -23,4 +23,17 @@ struct KeyRoutingTests {
         #expect(Composer.outgoing("  Hello, chair  \n") == "Hello, chair")
         #expect(Composer.outgoing(" \t\n") == nil)
     }
+
+    @Test("Composer keeps new text and blocks a second send while the first is running")
+    func sendState() {
+        var state = ComposerSendState()
+        #expect(state.begin("  First message  ") == "First message")
+        #expect(state.isSending)
+        #expect(state.begin("First message") == nil)
+        #expect(state.finish(currentDraft: "Second message", succeeded: true) == "Second message")
+        #expect(!state.isSending)
+
+        #expect(state.begin("Third message") == "Third message")
+        #expect(state.finish(currentDraft: "Third message", succeeded: true).isEmpty)
+    }
 }

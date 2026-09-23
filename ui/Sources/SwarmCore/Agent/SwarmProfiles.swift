@@ -3,9 +3,8 @@ import Foundation
 // The roles, accounts and usage that swarm reports, as Swarm reads them.
 //
 // swarm owns these decisions (docs/decisions/0005 at the root of the swarm repository) and prints
-// them as JSON. The shapes are fixed in `docs/profiles-contract.md` beside it, and a change to a
-// shape changes that file, swarm's output and these types together. The JSON keys are snake_case;
-// decode with `.convertFromSnakeCase`.
+// them as JSON. `src/profiles.rs` owns the shapes, so a change must update swarm's output and these
+// types together. The JSON keys are snake_case; decode with `.convertFromSnakeCase`.
 
 /// One route from swarm's routing config, resolved to the runner it starts with.
 public struct SwarmRole: Sendable, Hashable, Codable, Identifiable {

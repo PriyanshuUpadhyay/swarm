@@ -41,19 +41,6 @@ public struct SwarmCLIBus: SwarmBus {
         self.run = run
     }
 
-    public func startSession() async throws -> SwarmSessionID {
-        _ = try await call(["init"])
-        let created = try await call(["session", "new", "lane"])
-        let value = created.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else {
-            throw SwarmProfileError.failed("swarm returned an invalid session id")
-        }
-
-        let session = SwarmSessionID(value)
-        _ = try await call(["agent", "add", "orchestrator", "orchestrator"], in: session)
-        return session
-    }
-
     public func startChairSession(
         chair: SwarmChair?, directory: String
     ) async throws -> SwarmSessionID {
@@ -132,17 +119,6 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
     }
 
-    public func send(
-        _ body: String, to agent: SwarmAgentID, in session: SwarmSessionID
-    ) async throws -> Int {
-        let result = try await call(["send", agent.rawValue, "ask"], in: session, stdin: body)
-        let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let seq = Int(value), seq >= 0 else {
-            throw SwarmProfileError.failed("swarm returned an invalid message sequence")
-        }
-        return seq
-    }
-
     public func type(
         _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws {
@@ -157,16 +133,10 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
-    public func ack(_ seq: Int, in session: SwarmSessionID) async throws {
-        _ = try await call(["ack", String(seq)], in: session)
-    }
-
-    public func sweep(in session: SwarmSessionID) async throws {
-        _ = try await call(["sweep"], in: session)
-    }
-
-    public func close(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws {
-        _ = try await call(["close", agent.rawValue], in: session)
+    public func close(
+        _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(["close", agent.rawValue], in: session, adapter: adapter)
     }
 
     public func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand {

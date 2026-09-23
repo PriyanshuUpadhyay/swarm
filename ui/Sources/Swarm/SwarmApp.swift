@@ -57,8 +57,8 @@ final class SessionsTreeModel {
     }
 
     func close(_ id: SwarmSessionID) async throws {
-        try await bus.close(SwarmPanePolicy.chair, in: id)
-        try await bus.archive([id])
+        guard let session = tree.session(id)?.session else { return }
+        try await SwarmSessionCloser.close(session, bus: bus)
         clearSelection(if: id)
         try await refresh()
     }

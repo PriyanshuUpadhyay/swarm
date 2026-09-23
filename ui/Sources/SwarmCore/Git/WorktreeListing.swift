@@ -2,17 +2,8 @@ import Foundation
 
 /// One record of `git worktree list --porcelain`, and the parser over the whole of it.
 ///
-/// Pure, and in a file of its own, because the answer to "which branches are already taken"
-/// decides whether the create window may offer a row at all, and that decision was reached by
-/// asking Swarm's own database. The database only knows about worktrees Swarm cut. Git knows
-/// about all of them, whoever made them, which on this Mac means Conductor's, another agent
-/// runner's, and whatever was cut by hand. See `BranchHolder` for the bug that forced it.
-///
-/// It used to be parsed inline inside `Git.worktrees`, where the only way to exercise a locked
-/// worktree or a detached head was to have a repository with one already in it. The awkward
-/// shapes are all real: a project on this Mac lists twenty-two worktrees from three different
-/// applications, several of them locked by an agent, with the main checkout among them looking
-/// exactly like the rest.
+/// This parser keeps Git as the source of truth for worktrees made by any tool or by hand.
+/// Keeping it pure lets tests cover locked worktrees and detached heads without creating them.
 public struct WorktreeEntry: Sendable, Hashable {
     public var path: String
     public var head: String

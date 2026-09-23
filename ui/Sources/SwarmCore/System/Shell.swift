@@ -31,10 +31,8 @@ public struct ShellError: Error, CustomStringConvertible {
 
 /// Every subprocess in Swarm goes through here.
 ///
-/// Nothing uses a login shell: commands are exec'd directly so an argument containing a space
-/// or a quote can never be reinterpreted. `Shell.script` is the deliberate exception, used for
-/// user-authored setup and run scripts, and `LoginShellPath` is the other, which starts one for
-/// the single purpose of asking it what its PATH is.
+/// Commands are exec'd directly, so an argument containing a space or a quote cannot be
+/// reinterpreted. `LoginShellPath` starts a shell only to read its PATH.
 public enum Shell {
     /// Directories added to PATH for spawned processes, because GUI apps launched from Finder
     /// inherit a minimal PATH that lacks Homebrew, mise, fnm, and friends.
@@ -58,7 +56,7 @@ public enum Shell {
         spawns.add(1, ordering: .relaxed)
     }
 
-    /// The running total, for the probes. See `IdleProbe`.
+    /// The running total of subprocesses started by this process.
     public static var spawnCount: Int {
         spawns.load(ordering: .relaxed)
     }
@@ -214,17 +212,5 @@ public enum Shell {
             )
         }
         return result
-    }
-
-    /// Run a user-authored script through zsh. Used only for setup and run scripts, where the
-    /// whole point is that the user wrote shell.
-    @discardableResult
-    public static func script(
-        _ source: String,
-        cwd: String,
-        env: [String: String] = [:],
-        timeout: Duration? = nil
-    ) async throws -> ShellResult {
-        try await run("/bin/zsh", ["-c", source], cwd: cwd, env: env, timeout: timeout)
     }
 }

@@ -3,19 +3,9 @@ import Synchronization
 
 /// The PATH the user's own login shell has, asked for once per launch.
 ///
-/// `ExecutableSearchPath` guesses. It names the directories the package managers people actually
-/// use put binaries in, and that list is right often enough that Swarm shipped on it. What it
-/// cannot do is know about the line somebody wrote in their own `.zshrc` years ago, which is where
-/// a surprising amount of a working developer's PATH comes from: a company toolchain under
-/// `~/work/bin`, a Herd or a Valet shim, a language manager nobody here has heard of.
-///
-/// **The report that forced this was one machine disagreeing with itself.** A terminal pane in
-/// Swarm runs the real login shell (`TerminalLaunch.loginShell`), so `./.swarm/setup.sh` typed
-/// into it found every binary the user had. The same script started by Run Setup got the guessed
-/// PATH and could not find them, and the user's fix was to edit `$PATH` inside the setup script,
-/// which is a thing nobody should have to work out. `ScriptLaunch`'s own header says what the
-/// promise is: the script run from a terminal and the script started by Swarm should be the same
-/// program. It cannot be if the two do not agree on where the programs are.
+/// `ExecutableSearchPath` guesses common package-manager paths, but it cannot know the custom
+/// paths in a user's shell startup files. This probe gives app subprocesses the same executable
+/// search path as the user's terminal.
 ///
 /// # Why this is safe to do, when the comment on `ExecutableSearchPath` says it is not
 ///
@@ -42,9 +32,8 @@ import Synchronization
 ///
 /// # The escape hatch
 ///
-/// `SWARM_UI_LOGIN_SHELL_PATH=0` skips the probe. It is what `Tools/test-core.sh` sets, so the suite
-/// never spawns a login shell for a `runSetup` test, and it is the answer for a machine whose
-/// startup files genuinely cannot be run headless.
+/// `SWARM_UI_LOGIN_SHELL_PATH=0` skips the probe for tests or for startup files that cannot run
+/// without a terminal.
 public enum LoginShellPath {
     /// How long a startup file gets before it is killed and the guess list is kept.
     ///
@@ -64,9 +53,7 @@ public enum LoginShellPath {
 
     /// Wait for the probe to have finished, starting it if nothing has.
     ///
-    /// Called before a setup or archive script is spawned, which is the one place where a PATH
-    /// that arrives a moment late is a script that fails rather than a lookup that is slightly
-    /// worse. Everywhere else takes whatever has landed.
+    /// Call this before a subprocess that must use the login shell's PATH.
     public static func ready() async {
         await task().value
     }

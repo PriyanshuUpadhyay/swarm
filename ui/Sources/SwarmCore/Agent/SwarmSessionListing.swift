@@ -248,9 +248,18 @@ public enum SwarmSessionAgents {
 public actor SwarmSessionDiscovery {
     private var locations: [String: SwarmPathIdentity] = [:]
     private var titles: [SwarmSessionID: String] = [:]
+    private var titleLogs: [SwarmSessionID: String] = [:]
     private var titleMisses: [SwarmSessionID: Date] = [:]
+    private let profiles: any SwarmProfileSource
+    private let home: URL
 
-    public init() {}
+    public init(
+        profiles: any SwarmProfileSource = SwarmCLIProfileSource(),
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
+        self.profiles = profiles
+        self.home = home
+    }
 
     public func discover(
         sessions: [SwarmSession], projects: [String],
@@ -285,21 +294,26 @@ public actor SwarmSessionDiscovery {
         sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]
     ) async -> [SwarmSessionID: String] {
         let now = Date()
-        let profileSource = SwarmCLIProfileSource()
-        let home = FileManager.default.homeDirectoryForCurrentUser
         var homesByProvider: [String: [URL]] = [:]
 
-        for session in sessions where session.archivedAt == nil && titles[session.id] == nil {
-            if let missedAt = titleMisses[session.id], now.timeIntervalSince(missedAt) < 30 {
+        for session in sessions where session.archivedAt == nil {
+            let provider = session.chairProvider ?? agentsBySession[session.id]?
+                .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
+            let discoversByTime = session.chairLog == nil && session.chairID == nil
+                && (provider == "claude" || provider == "codex")
+            let busLogChanged = session.chairLog != nil
+                && titleLogs[session.id] != session.chairLog
+            if !discoversByTime, !busLogChanged, titles[session.id] != nil {
+                continue
+            }
+            if !discoversByTime, !busLogChanged,
+               let missedAt = titleMisses[session.id], now.timeIntervalSince(missedAt) < 30 {
                 continue
             }
             var log = session.chairLog
-            if log == nil,
-               let provider = agentsBySession[session.id]?
-                .first(where: { $0.id == SwarmPanePolicy.chair })?.provider,
-               provider == "claude" || provider == "codex" {
+            if log == nil, let provider, provider == "claude" || provider == "codex" {
                 if homesByProvider[provider] == nil {
-                    let accounts = try? await profileSource.accounts(provider: provider)
+                    let accounts = try? await profiles.accounts(provider: provider)
                     homesByProvider[provider] = ChairLogDiscovery.homes(
                         provider: provider,
                         accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
@@ -311,6 +325,12 @@ public actor SwarmSessionDiscovery {
                     homes: homesByProvider[provider] ?? []
                 )?.path
             }
+            if titleLogs[session.id] != log {
+                titles[session.id] = nil
+                titleMisses[session.id] = nil
+                titleLogs[session.id] = log
+            }
+            guard titles[session.id] == nil else { continue }
             guard let prompt = log.flatMap(ChairLogTitle.firstUserPrompt) else {
                 titleMisses[session.id] = now
                 continue

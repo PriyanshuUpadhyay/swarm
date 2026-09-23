@@ -11,7 +11,6 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
     public private(set) var roleID: String?
     public private(set) var model: String = ""
     public private(set) var effort: String = ""
-    public private(set) var accountCaption: String?
 
     public init() {}
 
@@ -21,17 +20,7 @@ public struct SwarmLaunchChoice: Sendable, Equatable {
         roleID = role?.id
         model = role?.model ?? ""
         effort = role?.effort ?? ""
-        accountCaption = nil
         return true
-    }
-
-    public mutating func apply(_ decision: SwarmAccountLoadDecision) {
-        accountCaption = decision.fallbackCaption
-        if decision.usesDefault {
-            roleID = nil
-            model = ""
-            effort = ""
-        }
     }
 }
 
@@ -94,8 +83,6 @@ public struct SwarmAccountLoadDecision: Sendable, Hashable {
     public var options: [SwarmAccountOption]
     public var selection: SwarmAccountSelection?
     public var fallbackCaption: String?
-
-    public var usesDefault: Bool { fallbackCaption != nil }
 
     public static func loaded(_ list: SwarmAccountList) -> Self {
         guard !list.accounts.isEmpty else {

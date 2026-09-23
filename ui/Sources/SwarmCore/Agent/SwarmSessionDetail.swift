@@ -43,13 +43,16 @@ public enum ChairTranscriptSnapshot: Sendable, Equatable {
     }
 }
 
-/// Owns one live reader and resolves the log again on every poll until it appears.
+/// Owns one live reader and rechecks time-matched logs while the bus has no chair id.
 public actor SwarmChairTranscript {
     private let binary: URL?
     private let profiles: any SwarmProfileSource
     private let home: URL
     private var discoveredSession: SwarmSessionID?
+    private var discoveredProvider: String?
+    private var discoveredChairID: SwarmChairID?
     private var discoveredLog: URL?
+    private var homesByProvider: [String: [URL]] = [:]
     private var log: URL?
     private var reader: ToolTranscriptReader?
     private var rows: [TranscriptRow] = []
@@ -68,22 +71,10 @@ public actor SwarmChairTranscript {
         session: SwarmSession, chairProvider: String? = nil
     ) async -> ChairTranscriptSnapshot {
         var resolved = session
-        let provider = session.chairProvider ?? chairProvider
-        if resolved.chairLog == nil, let provider, provider == "claude" || provider == "codex" {
-            if discoveredSession != session.id || discoveredLog == nil {
-                let accounts = try? await profiles.accounts(provider: provider)
-                let homes = ChairLogDiscovery.homes(
-                    provider: provider,
-                    accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
-                )
-                discoveredLog = ChairLogDiscovery.path(
-                    provider: provider, chairID: session.chairID?.rawValue,
-                    cwd: session.cwd, createdAt: session.createdAt,
-                    homes: homes
-                )
-                discoveredSession = session.id
-            }
-            resolved.chairLog = discoveredLog?.path
+        if resolved.chairLog == nil {
+            resolved.chairLog = await discoveredLog(
+                for: session, chairProvider: chairProvider
+            )?.path
         }
         switch ChairTranscriptSource.resolve(
             session: resolved, chairProvider: chairProvider,
@@ -114,6 +105,34 @@ public actor SwarmChairTranscript {
                 return .unavailable(String(describing: error))
             }
         }
+    }
+
+    func discoveredLog(
+        for session: SwarmSession, chairProvider: String? = nil
+    ) async -> URL? {
+        let provider = session.chairProvider ?? chairProvider
+        guard session.chairLog == nil, let provider,
+              provider == "claude" || provider == "codex" else { return nil }
+        if homesByProvider[provider] == nil {
+            let accounts = try? await profiles.accounts(provider: provider)
+            homesByProvider[provider] = ChairLogDiscovery.homes(
+                provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [],
+                userHome: home
+            )
+        }
+        if session.chairID == nil || discoveredSession != session.id
+            || discoveredProvider != provider || discoveredChairID != session.chairID
+            || discoveredLog == nil {
+            discoveredLog = ChairLogDiscovery.path(
+                provider: provider, chairID: session.chairID?.rawValue,
+                cwd: session.cwd, createdAt: session.createdAt,
+                homes: homesByProvider[provider] ?? []
+            )
+            discoveredSession = session.id
+            discoveredProvider = provider
+            discoveredChairID = session.chairID
+        }
+        return discoveredLog
     }
 }
 
@@ -170,6 +189,19 @@ public enum SwarmPanePolicy {
         var command = bus.attachCommand(for: agent, in: session.id)
         command.environment["SWARM_ADAPTER"] = session.adapter ?? ""
         return command
+    }
+}
+
+public enum SwarmSessionCloser {
+    public static func close(_ session: SwarmSession, bus: any SwarmBus) async throws {
+        let agents = try await bus.agents(in: session)
+        let live = agents.filter { $0.alive == true }
+        let children = live.filter { $0.id != SwarmPanePolicy.chair }
+        let chairs = live.filter { $0.id == SwarmPanePolicy.chair }
+        for agent in children + chairs {
+            try await bus.close(agent.id, in: session)
+        }
+        try await bus.archive([session.id])
     }
 }
 
