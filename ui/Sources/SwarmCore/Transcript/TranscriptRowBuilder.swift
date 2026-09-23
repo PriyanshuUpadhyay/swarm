@@ -17,6 +17,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var text: String
     public var eventID: String
     public var detail: String? = nil
+    public var endsTurn = false
     public var id: String { eventID }
 
     public func label(chair: String?) -> String {
@@ -115,6 +116,7 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(
                 kind: .result, text: reason.rawValue, eventID: key(meta, "result", index)
             )
+            row.endsTurn = true
         case .image(let role, let mediaType, let meta):
             row = TranscriptRow(
                 kind: .notice, text: "\(role) image (\(mediaType))",
@@ -144,5 +146,13 @@ public enum TranscriptRowBuilder {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
         return detail.map { "\(name) · \($0)" } ?? name
+    }
+}
+
+public enum ChairTurn {
+    /// A turn runs from the user's last message until a turn-ended row follows it.
+    public static func isActive(_ rows: [TranscriptRow]) -> Bool {
+        guard let lastUser = rows.lastIndex(where: { $0.kind == .user }) else { return false }
+        return !rows[lastUser...].contains(where: \.endsTurn)
     }
 }

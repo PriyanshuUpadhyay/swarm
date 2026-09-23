@@ -232,7 +232,7 @@ struct SessionDetailView: View {
                     get: { model.draft },
                     set: { model.setDraft($0, sessionID: row.id.rawValue) }
                 ),
-                isRunning: row.isRunning == true,
+                isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
                 isSending: model.isSending(sessionID: row.id.rawValue),
                 commandSource: commandSource,
                 mentionSource: ComposerMentionSource(root: row.session.cwd),
