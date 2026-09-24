@@ -106,12 +106,22 @@ final class AgentPaneStore {
         let timing = SwarmPerformance.begin("TerminalAttach")
         defer { timing.end() }
         let terminal = SwarmTerminalView(frame: CGRect(x: 0, y: 0, width: 900, height: 400))
-        terminal.onEnded = { [weak self] in self?.ended.insert(key) }
+        terminal.onEnded = { [weak self, weak terminal] in
+            guard let self, self.terminals[key] === terminal else { return }
+            self.ended.insert(key)
+        }
         terminal.onFocus = { [weak self] in self?.focusedKey = key }
         let command = SwarmPanePolicy.attachCommand(bus: bus, session: session, agent: agent.id)
         terminal.start(SwarmAttachLaunch(command: command, directory: session.cwd))
         terminals[key] = terminal
         return terminal
+    }
+
+    func reconnect(session: SwarmSession, agent: SwarmAgent) -> SwarmTerminalView {
+        let key = key(session: session, agent: agent)
+        terminals.removeValue(forKey: key)?.willStop()
+        ended.remove(key)
+        return terminal(session: session, agent: agent)
     }
 
     func stopAll() {
@@ -135,7 +145,12 @@ struct AgentTerminalView: View {
                 TerminalContainer(terminal: terminal)
             }
             if store.ended.contains(store.key(session: session, agent: agent)) {
-                Text("This agent has ended")
+                VStack(spacing: 8) {
+                    Text("Pane connection closed")
+                    Button("Reconnect") {
+                        terminal = store.reconnect(session: session, agent: agent)
+                    }
+                }
                     .padding(8)
                     .background(.regularMaterial)
             }

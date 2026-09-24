@@ -78,6 +78,8 @@ project, then opens New Chat there. Empty task worktrees stay available from the
 Plain folders keep the New Chat action without Git worktrees.
 Chats in one workspace appear as tabs above the transcript. The plus button starts another chat
 in that workspace; chats in other worktrees stay in their own tab groups.
+Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane
+accepts input in Swarm. A closed connection can be reopened with Reconnect.
 
 ## Performance profiling
 
