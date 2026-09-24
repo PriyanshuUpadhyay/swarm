@@ -90,7 +90,9 @@ final class SessionsTreeModel {
     }
 
     func archive(_ id: SwarmSessionID) async throws {
-        try await bus.archive([id])
+        let ids = tree.archiveIDs(for: id)
+        guard !ids.isEmpty else { return }
+        try await bus.archive(ids)
         clearSelection(if: id)
         try await refresh()
     }
@@ -121,6 +123,7 @@ private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
+    @State private var actionError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -196,6 +199,14 @@ private struct SessionsWindow: View {
                 Task { try? await model.refresh() }
             }
         }
+        .alert("Could not update chat", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
     }
 
     private func chatRow(_ row: ChatRow) -> some View {
@@ -243,11 +254,17 @@ private struct SessionsWindow: View {
         )
         Button("New chat here") { newChatDirectory = row.workspacePath }
         Button("Close chat") {
-            Task { try? await model.close(row.id) }
+            Task {
+                do { try await model.close(row.id) }
+                catch { actionError = String(describing: error) }
+            }
         }
         .disabled(presentation.state != .live)
         Button("Archive") {
-            Task { try? await model.archive(row.id) }
+            Task {
+                do { try await model.archive(row.id) }
+                catch { actionError = String(describing: error) }
+            }
         }
     }
 

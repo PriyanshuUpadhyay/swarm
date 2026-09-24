@@ -173,6 +173,10 @@ public struct SessionsTree: Sendable, Hashable {
         chat(id)?.session
     }
 
+    public func archiveIDs(for id: SwarmSessionID) -> [SwarmSessionID] {
+        chat(id).map { SwarmSessionListing.archiveIDs(for: $0.session) } ?? []
+    }
+
     public func retainedSelection(_ id: SwarmSessionID?) -> SwarmSessionID? {
         guard let id else { return nil }
         return chat(id)?.id
