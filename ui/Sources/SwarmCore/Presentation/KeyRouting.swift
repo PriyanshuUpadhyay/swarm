@@ -1,15 +1,15 @@
 import Foundation
 
 public enum FocusedSurface: Sendable {
-    case terminal, transcript, composer, sidebar
+    case terminal, transcript, sidebar
 }
 
 public enum RoutedKey: Sendable, Equatable {
-    case escape, `return`, shiftReturn, commandN, commandF, commandG, shiftCommandG, other
+    case escape, commandN, commandF, commandG, shiftCommandG, other
 }
 
 public enum KeyRoute: Sendable, Equatable {
-    case terminal, clearComposer, sendComposer, insertNewline, openNewChat
+    case terminal, openNewChat
     case openFind, findNext, findPrevious, ignore
 }
 
@@ -21,9 +21,6 @@ public enum KeyRouting {
         case (.transcript, .commandF): .openFind
         case (.transcript, .commandG): .findNext
         case (.transcript, .shiftCommandG): .findPrevious
-        case (.composer, .escape): .clearComposer
-        case (.composer, .return): .sendComposer
-        case (.composer, .shiftReturn): .insertNewline
         default: .ignore
         }
     }
