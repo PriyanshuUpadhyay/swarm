@@ -7,13 +7,16 @@ import SwarmCore
 final class SessionDetailModel {
     private let transcript = SwarmChairTranscript()
     private let bus = SwarmCLIBus()
+    private let drafts = ComposerDraftStore()
+    private var activeSessionID: String?
 
     var snapshot: ChairTranscriptSnapshot = .waiting
     var draft = ""
-    var sendError: String?
     private var sendState = ComposerSendState()
 
-    var isSending: Bool { sendState.isSending }
+    func isSending(sessionID: String) -> Bool {
+        sendState.isSending(sessionID: sessionID)
+    }
 
     var rows: [TranscriptRow] {
         if case .rows(let rows, _) = snapshot { return rows }
@@ -26,24 +29,46 @@ final class SessionDetailModel {
     }
 
     func poll(session: SwarmSession, chairProvider: String?) async {
+        activate(sessionID: session.id.rawValue)
         while !Task.isCancelled {
             snapshot = await transcript.poll(session: session, chairProvider: chairProvider)
             try? await Task.sleep(for: .seconds(1))
         }
     }
 
-    func send(session: SwarmSession) async -> Bool {
-        guard let text = sendState.begin(draft) else { return false }
+    func setDraft(_ value: String, sessionID: String) {
+        if activeSessionID != sessionID { activate(sessionID: sessionID) }
+        draft = value
+        drafts.save(value, for: sessionID)
+    }
+
+    func send(_ requestedText: String, session: SwarmSession) async throws {
+        let sessionID = session.id.rawValue
+        guard let text = sendState.begin(sessionID: sessionID, draft: requestedText) else { return }
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)
-            draft = sendState.finish(currentDraft: draft, succeeded: true)
-            sendError = nil
-            return true
+            let current = activeSessionID == sessionID ? draft : drafts.draft(for: sessionID)
+            let next = sendState.finish(
+                sessionID: sessionID, currentDraft: current, succeeded: true
+            )
+            drafts.save(next, for: sessionID)
+            if activeSessionID == sessionID { draft = next }
         } catch {
-            draft = sendState.finish(currentDraft: draft, succeeded: false)
-            sendError = String(describing: error)
-            return false
+            let current = activeSessionID == sessionID ? draft : drafts.draft(for: sessionID)
+            _ = sendState.finish(sessionID: sessionID, currentDraft: current, succeeded: false)
+            throw error
         }
+    }
+
+    func interrupt(session: SwarmSession) async throws {
+        try await bus.interrupt(SwarmPanePolicy.chair, in: session)
+    }
+
+    private func activate(sessionID: String) {
+        guard activeSessionID != sessionID else { return }
+        if let activeSessionID { drafts.save(draft, for: activeSessionID) }
+        activeSessionID = sessionID
+        draft = drafts.draft(for: sessionID)
     }
 }
 
@@ -201,64 +226,23 @@ struct SessionDetailView: View {
             }
             .frame(maxHeight: .infinity)
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .bottom) {
-                    TextField("Message the chair", text: $model.draft, axis: .vertical)
-                        .lineLimit(1...8)
-                        .textFieldStyle(.plain)
-                        .font(.body)
-                        .focused($composerFocused)
-                        .simultaneousGesture(TapGesture().onEnded {
-                            composerFocused = true
-                            panes.clearFocus()
-                        })
-                        .onKeyPress(.return, phases: .down) { press in
-                            guard press.modifiers.contains(.shift),
-                                  KeyRouting.route(focus: .composer, key: .shiftReturn) == .insertNewline
-                            else { return .ignored }
-                            model.draft.append("\n")
-                            return .handled
-                        }
-                        .onKeyPress(.escape) {
-                            guard KeyRouting.route(focus: .composer, key: .escape) == .clearComposer else {
-                                return .ignored
-                            }
-                            model.draft = ""
-                            return .handled
-                        }
-                        .onSubmit {
-                            if KeyRouting.route(focus: .composer, key: .return) == .sendComposer {
-                                send()
-                            }
-                        }
-                    Button(action: send) {
-                        Group {
-                            if Composer.outgoing(model.draft) == nil {
-                                Image(systemName: "arrow.up.circle.fill").foregroundStyle(.tertiary)
-                            } else {
-                                Image(systemName: "arrow.up.circle.fill").foregroundStyle(Color.accentColor)
-                            }
-                        }
-                        .font(.title2)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(Composer.outgoing(model.draft) == nil || model.isSending)
-                    .accessibilityLabel("Send")
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background {
-                    RoundedRectangle(cornerRadius: 10).fill(.background)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10).stroke(.separator, lineWidth: 1)
-                }
-                if let error = model.sendError {
-                    Text(verbatim: error)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                }
-            }
+            ComposerView(
+                sessionID: row.id.rawValue,
+                draft: Binding(
+                    get: { model.draft },
+                    set: { model.setDraft($0, sessionID: row.id.rawValue) }
+                ),
+                isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
+                isSending: model.isSending(sessionID: row.id.rawValue),
+                commandSource: commandSource,
+                mentionSource: ComposerMentionSource(root: row.session.cwd),
+                scratchDirectory: AgentScratchDirectory.current(),
+                focus: $composerFocused,
+                send: { try await model.send($0, session: row.session) },
+                interrupt: { try await model.interrupt(session: row.session) },
+                onFocused: { panes.clearFocus() }
+            )
+            .id(row.id.rawValue)
             .padding(12)
         }
         .focusable()
@@ -321,6 +305,17 @@ struct SessionDetailView: View {
 
     private var visibleRows: [TranscriptRow] {
         model.rows.filter { showHiddenRows || !$0.isHiddenByDefault }
+    }
+
+    private var commandSource: ComposerCommandSource {
+        let environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ComposerCommandSource(
+            provider: row.provider ?? chairProvider,
+            homeDirectory: home,
+            claudeConfigDirectories: environment["CLAUDE_CONFIG_DIR"].map { [$0] } ?? [],
+            codexDirectories: environment["CODEX_HOME"].map { [$0] } ?? []
+        )
     }
 
     private var rawSessionJSON: String {
@@ -417,12 +412,6 @@ struct SessionDetailView: View {
     private func resetFindSelection() {
         findMatchID = findMatches.first
         pendingScrollID = findMatches.first
-    }
-
-    private func send() {
-        Task {
-            if await model.send(session: row.session) { composerFocused = true }
-        }
     }
 
     private var paneColumn: some View {

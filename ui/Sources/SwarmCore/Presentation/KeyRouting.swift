@@ -65,31 +65,3 @@ public enum PaneSearch {
         return min(current, newMatches.count - 1)
     }
 }
-
-public enum Composer {
-    /// The text that leaves the box, or nil when nothing should be sent.
-    public static func outgoing(_ draft: String) -> String? {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
-    }
-}
-
-public struct ComposerSendState: Sendable, Equatable {
-    private var submittedDraft: String?
-
-    public init() {}
-
-    public var isSending: Bool { submittedDraft != nil }
-
-    public mutating func begin(_ draft: String) -> String? {
-        guard submittedDraft == nil, let message = Composer.outgoing(draft) else { return nil }
-        submittedDraft = draft
-        return message
-    }
-
-    public mutating func finish(currentDraft: String, succeeded: Bool) -> String {
-        defer { submittedDraft = nil }
-        guard succeeded, currentDraft == submittedDraft else { return currentDraft }
-        return ""
-    }
-}
