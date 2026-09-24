@@ -134,3 +134,45 @@ Part 2 per-model trail:
   and no module.
 
 Part 2 timing: round 1 about 7 min.
+
+# Part 3: review of the swarm-roadmap branch
+
+Owner: "get the changes done reviewed by /council". Artifact: main..swarm-roadmap at ebe657c5
+(ring repair, `swarm launch` absorbing `swarm-spawn-role.py`, host files moved into swarm).
+Fresh seats, same routes. The first GPT seat exited at launch after its profile line (the
+`todo.md` failure). Its retry stopped on a Codex trust prompt for the new worktree, which the
+chair accepted. The chair pane had also moved to a new pane on resume, so rings went to a dead
+pane until `swarm agent add orchestrator orchestrator` ran again. Both are new evidence for
+roadmap steps 1 and 4.
+
+## Verdicts
+
+GPT NO-GO, CLAUDE GO-WITH-CHANGES, GEMINI GO-WITH-CHANGES. All three found the same Codex gap.
+Without `--account`, trust went into one Codex home, but yelo's `codex` picks the profile in the
+pane, and a repo subdirectory was keyed by cwd, not the git root. GPT and CLAUDE found that AGY
+and Codex trust now reached any directory. GEMINI accepted that.
+
+Owner resolved the split on trust scope: "Git repos + scratch".
+
+## Required changes, done in 13aa2e83
+
+- Codex and AGY trust only a git root, or a dir inside a scratch root (`/private/tmp/councils`,
+  `/private/tmp/claude-<uid>`, `$SWARM_HOME/.swarm/ws`, `~/swarm/workspaces.noindex`). $HOME and `/`
+  are refused, and every checked dir must be the user's and closed to group and world writes. A
+  refused dir gets a warning and no trust, and the prompt stays in the pane.
+- Without `--account`, Codex trust goes into `~/.codex` and every `~/.codex-*` home.
+- One lock file, `~/.swarm/trust.lock`, covers every trust write (GPT). A test with eight racing
+  writers keeps all eight entries.
+- `launch` checks the session before any write (CLAUDE).
+- `scripts/install.sh` refuses a checkout that is not on `main` (CLAUDE).
+
+## Accepted gaps
+
+- AGY baseline merge. It stays in dotfiles `sync-agy-settings.py` (CLAUDE, GEMINI; GPT dissents).
+  `AGY_SETTINGS_PATH` is not honored.
+- Codex table present with `trust_level` other than trusted. It is left as the user set it.
+- `~/.claude.json` backup copy. It is dropped, and the atomic 0600 rename stays.
+- Ready-wait. It is not done, so this branch is not the finished roadmap step 1 (GPT).
+
+Live check after the fix: a `code.small` Codex seat in a council scratch dir reached its prompt
+with no trust dialog, and the entry was in all four Codex profiles.
