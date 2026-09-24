@@ -282,6 +282,21 @@ public actor SwarmSessionDiscovery {
         }
     }
 
+    public func composerCommandSource(
+        for session: SwarmSession, provider: String?
+    ) async -> ComposerCommandSource {
+        let list: SwarmAccountList?
+        if let provider, session.chairLog != nil {
+            list = try? await profiles.accounts(provider: provider)
+        } else {
+            list = nil
+        }
+        return ComposerCommandSource.resolve(
+            provider: provider, session: session,
+            accounts: list?.accounts ?? [], homeDirectory: home.path
+        )
+    }
+
     func identity(for path: String) -> SwarmPathIdentity {
         let normal = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
         if let cached = locations[normal] { return cached }
