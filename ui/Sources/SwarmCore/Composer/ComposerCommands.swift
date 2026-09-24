@@ -26,21 +26,41 @@ public struct ComposerCommandMatch: Identifiable, Hashable, Sendable {
 public struct ComposerCommandSource: Equatable, Sendable {
     public var provider: String?
     public var homeDirectory: String
-    public var claudeConfigDirectories: [String]
-    public var codexDirectories: [String]
+    public var configDirectory: String?
+    public var projectDirectory: String?
 
     public init(
         provider: String?, homeDirectory: String,
-        claudeConfigDirectories: [String] = [], codexDirectories: [String] = []
+        configDirectory: String? = nil, projectDirectory: String? = nil
     ) {
         self.provider = provider
         self.homeDirectory = homeDirectory
-        self.claudeConfigDirectories = claudeConfigDirectories
-        self.codexDirectories = codexDirectories
+        self.configDirectory = configDirectory
+        self.projectDirectory = projectDirectory
+    }
+
+    public static func resolve(
+        provider: String?, session: SwarmSession, accounts: [SwarmAccount],
+        homeDirectory: String
+    ) -> Self {
+        let kind = provider?.lowercased()
+        let log = session.chairLog.map { URL(fileURLWithPath: $0).standardized.path }
+        let account = accounts.filter { account in
+            guard kind == "claude" || kind == "codex" else { return false }
+            guard let log else { return false }
+            let home = URL(fileURLWithPath: account.home).standardized.path
+            return log == home || log.hasPrefix(home + "/")
+        }.max { $0.home.count < $1.home.count }
+        let key = kind == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+        let config = account.map { $0.env[key] ?? $0.home }
+        return Self(
+            provider: provider, homeDirectory: homeDirectory,
+            configDirectory: config, projectDirectory: session.cwd
+        )
     }
 }
 
-/// Adapted from Bloom's SlashCommand and SlashCommandIndex, with only user-level sources.
+/// Adapted from Bloom's SlashCommand and SlashCommandIndex.
 public enum ComposerCommandCatalog {
     private static let limit = 500
 
@@ -48,21 +68,23 @@ public enum ComposerCommandCatalog {
         var values: [String: ComposerCommand] = [:]
         for command in builtIns(provider: source.provider) { values[command.name] = command }
 
-        var claudeRoots = [source.homeDirectory + "/.claude"]
-        claudeRoots.append(contentsOf: source.claudeConfigDirectories)
-        for root in unique(claudeRoots) {
+        let provider = source.provider?.lowercased()
+        if provider != "codex" {
+            let root = source.configDirectory ?? source.homeDirectory + "/.claude"
             add(commandFiles(in: root + "/commands"), to: &values)
             add(skillFiles(in: root + "/skills"), to: &values)
         }
-
-        var codexRoots = [source.homeDirectory + "/.codex"]
-        codexRoots.append(contentsOf: source.codexDirectories)
-        for root in unique(codexRoots) {
+        if provider != "claude" {
+            let root = source.configDirectory ?? source.homeDirectory + "/.codex"
             add(promptFiles(in: root + "/prompts"), to: &values)
             add(skillFiles(in: root + "/skills"), to: &values)
             add(skillFiles(in: root + "/skills/.system"), to: &values)
         }
         add(skillFiles(in: source.homeDirectory + "/.agents/skills"), to: &values)
+        if provider == "claude", let project = source.projectDirectory {
+            add(commandFiles(in: project + "/.claude/commands"), to: &values)
+            add(skillFiles(in: project + "/.claude/skills"), to: &values)
+        }
         return values.values.sorted { $0.name < $1.name }
     }
 
@@ -119,11 +141,6 @@ public enum ComposerCommandCatalog {
         _ commands: [ComposerCommand], to values: inout [String: ComposerCommand]
     ) {
         for command in commands { values[command.name] = command }
-    }
-
-    private static func unique(_ values: [String]) -> [String] {
-        var seen: Set<String> = []
-        return values.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     private static func commandFiles(in directory: String) -> [ComposerCommand] {
@@ -195,23 +212,49 @@ public enum ComposerCommandCatalog {
     }
 
     private static func frontmatter(in path: String) -> (name: String?, description: String?) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let text = String(data: data.prefix(8_192), encoding: .utf8) else {
+        guard let data = FileManager.default.contents(atPath: path) else {
             return (nil, nil)
         }
+        let text = String(decoding: data.prefix(8_192), as: UTF8.self)
         let lines = text.components(separatedBy: .newlines)
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
             return (nil, nil)
         }
         var name: String?
         var detail: String?
-        for line in lines.dropFirst() {
+        var index = 1
+        while index < lines.count {
+            let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed == "---" { break }
             if trimmed.hasPrefix("name:") { name = fieldValue(trimmed, key: "name") }
             if trimmed.hasPrefix("description:") {
-                detail = fieldValue(trimmed, key: "description")
+                let value = fieldValue(trimmed, key: "description")
+                if value == "|" || value == ">" {
+                    var parts: [String] = []
+                    var indentation: Int?
+                    while index + 1 < lines.count {
+                        let next = lines[index + 1]
+                        let spaces = next.prefix(while: { $0 == " " }).count
+                        if next.trimmingCharacters(in: .whitespaces).isEmpty {
+                            parts.append("")
+                            index += 1
+                            continue
+                        }
+                        let width = indentation ?? spaces
+                        guard spaces >= width, width > 0 else { break }
+                        indentation = width
+                        parts.append(String(next.dropFirst(width)))
+                        index += 1
+                    }
+                    let joined = value == "|" ? parts.joined(separator: "\n")
+                        : parts.joined(separator: " ")
+                    detail = String(joined.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+                } else {
+                    detail = value
+                }
             }
+            index += 1
         }
         return (name, detail)
     }

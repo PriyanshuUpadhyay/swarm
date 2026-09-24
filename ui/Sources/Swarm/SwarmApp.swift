@@ -25,6 +25,7 @@ extension FocusedValues {
 final class SessionsTreeModel {
     private let bus = SwarmCLIBus()
     private let discovery = SwarmSessionDiscovery()
+    private let drafts = ComposerDraftStore()
 
     var tree = SessionsTree(projects: [])
     var selectedSessionID = UserDefaults.standard.string(forKey: "selectedSessionID").map(SwarmSessionID.init) {
@@ -34,6 +35,8 @@ final class SessionsTreeModel {
     }
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
+    var commandSource: ComposerCommandSource?
+    private var commandSourceKey: String?
     var error: String?
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
@@ -42,6 +45,8 @@ final class SessionsTreeModel {
         pendingID = nil
         selectedSessionID = id
         agents = []
+        commandSource = nil
+        commandSourceKey = nil
     }
 
     func startChat(_ plan: SwarmChatLaunchPlan) async throws -> SwarmSessionID {
@@ -56,14 +61,30 @@ final class SessionsTreeModel {
 
     func refresh() async throws {
         let sessions = try await bus.sessions()
+        drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         tree = try await discovery.tree(sessions: sessions, bus: bus)
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
             pendingID = nil
             self.selectedSessionID = row.id
             agents = try await bus.agents(in: row.session)
+            let provider = row.provider ?? agents.first {
+                $0.id == SwarmPanePolicy.chair
+            }?.provider
+            let key = row.id.rawValue + (row.session.chairLog ?? "") + (provider ?? "")
+            if commandSourceKey != key {
+                let source = await discovery.composerCommandSource(
+                    for: row.session, provider: provider
+                )
+                if self.selectedSessionID == row.id {
+                    commandSource = source
+                    commandSourceKey = key
+                }
+            }
         } else if pendingID == nil {
             selectedSessionID = tree.retainedSelection(selectedSessionID)
             agents = []
+            commandSource = nil
+            commandSourceKey = nil
         }
         error = nil
     }
@@ -147,7 +168,9 @@ private struct SessionsWindow: View {
                 SessionDetailView(
                     row: row,
                     title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
-                    agents: model.agents, panes: panes
+                    agents: model.agents, panes: panes,
+                    commandSource: model.commandSource,
+                    isCurrentSession: { model.selectedSession?.id == row.id }
                 )
                     .id(row.id)
             } else if let error = model.error {

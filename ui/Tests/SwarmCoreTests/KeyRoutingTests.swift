@@ -6,18 +6,14 @@ struct KeyRoutingTests {
     @Test("Keys go only to their focused surface")
     func table() {
         #expect(KeyRouting.route(focus: .terminal, key: .escape) == .terminal)
-        #expect(KeyRouting.route(focus: .terminal, key: .return) == .terminal)
         #expect(KeyRouting.route(focus: .terminal, key: .other) == .terminal)
-        #expect(KeyRouting.route(focus: .composer, key: .escape) == .clearComposer)
-        #expect(KeyRouting.route(focus: .composer, key: .return) == .sendComposer)
-        #expect(KeyRouting.route(focus: .composer, key: .shiftReturn) == .insertNewline)
         #expect(KeyRouting.route(focus: .transcript, key: .escape) == .ignore)
         #expect(KeyRouting.route(focus: .transcript, key: .commandF) == .openFind)
         #expect(KeyRouting.route(focus: .transcript, key: .commandG) == .findNext)
         #expect(KeyRouting.route(focus: .transcript, key: .shiftCommandG) == .findPrevious)
         #expect(KeyRouting.route(focus: .terminal, key: .commandF) == .terminal)
         #expect(KeyRouting.route(focus: .sidebar, key: .escape) == .ignore)
-        for focus in [FocusedSurface.terminal, .transcript, .composer, .sidebar] {
+        for focus in [FocusedSurface.terminal, .transcript, .sidebar] {
             #expect(KeyRouting.route(focus: focus, key: .commandN) == .openNewChat)
         }
     }

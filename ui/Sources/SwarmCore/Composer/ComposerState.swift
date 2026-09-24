@@ -10,11 +10,13 @@ public enum Composer {
     /// Adds a path as its own token and leaves the caret ready for more text.
     public static func appending(path: String, to draft: String, prefix: String = "") -> String {
         let separator = draft.isEmpty || draft.last?.isWhitespace == true ? "" : " "
-        return draft + separator + prefix + path + " "
+        return draft + separator + prefix + pathToken(path) + " "
     }
 
     public static func removing(path: String, prefix: String = "", from draft: String) -> String {
-        let token = prefix + path
+        let quoted = prefix + pathToken(path)
+        let token = wholePathRange(of: quoted, in: draft, from: draft.startIndex) != nil
+            ? quoted : prefix + path
         var result = ""
         var cursor = draft.startIndex
         while let range = wholePathRange(of: token, in: draft, from: cursor) {
@@ -29,7 +31,8 @@ public enum Composer {
     }
 
     public static func contains(path: String, in draft: String) -> Bool {
-        wholePathRange(of: path, in: draft, from: draft.startIndex) != nil
+        wholePathRange(of: pathToken(path), in: draft, from: draft.startIndex) != nil
+            || wholePathRange(of: path, in: draft, from: draft.startIndex) != nil
     }
 
     public static func retainedAttachments(
@@ -52,6 +55,28 @@ public enum Composer {
             cursor = draft.index(after: range.lowerBound)
         }
         return nil
+    }
+
+    private static func pathToken(_ path: String) -> String {
+        guard path.contains(where: \.isWhitespace) else { return path }
+        return "\"" + path.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+}
+
+public struct ComposerAttachmentContext: Equatable, Sendable {
+    public let sessionID: String
+    public let draft: String
+    public let generation: Int
+
+    public init(sessionID: String, draft: String, generation: Int) {
+        self.sessionID = sessionID
+        self.draft = draft
+        self.generation = generation
+    }
+
+    public func matches(sessionID: String, draft: String, generation: Int) -> Bool {
+        self.sessionID == sessionID && self.draft == draft && self.generation == generation
     }
 }
 
@@ -103,6 +128,13 @@ public struct ComposerDraftStore {
             defaults.removeObject(forKey: key)
         } else {
             defaults.set(draft, forKey: key)
+        }
+    }
+
+    public func prune(keeping sessionIDs: Set<String>) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+            let sessionID = String(key.dropFirst(keyPrefix.count))
+            if !sessionIDs.contains(sessionID) { defaults.removeObject(forKey: key) }
         }
     }
 }
