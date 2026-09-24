@@ -80,7 +80,7 @@ struct ComposerView: View {
             .padding(.top, 10)
             .padding(.bottom, 8)
             .simultaneousGesture(TapGesture().onEnded {
-                if menuVisible { dismissedToken = resolvedMenu.token }
+                dismissMenu()
                 focus.wrappedValue = true
                 onFocused()
             })
@@ -139,7 +139,6 @@ struct ComposerView: View {
                         Image(systemName: "photo")
                         Text(attachment.name).lineLimit(1)
                         Button {
-                            attachments.removeAll { $0 == attachment }
                             draft.wrappedValue = Composer.removing(
                                 path: attachment.path, from: draft.wrappedValue
                             )
@@ -260,10 +259,9 @@ struct ComposerView: View {
             guard completionCount > 0 else { return .ignored }
             pick(min(selectedIndex, completionCount - 1))
         case .dismissMenu:
-            dismissedToken = resolvedMenu.token
+            dismissMenu()
         case .clear:
             draft.wrappedValue = ""
-            attachments = []
         case .send:
             submit()
         case .insertNewline:
@@ -295,8 +293,12 @@ struct ComposerView: View {
     }
 
     private func dismissMenuForCaretMove() -> KeyPress.Result {
-        if menuVisible { dismissedToken = resolvedMenu.token }
+        dismissMenu()
         return .ignored
+    }
+
+    private func dismissMenu() {
+        if menuVisible { dismissedToken = resolvedMenu.token }
     }
 
     private var showsStop: Bool { isRunning }
