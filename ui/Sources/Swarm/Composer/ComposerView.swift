@@ -16,14 +16,19 @@ struct ComposerView: View {
     let send: (String) async throws -> Void
     let interrupt: () async throws -> Void
     let onFocused: () -> Void
+    let isCurrentSession: () -> Bool
 
     @State private var commands: [ComposerCommand] = []
     @State private var files: [String] = []
+    @State private var resolvedMenu: ComposerMenu = .none
+    @State private var slashMatches: [ComposerCommandMatch] = []
+    @State private var fileMatches: [ComposerFileMatch] = []
     @State private var selectedIndex = 0
     @State private var dismissedToken: ComposerToken?
     @State private var attachments: [ComposerAttachment] = []
     @State private var actionError: String?
     @State private var isDropTarget = false
+    @State private var attachmentGeneration = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -53,21 +58,21 @@ struct ComposerView: View {
             commands = await Task.detached {
                 ComposerCommandCatalog.discover(from: commandSource)
             }.value
+            updateMatches()
         }
         .task(id: mentionSource) {
             files = await ComposerFileCatalog.discover(from: mentionSource)
+            updateMatches()
         }
         .onChange(of: draft.wrappedValue) {
+            attachmentGeneration += 1
             attachments = Composer.retainedAttachments(attachments, in: draft.wrappedValue)
             dismissedToken = nil
             selectedIndex = 0
+            updateMatches()
         }
-        .onChange(of: sessionID) {
-            attachments = []
-            actionError = nil
-            dismissedToken = nil
-            selectedIndex = 0
-        }
+        .onAppear { updateMatches() }
+        .onDisappear { attachmentGeneration += 1 }
     }
 
     private var editor: some View {
@@ -136,7 +141,9 @@ struct ComposerView: View {
             HStack(spacing: 6) {
                 ForEach(attachments) { attachment in
                     HStack(spacing: 5) {
-                        Image(systemName: "photo")
+                        Image(systemName: ComposerAttachmentStore.isImage(
+                            pathExtension: (attachment.path as NSString).pathExtension
+                        ) ? "photo" : "doc")
                         Text(attachment.name).lineLimit(1)
                         Button {
                             draft.wrappedValue = Composer.removing(
@@ -199,21 +206,24 @@ struct ComposerView: View {
     }
 
     // TextField exposes no selection, so completion works only at the end of the draft.
-    private var caret: Int { (draft.wrappedValue as NSString).length }
-    private var resolvedMenu: ComposerMenu {
-        ComposerMenu.resolve(draft: draft.wrappedValue, caret: caret)
+    private func updateMatches() {
+        let text = draft.wrappedValue
+        resolvedMenu = ComposerMenu.resolve(draft: text, caret: (text as NSString).length)
+        switch resolvedMenu {
+        case .none:
+            slashMatches = []
+            fileMatches = []
+        case .slash(let token):
+            slashMatches = ComposerCommandCatalog.matches(commands, query: token.query)
+            fileMatches = []
+        case .mention(let token):
+            slashMatches = []
+            fileMatches = ComposerFileCatalog.matches(files, query: token.query)
+        }
     }
     private var menuVisible: Bool {
         guard let token = resolvedMenu.token else { return false }
         return token != dismissedToken
-    }
-    private var slashMatches: [ComposerCommandMatch] {
-        guard case .slash(let token) = resolvedMenu else { return [] }
-        return ComposerCommandCatalog.matches(commands, query: token.query)
-    }
-    private var fileMatches: [ComposerFileMatch] {
-        guard case .mention(let token) = resolvedMenu else { return [] }
-        return ComposerFileCatalog.matches(files, query: token.query)
     }
     private var completionCount: Int {
         switch resolvedMenu {
@@ -261,6 +271,7 @@ struct ComposerView: View {
         case .dismissMenu:
             dismissMenu()
         case .clear:
+            attachmentGeneration += 1
             draft.wrappedValue = ""
         case .send:
             submit()
@@ -308,6 +319,7 @@ struct ComposerView: View {
         guard !isSending, Composer.outgoing(snapshot) != nil else {
             return
         }
+        attachmentGeneration += 1
         Task {
             do {
                 try await send(snapshot)
@@ -337,13 +349,17 @@ struct ComposerView: View {
     }
 
     private func receiveDrop(_ providers: [NSItemProvider]) -> Bool {
+        let context = attachmentContext
         var accepted = false
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 accepted = true
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
                     guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                    Task { @MainActor in addFile(at: url.path) }
+                    Task { @MainActor in
+                        guard isCurrent(context) else { return }
+                        addFile(at: url.path)
+                    }
                 }
             } else if loadImage(from: provider) {
                 accepted = true
@@ -353,12 +369,14 @@ struct ComposerView: View {
     }
 
     private func loadImage(from provider: NSItemProvider) -> Bool {
+        let context = attachmentContext
         let types: [(UTType, String)] = [(.png, "png"), (.jpeg, "jpg"), (.tiff, "tiff")]
         guard let item = types.first(where: {
             provider.hasItemConformingToTypeIdentifier($0.0.identifier)
         }) else { return false }
         provider.loadDataRepresentation(forTypeIdentifier: item.0.identifier) { data, error in
             Task { @MainActor in
+                guard isCurrent(context) else { return }
                 if let data {
                     addImage(data, fileExtension: item.1)
                 } else if let error {
@@ -393,5 +411,19 @@ struct ComposerView: View {
         if !attachments.contains(attachment) { attachments.append(attachment) }
         draft.wrappedValue = Composer.appending(path: attachment.path, to: draft.wrappedValue)
         focus.wrappedValue = true
+    }
+
+    private var attachmentContext: ComposerAttachmentContext {
+        ComposerAttachmentContext(
+            sessionID: sessionID, draft: draft.wrappedValue,
+            generation: attachmentGeneration
+        )
+    }
+
+    private func isCurrent(_ context: ComposerAttachmentContext) -> Bool {
+        isCurrentSession() && context.matches(
+            sessionID: sessionID, draft: draft.wrappedValue,
+            generation: attachmentGeneration
+        )
     }
 }

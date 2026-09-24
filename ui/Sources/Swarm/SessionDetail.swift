@@ -77,6 +77,8 @@ struct SessionDetailView: View {
     let title: String
     let agents: [SwarmAgent]
     let panes: AgentPaneStore
+    let commandSource: ComposerCommandSource?
+    let isCurrentSession: () -> Bool
 
     @State private var model = SessionDetailModel()
     @State private var followsTail = true
@@ -234,13 +236,18 @@ struct SessionDetailView: View {
                 ),
                 isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
                 isSending: model.isSending(sessionID: row.id.rawValue),
-                commandSource: commandSource,
+                commandSource: commandSource ?? ComposerCommandSource(
+                    provider: row.provider ?? chairProvider,
+                    homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+                    projectDirectory: row.session.cwd
+                ),
                 mentionSource: ComposerMentionSource(root: row.session.cwd),
                 scratchDirectory: AgentScratchDirectory.current(),
                 focus: $composerFocused,
                 send: { try await model.send($0, session: row.session) },
                 interrupt: { try await model.interrupt(session: row.session) },
-                onFocused: { panes.clearFocus() }
+                onFocused: { panes.clearFocus() },
+                isCurrentSession: isCurrentSession
             )
             .id(row.id.rawValue)
             .padding(12)
@@ -305,17 +312,6 @@ struct SessionDetailView: View {
 
     private var visibleRows: [TranscriptRow] {
         model.rows.filter { showHiddenRows || !$0.isHiddenByDefault }
-    }
-
-    private var commandSource: ComposerCommandSource {
-        let environment = ProcessInfo.processInfo.environment
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return ComposerCommandSource(
-            provider: row.provider ?? chairProvider,
-            homeDirectory: home,
-            claudeConfigDirectories: environment["CLAUDE_CONFIG_DIR"].map { [$0] } ?? [],
-            codexDirectories: environment["CODEX_HOME"].map { [$0] } ?? []
-        )
     }
 
     private var rawSessionJSON: String {
