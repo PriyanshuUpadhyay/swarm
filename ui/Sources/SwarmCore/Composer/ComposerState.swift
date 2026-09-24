@@ -15,8 +15,43 @@ public enum Composer {
 
     public static func removing(path: String, prefix: String = "", from draft: String) -> String {
         let token = prefix + path
-        return draft.replacingOccurrences(of: token + " ", with: "")
-            .replacingOccurrences(of: token, with: "")
+        var result = ""
+        var cursor = draft.startIndex
+        while let range = wholePathRange(of: token, in: draft, from: cursor) {
+            result += draft[cursor..<range.lowerBound]
+            cursor = range.upperBound
+            if cursor < draft.endIndex, draft[cursor].isWhitespace {
+                cursor = draft.index(after: cursor)
+            }
+        }
+        result += draft[cursor...]
+        return result
+    }
+
+    public static func contains(path: String, in draft: String) -> Bool {
+        wholePathRange(of: path, in: draft, from: draft.startIndex) != nil
+    }
+
+    public static func retainedAttachments(
+        _ attachments: [ComposerAttachment], in draft: String
+    ) -> [ComposerAttachment] {
+        attachments.filter { contains(path: $0.path, in: draft) }
+    }
+
+    private static func wholePathRange(
+        of path: String, in draft: String, from start: String.Index
+    ) -> Range<String.Index>? {
+        guard !path.isEmpty else { return nil }
+        var cursor = start
+        while let range = draft.range(of: path, range: cursor..<draft.endIndex) {
+            let leftBounded = range.lowerBound == draft.startIndex
+                || draft[draft.index(before: range.lowerBound)].isWhitespace
+            let rightBounded = range.upperBound == draft.endIndex
+                || draft[range.upperBound].isWhitespace
+            if leftBounded && rightBounded { return range }
+            cursor = range.upperBound
+        }
+        return nil
     }
 }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// A completion token measured in UTF-16, the same unit AppKit uses for the caret.
+/// A completion token measured in UTF-16, the same unit NSString uses for edits.
 public struct ComposerToken: Equatable, Sendable {
     public var start: Int
     public var length: Int
@@ -78,12 +78,15 @@ public enum ComposerKeyAction: Sendable, Equatable {
 }
 
 public enum ComposerKeyRouter {
-    public static func route(_ key: ComposerInputKey, menuOpen: Bool) -> ComposerKeyAction {
+    public static func route(
+        _ key: ComposerInputKey, menuOpen: Bool, hasRows: Bool
+    ) -> ComposerKeyAction {
         if menuOpen {
             return switch key {
-            case .up: .move(-1)
-            case .down: .move(1)
-            case .return, .tab: .pick
+            case .up: .move(hasRows ? -1 : 0)
+            case .down: .move(hasRows ? 1 : 0)
+            case .return: hasRows ? .pick : .send
+            case .tab: hasRows ? .pick : .move(0)
             case .escape: .dismissMenu
             case .shiftReturn: .insertNewline
             }
