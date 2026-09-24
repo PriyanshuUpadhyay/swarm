@@ -106,6 +106,27 @@ final class SessionsTreeModel {
         return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
     }
 
+    func createTask(named name: String, in project: ProjectNode) async throws -> String {
+        guard case .repository(let common) = project.id else {
+            throw GitTaskWorktreeError.notRepository
+        }
+        let root = URL(fileURLWithPath: project.path)
+        let parent = URL(fileURLWithPath: common).lastPathComponent == ".bare"
+            ? root.appendingPathComponent("wt", isDirectory: true)
+            : root.deletingLastPathComponent()
+                .appendingPathComponent(project.name + "-worktrees", isDirectory: true)
+        let repositoryDirectory = URL(fileURLWithPath: common).lastPathComponent == ".bare"
+            ? common : project.path
+        let path = try await GitTaskWorktree.create(
+            named: name, in: repositoryDirectory,
+            commonDirectory: common, under: parent.path
+        )
+        try projects.add(URL(fileURLWithPath: path))
+        do { try await refresh() }
+        catch { self.error = String(describing: error) }
+        return path
+    }
+
     func archive(_ id: SwarmSessionID) async throws {
         let ids = tree.archiveIDs(for: id)
         guard !ids.isEmpty else { return }
@@ -140,6 +161,8 @@ private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
+    @State private var newTaskProject: ProjectNode?
+    @State private var pendingTaskChatDirectory: String?
     @State private var switchChatFrom: SwarmProjectSession?
     @State private var selectedProjectID: SwarmPathIdentity?
     @State private var actionError: String?
@@ -165,6 +188,12 @@ private struct SessionsWindow: View {
                             },
                             onNewChat: { newChatDirectory = project.launchDirectory }
                         )
+                        .contextMenu {
+                            Button("New chat") { newChatDirectory = project.launchDirectory }
+                            if case .repository = project.id {
+                                Button("New Task…") { newTaskProject = project }
+                            }
+                        }
                     case .chat(let row):
                         chatRow(row)
                         .padding(.leading, 16)
@@ -218,9 +247,11 @@ private struct SessionsWindow: View {
                 )
                     .id(row.id)
             } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
-                ProjectHome(project: project) {
-                    newChatDirectory = project.launchDirectory
-                }
+                ProjectHome(
+                    project: project,
+                    onNewChat: { newChatDirectory = $0 },
+                    onNewTask: { newTaskProject = project }
+                )
             } else {
                 AgentProfilesHome(
                     sessionsError: model.error,
@@ -245,6 +276,18 @@ private struct SessionsWindow: View {
             NewChatSheet(directory: target.directory, launch: model.startChat) { _ in
                 Task { try? await model.refresh() }
             }
+        }
+        .sheet(item: $newTaskProject, onDismiss: {
+            if let path = pendingTaskChatDirectory {
+                pendingTaskChatDirectory = nil
+                newChatDirectory = path
+            }
+        }) { project in
+            NewTaskSheet(
+                project: project,
+                create: { try await model.createTask(named: $0, in: project) },
+                onCreated: { pendingTaskChatDirectory = $0 }
+            )
         }
         .sheet(item: $switchChatFrom) { row in
             NewChatSheet(
@@ -409,16 +452,83 @@ private struct ProjectRowLabel: View {
 
 private struct ProjectHome: View {
     let project: ProjectNode
-    let onNewChat: () -> Void
+    let onNewChat: (String) -> Void
+    let onNewTask: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(project.name).font(.largeTitle.bold())
             Text(project.launchDirectory).foregroundStyle(.secondary).textSelection(.enabled)
-            Button("New chat", action: onNewChat)
+            HStack {
+                Button("New chat") { onNewChat(project.launchDirectory) }
+                if case .repository = project.id {
+                    Button("New Task…", action: onNewTask)
+                }
+            }
+            if case .repository = project.id {
+                Text("Worktrees").font(.headline)
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(project.workspaces) { workspace in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(workspace.name)
+                                    Text(workspace.path).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("New chat") { onNewChat(workspace.path) }
+                            }
+                        }
+                    }
+                }
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct NewTaskSheet: View {
+    let project: ProjectNode
+    let create: (String) async throws -> String
+    let onCreated: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var isCreating = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Task").font(.title2)
+            Text(project.path).foregroundStyle(.secondary)
+            TextField("Task name", text: $name)
+            Text("Swarm will make a branch and worktree for this task.")
+                .foregroundStyle(.secondary)
+            if let error { Text(verbatim: error).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .disabled(isCreating)
+                Button(isCreating ? "Creating…" : "Create") {
+                    Task {
+                        isCreating = true
+                        defer { isCreating = false }
+                        do {
+                            onCreated(try await create(name))
+                            dismiss()
+                        } catch {
+                            self.error = (error as? LocalizedError)?.errorDescription
+                                ?? String(describing: error)
+                        }
+                    }
+                }
+                .disabled(isCreating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .interactiveDismissDisabled(isCreating)
     }
 }
 

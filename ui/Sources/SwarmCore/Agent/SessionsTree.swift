@@ -146,7 +146,7 @@ public struct SessionsTree: Sendable, Hashable {
                 var workspaces = listed.compactMap { entry -> WorkspaceNode? in
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
-                    guard !matches.isEmpty else { return nil }
+                    guard !matches.isEmpty || openedProjects[identity] != nil else { return nil }
                     return WorkspaceNode(
                         path: entry.path,
                         name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,

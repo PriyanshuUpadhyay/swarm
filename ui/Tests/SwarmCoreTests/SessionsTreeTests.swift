@@ -44,6 +44,7 @@ struct SessionsTreeTests {
         #expect(repository.projects.map(\.path) == ["/repo"])
         #expect(repository.projects[0].launchDirectory == "/repo/wt/feature")
         #expect(repository.projects[0].chats.isEmpty)
+        #expect(repository.projects[0].workspaces.map(\.name) == ["feature", "main"])
 
         let reopened = build([], projectPaths: ["/repo/wt/feature", "/repo/wt/main"])
         #expect(reopened.projects.count == 1)
