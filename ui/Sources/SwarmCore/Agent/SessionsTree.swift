@@ -244,12 +244,14 @@ public struct SessionsTree: Sendable, Hashable {
         ordered(SwarmSessionListing.chatGroups(sessions).map {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
             let agents = $0.flatMap { agentsBySession[$0.id] ?? [] }
-            let running = known ? agents.contains(where: { $0.alive == true }) : nil
+            let running = known
+                ? agentsBySession[$0[0].id]?.contains(where: { $0.alive == true })
+                : nil
             let provider = $0[0].chairProvider
                 ?? agents.first(where: { $0.id == SwarmPanePolicy.chair })?.provider
                 ?? agents.first?.provider
             return SwarmProjectSession(
-                sessions: $0, title: $0.lazy.compactMap { titles[$0.id] }.first ?? "Chat",
+                sessions: $0, title: $0.reversed().lazy.compactMap { titles[$0.id] }.first ?? "Chat",
                 isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider

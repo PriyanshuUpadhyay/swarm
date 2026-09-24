@@ -88,6 +88,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     public var chairProvider: String?
     public var chairID: SwarmChairID?
     public var chairLog: String?
+    public var continuationOf: SwarmSessionID?
     public var agents: Int
     public var messages: Int
     public var lastMessageAt: Int?
@@ -97,6 +98,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         id: SwarmSessionID, talkMode: String, adapter: String?, cwd: String, createdAt: Int,
         chairProvider: String? = nil, chairID: SwarmChairID? = nil,
         chairLog: String?, agents: Int, messages: Int, lastMessageAt: Int?,
+        continuationOf: SwarmSessionID? = nil,
         archivedAt: Int? = nil
     ) {
         self.id = id
@@ -107,6 +109,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         self.chairProvider = chairProvider
         self.chairID = chairID
         self.chairLog = chairLog
+        self.continuationOf = continuationOf
         self.agents = agents
         self.messages = messages
         self.lastMessageAt = lastMessageAt
@@ -114,7 +117,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, talkMode, adapter, cwd, createdAt, chairProvider, chairID = "chairId", chairLog
+        case id, talkMode, adapter, cwd, createdAt, chairProvider, chairID = "chairId", chairLog, continuationOf
         case agents, messages, lastMessageAt, archivedAt
     }
 
@@ -128,6 +131,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         chairProvider = try values.decodeIfPresent(String.self, forKey: .chairProvider)
         chairID = try values.decodeIfPresent(SwarmChairID.self, forKey: .chairID)
         chairLog = try values.decodeIfPresent(String.self, forKey: .chairLog)
+        continuationOf = try values.decodeIfPresent(SwarmSessionID.self, forKey: .continuationOf)
         agents = try values.decode(Int.self, forKey: .agents)
         messages = try values.decode(Int.self, forKey: .messages)
         lastMessageAt = try values.decodeIfPresent(Int.self, forKey: .lastMessageAt)
@@ -144,6 +148,7 @@ public struct SwarmSession: Sendable, Hashable, Codable, Identifiable {
         try values.encodeIfPresent(chairProvider, forKey: .chairProvider)
         try values.encodeIfPresent(chairID, forKey: .chairID)
         try values.encodeIfPresent(chairLog, forKey: .chairLog)
+        try values.encodeIfPresent(continuationOf, forKey: .continuationOf)
         try values.encode(agents, forKey: .agents)
         try values.encode(messages, forKey: .messages)
         try values.encodeIfPresent(lastMessageAt, forKey: .lastMessageAt)
@@ -215,7 +220,7 @@ public protocol SwarmBus: Sendable {
     /// `swarm launch`, run in `directory`. `account` is `"auto"`, an account name, or nil for the
     /// CLI's default home.
     func launch(
-        _ agent: SwarmAgentID, role: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
@@ -229,6 +234,8 @@ public protocol SwarmBus: Sendable {
     func sessions() async throws -> [SwarmSession]
     /// `swarm session archive <id>...`, with no session selected in the environment.
     func archive(_ sessions: [SwarmSessionID]) async throws
+    /// Save a continuation after the new chair has received its handoff message.
+    func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws
     /// `swarm type <agent>` with `text` on stdin.
     func type(
         _ text: String, to agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
@@ -262,6 +269,10 @@ public extension SwarmBus {
 
     func archive(_ sessions: [SwarmSessionID]) async throws {
         throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
+    func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
+        throw SwarmProfileError.unavailable("swarm chat links are not available")
     }
 
     func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
@@ -316,7 +327,7 @@ public struct UnavailableSwarmBus: SwarmBus {
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
 
     public func launch(
-        _ agent: SwarmAgentID, role: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch {
         throw notConnected

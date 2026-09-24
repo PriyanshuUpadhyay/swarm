@@ -3,9 +3,14 @@ import Foundation
 public struct SwarmLaunchChoice: Sendable, Equatable {
     public static let providers = ["claude", "codex", "agy"]
 
-    public static func roles(_ roles: [SwarmRole], for provider: String) -> [SwarmRole] {
-        guard providers.contains(provider) else { return [] }
-        return roles.filter { $0.provider == provider }
+    public static func roles(
+        _ roles: [SwarmRole], for provider: String, switching: Bool = false
+    ) -> [SwarmRole] {
+        guard provider == "all" || providers.contains(provider) else { return [] }
+        return roles.filter { role in
+            (!switching || role.provider != "agy")
+                && (provider == "all" || role.provider == provider)
+        }
     }
 
     public private(set) var roleID: String?

@@ -55,6 +55,14 @@ final class SessionsTreeModel {
         }
     }
 
+    func switchChat(_ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession) async throws -> SwarmSessionID {
+        let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus)
+        pendingID = id
+        selectedSessionID = id
+        agents = []
+        return id
+    }
+
     func refresh() async throws {
         let sessions = try await bus.sessions()
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
@@ -119,6 +127,7 @@ private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
+    @State private var switchChatFrom: SwarmProjectSession?
     @State private var actionError: String?
 
     var body: some View {
@@ -173,6 +182,7 @@ private struct SessionsWindow: View {
                     title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
                     agents: model.agents, panes: panes,
                     commandSource: model.commandSource,
+                    onSwitchModel: { switchChatFrom = row },
                     isCurrentSession: { model.selectedSession?.id == row.id }
                 )
                     .id(row.id)
@@ -194,6 +204,14 @@ private struct SessionsWindow: View {
             set: { newChatDirectory = $0?.directory }
         )) { target in
             NewChatSheet(directory: target.directory, launch: model.startChat) { _ in
+                Task { try? await model.refresh() }
+            }
+        }
+        .sheet(item: $switchChatFrom) { row in
+            NewChatSheet(
+                directory: row.session.cwd, isSwitch: true,
+                launch: { plan in try await model.switchChat(plan, from: row) }
+            ) { _ in
                 Task { try? await model.refresh() }
             }
         }
@@ -442,7 +460,7 @@ enum SwarmExecutable {
     private static func launchCheck(directory: String, provider: String, roleID: String) async {
         do {
             await LoginShellPath.ready()
-            let roles = try await SwarmCLIProfileSource().roles()
+            let roles = try await SwarmCLIProfileSource().launchChoices()
             guard let role = SwarmLaunchChoice.roles(roles, for: provider).first(where: { $0.id == roleID }),
                   let plan = SwarmChatLaunchPlan(directory: directory, role: role, account: .auto) else {
                 throw SwarmProfileError.failed("Provider, role, or directory is invalid")

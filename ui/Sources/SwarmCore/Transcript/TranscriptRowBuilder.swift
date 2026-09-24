@@ -20,6 +20,12 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var endsTurn = false
     public var id: String { eventID }
 
+    public init(kind: Kind, text: String, eventID: String) {
+        self.kind = kind
+        self.text = text
+        self.eventID = eventID
+    }
+
     public func label(chair: String?) -> String {
         switch kind {
         case .user: "You"

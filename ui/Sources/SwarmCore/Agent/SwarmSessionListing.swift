@@ -67,17 +67,23 @@ public enum SwarmSessionListing {
     /// Sessions made by repeated `swarm session new` calls in one chair chat are one chat row.
     public static func chatGroups(_ sessions: [SwarmSession]) -> [[SwarmSession]] {
         var grouped: [String: [SwarmSession]] = [:]
-        var ungrouped: [[SwarmSession]] = []
+        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
         for session in sessions {
-            if let provider = session.chairProvider, let id = session.chairID {
+            var root = session
+            var seen: Set<SwarmSessionID> = []
+            while let parentID = root.continuationOf, let parent = byID[parentID],
+                  seen.insert(root.id).inserted {
+                root = parent
+            }
+            if let provider = root.chairProvider, let id = root.chairID {
                 grouped["chair:\(provider):\(id)", default: []].append(session)
-            } else if let log = session.chairLog {
+            } else if let log = root.chairLog {
                 grouped["log:\(log)", default: []].append(session)
             } else {
-                ungrouped.append([session])
+                grouped["session:\(root.id.rawValue)", default: []].append(session)
             }
         }
-        return (Array(grouped.values) + ungrouped)
+        return Array(grouped.values)
             .map { $0.sorted { $0.createdAt == $1.createdAt
                 ? $0.id.rawValue > $1.id.rawValue : $0.createdAt > $1.createdAt } }
             .sorted { newer($0[0], $1[0]) }

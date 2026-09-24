@@ -29,7 +29,7 @@ public enum SwarmChatLauncher {
         let id = try await bus.startChairSession(chair: nil, directory: plan.directory)
         await onCreated(id)
         _ = try await bus.launch(
-            SwarmPanePolicy.chair, role: plan.role, account: plan.account,
+            SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, account: plan.account,
             in: id, directory: plan.directory
         )
         return id

@@ -180,6 +180,21 @@ struct SessionsTreeTests {
         #expect(tree.windowTitle(for: rows[0].id) == "repo · Chat")
     }
 
+    @Test("A provider switch keeps both sessions in one chat")
+    func continuedChat() {
+        var old = session("old", cwd: "/repo/wt/main", chair: "claude-chat")
+        old.chairProvider = "claude"
+        var next = session("next", cwd: "/repo/wt/main", chair: "codex-chat")
+        next.chairProvider = "codex"
+        next.continuationOf = old.id
+        next.createdAt = 2
+        let tree = build([old, next], titles: [old.id: "Fix the menu", next.id: "Context from prior chat"])
+        let row = tree.session(next.id)
+        #expect(row?.sessions.map(\.id) == [next.id, old.id])
+        #expect(row?.title == "Fix the menu")
+        #expect(tree.archiveIDs(for: next.id) == [next.id, old.id])
+    }
+
     @Test("A new session remains the chat row when an older session has later activity")
     func newestSessionOwnsChat() {
         var older = session("older", cwd: "/repo/wt/main", chair: "chair")

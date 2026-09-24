@@ -20,7 +20,7 @@ struct SwarmChatLaunchTests {
         #expect(created.rawValue == id)
         #expect(await calls.arguments == [
             ["init"], ["session", "new", "lane"],
-            ["launch", "orchestrator", "council.claude", "--account", "auto"],
+            ["launch", "orchestrator", "council.claude", "--provider", "claude", "--account", "auto"],
         ])
         #expect(await calls.adapters == ["tmux-solo", "tmux-solo", "tmux-solo"])
     }

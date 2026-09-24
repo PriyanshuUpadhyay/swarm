@@ -37,9 +37,10 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
 | `session new <lane\|relay\|open> [--chair <claude\|codex>:<id>]` | any | Create a session for the physical current directory (`pwd -P`) and print its UUID v7 id. Without `--chair`, use a chair id from the current CLI environment when present. |
 | `session chair <claude\|codex>:<id>` | orchestrator | Set the chair transcript id. Refuse any other agent. |
+| `session continue <new_id> <old_id>` | any | Link a newer session to an older session in the same directory after the new chair receives its context. |
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
-| `roles --json` | any | List routed roles as JSON. |
+| `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
 | `roles set-model <runner> <model>` | any | Save a runner's model in the shared routing config. Every role using that runner changes. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
 | `usage --json` | any | List account use meters as JSON. |
@@ -47,9 +48,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, and adapter attach support as JSON. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
-| `launch <id> <role> [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve the role, register the agent, split a pane in `--cwd`, and start its provider CLI with the extra args. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
+| `launch <id> <role> [--provider <claude\|codex\|agy>] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve the role for the selected provider, register the agent, split a pane in `--cwd`, and start its provider CLI with the extra args. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
-| `type <id>` | session | Read text from stdin and type it into the agent pane. |
+| `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
 | `attach <id>` | session | Attach to the agent pane when the adapter supports it. |
 | `close <id>` | session | Close the pane of `<id>` and forget it. |
@@ -62,6 +63,11 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 
 The Herdr adapter runs `~/.config/herdr/bin/swarm-split.py` to create its pane layout. The repository
 ships it as `adapters/swarm-split.py`, and `sh scripts/install.sh` links it there.
+
+Swarm.app opens on Home, where routed roles show their models. New Chat shows each provider that a
+role can use. In a chat, Switch model asks the live chair for a compact summary, starts the chosen
+Claude or Codex role, and keeps both parts in one sidebar row. If the old pane has closed, the new
+chair receives recent messages and makes its own compact summary.
 
 ## Agents
 

@@ -81,6 +81,10 @@ struct SwarmSpikeTests {
         ]
         #expect(SwarmLaunchChoice.roles(roles, for: "claude").map(\.id) == ["claude-role"])
         #expect(SwarmLaunchChoice.roles(roles, for: "agy").map(\.id) == ["agy-role"])
+        #expect(SwarmLaunchChoice.roles(roles, for: "all").map(\.id) == ["claude-role", "agy-role"])
+        #expect(SwarmLaunchChoice.roles(roles, for: "all", switching: true).map(\.id) == ["claude-role"])
+        #expect(SwarmRole(role: "same", runner: "a", provider: "claude", model: "opus", effort: nil, sandbox: nil, fallbacks: []).launchID
+            != SwarmRole(role: "same", runner: "b", provider: "codex", model: "gpt", effort: nil, sandbox: nil, fallbacks: []).launchID)
         var choice = SwarmLaunchChoice()
         let accepted = choice.selectRole(roles[1])
         #expect(accepted)

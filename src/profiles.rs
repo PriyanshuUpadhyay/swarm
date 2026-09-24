@@ -23,6 +23,8 @@ struct RoutingRunner {
 #[derive(Debug, PartialEq, Serialize)]
 pub struct RoleList {
     pub roles: Vec<Role>,
+    /// One launchable runner per route and provider, including non-primary runners.
+    pub choices: Vec<Role>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -40,6 +42,7 @@ pub fn translate_roles(json: &str) -> Result<RoleList, String> {
     let input: RoutingState =
         serde_json::from_str(json).map_err(|error| format!("routing JSON: {error}"))?;
     let mut roles = Vec::with_capacity(input.config.routes.len());
+    let mut choices = Vec::new();
     for (role, runner_ids) in input.config.routes {
         let (runner, fallbacks) = runner_ids
             .split_first()
@@ -50,7 +53,7 @@ pub fn translate_roles(json: &str) -> Result<RoleList, String> {
             .get(runner)
             .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
         roles.push(Role {
-            role,
+            role: role.clone(),
             runner: runner.clone(),
             provider: details.provider.clone(),
             model: details.model.clone(),
@@ -58,8 +61,20 @@ pub fn translate_roles(json: &str) -> Result<RoleList, String> {
             sandbox: details.sandbox.clone(),
             fallbacks: fallbacks.to_vec(),
         });
+        for runner in runner_ids {
+            let details = input.config.runners.get(&runner)
+                .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
+            if choices.iter().any(|choice: &Role| choice.role == role && choice.provider == details.provider) {
+                continue;
+            }
+            choices.push(Role {
+                role: role.clone(), runner, provider: details.provider.clone(),
+                model: details.model.clone(), effort: details.effort.clone(),
+                sandbox: details.sandbox.clone(), fallbacks: Vec::new(),
+            });
+        }
     }
-    Ok(RoleList { roles })
+    Ok(RoleList { roles, choices })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -299,6 +314,8 @@ mod tests {
         assert_eq!(result.roles[1].fallbacks, ["codexBackup"]);
         assert_eq!(result.roles[1].effort, None);
         assert_eq!(result.roles[1].sandbox, None);
+        assert_eq!(result.choices.iter().filter(|choice| choice.role == "ORCHESTRATOR").count(), 2);
+        assert_eq!(result.choices.iter().find(|choice| choice.role == "ORCHESTRATOR" && choice.provider == "codex").unwrap().model, "gpt-backup");
     }
 
     #[test]

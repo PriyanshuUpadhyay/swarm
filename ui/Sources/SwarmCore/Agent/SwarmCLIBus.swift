@@ -62,10 +62,10 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     public func launch(
-        _ agent: SwarmAgentID, role: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch {
-        var arguments = ["launch", agent.rawValue, role]
+        var arguments = ["launch", agent.rawValue, role, "--provider", provider]
         if let account { arguments += ["--account", account] }
         let result = try await call(
             arguments, in: session, directory: directory, timeout: .seconds(60)
@@ -117,6 +117,10 @@ public struct SwarmCLIBus: SwarmBus {
     public func archive(_ sessions: [SwarmSessionID]) async throws {
         guard !sessions.isEmpty else { return }
         _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
+    }
+
+    public func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
+        _ = try await call(["session", "continue", newSession.rawValue, oldSession.rawValue])
     }
 
     public func type(

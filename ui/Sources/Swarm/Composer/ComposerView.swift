@@ -8,6 +8,7 @@ struct ComposerView: View {
     var draft: Binding<String>
     let isRunning: Bool
     let isSending: Bool
+    var sendDisabledReason: String? = nil
     let commandSource: ComposerCommandSource
     let mentionSource: ComposerMentionSource
     let scratchDirectory: String
@@ -46,6 +47,9 @@ struct ComposerView: View {
             }
             if let actionError {
                 Text(verbatim: actionError).font(.caption).foregroundStyle(.red)
+            }
+            if let sendDisabledReason {
+                Text(verbatim: sendDisabledReason).font(.caption).foregroundStyle(.secondary)
             }
         }
         .onDrop(
@@ -127,7 +131,7 @@ struct ComposerView: View {
                         .background(.primary, in: RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.plain)
-                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending)
+                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending || sendDisabledReason != nil)
                 .help("Send (Return)")
             }
         }
@@ -315,7 +319,7 @@ struct ComposerView: View {
 
     private func submit() {
         let snapshot = draft.wrappedValue
-        guard !isSending, Composer.outgoing(snapshot) != nil else {
+        guard !isSending, sendDisabledReason == nil, Composer.outgoing(snapshot) != nil else {
             return
         }
         attachmentGeneration += 1
@@ -325,7 +329,7 @@ struct ComposerView: View {
                 actionError = nil
                 focus.wrappedValue = true
             } catch {
-                actionError = String(describing: error)
+                actionError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }
@@ -336,7 +340,7 @@ struct ComposerView: View {
                 try await interrupt()
                 actionError = nil
             } catch {
-                actionError = String(describing: error)
+                actionError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }

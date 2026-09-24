@@ -10,7 +10,7 @@ struct SwarmProfilesTests {
     func decodesRoles() async throws {
         let source = source(
             expectedArguments: ["roles", "--json"],
-            stdout: #"{"roles":[{"role":"code.complex","runner":"codex-sol-high-agent","provider":"codex","model":"gpt-5.6-sol","effort":"high","sandbox":"workspace-write","fallbacks":[]}] }"#
+            stdout: #"{"roles":[{"role":"code.complex","runner":"codex-sol-high-agent","provider":"codex","model":"gpt-5.6-sol","effort":"high","sandbox":"workspace-write","fallbacks":[]}],"choices":[]}"#
         )
 
         let roles = try await source.roles()
@@ -21,11 +21,22 @@ struct SwarmProfilesTests {
         )])
     }
 
+    @Test("launch choices include a role's alternate provider")
+    func decodesLaunchChoices() async throws {
+        let source = source(
+            expectedArguments: ["roles", "--json"],
+            stdout: #"{"roles":[{"role":"search.web","runner":"codex-low","provider":"codex","model":"gpt","effort":null,"sandbox":null,"fallbacks":["claude-low"]}],"choices":[{"role":"search.web","runner":"codex-low","provider":"codex","model":"gpt","effort":null,"sandbox":null,"fallbacks":[]},{"role":"search.web","runner":"claude-low","provider":"claude","model":"sonnet","effort":null,"sandbox":null,"fallbacks":[]}]}"#
+        )
+        let choices = try await source.launchChoices()
+        #expect(choices.map(\.provider) == ["codex", "claude"])
+        #expect(choices.last?.model == "sonnet")
+    }
+
     @Test("decodes nullable role fields and fallbacks")
     func decodesRoleOptionals() async throws {
         let source = source(
             expectedArguments: ["roles", "--json"],
-            stdout: #"{"roles":[{"role":"code.fast","runner":"claude-fast","provider":"claude","model":"haiku","effort":null,"sandbox":null,"fallbacks":["codex-fast"]}]}"#
+            stdout: #"{"roles":[{"role":"code.fast","runner":"claude-fast","provider":"claude","model":"haiku","effort":null,"sandbox":null,"fallbacks":["codex-fast"]}],"choices":[]}"#
         )
 
         let roles = try await source.roles()
@@ -119,7 +130,7 @@ struct SwarmProfilesTests {
             #expect(cwd == AgentScratchDirectory.current())
             #expect(cwd != NSHomeDirectory())
             #expect(FileManager.default.fileExists(atPath: cwd))
-            return ShellResult(status: 0, stdout: #"{"roles":[]}"#, stderr: "")
+            return ShellResult(status: 0, stdout: #"{"roles":[],"choices":[]}"#, stderr: "")
         }
 
         _ = try await source.roles()

@@ -30,6 +30,10 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         try await read(["roles", "--json"], as: SwarmRoleList.self).roles
     }
 
+    public func launchChoices() async throws -> [SwarmRole] {
+        try await read(["roles", "--json"], as: SwarmRoleList.self).choices
+    }
+
     /// Saves to the shared router config, so every role using this runner changes.
     public func setModel(_ model: String, for runner: String) async throws {
         let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
