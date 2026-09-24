@@ -21,15 +21,15 @@ struct SwarmProfilesTests {
         )])
     }
 
-    @Test("launch choices include a role's alternate provider")
-    func decodesLaunchChoices() async throws {
+    @Test("reads provider models without using routed roles")
+    func decodesModels() async throws {
         let source = source(
-            expectedArguments: ["roles", "--json"],
-            stdout: #"{"roles":[{"role":"search.web","runner":"codex-low","provider":"codex","model":"gpt","effort":null,"sandbox":null,"fallbacks":["claude-low"]}],"choices":[{"role":"search.web","runner":"codex-low","provider":"codex","model":"gpt","effort":null,"sandbox":null,"fallbacks":[]},{"role":"search.web","runner":"claude-low","provider":"claude","model":"sonnet","effort":null,"sandbox":null,"fallbacks":[]}]}"#
+            expectedArguments: ["models", "--provider", "codex", "--json"],
+            stdout: #"{"provider":"codex","models":[{"id":"gpt-6-sol","label":"GPT-6-Sol"}]}"#
         )
-        let choices = try await source.launchChoices()
-        #expect(choices.map(\.provider) == ["codex", "claude"])
-        #expect(choices.last?.model == "sonnet")
+        #expect(try await source.models(provider: "codex") == [
+            SwarmModel(id: "gpt-6-sol", label: "GPT-6-Sol")
+        ])
     }
 
     @Test("decodes nullable role fields and fallbacks")

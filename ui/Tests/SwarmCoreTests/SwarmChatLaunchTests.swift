@@ -14,13 +14,13 @@ struct SwarmChatLaunchTests {
         ])
         let bus = bus(calls)
         let plan = try #require(SwarmChatLaunchPlan(
-            directory: "/work", role: role, account: .auto
+            directory: "/work", provider: "claude", model: "sonnet", account: .auto
         ))
         let created = try await SwarmChatLauncher.start(plan, bus: bus)
         #expect(created.rawValue == id)
         #expect(await calls.arguments == [
             ["init"], ["session", "new", "lane"],
-            ["launch", "orchestrator", "council.claude", "--provider", "claude", "--account", "auto"],
+            ["launch", "orchestrator", "chat", "--provider", "claude", "--model", "sonnet", "--account", "auto"],
         ])
         #expect(await calls.adapters == ["tmux-solo", "tmux-solo", "tmux-solo"])
     }
@@ -33,7 +33,7 @@ struct SwarmChatLaunchTests {
             ShellResult(status: 1, stdout: "", stderr: "not signed in\nmore detail\n"),
         ])
         let plan = try #require(SwarmChatLaunchPlan(
-            directory: "/work", role: role, account: .auto
+            directory: "/work", provider: "claude", model: "sonnet", account: .auto
         ))
         do {
             _ = try await SwarmChatLauncher.start(plan, bus: bus(calls))
@@ -41,13 +41,6 @@ struct SwarmChatLaunchTests {
         } catch let error as SwarmProfileError {
             #expect(error.message == "not signed in")
         }
-    }
-
-    private var role: SwarmRole {
-        SwarmRole(
-            role: "council.claude", runner: "claude", provider: "claude",
-            model: "opus", effort: "high", sandbox: nil, fallbacks: []
-        )
     }
 
     private func bus(_ calls: LaunchCalls) -> SwarmCLIBus {

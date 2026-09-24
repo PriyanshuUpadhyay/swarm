@@ -61,36 +61,15 @@ struct SwarmSpikeTests {
         #expect(ChairLogTitle.firstUserPrompt(path: agents.path) == nil)
     }
 
-    @Test("Launch choice rejects a role the app cannot run")
-    func launchChoice() {
-        var choice = SwarmLaunchChoice()
-        let role = SwarmRole(
-            role: "code", runner: "external", provider: "unknown", model: "model",
-            effort: nil, sandbox: nil, fallbacks: []
-        )
-        let accepted = choice.selectRole(role)
-        #expect(!accepted)
-        #expect(choice.roleID == nil)
-    }
-
-    @Test("Launch roles follow the selected provider, including AGY")
-    func providerRoles() {
-        let roles = [
-            SwarmRole(role: "claude-role", runner: "x", provider: "claude", model: "opus", effort: nil, sandbox: nil, fallbacks: []),
-            SwarmRole(role: "agy-role", runner: "y", provider: "agy", model: "gemini", effort: nil, sandbox: nil, fallbacks: []),
-        ]
-        #expect(SwarmLaunchChoice.roles(roles, for: "claude").map(\.id) == ["claude-role"])
-        #expect(SwarmLaunchChoice.roles(roles, for: "agy").map(\.id) == ["agy-role"])
-        #expect(SwarmLaunchChoice.roles(roles, for: "all").map(\.id) == ["claude-role", "agy-role"])
-        #expect(SwarmLaunchChoice.roles(roles, for: "all", switching: true).map(\.id) == ["claude-role"])
-        #expect(SwarmRole(role: "same", runner: "a", provider: "claude", model: "opus", effort: nil, sandbox: nil, fallbacks: []).launchID
-            != SwarmRole(role: "same", runner: "b", provider: "codex", model: "gpt", effort: nil, sandbox: nil, fallbacks: []).launchID)
-        var choice = SwarmLaunchChoice()
-        let accepted = choice.selectRole(roles[1])
-        #expect(accepted)
-        #expect(SwarmChatLaunchPlan(directory: "/work", role: roles[1], account: .auto)?.account == nil)
-        #expect(SwarmChatLaunchPlan(directory: "/work", role: roles[0], account: .auto)?.account == "auto")
-        #expect(SwarmChatLaunchPlan(directory: "/work", role: roles[0], account: nil)?.account == nil)
+    @Test("A chat accepts a provider model without a routed role")
+    func directModel() {
+        let agy = SwarmChatLaunchPlan(directory: "/work", provider: "agy", model: "gemini-3.8-flash-low", account: .auto)
+        #expect(agy?.role == "chat")
+        #expect(agy?.model == "gemini-3.8-flash-low")
+        #expect(agy?.account == nil)
+        #expect(SwarmChatLaunchPlan(directory: "/work", provider: "codex", model: " gpt-6-sol ", account: .auto)?.model == "gpt-6-sol")
+        #expect(SwarmChatLaunchPlan(directory: "/work", provider: "unknown", model: "x", account: nil) == nil)
+        #expect(SwarmChatLaunchPlan(directory: "/work", provider: "claude", model: "--bad", account: nil) == nil)
     }
 
     private func session(_ id: String, cwd: String, chair: String?) -> SwarmSession {

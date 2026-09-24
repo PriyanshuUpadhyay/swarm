@@ -12,6 +12,28 @@ pub struct ResolvedRole {
     pub permission: Option<String>,
 }
 
+pub fn chat_role(provider: &str, model: &str) -> Result<ResolvedRole, String> {
+    if model.is_empty()
+        || model.starts_with('-')
+        || model.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+    {
+        return Err("swarm: model must be one non-empty name".into());
+    }
+    let sandbox = match provider {
+        "claude" | "agy" => None,
+        "codex" => Some("workspace-write".into()),
+        _ => return Err(format!("swarm: unsupported chat provider {provider}")),
+    };
+    Ok(ResolvedRole {
+        provider: Some(provider.into()),
+        model: Some(model.into()),
+        effort: Some("medium".into()),
+        sandbox,
+        approval: None,
+        permission: None,
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct Agent {
     pub id: String,
@@ -702,6 +724,16 @@ mod tests {
         assert!(!valid_agent_id("Coder-1"));
         assert!(!valid_agent_id("-coder"));
         assert!(!valid_agent_id(&"a".repeat(41)));
+    }
+
+    #[test]
+    fn a_chat_builds_the_chosen_model_without_a_router_role() {
+        let resolved = chat_role("codex", "gpt-6-sol").unwrap();
+        let args = argv("orchestrator", "chat", &resolved, "/home").unwrap();
+        assert!(args.windows(2).any(|pair| pair == ["--model", "gpt-6-sol"]));
+        assert!(args.windows(2).any(|pair| pair == ["--sandbox", "workspace-write"]));
+        assert!(chat_role("claude", "--bad").is_err());
+        assert!(chat_role("unknown", "model").is_err());
     }
 
     #[test]

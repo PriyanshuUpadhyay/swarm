@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -396,6 +396,17 @@ fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String
     }
 }
 
+fn list_models(provider: &str) -> Result<swarm::profiles::ModelList, Box<dyn std::error::Error>> {
+    let models = match provider {
+        "claude" => swarm::profiles::claude_models(),
+        "codex" => swarm::profiles::codex_models(tool_stdout("codex", &["debug", "models"])?.as_bytes())?,
+        "agy" => swarm::profiles::agy_models(&tool_stdout("agy", &["models"])?),
+        _ => return Err(format!("swarm: unsupported model provider {provider}").into()),
+    };
+    if models.is_empty() { return Err(format!("swarm: {provider} returned no models").into()); }
+    Ok(swarm::profiles::ModelList { provider: provider.into(), models })
+}
+
 /// Where `launch` may pre-trust Codex and AGY for `cwd`; see `swarm::bus::trust_target`.
 fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let git_root = std::process::Command::new("git")
@@ -642,6 +653,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let [cmd, provider_flag, provider, json] = args
+        && cmd == "models" && provider_flag == "--provider" && json == "--json"
+    {
+        return print_json(&list_models(provider)?);
+    }
+    if let [cmd, provider_flag, provider, json] = args
         && cmd == "accounts"
         && provider_flag == "--provider"
         && json == "--json"
@@ -821,18 +837,27 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some(index) => (&rest[..index], &rest[index + 1..]),
             None => (rest, &[][..]),
         };
-        let (mut account, mut cwd, mut requested_provider) = (None, None, None);
+        let (mut account, mut cwd, mut requested_provider, mut requested_model) = (None, None, None, None);
         for pair in options.chunks(2) {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
                 [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
                 [flag, value] if flag == "--provider" && matches!(value.as_str(), "claude" | "codex" | "agy") => requested_provider = Some(value.as_str()),
+                [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
                 _ => return Err(USAGE.into()),
             }
         }
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd).map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved = resolve_role(role, requested_provider)?;
+        let resolved = if role == "chat" {
+            swarm::bus::chat_role(
+                requested_provider.ok_or("swarm: chat needs --provider")?,
+                requested_model.ok_or("swarm: chat needs --model")?,
+            )?
+        } else {
+            if requested_model.is_some() { return Err("swarm: --model requires the chat role".into()); }
+            resolve_role(role, requested_provider)?
+        };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
