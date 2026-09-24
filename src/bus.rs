@@ -275,6 +275,57 @@ pub fn claude_child(agent_id: &str, cwd: &std::path::Path, extra: &[String], ses
     (cwd.join(".herdr").join("workers"), args)
 }
 
+/// The directory `swarm launch` may mark trusted for Codex and AGY: the git root when `cwd` is in a
+/// repository, since Codex keys trust on it, or else `cwd` itself when it sits inside one of the
+/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every checked dir
+/// must belong to the user and be closed to group and world writes, so another account cannot
+/// plant files in a place the agents then trust.
+pub fn trust_target(
+    cwd: &std::path::Path,
+    git_root: Option<&std::path::Path>,
+    home: &std::path::Path,
+    scratch_roots: &[std::path::PathBuf],
+) -> Result<std::path::PathBuf, String> {
+    use std::os::unix::fs::MetadataExt;
+    let (target, top) = match git_root {
+        Some(root) => (root.to_path_buf(), root.to_path_buf()),
+        None => {
+            let root = scratch_roots
+                .iter()
+                .find(|root| cwd.starts_with(root) && cwd != root.as_path())
+                .ok_or_else(|| format!("{} is not in a git repository or a scratch dir", cwd.display()))?;
+            (cwd.to_path_buf(), root.clone())
+        }
+    };
+    if target == home || target.parent().is_none() {
+        return Err(format!("{} is too broad to trust", target.display()));
+    }
+    let uid = std::fs::metadata(home).map_err(|error| format!("{}: {error}", home.display()))?.uid();
+    let mut dir = target.as_path();
+    loop {
+        let meta = std::fs::metadata(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+        if meta.uid() != uid || meta.mode() & 0o022 != 0 {
+            return Err(format!("{} must be yours and closed to group and world writes", dir.display()));
+        }
+        if dir == top {
+            return Ok(target);
+        }
+        dir = dir.parent().ok_or_else(|| format!("{} left its root", target.display()))?;
+    }
+}
+
+/// Run `change` while holding `lock`, so two launches cannot both read a settings file and the
+/// second write drop the first one's trust entry.
+pub fn with_lock<T>(lock: &std::path::Path, change: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(lock)
+        .map_err(|error| format!("swarm: cannot open {}: {error}", lock.display()))?;
+    file.lock().map_err(|error| format!("swarm: cannot lock {}: {error}", lock.display()))?;
+    change()
+}
+
 /// Mark `dir` trusted in Claude's `~/.claude.json`, so a child does not boot into the folder-trust
 /// dialog and wait there with nobody to answer. Returns whether the file changed.
 pub fn ensure_claude_trust(config: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
@@ -566,6 +617,54 @@ mod tests {
 
         std::fs::write(&config, "[]").unwrap();
         assert!(ensure_claude_trust(&config, std::path::Path::new("/repo")).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn trust_reaches_only_a_git_root_or_a_scratch_dir_that_is_closed_to_others() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("swarm-trust-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (home, repo, scratch) = (base.join("home"), base.join("home/repo"), base.join("scratch"));
+        let (seat, open) = (scratch.join("run/seat"), scratch.join("open"));
+        for dir in [&repo.join("sub"), &seat, &open] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        for dir in [&base, &home, &repo, &scratch, &scratch.join("run"), &seat] {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let roots = [scratch.clone()];
+
+        assert_eq!(trust_target(&repo.join("sub"), Some(&repo), &home, &roots), Ok(repo.clone()));
+        assert_eq!(trust_target(&seat, None, &home, &roots), Ok(seat.clone()));
+        assert!(trust_target(&home, None, &home, &roots).is_err());
+        assert!(trust_target(&home, Some(&home), &home, &roots).is_err());
+        assert!(trust_target(&scratch, None, &home, &roots).is_err());
+        assert!(trust_target(&open, None, &home, &roots).is_err());
+        std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(trust_target(&seat, None, &home, &roots).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn locked_trust_writes_keep_every_entry_when_launches_race() {
+        let root = std::env::temp_dir().join(format!("swarm-trust-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (settings, lock) = (root.join("settings.json"), root.join("trust.lock"));
+        let threads: Vec<_> = (0..8)
+            .map(|index| {
+                let (settings, lock) = (settings.clone(), lock.clone());
+                std::thread::spawn(move || {
+                    let dir = std::path::PathBuf::from(format!("/seat-{index}"));
+                    with_lock(&lock, || ensure_agy_trust(&settings, &dir)).unwrap();
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|thread| thread.join().unwrap());
+        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(value["trustedWorkspaces"].as_array().unwrap().len(), 8);
         std::fs::remove_dir_all(root).unwrap();
     }
 

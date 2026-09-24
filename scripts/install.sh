@@ -8,10 +8,16 @@
 #       the SessionStart hook in ~/.claude/settings.json and ~/.codex/hooks.json runs this path
 #   $HOME/.config/herdr/bin/swarm-split.py -> <repo>/adapters/swarm-split.py
 #       the herdr adapter's spawn verb runs this path
-# Re-run after a clone moves; idempotent.
+# Run it from the main checkout: every link points into the checkout that runs it, and a feature
+# worktree is gone after merge. Re-run after a clone moves; idempotent.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
+branch=$(git -C "$repo" rev-parse --abbrev-ref HEAD)
+if [ "$branch" != main ]; then
+    echo "install.sh: $repo is on $branch; run it from the main checkout" >&2
+    exit 1
+fi
 hub=$HOME/.agents/skills
 mkdir -p "$hub" "$HOME/.claude/skills" "$HOME/.gemini/config/skills" \
     "$HOME/.claude/scripts" "$HOME/.config/herdr/bin"
