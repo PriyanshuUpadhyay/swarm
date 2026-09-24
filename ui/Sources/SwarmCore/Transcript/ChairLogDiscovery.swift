@@ -2,6 +2,8 @@ import Foundation
 
 /// Finds a provider log by its chair id or session start time.
 public enum ChairLogDiscovery {
+    private static let firstRecordCache = FirstRecordCache()
+
     public static func path(
         provider: String, chairID: String?, cwd: String, createdAt: Int,
         homes: [URL]
@@ -28,10 +30,11 @@ public enum ChairLogDiscovery {
         }
 
         var closest: (path: URL, distance: TimeInterval)?
+        let formatter = ISO8601DateFormatter()
 
         for home in roots {
             for candidate in candidates(provider: provider, home: home, manager: manager) {
-                guard let record = firstRecord(in: candidate),
+                guard let record = firstRecord(in: candidate, formatter: formatter),
                       record.cwd == URL(fileURLWithPath: cwd).standardizedFileURL.path else { continue }
                 let delay = record.date.timeIntervalSince1970 - TimeInterval(createdAt)
                 let distance = abs(delay)
@@ -80,11 +83,32 @@ public enum ChairLogDiscovery {
         }
     }
 
-    private static func firstRecord(in path: URL) -> (cwd: String, date: Date)? {
+    private static func firstRecord(
+        in path: URL, formatter: ISO8601DateFormatter
+    ) -> (cwd: String, date: Date)? {
+        let key = path.standardizedFileURL as NSURL
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: key.path ?? path.path),
+              let size = attributes[.size] as? NSNumber,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        let fileNumber = attributes[.systemFileNumber] as? NSNumber
+        if let cached = firstRecordCache.object(forKey: key),
+           cached.size == size, cached.modified == modified,
+           cached.fileNumber == fileNumber {
+            return cached.record
+        }
+        let record = parseFirstRecord(in: path, formatter: formatter)
+        firstRecordCache.setObject(CachedFirstRecord(
+            size: size, modified: modified, fileNumber: fileNumber, record: record
+        ), forKey: key)
+        return record
+    }
+
+    private static func parseFirstRecord(
+        in path: URL, formatter: ISO8601DateFormatter
+    ) -> (cwd: String, date: Date)? {
         guard let file = try? FileHandle(forReadingFrom: path) else { return nil }
         defer { try? file.close() }
         guard let data = try? file.read(upToCount: 65_536) else { return nil }
-        let formatter = ISO8601DateFormatter()
         for line in data.split(separator: 10) {
             guard let value = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
                   let timestamp = value["timestamp"] as? String,
@@ -97,5 +121,29 @@ public enum ChairLogDiscovery {
             return (URL(fileURLWithPath: cwd).standardizedFileURL.path, date)
         }
         return nil
+    }
+}
+
+private final class FirstRecordCache: @unchecked Sendable {
+    // NSCache synchronizes access to its entries, including calls from both discovery actors.
+    private let cache = NSCache<NSURL, CachedFirstRecord>()
+
+    func object(forKey key: NSURL) -> CachedFirstRecord? { cache.object(forKey: key) }
+    func setObject(_ value: CachedFirstRecord, forKey key: NSURL) {
+        cache.setObject(value, forKey: key)
+    }
+}
+
+private final class CachedFirstRecord {
+    let size: NSNumber
+    let modified: Date
+    let fileNumber: NSNumber?
+    let record: (cwd: String, date: Date)?
+
+    init(size: NSNumber, modified: Date, fileNumber: NSNumber?, record: (cwd: String, date: Date)?) {
+        self.size = size
+        self.modified = modified
+        self.fileNumber = fileNumber
+        self.record = record
     }
 }
