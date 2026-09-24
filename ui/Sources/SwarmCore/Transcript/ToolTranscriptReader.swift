@@ -7,6 +7,16 @@ public protocol TranscriptReading: Actor {
     func readIfChanged() async throws -> [TranscriptRecord]?
 }
 
+enum TranscriptReaderError: Error, CustomStringConvertible {
+    case streamEnded(String)
+
+    var description: String {
+        switch self {
+        case .streamEnded(let reason): "Transcript reader stopped: \(reason)"
+        }
+    }
+}
+
 /// Reads interactive CLI transcripts via the external Zig transcript subprocess.
 ///
 /// Spawns `transcript --follow --tail <messageLimit>` on initial read and streams new events
@@ -29,6 +39,7 @@ public actor ToolTranscriptReader: TranscriptReading {
     private var appendedThisRead = 0
     private var rebuiltThisRead = false
     private var hasStarted = false
+    private var streamFailure: String?
     private var startContinuation: CheckedContinuation<Void, Never>?
     private var isCatchingUp = true
 
@@ -75,15 +86,16 @@ public actor ToolTranscriptReader: TranscriptReading {
 
         streamTask = Task { [weak self] in
             await withTaskCancellationHandler {
+                var failure: String?
                 do {
                     for try await record in proc.stream {
                         guard !Task.isCancelled else { break }
                         await self?.ingest(record)
                     }
                 } catch {
-                    // Stream ended or process failed.
+                    failure = String(describing: error)
                 }
-                await self?.finishInitialCatchUp()
+                await self?.streamDidEnd(failure)
             } onCancel: {
                 proc.stop()
             }
@@ -107,6 +119,11 @@ public actor ToolTranscriptReader: TranscriptReading {
             startContinuation = nil
             cont.resume()
         }
+    }
+
+    private func streamDidEnd(_ failure: String?) {
+        streamFailure = failure ?? "the process exited"
+        finishInitialCatchUp()
     }
 
     private func ingest(_ record: TranscriptRecord) {
@@ -144,6 +161,9 @@ public actor ToolTranscriptReader: TranscriptReading {
 
     public func read() async throws -> [TranscriptRecord] {
         await startIfNeeded()
+        if records.isEmpty, let streamFailure {
+            throw TranscriptReaderError.streamEnded(streamFailure)
+        }
         let visible = Array(records.dropFirst(messageStart))
         appendedThisRead = 0
         rebuiltThisRead = false
@@ -152,7 +172,13 @@ public actor ToolTranscriptReader: TranscriptReading {
 
     public func readIfChanged() async throws -> [TranscriptRecord]? {
         await startIfNeeded()
-        guard appendedThisRead > 0 || rebuiltThisRead else { return nil }
+        if records.isEmpty, let streamFailure {
+            throw TranscriptReaderError.streamEnded(streamFailure)
+        }
+        guard appendedThisRead > 0 || rebuiltThisRead else {
+            if let streamFailure { throw TranscriptReaderError.streamEnded(streamFailure) }
+            return nil
+        }
         let visible = Array(records.dropFirst(messageStart))
         appendedThisRead = 0
         rebuiltThisRead = false

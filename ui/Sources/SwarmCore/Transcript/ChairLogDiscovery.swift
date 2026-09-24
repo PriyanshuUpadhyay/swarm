@@ -102,7 +102,11 @@ public enum ChairLogDiscovery {
                 at: sessions, includingPropertiesForKeys: [.isRegularFileKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
             )
-            return (files?.allObjects as? [URL] ?? []).filter {
+            let archived = home.appendingPathComponent("archived_sessions", isDirectory: true)
+            let archivedFiles = (try? manager.contentsOfDirectory(
+                at: archived, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            )) ?? []
+            return ((files?.allObjects as? [URL] ?? []) + archivedFiles).filter {
                 $0.lastPathComponent.hasPrefix("rollout-") && $0.pathExtension == "jsonl"
             }
         default:

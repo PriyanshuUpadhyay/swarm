@@ -11,7 +11,8 @@ build:
 
 test:
 	zig build --build-file ../packages/transcript/build.zig -Doptimize=ReleaseSafe
-	SWARM_TRANSCRIPT_TOOL=$(abspath ../packages/transcript/zig-out/bin/transcript) swift test --disable-sandbox
+	# Transcript subprocess tests can stall when Swift Testing runs them in parallel.
+	SWARM_TRANSCRIPT_TOOL=$(abspath ../packages/transcript/zig-out/bin/transcript) swift test --disable-sandbox --no-parallel
 
 lint:
 	./Tools/lint.sh

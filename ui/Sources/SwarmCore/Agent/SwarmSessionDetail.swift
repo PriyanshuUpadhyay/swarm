@@ -10,14 +10,10 @@ public enum ChairTranscriptSource: Sendable, Equatable {
         session: SwarmSession, chairProvider: String? = nil,
         logExists: (String) -> Bool
     ) -> ChairTranscriptSource {
-        let provider = session.chairProvider ?? chairProvider
-        if provider == "agy" { return .unsupported }
+        guard let provider = session.chairProvider ?? chairProvider,
+              provider == "claude" || provider == "codex" else { return .unsupported }
         guard let path = session.chairLog, !path.isEmpty, logExists(path) else { return .waiting }
-        switch provider {
-        case "claude": return .ready(log: URL(fileURLWithPath: path), format: "claude")
-        case "codex": return .ready(log: URL(fileURLWithPath: path), format: "codex")
-        default: return .unsupported
-        }
+        return .ready(log: URL(fileURLWithPath: path), format: provider)
     }
 }
 
@@ -74,7 +70,7 @@ public actor SwarmChairTranscript {
         let timing = SwarmPerformance.begin("TranscriptPoll")
         defer { timing.end(count: rows.count) }
         var resolved = session
-        if resolved.chairLog == nil {
+        if resolved.chairLog.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true {
             resolved.chairLog = await discoveredLog(
                 for: session, chairProvider: chairProvider
             )?.path
@@ -86,9 +82,7 @@ public actor SwarmChairTranscript {
         case .waiting:
             reader = nil
             log = nil
-            rows = []
-            rawEntries = []
-            return .waiting
+            return rows.isEmpty ? .waiting : .rows(rows, raw: rawEntries)
         case .unsupported:
             return .notice("No transcript reader for this provider yet")
         case .ready(let path, let format):
@@ -98,8 +92,6 @@ public actor SwarmChairTranscript {
             if path != log {
                 log = path
                 reader = ToolTranscriptReader(binary: binary, format: format, log: path)
-                rows = []
-                rawEntries = []
             }
             do {
                 let records: [TranscriptRecord]?
@@ -116,7 +108,11 @@ public actor SwarmChairTranscript {
                 }
                 return .rows(rows, raw: rawEntries)
             } catch {
-                return .unavailable(String(describing: error))
+                reader = nil
+                log = nil
+                return rows.isEmpty
+                    ? .unavailable(String(describing: error))
+                    : .rows(rows, raw: rawEntries)
             }
         }
     }
@@ -125,7 +121,8 @@ public actor SwarmChairTranscript {
         for session: SwarmSession, chairProvider: String? = nil
     ) async -> URL? {
         let provider = session.chairProvider ?? chairProvider
-        guard session.chairLog == nil, let provider,
+        guard session.chairLog.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true,
+              let provider,
               provider == "claude" || provider == "codex" else { return nil }
         if homesByProvider[provider] == nil {
             let accounts = try? await profiles.accounts(provider: provider)
@@ -136,7 +133,7 @@ public actor SwarmChairTranscript {
         }
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID
-            || discoveredLog == nil {
+            || discoveredLog.map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true {
             discoveredLog = ChairLogDiscovery.path(
                 provider: provider, chairID: session.chairID?.rawValue,
                 cwd: session.cwd, createdAt: session.createdAt,
