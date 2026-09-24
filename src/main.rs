@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -86,6 +86,13 @@ fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>>
     let command = routing_command()?;
     let json = tool_stdout(&command, &["web-state"])?;
     swarm::profiles::translate_roles(&json).map_err(|error| format!("swarm: {error}").into())
+}
+
+fn set_role_model(command: &str, runner: &str, model: &str) -> Result<String, Box<dyn std::error::Error>> {
+    if model.is_empty() || model.chars().any(char::is_whitespace) {
+        return Err("swarm: model must be one non-empty name".into());
+    }
+    tool_stdout(command, &["bump", runner, model])
 }
 
 fn resolve_role(role: &str) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
@@ -627,6 +634,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, json] = args && cmd == "roles" && json == "--json" {
         return print_json(&load_roles()?);
     }
+    if let [cmd, sub, runner, model] = args && cmd == "roles" && sub == "set-model" {
+        let output = set_role_model(&routing_command()?, runner, model)?;
+        print!("{output}");
+        return Ok(());
+    }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "accounts"
         && provider_flag == "--provider"
@@ -989,6 +1001,23 @@ mod tests {
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
+
+    #[test]
+    fn model_edit_calls_the_router_and_rejects_blank_names() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!("swarm-model-test-{}", uuid::Uuid::now_v7()));
+        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let command = path.to_str().unwrap();
+        assert_eq!(
+            set_role_model(command, "codex-sol-high-agent", "gpt-6-sol").unwrap(),
+            "bump\ncodex-sol-high-agent\ngpt-6-sol\n"
+        );
+        assert!(set_role_model(command, "codex-sol-high-agent", " ").is_err());
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn sweep_rerings_a_child_once_for_old_unseen_messages() {

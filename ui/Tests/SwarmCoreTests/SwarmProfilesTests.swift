@@ -36,6 +36,28 @@ struct SwarmProfilesTests {
         )])
     }
 
+    @Test("model edits use the runner shared by routed profiles")
+    func updatesRunnerModel() async throws {
+        let source = source(
+            expectedArguments: ["roles", "set-model", "codex-sol-high-agent", "gpt-6-sol"],
+            stdout: "Set model 'gpt-6-sol' on: codex-sol-high-agent\n"
+        )
+
+        try await source.setModel(" gpt-6-sol ", for: "codex-sol-high-agent")
+    }
+
+    @Test("a failed model edit keeps the CLI error")
+    func failedModelEdit() async {
+        let source = source(
+            expectedArguments: ["roles", "set-model", "codex-sol-high-agent", "bad-model"],
+            status: 1, stderr: "agent-routing: invalid model\n"
+        )
+
+        await #expect(throws: SwarmProfileError.failed("agent-routing: invalid model")) {
+            try await source.setModel("bad-model", for: "codex-sol-high-agent")
+        }
+    }
+
     @Test("decodes the Claude accounts contract")
     func decodesClaudeAccounts() async throws {
         let source = source(
