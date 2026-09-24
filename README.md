@@ -73,6 +73,10 @@ for a compact summary, starts the chosen Claude or Codex model, and keeps both p
 row. If the old pane has closed, the new chair receives recent messages and makes its own compact
 summary.
 
+For a Git project, New Task starts a branch from the default branch in a worktree beside the
+project, then opens New Chat there. Empty task worktrees stay available from the project view.
+Plain folders keep the New Chat action without Git worktrees.
+
 ## Agents
 
 Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that
