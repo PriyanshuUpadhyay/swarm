@@ -115,6 +115,8 @@ struct ComposerTests {
         #expect(Composer.removing(path: path, from: "/tmp/a.txt.bak") == "/tmp/a.txt.bak")
         #expect(Composer.contains(path: spacedPath, in: "open /tmp/a file.txt now"))
         #expect(Composer.removing(path: spacedPath, from: "open /tmp/a file.txt now") == "open now")
+        #expect(Composer.contains(path: "a a", in: "xa a a"))
+        #expect(Composer.removing(path: "a a", from: "xa a a") == "xa ")
         #expect(Composer.retainedAttachments(
             [ComposerAttachment(path: path), ComposerAttachment(path: spacedPath)],
             in: "open /tmp/a file.txt now"

@@ -49,7 +49,7 @@ public enum Composer {
             let rightBounded = range.upperBound == draft.endIndex
                 || draft[range.upperBound].isWhitespace
             if leftBounded && rightBounded { return range }
-            cursor = range.upperBound
+            cursor = draft.index(after: range.lowerBound)
         }
         return nil
     }
