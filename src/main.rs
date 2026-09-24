@@ -387,6 +387,30 @@ fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String
     }
 }
 
+/// Where `launch` may pre-trust Codex and AGY for `cwd`; see `swarm::bus::trust_target`.
+fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let git_root = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| std::fs::canonicalize(String::from_utf8_lossy(&output.stdout).trim()).ok());
+    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(user_home).map_err(|error| error.to_string())?);
+    let swarm_home = swarm::paths::home().map_err(|error| error.to_string())?;
+    let scratch_roots: Vec<_> = [
+        std::path::PathBuf::from("/private/tmp/councils"),
+        std::path::PathBuf::from(format!("/private/tmp/claude-{uid}")),
+        std::path::Path::new(&swarm_home).join(".swarm/ws"),
+        user_home.join("swarm/workspaces.noindex"),
+    ]
+    .iter()
+    .filter_map(|root| std::fs::canonicalize(root).ok())
+    .collect();
+    swarm::bus::trust_target(cwd, git_root.as_deref(), &std::fs::canonicalize(user_home).map_err(|error| error.to_string())?, &scratch_roots)
+}
+
 fn spawn_agent(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -773,6 +797,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(reason) = swarm::bus::launch_refusal(env::var("SWARM_AGENT_ID").ok().as_deref(), herdr_agent_pane.as_deref()) {
             return Err(reason.into());
         }
+        // Fail before any trust write, so a stray launch outside a session changes nothing.
+        session_id()?;
         let (options, extra) = match rest.iter().position(|arg| arg == "--") {
             Some(index) => (&rest[..index], &rest[index + 1..]),
             None => (rest, &[][..]),
@@ -796,27 +822,44 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
+        let lock = root.join("trust.lock");
         match provider.as_deref() {
-            Some("codex") => {
-                let home = if let Some(account_name) = account {
-                    let accounts = load_accounts("codex", true)?;
-                    let account = swarm::profiles::resolve_account(&accounts, account_name)
-                        .map_err(|error| format!("swarm: {error}"))?;
-                    std::path::PathBuf::from(&account.home)
-                } else {
-                    default_codex_home()?
-                };
-                swarm::bus::ensure_codex_trust(&home, &cwd)?;
-            }
-            Some("agy") => {
-                swarm::bus::ensure_agy_trust(&user_home.join(".gemini/antigravity-cli/settings.json"), &cwd)?;
-            }
+            Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
+                Ok(target) if provider == "codex" => {
+                    // Without --account, yelo's `codex` in the pane picks the profile, so every
+                    // profile it might pick needs the entry.
+                    let homes = if let Some(account_name) = account {
+                        let accounts = load_accounts("codex", true)?;
+                        let account = swarm::profiles::resolve_account(&accounts, account_name)
+                            .map_err(|error| format!("swarm: {error}"))?;
+                        vec![std::path::PathBuf::from(&account.home)]
+                    } else {
+                        let mut homes = vec![default_codex_home()?];
+                        homes.extend(
+                            std::fs::read_dir(&user_home)?
+                                .filter_map(Result::ok)
+                                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".codex-") && entry.path().is_dir())
+                                .map(|entry| entry.path()),
+                        );
+                        homes.sort();
+                        homes.dedup();
+                        homes
+                    };
+                    swarm::bus::with_lock(&lock, || homes.iter().try_for_each(|home| swarm::bus::ensure_codex_trust(home, &target)))?;
+                }
+                Ok(target) => {
+                    let settings = user_home.join(".gemini/antigravity-cli/settings.json");
+                    swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_trust(&settings, &target))?;
+                }
+                Err(reason) => eprintln!("swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"),
+            },
             // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
             Some("claude") if agent_id != "orchestrator" => {
                 let (dir, args) = swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
                 std::fs::create_dir_all(&dir)?;
                 pane_dir = std::fs::canonicalize(&dir)?;
-                swarm::bus::ensure_claude_trust(&user_home.join(".claude.json"), &pane_dir)?;
+                let config = user_home.join(".claude.json");
+                swarm::bus::with_lock(&lock, || swarm::bus::ensure_claude_trust(&config, &pane_dir))?;
                 extra = args;
             }
             _ => {}
