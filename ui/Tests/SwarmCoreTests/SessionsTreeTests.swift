@@ -170,6 +170,10 @@ struct SessionsTreeTests {
         let rows = workspace.sessions
         #expect(rows.count == 1)
         #expect(rows[0].sessions.count == 2)
+        #expect(Set(tree.archiveIDs(for: rows[0].id))
+            == [SwarmSessionID("older"), SwarmSessionID("newer")])
+        #expect(Set(tree.archiveIDs(for: SwarmSessionID("older")))
+            == [SwarmSessionID("older"), SwarmSessionID("newer")])
         #expect(tree.session(rows[0].id)?.id == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("newer")) == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("gone")) == nil)
