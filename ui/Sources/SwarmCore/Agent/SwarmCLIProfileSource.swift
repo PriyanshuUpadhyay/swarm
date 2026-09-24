@@ -30,6 +30,15 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         try await read(["roles", "--json"], as: SwarmRoleList.self).roles
     }
 
+    /// Saves to the shared router config, so every role using this runner changes.
+    public func setModel(_ model: String, for runner: String) async throws {
+        let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw SwarmProfileError.failed("Enter a model name")
+        }
+        _ = try await call(["roles", "set-model", runner, name])
+    }
+
     public func accounts(provider: String) async throws -> SwarmAccountList {
         try await read(["accounts", "--provider", provider, "--json"], as: SwarmAccountList.self)
     }
@@ -39,6 +48,17 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
     }
 
     private func read<Value: Decodable>(_ arguments: [String], as type: Value.Type) async throws -> Value {
+        let result = try await call(arguments)
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            return try decoder.decode(type, from: Data(result.stdout.utf8))
+        } catch {
+            throw SwarmProfileError.failed("swarm returned invalid JSON")
+        }
+    }
+
+    private func call(_ arguments: [String]) async throws -> ShellResult {
         let result: ShellResult
         do {
             // swarm needs no project, and remaking the temporary folder per call also survives
@@ -62,12 +82,6 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
             throw SwarmProfileError.failed(firstLine)
         }
 
-        do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return try decoder.decode(type, from: Data(result.stdout.utf8))
-        } catch {
-            throw SwarmProfileError.failed("swarm returned invalid JSON")
-        }
+        return result
     }
 }

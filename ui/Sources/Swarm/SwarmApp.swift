@@ -28,11 +28,7 @@ final class SessionsTreeModel {
     private let drafts = ComposerDraftStore()
 
     var tree = SessionsTree(projects: [])
-    var selectedSessionID = UserDefaults.standard.string(forKey: "selectedSessionID").map(SwarmSessionID.init) {
-        didSet {
-            UserDefaults.standard.set(selectedSessionID?.rawValue, forKey: "selectedSessionID")
-        }
-    }
+    var selectedSessionID: SwarmSessionID?
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var commandSource: ComposerCommandSource?
@@ -41,7 +37,7 @@ final class SessionsTreeModel {
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
-    func select(_ id: SwarmSessionID) {
+    func select(_ id: SwarmSessionID?) {
         pendingID = nil
         selectedSessionID = id
         agents = []
@@ -128,6 +124,10 @@ private struct SessionsWindow: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedSessionID) {
+                Button { model.select(nil) } label: {
+                    Label("Home", systemImage: "house")
+                }
+                .buttonStyle(.plain)
                 ForEach(sidebarRows) { entry in
                     switch entry {
                     case .project(let project):
@@ -149,7 +149,7 @@ private struct SessionsWindow: View {
                 guard oldID != id else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
-                if let id { model.select(id) }
+                model.select(id)
             }
             .toolbar {
                 Button {
@@ -176,10 +176,8 @@ private struct SessionsWindow: View {
                     isCurrentSession: { model.selectedSession?.id == row.id }
                 )
                     .id(row.id)
-            } else if let error = model.error {
-                ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {
-                ContentUnavailableView("Select a chat", systemImage: "bubble.left")
+                AgentProfilesHome(sessionsError: model.error)
             }
         }
         .background(WindowFrameRestorer())

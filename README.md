@@ -40,6 +40,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
 | `roles --json` | any | List routed roles as JSON. |
+| `roles set-model <runner> <model>` | any | Save a runner's model in the shared routing config. Every role using that runner changes. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
 | `usage --json` | any | List account use meters as JSON. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
