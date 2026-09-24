@@ -180,6 +180,9 @@ struct ComposerTests {
         try "---\ndescription: >\n  First line\n  Second line\n---\n".write(
             to: folded, atomically: true, encoding: .utf8
         )
+        try "---\ndescription: >-\n  Kept line\n---\n".write(
+            to: commands.appendingPathComponent("chomped.md"), atomically: true, encoding: .utf8
+        )
         let header = "---\ndescription: Survives cut\n---\n"
         let text = header + String(repeating: "x", count: 8_191 - header.utf8.count) + "é"
         try text.write(to: cut, atomically: true, encoding: .utf8)
@@ -188,6 +191,7 @@ struct ComposerTests {
         ))
         #expect(found.first { $0.name == "literal" }?.detail == "First line\nSecond line")
         #expect(found.first { $0.name == "folded" }?.detail == "First line Second line")
+        #expect(found.first { $0.name == "chomped" }?.detail == "Kept line")
         #expect(found.first { $0.name == "cut" }?.detail == "Survives cut")
     }
 
@@ -212,13 +216,14 @@ struct ComposerTests {
         ).count == 1)
     }
 
-    @Test("A late attachment needs the same draft and generation")
+    @Test("A late attachment needs the same chat and generation")
     func attachmentContext() {
-        let context = ComposerAttachmentContext(sessionID: "one", draft: "hello", generation: 2)
-        #expect(context.matches(sessionID: "one", draft: "hello", generation: 2))
-        #expect(!context.matches(sessionID: "one", draft: "", generation: 3))
-        #expect(!context.matches(sessionID: "two", draft: "hello", generation: 2))
-        #expect(!context.matches(sessionID: "one", draft: "hello", generation: 3))
+        let first = ComposerAttachmentContext(sessionID: "one", generation: 2)
+        let second = ComposerAttachmentContext(sessionID: "one", generation: 2)
+        #expect(first.matches(sessionID: "one", generation: 2))
+        #expect(second.matches(sessionID: "one", generation: 2))
+        #expect(!first.matches(sessionID: "two", generation: 2))
+        #expect(!first.matches(sessionID: "one", generation: 3))
     }
 
     @Test("A chip needs a whole path, including paths with spaces")

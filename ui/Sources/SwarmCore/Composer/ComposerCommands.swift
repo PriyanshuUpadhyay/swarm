@@ -44,11 +44,11 @@ public struct ComposerCommandSource: Equatable, Sendable {
         homeDirectory: String
     ) -> Self {
         let kind = provider?.lowercased()
-        let log = session.chairLog.map { URL(fileURLWithPath: $0).standardized.path }
+        let log = session.chairLog.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardized.path }
         let account = accounts.filter { account in
             guard kind == "claude" || kind == "codex" else { return false }
             guard let log else { return false }
-            let home = URL(fileURLWithPath: account.home).standardized.path
+            let home = URL(fileURLWithPath: account.home).resolvingSymlinksInPath().standardized.path
             return log == home || log.hasPrefix(home + "/")
         }.max { $0.home.count < $1.home.count }
         let key = kind == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
@@ -230,7 +230,7 @@ public enum ComposerCommandCatalog {
             if trimmed.hasPrefix("name:") { name = fieldValue(trimmed, key: "name") }
             if trimmed.hasPrefix("description:") {
                 let value = fieldValue(trimmed, key: "description")
-                if value == "|" || value == ">" {
+                if let value, ["|", ">", "|-", ">-", "|+", ">+"].contains(value) {
                     var parts: [String] = []
                     var indentation: Int?
                     while index + 1 < lines.count {
@@ -247,9 +247,10 @@ public enum ComposerCommandCatalog {
                         parts.append(String(next.dropFirst(width)))
                         index += 1
                     }
-                    let joined = value == "|" ? parts.joined(separator: "\n")
+                    let joined = value.hasPrefix("|") ? parts.joined(separator: "\n")
                         : parts.joined(separator: " ")
-                    detail = String(joined.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+                    let text = joined.trimmingCharacters(in: .whitespacesAndNewlines)
+                    detail = text.isEmpty ? nil : String(text.prefix(120))
                 } else {
                     detail = value
                 }
