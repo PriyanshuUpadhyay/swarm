@@ -35,14 +35,28 @@ private final class TranscriptProcessLifecycle: @unchecked Sendable {
         return true
     }
 
+    /// Signals the process and returns at once. `stop` runs from `deinit` and from stream
+    /// termination, which can be the main thread inside a SwiftUI update. `waitUntilExit` spins
+    /// the calling thread's run loop, and on the main thread that re-enters the update and
+    /// AttributeGraph aborts, so only `reap` waits.
     func stop() {
         lock.lock()
         defer { lock.unlock() }
         stopped = true
-        guard started, !reaped else { return }
-        if process.isRunning { process.terminate() }
+        if started, !reaped, process.isRunning { process.terminate() }
+    }
+
+    /// Waits for the process to exit. Call it only from the reader task, never the main thread.
+    /// The wait happens outside the lock, so a `stop` from another thread never blocks behind it.
+    func reap() {
+        lock.lock()
+        let waiting = started && !reaped
+        lock.unlock()
+        guard waiting else { return }
         process.waitUntilExit()
+        lock.lock()
         reaped = true
+        lock.unlock()
     }
 
     var processIdentifier: Int32? {
@@ -153,6 +167,7 @@ public final class TranscriptToolProcess: Sendable {
                 }
 
                 lifecycle.stop()
+                lifecycle.reap()
                 let stderrBuffer = await stderrTask.value
 
                 if let status = lifecycle.terminationStatus, status != 0 {
