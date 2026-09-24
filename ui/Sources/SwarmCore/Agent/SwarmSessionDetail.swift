@@ -190,9 +190,9 @@ public enum SwarmPanePolicy {
 
     public static func unavailableReason(session: SwarmSession, agent: SwarmAgent) -> String? {
         switch session.adapter {
-        case "tmux-solo":
+        case "tmux-solo", "herdr":
             return agent.pane == nil ? "This agent has no pane" : nil
-        case "tmux", "herdr": return "This session's host has no attach"
+        case "tmux": return "This session's host has no attach"
         default: return "This session's host has no attach"
         }
     }

@@ -179,6 +179,12 @@ mod tests {
     }
 
     #[test]
+    fn shipped_herdr_attaches_by_agent_pane() {
+        let adapter = parse("herdr", shipped("herdr").unwrap()).unwrap();
+        assert_eq!(adapter.attach.as_deref(), Some("herdr agent attach \"$SWARM_PANE\""));
+    }
+
+    #[test]
     fn parses_and_runs_optional_interrupt() {
         let adapter = parse("fake", &format!("{FULL}interrupt = printf interrupted\n")).unwrap();
         assert_eq!(adapter.run("interrupt", &[]).unwrap(), "interrupted");

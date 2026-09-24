@@ -5,17 +5,18 @@ import TranscriptTool
 
 @Suite("Session detail")
 struct SwarmSessionDetailTests {
-    @Test("Only tmux-solo agents with panes can attach")
+    @Test("Tmux-solo and Herdr agents with panes can attach")
     func adapterPolicy() {
         let agent = SwarmAgent(id: .init("orchestrator"), role: "orchestrator", pane: "%1", alive: true)
         #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux-solo"), agent: agent) == nil)
         #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux"), agent: agent)
             == "This session's host has no attach")
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "herdr"), agent: agent)
-            == "This session's host has no attach")
+        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "herdr"), agent: agent) == nil)
         var unstarted = agent
         unstarted.pane = nil
         #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux-solo"), agent: unstarted)
+            == "This agent has no pane")
+        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "herdr"), agent: unstarted)
             == "This agent has no pane")
     }
 
@@ -36,7 +37,7 @@ struct SwarmSessionDetailTests {
         #expect(cells.map(\.kind) == [.attach, .attach])
         value.adapter = "herdr"
         #expect(SwarmPanePolicy.cells(session: value, agents: agents).first?.kind
-            == .notice("This session's host has no attach"))
+            == .attach)
     }
 
     @Test("The pane column exists only while a child agent is live")
