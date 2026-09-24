@@ -5,42 +5,52 @@ import SwarmCore
 @MainActor @Observable
 final class NewChatModel {
     private let profiles = SwarmCLIProfileSource()
+    static let otherModel = "__other__"
 
-    var provider = "all"
+    var provider = "codex"
     var isSwitch = false
-    var roles: [SwarmRole] = []
-    var roleID: String?
-    var choice = SwarmLaunchChoice()
+    var models: [SwarmModel] = []
+    var modelID = otherModel
+    var customModel = ""
+    var modelCaption: String?
+    var isLoadingModels = false
     var accountOptions: [SwarmAccountOption] = []
     var accountSelection: SwarmAccountSelection?
     var accountCaption: String?
+    var isLoadingAccounts = false
     var errorMessage: String?
     var isLoading = true
     var isStarting = false
 
-    var filteredRoles: [SwarmRole] {
-        SwarmLaunchChoice.roles(roles, for: provider, switching: isSwitch)
+    var selectedModel: String {
+        modelID == Self.otherModel ? customModel.trimmingCharacters(in: .whitespacesAndNewlines) : modelID
     }
-    var selectedRole: SwarmRole? { filteredRoles.first { $0.launchID == roleID } }
     var canStart: Bool {
-        selectedRole != nil && choice.roleID == selectedRole?.id && !isLoading && !isStarting
+        SwarmChatLaunchPlan.validModel(selectedModel)
+            && !isLoading && !isLoadingModels && !isLoadingAccounts && !isStarting
     }
 
-    func load() async {
-        do {
-            roles = try await profiles.launchChoices()
-            selectProvider(provider)
-            await loadAccounts()
-        } catch {
-            errorMessage = message(error)
+    func load(initialProvider: String?) async {
+        let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
+        if let initialProvider, allowed.contains(initialProvider) {
+            provider = initialProvider
         }
+        await loadModels()
+        await loadAccounts()
         isLoading = false
     }
 
     func selectProvider(_ provider: String) {
         self.provider = provider
-        roleID = filteredRoles.first?.launchID
-        _ = choice.selectRole(selectedRole)
+        models = []
+        modelID = Self.otherModel
+        customModel = ""
+        modelCaption = nil
+        clearAccounts()
+        Task {
+            await loadModels()
+            await loadAccounts()
+        }
     }
 
     func clearAccounts() {
@@ -49,38 +59,59 @@ final class NewChatModel {
         accountCaption = nil
     }
 
-    func selectRole(_ id: String?) {
-        roleID = id
-        _ = choice.selectRole(selectedRole)
+    func loadModels() async {
+        let requested = provider
+        isLoadingModels = true
+        do {
+            let choices = try await profiles.models(provider: requested)
+            guard provider == requested else { return }
+            models = choices
+            let preferred = [
+                "claude": "sonnet", "codex": "gpt-6-sol", "agy": "gemini-3.8-flash-high"
+            ][requested]
+            modelID = choices.first { $0.id == preferred }?.id
+                ?? choices.first?.id ?? Self.otherModel
+            modelCaption = requested == "claude"
+                ? "Claude lists aliases here. Choose Other model to enter a full model name."
+                : nil
+        } catch {
+            guard provider == requested else { return }
+            models = []
+            modelID = Self.otherModel
+            modelCaption = "Model list unavailable: \(message(error)). Enter a model name."
+        }
+        isLoadingModels = false
     }
 
     func loadAccounts() async {
-        guard let requested = selectedRole?.provider else { return }
+        let requested = provider
+        isLoadingAccounts = true
         do {
             let decision = SwarmAccountLoadDecision.loaded(
                 try await profiles.accounts(provider: requested)
             )
-            guard selectedRole?.provider == requested else { return }
+            guard provider == requested else { return }
             accountOptions = decision.options
             accountSelection = decision.selection
             accountCaption = decision.fallbackCaption
         } catch {
-            guard selectedRole?.provider == requested else { return }
+            guard provider == requested else { return }
             let decision = SwarmAccountLoadDecision.failed(message: message(error))
             accountOptions = decision.options
             accountSelection = decision.selection
             accountCaption = decision.fallbackCaption
         }
+        isLoadingAccounts = false
     }
 
     func start(
         directory: String,
         launch: (SwarmChatLaunchPlan) async throws -> SwarmSessionID
     ) async -> SwarmSessionID? {
-        guard canStart, let role = selectedRole,
-              let plan = SwarmChatLaunchPlan(
-                directory: directory, role: role, account: accountSelection
-              ) else { return nil }
+        guard canStart, let plan = SwarmChatLaunchPlan(
+            directory: directory, provider: provider, model: selectedModel,
+            account: accountSelection
+        ) else { return nil }
         isStarting = true
         errorMessage = nil
         do {
@@ -102,6 +133,7 @@ final class NewChatModel {
 struct NewChatSheet: View {
     let directory: String
     var isSwitch = false
+    var initialProvider: String?
     let launch: (SwarmChatLaunchPlan) async throws -> SwarmSessionID
     let onStarted: (SwarmSessionID) -> Void
 
@@ -117,30 +149,31 @@ struct NewChatSheet: View {
                     .foregroundStyle(.secondary)
             }
             if model.isLoading {
-                ProgressView("Loading roles")
+                ProgressView("Loading models")
             } else {
                 Form {
-                    Picker("Provider", selection: $model.provider) {
-                        ForEach(["all"] + (isSwitch ? ["claude", "codex"] : SwarmLaunchChoice.providers), id: \.self) { provider in
-                            Text(provider == "all" ? "All" : provider.capitalized).tag(provider)
+                    Picker("Provider", selection: Binding(
+                        get: { model.provider }, set: { model.selectProvider($0) }
+                    )) {
+                        ForEach(isSwitch ? ["claude", "codex"] : SwarmChatProvider.all, id: \.self) { provider in
+                            Text(provider.capitalized).tag(provider)
                         }
                     }
-                    .onChange(of: model.provider) { _, provider in
-                        model.selectProvider(provider)
-                    }
-                    Picker("Role", selection: $model.roleID) {
-                        ForEach(model.filteredRoles, id: \.launchID) { role in
-                            Text("\(role.role) · \(role.provider) · \(role.model)")
-                                .tag(role.launchID as String?)
+                    Picker("Model", selection: $model.modelID) {
+                        ForEach(model.models) { choice in
+                            Text(choice.label == choice.id ? choice.id : "\(choice.label) · \(choice.id)")
+                                .tag(choice.id)
                         }
+                        Text("Other model…").tag(NewChatModel.otherModel)
                     }
-                    .onChange(of: model.roleID) { oldID, id in
-                        model.selectRole(id)
-                        let oldProvider = model.roles.first { $0.launchID == oldID }?.provider
-                        if !model.isLoading, oldProvider != model.selectedRole?.provider {
-                            model.clearAccounts()
-                            Task { await model.loadAccounts() }
-                        }
+                    if model.modelID == NewChatModel.otherModel {
+                        TextField("Model name", text: $model.customModel)
+                    }
+                    if model.isLoadingModels {
+                        ProgressView("Loading models")
+                    }
+                    if let caption = model.modelCaption {
+                        Text(verbatim: caption).foregroundStyle(.secondary)
                     }
                     if !model.accountOptions.isEmpty {
                         Picker("Account", selection: $model.accountSelection) {
@@ -177,10 +210,10 @@ struct NewChatSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 500)
         .task {
             model.isSwitch = isSwitch
-            await model.load()
+            await model.load(initialProvider: initialProvider)
         }
     }
 }

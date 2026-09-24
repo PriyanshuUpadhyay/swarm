@@ -209,7 +209,7 @@ private struct SessionsWindow: View {
         }
         .sheet(item: $switchChatFrom) { row in
             NewChatSheet(
-                directory: row.session.cwd, isSwitch: true,
+                directory: row.session.cwd, isSwitch: true, initialProvider: row.provider,
                 launch: { plan in try await model.switchChat(plan, from: row) }
             ) { _ in
                 Task { try? await model.refresh() }
@@ -451,19 +451,19 @@ enum SwarmExecutable {
         } else if arguments.count == 3, arguments[0] == "--attach-check" {
             await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
         } else if arguments.count == 4, arguments[0] == "--launch-check" {
-            await launchCheck(directory: arguments[1], provider: arguments[2], roleID: arguments[3])
+            await launchCheck(directory: arguments[1], provider: arguments[2], model: arguments[3])
         } else {
             SwarmApp.main()
         }
     }
 
-    private static func launchCheck(directory: String, provider: String, roleID: String) async {
+    private static func launchCheck(directory: String, provider: String, model: String) async {
         do {
             await LoginShellPath.ready()
-            let roles = try await SwarmCLIProfileSource().launchChoices()
-            guard let role = SwarmLaunchChoice.roles(roles, for: provider).first(where: { $0.id == roleID }),
-                  let plan = SwarmChatLaunchPlan(directory: directory, role: role, account: .auto) else {
-                throw SwarmProfileError.failed("Provider, role, or directory is invalid")
+            guard let plan = SwarmChatLaunchPlan(
+                directory: directory, provider: provider, model: model, account: .auto
+            ) else {
+                throw SwarmProfileError.failed("Provider, model, or directory is invalid")
             }
             let id = try await SessionsTreeModel().startChat(plan)
             let agent = try await SwarmChatLauncher.waitForChairPane(in: id, bus: SwarmCLIBus())

@@ -220,7 +220,7 @@ public protocol SwarmBus: Sendable {
     /// `swarm launch`, run in `directory`. `account` is `"auto"`, an account name, or nil for the
     /// CLI's default home.
     func launch(
-        _ agent: SwarmAgentID, role: String, provider: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String, model: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
@@ -327,7 +327,7 @@ public struct UnavailableSwarmBus: SwarmBus {
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
 
     public func launch(
-        _ agent: SwarmAgentID, role: String, provider: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String, model: String, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch {
         throw notConnected

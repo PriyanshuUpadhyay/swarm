@@ -1,21 +1,37 @@
 import Foundation
 
+public enum SwarmChatProvider {
+    public static let all = ["claude", "codex", "agy"]
+}
+
 public struct SwarmChatLaunchPlan: Sendable, Equatable {
     public let directory: String
     public let provider: String
     public let role: String
+    public let model: String
     public let account: String?
 
-    public init?(directory: String, role: SwarmRole, account: SwarmAccountSelection?) {
-        guard directory.hasPrefix("/"), SwarmLaunchChoice.providers.contains(role.provider) else {
+    public static func validModel(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix("-") && !name.unicodeScalars.contains {
+            CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+        }
+    }
+
+    public init?(
+        directory: String, provider: String, model: String, account: SwarmAccountSelection?
+    ) {
+        let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard directory.hasPrefix("/"), SwarmChatProvider.all.contains(provider),
+              Self.validModel(name) else {
             return nil
         }
         self.directory = directory
-        provider = role.provider
-        self.role = role.id
+        self.provider = provider
+        role = "chat"
+        self.model = name
         self.account = switch account {
-        case .auto where role.provider != "agy": "auto"
-        case .named(let name) where role.provider != "agy": name
+        case .auto where provider != "agy": "auto"
+        case .named(let name) where provider != "agy": name
         default: nil
         }
     }
@@ -29,7 +45,8 @@ public enum SwarmChatLauncher {
         let id = try await bus.startChairSession(chair: nil, directory: plan.directory)
         await onCreated(id)
         _ = try await bus.launch(
-            SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, account: plan.account,
+            SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
+            account: plan.account,
             in: id, directory: plan.directory
         )
         return id

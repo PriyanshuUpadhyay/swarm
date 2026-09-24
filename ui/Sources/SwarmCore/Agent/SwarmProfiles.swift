@@ -9,7 +9,6 @@ import Foundation
 /// One route from swarm's routing config, resolved to the runner it starts with.
 public struct SwarmRole: Sendable, Hashable, Codable, Identifiable {
     public var id: String { role }
-    public var launchID: String { role + "@" + provider }
 
     public var role: String
     public var runner: String
@@ -41,6 +40,16 @@ public struct SwarmRoleList: Sendable, Hashable, Codable {
         self.roles = roles
         self.choices = choices
     }
+}
+
+public struct SwarmModel: Sendable, Hashable, Codable, Identifiable {
+    public var id: String
+    public var label: String
+}
+
+public struct SwarmModelList: Sendable, Hashable, Codable {
+    public var provider: String
+    public var models: [SwarmModel]
 }
 
 /// One signed-in account a provider's CLI can run on, and the environment that selects it.

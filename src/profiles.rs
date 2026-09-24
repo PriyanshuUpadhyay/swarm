@@ -38,6 +38,68 @@ pub struct Role {
     pub fallbacks: Vec<String>,
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ModelList {
+    pub provider: String,
+    pub models: Vec<Model>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Model {
+    pub id: String,
+    pub label: String,
+}
+
+pub fn claude_models() -> Vec<Model> {
+    [
+        "default", "sonnet", "opus", "haiku", "fable", "best", "sonnet[1m]", "opus[1m]", "opusplan",
+    ]
+        .into_iter()
+        .map(|id| Model { id: id.into(), label: id.into() })
+        .collect()
+}
+
+pub fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
+    let value: serde_json::Value = serde_json::from_slice(json)
+        .map_err(|error| format!("codex model JSON: {error}"))?;
+    let rows = value["models"].as_array().ok_or("codex model JSON has no models")?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            if row["visibility"] == "hide" {
+                return None;
+            }
+            let id = row["slug"].as_str()?;
+            let label = row["display_name"].as_str().unwrap_or(id);
+            Some(Model { id: id.into(), label: label.into() })
+        })
+        .collect())
+}
+
+pub fn agy_models(output: &str) -> Vec<Model> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let (id, label) = line.split_once('\t')?;
+            (!id.is_empty() && !label.is_empty()).then(|| Model { id: id.into(), label: label.into() })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    #[test]
+    fn catalogs_show_listed_codex_models_and_agy_models() {
+        let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
+        assert_eq!(codex_models(codex).unwrap(), vec![Model { id: "gpt-6-sol".into(), label: "GPT-6-Sol".into() }]);
+        assert!(codex_models(b"not json").is_err());
+        assert_eq!(agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
+            vec![Model { id: "gemini-3.8-flash-high".into(), label: "Gemini 3.8 Flash (High)".into() }]);
+    }
+}
+
 pub fn translate_roles(json: &str) -> Result<RoleList, String> {
     let input: RoutingState =
         serde_json::from_str(json).map_err(|error| format!("routing JSON: {error}"))?;
