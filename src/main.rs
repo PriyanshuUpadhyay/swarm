@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -387,6 +387,30 @@ fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String
     }
 }
 
+/// Where `launch` may pre-trust Codex and AGY for `cwd`; see `swarm::bus::trust_target`.
+fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let git_root = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| std::fs::canonicalize(String::from_utf8_lossy(&output.stdout).trim()).ok());
+    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(user_home).map_err(|error| error.to_string())?);
+    let swarm_home = swarm::paths::home().map_err(|error| error.to_string())?;
+    let scratch_roots: Vec<_> = [
+        std::path::PathBuf::from("/private/tmp/councils"),
+        std::path::PathBuf::from(format!("/private/tmp/claude-{uid}")),
+        std::path::Path::new(&swarm_home).join(".swarm/ws"),
+        user_home.join("swarm/workspaces.noindex"),
+    ]
+    .iter()
+    .filter_map(|root| std::fs::canonicalize(root).ok())
+    .collect();
+    swarm::bus::trust_target(cwd, git_root.as_deref(), &std::fs::canonicalize(user_home).map_err(|error| error.to_string())?, &scratch_roots)
+}
+
 fn spawn_agent(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -480,7 +504,35 @@ fn report_dead(
     Ok(())
 }
 
-/// One sweep pass: re-ring unseen messages and report each child whose pane is gone.
+/// Ring `agent` again when its unseen messages are due for a second ring.
+fn rering_if_due(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+    agent: &str,
+    pane: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
+        return Ok(());
+    }
+    connection.execute(
+        "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
+         WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM read_mark
+                           WHERE read_mark.session_id = message.session_id
+                             AND message_seq = message.seq AND agent_id = ?2)",
+        (session_id, agent),
+    )?;
+    match adapter.run("ring", &[("pane", pane), ("text", &ring_text(root))]) {
+        Ok(_) => eprintln!("swarm: re-ringed {agent}"),
+        Err(error) => eprintln!("swarm: re-ring failed for {agent}: {error}"),
+    }
+    Ok(())
+}
+
+/// One sweep pass: re-ring unseen messages, the sweeper's own included, and report each child
+/// whose pane is gone.
 fn sweep_once(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -488,22 +540,13 @@ fn sweep_once(
     session_id: &str,
     agent_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // A child's ring to the chair can be lost too, and no other sweeper covers the chair.
+    if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
+        rering_if_due(connection, root, adapter, session_id, agent_id, &pane)?;
+    }
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
-            if swarm::store::rering_due(connection, session_id, &child, RERING_UNSEEN_AFTER_SECS)? {
-                connection.execute(
-                    "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
-                     WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
-                       AND NOT EXISTS (SELECT 1 FROM read_mark
-                                       WHERE read_mark.session_id = message.session_id
-                                         AND message_seq = message.seq AND agent_id = ?2)",
-                    (session_id, &child),
-                )?;
-                match adapter.run("ring", &[("pane", &pane), ("text", &ring_text(root))]) {
-                    Ok(_) => eprintln!("swarm: re-ringed {child}"),
-                    Err(error) => eprintln!("swarm: re-ring failed for {child}: {error}"),
-                }
-            }
+            rering_if_due(connection, root, adapter, session_id, &child, &pane)?;
             continue;
         }
         let note = format!("agent {child} died without a summary");
@@ -750,25 +793,80 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if !swarm::bus::valid_agent_id(agent_id) {
             return Err(format!("swarm: bad agent id {agent_id}").into());
         }
-        let account = match rest {
-            [] => None,
-            [flag, account] if flag == "--account" => Some(account.as_str()),
-            _ => return Err(USAGE.into()),
-        };
-        let resolved = resolve_role(role)?;
-        let provider = resolved.provider.clone();
-        if provider.as_deref() == Some("codex") {
-            let home = if let Some(account_name) = account {
-                let accounts = load_accounts("codex", true)?;
-                let account = swarm::profiles::resolve_account(&accounts, account_name)
-                    .map_err(|error| format!("swarm: {error}"))?;
-                std::path::PathBuf::from(&account.home)
-            } else {
-                default_codex_home()?
-            };
-            swarm::bus::ensure_codex_trust(&home, &std::env::current_dir()?)?;
+        let herdr_agent_pane = env::var("HERDR_AGENT_PANE").ok();
+        if let Some(reason) = swarm::bus::launch_refusal(env::var("SWARM_AGENT_ID").ok().as_deref(), herdr_agent_pane.as_deref()) {
+            return Err(reason.into());
         }
-        let command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
+        // Fail before any trust write, so a stray launch outside a session changes nothing.
+        session_id()?;
+        let (options, extra) = match rest.iter().position(|arg| arg == "--") {
+            Some(index) => (&rest[..index], &rest[index + 1..]),
+            None => (rest, &[][..]),
+        };
+        let (mut account, mut cwd) = (None, None);
+        for pair in options.chunks(2) {
+            match pair {
+                [flag, value] if flag == "--account" => account = Some(value.as_str()),
+                [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
+                _ => return Err(USAGE.into()),
+            }
+        }
+        let cwd = cwd.map_or_else(env::current_dir, Ok)?;
+        let cwd = std::fs::canonicalize(&cwd).map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
+        let resolved = resolve_role(role)?;
+        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
+            return Err(reason.into());
+        }
+        let provider = resolved.provider.clone();
+        let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
+        let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
+        let mut pane_dir = cwd.clone();
+        let user_home = std::path::PathBuf::from(env_var("HOME")?);
+        let lock = root.join("trust.lock");
+        match provider.as_deref() {
+            Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
+                Ok(target) if provider == "codex" => {
+                    // Without --account, yelo's `codex` in the pane picks the profile, so every
+                    // profile it might pick needs the entry.
+                    let homes = if let Some(account_name) = account {
+                        let accounts = load_accounts("codex", true)?;
+                        let account = swarm::profiles::resolve_account(&accounts, account_name)
+                            .map_err(|error| format!("swarm: {error}"))?;
+                        vec![std::path::PathBuf::from(&account.home)]
+                    } else {
+                        let mut homes = vec![default_codex_home()?];
+                        homes.extend(
+                            std::fs::read_dir(&user_home)?
+                                .filter_map(Result::ok)
+                                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".codex-") && entry.path().is_dir())
+                                .map(|entry| entry.path()),
+                        );
+                        homes.sort();
+                        homes.dedup();
+                        homes
+                    };
+                    swarm::bus::with_lock(&lock, || homes.iter().try_for_each(|home| swarm::bus::ensure_codex_trust(home, &target)))?;
+                }
+                Ok(target) => {
+                    let settings = user_home.join(".gemini/antigravity-cli/settings.json");
+                    swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_trust(&settings, &target))?;
+                }
+                Err(reason) => eprintln!("swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"),
+            },
+            // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
+            Some("claude") if agent_id != "orchestrator" => {
+                let (dir, args) = swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                std::fs::create_dir_all(&dir)?;
+                pane_dir = std::fs::canonicalize(&dir)?;
+                let config = user_home.join(".claude.json");
+                swarm::bus::with_lock(&lock, || swarm::bus::ensure_claude_trust(&config, &pane_dir))?;
+                extra = args;
+            }
+            _ => {}
+        }
+        command.extend(extra);
+        // Every adapter's spawn verb opens the pane in the working directory it runs in.
+        env::set_current_dir(&pane_dir)?;
         return spawn_agent(
             &connection,
             &root,
@@ -984,6 +1082,36 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
         deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "third").unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(3));
+
+        // The coder listed "third" but has not acked it, so "fourth" is news and must ring.
+        swarm::store::inbox(&connection, &session, CODER).unwrap();
+        deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "fourth").unwrap();
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(4));
+    }
+
+    #[test]
+    fn sweep_rerings_its_own_chair_for_an_old_unseen_finish() {
+        let root = std::env::temp_dir().join(format!("swarm-sweep-chair-test-{}", std::process::id()));
+        let ring_log = root.join("rings");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
+        swarm::store::send_message(&mut connection, &root, &session, CODER, ORCHESTRATOR, "summary", "done").unwrap();
+        connection.execute("UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61, rings = 1", []).unwrap();
+        let adapter = swarm::adapter::parse(
+            "fake",
+            &format!("self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE\" >> '{}'\nlist = echo %2\nclose = true\ncapture = true\n", ring_log.display()),
+        )
+        .unwrap();
+
+        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
 
     #[test]

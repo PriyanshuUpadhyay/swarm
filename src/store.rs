@@ -445,6 +445,7 @@ pub fn has_rung_unread(
         "SELECT EXISTS (
              SELECT 1 FROM message
              WHERE session_id = ?1 AND recipient_id = ?2 AND rings > 0
+               AND seen_at IS NULL
                AND NOT EXISTS (
                    SELECT 1 FROM read_mark
                    WHERE read_mark.session_id = message.session_id

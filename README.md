@@ -46,7 +46,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, and adapter attach support as JSON. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
-| `launch <id> <role> [--account <auto\|name>]` | session | Resolve the role, register the agent, split a pane, and start its provider CLI. |
+| `launch <id> <role> [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve the role, register the agent, split a pane in `--cwd`, and start its provider CLI with the extra args. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
 | `type <id>` | session | Read text from stdin and type it into the agent pane. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
@@ -55,19 +55,20 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `send <recipient> <kind>` | agent | Store stdin as a message, ring the recipient, print the seq. |
 | `finish` | agent | Send stdin as a `summary` to the orchestrator, print the seq. |
 | `exited` | agent | Capture the own pane to `runs/<session>/<id>.log`, report a missing summary. |
-| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. Re-ring an unread child at most once after 60 s, then wait for an ack. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
+| `sweep [--every <secs>]` | agent | Report each child whose pane is gone, print `dead <id>`. Re-ring an unseen message at most once after 60 s, for a child or the caller itself, then wait for an ack. With `--every`, repeat every N seconds and warn instead of exit on a failed pass. |
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
 
 The Herdr adapter runs `~/.config/herdr/bin/swarm-split.py` to create its pane layout. The repository
-does not ship that helper, so install it before you use `SWARM_ADAPTER=herdr`.
+ships it as `adapters/swarm-split.py`, and `sh scripts/install.sh` links it there.
 
 ## Agents
 
 Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that
 `swarm spawn` started, and `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code
 finds them through `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads
-`AGENTS.md`. `sh scripts/install-skills.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
+`AGENTS.md`. `sh scripts/install.sh` links them into every agent CLI on the machine, with the host files the
+skills and adapters run. `demo/herdr.sh` and
 `demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
 `VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 
