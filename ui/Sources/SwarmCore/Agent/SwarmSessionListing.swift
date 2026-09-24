@@ -320,18 +320,23 @@ public actor SwarmSessionDiscovery {
         for session in sessions where session.archivedAt == nil {
             let provider = session.chairProvider ?? agentsBySession[session.id]?
                 .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
-            let discoversByTime = session.chairLog == nil && session.chairID == nil
+            let busLog = session.chairLog.flatMap {
+                FileManager.default.fileExists(atPath: $0) ? $0 : nil
+            }
+            let discoversByTime = busLog == nil && session.chairID == nil
                 && (provider == "claude" || provider == "codex")
-            let busLogChanged = session.chairLog != nil
-                && titleLogs[session.id] != session.chairLog
-            if !discoversByTime, !busLogChanged, titles[session.id] != nil {
+            let busLogChanged = busLog != nil && titleLogs[session.id] != busLog
+            let cachedLogMissing = titleLogs[session.id].map {
+                !FileManager.default.fileExists(atPath: $0)
+            } ?? false
+            if !discoversByTime, !busLogChanged, !cachedLogMissing, titles[session.id] != nil {
                 continue
             }
-            if !discoversByTime, !busLogChanged,
+            if !discoversByTime, !busLogChanged, !cachedLogMissing,
                let missedAt = titleMisses[session.id], now.timeIntervalSince(missedAt) < 30 {
                 continue
             }
-            var log = session.chairLog
+            var log = busLog
             if log == nil, let provider, provider == "claude" || provider == "codex" {
                 if homesByProvider[provider] == nil {
                     let accounts = try? await profiles.accounts(provider: provider)

@@ -72,6 +72,8 @@ struct SwarmSessionDetailTests {
         value.chairProvider = nil
         #expect(await reader.poll(session: value, chairProvider: "agy")
             == .notice("No transcript reader for this provider yet"))
+        #expect(await reader.poll(session: value)
+            == .notice("No transcript reader for this provider yet"))
     }
 
     @Test("A missing log explains whether the chat ended")
@@ -100,6 +102,42 @@ struct SwarmSessionDetailTests {
         let snapshot = await reader.poll(session: value)
         guard case .rows(let rows, _) = snapshot else {
             Issue.record("The tool did not return rows")
+            return
+        }
+        #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
+        try FileManager.default.removeItem(at: log)
+        guard case .rows(let retained, _) = await reader.poll(session: value) else {
+            Issue.record("A missing log cleared the loaded transcript")
+            return
+        }
+        #expect(retained == rows)
+    }
+
+    @Test("A transcript starts after its reader becomes available")
+    func readerRetry() async throws {
+        let realBinary = try #require(TranscriptToolProcess.bundled)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-reader-retry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("transcript")
+        let log = directory.appendingPathComponent("rollout.jsonl")
+        try Data("""
+            {"type":"session_meta","payload":{"id":"session-1","cwd":"/work"}}
+            {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List files"}]}}
+            """.appending("\n").utf8).write(to: log)
+        var value = session(adapter: "herdr")
+        value.chairProvider = "codex"
+        value.chairLog = log.path
+        let reader = SwarmChairTranscript(binary: binary)
+
+        guard case .unavailable = await reader.poll(session: value) else {
+            Issue.record("The missing reader did not report a failure")
+            return
+        }
+        try FileManager.default.copyItem(at: realBinary, to: binary)
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("The reader did not retry")
             return
         }
         #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })

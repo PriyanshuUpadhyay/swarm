@@ -73,7 +73,12 @@ final class SessionDetailModel {
                     }
                 }
             }
-            snapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
+            if Task.isCancelled {
+                cycleTiming.end(count: rows.count)
+                break
+            }
+            let next: ChairTranscriptSnapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
+            if next != snapshot { snapshot = next }
             cycleTiming.end(count: rows.count)
             if !opened {
                 openTiming.end(count: rows.count)

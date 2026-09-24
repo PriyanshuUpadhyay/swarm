@@ -157,6 +157,62 @@ struct ChairLogDiscoveryTests {
         )?.standardizedFileURL == log.standardizedFileURL)
     }
 
+    @Test("A Codex chat loads after its log moves to archived sessions")
+    func archivedCodexLog() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let chairID = "01a0c8e7-9ded-7081-a631-d7642cf19264"
+        let original = try fixture.codexLog(
+            home: home, name: "2026-09-22T12-26-02-\(chairID)",
+            cwd: "/work", at: "2026-09-22T12:26:02Z"
+        )
+        let archived = home.appendingPathComponent("archived_sessions/\(original.lastPathComponent)")
+        let session = SwarmSession(
+            id: .init("archived-chat"), talkMode: "lane", adapter: "tmux-solo",
+            cwd: "/work", createdAt: 1_790_079_961, chairProvider: "codex",
+            chairID: .init(chairID), chairLog: original.path,
+            agents: 0, messages: 0, lastMessageAt: nil
+        )
+        let accounts = SwarmAccountList(provider: "codex", source: "fixture", accounts: [
+            account("test", home: home)
+        ], auto: "test")
+        let binary = try #require(TranscriptToolProcess.bundled)
+        let reader = SwarmChairTranscript(
+            binary: binary, profiles: FixtureProfiles(accountList: accounts), home: fixture.root
+        )
+
+        guard case .rows = await reader.poll(session: session) else {
+            Issue.record("The original transcript did not load")
+            return
+        }
+        try FileManager.default.createDirectory(
+            at: archived.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: original, to: archived)
+        #expect(await reader.discoveredLog(for: session)?.standardizedFileURL
+            == archived.standardizedFileURL)
+        guard case .rows(let rows, _) = await reader.poll(session: session) else {
+            Issue.record("The archived transcript did not load")
+            return
+        }
+        #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
+        var unlinked = session
+        unlinked.chairLog = nil
+        let fresh = SwarmChairTranscript(
+            binary: binary, profiles: FixtureProfiles(accountList: accounts), home: fixture.root
+        )
+        guard case .rows = await fresh.poll(session: unlinked) else {
+            Issue.record("The archived transcript did not load without a saved path")
+            return
+        }
+        let discovery = SwarmSessionDiscovery(
+            profiles: FixtureProfiles(accountList: accounts), home: fixture.root
+        )
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: [:])[session.id]
+            == "List files")
+    }
+
     @Test("Rejects a rollout that starts twenty minutes before the session")
     func codexTooEarly() throws {
         let fixture = try Fixture()
