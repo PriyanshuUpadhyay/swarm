@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -95,9 +95,11 @@ fn set_role_model(command: &str, runner: &str, model: &str) -> Result<String, Bo
     tool_stdout(command, &["bump", runner, model])
 }
 
-fn resolve_role(role: &str) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
+fn resolve_role(role: &str, provider: Option<&str>) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
     let command = routing_command()?;
-    let output = run_tool(&command, &["get", role])?;
+    let mut args = vec!["get", role];
+    if let Some(provider) = provider { args.extend(["--provider", provider]); }
+    let output = run_tool(&command, &args)?;
     if !output.status.success() {
         let reason = String::from_utf8_lossy(&output.stderr).trim().replace(['\r', '\n'], " ");
         return Err(format!("swarm: cannot resolve role {role}: {reason}").into());
@@ -706,6 +708,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         set_chair_for_caller(&connection, &session_id, &agent_id, parse_chair(value)?)?;
         return Ok(());
     }
+    if let [cmd, sub, new_id, old_id] = args && cmd == "session" && sub == "continue" {
+        return swarm::store::continue_session(&connection, new_id, old_id);
+    }
     if let [cmd, sub, ids @ ..] = args
         && cmd == "session"
         && sub == "archive"
@@ -738,6 +743,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 chair_provider: row.chair_provider,
                 chair_id: row.chair_id,
                 chair_log: chair_log.map(|path| path.to_string_lossy().into_owned()),
+                continuation_of: row.continuation_of,
                 agents: row.agents,
                 messages: row.messages,
                 last_message_at: row.last_message_at,
@@ -815,17 +821,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some(index) => (&rest[..index], &rest[index + 1..]),
             None => (rest, &[][..]),
         };
-        let (mut account, mut cwd) = (None, None);
+        let (mut account, mut cwd, mut requested_provider) = (None, None, None);
         for pair in options.chunks(2) {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
                 [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
+                [flag, value] if flag == "--provider" && matches!(value.as_str(), "claude" | "codex" | "agy") => requested_provider = Some(value.as_str()),
                 _ => return Err(USAGE.into()),
             }
         }
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd).map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved = resolve_role(role)?;
+        let resolved = resolve_role(role, requested_provider)?;
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
@@ -911,8 +918,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
             .ok_or("swarm: no pane recorded")?;
-        swarm::adapter::load(&root, &adapter_name())?
-            .run("ring", &[("pane", &pane), ("text", &text)])?;
+        let adapter = swarm::adapter::load(&root, &adapter_name())?;
+        if !adapter.has_pane(&pane)? {
+            return Err("swarm: this chat's pane has closed; start a new chat or switch model".into());
+        }
+        adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
         return Ok(());
     }
     if let [cmd, agent_id] = args && cmd == "interrupt" {

@@ -9,6 +9,7 @@ import Foundation
 /// One route from swarm's routing config, resolved to the runner it starts with.
 public struct SwarmRole: Sendable, Hashable, Codable, Identifiable {
     public var id: String { role }
+    public var launchID: String { role + "@" + provider }
 
     public var role: String
     public var runner: String
@@ -34,9 +35,11 @@ public struct SwarmRole: Sendable, Hashable, Codable, Identifiable {
 
 public struct SwarmRoleList: Sendable, Hashable, Codable {
     public var roles: [SwarmRole]
+    public var choices: [SwarmRole]
 
-    public init(roles: [SwarmRole]) {
+    public init(roles: [SwarmRole], choices: [SwarmRole]) {
         self.roles = roles
+        self.choices = choices
     }
 }
 

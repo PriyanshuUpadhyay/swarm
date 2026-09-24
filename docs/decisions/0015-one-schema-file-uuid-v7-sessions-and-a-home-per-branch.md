@@ -1,9 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-22
 deciders: [user]
 supersedes:
-superseded-by:
+superseded-by: 0016
 related: [0014]
 informed-by:
   - migrations/0001.sql

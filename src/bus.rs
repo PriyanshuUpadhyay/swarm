@@ -53,6 +53,7 @@ pub struct Session {
     pub chair_provider: Option<String>,
     pub chair_id: Option<String>,
     pub chair_log: Option<String>,
+    pub continuation_of: Option<String>,
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,

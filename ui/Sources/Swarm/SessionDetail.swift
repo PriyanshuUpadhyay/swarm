@@ -5,7 +5,7 @@ import SwarmCore
 
 @MainActor @Observable
 final class SessionDetailModel {
-    private let transcript = SwarmChairTranscript()
+    private var transcripts: [SwarmSessionID: SwarmChairTranscript] = [:]
     private let bus = SwarmCLIBus()
     private let drafts = ComposerDraftStore()
     private var activeSessionID: String?
@@ -28,10 +28,48 @@ final class SessionDetailModel {
         return []
     }
 
-    func poll(session: SwarmSession, chairProvider: String?) async {
-        activate(sessionID: session.id.rawValue)
+    func poll(row: SwarmProjectSession, chairProvider: String?) async {
+        activate(sessionID: row.id.rawValue)
         while !Task.isCancelled {
-            snapshot = await transcript.poll(session: session, chairProvider: chairProvider)
+            var rows: [TranscriptRow] = []
+            var raw: [RawTranscriptEntry] = []
+            var latest: ChairTranscriptSnapshot = .waiting
+            for session in row.sessions.reversed() {
+                let transcript = transcripts[session.id] ?? SwarmChairTranscript()
+                transcripts[session.id] = transcript
+                let result = await transcript.poll(
+                    session: session,
+                    chairProvider: session.chairProvider ?? chairProvider
+                )
+                latest = result
+                if case .rows(let sessionRows, let sessionRaw) = result {
+                    if !rows.isEmpty {
+                        rows.append(TranscriptRow(
+                            kind: .notice, text: "Model switched to \(session.chairProvider ?? "agent")",
+                            eventID: "switch-\(session.id.rawValue)"
+                        ))
+                    }
+                    rows += sessionRows.map { row in
+                        var copy = row
+                        copy.eventID = session.id.rawValue + ":" + row.eventID
+                        return copy
+                    }
+                    let rawOffset = raw.count
+                    raw += sessionRaw.map { entry in
+                        var copy = entry
+                        copy.index += rawOffset
+                        return copy
+                    }
+                } else if !rows.isEmpty, session.id == row.id {
+                    if case .unavailable(let message) = result {
+                        rows.append(TranscriptRow(
+                            kind: .error, text: message,
+                            eventID: "unavailable-\(session.id.rawValue)"
+                        ))
+                    }
+                }
+            }
+            snapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -78,6 +116,7 @@ struct SessionDetailView: View {
     let agents: [SwarmAgent]
     let panes: AgentPaneStore
     let commandSource: ComposerCommandSource?
+    let onSwitchModel: () -> Void
     let isCurrentSession: () -> Bool
 
     @State private var model = SessionDetailModel()
@@ -107,7 +146,7 @@ struct SessionDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
-            await model.poll(session: row.session, chairProvider: chairProvider)
+            await model.poll(row: row, chairProvider: chairProvider)
         }
         .onAppear { transcriptFocused = true }
         .onChange(of: panes.focusedKey) { _, key in
@@ -127,6 +166,9 @@ struct SessionDetailView: View {
             HStack {
                 Text("Transcript").font(.headline)
                 Spacer()
+                Button("Switch model", action: onSwitchModel)
+                    .disabled(model.isSending(sessionID: row.id.rawValue)
+                        || (row.isRunning == true && ChairTurn.isActive(model.rows)))
                 if showRawData {
                     Text("RAW")
                         .font(.caption2.bold())
@@ -236,6 +278,9 @@ struct SessionDetailView: View {
                 ),
                 isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
                 isSending: model.isSending(sessionID: row.id.rawValue),
+                sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
+                    ? "This chat's pane has closed. Start a new chat or switch model."
+                    : nil,
                 commandSource: commandSource ?? ComposerCommandSource(
                     provider: row.provider ?? chairProvider,
                     homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,

@@ -13,7 +13,10 @@ pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Err
     Ok(connection)
 }
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001.sql"),
+    include_str!("../migrations/0002.sql"),
+];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
@@ -21,9 +24,12 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
         tx.execute_batch(MIGRATIONS[0])?;
-        tx.pragma_update(None, "user_version", 1)?;
-    } else if version != 1 {
+    } else if version != 1 && version != 2 {
         return Err("database made by another swarm build; use another SWARM_HOME or delete it".into());
+    }
+    if version < 2 {
+        tx.execute_batch(MIGRATIONS[1])?;
+        tx.pragma_update(None, "user_version", 2)?;
     }
 
     tx.commit()?;
@@ -191,6 +197,26 @@ pub fn create_session(
     Ok(id)
 }
 
+/// Link a newer session in the same directory; the link is written only after handoff delivery.
+pub fn continue_session(
+    connection: &Connection,
+    new_id: &str,
+    old_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE session SET continuation_of = ?2
+         WHERE id = ?1 AND continuation_of IS NULL AND archived_at IS NULL
+           AND EXISTS (SELECT 1 FROM session AS old
+                       WHERE old.id = ?2 AND old.archived_at IS NULL
+                         AND old.cwd = session.cwd AND old.id < session.id)",
+        (new_id, old_id),
+    )?;
+    if changed != 1 {
+        return Err("sessions cannot be linked as one chat".into());
+    }
+    Ok(())
+}
+
 pub fn set_chair(
     connection: &Connection,
     session_id: &str,
@@ -262,6 +288,7 @@ pub struct SessionRow {
     pub chair_provider: Option<String>,
     pub chair_id: Option<String>,
     pub chair_log: Option<String>,
+    pub continuation_of: Option<String>,
     pub chair_days: [String; 3],
     pub agents: i64,
     pub messages: i64,
@@ -271,7 +298,7 @@ pub struct SessionRow {
 pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
-                chair_provider, chair_id, chair_log,
+                chair_provider, chair_id, chair_log, continuation_of,
                 strftime('%Y/%m/%d', session.created_at - 86400, 'unixepoch'),
                 strftime('%Y/%m/%d', session.created_at, 'unixepoch'),
                 strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
@@ -292,10 +319,11 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
             chair_provider: row.get(5)?,
             chair_id: row.get(6)?,
             chair_log: row.get(7)?,
-            chair_days: [row.get(8)?, row.get(9)?, row.get(10)?],
-            agents: row.get(11)?,
-            messages: row.get(12)?,
-            last_message_at: row.get(13)?,
+            continuation_of: row.get(8)?,
+            chair_days: [row.get(9)?, row.get(10)?, row.get(11)?],
+            agents: row.get(12)?,
+            messages: row.get(13)?,
+            last_message_at: row.get(14)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -944,6 +972,21 @@ mod tests {
         let first = create_session(&connection, "lane", Path::new("/first"), None, None).unwrap();
         connection.execute("DELETE FROM session WHERE id = ?1", [&first]).unwrap();
         assert_ne!(create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(), first);
+    }
+
+    #[test]
+    fn migration_adds_chat_continuations_to_existing_databases() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(MIGRATIONS[0]).unwrap();
+        connection.pragma_update(None, "user_version", 1).unwrap();
+        migrate(&mut connection).unwrap();
+        let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap();
+        assert_eq!(version, 2);
+        let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
+        let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
+        continue_session(&connection, &new, &old).unwrap();
+        assert_eq!(sessions(&connection).unwrap()[0].continuation_of.as_deref(), Some(old.as_str()));
+        assert!(continue_session(&connection, &old, &new).is_err());
     }
 
     #[test]
