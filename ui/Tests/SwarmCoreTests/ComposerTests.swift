@@ -40,14 +40,23 @@ struct ComposerTests {
 
     @Test("Menu keys move, pick, dismiss, and preserve composer keys")
     func keyRouting() {
-        #expect(ComposerKeyRouter.route(.down, menuOpen: true) == .move(1))
-        #expect(ComposerKeyRouter.route(.return, menuOpen: true) == .pick)
-        #expect(ComposerKeyRouter.route(.tab, menuOpen: true) == .pick)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: true) == .dismissMenu)
-        #expect(ComposerKeyRouter.route(.return, menuOpen: false) == .send)
-        #expect(ComposerKeyRouter.route(.shiftReturn, menuOpen: false) == .insertNewline)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: false) == .clear)
+        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: true) == .move(1))
+        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: true) == .pick)
+        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: true) == .pick)
+        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: true) == .dismissMenu)
+        #expect(ComposerKeyRouter.route(.return, menuOpen: false, hasRows: false) == .send)
+        #expect(ComposerKeyRouter.route(.shiftReturn, menuOpen: false, hasRows: false) == .insertNewline)
+        #expect(ComposerKeyRouter.route(.escape, menuOpen: false, hasRows: false) == .clear)
         #expect(ComposerKeyRouter.movedSelection(current: 0, count: 3, delta: -1) == 2)
+    }
+
+    @Test("An empty completion menu lets Return send")
+    func emptyMenuKeys() {
+        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: false) == .send)
+        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: false) == .move(0))
+        #expect(ComposerKeyRouter.route(.up, menuOpen: true, hasRows: false) == .move(0))
+        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: false) == .move(0))
+        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: false) == .dismissMenu)
     }
 
     @Test("Command matching is fuzzy and provider built-ins differ")
@@ -96,5 +105,30 @@ struct ComposerTests {
         let draft = Composer.appending(path: "/tmp/image.png", to: "look")
         #expect(draft == "look /tmp/image.png ")
         #expect(Composer.removing(path: "/tmp/image.png", from: draft) == "look ")
+    }
+
+    @Test("A chip needs a whole path, including paths with spaces")
+    func wholeAttachmentPaths() {
+        let path = "/tmp/a.txt"
+        let spacedPath = "/tmp/a file.txt"
+        #expect(!Composer.contains(path: path, in: "/tmp/a.txt.bak"))
+        #expect(Composer.removing(path: path, from: "/tmp/a.txt.bak") == "/tmp/a.txt.bak")
+        #expect(Composer.contains(path: spacedPath, in: "open /tmp/a file.txt now"))
+        #expect(Composer.removing(path: spacedPath, from: "open /tmp/a file.txt now") == "open now")
+        #expect(Composer.retainedAttachments(
+            [ComposerAttachment(path: path), ComposerAttachment(path: spacedPath)],
+            in: "open /tmp/a file.txt now"
+        ) == [ComposerAttachment(path: spacedPath)])
+    }
+
+    @Test("A file added while a send runs keeps its chip")
+    func attachmentAddedDuringSend() {
+        var state = ComposerSendState()
+        let attachment = ComposerAttachment(path: "/tmp/new file.txt")
+        #expect(state.begin(sessionID: "one", draft: "hello") == "hello")
+        let edited = Composer.appending(path: attachment.path, to: "hello")
+        let finished = state.finish(sessionID: "one", currentDraft: edited, succeeded: true)
+        #expect(finished == edited)
+        #expect(Composer.retainedAttachments([attachment], in: finished) == [attachment])
     }
 }

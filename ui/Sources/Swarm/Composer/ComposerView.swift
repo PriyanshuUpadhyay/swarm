@@ -12,6 +12,7 @@ struct ComposerView: View {
     let mentionSource: ComposerMentionSource
     let scratchDirectory: String
     var focus: FocusState<Bool>.Binding
+    /// Receives the raw draft so the send owner can match it after the send.
     let send: (String) async throws -> Void
     let interrupt: () async throws -> Void
     let onFocused: () -> Void
@@ -57,6 +58,7 @@ struct ComposerView: View {
             files = await ComposerFileCatalog.discover(from: mentionSource)
         }
         .onChange(of: draft.wrappedValue) {
+            attachments = Composer.retainedAttachments(attachments, in: draft.wrappedValue)
             dismissedToken = nil
             selectedIndex = 0
         }
@@ -78,9 +80,12 @@ struct ComposerView: View {
             .padding(.top, 10)
             .padding(.bottom, 8)
             .simultaneousGesture(TapGesture().onEnded {
+                if menuVisible { dismissedToken = resolvedMenu.token }
                 focus.wrappedValue = true
                 onFocused()
             })
+            .onKeyPress(.leftArrow) { dismissMenuForCaretMove() }
+            .onKeyPress(.rightArrow) { dismissMenuForCaretMove() }
             .onKeyPress(.upArrow) { handle(.up) }
             .onKeyPress(.downArrow) { handle(.down) }
             .onKeyPress(.tab) { handle(.tab) }
@@ -108,7 +113,8 @@ struct ComposerView: View {
                 .tint(.red)
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop the chair (⌘.)")
-            } else {
+            }
+            if !showsStop || Composer.outgoing(draft.wrappedValue) != nil {
                 Button(action: submit) {
                     Image(systemName: "arrow.up")
                         .font(.headline)
@@ -193,6 +199,7 @@ struct ComposerView: View {
         }
     }
 
+    // TextField exposes no selection, so completion works only at the end of the draft.
     private var caret: Int { (draft.wrappedValue as NSString).length }
     private var resolvedMenu: ComposerMenu {
         ComposerMenu.resolve(draft: draft.wrappedValue, caret: caret)
@@ -240,7 +247,9 @@ struct ComposerView: View {
     }
 
     private func handle(_ key: ComposerInputKey) -> KeyPress.Result {
-        let action = ComposerKeyRouter.route(key, menuOpen: menuVisible)
+        let action = ComposerKeyRouter.route(
+            key, menuOpen: menuVisible, hasRows: completionCount > 0
+        )
         switch action {
         case .move(let delta):
             guard menuVisible, completionCount > 0 else { return .ignored }
@@ -285,16 +294,21 @@ struct ComposerView: View {
         focus.wrappedValue = true
     }
 
-    // Text in the box always offers Send, so a turn that never reports its end cannot lock the composer.
-    private var showsStop: Bool { isRunning && Composer.outgoing(draft.wrappedValue) == nil }
+    private func dismissMenuForCaretMove() -> KeyPress.Result {
+        if menuVisible { dismissedToken = resolvedMenu.token }
+        return .ignored
+    }
+
+    private var showsStop: Bool { isRunning }
 
     private func submit() {
-        guard !isSending, let message = Composer.outgoing(draft.wrappedValue) else {
+        let snapshot = draft.wrappedValue
+        guard !isSending, Composer.outgoing(snapshot) != nil else {
             return
         }
         Task {
             do {
-                try await send(message)
+                try await send(snapshot)
                 actionError = nil
                 focus.wrappedValue = true
             } catch {

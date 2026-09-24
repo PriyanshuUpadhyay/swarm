@@ -83,4 +83,15 @@ struct KeyRoutingTests {
             sessionID: "two", currentDraft: "Third message", succeeded: true
         ).isEmpty)
     }
+
+    @Test("A picked command clears after send, but a later edit stays")
+    func pickedCommandSendState() {
+        var state = ComposerSendState()
+        #expect(state.begin(sessionID: "one", draft: "/review ") == "/review")
+        #expect(state.finish(sessionID: "one", currentDraft: "/review ", succeeded: true) == "")
+        #expect(state.begin(sessionID: "one", draft: "/review ") == "/review")
+        #expect(state.finish(
+            sessionID: "one", currentDraft: "/review \n", succeeded: true
+        ) == "/review \n")
+    }
 }
