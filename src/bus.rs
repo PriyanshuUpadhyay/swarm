@@ -1,3 +1,5 @@
+use std::os::unix::fs::OpenOptionsExt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +208,158 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
         .map_err(|error| format!("cannot update Codex config: {error}"))
 }
 
+/// Why a caller may not launch an agent, or None. A pane `swarm spawn` made carries its own
+/// agent id, and only the orchestrator starts children; Herdr marks its own agent panes too.
+pub fn launch_refusal(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> Option<&'static str> {
+    let child = swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1");
+    child.then_some("swarm: a child agent cannot launch agents; ask the orchestrator")
+}
+
+/// Fable runs as a child only for review and council seats. The router refuses it too; this is
+/// the second, independent check, so a config edited past the router still cannot reach a pane.
+pub fn fable_refusal(agent_id: &str, role: &str, model: Option<&str>) -> Option<String> {
+    let fable = model.is_some_and(|model| model.to_ascii_lowercase().contains("fable"));
+    (fable && agent_id != "orchestrator" && !role.starts_with("review.") && !role.starts_with("council."))
+        .then(|| format!("swarm: Fable is a child only for review.* and council.* (role {role})"))
+}
+
+/// Provider flags the role owns; a caller's extra args may not set them.
+fn owned_flags(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "codex" => &["-m", "--model", "-s", "--sandbox", "-a", "--ask-for-approval"],
+        _ => &["--model", "--effort", "--permission-mode", "--mode", "--dangerously-skip-permissions", "--yolo"],
+    }
+}
+
+fn has_flag(args: &[String], flags: &[&str]) -> bool {
+    // Everything past a bare `--` is a positional prompt, not a flag.
+    args.iter()
+        .take_while(|arg| *arg != "--")
+        .any(|arg| flags.contains(&arg.split('=').next().unwrap_or(arg)))
+}
+
+/// The caller's extra args for `provider`, checked and in the provider's shape.
+pub fn extra_args(provider: &str, extra: &[String]) -> Result<Vec<String>, String> {
+    if has_flag(extra, owned_flags(provider)) {
+        return Err(format!(
+            "swarm: the role owns {provider} model, effort, sandbox, and approval flags; remove them from the extra args"
+        ));
+    }
+    // AGY reads a leading positional as a one-shot prompt; `-i` keeps the pane interactive.
+    if provider == "agy" && extra.first().is_some_and(|arg| !arg.starts_with('-')) {
+        return Ok([vec!["-i".to_string()], extra.to_vec()].concat());
+    }
+    Ok(extra.to_vec())
+}
+
+/// Where a Claude child runs and the args that go with it. Claude files a transcript under its
+/// cwd and has no way to move it, so a child runs from a pool dir under the caller's tree to stay
+/// out of the caller's /resume picker; `--add-dir` gives it the tree back. Its session id takes a
+/// reserved prefix so tools can tell a worker transcript apart. A resuming child keeps its cwd,
+/// because its transcript already lives under the original one.
+pub fn claude_child(agent_id: &str, cwd: &std::path::Path, extra: &[String], session_id: &uuid::Uuid) -> (std::path::PathBuf, Vec<String>) {
+    const RESUME: &[&str] = &["-r", "--resume", "-c", "--continue", "--fork-session"];
+    if has_flag(extra, RESUME) {
+        return (cwd.to_path_buf(), extra.to_vec());
+    }
+    let mut args = Vec::new();
+    if !has_flag(extra, &["--session-id"]) {
+        let id = session_id.to_string();
+        args.extend(["--session-id".to_string(), format!("aaaaaaaa{}", &id[8..])]);
+        if !has_flag(extra, &["-n", "--name"]) {
+            args.extend(["-n".to_string(), agent_id.to_string()]);
+        }
+    }
+    args.extend_from_slice(extra);
+    args.extend(["--add-dir".to_string(), cwd.to_string_lossy().into_owned()]);
+    (cwd.join(".herdr").join("workers"), args)
+}
+
+/// Mark `dir` trusted in Claude's `~/.claude.json`, so a child does not boot into the folder-trust
+/// dialog and wait there with nobody to answer. Returns whether the file changed.
+pub fn ensure_claude_trust(config: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
+    let mut value = read_json_object(config)?;
+    let key = dir.to_string_lossy().into_owned();
+    let project = value
+        .as_object_mut()
+        .expect("read_json_object returns an object")
+        .entry("projects")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or("swarm: projects in ~/.claude.json is not an object")?
+        .entry(key)
+        .or_insert_with(|| serde_json::json!({}));
+    if project["hasTrustDialogAccepted"] == true {
+        return Ok(false);
+    }
+    project
+        .as_object_mut()
+        .ok_or("swarm: a project entry in ~/.claude.json is not an object")?
+        .insert("hasTrustDialogAccepted".into(), true.into());
+    write_json(config, &value).map(|()| true)
+}
+
+/// Add `dir` to AGY's `trustedWorkspaces`. Returns whether the file changed.
+pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
+    let mut value = read_json_object(settings)?;
+    let trusted = value
+        .as_object_mut()
+        .expect("read_json_object returns an object")
+        .entry("trustedWorkspaces")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or("swarm: trustedWorkspaces in the AGY settings is not a list")?;
+    let dir = serde_json::Value::from(dir.to_string_lossy().into_owned());
+    if trusted.contains(&dir) {
+        return Ok(false);
+    }
+    trusted.push(dir);
+    write_json(settings, &value).map(|()| true)
+}
+
+fn read_json_object(path: &std::path::Path) -> Result<serde_json::Value, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({})),
+        Err(error) => return Err(format!("swarm: cannot read {}: {error}", path.display())),
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| format!("swarm: cannot parse {}: {error}", path.display()))?;
+    value
+        .is_object()
+        .then_some(value)
+        .ok_or_else(|| format!("swarm: {} is not a JSON object", path.display()))
+}
+
+/// Replace `path` in one rename, with the old file's permissions, because `~/.claude.json` holds
+/// credentials and a running CLI may read it at any moment.
+fn write_json(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
+    let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
+    let dir = path.parent().ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
+    std::fs::create_dir_all(dir).map_err(fail)?;
+    let tmp = dir.join(format!(
+        ".{}.swarm-{}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id()
+    ));
+    let permissions = std::fs::metadata(path)
+        .map(|meta| meta.permissions())
+        .unwrap_or_else(|_| std::os::unix::fs::PermissionsExt::from_mode(0o600));
+    let text = serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n";
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()))
+        .and_then(|()| std::fs::set_permissions(&tmp, permissions))
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&tmp);
+            fail(error)
+        })
+}
+
 fn chair_hook_command(provider: &str) -> Result<String, String> {
     let exe = std::env::current_exe()
         .map_err(|error| format!("swarm: cannot find executable: {error}"))?
@@ -340,6 +494,78 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&config).unwrap(), once);
         ensure_codex_trust(&root, std::path::Path::new("/two")).unwrap();
         assert_eq!(std::fs::read_to_string(&config).unwrap().matches("trust_level = \"trusted\"").count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn only_the_orchestrator_launches_and_fable_stays_on_review_and_council() {
+        assert!(launch_refusal(None, None).is_none());
+        assert!(launch_refusal(Some("orchestrator"), None).is_none());
+        assert!(launch_refusal(Some("coder"), None).is_some());
+        assert!(launch_refusal(None, Some("1")).is_some());
+
+        assert!(fable_refusal("coder", "code.complex", Some("claude-fable-5-1")).is_some());
+        assert!(fable_refusal("seat", "council.claude", Some("claude-fable-5-1")).is_none());
+        assert!(fable_refusal("seat", "review.pr", Some("Claude-FABLE")).is_none());
+        assert!(fable_refusal("orchestrator", "code.complex", Some("claude-fable-5-1")).is_none());
+        assert!(fable_refusal("coder", "code.complex", Some("claude-opus-5-5")).is_none());
+    }
+
+    #[test]
+    fn extra_args_keep_role_flags_out_and_agy_interactive() {
+        assert!(extra_args("claude", &strings(&["--model=opus"])).is_err());
+        assert!(extra_args("codex", &strings(&["-s", "danger-full-access"])).is_err());
+        assert_eq!(extra_args("claude", &strings(&["--", "--model"])).unwrap(), strings(&["--", "--model"]));
+        assert_eq!(extra_args("agy", &strings(&["fix the bug"])).unwrap(), strings(&["-i", "fix the bug"]));
+        assert_eq!(extra_args("agy", &strings(&["-i", "fix"])).unwrap(), strings(&["-i", "fix"]));
+    }
+
+    #[test]
+    fn a_claude_child_runs_from_the_pool_with_a_reserved_session_id() {
+        let cwd = std::path::Path::new("/repo");
+        let id = uuid::Uuid::now_v7();
+        let (dir, args) = claude_child("coder", cwd, &strings(&["--verbose"]), &id);
+        assert_eq!(dir, std::path::Path::new("/repo/.herdr/workers"));
+        assert_eq!(args[0], "--session-id");
+        assert!(args[1].starts_with("aaaaaaaa-") && uuid::Uuid::parse_str(&args[1]).is_ok());
+        assert_eq!(args[2..], strings(&["-n", "coder", "--verbose", "--add-dir", "/repo"]));
+
+        let (_, named) = claude_child("coder", cwd, &strings(&["--name", "x"]), &id);
+        assert!(!named.contains(&"-n".to_string()));
+        let (dir, resumed) = claude_child("coder", cwd, &strings(&["--resume", "abc"]), &id);
+        assert_eq!((dir.as_path(), resumed), (cwd, strings(&["--resume", "abc"])));
+    }
+
+    #[test]
+    fn trust_writes_keep_other_keys_order_and_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("swarm-claude-trust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let config = root.join(".claude.json");
+        std::fs::write(&config, r#"{"zeta":1,"projects":{"/other":{"allowedTools":[]}},"alpha":2}"#).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert!(ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap());
+        assert!(!ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap());
+        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(value.as_object().unwrap().keys().collect::<Vec<_>>(), ["zeta", "projects", "alpha"]);
+        assert_eq!(value["projects"]["/repo/.herdr/workers"]["hasTrustDialogAccepted"], true);
+        assert_eq!(value["projects"]["/other"]["allowedTools"], serde_json::json!([]));
+        assert_eq!(std::fs::metadata(&config).unwrap().permissions().mode() & 0o777, 0o600);
+
+        let settings = root.join("agy/settings.json");
+        assert!(ensure_agy_trust(&settings, std::path::Path::new("/repo")).unwrap());
+        assert!(!ensure_agy_trust(&settings, std::path::Path::new("/repo")).unwrap());
+        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(value["trustedWorkspaces"], serde_json::json!(["/repo"]));
+
+        std::fs::write(&config, "[]").unwrap();
+        assert!(ensure_claude_trust(&config, std::path::Path::new("/repo")).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 

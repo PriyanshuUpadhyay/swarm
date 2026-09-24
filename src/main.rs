@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -769,25 +769,61 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if !swarm::bus::valid_agent_id(agent_id) {
             return Err(format!("swarm: bad agent id {agent_id}").into());
         }
-        let account = match rest {
-            [] => None,
-            [flag, account] if flag == "--account" => Some(account.as_str()),
-            _ => return Err(USAGE.into()),
-        };
-        let resolved = resolve_role(role)?;
-        let provider = resolved.provider.clone();
-        if provider.as_deref() == Some("codex") {
-            let home = if let Some(account_name) = account {
-                let accounts = load_accounts("codex", true)?;
-                let account = swarm::profiles::resolve_account(&accounts, account_name)
-                    .map_err(|error| format!("swarm: {error}"))?;
-                std::path::PathBuf::from(&account.home)
-            } else {
-                default_codex_home()?
-            };
-            swarm::bus::ensure_codex_trust(&home, &std::env::current_dir()?)?;
+        let herdr_agent_pane = env::var("HERDR_AGENT_PANE").ok();
+        if let Some(reason) = swarm::bus::launch_refusal(env::var("SWARM_AGENT_ID").ok().as_deref(), herdr_agent_pane.as_deref()) {
+            return Err(reason.into());
         }
-        let command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
+        let (options, extra) = match rest.iter().position(|arg| arg == "--") {
+            Some(index) => (&rest[..index], &rest[index + 1..]),
+            None => (rest, &[][..]),
+        };
+        let (mut account, mut cwd) = (None, None);
+        for pair in options.chunks(2) {
+            match pair {
+                [flag, value] if flag == "--account" => account = Some(value.as_str()),
+                [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
+                _ => return Err(USAGE.into()),
+            }
+        }
+        let cwd = cwd.map_or_else(env::current_dir, Ok)?;
+        let cwd = std::fs::canonicalize(&cwd).map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
+        let resolved = resolve_role(role)?;
+        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
+            return Err(reason.into());
+        }
+        let provider = resolved.provider.clone();
+        let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
+        let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
+        let mut pane_dir = cwd.clone();
+        let user_home = std::path::PathBuf::from(env_var("HOME")?);
+        match provider.as_deref() {
+            Some("codex") => {
+                let home = if let Some(account_name) = account {
+                    let accounts = load_accounts("codex", true)?;
+                    let account = swarm::profiles::resolve_account(&accounts, account_name)
+                        .map_err(|error| format!("swarm: {error}"))?;
+                    std::path::PathBuf::from(&account.home)
+                } else {
+                    default_codex_home()?
+                };
+                swarm::bus::ensure_codex_trust(&home, &cwd)?;
+            }
+            Some("agy") => {
+                swarm::bus::ensure_agy_trust(&user_home.join(".gemini/antigravity-cli/settings.json"), &cwd)?;
+            }
+            // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
+            Some("claude") if agent_id != "orchestrator" => {
+                let (dir, args) = swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                std::fs::create_dir_all(&dir)?;
+                pane_dir = std::fs::canonicalize(&dir)?;
+                swarm::bus::ensure_claude_trust(&user_home.join(".claude.json"), &pane_dir)?;
+                extra = args;
+            }
+            _ => {}
+        }
+        command.extend(extra);
+        // Every adapter's spawn verb opens the pane in the working directory it runs in.
+        env::set_current_dir(&pane_dir)?;
         return spawn_agent(
             &connection,
             &root,
