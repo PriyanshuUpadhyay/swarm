@@ -66,17 +66,15 @@ public enum Composer {
 
 public struct ComposerAttachmentContext: Equatable, Sendable {
     public let sessionID: String
-    public let draft: String
     public let generation: Int
 
-    public init(sessionID: String, draft: String, generation: Int) {
+    public init(sessionID: String, generation: Int) {
         self.sessionID = sessionID
-        self.draft = draft
         self.generation = generation
     }
 
-    public func matches(sessionID: String, draft: String, generation: Int) -> Bool {
-        self.sessionID == sessionID && self.draft == draft && self.generation == generation
+    public func matches(sessionID: String, generation: Int) -> Bool {
+        self.sessionID == sessionID && self.generation == generation
     }
 }
 

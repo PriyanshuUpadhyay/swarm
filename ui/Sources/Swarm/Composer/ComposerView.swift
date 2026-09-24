@@ -65,7 +65,6 @@ struct ComposerView: View {
             updateMatches()
         }
         .onChange(of: draft.wrappedValue) {
-            attachmentGeneration += 1
             attachments = Composer.retainedAttachments(attachments, in: draft.wrappedValue)
             dismissedToken = nil
             selectedIndex = 0
@@ -415,15 +414,13 @@ struct ComposerView: View {
 
     private var attachmentContext: ComposerAttachmentContext {
         ComposerAttachmentContext(
-            sessionID: sessionID, draft: draft.wrappedValue,
-            generation: attachmentGeneration
+            sessionID: sessionID, generation: attachmentGeneration
         )
     }
 
     private func isCurrent(_ context: ComposerAttachmentContext) -> Bool {
         isCurrentSession() && context.matches(
-            sessionID: sessionID, draft: draft.wrappedValue,
-            generation: attachmentGeneration
+            sessionID: sessionID, generation: attachmentGeneration
         )
     }
 }
