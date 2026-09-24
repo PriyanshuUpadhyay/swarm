@@ -25,6 +25,17 @@ struct SessionsTreeTests {
         #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
     }
 
+    @Test("Chat tabs contain only chats from the selected workspace")
+    func workspaceChats() {
+        let first = session("first", cwd: "/repo/wt/feature")
+        let second = session("second", cwd: "/repo/wt/feature/src")
+        let other = session("other", cwd: "/repo/wt/main")
+        let tree = build([first, second, other])
+        #expect(Set(tree.workspaceChats(for: first.id).map(\.id)) == [first.id, second.id])
+        #expect(tree.workspaceChats(for: other.id).map(\.id) == [other.id])
+        #expect(tree.workspaceChats(for: SwarmSessionID("missing")).isEmpty)
+    }
+
     @Test("A folder is one workspace")
     func folder() {
         let tree = build([session("folder-1", cwd: "/outside")])

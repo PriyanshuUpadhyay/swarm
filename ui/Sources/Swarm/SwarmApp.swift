@@ -237,15 +237,19 @@ private struct SessionsWindow: View {
             }
         } detail: {
             if let row = model.selectedSession {
-                SessionDetailView(
-                    row: row,
-                    title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
-                    agents: model.agents, panes: panes,
-                    commandSource: model.commandSource,
-                    onSwitchModel: { switchChatFrom = row },
-                    isCurrentSession: { model.selectedSession?.id == row.id }
-                )
+                VStack(spacing: 0) {
+                    workspaceTabs(for: row)
+                    Divider()
+                    SessionDetailView(
+                        row: row,
+                        title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
+                        agents: model.agents, panes: panes,
+                        commandSource: model.commandSource,
+                        onSwitchModel: { switchChatFrom = row },
+                        isCurrentSession: { model.selectedSession?.id == row.id }
+                    )
                     .id(row.id)
+                }
             } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
                 ProjectHome(
                     project: project,
@@ -305,6 +309,62 @@ private struct SessionsWindow: View {
         } message: {
             Text(actionError ?? "")
         }
+    }
+
+    private func workspaceTabs(for selected: SwarmProjectSession) -> some View {
+        let chats = model.tree.workspaceChats(for: selected.id)
+        return HStack(spacing: 8) {
+            if let workspace = chats.first?.workspace {
+                Text(workspace)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, 12)
+            }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(chats) { chat in
+                            Button {
+                                model.select(chat.id)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(chat.session.title)
+                                        .lineLimit(1)
+                                    if let provider = chat.session.provider {
+                                        Text(providerBadge(provider))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    chat.id == selected.id ? Color.accentColor.opacity(0.2) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 7)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(chat.id == selected.id ? .isSelected : [])
+                            .id(chat.id)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .onAppear { proxy.scrollTo(selected.id) }
+                .onChange(of: selected.id) { _, id in proxy.scrollTo(id) }
+            }
+            Button {
+                if let path = chats.first?.workspacePath { newChatDirectory = path }
+            } label: {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.plain)
+            .help("New chat in this workspace")
+            .accessibilityLabel("New chat in this workspace")
+            .padding(.trailing, 12)
+        }
+        .padding(.vertical, 5)
     }
 
     private func chatRow(_ row: ChatRow) -> some View {

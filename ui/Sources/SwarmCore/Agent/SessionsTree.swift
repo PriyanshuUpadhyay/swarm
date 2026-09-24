@@ -208,6 +208,15 @@ public struct SessionsTree: Sendable, Hashable {
         chat(id)?.workspacePath
     }
 
+    public func workspaceChats(for id: SwarmSessionID) -> [ChatRow] {
+        for project in projects {
+            let chats = project.chats
+            guard let selected = chats.first(where: { $0.id == id }) else { continue }
+            return chats.filter { $0.workspacePath == selected.workspacePath }
+        }
+        return []
+    }
+
     public func text(now: Int = Int(Date().timeIntervalSince1970)) -> String {
         var lines: [String] = []
         for project in projects {
