@@ -8,6 +8,9 @@ public enum ChairLogDiscovery {
         provider: String, chairID: String?, cwd: String, createdAt: Int,
         homes: [URL]
     ) -> URL? {
+        let timing = SwarmPerformance.begin("LogDiscovery")
+        var candidatesSeen = 0
+        defer { timing.end(count: candidatesSeen) }
         let manager = FileManager.default
         var seen: Set<String> = []
         let roots = homes.map(\.standardizedFileURL).filter { seen.insert($0.path).inserted }
@@ -17,7 +20,8 @@ public enum ChairLogDiscovery {
                 if let match = candidates(provider: provider, home: home, manager: manager)
                     .sorted(by: { $0.path < $1.path })
                     .first(where: { candidate in
-                        switch provider {
+                        candidatesSeen += 1
+                        return switch provider {
                         case "claude": candidate.lastPathComponent == "\(chairID).jsonl"
                         case "codex": candidate.lastPathComponent.hasSuffix("-\(chairID).jsonl")
                         default: false
@@ -31,9 +35,12 @@ public enum ChairLogDiscovery {
 
         var closest: (path: URL, distance: TimeInterval)?
         let formatter = ISO8601DateFormatter()
+        let codexWindow = provider == "codex" ? codexFileWindow(createdAt: createdAt) : nil
 
         for home in roots {
             for candidate in candidates(provider: provider, home: home, manager: manager) {
+                if let codexWindow, !codexWindow(candidate) { continue }
+                candidatesSeen += 1
                 guard let record = firstRecord(in: candidate, formatter: formatter),
                       record.cwd == URL(fileURLWithPath: cwd).standardizedFileURL.path else { continue }
                 let delay = record.date.timeIntervalSince1970 - TimeInterval(createdAt)
@@ -46,6 +53,26 @@ public enum ChairLogDiscovery {
             }
         }
         return closest?.path
+    }
+
+    private static func codexFileWindow(createdAt: Int) -> (URL) -> Bool {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
+        // File names can use a local clock; allow every time zone around the record's 10-minute window.
+        let margin = 26 * 60 * 60
+        let lower = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt - margin)))
+        let upper = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(createdAt + margin)))
+        return { candidate in
+            let name = candidate.lastPathComponent
+            let stamp = String(name.dropFirst("rollout-".count).prefix(19))
+            // Older or custom rollout names have no date stamp, so inspect those as before.
+            guard stamp.count == 19, stamp[stamp.index(stamp.startIndex, offsetBy: 10)] == "T" else {
+                return true
+            }
+            return stamp >= lower && stamp <= upper
+        }
     }
 
     static func homes(provider: String, accountHomes: [String], userHome: URL) -> [URL] {

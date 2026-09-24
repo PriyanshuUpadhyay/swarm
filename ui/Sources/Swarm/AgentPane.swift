@@ -103,6 +103,8 @@ final class AgentPaneStore {
     func terminal(session: SwarmSession, agent: SwarmAgent) -> SwarmTerminalView {
         let key = key(session: session, agent: agent)
         if let terminal = terminals[key] { return terminal }
+        let timing = SwarmPerformance.begin("TerminalAttach")
+        defer { timing.end() }
         let terminal = SwarmTerminalView(frame: CGRect(x: 0, y: 0, width: 900, height: 400))
         terminal.onEnded = { [weak self] in self?.ended.insert(key) }
         terminal.onFocus = { [weak self] in self?.focusedKey = key }

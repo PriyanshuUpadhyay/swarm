@@ -42,13 +42,24 @@ public enum SwarmChatLauncher {
         _ plan: SwarmChatLaunchPlan, bus: any SwarmBus,
         onCreated: @Sendable (SwarmSessionID) async -> Void = { _ in }
     ) async throws -> SwarmSessionID {
-        let id = try await bus.startChairSession(chair: nil, directory: plan.directory)
+        let timing = SwarmPerformance.begin("ChatLaunch")
+        defer { timing.end() }
+        let id: SwarmSessionID
+        do {
+            let createTiming = SwarmPerformance.begin("SessionCreate")
+            defer { createTiming.end() }
+            id = try await bus.startChairSession(chair: nil, directory: plan.directory)
+        }
         await onCreated(id)
-        _ = try await bus.launch(
-            SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
-            account: plan.account,
-            in: id, directory: plan.directory
-        )
+        do {
+            let launchTiming = SwarmPerformance.begin("ProviderLaunch")
+            defer { launchTiming.end() }
+            _ = try await bus.launch(
+                SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
+                account: plan.account,
+                in: id, directory: plan.directory
+            )
+        }
         return id
     }
 

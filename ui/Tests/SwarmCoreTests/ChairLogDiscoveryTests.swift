@@ -140,6 +140,23 @@ struct ChairLogDiscoveryTests {
         )?.lastPathComponent == early.lastPathComponent)
     }
 
+    @Test("Finds a stamped rollout across midnight")
+    func codexMidnight() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let log = try fixture.codexLog(
+            home: home, name: "2026-09-21T23-59-30-near", cwd: "/work",
+            at: "2026-09-21T23:59:30Z"
+        )
+        let start = try #require(ISO8601DateFormatter().date(from: "2026-09-22T00:02:00Z"))
+
+        #expect(ChairLogDiscovery.path(
+            provider: "codex", chairID: nil, cwd: "/work",
+            createdAt: Int(start.timeIntervalSince1970), homes: [home]
+        )?.standardizedFileURL == log.standardizedFileURL)
+    }
+
     @Test("Rejects a rollout that starts twenty minutes before the session")
     func codexTooEarly() throws {
         let fixture = try Fixture()

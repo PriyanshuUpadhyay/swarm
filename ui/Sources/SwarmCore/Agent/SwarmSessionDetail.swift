@@ -71,6 +71,8 @@ public actor SwarmChairTranscript {
     public func poll(
         session: SwarmSession, chairProvider: String? = nil
     ) async -> ChairTranscriptSnapshot {
+        let timing = SwarmPerformance.begin("TranscriptPoll")
+        defer { timing.end(count: rows.count) }
         var resolved = session
         if resolved.chairLog == nil {
             resolved.chairLog = await discoveredLog(
@@ -100,9 +102,17 @@ public actor SwarmChairTranscript {
                 rawEntries = []
             }
             do {
-                if let records = try await reader?.readIfChanged() {
+                let records: [TranscriptRecord]?
+                do {
+                    let readTiming = SwarmPerformance.begin("TranscriptRead")
+                    defer { readTiming.end() }
+                    records = try await reader?.readIfChanged()
+                }
+                if let records {
+                    let buildTiming = SwarmPerformance.begin("TranscriptRows")
                     rows = TranscriptRowBuilder.rows(from: records)
                     rawEntries = TranscriptDebugData.entries(from: records)
+                    buildTiming.end(count: rows.count)
                 }
                 return .rows(rows, raw: rawEntries)
             } catch {

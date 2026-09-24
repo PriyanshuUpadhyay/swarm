@@ -307,29 +307,42 @@ extension SwarmSessionDiscovery {
     ) async throws -> SessionsTree {
         var listings: [String: [WorktreeEntry]] = [:]
         var agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
-        for session in sessions where session.archivedAt == nil {
-            if session.agents == 0 {
-                agentsBySession[session.id] = []
-            } else if let agents = try? await bus.agents(in: session) {
-                agentsBySession[session.id] = agents
+        do {
+            let timing = SwarmPerformance.begin("SessionDiscovery")
+            defer { timing.end(count: agentsBySession.count) }
+            for session in sessions where session.archivedAt == nil {
+                if session.agents == 0 {
+                    agentsBySession[session.id] = []
+                } else if let agents = try? await bus.agents(in: session) {
+                    agentsBySession[session.id] = agents
+                }
+                guard case .repository(let common) = identity(for: session.cwd), listings[common] == nil else {
+                    continue
+                }
+                listings[common] = try await Git.worktrees(of: common)
             }
-            guard case .repository(let common) = identity(for: session.cwd), listings[common] == nil else {
-                continue
-            }
-            listings[common] = try await Git.worktrees(of: common)
         }
-        for path in projectPaths {
-            guard case .repository(let common) = identity(for: path), listings[common] == nil else {
-                continue
+        do {
+            let timing = SwarmPerformance.begin("ProjectDiscovery")
+            defer { timing.end(count: projectPaths.count) }
+            for path in projectPaths {
+                guard case .repository(let common) = identity(for: path), listings[common] == nil else {
+                    continue
+                }
+                listings[common] = try await Git.worktrees(of: common)
             }
-            listings[common] = try await Git.worktrees(of: common)
         }
+        let titleTiming = SwarmPerformance.begin("TitleResolution")
         let titles = await resolvedTitles(sessions: sessions, agentsBySession: agentsBySession)
-        return SessionsTree.build(
+        titleTiming.end(count: titles.count)
+        let buildTiming = SwarmPerformance.begin("TreeBuild")
+        let tree = SessionsTree.build(
             sessions: sessions, projectPaths: projectPaths,
             agentsBySession: agentsBySession, titles: titles,
             repositoryPathsResolver: Git.repositoryPaths,
             worktreeLister: { listings[$0] ?? [] }
         )
+        buildTiming.end(count: tree.projects.count)
+        return tree
     }
 }

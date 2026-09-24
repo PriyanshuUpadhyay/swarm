@@ -29,8 +29,12 @@ final class SessionDetailModel {
     }
 
     func poll(row: SwarmProjectSession, chairProvider: String?) async {
+        let openTiming = SwarmPerformance.begin("ChatOpen")
+        var opened = false
+        defer { if !opened { openTiming.end() } }
         activate(sessionID: row.id.rawValue)
         while !Task.isCancelled {
+            let cycleTiming = SwarmPerformance.begin("TranscriptComposition")
             var rows: [TranscriptRow] = []
             var raw: [RawTranscriptEntry] = []
             var latest: ChairTranscriptSnapshot = .waiting
@@ -70,6 +74,11 @@ final class SessionDetailModel {
                 }
             }
             snapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
+            cycleTiming.end(count: rows.count)
+            if !opened {
+                openTiming.end(count: rows.count)
+                opened = true
+            }
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -129,6 +138,7 @@ struct SessionDetailView: View {
     @State private var findQuery = ""
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
+    @State private var didShowRows = false
     @FocusState private var composerFocused: Bool
     @FocusState private var findFieldFocused: Bool
     @FocusState private var transcriptFocused: Bool
@@ -148,7 +158,15 @@ struct SessionDetailView: View {
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
             await model.poll(row: row, chairProvider: chairProvider)
         }
-        .onAppear { transcriptFocused = true }
+        .onAppear {
+            SwarmPerformance.event("ChatDetailAppeared")
+            transcriptFocused = true
+        }
+        .onChange(of: model.snapshot) { _, snapshot in
+            guard !didShowRows, case .rows = snapshot else { return }
+            didShowRows = true
+            SwarmPerformance.event("ChatRowsShown")
+        }
         .onChange(of: panes.focusedKey) { _, key in
             guard key != nil else { return }
             transcriptFocused = false

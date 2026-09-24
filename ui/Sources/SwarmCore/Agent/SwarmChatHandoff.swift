@@ -9,6 +9,8 @@ public enum SwarmChatHandoff {
         _ plan: SwarmChatLaunchPlan, after row: SwarmProjectSession,
         bus: any SwarmBus
     ) async throws -> SwarmSessionID {
+        let timing = SwarmPerformance.begin("ModelHandoff")
+        defer { timing.end() }
         guard plan.provider == "claude" || plan.provider == "codex" else {
             throw SwarmProfileError.failed("Model switching supports Claude and Codex chats")
         }

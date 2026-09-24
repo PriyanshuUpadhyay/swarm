@@ -79,6 +79,23 @@ Plain folders keep the New Chat action without Git worktrees.
 Chats in one workspace appear as tabs above the transcript. The plus button starts another chat
 in that workspace; chats in other worktrees stay in their own tab groups.
 
+## Performance profiling
+
+Turn on **Debug > Performance Logging** in Swarm.app. Then open a slow chat or start a new one.
+In Terminal, watch the stage times in milliseconds:
+
+```sh
+/usr/bin/log stream --style compact --level info --predicate 'subsystem == "io.github.priyanshuupadhyay.swarm" AND category == "performance"'
+```
+
+For a saved trace, use `/usr/bin/log show --last 10m --style compact --info` with the same predicate.
+The logs show stage names, times, and item counts. They do not include chat text, paths, or
+command arguments. Turn off the menu switch when done. Set `SWARM_PERF=1` to enable the same
+timings for a command-line run. In Instruments, use Time Profiler for CPU work and Points of
+Interest for the stage intervals. `AppStarted` and `WindowReady` mark startup.
+`ChatSelected`, `ChatDetailAppeared`, and `ChatRowsShown` mark the visible chat-open path;
+`InitialRefresh`, `WorkspaceTree`, and `TranscriptPoll` show where the time goes before that.
+
 ## Agents
 
 Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that

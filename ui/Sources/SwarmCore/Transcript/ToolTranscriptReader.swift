@@ -91,10 +91,12 @@ public actor ToolTranscriptReader: TranscriptReading {
 
         // Wait for initial events from --tail to settle into messages.
         // Fall back after 3 seconds so an unresponsive or missing tool does not stall.
+        let timing = SwarmPerformance.begin("TranscriptCatchUp")
         await withCheckedContinuation { continuation in
             self.startContinuation = continuation
             scheduleCatchUpCompletion(delayMilliseconds: 3000)
         }
+        timing.end(count: records.count)
     }
 
     private func finishInitialCatchUp() {
