@@ -107,6 +107,7 @@ public struct SessionsTree: Sendable, Hashable {
 
     public static func build(
         sessions: [SwarmSession],
+        projectPaths: [String] = [],
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
         titles: [SwarmSessionID: String] = [:],
         repositoryPathsResolver: (String) -> GitRepositoryPaths?,
@@ -118,6 +119,16 @@ public struct SessionsTree: Sendable, Hashable {
                 for: session.cwd, repositoryPathsResolver: repositoryPathsResolver
             )
             groups[identity, default: []].append(session)
+        }
+        var openedProjects: [SwarmPathIdentity: String] = [:]
+        for path in projectPaths {
+            let identity = SwarmSessionDiscovery.identity(
+                for: path, repositoryPathsResolver: repositoryPathsResolver
+            )
+            openedProjects[identity] = path
+        }
+        for identity in openedProjects.keys where groups[identity] == nil {
+            groups[identity] = []
         }
 
         let projects = groups.compactMap { identity, sessions -> ProjectNode? in
@@ -156,15 +167,16 @@ public struct SessionsTree: Sendable, Hashable {
                         sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles)
                     ))
                 }
-                guard !workspaces.isEmpty else { return nil }
-                let launchDirectory = listed.first { $0.branch == "main" && !$0.isBare }?.path
+                guard !workspaces.isEmpty || openedProjects[identity] != nil else { return nil }
+                let launchDirectory = openedProjects[identity]
+                    ?? listed.first { $0.branch == "main" && !$0.isBare }?.path
                     ?? listed.first { !$0.isBare }?.path ?? path
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: launchDirectory,
                     workspaces: ordered(workspaces)
                 )
             }
-        }.filter { !$0.chats.isEmpty }
+        }.filter { !$0.chats.isEmpty || openedProjects[$0.id] != nil }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
     }
@@ -281,7 +293,9 @@ public struct SessionsTree: Sendable, Hashable {
 }
 
 extension SwarmSessionDiscovery {
-    public func tree(sessions: [SwarmSession], bus: any SwarmBus) async throws -> SessionsTree {
+    public func tree(
+        sessions: [SwarmSession], projectPaths: [String] = [], bus: any SwarmBus
+    ) async throws -> SessionsTree {
         var listings: [String: [WorktreeEntry]] = [:]
         var agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
         for session in sessions where session.archivedAt == nil {
@@ -295,9 +309,16 @@ extension SwarmSessionDiscovery {
             }
             listings[common] = try await Git.worktrees(of: common)
         }
+        for path in projectPaths {
+            guard case .repository(let common) = identity(for: path), listings[common] == nil else {
+                continue
+            }
+            listings[common] = try await Git.worktrees(of: common)
+        }
         let titles = await resolvedTitles(sessions: sessions, agentsBySession: agentsBySession)
         return SessionsTree.build(
-            sessions: sessions, agentsBySession: agentsBySession, titles: titles,
+            sessions: sessions, projectPaths: projectPaths,
+            agentsBySession: agentsBySession, titles: titles,
             repositoryPathsResolver: Git.repositoryPaths,
             worktreeLister: { listings[$0] ?? [] }
         )

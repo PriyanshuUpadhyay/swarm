@@ -34,6 +34,22 @@ struct SessionsTreeTests {
         #expect(tree.launchDirectory(for: SwarmSessionID("folder-1")) == "/outside")
     }
 
+    @Test("Opened projects stay visible with no chats")
+    func openedEmptyProjects() {
+        let folder = build([], projectPaths: ["/outside"])
+        #expect(folder.projects.map(\.path) == ["/outside"])
+        #expect(folder.projects[0].chats.isEmpty)
+
+        let repository = build([], projectPaths: ["/repo/wt/feature"])
+        #expect(repository.projects.map(\.path) == ["/repo"])
+        #expect(repository.projects[0].launchDirectory == "/repo/wt/feature")
+        #expect(repository.projects[0].chats.isEmpty)
+
+        let reopened = build([], projectPaths: ["/repo/wt/feature", "/repo/wt/main"])
+        #expect(reopened.projects.count == 1)
+        #expect(reopened.projects[0].launchDirectory == "/repo/wt/main")
+    }
+
     @Test("Resolved titles name their rows and missing titles fall back")
     func resolvedTitles() {
         let named = session("named", cwd: "/outside")
@@ -275,11 +291,13 @@ struct SessionsTreeTests {
     }
 
     private func build(
-        _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
+        _ sessions: [SwarmSession], projectPaths: [String] = [],
+        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
         titles: [SwarmSessionID: String] = [:]
     ) -> SessionsTree {
         SessionsTree.build(
-            sessions: sessions, agentsBySession: agentsBySession, titles: titles,
+            sessions: sessions, projectPaths: projectPaths,
+            agentsBySession: agentsBySession, titles: titles,
             repositoryPathsResolver: { path in
                 guard path.hasPrefix("/repo") else { return nil }
                 return GitRepositoryPaths(gitDirectory: common + "/worktrees/test", commonDirectory: common)

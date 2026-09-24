@@ -3,6 +3,8 @@ import SwarmCore
 
 struct AgentProfilesHome: View {
     let sessionsError: String?
+    let onOpenProject: () -> Void
+    let onCreateProject: () -> Void
     @State private var roles: [SwarmRole] = []
     @State private var isLoading = true
     @State private var error: String?
@@ -11,6 +13,10 @@ struct AgentProfilesHome: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Button("Open Project…", action: onOpenProject)
+                Button("Create Project…", action: onCreateProject)
+            }
             HStack {
                 Text("Agent profiles").font(.largeTitle.bold())
                 Spacer()
