@@ -39,6 +39,7 @@ final class SessionsTreeModel {
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
     func select(_ id: SwarmSessionID?) {
+        if id != nil { SwarmPerformance.event("ChatSelected") }
         pendingID = nil
         selectedSessionID = id
         agents = []
@@ -65,21 +66,38 @@ final class SessionsTreeModel {
     }
 
     func refresh() async throws {
-        let sessions = try await bus.sessions()
+        let timing = SwarmPerformance.begin("UIRefresh")
+        defer { timing.end(count: tree.projects.count) }
+        let sessions: [SwarmSession]
+        do {
+            let listTiming = SwarmPerformance.begin("SessionList")
+            defer { listTiming.end() }
+            sessions = try await bus.sessions()
+        }
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
-        tree = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
+        do {
+            let treeTiming = SwarmPerformance.begin("WorkspaceTree")
+            defer { treeTiming.end(count: sessions.count) }
+            tree = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
+        }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
             pendingID = nil
             self.selectedSessionID = row.id
-            agents = try await bus.agents(in: row.session)
+            do {
+                let agentTiming = SwarmPerformance.begin("SelectedAgents")
+                defer { agentTiming.end() }
+                agents = try await bus.agents(in: row.session)
+            }
             let provider = row.provider ?? agents.first {
                 $0.id == SwarmPanePolicy.chair
             }?.provider
             let key = row.id.rawValue + (row.session.chairLog ?? "") + (provider ?? "")
             if commandSourceKey != key {
+                let commandTiming = SwarmPerformance.begin("ComposerCommands")
                 let source = await discovery.composerCommandSource(
                     for: row.session, provider: provider
                 )
+                commandTiming.end()
                 if self.selectedSessionID == row.id {
                     commandSource = source
                     commandSourceKey = key
@@ -95,18 +113,24 @@ final class SessionsTreeModel {
     }
 
     func openProject(_ url: URL) async throws -> SwarmPathIdentity {
+        let timing = SwarmPerformance.begin("ProjectOpen")
+        defer { timing.end() }
         let path = try projects.add(url)
         try await refresh()
         return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
     }
 
     func createProject(at url: URL) async throws -> SwarmPathIdentity {
+        let timing = SwarmPerformance.begin("ProjectCreate")
+        defer { timing.end() }
         let path = try projects.create(at: url)
         try await refresh()
         return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
+        let timing = SwarmPerformance.begin("TaskCreate")
+        defer { timing.end() }
         guard case .repository(let common) = project.id else {
             throw GitTaskWorktreeError.notRepository
         }
@@ -143,9 +167,13 @@ final class SessionsTreeModel {
     }
 
     func run() async {
+        var first = true
         while !Task.isCancelled {
+            let timing = SwarmPerformance.begin(first ? "InitialRefresh" : "RefreshTick")
             do { try await refresh() }
             catch { self.error = String(describing: error) }
+            timing.end()
+            first = false
             try? await Task.sleep(for: .seconds(2))
         }
     }
@@ -266,6 +294,7 @@ private struct SessionsWindow: View {
         }
         .background(WindowFrameRestorer())
         .task {
+            SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
             await model.run()
         }
@@ -640,6 +669,8 @@ private struct LaunchTarget: Identifiable {
 }
 
 struct SwarmApp: App {
+    init() { SwarmPerformance.event("AppStarted") }
+
     var body: some Scene {
         WindowGroup { SessionsWindow() }
             .commands {
@@ -651,11 +682,13 @@ struct SwarmApp: App {
 
 private struct DebugCommands: Commands {
     @AppStorage("showRawData") private var showRawData = false
+    @AppStorage("performanceLogging") private var performanceLogging = false
 
     var body: some Commands {
         CommandMenu("Debug") {
             Toggle("Show Raw Data", isOn: $showRawData)
                 .keyboardShortcut("r", modifiers: [.command, .option])
+            Toggle("Performance Logging", isOn: $performanceLogging)
         }
     }
 }

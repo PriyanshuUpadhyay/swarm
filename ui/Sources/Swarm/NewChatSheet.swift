@@ -31,12 +31,15 @@ final class NewChatModel {
     }
 
     func load(initialProvider: String?) async {
+        let timing = SwarmPerformance.begin("NewChatOptions")
+        defer { timing.end() }
         let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
         if let initialProvider, allowed.contains(initialProvider) {
             provider = initialProvider
         }
-        await loadModels()
-        await loadAccounts()
+        async let models: Void = loadModels()
+        async let accounts: Void = loadAccounts()
+        _ = await (models, accounts)
         isLoading = false
     }
 
@@ -48,8 +51,9 @@ final class NewChatModel {
         modelCaption = nil
         clearAccounts()
         Task {
-            await loadModels()
-            await loadAccounts()
+            async let models: Void = loadModels()
+            async let accounts: Void = loadAccounts()
+            _ = await (models, accounts)
         }
     }
 
@@ -60,6 +64,8 @@ final class NewChatModel {
     }
 
     func loadModels() async {
+        let timing = SwarmPerformance.begin("ModelOptions")
+        defer { timing.end(count: models.count) }
         let requested = provider
         isLoadingModels = true
         do {
@@ -84,6 +90,8 @@ final class NewChatModel {
     }
 
     func loadAccounts() async {
+        let timing = SwarmPerformance.begin("AccountOptions")
+        defer { timing.end(count: accountOptions.count) }
         let requested = provider
         isLoadingAccounts = true
         do {
@@ -112,6 +120,8 @@ final class NewChatModel {
             directory: directory, provider: provider, model: selectedModel,
             account: accountSelection
         ) else { return nil }
+        let timing = SwarmPerformance.begin("NewChatStart")
+        defer { timing.end() }
         isStarting = true
         errorMessage = nil
         do {

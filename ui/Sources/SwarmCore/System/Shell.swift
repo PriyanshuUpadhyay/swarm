@@ -184,6 +184,15 @@ public enum Shell {
         outputLimit: Int = 64 * 1_024 * 1_024
     ) async throws -> ShellBytes {
         try Task.checkCancellation()
+        let name: StaticString
+        switch URL(fileURLWithPath: executable).lastPathComponent {
+        case "git": name = "GitProcess"
+        case "swarm": name = "SwarmProcess"
+        case "yelo": name = "YeloProcess"
+        default: name = "OtherProcess"
+        }
+        let timing = SwarmPerformance.begin(name)
+        defer { timing.end() }
         guard let path = which(executable) else {
             throw ShellError(command: executable, status: 127, stderr: "\(executable) not found on PATH")
         }

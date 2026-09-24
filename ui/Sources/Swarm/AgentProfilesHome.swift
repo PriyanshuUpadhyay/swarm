@@ -76,6 +76,8 @@ struct AgentProfilesHome: View {
     }
 
     private func load() async {
+        let timing = SwarmPerformance.begin("AgentProfiles")
+        defer { timing.end(count: roles.count) }
         isLoading = true
         defer { isLoading = false }
         do {
