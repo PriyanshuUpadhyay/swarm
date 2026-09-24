@@ -205,6 +205,26 @@ struct ChairLogDiscoveryTests {
         )?.lastPathComponent == log.lastPathComponent)
     }
 
+    @Test("A changed log updates the time-matched path cache")
+    func changedLogUpdatesCache() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".claude")
+        let project = home.appendingPathComponent("projects/repo")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let log = project.appendingPathComponent("native-id.jsonl")
+        try Data(#"{"timestamp":"2026-09-22T12:27:01Z","cwd":"/work"}"#.utf8).write(to: log)
+        #expect(ChairLogDiscovery.path(
+            provider: "claude", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
+        ) != nil)
+        try Data(#"{"timestamp":"2026-09-22T12:27:01Z","cwd":"/other-work"}"#.utf8).write(to: log)
+        #expect(ChairLogDiscovery.path(
+            provider: "claude", chairID: nil, cwd: "/work", createdAt: 1_790_079_961,
+            homes: [home]
+        ) == nil)
+    }
+
     @Test("Finds a Codex chair id in nested session folders")
     func codexChairID() throws {
         let fixture = try Fixture()
