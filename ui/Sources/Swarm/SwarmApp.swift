@@ -26,6 +26,7 @@ final class SessionsTreeModel {
     private let bus = SwarmCLIBus()
     private let discovery = SwarmSessionDiscovery()
     private let drafts = ComposerDraftStore()
+    private let projects = SwarmProjectStore()
 
     var tree = SessionsTree(projects: [])
     var selectedSessionID: SwarmSessionID?
@@ -66,7 +67,7 @@ final class SessionsTreeModel {
     func refresh() async throws {
         let sessions = try await bus.sessions()
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
-        tree = try await discovery.tree(sessions: sessions, bus: bus)
+        tree = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
             pendingID = nil
             self.selectedSessionID = row.id
@@ -91,6 +92,18 @@ final class SessionsTreeModel {
             commandSourceKey = nil
         }
         error = nil
+    }
+
+    func openProject(_ url: URL) async throws -> SwarmPathIdentity {
+        let path = try projects.add(url)
+        try await refresh()
+        return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
+    }
+
+    func createProject(at url: URL) async throws -> SwarmPathIdentity {
+        let path = try projects.create(at: url)
+        try await refresh()
+        return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
     }
 
     func archive(_ id: SwarmSessionID) async throws {
@@ -128,21 +141,30 @@ private struct SessionsWindow: View {
     @State private var panes = AgentPaneStore()
     @State private var newChatDirectory: String?
     @State private var switchChatFrom: SwarmProjectSession?
+    @State private var selectedProjectID: SwarmPathIdentity?
     @State private var actionError: String?
 
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedSessionID) {
-                Button { model.select(nil) } label: {
+                Button {
+                    selectedProjectID = nil
+                    model.select(nil)
+                } label: {
                     Label("Home", systemImage: "house")
                 }
                 .buttonStyle(.plain)
                 ForEach(sidebarRows) { entry in
                     switch entry {
                     case .project(let project):
-                        ProjectRowLabel(name: project.name) {
-                            newChatDirectory = project.launchDirectory
-                        }
+                        ProjectRowLabel(
+                            name: project.name,
+                            onSelect: {
+                                model.select(nil)
+                                selectedProjectID = project.id
+                            },
+                            onNewChat: { newChatDirectory = project.launchDirectory }
+                        )
                     case .chat(let row):
                         chatRow(row)
                         .padding(.leading, 16)
@@ -158,9 +180,18 @@ private struct SessionsWindow: View {
                 guard oldID != id else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 panes.clearFocus()
+                if id != nil { selectedProjectID = nil }
                 model.select(id)
             }
             .toolbar {
+                Menu {
+                    Button("Open Project…", action: openExistingProject)
+                    Button("Create Project…", action: createProject)
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .help("Projects")
+                .accessibilityLabel("Projects")
                 Button {
                     if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
                        let id = model.selectedSessionID,
@@ -186,8 +217,16 @@ private struct SessionsWindow: View {
                     isCurrentSession: { model.selectedSession?.id == row.id }
                 )
                     .id(row.id)
+            } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
+                ProjectHome(project: project) {
+                    newChatDirectory = project.launchDirectory
+                }
             } else {
-                AgentProfilesHome(sessionsError: model.error)
+                AgentProfilesHome(
+                    sessionsError: model.error,
+                    onOpenProject: openExistingProject,
+                    onCreateProject: createProject
+                )
             }
         }
         .background(WindowFrameRestorer())
@@ -215,7 +254,7 @@ private struct SessionsWindow: View {
                 Task { try? await model.refresh() }
             }
         }
-        .alert("Could not update chat", isPresented: Binding(
+        .alert("Could not complete action", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
         )) {
@@ -292,6 +331,42 @@ private struct SessionsWindow: View {
         }
     }
 
+    private func openExistingProject() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open Project"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let id = try await model.openProject(url)
+                model.select(nil)
+                selectedProjectID = id
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func createProject() {
+        let panel = NSSavePanel()
+        panel.title = "Create Project"
+        panel.prompt = "Create Project"
+        panel.nameFieldStringValue = "New Project"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let id = try await model.createProject(at: url)
+                model.select(nil)
+                selectedProjectID = id
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
     private var sidebarRows: [SidebarRow] {
         var rows: [SidebarRow] = []
         for project in model.tree.projects {
@@ -304,16 +379,20 @@ private struct SessionsWindow: View {
 
 private struct ProjectRowLabel: View {
     let name: String
+    let onSelect: () -> Void
     let onNewChat: () -> Void
     @State private var hovered = false
 
     var body: some View {
         HStack {
-            Text(name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Button(action: onSelect) {
+                Text(name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .buttonStyle(.plain)
             Spacer()
             Button(action: onNewChat) {
                 Image(systemName: "plus.circle")
@@ -325,6 +404,21 @@ private struct ProjectRowLabel: View {
             .allowsHitTesting(hovered)
         }
         .onHover { hovered = $0 }
+    }
+}
+
+private struct ProjectHome: View {
+    let project: ProjectNode
+    let onNewChat: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(project.name).font(.largeTitle.bold())
+            Text(project.launchDirectory).foregroundStyle(.secondary).textSelection(.enabled)
+            Button("New chat", action: onNewChat)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

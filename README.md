@@ -65,8 +65,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 The Herdr adapter runs `~/.config/herdr/bin/swarm-split.py` to create its pane layout. The repository
 ships it as `adapters/swarm-split.py`, and `sh scripts/install.sh` links it there.
 
-Swarm.app opens on Home, where routed roles show their models. New Chat lets the user choose a
-provider and model without changing a routed role. Codex and AGY list CLI models; Claude lists
+Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
+sidebar, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
+lets the user choose a provider and model without changing a routed role. Codex and AGY list CLI models; Claude lists
 aliases and accepts a full model name in Other model. In a chat, Switch model asks the live chair
 for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one sidebar
 row. If the old pane has closed, the new chair receives recent messages and makes its own compact
