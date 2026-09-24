@@ -70,13 +70,28 @@ struct KeyRoutingTests {
     @Test("Composer keeps new text and blocks a second send while the first is running")
     func sendState() {
         var state = ComposerSendState()
-        #expect(state.begin("  First message  ") == "First message")
-        #expect(state.isSending)
-        #expect(state.begin("First message") == nil)
-        #expect(state.finish(currentDraft: "Second message", succeeded: true) == "Second message")
-        #expect(!state.isSending)
+        #expect(state.begin(sessionID: "one", draft: "  First message  ") == "First message")
+        #expect(state.isSending(sessionID: "one"))
+        #expect(state.begin(sessionID: "one", draft: "First message") == nil)
+        #expect(state.finish(
+            sessionID: "one", currentDraft: "Second message", succeeded: true
+        ) == "Second message")
+        #expect(!state.isSending(sessionID: "one"))
 
-        #expect(state.begin("Third message") == "Third message")
-        #expect(state.finish(currentDraft: "Third message", succeeded: true).isEmpty)
+        #expect(state.begin(sessionID: "two", draft: "Third message") == "Third message")
+        #expect(state.finish(
+            sessionID: "two", currentDraft: "Third message", succeeded: true
+        ).isEmpty)
+    }
+
+    @Test("A picked command clears after send, but a later edit stays")
+    func pickedCommandSendState() {
+        var state = ComposerSendState()
+        #expect(state.begin(sessionID: "one", draft: "/review ") == "/review")
+        #expect(state.finish(sessionID: "one", currentDraft: "/review ", succeeded: true) == "")
+        #expect(state.begin(sessionID: "one", draft: "/review ") == "/review")
+        #expect(state.finish(
+            sessionID: "one", currentDraft: "/review \n", succeeded: true
+        ) == "/review \n")
     }
 }
