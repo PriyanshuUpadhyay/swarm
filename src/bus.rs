@@ -152,6 +152,33 @@ pub fn argv(agent_id: &str, role: &str, resolved: &ResolvedRole, swarm_home: &st
     }
 }
 
+/// The model a provider command line names with `--model` or `-m`, without a `[1m]` suffix.
+pub fn command_model(command: &[String]) -> Option<&str> {
+    let mut args = command.iter().take_while(|arg| *arg != "--");
+    while let Some(arg) = args.next() {
+        let model = match arg.strip_prefix("--model=") {
+            Some(model) => model,
+            None if arg == "--model" || arg == "-m" => args.next()?,
+            None => continue,
+        };
+        return model.split('[').next();
+    }
+    None
+}
+
+/// `catalog` is the Claude binary itself, where every model id and alias sits as a quoted
+/// string, or the JSON of `codex debug models`.
+pub fn model_known(provider: &str, catalog: &[u8], model: &str) -> bool {
+    if provider == "claude" {
+        let quoted = format!("\"{model}\"");
+        return catalog.windows(quoted.len()).any(|window| window == quoted.as_bytes());
+    }
+    serde_json::from_slice::<serde_json::Value>(catalog)
+        .ok()
+        .and_then(|value| value["models"].as_array().cloned())
+        .is_some_and(|models| models.iter().any(|entry| entry["slug"] == model))
+}
+
 /// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
 /// Keep the existing file byte-identical when the project table is already present.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
@@ -349,5 +376,24 @@ mod tests {
         assert!(!valid_agent_id("Coder-1"));
         assert!(!valid_agent_id("-coder"));
         assert!(!valid_agent_id(&"a".repeat(41)));
+    }
+
+    #[test]
+    fn finds_the_command_model_and_checks_it_against_the_catalog() {
+        let command = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        assert_eq!(command_model(&command(&["claude", "--model", "opus[1m]", "--effort", "high"])), Some("opus"));
+        assert_eq!(command_model(&command(&["codex", "-m", "gpt-6-sol"])), Some("gpt-6-sol"));
+        assert_eq!(command_model(&command(&["codex", "--model=gpt-6-luna"])), Some("gpt-6-luna"));
+        assert_eq!(command_model(&command(&["agy", "--", "--model", "x"])), None);
+
+        let binary = br#"aliases:{opus:{default:"claude-opus-5-5"}},x="opus""#;
+        assert!(model_known("claude", binary, "claude-opus-5-5"));
+        assert!(model_known("claude", binary, "opus"));
+        assert!(!model_known("claude", binary, "claude-opus-5"));
+
+        let codex = br#"{"models":[{"slug":"gpt-6-sol"},{"slug":"gpt-6-luna"}]}"#;
+        assert!(model_known("codex", codex, "gpt-6-sol"));
+        assert!(!model_known("codex", codex, "gpt-5.6-sol"));
+        assert!(!model_known("codex", b"not json", "gpt-6-sol"));
     }
 }

@@ -368,6 +368,25 @@ fn register_spawned_pane(
     Ok(pane)
 }
 
+/// What the provider CLI on PATH knows as models, for `swarm::bus::model_known`. None when the
+/// check cannot run; agy is skipped because `agy models` asks the network (about 5 s).
+fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String, String>) -> Option<Vec<u8>> {
+    match provider {
+        "claude" => env::split_paths(&env::var_os("PATH")?)
+            .map(|dir| dir.join("claude"))
+            .find(|path| path.is_file())
+            .and_then(|path| std::fs::read(path).ok()),
+        "codex" => std::process::Command::new("codex")
+            .args(["debug", "models"])
+            .envs(account_env)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| output.stdout),
+        _ => None,
+    }
+}
+
 fn spawn_agent(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -394,6 +413,14 @@ fn spawn_agent(
     let provider = options.provider.or_else(|| options.command.first().map(String::as_str))
         .filter(|provider| matches!(*provider, "claude" | "codex" | "agy"))
         .map(str::to_string);
+    // Warn, do not refuse: an unknown name usually means the role config or the CLI is stale,
+    // and the pane shows the real error if the model does not run.
+    if let (Some(provider), Some(model)) = (provider.as_deref(), swarm::bus::command_model(options.command)) {
+        let account_env = account.as_ref().map(|account| account.env.clone()).unwrap_or_default();
+        if model_catalog(provider, &account_env).is_some_and(|catalog| !swarm::bus::model_known(provider, &catalog, model)) {
+            eprintln!("swarm: warning: the installed {provider} CLI does not list model {model}; the role config may need an update");
+        }
+    }
     let adapter = swarm::adapter::load(root, &adapter_name())?;
     let session = session_id.to_string();
     let home = swarm::paths::home()?;
