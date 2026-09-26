@@ -51,15 +51,17 @@ public struct WorkspaceNode: Sendable, Hashable, Identifiable {
     public var id: String { path }
     public let path: String
     public let name: String
+    public let branch: String?
     public let sessions: [SwarmProjectSession]
     public var current: SwarmProjectSession? { sessions.first }
     public var state: SessionRowPresentation.State? {
         current.map(SessionRowPresentation.state)
     }
 
-    public init(path: String, name: String, sessions: [SwarmProjectSession]) {
+    public init(path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil) {
         self.path = path
         self.name = name
+        self.branch = branch
         self.sessions = sessions
     }
 }
@@ -150,7 +152,8 @@ public struct SessionsTree: Sendable, Hashable {
                     return WorkspaceNode(
                         path: entry.path,
                         name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,
-                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles)
+                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles),
+                        branch: entry.branch
                     )
                 }
                 let hubSessions = sessions.filter { session in

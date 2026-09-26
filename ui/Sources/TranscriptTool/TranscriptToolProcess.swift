@@ -88,7 +88,7 @@ public final class TranscriptToolProcess: Sendable {
     public var events: AsyncThrowingStream<TranscriptRecord, Error> { stream }
     public var processIdentifier: Int32? { lifecycle.processIdentifier }
 
-    public init(binary: URL, format: String, log: URL, tail: Int? = nil, follow: Bool) {
+    public init(binary: URL, format: String, log: URL, tail: Int? = nil, before: UInt64? = nil, follow: Bool) {
         self.binary = binary
         self.format = format
         self.log = log
@@ -98,6 +98,9 @@ public final class TranscriptToolProcess: Sendable {
         var arguments: [String] = ["--format", format]
         if let tail {
             arguments.append(contentsOf: ["--tail", String(tail)])
+        }
+        if let before {
+            arguments.append(contentsOf: ["--before", String(before)])
         }
         if follow {
             arguments.append("--follow")

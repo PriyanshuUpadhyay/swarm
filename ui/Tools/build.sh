@@ -34,7 +34,8 @@ bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --sho
 app="$root/.build/release/Swarm.app"
 
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp -R "$root/Sources/Swarm/Resources/DiffViewer" "$app/Contents/Resources/DiffViewer"
 cp "$bin_dir/Swarm" "$app/Contents/MacOS/Swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"

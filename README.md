@@ -66,18 +66,21 @@ The Herdr adapter runs `~/.config/herdr/bin/swarm-split.py` to create its pane l
 ships it as `adapters/swarm-split.py`, and `sh scripts/install.sh` links it there.
 
 Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
-sidebar, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
+project list, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
 lets the user choose a provider and model without changing a routed role. Codex and AGY list CLI models; Claude lists
 aliases and accepts a full model name in Other model. In a chat, Switch model asks the live chair
-for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one sidebar
-row. If the old pane has closed, the new chair receives recent messages and makes its own compact
+for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
+tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
 summary.
 
-For a Git project, New Task starts a branch from the default branch in a worktree beside the
+For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
 project, then opens New Chat there. Empty task worktrees stay available from the project view.
 Plain folders keep the New Chat action without Git worktrees.
-Chats in one workspace appear as tabs above the transcript. The plus button starts another chat
-in that workspace; chats in other worktrees stay in their own tab groups.
+The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
+finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear
+as underlined tabs above the transcript. The plus button starts another chat in that workspace.
+Pins, workspace names, and the last selected chat survive restarts. Archive workspace hides its
+row without deleting files, archiving chats, or stopping agents; Archived offers Restore workspace.
 Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane
 accepts input in Swarm. A closed connection can be reopened with Reconnect.
 

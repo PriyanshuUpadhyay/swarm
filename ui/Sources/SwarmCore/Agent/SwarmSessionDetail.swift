@@ -11,13 +11,14 @@ public enum ChairTranscriptSource: Sendable, Equatable {
         logExists: (String) -> Bool
     ) -> ChairTranscriptSource {
         guard let provider = session.chairProvider ?? chairProvider,
-              provider == "claude" || provider == "codex" else { return .unsupported }
+              ["claude", "codex", "agy"].contains(provider) else { return .unsupported }
         guard let path = session.chairLog, !path.isEmpty, logExists(path) else { return .waiting }
         return .ready(log: URL(fileURLWithPath: path), format: provider)
     }
 }
 
 public enum ChairTranscriptSnapshot: Sendable, Equatable {
+    case loading
     case waiting
     case rows([TranscriptRow], raw: [RawTranscriptEntry])
     case notice(String)
@@ -31,6 +32,7 @@ public enum ChairTranscriptSnapshot: Sendable, Equatable {
 
     public var printText: String {
         switch self {
+        case .loading: "notice Loading chat…"
         case .waiting: "notice The chair has not written its log yet"
         case .rows(let rows, _): rows.map(\.printLine).joined(separator: "\n")
         case .notice(let message): "notice \(message)"
@@ -51,8 +53,11 @@ public actor SwarmChairTranscript {
     private var homesByProvider: [String: [URL]] = [:]
     private var log: URL?
     private var reader: ToolTranscriptReader?
+    public private(set) var currentModel: String?
+    public private(set) var usage = ChatUsage()
     private var rows: [TranscriptRow] = []
     private var rawEntries: [RawTranscriptEntry] = []
+    public private(set) var hasOlder = false
 
     public init(
         binary: URL? = nil,
@@ -91,6 +96,8 @@ public actor SwarmChairTranscript {
             }
             if path != log {
                 log = path
+                currentModel = nil
+                usage = ChatUsage()
                 reader = ToolTranscriptReader(binary: binary, format: format, log: path)
             }
             do {
@@ -100,11 +107,8 @@ public actor SwarmChairTranscript {
                     defer { readTiming.end() }
                     records = try await reader?.readIfChanged()
                 }
-                if let records {
-                    let buildTiming = SwarmPerformance.begin("TranscriptRows")
-                    rows = TranscriptRowBuilder.rows(from: records)
-                    rawEntries = TranscriptDebugData.entries(from: records)
-                    buildTiming.end(count: rows.count)
+                if records != nil, let reader {
+                    await rebuild(from: reader)
                 }
                 return .rows(rows, raw: rawEntries)
             } catch {
@@ -115,6 +119,24 @@ public actor SwarmChairTranscript {
                     : .rows(rows, raw: rawEntries)
             }
         }
+    }
+
+    public func loadOlder() async throws -> ChairTranscriptSnapshot {
+        guard let reader else { return .rows(rows, raw: rawEntries) }
+        _ = try await reader.loadOlder()
+        await rebuild(from: reader)
+        return .rows(rows, raw: rawEntries)
+    }
+
+    private func rebuild(from reader: ToolTranscriptReader) async {
+        let window = await reader.window()
+        let timing = SwarmPerformance.begin("TranscriptRows")
+        defer { timing.end(count: rows.count) }
+        rows = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        rawEntries = TranscriptDebugData.entries(from: window.records, indexOffset: window.indexOffset)
+        hasOlder = window.hasOlder
+        usage = window.usage
+        if let model = ChatModelChoice.latest(in: window.records) { currentModel = model }
     }
 
     func discoveredLog(

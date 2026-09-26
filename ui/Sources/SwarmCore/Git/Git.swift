@@ -15,11 +15,14 @@ struct GitOutput: Sendable {
 
 /// Running git, and the facts every other part of `Git` asks it for.
 public enum Git {
-    static func runRaw(_ arguments: [String], in directory: String) async throws -> GitOutput {
+    static func runRaw(
+        _ arguments: [String], in directory: String,
+        timeout: Duration? = nil, outputLimit: Int = 64 * 1024 * 1024
+    ) async throws -> GitOutput {
         let result = try await Shell.runBytes("git", arguments, cwd: directory, env: [
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_OPTIONAL_LOCKS": "0",
-        ])
+        ], timeout: timeout, outputLimit: outputLimit)
         return GitOutput(
             status: result.status,
             stdout: result.stdout,

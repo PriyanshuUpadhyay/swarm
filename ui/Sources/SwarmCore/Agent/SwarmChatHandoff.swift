@@ -5,18 +5,24 @@ public enum SwarmChatHandoff {
 
     /// Ask the old chair for a summary, start the new chair, then link the sessions after delivery.
     /// If the new chair fails after launch, its session stays separate so the old chat is intact.
+    /// Cancellation is offered only before starting; it does not interrupt the old chair
+    /// or undo a launched agent. Callers must keep later stages visible until they finish.
     public static func start(
         _ plan: SwarmChatLaunchPlan, after row: SwarmProjectSession,
-        bus: any SwarmBus
+        bus: any SwarmBus,
+        onProgress: @Sendable (ChatSwitchPhase) async -> Void = { _ in }
     ) async throws -> SwarmSessionID {
         let timing = SwarmPerformance.begin("ModelHandoff")
         defer { timing.end() }
         guard plan.provider == "claude" || plan.provider == "codex" else {
             throw SwarmProfileError.failed("Model switching supports Claude and Codex chats")
         }
+        try Task.checkCancellation()
+        await onProgress(.preparing)
         let source = row.session
         let transcript = SwarmChairTranscript()
         let initial = await transcript.poll(session: source, chairProvider: row.provider)
+        try Task.checkCancellation()
         guard case .rows(let oldRows, _) = initial else {
             throw SwarmProfileError.failed("The current chat has no readable transcript to carry forward")
         }
@@ -24,7 +30,13 @@ public enum SwarmChatHandoff {
         var context: String?
         var isSummary = false
         let chair = try await bus.agents(in: source).first { $0.id == SwarmPanePolicy.chair }
+        try Task.checkCancellation()
         if chair?.alive == true {
+            guard !ChairTurn.isActive(oldRows) else {
+                throw SwarmProfileError.failed("Wait for the current reply to finish, or stop it before switching model.")
+            }
+            await onProgress(.summarizing)
+            try Task.checkCancellation()
             try await bus.type(request, to: SwarmPanePolicy.chair, in: source)
             for _ in 0..<90 {
                 try await Task.sleep(for: .seconds(1))
@@ -41,11 +53,16 @@ public enum SwarmChatHandoff {
             throw SwarmProfileError.failed("The current chat has no messages to carry forward")
         }
 
+        try Task.checkCancellation()
+        await onProgress(.starting)
+        try Task.checkCancellation()
         let id = try await SwarmChatLauncher.start(plan, bus: bus)
+        await onProgress(.waiting)
         for _ in 0..<30 {
             try await Task.sleep(for: .seconds(1))
             if let session = try await bus.sessions().first(where: { $0.id == id }),
                isReady(session, provider: plan.provider) {
+                await onProgress(.delivering)
                 try await bus.type(
                     firstMessage(context: context, isSummary: isSummary),
                     to: SwarmPanePolicy.chair, in: session

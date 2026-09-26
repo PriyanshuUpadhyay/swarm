@@ -9,13 +9,13 @@ public enum RoutedKey: Sendable, Equatable {
 }
 
 public enum KeyRoute: Sendable, Equatable {
-    case terminal, openNewChat
+    case terminal, openNewWorkspace
     case openFind, findNext, findPrevious, ignore
 }
 
 public enum KeyRouting {
     public static func route(focus: FocusedSurface, key: RoutedKey) -> KeyRoute {
-        if key == .commandN { return .openNewChat }
+        if key == .commandN { return .openNewWorkspace }
         return switch (focus, key) {
         case (.terminal, _): .terminal
         case (.transcript, .commandF): .openFind
