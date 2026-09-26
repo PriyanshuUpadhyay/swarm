@@ -14,7 +14,7 @@ struct KeyRoutingTests {
         #expect(KeyRouting.route(focus: .terminal, key: .commandF) == .terminal)
         #expect(KeyRouting.route(focus: .sidebar, key: .escape) == .ignore)
         for focus in [FocusedSurface.terminal, .transcript, .sidebar] {
-            #expect(KeyRouting.route(focus: focus, key: .commandN) == .openNewChat)
+            #expect(KeyRouting.route(focus: focus, key: .commandN) == .openNewWorkspace)
         }
     }
 

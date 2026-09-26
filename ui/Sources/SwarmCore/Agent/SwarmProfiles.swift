@@ -45,6 +45,8 @@ public struct SwarmRoleList: Sendable, Hashable, Codable {
 public struct SwarmModel: Sendable, Hashable, Codable, Identifiable {
     public var id: String
     public var label: String
+
+    public init(id: String, label: String) { self.id = id; self.label = label }
 }
 
 public struct SwarmModelList: Sendable, Hashable, Codable {

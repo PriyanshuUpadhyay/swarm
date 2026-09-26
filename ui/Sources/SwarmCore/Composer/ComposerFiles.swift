@@ -24,13 +24,22 @@ public struct ComposerFileMatch: Identifiable, Hashable, Sendable {
 
 /// The ranking is adapted from Bloom's FileMatch.
 public enum ComposerFileCatalog {
-    public static func discover(from source: ComposerMentionSource) async -> [String] {
+    /// File suggestions must not recursively scan the home folder or an ancestor, even
+    /// when that folder is a Git repository. A project below the home folder is allowed.
+    public static func discover(
+        from source: ComposerMentionSource,
+        homeDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) async -> [String] {
+        let root = URL(fileURLWithPath: source.root).resolvingSymlinksInPath().standardizedFileURL.path
+        let home = URL(fileURLWithPath: homeDirectory).resolvingSymlinksInPath().standardizedFileURL.path
+        guard root != "/", root != home, !home.hasPrefix(root + "/"), !Task.isCancelled else { return [] }
         if let result = try? await Shell.run(
             "git", ["ls-files", "-co", "--exclude-standard"],
             cwd: source.root, timeout: .seconds(10), outputLimit: 4 * 1_024 * 1_024
         ), result.ok {
             return result.stdout.split(whereSeparator: \.isNewline).map(String.init).sorted()
         }
+        guard !Task.isCancelled else { return [] }
         return walk(root: source.root)
     }
 
@@ -65,6 +74,7 @@ public enum ComposerFileCatalog {
         let skipped = Set([".git", ".build", "node_modules", "DerivedData"])
         var paths: [String] = []
         for case let url as URL in enumerator {
+            guard !Task.isCancelled else { break }
             let values = try? url.resourceValues(forKeys: Set(keys))
             let normalized = url.standardizedFileURL.path
             guard normalized.hasPrefix(rootURL.path + "/") else { continue }

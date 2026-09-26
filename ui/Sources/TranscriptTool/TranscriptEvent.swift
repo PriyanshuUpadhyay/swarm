@@ -187,12 +187,14 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
     case error(message: String, meta: Meta)
     case systemMessage(kind: String, text: String, meta: Meta)
     case sessionInfo(kind: String, value: String, meta: Meta)
+    case usage(TranscriptUsage, meta: Meta)
     case image(role: String, mediaType: String, meta: Meta)
     case userMessageChunk(text: String, meta: Meta)
     case agentMessageChunk(text: String, meta: Meta)
     case agentThoughtChunk(text: String, meta: Meta)
     case toolCall(toolCallID: String, name: String, input: JSONElement, status: ToolStatus, meta: Meta)
     case toolCallUpdate(toolCallID: String, status: ToolStatus, content: String, meta: Meta)
+    case toolDiff(TranscriptDiff, meta: Meta)
     case elicitation(toolCallID: String, questions: [Question], meta: Meta)
     case elicitationResult(toolCallID: String, answers: [Answer], meta: Meta)
     case hookResult(kind: String, hookEvent: String, hookName: String, toolCallID: String, exitCode: Int64?, meta: Meta)
@@ -265,6 +267,9 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
             let value = (try? container.decodeIfPresent(String.self, forKey: .value)) ?? ""
             self = .sessionInfo(kind: kind, value: value, meta: meta)
 
+        case "usage":
+            self = .usage(try TranscriptUsage(from: decoder), meta: meta)
+
         case "image":
             let role = (try? container.decodeIfPresent(String.self, forKey: .role)) ?? "agent"
             let mediaType = (try? container.decodeIfPresent(String.self, forKey: .mediaType)) ?? ""
@@ -315,6 +320,9 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
                 kind: kind, hookEvent: hookEvent, hookName: hookName, toolCallID: id,
                 exitCode: exitCode, meta: meta
             )
+
+        case "tool_diff":
+            self = .toolDiff(try TranscriptDiff(from: decoder), meta: meta)
 
         case "permission_decision":
             let hookEvent = (try? container.decodeIfPresent(String.self, forKey: .hookEvent)) ?? ""

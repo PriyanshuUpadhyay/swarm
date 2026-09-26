@@ -20,9 +20,10 @@ enum TranscriptReaderError: Error, CustomStringConvertible {
 /// Reads interactive CLI transcripts via the external Zig transcript subprocess.
 ///
 /// Spawns `transcript --follow --tail <messageLimit>` on initial read and streams new events
-/// directly into the transcript message list.
+/// directly into the transcript message list. The limit counts source log lines, not emitted
+/// events; all events in each line are retained. Loaded pages stay until the reader is released.
 public actor ToolTranscriptReader: TranscriptReading {
-    public static let messageLimit = 500
+    public static let messageLimit = 100
 
     private let binary: URL
     private let format: String
@@ -34,7 +35,11 @@ public actor ToolTranscriptReader: TranscriptReading {
     private var catchUpTimer: Task<Void, Never>?
 
     private var records: [TranscriptRecord] = []
-    private var messageStart = 0
+    public private(set) var usage = ChatUsage()
+    public private(set) var historyStartIndex = 0
+    public private(set) var olderOffset: UInt64?
+    private var loadingOlder = false
+    public var hasOlder: Bool { (olderOffset ?? 0) > 0 }
 
     private var appendedThisRead = 0
     private var rebuiltThisRead = false
@@ -47,7 +52,7 @@ public actor ToolTranscriptReader: TranscriptReading {
         binary: URL,
         format: String,
         log: URL,
-        messageLimit: Int = 500
+        messageLimit: Int = ToolTranscriptReader.messageLimit
     ) {
         self.binary = binary
         self.format = format
@@ -135,28 +140,53 @@ public actor ToolTranscriptReader: TranscriptReading {
             scheduleCatchUpCompletion(delayMilliseconds: 80)
         }
 
-        if case .page = record.event {
+        if case .page(let start, let end) = record.event {
+            if start != end { olderOffset = start }
             return
         }
 
+        usage.ingest(record.event)
         records.append(record)
         appendedThisRead += 1
-        trim()
     }
 
-    private func trim() {
-        var trimmed = false
-        while records.count - messageStart > limit {
-            messageStart += 1
-            trimmed = true
+    /// Fetch the preceding source window without restarting the live stream.
+    public func loadOlder() async throws -> [TranscriptRecord] {
+        await startIfNeeded()
+        guard !loadingOlder, let before = olderOffset, before > 0 else { return records }
+        loadingOlder = true
+        defer { loadingOlder = false }
+        let page = TranscriptToolProcess(
+            binary: binary, format: format, log: log, tail: limit, before: before, follow: false
+        )
+        var older: [TranscriptRecord] = []
+        var nextOffset: UInt64?
+        try await withTaskCancellationHandler {
+            for try await record in page.stream {
+                try Task.checkCancellation()
+                if case .page(let start, let end) = record.event {
+                    guard end == before, start < before else {
+                        throw TranscriptReaderError.streamEnded("the history file changed; reopen this chat")
+                    }
+                    nextOffset = start
+                } else {
+                    older.append(record)
+                }
+            }
+        } onCancel: {
+            page.stop()
         }
-        if messageStart > 1024, messageStart * 2 > records.count {
-            records.removeFirst(messageStart)
-            messageStart = 0
+        guard let nextOffset else {
+            throw TranscriptReaderError.streamEnded("the history page has no cursor")
         }
-        if trimmed {
-            rebuiltThisRead = true
-        }
+        // Live events may arrive while the page is read. Prepend to the current array.
+        records.insert(contentsOf: older, at: 0)
+        historyStartIndex -= older.count
+        olderOffset = nextOffset
+        usage = ChatUsage()
+        for record in records { usage.ingest(record.event) }
+        rebuiltThisRead = true
+        return records
     }
 
     public func read() async throws -> [TranscriptRecord] {
@@ -164,7 +194,7 @@ public actor ToolTranscriptReader: TranscriptReading {
         if records.isEmpty, let streamFailure {
             throw TranscriptReaderError.streamEnded(streamFailure)
         }
-        let visible = Array(records.dropFirst(messageStart))
+        let visible = records
         appendedThisRead = 0
         rebuiltThisRead = false
         return visible
@@ -179,10 +209,14 @@ public actor ToolTranscriptReader: TranscriptReading {
             if let streamFailure { throw TranscriptReaderError.streamEnded(streamFailure) }
             return nil
         }
-        let visible = Array(records.dropFirst(messageStart))
+        let visible = records
         appendedThisRead = 0
         rebuiltThisRead = false
         return visible
+    }
+
+    func window() -> (records: [TranscriptRecord], indexOffset: Int, hasOlder: Bool, usage: ChatUsage) {
+        (records, historyStartIndex, hasOlder, usage)
     }
 
     func processIdentifier() -> Int32? {

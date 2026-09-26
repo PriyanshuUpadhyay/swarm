@@ -23,6 +23,7 @@ let package = Package(
         .executableTarget(
             name: "Swarm",
             dependencies: ["SwarmCore", .product(name: "SwiftTerm", package: "SwiftTerm")],
+            resources: [.copy("Resources/DiffViewer")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(name: "SwarmCoreTests", dependencies: ["SwarmCore"], swiftSettings: [.swiftLanguageMode(.v6)]),

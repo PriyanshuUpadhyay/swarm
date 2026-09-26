@@ -17,6 +17,21 @@ pub const ErrorEvent = struct { meta: Meta, message: []const u8 };
 pub const SystemMessage = struct { meta: Meta, kind: []const u8, text: []const u8 };
 pub const SessionInfoKind = enum { title, agent_name, model, cwd };
 pub const SessionInfo = struct { meta: Meta, kind: SessionInfoKind, value: []const u8 };
+pub const Usage = struct {
+    meta: Meta,
+    source: enum { claude, codex },
+    kind: enum { context, cost },
+    context_tokens: ?i64 = null,
+    context_capacity_tokens: ?i64 = null,
+    input_tokens: ?i64 = null,
+    output_tokens: ?i64 = null,
+    cache_read_tokens: ?i64 = null,
+    cache_write_tokens: ?i64 = null,
+    session_input_tokens: ?i64 = null,
+    session_output_tokens: ?i64 = null,
+    cost_usd: ?f64 = null,
+    cost_completeness: enum { complete, partial, unknown } = .unknown,
+};
 pub const Image = struct { meta: Meta, role: enum { user, agent, tool }, media_type: []const u8 };
 
 pub const Unknown = struct {
@@ -39,6 +54,21 @@ pub const ToolCallUpdate = struct {
     tool_call_id: []const u8,
     status: ToolStatus,
     content: []const u8,
+};
+
+pub const DiffHunk = struct {
+    old_start: i64,
+    old_lines: i64,
+    new_start: i64,
+    new_lines: i64,
+    lines: []const []const u8,
+};
+
+pub const ToolDiff = struct {
+    meta: Meta,
+    tool_call_id: []const u8,
+    path: []const u8,
+    hunks: []const DiffHunk,
 };
 
 pub const Option = struct {
@@ -93,12 +123,14 @@ pub const Event = union(enum) {
     @"error": ErrorEvent,
     system_message: SystemMessage,
     session_info: SessionInfo,
+    usage: Usage,
     image: Image,
     user_message_chunk: Text,
     agent_message_chunk: Text,
     agent_thought_chunk: Text,
     tool_call: ToolCall,
     tool_call_update: ToolCallUpdate,
+    tool_diff: ToolDiff,
     elicitation: Elicitation,
     elicitation_result: ElicitationResult,
     hook_result: HookResult,
@@ -109,6 +141,29 @@ pub const Event = union(enum) {
 pub fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     const value = obj.get(key) orelse return "";
     return if (value == .string) value.string else "";
+}
+
+pub fn tokenCount(obj: std.json.ObjectMap, key: []const u8) ?i64 {
+    const value = obj.get(key) orelse return null;
+    return if (value == .integer and value.integer >= 0) value.integer else null;
+}
+
+fn nonnegativeNumber(obj: std.json.ObjectMap, key: []const u8) ?f64 {
+    const value = obj.get(key) orelse return null;
+    const number: f64 = switch (value) {
+        .integer => @floatFromInt(value.integer),
+        .float => value.float,
+        else => return null,
+    };
+    return if (std.math.isFinite(number) and number >= 0) number else null;
+}
+
+fn claudeInputTokens(usage: std.json.ObjectMap) ?i64 {
+    const input = tokenCount(usage, "input_tokens") orelse return null;
+    const read = tokenCount(usage, "cache_read_input_tokens") orelse return null;
+    const write = tokenCount(usage, "cache_creation_input_tokens") orelse return null;
+    const sum = std.math.add(i64, input, read) catch return null;
+    return std.math.add(i64, sum, write) catch null;
 }
 
 pub fn oneOf(value: []const u8, choices: []const []const u8) bool {
@@ -305,9 +360,23 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         }
         return events.items;
     }
+    if (std.mem.eql(u8, record_type, "cost-state")) {
+        const unknown_cost = rec.get("hasUnknownModelCost") orelse .null;
+        try events.append(arena, .{ .usage = .{
+            .meta = meta,
+            .source = .claude,
+            .kind = .cost,
+            .cost_usd = nonnegativeNumber(rec, "totalCostUSD"),
+            .cost_completeness = if (unknown_cost == .bool)
+                (if (unknown_cost.bool) .partial else .complete)
+            else
+                .unknown,
+        } });
+        return events.items;
+    }
     if (oneOf(record_type, &.{
         "last-prompt",        "atis-latch",          "mode",                      "permission-mode",          "file-history-snapshot",
-        "file-history-delta", "queue-operation",     "pr-link",                   "bridge-session",           "cost-state",
+        "file-history-delta", "queue-operation",     "pr-link",                   "bridge-session",
         "frame-link",         "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
@@ -324,11 +393,38 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     }
     const message = rec.get("message") orelse return events.items;
     if (message != .object) return events.items;
+    if (!is_user) {
+        const model = str(message.object, "model");
+        if (model.len > 0 and !std.mem.eql(u8, model, "<synthetic>")) {
+            try events.append(arena, .{ .session_info = .{ .meta = meta, .kind = .model, .value = model } });
+        }
+        if (!std.mem.eql(u8, model, "<synthetic>")) {
+            if (message.object.get("usage")) |usage| {
+                if (usage == .object) {
+                    const input = claudeInputTokens(usage.object);
+                    try events.append(arena, .{ .usage = .{
+                        .meta = meta,
+                        .source = .claude,
+                        .kind = .context,
+                        .context_tokens = input,
+                        .input_tokens = input,
+                        .output_tokens = tokenCount(usage.object, "output_tokens"),
+                        .cache_read_tokens = tokenCount(usage.object, "cache_read_input_tokens"),
+                        .cache_write_tokens = tokenCount(usage.object, "cache_creation_input_tokens"),
+                    } });
+                }
+            }
+        }
+    }
     const content = message.object.get("content") orelse return events.items;
     if (content == .string and is_user) {
         try events.append(arena, claudeTextEvent(meta, rec, is_user, content.string));
     }
     if (content != .array) return events.items;
+    var result_count: usize = 0;
+    for (content.array.items) |block| {
+        if (block == .object and std.mem.eql(u8, str(block.object, "type"), "tool_result")) result_count += 1;
+    }
     var has_unknown = false;
     for (content.array.items) |block| {
         if (block != .object) continue;
@@ -422,6 +518,22 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .status = if (is_error) .failed else .completed,
                 .content = result_text,
             } });
+            const result = rec.get("toolUseResult") orelse .null;
+            if (!is_error and result == .object and result.object.contains("structuredPatch")) {
+                // The saved patch belongs to the record, so a multi-result record cannot
+                // assign it to a tool without additional source evidence.
+                const diff = @import("diff.zig").parse(arena, result, meta, str(block.object, "tool_use_id"), result_count) catch |err| switch (err) {
+                    error.InvalidPatch => invalid: {
+                        if (!has_unknown) {
+                            try events.append(arena, try unknownEvent(arena, meta, line));
+                            has_unknown = true;
+                        }
+                        break :invalid null;
+                    },
+                    else => return err,
+                };
+                if (diff) |value| try events.append(arena, .{ .tool_diff = value });
+            }
         } else if (!has_unknown) {
             try events.append(arena, try unknownEvent(arena, meta, line));
             has_unknown = true;
@@ -696,7 +808,8 @@ pub fn translateFollowWithLog(gpa: std.mem.Allocator, format: Format, session_id
     try translateFollowWindowWithLog(gpa, format, session_id, file, io, 0, 0, writer, unknown_log);
 }
 
-/// Translates the initial window, holds its final partial line, and follows from `end_offset`.
+/// Translates the initial window, emits an empty page at its end, holds its final partial line,
+/// and follows from `end_offset`. The empty page lets consumers finish loading without an idle timer.
 pub fn translateFollowWindow(
     gpa: std.mem.Allocator,
     format: Format,
@@ -727,6 +840,10 @@ pub fn translateFollowWindowWithLog(
     translator.unknown_log = unknown_log;
     var input_buffer: [64 * 1024]u8 = undefined;
     try translateFileRange(&translator, file, io, start_offset, end_offset, writer, &input_buffer, false);
+    // An empty page marks the end of the initial window, including logs with no events.
+    try writePageJson(writer, end_offset, end_offset);
+    try writer.writeByte('\n');
+    try writer.flush();
     var offset = end_offset;
     while (true) {
         const read_len = try file.readPositionalAll(io, &input_buffer, offset);
@@ -1316,4 +1433,40 @@ test "translate flushes each input line" {
         "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",
         output.sink.written(),
     );
+}
+
+test "Claude assistant model is reported without treating synthetic messages as models" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-4-6\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]}}");
+    try std.testing.expectEqual(@as(usize, 2), events.len);
+    try std.testing.expectEqualStrings("claude-opus-4-6", events[0].session_info.value);
+    try std.testing.expectEqualStrings("Hello", events[1].agent_message_chunk.text);
+    const synthetic = try parseLine(arena_state.allocator(), "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"No response\"}]}}");
+    try std.testing.expectEqual(@as(usize, 1), synthetic.len);
+    try std.testing.expect(synthetic[0] == .agent_message_chunk);
+}
+
+test "Claude context includes cache while cost snapshots remain separate" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const events = try parseLine(arena.allocator(),
+        \\{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":80,"cache_creation_input_tokens":20,"output_tokens":7},"content":[]}}
+    );
+    try std.testing.expectEqual(@as(?i64, 110), events[0].usage.context_tokens);
+    try std.testing.expectEqual(@as(?i64, 7), events[0].usage.output_tokens);
+    try std.testing.expectEqual(@as(?i64, null), events[0].usage.context_capacity_tokens);
+    const cost = try parseLine(arena.allocator(),
+        \\{"type":"cost-state","totalCostUSD":0,"hasUnknownModelCost":true}
+    );
+    try std.testing.expectEqual(@as(?f64, 0), cost[0].usage.cost_usd);
+    try std.testing.expect(cost[0].usage.cost_completeness == .partial);
+    const missing = try parseLine(arena.allocator(),
+        \\{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":7},"content":[]}}
+    );
+    try std.testing.expectEqual(@as(?i64, null), missing[0].usage.context_tokens);
+    const invalid = try parseLine(arena.allocator(),
+        \\{"type":"cost-state","totalCostUSD":-1}
+    );
+    try std.testing.expectEqual(@as(?f64, null), invalid[0].usage.cost_usd);
 }

@@ -56,6 +56,27 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             } });
         } else if (std.mem.eql(u8, payload_type, "context_compacted")) {
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "compaction", .text = root.str(payload, "message") } });
+        } else if (std.mem.eql(u8, payload_type, "token_count")) {
+            const info = payload.get("info") orelse .null;
+            const last = if (info == .object) info.object.get("last_token_usage") orelse .null else .null;
+            if (last == .object) {
+                const total = info.object.get("total_token_usage") orelse .null;
+                try events.append(arena, .{ .usage = .{
+                    .meta = meta,
+                    .source = .codex,
+                    .kind = .context,
+                    .context_tokens = root.tokenCount(last.object, "total_tokens"),
+                    .context_capacity_tokens = root.tokenCount(info.object, "model_context_window"),
+                    .input_tokens = root.tokenCount(last.object, "input_tokens"),
+                    .output_tokens = root.tokenCount(last.object, "output_tokens"),
+                    .cache_read_tokens = root.tokenCount(last.object, "cached_input_tokens"),
+                    .cache_write_tokens = root.tokenCount(last.object, "cache_write_input_tokens"),
+                    .session_input_tokens = if (total == .object) root.tokenCount(total.object, "input_tokens") else null,
+                    .session_output_tokens = if (total == .object) root.tokenCount(total.object, "output_tokens") else null,
+                } });
+            } else {
+                try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "event_msg/token_count" } });
+            }
         } else if (std.mem.eql(u8, payload_type, "error")) {
             try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(payload, "message") } });
         } else if (std.mem.eql(u8, payload_type, "user_message")) {
@@ -63,7 +84,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         } else if (root.oneOf(payload_type, &.{
             "agent_message",      "exec_command_end",        "patch_apply_end",
             "mcp_tool_call_end",  "web_search_end",          "item_completed",
-            "token_count",        "thread_settings_applied", "entered_review_mode",
+            "thread_settings_applied", "entered_review_mode",
             "exited_review_mode", "sub_agent_activity",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "event_msg/{s}", .{payload_type}) } });
@@ -710,4 +731,21 @@ test "codex translation makes the line unknown" {
     try root.translate(std.testing.allocator, .codex, "", &reader, &output.writer);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"type\":\"unknown\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"raw\":\"codex line\"") != null);
+}
+
+test "Codex context uses last total and does not add cached input twice" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const events = try parseLine(arena.allocator(),
+        \\{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":20,"total_tokens":120},"total_token_usage":{"input_tokens":9000,"output_tokens":1000},"model_context_window":200}}}
+    );
+    try std.testing.expectEqual(@as(?i64, 120), events[0].usage.context_tokens);
+    try std.testing.expectEqual(@as(?i64, 100), events[0].usage.input_tokens);
+    try std.testing.expectEqual(@as(?i64, 80), events[0].usage.cache_read_tokens);
+    try std.testing.expectEqual(@as(?i64, 9000), events[0].usage.session_input_tokens);
+    try std.testing.expectEqual(@as(?i64, 200), events[0].usage.context_capacity_tokens);
+    const missing = try parseLine(arena.allocator(),
+        \\{"type":"event_msg","payload":{"type":"token_count","info":null}}
+    );
+    try std.testing.expect(missing[0] == .ignored);
 }

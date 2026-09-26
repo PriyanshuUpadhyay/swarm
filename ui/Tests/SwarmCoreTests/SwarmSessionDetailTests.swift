@@ -71,9 +71,35 @@ struct SwarmSessionDetailTests {
         #expect(await reader.poll(session: value) == .waiting)
         value.chairProvider = nil
         #expect(await reader.poll(session: value, chairProvider: "agy")
-            == .notice("No transcript reader for this provider yet"))
+            == .waiting)
         #expect(await reader.poll(session: value)
             == .notice("No transcript reader for this provider yet"))
+    }
+
+    @Test("A known AGY log uses the existing translator and retains failed tool output")
+    func agyLog() async throws {
+        let binary = try #require(TranscriptToolProcess.bundled)
+        let log = FileManager.default.temporaryDirectory.appendingPathComponent("agy-ui-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        try Data("""
+            {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-09-26T00:00:00Z","tool_calls":[{"name":"run_command","args":{"CommandLine":"swift test"}}]}
+            {"step_index":2,"source":"MODEL","type":"RUN_COMMAND","status":"ERROR","created_at":"2026-09-26T00:00:01Z","content":"One check failed."}
+            """.appending("\n").utf8).write(to: log)
+        var value = session(adapter: "herdr")
+        value.chairProvider = "agy"
+        value.chairLog = log.path
+        #expect(ChairTranscriptSource.resolve(session: value, logExists: { _ in true })
+            == .ready(log: log, format: "agy"))
+        let reader = SwarmChairTranscript(binary: binary)
+        guard case .rows(let rows, let raw) = await reader.poll(session: value) else {
+            Issue.record("AGY log did not reach the UI reader")
+            return
+        }
+        #expect(rows.count == 1)
+        #expect(rows.first?.tool?.command == "swift test")
+        #expect(rows.first?.tool?.state == .failed)
+        #expect(rows.first?.tool?.output == "One check failed.")
+        #expect(raw.count == 2)
     }
 
     @Test("A missing log explains whether the chat ended")
@@ -111,6 +137,18 @@ struct SwarmSessionDetailTests {
             return
         }
         #expect(retained == rows)
+    }
+
+    @Test("The chair reports the actual Claude model through the transcript tool")
+    func actualModel() async throws {
+        let log = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        try Data(#"{"type":"assistant","uuid":"a","message":{"model":"claude-opus-4-6","content":[{"type":"text","text":"Ready"}]}}"#.appending("\n").utf8).write(to: log)
+        var value = session(adapter: "tmux-solo")
+        value.chairLog = log.path
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        _ = await reader.poll(session: value)
+        #expect(await reader.currentModel == "claude-opus-4-6")
     }
 
     @Test("A transcript starts after its reader becomes available")

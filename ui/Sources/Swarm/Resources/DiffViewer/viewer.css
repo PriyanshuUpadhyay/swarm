@@ -1,0 +1,11 @@
+:root { color-scheme: light dark; font: 13px -apple-system, sans-serif; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+main { padding: 12px; }
+pre { margin: 0; font: 12px/1.6 ui-monospace, Menlo, monospace; tab-size: 4; white-space: pre; }
+.d2h-wrapper { text-align: left; }
+.d2h-code-line, .d2h-code-side-line, .d2h-code-line-ctn { font: 12px/1.6 ui-monospace, Menlo, monospace; }
+.d2h-file-name { overflow-wrap: anywhere; }
+.d2h-code-line-ctn.hljs { padding: 0; background: transparent; }
+.d2h-light-color-scheme .hljs { color: #24292e; }
+.d2h-light-color-scheme .hljs-keyword { color: #a626a4; }
+.d2h-light-color-scheme .hljs-string { color: #22863a; }

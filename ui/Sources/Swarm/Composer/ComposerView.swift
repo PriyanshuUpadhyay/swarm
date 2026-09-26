@@ -8,6 +8,11 @@ struct ComposerView: View {
     var draft: Binding<String>
     let isRunning: Bool
     let isSending: Bool
+    var modelLabel: String = "Choose model"
+    var modelSwitchDisabledReason: String? = nil
+    var selectModel: (() -> Void)? = nil
+    var usageLabel: String? = nil
+    var showUsage: (() -> Void)? = nil
     var sendDisabledReason: String? = nil
     let commandSource: ComposerCommandSource
     let mentionSource: ComposerMentionSource
@@ -21,6 +26,7 @@ struct ComposerView: View {
 
     @State private var commands: [ComposerCommand] = []
     @State private var files: [String] = []
+    @State private var indexedSource: ComposerMentionSource?
     @State private var resolvedMenu: ComposerMenu = .none
     @State private var slashMatches: [ComposerCommandMatch] = []
     @State private var fileMatches: [ComposerFileMatch] = []
@@ -38,6 +44,17 @@ struct ComposerView: View {
                 if !attachments.isEmpty { attachmentRow }
                 editor
                 footer
+                if let usageLabel, let showUsage {
+                    Button(action: showUsage) {
+                        Text(usageLabel).font(.caption).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Usage details: \(usageLabel)")
+                    .help("Context, cache, and estimated cost for this agent session")
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                }
             }
             .background(.background)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -64,8 +81,13 @@ struct ComposerView: View {
             }.value
             updateMatches()
         }
-        .task(id: mentionSource) {
-            files = await ComposerFileCatalog.discover(from: mentionSource)
+        .task(id: activeMentionSource) {
+            guard let source = activeMentionSource, indexedSource != source else { return }
+            files = []
+            let discovered = await ComposerFileCatalog.discover(from: source)
+            guard !Task.isCancelled else { return }
+            files = discovered
+            indexedSource = source
             updateMatches()
         }
         .onChange(of: draft.wrappedValue) {
@@ -76,6 +98,11 @@ struct ComposerView: View {
         }
         .onAppear { updateMatches() }
         .onDisappear { attachmentGeneration += 1 }
+    }
+
+    private var activeMentionSource: ComposerMentionSource? {
+        if case .mention = resolvedMenu { return mentionSource }
+        return nil
     }
 
     private var editor: some View {
@@ -105,6 +132,19 @@ struct ComposerView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
+            if let selectModel {
+                Button(action: selectModel) {
+                    HStack(spacing: 5) {
+                        Text(modelLabel).lineLimit(1).truncationMode(.middle)
+                        Image(systemName: "chevron.down").font(.caption2)
+                    }
+                    .font(.callout)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Choose model: \(modelLabel)")
+                .help(modelSwitchDisabledReason ?? "Choose a model for this chat")
+                .disabled(modelSwitchDisabledReason != nil)
+            }
             if showsStop {
                 Text("⌘. stops")
                     .font(.caption2)

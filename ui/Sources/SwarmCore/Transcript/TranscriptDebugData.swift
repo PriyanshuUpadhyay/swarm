@@ -6,18 +6,19 @@ public struct RawTranscriptEntry: Sendable, Hashable, Identifiable {
     public var rawLine: String
     public var displayText: String
     public var rowKind: String
-    public var id: String { "raw-\(index)" }
+    public var sessionID: String = ""
+    public var id: String { "\(sessionID)raw-\(index)" }
 }
 
 public enum TranscriptDebugData {
-    public static func entries(from records: some Sequence<TranscriptRecord>) -> [RawTranscriptEntry] {
+    public static func entries(from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0) -> [RawTranscriptEntry] {
         records.enumerated().map { index, record in
-            let row = TranscriptRowBuilder.row(from: record.event, index: index)
+            let row = TranscriptRowBuilder.row(from: record.event, index: index + indexOffset)
             let kind = if let row, row.isHiddenByDefault { "hidden" }
                 else if let row { row.kind.rawValue }
                 else { "no row" }
             return RawTranscriptEntry(
-                index: index, rawLine: record.rawLine,
+                index: index + indexOffset, rawLine: record.rawLine,
                 displayText: prettyJSON(record.rawLine), rowKind: kind
             )
         }

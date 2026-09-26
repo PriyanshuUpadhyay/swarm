@@ -5,134 +5,142 @@ import SwarmCore
 @MainActor @Observable
 final class NewChatModel {
     private let profiles = SwarmCLIProfileSource()
-    static let otherModel = "__other__"
+    private let preferences = ChatModelPreferences()
+    private var choices: [String: String] = [:]
+    private var generation = 0
 
     var provider = "codex"
     var isSwitch = false
     var models: [SwarmModel] = []
-    var modelID = otherModel
+    var selectedModel = ""
+    var query = ""
     var customModel = ""
+    var showCustomModel = false
     var modelCaption: String?
-    var isLoadingModels = false
     var accountOptions: [SwarmAccountOption] = []
     var accountSelection: SwarmAccountSelection?
     var accountCaption: String?
-    var isLoadingAccounts = false
     var errorMessage: String?
     var isLoading = true
     var isStarting = false
+    var isCancelling = false
+    var phase: ChatSwitchPhase?
+    var operation: Task<Void, Never>?
 
-    var selectedModel: String {
-        modelID == Self.otherModel ? customModel.trimmingCharacters(in: .whitespacesAndNewlines) : modelID
-    }
     var canStart: Bool {
-        SwarmChatLaunchPlan.validModel(selectedModel)
-            && !isLoading && !isLoadingModels && !isLoadingAccounts && !isStarting
+        SwarmChatLaunchPlan.validModel(selectedModel) && !isLoading && !isStarting
     }
 
-    func load(initialProvider: String?) async {
-        let timing = SwarmPerformance.begin("NewChatOptions")
-        defer { timing.end() }
-        let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
-        if let initialProvider, allowed.contains(initialProvider) {
-            provider = initialProvider
+    var visibleModels: [SwarmModel] {
+        var result = models
+        if !selectedModel.isEmpty, !result.contains(where: { $0.id == selectedModel }) {
+            result.insert(SwarmModel(id: selectedModel, label: selectedModel), at: 0)
         }
-        async let models: Void = loadModels()
-        async let accounts: Void = loadAccounts()
-        _ = await (models, accounts)
-        isLoading = false
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.filter { search.isEmpty || $0.label.localizedCaseInsensitiveContains(search)
+            || $0.id.localizedCaseInsensitiveContains(search) }
+    }
+
+    func load(initialProvider: String?, initialModel: String?) async {
+        let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
+        if let preferred = initialProvider ?? preferences.provider, allowed.contains(preferred) {
+            provider = preferred
+        }
+        selectedModel = ChatModelChoice.initial(
+            current: initialModel, saved: preferences.model(for: provider), models: []
+        )
+        await loadOptions()
     }
 
     func selectProvider(_ provider: String) {
+        guard provider != self.provider else { return }
+        choices[self.provider] = selectedModel
         self.provider = provider
+        selectedModel = choices[provider] ?? preferences.model(for: provider) ?? ""
         models = []
-        modelID = Self.otherModel
-        customModel = ""
+        query = ""
         modelCaption = nil
-        clearAccounts()
-        Task {
-            async let models: Void = loadModels()
-            async let accounts: Void = loadAccounts()
-            _ = await (models, accounts)
-        }
-    }
-
-    func clearAccounts() {
+        errorMessage = nil
+        showCustomModel = false
         accountOptions = []
         accountSelection = nil
         accountCaption = nil
+        isLoading = true
+        Task { await loadOptions() }
     }
 
-    func loadModels() async {
-        let timing = SwarmPerformance.begin("ModelOptions")
-        defer { timing.end(count: models.count) }
-        let requested = provider
-        isLoadingModels = true
-        do {
-            let choices = try await profiles.models(provider: requested)
-            guard provider == requested else { return }
-            models = choices
-            let preferred = [
-                "claude": "sonnet", "codex": "gpt-6-sol", "agy": "gemini-3.8-flash-high"
-            ][requested]
-            modelID = choices.first { $0.id == preferred }?.id
-                ?? choices.first?.id ?? Self.otherModel
-            modelCaption = requested == "claude"
-                ? "Claude lists aliases here. Choose Other model to enter a full model name."
-                : nil
-        } catch {
-            guard provider == requested else { return }
-            models = []
-            modelID = Self.otherModel
-            modelCaption = "Model list unavailable: \(message(error)). Enter a model name."
-        }
-        isLoadingModels = false
+    func selectModel(_ id: String) {
+        selectedModel = id
+        choices[provider] = id
+        preferences.remember(provider: provider, model: id)
+        errorMessage = nil
     }
 
-    func loadAccounts() async {
-        let timing = SwarmPerformance.begin("AccountOptions")
-        defer { timing.end(count: accountOptions.count) }
+    private func loadOptions() async {
+        generation += 1
+        let requestedGeneration = generation
         let requested = provider
-        isLoadingAccounts = true
+        async let modelResult = loadModels(provider: requested)
+        async let accountResult = loadAccounts(provider: requested)
+        let (catalog, accounts) = await (modelResult, accountResult)
+        guard generation == requestedGeneration, provider == requested else { return }
+        models = catalog.models
+        modelCaption = catalog.caption
+        selectedModel = ChatModelChoice.initial(current: selectedModel, saved: nil, models: models)
+        accountOptions = accounts.options
+        accountSelection = accounts.selection
+        accountCaption = accounts.fallbackCaption
+        isLoading = false
+    }
+
+    private func loadModels(provider: String) async -> (models: [SwarmModel], caption: String?) {
         do {
-            let decision = SwarmAccountLoadDecision.loaded(
-                try await profiles.accounts(provider: requested)
-            )
-            guard provider == requested else { return }
-            accountOptions = decision.options
-            accountSelection = decision.selection
-            accountCaption = decision.fallbackCaption
+            return (try await profiles.models(provider: provider), nil)
         } catch {
-            guard provider == requested else { return }
-            let decision = SwarmAccountLoadDecision.failed(message: message(error))
-            accountOptions = decision.options
-            accountSelection = decision.selection
-            accountCaption = decision.fallbackCaption
+            return ([], "Could not load models. Retry or enter a model name. \(message(error))")
         }
-        isLoadingAccounts = false
+    }
+
+    private func loadAccounts(provider: String) async -> SwarmAccountLoadDecision {
+        do { return .loaded(try await profiles.accounts(provider: provider)) }
+        catch { return .failed(message: message(error)) }
+    }
+
+    func retry() async {
+        isLoading = true
+        await loadOptions()
     }
 
     func start(
         directory: String,
-        launch: (SwarmChatLaunchPlan) async throws -> SwarmSessionID
+        launch: (SwarmChatLaunchPlan, @escaping @Sendable (ChatSwitchPhase) async -> Void) async throws -> SwarmSessionID
     ) async -> SwarmSessionID? {
         guard canStart, let plan = SwarmChatLaunchPlan(
-            directory: directory, provider: provider, model: selectedModel,
-            account: accountSelection
+            directory: directory, provider: provider, model: selectedModel, account: accountSelection
         ) else { return nil }
-        let timing = SwarmPerformance.begin("NewChatStart")
-        defer { timing.end() }
         isStarting = true
+        phase = isSwitch ? .preparing : .starting
         errorMessage = nil
+        defer { isStarting = false; isCancelling = false; phase = nil }
         do {
-            let id = try await launch(plan)
-            isStarting = false
+            let id = try await launch(plan) { phase in
+                await MainActor.run { self.phase = phase }
+            }
+            preferences.remember(provider: plan.provider, model: plan.model)
             return id
+        } catch is CancellationError {
+            errorMessage = "Switch cancelled. The current chat stays selected."
+            return nil
         } catch {
             errorMessage = message(error)
-            isStarting = false
             return nil
         }
+    }
+
+    func cancel() {
+        guard phase?.canCancel == true else { return }
+        isCancelling = true
+        operation?.cancel()
     }
 
     private func message(_ error: any Error) -> String {
@@ -144,86 +152,159 @@ struct NewChatSheet: View {
     let directory: String
     var isSwitch = false
     var initialProvider: String?
-    let launch: (SwarmChatLaunchPlan) async throws -> SwarmSessionID
+    var initialModel: String?
+    let launch: (SwarmChatLaunchPlan, @escaping @Sendable (ChatSwitchPhase) async -> Void) async throws -> SwarmSessionID
     let onStarted: (SwarmSessionID) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var model = NewChatModel()
+    @State private var showAccount = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(isSwitch ? "Switch model" : "New chat").font(.title2)
-            Text(verbatim: directory).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(isSwitch ? "Choose model" : "New chat").font(.title2.bold())
             if isSwitch {
-                Text("Swarm will carry this chat's context to the new agent.")
+                Text("Current: \(initialModel ?? "Model not reported")")
                     .foregroundStyle(.secondary)
-            }
-            if model.isLoading {
-                ProgressView("Loading models")
+                Text("This starts a new agent with a summary or recent messages. The full conversation is not sent.")
+                    .font(.callout).foregroundStyle(.secondary)
             } else {
-                Form {
-                    Picker("Provider", selection: Binding(
-                        get: { model.provider }, set: { model.selectProvider($0) }
-                    )) {
-                        ForEach(isSwitch ? ["claude", "codex"] : SwarmChatProvider.all, id: \.self) { provider in
-                            Text(provider.capitalized).tag(provider)
-                        }
-                    }
-                    Picker("Model", selection: $model.modelID) {
-                        ForEach(model.models) { choice in
-                            Text(choice.label == choice.id ? choice.id : "\(choice.label) · \(choice.id)")
-                                .tag(choice.id)
-                        }
-                        Text("Other model…").tag(NewChatModel.otherModel)
-                    }
-                    if model.modelID == NewChatModel.otherModel {
-                        TextField("Model name", text: $model.customModel)
-                    }
-                    if model.isLoadingModels {
-                        ProgressView("Loading models")
-                    }
-                    if let caption = model.modelCaption {
-                        Text(verbatim: caption).foregroundStyle(.secondary)
-                    }
-                    if !model.accountOptions.isEmpty {
-                        Picker("Account", selection: $model.accountSelection) {
-                            ForEach(model.accountOptions) { option in
-                                Text(option.label).tag(option.selection as SwarmAccountSelection?)
-                                    .disabled(option.disabledReason != nil)
-                            }
-                        }
-                    } else {
-                        LabeledContent("Account", value: "Auto")
-                    }
-                    if let caption = model.accountCaption {
-                        Text(verbatim: caption).foregroundStyle(.secondary)
-                    }
+                Text(verbatim: directory).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                    .truncationMode(.middle).help(directory)
+            }
+            selection.disabled(model.isStarting)
+            if let phase = model.phase {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text(model.isCancelling ? "Cancelling switch…" : phase.title)
                 }
+                Text(phase.canCancel
+                     ? "You can cancel before the new agent starts. The current agent may finish its summary."
+                     : "The new agent is starting. Keep this window open until the switch finishes.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let error = model.errorMessage {
-                Text(verbatim: error).foregroundStyle(.red)
+                Text(verbatim: error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
             HStack {
+                Button(model.isStarting ? "Cancel switch" : "Cancel") {
+                    if model.isStarting { model.cancel() } else { dismiss() }
+                }
+                .keyboardShortcut(.cancelAction)
+                .disabled(model.isStarting && (model.phase?.canCancel != true || model.isCancelling))
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .accessibilityLabel("Cancel")
-                Button(model.isStarting ? "Starting…" : (isSwitch ? "Switch" : "Start")) {
-                    Task {
+                Button(isSwitch ? "Switch model" : "Start chat") {
+                    guard model.operation == nil else { return }
+                    model.operation = Task {
+                        defer { model.operation = nil }
                         if let id = await model.start(directory: directory, launch: launch) {
                             onStarted(id)
                             dismiss()
                         }
                     }
                 }
-                .accessibilityLabel("Start")
-                .disabled(!model.canStart)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.canStart || (isSwitch && model.provider == initialProvider
+                    && model.selectedModel == initialModel))
             }
         }
         .padding(20)
-        .frame(width: 500)
+        .frame(width: 460)
+        .interactiveDismissDisabled(model.isStarting)
         .task {
             model.isSwitch = isSwitch
-            await model.load(initialProvider: initialProvider)
+            await model.load(initialProvider: initialProvider, initialModel: initialModel)
         }
+        .onDisappear { model.cancel() }
+    }
+
+    private var selection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Provider", selection: Binding(
+                get: { model.provider }, set: { model.selectProvider($0) }
+            )) {
+                ForEach(isSwitch ? ["claude", "codex"] : SwarmChatProvider.all, id: \.self) { provider in
+                    Text(provider == "agy" ? "Gemini" : provider.capitalized).tag(provider)
+                }
+            }
+            .pickerStyle(.segmented)
+            TextField("Search models", text: $model.query)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Search models")
+            if model.isLoading {
+                HStack { ProgressView().controlSize(.small); Text("Loading models and accounts…") }
+                    .frame(height: 190)
+            } else {
+                modelList
+            }
+            if let caption = model.modelCaption {
+                Text(verbatim: caption).font(.caption).foregroundStyle(.secondary)
+                Button("Retry") { Task { await model.retry() } }
+            }
+            DisclosureGroup("Other model", isExpanded: $model.showCustomModel) {
+                HStack {
+                    TextField("Model name", text: $model.customModel)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Use") {
+                        model.selectModel(model.customModel.trimmingCharacters(in: .whitespacesAndNewlines))
+                        model.query = ""
+                    }
+                    .disabled(!SwarmChatLaunchPlan.validModel(
+                        model.customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ))
+                }
+            }
+            Text("Reasoning effort: Medium (fixed for new agents)")
+                .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup(accountLabel, isExpanded: $showAccount) {
+                if !model.accountOptions.isEmpty {
+                    Picker("Account", selection: $model.accountSelection) {
+                        ForEach(model.accountOptions) { option in
+                            Text(option.label).tag(option.selection as SwarmAccountSelection?)
+                                .disabled(option.disabledReason != nil)
+                        }
+                    }
+                } else {
+                    Text("Use the provider's default account")
+                }
+                if let caption = model.accountCaption {
+                    Text(verbatim: caption).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var accountLabel: String {
+        let selected = model.accountOptions.first { $0.selection == model.accountSelection }
+        return "Account · " + (selected?.label ?? "Provider default")
+    }
+
+    private var modelList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                if model.visibleModels.isEmpty {
+                    Text("No matching models").foregroundStyle(.secondary).padding(10)
+                }
+                ForEach(model.visibleModels) { choice in
+                    Button {
+                        model.selectModel(choice.id)
+                    } label: {
+                        HStack {
+                            Text(choice.label)
+                            Spacer()
+                            if choice.id == model.selectedModel { Image(systemName: "checkmark") }
+                        }
+                        .padding(9)
+                        .contentShape(Rectangle())
+                        .background(choice.id == model.selectedModel ? Color.accentColor.opacity(0.15) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help(choice.id)
+                    .accessibilityAddTraits(choice.id == model.selectedModel ? .isSelected : [])
+                }
+            }
+        }
+        .frame(height: 190)
     }
 }

@@ -27,6 +27,33 @@ final class SessionsTreeModel {
     private let discovery = SwarmSessionDiscovery()
     private let drafts = ComposerDraftStore()
     private let projects = SwarmProjectStore()
+    private let navigationStore = WorkspaceNavigationStore()
+    var navigation = WorkspaceNavigation() {
+        didSet { if navigation != oldValue { navigationStore.save(navigation) } }
+    }
+
+    init() { navigation = navigationStore.load() }
+
+    var workspaces: [WorkspaceEntry] { WorkspaceEntry.list(in: tree) }
+    var selectedWorkspace: WorkspaceEntry? {
+        workspaces.first { $0.id == navigation.selectedWorkspace }
+    }
+
+    func selectWorkspace(_ entry: WorkspaceEntry) {
+        navigation.select(entry)
+        select(navigation.selectedChat(in: entry)?.id)
+    }
+
+    func showHome() {
+        navigation.selectedWorkspace = nil
+        select(nil)
+    }
+
+    func archiveWorkspace(_ entry: WorkspaceEntry) {
+        let wasSelected = navigation.selectedWorkspace == entry.id
+        navigation.archive(entry.id)
+        if wasSelected { select(nil) }
+    }
 
     var tree = SessionsTree(projects: [])
     var selectedSessionID: SwarmSessionID?
@@ -42,6 +69,11 @@ final class SessionsTreeModel {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         pendingID = nil
         selectedSessionID = id
+        if let id, let entry = workspaces.first(where: {
+            $0.chats.contains { $0.sessions.contains { $0.id == id } }
+        }) {
+            navigation.select(entry, chat: id)
+        }
         agents = []
         commandSource = nil
         commandSourceKey = nil
@@ -50,6 +82,9 @@ final class SessionsTreeModel {
     func startChat(_ plan: SwarmChatLaunchPlan) async throws -> SwarmSessionID {
         try await SwarmChatLauncher.start(plan, bus: bus) { id in
             await MainActor.run {
+                self.navigation.selectedWorkspace = plan.directory
+                self.navigation.selectedChats[plan.directory] = id.rawValue
+                self.navigation.archived.remove(plan.directory)
                 self.pendingID = id
                 self.selectedSessionID = id
                 self.agents = []
@@ -57,10 +92,14 @@ final class SessionsTreeModel {
         }
     }
 
-    func switchChat(_ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession) async throws -> SwarmSessionID {
-        let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus)
+    func switchChat(
+        _ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession,
+        onProgress: @escaping @Sendable (ChatSwitchPhase) async -> Void
+    ) async throws -> SwarmSessionID {
+        let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         pendingID = id
         selectedSessionID = id
+        if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
         agents = []
         return id
     }
@@ -80,13 +119,21 @@ final class SessionsTreeModel {
             defer { treeTiming.end(count: sessions.count) }
             tree = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
         }
+        if pendingID == nil, let entry = selectedWorkspace {
+            selectedSessionID = navigation.selectedChat(in: entry)?.id
+        }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
             pendingID = nil
             self.selectedSessionID = row.id
+            if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
+                navigation.select(entry, chat: row.id)
+            }
             do {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
                 defer { agentTiming.end() }
-                agents = try await bus.agents(in: row.session)
+                let loaded = try await bus.agents(in: row.session)
+                guard self.selectedSessionID == row.id else { return }
+                agents = loaded
             }
             let provider = row.provider ?? agents.first {
                 $0.id == SwarmPanePolicy.chair
@@ -146,6 +193,9 @@ final class SessionsTreeModel {
             commonDirectory: common, under: parent.path
         )
         try projects.add(URL(fileURLWithPath: path))
+        navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        navigation.selectedWorkspace = path
+        selectedSessionID = nil
         do { try await refresh() }
         catch { self.error = String(describing: error) }
         return path
@@ -191,106 +241,112 @@ private struct SessionsWindow: View {
     @State private var newChatDirectory: String?
     @State private var newTaskProject: ProjectNode?
     @State private var pendingTaskChatDirectory: String?
+    @State private var switchInitialModel: String?
     @State private var switchChatFrom: SwarmProjectSession?
     @State private var selectedProjectID: SwarmPathIdentity?
     @State private var actionError: String?
+    @State private var search = ""
+    @State private var searching = false
+    @State private var showingArchive = false
+    @State private var showingCreate = false
+    @State private var createAction: (() -> Void)?
+    @State private var renameTarget: WorkspaceEntry?
+    @State private var workspaceName = ""
+    @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
+    @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
+    @AppStorage("workspaceSidebarMode") private var storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+    @AppStorage("workspaceSidebarWidth") private var sidebarWidth = 280.0
+    @State private var document: WorkspaceDocument?
+    @State private var documentVisible = false
+    @State private var reportedUsage: (sessionID: SwarmSessionID, usage: ChatUsage)?
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $model.selectedSessionID) {
-                Button {
-                    selectedProjectID = nil
-                    model.select(nil)
-                } label: {
-                    Label("Home", systemImage: "house")
-                }
-                .buttonStyle(.plain)
-                ForEach(sidebarRows) { entry in
-                    switch entry {
-                    case .project(let project):
-                        ProjectRowLabel(
-                            name: project.name,
-                            onSelect: {
-                                model.select(nil)
-                                selectedProjectID = project.id
-                            },
-                            onNewChat: { newChatDirectory = project.launchDirectory }
-                        )
-                        .contextMenu {
-                            Button("New chat") { newChatDirectory = project.launchDirectory }
-                            if case .repository = project.id {
-                                Button("New Task…") { newTaskProject = project }
-                            }
+        MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
+            VStack(spacing: 0) {
+                sidebarModes
+                Divider()
+                if sidebarMode == .workspaces {
+                    workspaceSidebar
+                } else if let directory = workspaceDirectory {
+                    Button {
+                        storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+                        documentVisible = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
+                                .font(.subheadline.weight(.semibold))
+                            Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
                         }
-                    case .chat(let row):
-                        chatRow(row)
-                        .padding(.leading, 16)
-                        .tag(row.id)
-                        .contextMenu { chatMenu(row) }
+                        .lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                     }
-                }
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("Workspaces")
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300)
-            .onChange(of: model.selectedSessionID) { oldID, id in
-                guard oldID != id else { return }
-                NSApp.keyWindow?.makeFirstResponder(nil)
-                panes.clearFocus()
-                if id != nil { selectedProjectID = nil }
-                model.select(id)
-            }
-            .toolbar {
-                Menu {
-                    Button("Open Project…", action: openExistingProject)
-                    Button("Create Project…", action: createProject)
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                }
-                .help("Projects")
-                .accessibilityLabel("Projects")
-                Button {
-                    if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewChat,
-                       let id = model.selectedSessionID,
-                       let path = model.tree.launchDirectory(for: id) {
-                        newChatDirectory = path
-                    }
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-                .help("New chat")
-                .accessibilityLabel("New chat")
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(model.selectedSession == nil)
-            }
-        } detail: {
-            if let row = model.selectedSession {
-                VStack(spacing: 0) {
-                    workspaceTabs(for: row)
+                    .buttonStyle(.plain).help("Choose a workspace")
                     Divider()
-                    SessionDetailView(
-                        row: row,
-                        title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
-                        agents: model.agents, panes: panes,
-                        commandSource: model.commandSource,
-                        onSwitchModel: { switchChatFrom = row },
-                        isCurrentSession: { model.selectedSession?.id == row.id }
-                    )
-                    .id(row.id)
+                    if sidebarMode == .files {
+                        WorkspaceFilesView(directory: directory, open: openDocument).id(directory)
+                    } else {
+                        WorkspaceDetails(
+                            directory: directory,
+                            usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
+                            hasChat: model.selectedSession != nil, mode: sidebarMode, open: openDocument
+                        ).id(directory)
+                    }
+                } else {
+                    ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
+                    Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }.padding()
                 }
-            } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
-                ProjectHome(
-                    project: project,
-                    onNewChat: { newChatDirectory = $0 },
-                    onNewTask: { newTaskProject = project }
-                )
-            } else {
-                AgentProfilesHome(
-                    sessionsError: model.error,
-                    onOpenProject: openExistingProject,
-                    onCreateProject: createProject
-                )
             }
+            .background(Color(nsColor: .windowBackgroundColor))
+        } content: {
+            VStack(spacing: 0) {
+                if let document {
+                    HStack(spacing: 16) {
+                        Button("Chat") { documentVisible = false }
+                            .foregroundStyle(documentVisible ? Color.secondary : Color.primary)
+                        Button(document.title) { documentVisible = true }
+                            .lineLimit(1).truncationMode(.middle)
+                            .foregroundStyle(documentVisible ? Color.primary : Color.secondary)
+                        Button { closeDocument() } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("Close file preview")
+                        Spacer()
+                    }.buttonStyle(.plain).padding(12)
+                    Divider()
+                }
+                ZStack {
+                    // Keep the chat's identity and draft while a file is visible or the sidebar moves.
+                    workspaceContent
+                        .opacity(documentVisible ? 0 : 1)
+                        .allowsHitTesting(!documentVisible)
+                        .disabled(documentVisible)
+                        .accessibilityHidden(documentVisible)
+                    if let document, documentVisible {
+                        WorkspaceDocumentView(document: document).id(document.id)
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button { sidebarVisible.toggle() } label: { Label("Toggle sidebar", systemImage: sidebarOnRight ? "sidebar.right" : "sidebar.left") }
+                    .keyboardShortcut("b", modifiers: .command)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(sidebarOnRight ? "Move sidebar left" : "Move sidebar right") { sidebarOnRight.toggle() }
+                    Button("Show changes") { storedSidebarMode = WorkspaceSidebarMode.changes.rawValue; sidebarVisible = true }
+                        .keyboardShortcut("i", modifiers: [.command, .option])
+                } label: { Label("Sidebar options", systemImage: "ellipsis") }
+            }
+        }
+        .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
+        .onChange(of: model.selectedSessionID) { oldID, id in
+            guard oldID != id else { return }
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            panes.clearFocus()
+            documentVisible = false
+            if id != nil { selectedProjectID = nil }
         }
         .background(WindowFrameRestorer())
         .task {
@@ -302,11 +358,23 @@ private struct SessionsWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             panes.stopAll()
         }
+        .sheet(isPresented: $showingCreate, onDismiss: {
+            let action = createAction
+            createAction = nil
+            action?()
+        }) {
+            createWorkspacePicker
+        }
+        .sheet(isPresented: Binding(
+            get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
+        )) {
+            renameWorkspaceSheet
+        }
         .sheet(item: Binding(
             get: { newChatDirectory.map(LaunchTarget.init) },
             set: { newChatDirectory = $0?.directory }
         )) { target in
-            NewChatSheet(directory: target.directory, launch: model.startChat) { _ in
+            NewChatSheet(directory: target.directory, launch: { plan, _ in try await model.startChat(plan) }) { _ in
                 Task { try? await model.refresh() }
             }
         }
@@ -325,7 +393,8 @@ private struct SessionsWindow: View {
         .sheet(item: $switchChatFrom) { row in
             NewChatSheet(
                 directory: row.session.cwd, isSwitch: true, initialProvider: row.provider,
-                launch: { plan in try await model.switchChat(plan, from: row) }
+                initialModel: switchInitialModel,
+                launch: { plan, progress in try await model.switchChat(plan, from: row, onProgress: progress) }
             ) { _ in
                 Task { try? await model.refresh() }
             }
@@ -340,14 +409,212 @@ private struct SessionsWindow: View {
         }
     }
 
+    @ViewBuilder private var workspaceContent: some View {
+        if let row = model.selectedSession {
+            VStack(spacing: 0) {
+                workspaceTabs(for: row)
+                Divider()
+                SessionDetailView(
+                    row: row,
+                    title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
+                    agents: model.agents, panes: panes,
+                    commandSource: model.commandSource,
+                    onSwitchModel: { currentModel in
+                        switchInitialModel = currentModel
+                        switchChatFrom = row
+                    },
+                    isCurrentSession: { model.selectedSession?.id == row.id },
+                    isVisible: !documentVisible,
+                    onUsageChanged: { usage in
+                        if model.selectedSession?.id == row.id { reportedUsage = (row.id, usage) }
+                    },
+                    onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
+                )
+                .id(row.id)
+            }
+        } else if let workspace = model.selectedWorkspace {
+            VStack(spacing: 18) {
+                Text(model.navigation.title(for: workspace)).font(.title2)
+                Text("This workspace has no open chats.").foregroundStyle(.secondary)
+                Button("New chat") { newChatDirectory = workspace.id }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
+            ProjectHome(
+                project: project,
+                onNewChat: { newChatDirectory = $0 },
+                onNewTask: { newTaskProject = project }
+            )
+        } else {
+            AgentProfilesHome(
+                sessionsError: model.error,
+                onOpenProject: openExistingProject,
+                onCreateProject: createProject
+            )
+        }
+    }
+
+    private var minimumContentWidth: CGFloat {
+        guard let row = model.selectedSession else { return 400 }
+        return SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: model.agents) ? 680 : 400
+    }
+
+    private var workspaceDirectory: String? {
+        model.selectedWorkspace?.id ?? model.selectedSession?.session.cwd
+    }
+
+    private var sidebarMode: WorkspaceSidebarMode {
+        WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
+    }
+
+    private var sidebarModes: some View {
+        HStack(spacing: 0) {
+            ForEach(WorkspaceSidebarMode.allCases, id: \.self) { mode in
+                Button {
+                    storedSidebarMode = mode.rawValue
+                    if mode == .workspaces { documentVisible = false }
+                } label: {
+                    Image(systemName: mode.symbol)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(sidebarMode == mode ? Color.accentColor.opacity(0.15) : .clear)
+                        .overlay(alignment: .bottom) {
+                            if sidebarMode == mode { Rectangle().fill(Color.accentColor).frame(height: 2) }
+                        }
+                }
+                .buttonStyle(.plain).help(mode.rawValue).accessibilityLabel(mode.rawValue)
+                .accessibilityAddTraits(sidebarMode == mode ? [.isSelected] : [])
+            }
+        }
+    }
+
+    private func openDocument(_ value: WorkspaceDocument) {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        panes.clearFocus()
+        document = value
+        documentVisible = true
+    }
+
+    private func closeDocument() {
+        documentVisible = false
+        document = nil
+    }
+
+    private var workspaceSidebar: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Swarm").font(.title3.weight(.semibold))
+                Button {
+                    selectedProjectID = nil
+                    showingArchive = false
+                    model.showHome()
+                } label: { Label("Home", systemImage: "house") }
+                Button {
+                    if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewWorkspace {
+                        showingCreate = true
+                    }
+                } label: { Label("Create", systemImage: "plus") }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button {
+                    searching.toggle()
+                    searchFocused = searching
+                    if !searching { search = "" }
+                } label: { Label("Search", systemImage: "magnifyingglass") }
+                    .keyboardShortcut("k", modifiers: .command)
+                if searching {
+                    TextField("Search workspaces", text: $search)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($searchFocused)
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    if showingArchive {
+                        workspaceSection("Archived", entries: visibleWorkspaces.filter {
+                            model.navigation.archived.contains($0.id)
+                        })
+                    } else {
+                        workspaceSection("Pinned", entries: visibleWorkspaces.filter {
+                            model.navigation.pinned.contains($0.id) && !model.navigation.archived.contains($0.id)
+                        })
+                        workspaceSection("My workspaces", entries: visibleWorkspaces.filter {
+                            !model.navigation.pinned.contains($0.id) && !model.navigation.archived.contains($0.id)
+                        })
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+            }
+            Divider()
+            HStack {
+                Button {
+                    showingArchive.toggle()
+                } label: {
+                    Label(showingArchive ? "Workspaces" : "Archived", systemImage: "clock.arrow.circlepath")
+                }
+                Spacer()
+                Menu {
+                    Button("Open Project…", action: openExistingProject)
+                    Button("Create Project…", action: createProject)
+                } label: { Image(systemName: "folder.badge.plus") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .padding(16)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var createWorkspacePicker: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Create workspace").font(.title2)
+            Text("Choose a project").foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(model.tree.projects) { project in
+                        Button(project.name) {
+                            createAction = {
+                                if case .repository = project.id {
+                                    newTaskProject = project
+                                } else {
+                                    if let entry = model.workspaces.first(where: { $0.project.id == project.id }) {
+                                        model.navigation.archived.remove(entry.id)
+                                        model.selectWorkspace(entry)
+                                    }
+                                    newChatDirectory = project.launchDirectory
+                                }
+                            }
+                            showingCreate = false
+                        }
+                    }
+                }
+            }
+            HStack {
+                Button("Open Project…") { createAction = openExistingProject; showingCreate = false }
+                Button("Create Project…") { createAction = createProject; showingCreate = false }
+                Spacer()
+                Button("Cancel") { showingCreate = false }
+            }
+        }
+        .padding(24)
+        .frame(width: 480, height: 340)
+    }
+
     private func workspaceTabs(for selected: SwarmProjectSession) -> some View {
         let chats = model.tree.workspaceChats(for: selected.id)
         return HStack(spacing: 8) {
-            if let workspace = chats.first?.workspace {
-                Text(workspace)
-                    .font(.caption)
+            if let workspace = model.selectedWorkspace {
+                Text(model.navigation.title(for: workspace))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .frame(maxWidth: 220, alignment: .leading)
                     .padding(.leading, 12)
             }
             ScrollViewReader { proxy in
@@ -366,16 +633,19 @@ private struct SessionsWindow: View {
                                             .foregroundStyle(.secondary)
                                     }
                                 }
+                                .frame(width: 180, alignment: .leading)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    chat.id == selected.id ? Color.accentColor.opacity(0.2) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 7)
-                                )
+                                .padding(.vertical, 10)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle()
+                                        .fill(chat.id == selected.id ? Color.primary.opacity(0.75) : Color.clear)
+                                        .frame(height: 2)
+                                }
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(chat.id == selected.id ? .isSelected : [])
                             .id(chat.id)
+                            .contextMenu { chatMenu(chat) }
                         }
                     }
                 }
@@ -396,41 +666,134 @@ private struct SessionsWindow: View {
         .padding(.vertical, 5)
     }
 
-    private func chatRow(_ row: ChatRow) -> some View {
-        let presentation = SessionRowPresentation.make(
-            row, now: Int(Date().timeIntervalSince1970)
-        )
-        return HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(presentation.state == .live ? Color.green : Color.clear)
-                .frame(width: 3)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(presentation.title)
-                        .font(.body)
-                        .foregroundStyle(
-                            presentation.state == .ended ? Color.secondary : Color.primary
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let provider = presentation.provider {
-                        Text(providerBadge(provider))
-                            .font(.caption2)
-                            .frame(width: 16, height: 16)
-                            .background(Circle().fill(.quaternary))
-                            .accessibilityLabel(provider)
+    private var visibleWorkspaces: [WorkspaceEntry] {
+        model.workspaces.filter { model.navigation.matches(search, entry: $0) }
+    }
+
+    private var renameWorkspaceSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Rename workspace").font(.title2)
+            TextField("Name", text: $workspaceName)
+                .textFieldStyle(.roundedBorder)
+            Text("Leave the name blank to use the project and folder name.")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { renameTarget = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    if let entry = renameTarget {
+                        let name = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        model.navigation.names[entry.id] = name.isEmpty ? nil : name
                     }
+                    renameTarget = nil
                 }
-                Text(presentation.caption)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 380)
+    }
+
+    private func workspaceSection(_ title: String, entries: [WorkspaceEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.primary.opacity(0.7))
+                .padding(.horizontal, 10)
+                .padding(.top, 20)
+                .padding(.bottom, 8)
+            if entries.isEmpty {
+                Text(search.isEmpty ? "No workspaces" : "No matches")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+            }
+            ForEach(entries) { entry in workspaceRow(entry) }
+        }
+    }
+
+    private func workspaceRow(_ entry: WorkspaceEntry) -> some View {
+        let label = model.navigation.title(for: entry) + ", "
+            + model.navigation.detail(for: entry, among: model.workspaces)
+        let help = "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)"
+            + (entry.isRunning ? "\nAn agent process is alive" : "")
+        return Button {
+            if model.navigation.archived.contains(entry.id) {
+                model.navigation.archived.remove(entry.id)
+                showingArchive = false
+            }
+            selectedProjectID = nil
+            model.selectWorkspace(entry)
+        } label: {
+            workspaceRowLabel(entry)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    model.navigation.selectedWorkspace == entry.id ? Color.primary.opacity(0.08) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityValue(entry.isRunning ? "Agent process alive" : "")
+        .accessibilityAddTraits(model.navigation.selectedWorkspace == entry.id ? .isSelected : [])
+        .contextMenu {
+            if model.navigation.archived.contains(entry.id) {
+                Button("Restore workspace") { model.navigation.archived.remove(entry.id) }
+            } else {
+                Button("New chat") { newChatDirectory = entry.id }
+                Button(model.navigation.pinned.contains(entry.id) ? "Unpin workspace" : "Pin workspace") {
+                    if model.navigation.pinned.contains(entry.id) { model.navigation.pinned.remove(entry.id) }
+                    else { model.navigation.pinned.insert(entry.id) }
+                }
+                Button("Rename workspace…") {
+                    workspaceName = model.navigation.title(for: entry)
+                    renameTarget = entry
+                }
+                Button("Archive workspace") { model.archiveWorkspace(entry) }
+            }
+        }
+    }
+
+    private func workspaceRowLabel(_ entry: WorkspaceEntry) -> some View {
+        let title = model.navigation.title(for: entry)
+        let detail = model.navigation.detail(for: entry, among: model.workspaces)
+        let age: String?
+        if let chat = entry.chats.max(by: { $0.lastActivity < $1.lastActivity }) {
+            age = SessionRowPresentation.make(
+                ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id),
+                now: Int(Date().timeIntervalSince1970)
+            ).age
+        } else {
+            age = nil
+        }
+        return HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(entry.isRunning ? Color.green : Color.clear)
+                .frame(width: 2, height: 32)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            if let age {
+                Text(age)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .help("Last chat activity " + age + " ago")
             }
-            Spacer()
-            Text(presentation.age)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -447,7 +810,7 @@ private struct SessionsWindow: View {
             }
         }
         .disabled(presentation.state != .live)
-        Button("Archive") {
+        Button("Archive chat") {
             Task {
                 do { try await model.archive(row.id) }
                 catch { actionError = String(describing: error) }
@@ -473,7 +836,7 @@ private struct SessionsWindow: View {
         Task {
             do {
                 let id = try await model.openProject(url)
-                model.select(nil)
+                model.showHome()
                 selectedProjectID = id
             } catch {
                 actionError = error.localizedDescription
@@ -491,7 +854,7 @@ private struct SessionsWindow: View {
         Task {
             do {
                 let id = try await model.createProject(at: url)
-                model.select(nil)
+                model.showHome()
                 selectedProjectID = id
             } catch {
                 actionError = error.localizedDescription
@@ -499,44 +862,6 @@ private struct SessionsWindow: View {
         }
     }
 
-    private var sidebarRows: [SidebarRow] {
-        var rows: [SidebarRow] = []
-        for project in model.tree.projects {
-            rows.append(.project(project))
-            rows += project.chats.map(SidebarRow.chat)
-        }
-        return rows
-    }
-}
-
-private struct ProjectRowLabel: View {
-    let name: String
-    let onSelect: () -> Void
-    let onNewChat: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        HStack {
-            Button(action: onSelect) {
-                Text(name)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            Button(action: onNewChat) {
-                Image(systemName: "plus.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("New chat")
-            .accessibilityLabel("New chat")
-            .opacity(hovered ? 1 : 0)
-            .allowsHitTesting(hovered)
-        }
-        .onHover { hovered = $0 }
-    }
 }
 
 private struct ProjectHome: View {
@@ -551,7 +876,7 @@ private struct ProjectHome: View {
             HStack {
                 Button("New chat") { onNewChat(project.launchDirectory) }
                 if case .repository = project.id {
-                    Button("New Task…", action: onNewTask)
+                    Button("New workspace…", action: onNewTask)
                 }
             }
             if case .repository = project.id {
@@ -589,10 +914,10 @@ private struct NewTaskSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("New Task").font(.title2)
+            Text("Create workspace").font(.title2)
             Text(project.path).foregroundStyle(.secondary)
-            TextField("Task name", text: $name)
-            Text("Swarm will make a branch and worktree for this task.")
+            TextField("Workspace name", text: $name)
+            Text("This workspace will have its own branch and files.")
                 .foregroundStyle(.secondary)
             if let error { Text(verbatim: error).foregroundStyle(.red) }
             HStack {
@@ -618,18 +943,6 @@ private struct NewTaskSheet: View {
         .padding(24)
         .frame(width: 480)
         .interactiveDismissDisabled(isCreating)
-    }
-}
-
-private enum SidebarRow: Identifiable {
-    case project(ProjectNode)
-    case chat(ChatRow)
-
-    var id: String {
-        switch self {
-        case .project(let project): "project:\(project.path)"
-        case .chat(let row): "chat:\(row.id.rawValue)"
-        }
     }
 }
 
