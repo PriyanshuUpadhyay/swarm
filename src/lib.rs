@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod bus;
+pub mod herdr;
 pub mod host;
 pub mod paths;
 pub mod profiles;

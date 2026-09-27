@@ -97,6 +97,10 @@ impl Adapter {
     fn command(&self, line: &str, vars: &[(&str, &str)]) -> std::process::Command {
         let mut command = std::process::Command::new("sh");
         command.arg("-c").arg(line);
+        // A verb that calls swarm back runs this same binary, even from an app with a short PATH.
+        if let Ok(exe) = std::env::current_exe() {
+            command.env("SWARM_EXE", exe);
+        }
         for (key, value) in vars {
             command.env(format!("SWARM_{}", key.to_uppercase()), value);
         }
