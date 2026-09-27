@@ -96,21 +96,10 @@ fn set_role_model(command: &str, runner: &str, model: &str) -> Result<String, Bo
 }
 
 fn resolve_role(role: &str, provider: Option<&str>) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
-    let command = routing_command()?;
-    let mut args = vec!["get", role];
-    if let Some(provider) = provider { args.extend(["--provider", provider]); }
-    let output = run_tool(&command, &args)?;
-    if !output.status.success() {
-        let reason = String::from_utf8_lossy(&output.stderr).trim().replace(['\r', '\n'], " ");
-        return Err(format!("swarm: cannot resolve role {role}: {reason}").into());
-    }
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
-    if let Some(error) = value.get("error") {
-        let reason = error.as_str().map(str::to_string).unwrap_or_else(|| error.to_string());
-        return Err(format!("swarm: cannot resolve role {role}: {reason}").into());
-    }
-    serde_json::from_value(value).map_err(|error| format!("swarm: cannot resolve role {role}: {error}").into())
+    let fail = |error: String| format!("swarm: cannot resolve role {role}: {error}");
+    let (_, config) = swarm::routing::load().map_err(fail)?;
+    let value = swarm::routing::resolve(&config, role, provider).map_err(fail)?;
+    serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
 }
 
 fn load_accounts(provider: &str, with_pick: bool) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
