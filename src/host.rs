@@ -1,0 +1,127 @@
+//! The host contract a new agent session reads at start: which host it runs in, whether it is the
+//! orchestrator or a worker, and which runtime adapter skill it loads before it spawns anything.
+//! Claude, Codex, and AGY run `swarm host-context --provider <p>` as a SessionStart hook.
+
+use std::io::Write;
+
+const HERDR_CONTEXT: &str = r#"[agent-host: herdr]
+This session is running inside Herdr. The top-level session is the orchestrator.
+- Every worker must be a visible foreground pane split from HERDR_PANE_ID.
+- Set `SWARM_ADAPTER=herdr`. Open one session per run with `swarm session new lane`, export `SWARM_SESSION_ID` and `SWARM_AGENT_ID=orchestrator`, then `swarm agent add orchestrator orchestrator`.
+- Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Do not use provider-native subagents, headless CLIs, detached processes, or background workers.
+- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
+- Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
+
+const HERDR_WORKER_CONTEXT: &str = r#"[agent-host: herdr — worker]
+This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
+- Never spawn visible panes: `swarm launch`, `swarm spawn` and every `herdr` surface-creating command (`pane split`, `pane run`, `agent start`, `tab create`, `workspace create`, `worktree create`) are orchestrator-only and are refused for worker sessions.
+- Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
+- Report results to the orchestrator only; do not notify the user."#;
+
+const CODEX_HERDR_DELEGATION: &str = r#"- `spawn_agent`, `wait_agent` and the rest of the codex collaboration family are not a delegation path here: their workers run in-process and Herdr cannot show them. That holds however explicitly a task asks for sub-agents or parallel work — when you cannot create a visible pane, report that and stop; never substitute a hidden worker."#;
+
+const CODEX_SOCKET_PROBE: &str = r#"- The `swarm launch` line above states the general contract; these two cases resolve it for you and supersede it. Settle your spawn path ONCE, by testing the control socket with a single `herdr status`, then stay on the answer:
+  - `herdr status` answers → you are the unsandboxed driver. Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`.
+  - `herdr status` answers `PermissionDenied` → your sandbox denies that socket, so every direct `swarm` or `herdr` call is denied for the same reason. You have no spawn path: report that and stop. Do not retry the call, and do not request an escalated sandbox to force one through — escalation spends a user approval on a path this session is not meant to use."#;
+
+/// The contract for this session, or None outside a visible host. `env` reads one variable.
+pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
+    if env("HERDR_ENV").as_deref() != Some("1") || env("HERDR_PANE_ID").is_none_or(|pane| pane.is_empty()) {
+        return None;
+    }
+    let mut context = match is_worker(&env) {
+        true => HERDR_WORKER_CONTEXT.to_string(),
+        false if provider == "codex" => format!("{HERDR_CONTEXT}\n{CODEX_HERDR_DELEGATION}\n{CODEX_SOCKET_PROBE}"),
+        false => HERDR_CONTEXT.to_string(),
+    };
+    let adapter = match provider {
+        "claude" => "~/.claude/skills/orchestrate-claude/SKILL.md",
+        "codex" => "~/.agents/skills/orchestrate-codex/SKILL.md",
+        _ => "~/.gemini/config/skills/orchestrate-agy/SKILL.md",
+    };
+    context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore executing any portable skill that requests workers, load `{adapter}`.\nThe runtime adapter translates workflow requirements; the active agent-host contract owns worker lifecycle and visibility."));
+    Some(context)
+}
+
+/// True in a pane an orchestrator spawned: `swarm spawn` names every child but the orchestrator.
+pub fn is_worker(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("HERDR_AGENT_PANE").as_deref() == Some("1") || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
+}
+
+/// The hook output each provider reads. Codex takes only `additionalContext` into the
+/// conversation (`systemMessage` goes to the user), and prints `{}` outside a host.
+pub fn render(provider: &str, context: Option<&str>) -> String {
+    match (provider, context) {
+        ("claude", Some(context)) => format!("{context}\n"),
+        ("claude", None) => String::new(),
+        ("codex", Some(context)) => serde_json::json!({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}).to_string() + "\n",
+        ("codex", None) => "{}\n".into(),
+        (_, context) => serde_json::json!({"injectSteps": context.map(|context| vec![serde_json::json!({"ephemeralMessage": context})]).unwrap_or_default()}).to_string() + "\n",
+    }
+}
+
+/// An AGY worker's history goes through the classifier before the session starts. Best effort:
+/// a missing classifier or one that outlives six seconds changes nothing.
+pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
+    if provider != "agy" || !is_worker(|name| std::env::var(name).ok()) {
+        return;
+    }
+    let classifier = format!("{home}/.claude/hooks/worker-history-classifier.py");
+    let Ok(mut child) = std::process::Command::new(classifier)
+        .args(["--provider", provider])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(payload.as_bytes());
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    while matches!(child.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let pairs: Vec<(String, String)> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        move |name| pairs.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone())
+    }
+
+    const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
+
+    #[test]
+    fn outside_a_host_codex_gets_an_empty_object_and_claude_nothing() {
+        assert_eq!(render("codex", context("codex", env(&[])).as_deref()), "{}\n");
+        assert_eq!(render("claude", context("claude", env(&[])).as_deref()), "");
+        assert_eq!(render("agy", None), "{\"injectSteps\":[]}\n");
+    }
+
+    #[test]
+    fn only_the_codex_orchestrator_gets_the_delegation_and_probe_lines() {
+        let codex = context("codex", env(&HERDR)).unwrap();
+        assert!(codex.contains("Settle your spawn path ONCE") && codex.contains("spawn_agent"));
+        assert!(codex.find("[agent-host: herdr]") < codex.find("[agent-runtime: codex]"));
+        assert!(!context("claude", env(&HERDR)).unwrap().contains("spawn_agent"));
+    }
+
+    #[test]
+    fn a_worker_marker_gives_the_worker_contract_but_the_orchestrator_seat_does_not() {
+        for marker in [("HERDR_AGENT_PANE", "1"), ("SWARM_AGENT_ID", "cl-seat-1")] {
+            let body = context("codex", env(&[HERDR[0], HERDR[1], marker])).unwrap();
+            assert!(body.contains("[agent-host: herdr — worker]") && !body.contains("spawn_agent"), "{marker:?}");
+        }
+        let seat = context("claude", env(&[HERDR[0], HERDR[1], ("SWARM_AGENT_ID", "orchestrator")])).unwrap();
+        assert!(seat.starts_with("[agent-host: herdr]\n"));
+    }
+}

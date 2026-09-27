@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | host-context --provider <claude|codex|agy> | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -626,6 +626,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, json] = args && cmd == "roles" && json == "--json" {
         return print_json(&load_roles()?);
+    }
+    if let [cmd, flag, provider] = args
+        && cmd == "host-context" && flag == "--provider" && matches!(provider.as_str(), "claude" | "codex" | "agy")
+    {
+        let mut payload = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
+        swarm::host::contain_worker_history(provider, &payload, &env_var("HOME")?);
+        print!("{}", swarm::host::render(provider, swarm::host::context(provider, |name| env::var(name).ok()).as_deref()));
+        return Ok(());
     }
     if let [cmd, sub, role, rest @ ..] = args && cmd == "roles" && sub == "get" {
         let provider = match rest {
