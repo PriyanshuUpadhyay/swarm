@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 2,
+  "routes": {
+    "search.web": [
+      "codex-luna-low-agent",
+      "claude-sonnet-low-agent",
+      "agy-flash-high-agent"
+    ],
+    "code.small": [
+      "codex-luna-low-agent"
+    ],
+    "code.routine": [
+      "agy-flash-high-agent"
+    ],
+    "code.complex": [
+      "codex-sol-high-agent"
+    ],
+    "review.deep": [
+      "claude-fable-xhigh-agent",
+      "codex-astra-high-agent"
+    ],
+    "review.challenger": [
+      "claude-opus-xhigh-agent"
+    ],
+    "council.gpt": [
+      "codex-astra-high-agent"
+    ],
+    "council.gemini": [
+      "agy-flash-high-agent"
+    ],
+    "council.claude": [
+      "claude-fable-xhigh-agent"
+    ]
+  },
+  "runners": {
+    "claude-opus-xhigh-agent": {
+      "provider": "claude",
+      "model": "opus",
+      "effort": "xhigh",
+      "permission": "auto"
+    },
+    "claude-fable-xhigh-agent": {
+      "provider": "claude",
+      "model": "claude-fable-5-1",
+      "effort": "xhigh",
+      "permission": "auto"
+    },
+    "codex-luna-low-agent": {
+      "provider": "codex",
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "sandbox": "workspace-write",
+      "approval": "never"
+    },
+    "codex-sol-high-agent": {
+      "provider": "codex",
+      "model": "gpt-6-sol",
+      "effort": "high",
+      "sandbox": "workspace-write",
+      "approval": "never"
+    },
+    "codex-astra-high-agent": {
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "sandbox": "workspace-write",
+      "approval": "never"
+    },
+    "agy-flash-high-agent": {
+      "provider": "agy",
+      "model": "gemini-3.8-flash-high",
+      "effort": "high",
+      "permission": "skip"
+    },
+    "claude-sonnet-low-agent": {
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "low",
+      "permission": "auto"
+    }
+  }
+}

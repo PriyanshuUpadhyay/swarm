@@ -21,9 +21,15 @@ not set, the binary uses `HOME`. The data directory is always `$SWARM_HOME/.swar
 |---|---|
 | `SWARM_HOME` | Parent of the `.swarm/` data directory. Set it for each process. Defaults to `$HOME`. |
 | `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
+| `AGENT_ROUTING_CONFIG` | Routing config file. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
+
+Roles come from `$AGENT_ROUTING_CONFIG`, else `$XDG_CONFIG_HOME/agent-routing/roles.json`
+(`~/.config/agent-routing/roles.json`), else the `default-roles.json` built into the binary. The
+first `roles set-model` without a user file saves a copy of the default at the XDG path. A user
+file that is a broken symlink is an error, never a silent switch to the default.
 
 ## Commands
 
@@ -41,6 +47,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
 | `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
+| `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the role's runner as JSON: its fields plus `role`, `runnerId`, and `fallbackRunnerIds`. |
 | `roles set-model <runner> <model>` | any | Save a runner's model in the shared routing config. Every role using that runner changes. |
 | `models --provider <claude\|codex\|agy> --json` | any | List models for a new chat. Codex and AGY use their CLI catalogs; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |

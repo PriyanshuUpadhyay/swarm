@@ -1,5 +1,6 @@
 //! Role routing: which runner (provider, model, effort, sandbox) starts each role. The config is
-//! user data at `$AGENT_ROUTING_CONFIG`, else `$XDG_CONFIG_HOME/agent-routing/roles.json`.
+//! user data at `$AGENT_ROUTING_CONFIG`, else `$XDG_CONFIG_HOME/agent-routing/roles.json`, else
+//! the shipped `default-roles.json`.
 
 use serde_json::Value;
 use std::path::PathBuf;
@@ -20,9 +21,16 @@ pub fn config_path() -> Result<PathBuf, String> {
     Ok(config_home.join("agent-routing/roles.json"))
 }
 
+const DEFAULT: &str = include_str!("../default-roles.json");
+
 pub fn load() -> Result<(PathBuf, Value), String> {
     let path = config_path()?;
-    let text = std::fs::read_to_string(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    // No user file means the default; a broken symlink is an error, so a moved dotfiles checkout
+    // cannot switch every role to the default without a word.
+    let text = match std::fs::read_to_string(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && std::fs::symlink_metadata(&path).is_err() => DEFAULT.into(),
+        result => result.map_err(|error| format!("cannot read {}: {error}", path.display()))?,
+    };
     let config = serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
     Ok((path, config))
 }
@@ -41,6 +49,12 @@ pub fn set_model(runner: &str, model: &str) -> Result<(), String> {
         return Err(errors.join("\n"));
     }
     let text = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())? + "\n";
+    if std::fs::symlink_metadata(&path).is_err() {
+        let dir = path.parent().ok_or("config path has no folder")?;
+        std::fs::create_dir_all(dir)
+            .and_then(|()| std::fs::write(&path, DEFAULT))
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+    }
     let target = std::fs::canonicalize(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
     let backup = format!("{}.{stamp}.bak", path.display());
@@ -171,6 +185,7 @@ mod tests {
     #[test]
     fn validate_accepts_a_good_config_and_names_each_broken_rule() {
         assert_eq!(validate(&config()), Vec::<String>::new());
+        assert_eq!(validate(&serde_json::from_str(DEFAULT).unwrap()), Vec::<String>::new());
         let bad = serde_json::json!({
             "routes": {"code": ["claude-fable-high-agent", "claude-fable-high-agent", "gone"]},
             "runners": {

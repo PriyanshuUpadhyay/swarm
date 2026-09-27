@@ -71,3 +71,28 @@ fn set_model_writes_through_the_symlink_and_keeps_a_backup() {
         .count();
     assert_eq!(backups, 1);
 }
+
+#[test]
+fn with_no_user_file_the_default_routes_and_set_model_saves_a_copy() {
+    let home = scratch("default");
+
+    let output = swarm(&home, &[], &["roles", "get", "search.web"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let output = swarm(&home, &[], &["roles", "set-model", "codex-luna-low-agent", "gpt-luna-next"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(home.join(".config/agent-routing/roles.json")).unwrap()).unwrap();
+    assert_eq!(saved["runners"]["codex-luna-low-agent"]["model"], "gpt-luna-next");
+}
+
+#[test]
+fn a_broken_symlink_is_an_error_not_the_default() {
+    let home = scratch("dangling");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::os::unix::fs::symlink(home.join("gone.json"), home.join(".config/agent-routing/roles.json")).unwrap();
+
+    let output = swarm(&home, &[], &["roles", "get", "search.web"]);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot read"));
+}
