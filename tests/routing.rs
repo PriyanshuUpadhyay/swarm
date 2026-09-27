@@ -1,0 +1,53 @@
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+const CONFIG: &str = r#"{
+  "routes": {"code": ["codex-sol-high-agent", "claude-opus-high-agent"]},
+  "runners": {
+    "codex-sol-high-agent": {"provider": "codex", "model": "gpt-sol", "effort": "high"},
+    "claude-opus-high-agent": {"provider": "claude", "model": "opus"}
+  }
+}"#;
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("swarm-routing-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Runs the built binary with only HOME set, so no user config or routing env leaks in.
+fn swarm(home: &Path, env: &[(&str, &Path)], args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+    command.env_clear().env("HOME", home).args(args);
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    command.output().unwrap()
+}
+
+#[test]
+fn roles_get_reads_the_xdg_config() {
+    let home = scratch("get");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(home.join(".config/agent-routing/roles.json"), CONFIG).unwrap();
+
+    let output = swarm(&home, &[], &["roles", "get", "code", "--provider", "claude"]);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["runnerId"], "claude-opus-high-agent");
+    assert_eq!(resolved["role"], "code");
+}
+
+#[test]
+fn a_missing_explicit_config_is_an_error() {
+    let home = scratch("missing");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(home.join(".config/agent-routing/roles.json"), CONFIG).unwrap();
+
+    let output = swarm(&home, &[("AGENT_ROUTING_CONFIG", &home.join("nope.json"))], &["roles", "get", "code"]);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("AGENT_ROUTING_CONFIG names a missing file"));
+}

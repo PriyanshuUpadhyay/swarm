@@ -2,11 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
-struct RoutingState {
-    config: RoutingConfig,
-}
-
-#[derive(Deserialize)]
 struct RoutingConfig {
     routes: BTreeMap<String, Vec<String>>,
     runners: BTreeMap<String, RoutingRunner>,
@@ -100,17 +95,16 @@ mod model_tests {
     }
 }
 
-pub fn translate_roles(json: &str) -> Result<RoleList, String> {
-    let input: RoutingState =
-        serde_json::from_str(json).map_err(|error| format!("routing JSON: {error}"))?;
-    let mut roles = Vec::with_capacity(input.config.routes.len());
+pub fn translate_roles(config: &serde_json::Value) -> Result<RoleList, String> {
+    let config: RoutingConfig =
+        serde_json::from_value(config.clone()).map_err(|error| format!("routing config: {error}"))?;
+    let mut roles = Vec::with_capacity(config.routes.len());
     let mut choices = Vec::new();
-    for (role, runner_ids) in input.config.routes {
+    for (role, runner_ids) in config.routes {
         let (runner, fallbacks) = runner_ids
             .split_first()
             .ok_or_else(|| format!("route {role} has no runners"))?;
-        let details = input
-            .config
+        let details = config
             .runners
             .get(runner)
             .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
@@ -124,7 +118,7 @@ pub fn translate_roles(json: &str) -> Result<RoleList, String> {
             fallbacks: fallbacks.to_vec(),
         });
         for runner in runner_ids {
-            let details = input.config.runners.get(&runner)
+            let details = config.runners.get(&runner)
                 .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
             if choices.iter().any(|choice: &Role| choice.role == role && choice.provider == details.provider) {
                 continue;
@@ -368,9 +362,9 @@ mod tests {
 
     #[test]
     fn translates_routes_and_keeps_fallback_order() {
-        let json = r#"{"path":"/roles.json","config":{"routes":{"ORCHESTRATOR":["claudeLead","codexBackup"],"CODER":["codexWork"]},"runners":{"claudeLead":{"provider":"claude","model":"opus","effort":null},"codexBackup":{"provider":"codex","model":"gpt-backup","sandbox":"workspace-write"},"codexWork":{"provider":"codex","model":"gpt-work","effort":"high","sandbox":"workspace-write"}}}}"#;
+        let json = r#"{"routes":{"ORCHESTRATOR":["claudeLead","codexBackup"],"CODER":["codexWork"]},"runners":{"claudeLead":{"provider":"claude","model":"opus","effort":null},"codexBackup":{"provider":"codex","model":"gpt-backup","sandbox":"workspace-write"},"codexWork":{"provider":"codex","model":"gpt-work","effort":"high","sandbox":"workspace-write"}}}"#;
 
-        let result = translate_roles(json).unwrap();
+        let result = translate_roles(&serde_json::from_str(json).unwrap()).unwrap();
 
         assert_eq!(result.roles[1].runner, "claudeLead");
         assert_eq!(result.roles[1].fallbacks, ["codexBackup"]);

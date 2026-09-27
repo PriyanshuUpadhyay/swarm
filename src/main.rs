@@ -30,7 +30,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -83,9 +83,8 @@ fn yelo_command() -> String {
 }
 
 fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>> {
-    let command = routing_command()?;
-    let json = tool_stdout(&command, &["web-state"])?;
-    swarm::profiles::translate_roles(&json).map_err(|error| format!("swarm: {error}").into())
+    let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
+    swarm::profiles::translate_roles(&config).map_err(|error| format!("swarm: {error}").into())
 }
 
 fn set_role_model(command: &str, runner: &str, model: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -635,6 +634,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, json] = args && cmd == "roles" && json == "--json" {
         return print_json(&load_roles()?);
+    }
+    if let [cmd, sub, role, rest @ ..] = args && cmd == "roles" && sub == "get" {
+        let provider = match rest {
+            [] => None,
+            [flag, provider] if flag == "--provider" => Some(provider.as_str()),
+            _ => return Err(USAGE.into()),
+        };
+        let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
+        let resolved = swarm::routing::resolve(&config, role, provider).map_err(|error| format!("swarm: {error}"))?;
+        println!("{}", serde_json::to_string_pretty(&resolved)?);
+        return Ok(());
     }
     if let [cmd, sub, runner, model] = args && cmd == "roles" && sub == "set-model" {
         let output = set_role_model(&routing_command()?, runner, model)?;
