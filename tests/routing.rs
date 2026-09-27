@@ -51,3 +51,23 @@ fn a_missing_explicit_config_is_an_error() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("AGENT_ROUTING_CONFIG names a missing file"));
 }
+
+#[test]
+fn set_model_writes_through_the_symlink_and_keeps_a_backup() {
+    let home = scratch("set");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(home.join("real.json"), CONFIG).unwrap();
+    let link = home.join(".config/agent-routing/roles.json");
+    std::os::unix::fs::symlink(home.join("real.json"), &link).unwrap();
+
+    let output = swarm(&home, &[], &["roles", "set-model", "codex-sol-high-agent", "gpt-sol-2"]);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(home.join("real.json")).unwrap()).unwrap();
+    assert_eq!(saved["runners"]["codex-sol-high-agent"]["model"], "gpt-sol-2");
+    let backups = std::fs::read_dir(home.join(".config/agent-routing")).unwrap()
+        .filter(|entry| entry.as_ref().unwrap().file_name().to_string_lossy().ends_with(".bak"))
+        .count();
+    assert_eq!(backups, 1);
+}

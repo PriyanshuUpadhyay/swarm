@@ -27,6 +27,29 @@ pub fn load() -> Result<(PathBuf, Value), String> {
     Ok((path, config))
 }
 
+/// Sets one runner's model and saves the file: a timestamped backup beside it, then an atomic
+/// rename onto the real file, because the live roles.json is often a symlink that a rename onto
+/// the link itself would replace.
+pub fn set_model(runner: &str, model: &str) -> Result<(), String> {
+    let (path, mut config) = load()?;
+    let Some(Value::Object(fields)) = config["runners"].get_mut(runner) else {
+        return Err(format!("unknown runner '{runner}'"));
+    };
+    fields.insert("model".into(), model.into());
+    let text = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())? + "\n";
+    let target = std::fs::canonicalize(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
+    let backup = format!("{}.{stamp}.bak", path.display());
+    std::fs::copy(&target, &backup).map_err(|error| format!("{backup}: {error}"))?;
+    let temp = target.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temp, text)
+        .and_then(|()| std::fs::rename(&temp, &target))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&temp);
+            format!("{}: {error}", target.display())
+        })
+}
+
 /// The route's first runner, or its first runner of `provider`, with its fields plus `role`,
 /// `runnerId`, and `fallbackRunnerIds`: the route's other runners of the same provider, in order.
 pub fn resolve(config: &Value, role: &str, provider: Option<&str>) -> Result<Value, String> {

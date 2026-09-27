@@ -68,16 +68,6 @@ fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::e
     String::from_utf8(output.stdout).map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
 }
 
-fn routing_command() -> Result<String, Box<dyn std::error::Error>> {
-    if let Ok(command) = env::var("SWARM_ROUTING_CMD") {
-        return Ok(command);
-    }
-    Ok(std::path::Path::new(&env_var("HOME")?)
-        .join(".claude/scripts/agent-routing.mjs")
-        .to_string_lossy()
-        .into_owned())
-}
-
 fn yelo_command() -> String {
     env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
 }
@@ -87,11 +77,13 @@ fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>>
     swarm::profiles::translate_roles(&config).map_err(|error| format!("swarm: {error}").into())
 }
 
-fn set_role_model(command: &str, runner: &str, model: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn set_role_model(runner: &str, model: &str) -> Result<(), Box<dyn std::error::Error>> {
     if model.is_empty() || model.chars().any(char::is_whitespace) {
         return Err("swarm: model must be one non-empty name".into());
     }
-    tool_stdout(command, &["bump", runner, model])
+    swarm::routing::set_model(runner, model).map_err(|error| format!("swarm: {error}"))?;
+    println!("Set model '{model}' on: {runner}");
+    Ok(())
 }
 
 fn resolve_role(role: &str, provider: Option<&str>) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
@@ -647,9 +639,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let [cmd, sub, runner, model] = args && cmd == "roles" && sub == "set-model" {
-        let output = set_role_model(&routing_command()?, runner, model)?;
-        print!("{output}");
-        return Ok(());
+        return set_role_model(runner, model);
     }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "models" && provider_flag == "--provider" && json == "--json"
@@ -1037,20 +1027,9 @@ mod tests {
     const CODER: &str = "coder";
 
     #[test]
-    fn model_edit_calls_the_router_and_rejects_blank_names() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let path = std::env::temp_dir().join(format!("swarm-model-test-{}", uuid::Uuid::now_v7()));
-        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-
-        let command = path.to_str().unwrap();
-        assert_eq!(
-            set_role_model(command, "codex-sol-high-agent", "gpt-6-sol").unwrap(),
-            "bump\ncodex-sol-high-agent\ngpt-6-sol\n"
-        );
-        assert!(set_role_model(command, "codex-sol-high-agent", " ").is_err());
-        std::fs::remove_file(path).unwrap();
+    fn model_edit_rejects_blank_names() {
+        assert!(set_role_model("codex-sol-high-agent", " ").is_err());
+        assert!(set_role_model("codex-sol-high-agent", "").is_err());
     }
 
     #[test]
