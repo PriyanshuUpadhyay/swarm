@@ -33,7 +33,7 @@ Round 1 produced two GO-WITH-CHANGES positions but different first steps. Gemini
 - Gemini ran `gemini-3.8-flash-high`, high, via `council.gemini`, pane `wEW:pK`. It proposed structured diffs and accepted the source-proof, tool-result preservation, and display-only limits after examination.
 - Claude launched `claude-fable-5-1`, xhigh, via `council.claude`, pane `wEW:pH`, but returned no opinion because of its weekly limit.
 
-The Herdr session was `00000000-0000-4000-8000-000000000000`. Source review round times were 189 seconds, 130 seconds, and approximately 87 seconds, followed by a citation correction. Convergence occurred in round 3. Run artifacts were held at `/tmp/councils/swarm-zig-skins-20260926` until this durable record existed.
+Source review round times were 189 seconds, 130 seconds, and approximately 87 seconds, followed by a citation correction. Convergence occurred in round 3. Run artifacts were held at `/tmp/councils/swarm-zig-skins-20260926` until this durable record existed.
 
 Automatic approval review first blocked pane closure pending explicit confirmation. The user then approved closing skins-claude, skins-gpt, and skins-gemini. All three close commands completed, and `swarm agents --json` confirmed that each pane was null while the orchestrator pane remained alive. The run scratch directory was then removed after this durable record existed.
 
@@ -65,9 +65,9 @@ long Unicode lines, quoted/newline paths, malformed events, and unchanged canoni
 Applicable engineering guidance A4 and A7 was checked by judgment: unknown event fallback remains
 available, and line counts name their unit. Standards tally: pass 0 / fail 0 / judgment 2 / not checked 0.
 
-The signed app was installed at `/Users/me/Applications/Swarm.app`; all 15 installed file
+The signed app was installed at `~/Applications/Swarm.app`; all 15 installed file
 hashes matched the verified stage. The previous app remains at
-`/Users/me/Applications/Swarm.backup-20260926-141203-1e5103.app`. The user's running app was
+`~/Applications/Swarm.backup-20260926-141203-1e5103.app`. The user's running app was
 not restarted. Evidence logs are `/tmp/swarm-structured-diff-tests.log`,
 `/tmp/swarm-structured-diff-build.log`, `/tmp/swarm-structured-diff-ui-proof.txt`, and
 `/tmp/swarm-structured-diff-installed.json`. Source checks remain limited to the confirmed Claude
@@ -129,10 +129,10 @@ across workspace changes and restart, Changes-to-Workspaces return, scroll posit
 and resumed following at the end. A compact 980 by 800 window retained cards and composer controls.
 Reveal file selected the exact test file in Finder.
 
-The final signed app was installed at `/Users/me/Applications/Swarm.app`. All 15 installed
+The final signed app was installed at `~/Applications/Swarm.app`. All 15 installed
 file hashes matched the release stage. Both executable files matched the GUI-tested app after
 removing bundle-specific signatures from comparison copies. The previous app remains at
-`/Users/me/Applications/Swarm.backup-20260926-153526-transcript-ui.app`. The owned test app
+`~/Applications/Swarm.backup-20260926-153526-transcript-ui.app`. The owned test app
 exited normally; the user's personal app was not restarted. Evidence is under
 `/tmp/swarm-transcript-ui-run/`, including `tests-final.log`, `qa-evidence.json`,
 `final-compact.png`, and `installed.json`.

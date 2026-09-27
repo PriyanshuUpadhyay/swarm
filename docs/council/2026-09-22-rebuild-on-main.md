@@ -112,7 +112,7 @@ Per-model trail:
   GEMINI's import day and `TerminalGhostty`, and GPT's split retention, 8-12.
 
 Round wall times: R0 15:38:35-15:46:14 (8 min); R1 15:54:49-16:05:16 (10 min); R2
-16:05:58-16:11:16 (5 min). Scratch: /tmp/councils/00000000-0000-4000-8000-000000000000 (removed
+16:05:58-16:11:16 (5 min). Scratch: /tmp/councils/<run> (removed
 after this log).
 
 The decision to start the rebuild, and the day-two C fallback, remain with the owner.

@@ -36,7 +36,7 @@ one session, all in the path from the chat pane to the CLI:
 Routed through `council.claude` and `council.gemini`: Claude (`claude-fable-5-1`, xhigh) and Gemini
 (`gemini-3.8-flash-high`). **The council was degraded.** Both `council.gpt` seats (`gpt-6-astra`,
 high) exited at launch, one after the other, each printing only
-`codex: using profile 'example' (expiring usage first; --profile overrides)`. The third voice is
+`codex: using profile 'work' (expiring usage first; --profile overrides)`. The third voice is
 therefore Claude `opus` at xhigh through `review.challenger`, in its own visible pane.
 
 ## Verdict: GO-WITH-CHANGES (unanimous, converged at round 1)

@@ -68,7 +68,7 @@ Answered with no build needed:
 
 ## Timing
 
-Round 1 about 8 min, round 2 about 6 min. Pinned brief and rounds: /tmp/councils/00000000-0000-4000-8000-000000000000.
+Round 1 about 8 min, round 2 about 6 min. Pinned brief and rounds: /tmp/councils/<run>.
 
 # Part 2: four more notes
 
