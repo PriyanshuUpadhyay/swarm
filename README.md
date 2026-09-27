@@ -46,6 +46,8 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session continue <new_id> <old_id>` | any | Link a newer session to an older session in the same directory after the new chair receives its context. |
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
+| `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
+| `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
 | `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the role's runner as JSON: its fields plus `role`, `runnerId`, and `fallbackRunnerIds`. |
 | `roles set-model <runner> <model>` | any | Save a runner's model in the shared routing config. Every role using that runner changes. |
@@ -69,8 +71,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `inbox` | agent | Print `seq sender kind body_path` per unread message. |
 | `ack <seq>` | agent | Mark one message read. |
 
-The Herdr adapter runs `~/.config/herdr/bin/swarm-split.py` to create its pane layout. The repository
-ships it as `adapters/swarm-split.py`, and `sh scripts/install.sh` links it there.
+The Herdr adapter's spawn verb runs `swarm herdr-split` through `$SWARM_EXE`, the path of the binary
+that runs the verb, so Swarm.app finds it even with a short `PATH`. Claude, Codex, and AGY run
+`swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
 Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
 project list, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
@@ -113,8 +116,7 @@ Interest for the stage intervals. `AppStarted` and `WindowReady` mark startup.
 Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that
 `swarm spawn` started, and `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code
 finds them through `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads
-`AGENTS.md`. `sh scripts/install.sh` links them into every agent CLI on the machine, with the host files the
-skills and adapters run. `demo/herdr.sh` and
+`AGENTS.md`. `sh scripts/install.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
 `demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
 `VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 
