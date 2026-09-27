@@ -107,14 +107,14 @@ struct WorkspaceNavigationTests {
     @Test("Default names distinguish projects and stay stable when the branch changes")
     func folderTitles() {
         let swarm = entry(project: "/work/swarm", path: "/work/swarm/wt/main", branch: "main")
-        let thine = entry(project: "/work/thine", path: "/work/thine/wt/main", branch: "main")
+        let demo = entry(project: "/work/demo", path: "/work/demo/wt/main", branch: "main")
         let switched = entry(project: "/work/swarm", path: swarm.id, branch: "fix/login")
         let navigation = WorkspaceNavigation()
         #expect(navigation.title(for: swarm) == "swarm / main")
-        #expect(navigation.title(for: thine) == "thine / main")
+        #expect(navigation.title(for: demo) == "demo / main")
         #expect(navigation.title(for: switched) == navigation.title(for: swarm))
-        #expect(navigation.detail(for: switched, among: [switched, thine]) == "fix/login · 0 chats")
-        #expect(navigation.detail(for: swarm, among: [swarm, thine]) == "0 chats")
+        #expect(navigation.detail(for: switched, among: [switched, demo]) == "fix/login · 0 chats")
+        #expect(navigation.detail(for: swarm, among: [swarm, demo]) == "0 chats")
     }
 
     @Test("Matching project and folder names get the shortest distinct path even across sections")
