@@ -179,4 +179,24 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
             "{repo}"
         );
     }
+
+    // A resuming child runs in cwd itself, so a linked `.herdr` below it does not matter.
+    let resumed = home.join("link-herdr");
+    let cwd = resumed.to_string_lossy().into_owned();
+    let output = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "seat-resume",
+            "review.deep",
+            "--cwd",
+            &cwd,
+            "--",
+            "--resume",
+            "x",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(trusted(&home.join(".claude.json"), &resumed));
 }
