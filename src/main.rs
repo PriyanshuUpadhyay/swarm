@@ -701,6 +701,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
+    // A sandbox that denies the Herdr socket usually denies this database too, so a launch checks
+    // the socket first, and the caller reads that reason, not a database error.
+    if args.first().map(String::as_str) == Some("launch") && adapter_name() == "herdr" {
+        let status = run_tool("herdr", &["status"])?;
+        if let Some(reason) = swarm::bus::socket_refusal(&String::from_utf8_lossy(&status.stderr)) {
+            return Err(reason.into());
+        }
+    }
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     let session_new = match args {
         [cmd, sub, talk_mode] if cmd == "session" && sub == "new" => {

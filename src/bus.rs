@@ -246,6 +246,15 @@ pub fn fable_refusal(agent_id: &str, role: &str, model: Option<&str>) -> Option<
         .then(|| format!("swarm: Fable is a child only for review.* and council.* (role {role})"))
 }
 
+/// Why this session has no spawn path, from the stderr of `herdr status`, or None. A sandbox that
+/// denies the Herdr socket denies every later `herdr` call too, and a wider sandbox would spend a
+/// user approval on a path this session is not meant to use.
+pub fn socket_refusal(herdr_status_stderr: &str) -> Option<&'static str> {
+    herdr_status_stderr.contains("PermissionDenied").then_some(
+        "swarm: this sandbox denies the Herdr socket, so this session has no spawn path; report that and stop, and do not request a wider sandbox",
+    )
+}
+
 /// Provider flags the role owns; a caller's extra args may not set them.
 fn owned_flags(provider: &str) -> &'static [&'static str] {
     match provider {
@@ -587,6 +596,13 @@ mod tests {
         assert!(fable_refusal("seat", "review.pr", Some("Claude-FABLE")).is_none());
         assert!(fable_refusal("orchestrator", "code.complex", Some("claude-fable-5-1")).is_none());
         assert!(fable_refusal("coder", "code.complex", Some("claude-opus-5-5")).is_none());
+    }
+
+    #[test]
+    fn a_denied_herdr_socket_refuses_launch() {
+        let denied = r#"Error: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }"#;
+        assert!(socket_refusal(denied).is_some());
+        assert!(socket_refusal("").is_none());
     }
 
     #[test]
