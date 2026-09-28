@@ -7,7 +7,8 @@ the transcript of any child that exits without a summary.
 ## Install
 
 ```sh
-cargo install --path .
+brew install priyanshuupadhyay/tap/swarm   # macOS; installs tmux too
+# or from a checkout: cargo install --path .
 swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapters/ directories
 ```
 

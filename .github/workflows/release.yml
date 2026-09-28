@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  source:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare source archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$RELEASE_TAG" != "v$version" ]; then
+            echo "tag $RELEASE_TAG does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+          mkdir dist
+          git archive --format=tar.gz --prefix="swarm-$version/" --output="dist/swarm-$version.tar.gz" HEAD
+          (cd dist && sha256sum "swarm-$version.tar.gz" > "swarm-$version.sha256")
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.sha256 --verify-tag --draft --generate-notes
