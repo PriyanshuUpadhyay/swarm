@@ -1153,6 +1153,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some("claude") if agent_id != "orchestrator" => {
                 let (dir, args) =
                     swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
+                // trusting where it points could trust any folder, such as `/`.
+                for path in [cwd.join(".herdr"), dir.clone()] {
+                    if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_symlink()) {
+                        return Err(format!(
+                            "swarm: {} is a symlink; refusing to trust where it points",
+                            path.display()
+                        )
+                        .into());
+                    }
+                }
                 std::fs::create_dir_all(&dir)?;
                 pane_dir = std::fs::canonicalize(&dir)?;
                 // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,

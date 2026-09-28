@@ -154,4 +154,29 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
     assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
     assert!(!trusted(&home.join(".claude.json"), &only_b));
+
+    // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and trusting where
+    // it points could trust any folder, such as `/`.
+    let target = home.join("target");
+    std::fs::create_dir_all(target.join("workers")).unwrap();
+    for (repo, link, points_to) in [
+        ("link-herdr", ".herdr", target.clone()),
+        ("link-workers", ".herdr/workers", target.join("workers")),
+    ] {
+        let cwd = home.join(repo);
+        std::fs::create_dir_all(cwd.join(link).parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&points_to, cwd.join(link)).unwrap();
+        let cwd = cwd.to_string_lossy().into_owned();
+        let output = swarm(&home, &env, &["launch", repo, "review.deep", "--cwd", &cwd]);
+        assert!(!output.status.success(), "{repo} launched");
+        assert!(
+            stderr(&output).contains("symlink"),
+            "{repo}: {}",
+            stderr(&output)
+        );
+        assert!(
+            !trusted(&home.join(".claude.json"), &target.join("workers")),
+            "{repo}"
+        );
+    }
 }
