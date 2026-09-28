@@ -55,18 +55,31 @@ final class SessionsTreeModel {
         if wasSelected { select(nil) }
     }
 
+    private var sourceTree = SessionsTree(projects: [])
+    private var archives = ChatArchives()
+    private var refreshRevision = 0
+    private(set) var selectionRevision = 0
     var tree = SessionsTree(projects: [])
-    var selectedSessionID: SwarmSessionID?
+    let detailModels = SessionDetailStore()
+    var selectedSessionID: SwarmSessionID? {
+        didSet {
+            if let selectedSessionID, selectedSessionID != oldValue {
+                detailModels.activate(selectedSessionID)
+            }
+        }
+    }
     private var pendingID: SwarmSessionID?
     var agents: [SwarmAgent] = []
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
+    private(set) var closing: Set<SwarmSessionID> = []
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
     func select(_ id: SwarmSessionID?) {
         if id != nil { SwarmPerformance.event("ChatSelected") }
+        selectionRevision += 1
         pendingID = nil
         selectedSessionID = id
         if let id, let entry = workspaces.first(where: {
@@ -74,7 +87,7 @@ final class SessionsTreeModel {
         }) {
             navigation.select(entry, chat: id)
         }
-        agents = []
+        agents = id.flatMap { tree.agentsBySession[$0] } ?? []
         commandSource = nil
         commandSourceKey = nil
     }
@@ -85,6 +98,7 @@ final class SessionsTreeModel {
                 self.navigation.selectedWorkspace = plan.directory
                 self.navigation.selectedChats[plan.directory] = id.rawValue
                 self.navigation.archived.remove(plan.directory)
+                self.selectionRevision += 1
                 self.pendingID = id
                 self.selectedSessionID = id
                 self.agents = []
@@ -97,6 +111,7 @@ final class SessionsTreeModel {
         onProgress: @escaping @Sendable (ChatSwitchPhase) async -> Void
     ) async throws -> SwarmSessionID {
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
+        selectionRevision += 1
         pendingID = id
         selectedSessionID = id
         if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
@@ -105,6 +120,8 @@ final class SessionsTreeModel {
     }
 
     func refresh() async throws {
+        refreshRevision += 1
+        let revision = refreshRevision
         let timing = SwarmPerformance.begin("UIRefresh")
         defer { timing.end(count: tree.projects.count) }
         let sessions: [SwarmSession]
@@ -113,11 +130,16 @@ final class SessionsTreeModel {
             defer { listTiming.end() }
             sessions = try await bus.sessions()
         }
+        guard revision == refreshRevision else { return }
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
-            tree = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
+            let loaded = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
+            guard revision == refreshRevision else { return }
+            sourceTree = loaded
+            archives.reconcile(loaded)
+            tree = archives.applying(to: loaded)
         }
         if pendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
@@ -132,7 +154,7 @@ final class SessionsTreeModel {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
                 defer { agentTiming.end() }
                 let loaded = try await bus.agents(in: row.session)
-                guard self.selectedSessionID == row.id else { return }
+                guard revision == refreshRevision, self.selectedSessionID == row.id else { return }
                 agents = loaded
             }
             let provider = row.provider ?? agents.first {
@@ -145,7 +167,7 @@ final class SessionsTreeModel {
                     for: row.session, provider: provider
                 )
                 commandTiming.end()
-                if self.selectedSessionID == row.id {
+                if revision == refreshRevision, self.selectedSessionID == row.id {
                     commandSource = source
                     commandSourceKey = key
                 }
@@ -162,17 +184,21 @@ final class SessionsTreeModel {
     func openProject(_ url: URL) async throws -> SwarmPathIdentity {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
-        let path = try projects.add(url)
+        let path = try await projects.add(url)
         try await refresh()
-        return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
+        return await Task.detached {
+            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
+        }.value
     }
 
     func createProject(at url: URL) async throws -> SwarmPathIdentity {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
-        let path = try projects.create(at: url)
+        let path = try await projects.create(at: url)
         try await refresh()
-        return SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
+        return await Task.detached {
+            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
+        }.value
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
@@ -192,27 +218,46 @@ final class SessionsTreeModel {
             named: name, in: repositoryDirectory,
             commonDirectory: common, under: parent.path
         )
-        try projects.add(URL(fileURLWithPath: path))
+        try await projects.add(URL(fileURLWithPath: path))
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         navigation.selectedWorkspace = path
-        selectedSessionID = nil
+        select(nil)
         do { try await refresh() }
         catch { self.error = String(describing: error) }
         return path
     }
 
     func archive(_ id: SwarmSessionID) async throws {
-        let ids = tree.archiveIDs(for: id)
+        let ids = archives.begin(id, in: tree)
         guard !ids.isEmpty else { return }
-        try await bus.archive(ids)
-        clearSelection(if: id)
-        try await refresh()
+        let previous = selectedSessionID
+        let workspace = navigation.selectedWorkspace
+        let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
+        refreshRevision += 1
+        tree = archives.applying(to: sourceTree)
+        if next != previous { select(next) }
+        let revision = selectionRevision
+        SwarmPerformance.event("ChatArchiveApplied")
+        do {
+            try await bus.archive(ids)
+            archives.finish(id, succeeded: true)
+            refreshRevision += 1
+        } catch {
+            archives.finish(id, succeeded: false)
+            refreshRevision += 1
+            tree = archives.applying(to: sourceTree)
+            if selectionRevision == revision, navigation.selectedWorkspace == workspace,
+               let previous, tree.session(previous) != nil {
+                select(previous)
+            }
+            throw error
+        }
     }
 
     func close(_ id: SwarmSessionID) async throws {
-        guard let session = tree.session(id)?.session else { return }
+        guard let session = tree.session(id)?.session, closing.insert(id).inserted else { return }
+        defer { closing.remove(id) }
         try await SwarmSessionCloser.close(session, bus: bus)
-        clearSelection(if: id)
         try await refresh()
     }
 
@@ -228,11 +273,7 @@ final class SessionsTreeModel {
         }
     }
 
-    private func clearSelection(if id: SwarmSessionID) {
-        guard selectedSessionID == id else { return }
-        selectedSessionID = nil
-        agents = []
-    }
+
 }
 
 private struct SessionsWindow: View {
@@ -241,10 +282,10 @@ private struct SessionsWindow: View {
     @State private var newChatDirectory: String?
     @State private var newTaskProject: ProjectNode?
     @State private var pendingTaskChatDirectory: String?
-    @State private var switchInitialModel: String?
-    @State private var switchChatFrom: SwarmProjectSession?
+    @State private var switchTarget: SwitchTarget?
     @State private var selectedProjectID: SwarmPathIdentity?
     @State private var actionError: String?
+    @State private var projectAction: String?
     @State private var search = ""
     @State private var searching = false
     @State private var showingArchive = false
@@ -266,41 +307,48 @@ private struct SessionsWindow: View {
             VStack(spacing: 0) {
                 sidebarModes
                 Divider()
-                if sidebarMode == .workspaces {
-                    workspaceSidebar
-                } else if let directory = workspaceDirectory {
-                    Button {
-                        storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
-                        documentVisible = false
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
-                                .font(.subheadline.weight(.semibold))
-                            Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                ZStack {
+                    workspaceSidebar.retainedVisibility(sidebarMode == .workspaces)
+                    if let directory = workspaceDirectory {
+                        VStack(spacing: 0) {
+                            Button {
+                                storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+                                documentVisible = false
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                                }
+                                .lineLimit(1).truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            }
+                            .buttonStyle(.plain).help("Choose a workspace")
+                            Divider()
+                            WorkspacePanels(
+                                directory: directory, mode: sidebarMode, visible: sidebarVisible,
+                                usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
+                                hasChat: model.selectedSession != nil, open: openDocument
+                            ).id(directory)
                         }
-                        .lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .retainedVisibility(sidebarMode != .workspaces)
+                    } else if sidebarMode != .workspaces {
+                        VStack {
+                            ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
+                            Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }.padding()
+                        }
                     }
-                    .buttonStyle(.plain).help("Choose a workspace")
-                    Divider()
-                    if sidebarMode == .files {
-                        WorkspaceFilesView(directory: directory, open: openDocument).id(directory)
-                    } else {
-                        WorkspaceDetails(
-                            directory: directory,
-                            usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
-                            hasChat: model.selectedSession != nil, mode: sidebarMode, open: openDocument
-                        ).id(directory)
-                    }
-                } else {
-                    ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
-                    Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }.padding()
                 }
             }
             .background(Color(nsColor: .windowBackgroundColor))
         } content: {
             VStack(spacing: 0) {
+                if let projectAction {
+                    ProgressView(projectAction).controlSize(.small).padding(8)
+                }
+                if !model.closing.isEmpty {
+                    ProgressView("Closing chat…").controlSize(.small).padding(8)
+                }
                 if let document {
                     HStack(spacing: 16) {
                         Button("Chat") { documentVisible = false }
@@ -317,12 +365,10 @@ private struct SessionsWindow: View {
                 ZStack {
                     // Keep the chat's identity and draft while a file is visible or the sidebar moves.
                     workspaceContent
-                        .opacity(documentVisible ? 0 : 1)
-                        .allowsHitTesting(!documentVisible)
-                        .disabled(documentVisible)
-                        .accessibilityHidden(documentVisible)
-                    if let document, documentVisible {
+                        .retainedVisibility(!documentVisible)
+                    if let document {
                         WorkspaceDocumentView(document: document).id(document.id)
+                            .retainedVisibility(documentVisible)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -390,10 +436,11 @@ private struct SessionsWindow: View {
                 onCreated: { pendingTaskChatDirectory = $0 }
             )
         }
-        .sheet(item: $switchChatFrom) { row in
+        .sheet(item: $switchTarget) { target in
+            let row = target.row
             NewChatSheet(
                 directory: row.session.cwd, isSwitch: true, initialProvider: row.provider,
-                initialModel: switchInitialModel,
+                initialModel: target.model,
                 launch: { plan, progress in try await model.switchChat(plan, from: row, onProgress: progress) }
             ) { _ in
                 Task { try? await model.refresh() }
@@ -409,30 +456,31 @@ private struct SessionsWindow: View {
         }
     }
 
-    @ViewBuilder private var workspaceContent: some View {
-        if let row = model.selectedSession {
+    private var workspaceContent: some View {
+        ZStack {
             VStack(spacing: 0) {
-                workspaceTabs(for: row)
-                Divider()
-                SessionDetailView(
-                    row: row,
-                    title: model.selectedSessionID.flatMap(model.tree.windowTitle) ?? row.title,
-                    agents: model.agents, panes: panes,
-                    commandSource: model.commandSource,
-                    onSwitchModel: { currentModel in
-                        switchInitialModel = currentModel
-                        switchChatFrom = row
-                    },
-                    isCurrentSession: { model.selectedSession?.id == row.id },
-                    isVisible: !documentVisible,
-                    onUsageChanged: { usage in
-                        if model.selectedSession?.id == row.id { reportedUsage = (row.id, usage) }
-                    },
-                    onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
-                )
-                .id(row.id)
+                if let row = model.selectedSession {
+                    workspaceTabs(for: row)
+                    Divider()
+                }
+                ZStack {
+                    ForEach(model.detailModels.entries) { entry in
+                        if let cachedRow = model.tree.session(entry.id), cachedRow.id == entry.id {
+                            let active = cachedRow.id == model.selectedSessionID
+                            chatDetail(cachedRow, model: entry.model, active: active)
+                                .retainedVisibility(active)
+                        }
+                    }
+                }
             }
-        } else if let workspace = model.selectedWorkspace {
+            .retainedVisibility(model.selectedSession != nil)
+            if model.selectedSession == nil { workspaceLanding }
+        }
+        .navigationTitle(model.selectedSession.flatMap { model.tree.windowTitle(for: $0.id) } ?? "Swarm")
+    }
+
+    @ViewBuilder private var workspaceLanding: some View {
+        if let workspace = model.selectedWorkspace {
             VStack(spacing: 18) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
@@ -606,6 +654,25 @@ private struct SessionsWindow: View {
         .frame(width: 480, height: 340)
     }
 
+    private func chatDetail(
+        _ row: SwarmProjectSession, model detail: SessionDetailModel, active: Bool
+    ) -> some View {
+        SessionDetailView(
+            row: row, model: detail,
+            agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
+            panes: panes, commandSource: active ? model.commandSource : nil,
+            onSwitchModel: { currentModel in
+                switchTarget = SwitchTarget(row: row, model: currentModel)
+            },
+            isCurrentSession: { model.selectedSession?.id == row.id },
+            isActive: active, isVisible: active && !documentVisible,
+            onUsageChanged: { usage in
+                if model.selectedSession?.id == row.id { reportedUsage = (row.id, usage) }
+            },
+            onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
+        )
+    }
+
     private func workspaceTabs(for selected: SwarmProjectSession) -> some View {
         let chats = model.tree.workspaceChats(for: selected.id)
         return HStack(spacing: 8) {
@@ -621,29 +688,40 @@ private struct SessionsWindow: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 4) {
                         ForEach(chats) { chat in
-                            Button {
-                                model.select(chat.id)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text(chat.session.title)
-                                        .lineLimit(1)
-                                    if let provider = chat.session.provider {
-                                        Text(providerBadge(provider))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                            HStack(spacing: 0) {
+                                Button {
+                                    model.select(chat.id)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(chat.session.title).lineLimit(1)
+                                        if let provider = chat.session.provider {
+                                            Text(providerBadge(provider))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
+                                    .frame(width: 156, alignment: .leading)
+                                    .padding(.leading, 10)
+                                    .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
                                 }
-                                .frame(width: 180, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 10)
-                                .overlay(alignment: .bottom) {
-                                    Rectangle()
-                                        .fill(chat.id == selected.id ? Color.primary.opacity(0.75) : Color.clear)
-                                        .frame(height: 2)
+                                .accessibilityAddTraits(chat.id == selected.id ? .isSelected : [])
+                                Button { archiveChat(chat.id) } label: {
+                                    Image(systemName: "archivebox")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 34, height: 34)
+                                        .contentShape(Rectangle())
                                 }
+                                .help("Archive chat")
+                                .accessibilityLabel("Archive \(chat.session.title)")
                             }
                             .buttonStyle(.plain)
-                            .accessibilityAddTraits(chat.id == selected.id ? .isSelected : [])
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(chat.id == selected.id ? Color.primary.opacity(0.75) : Color.clear)
+                                    .frame(height: 2)
+                            }
                             .id(chat.id)
                             .contextMenu { chatMenu(chat) }
                         }
@@ -809,12 +887,14 @@ private struct SessionsWindow: View {
                 catch { actionError = String(describing: error) }
             }
         }
-        .disabled(presentation.state != .live)
-        Button("Archive chat") {
-            Task {
-                do { try await model.archive(row.id) }
-                catch { actionError = String(describing: error) }
-            }
+        .disabled(presentation.state != .live || model.closing.contains(row.id))
+        Button("Archive chat") { archiveChat(row.id) }
+    }
+
+    private func archiveChat(_ id: SwarmSessionID) {
+        Task {
+            do { try await model.archive(id) }
+            catch { actionError = String(describing: error) }
         }
     }
 
@@ -832,15 +912,9 @@ private struct SessionsWindow: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Project"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                let id = try await model.openProject(url)
-                model.showHome()
-                selectedProjectID = id
-            } catch {
-                actionError = error.localizedDescription
-            }
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            performProjectAction(url, create: false)
         }
     }
 
@@ -850,18 +924,59 @@ private struct SessionsWindow: View {
         panel.prompt = "Create Project"
         panel.nameFieldStringValue = "New Project"
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                let id = try await model.createProject(at: url)
-                model.showHome()
-                selectedProjectID = id
-            } catch {
-                actionError = error.localizedDescription
-            }
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            performProjectAction(url, create: true)
         }
     }
 
+    private func performProjectAction(_ url: URL, create: Bool) {
+        guard projectAction == nil else { return }
+        projectAction = create ? "Creating project…" : "Opening project…"
+        let selection = model.selectionRevision
+        Task {
+            defer { projectAction = nil }
+            do {
+                let id = try await (create ? model.createProject(at: url) : model.openProject(url))
+                guard model.selectionRevision == selection else { return }
+                model.showHome()
+                selectedProjectID = id
+            } catch { actionError = error.localizedDescription }
+        }
+    }
+
+}
+
+private struct WorkspacePanels: View {
+    let directory: String
+    let mode: WorkspaceSidebarMode
+    let visible: Bool
+    let usage: ChatUsage?
+    let hasChat: Bool
+    let open: (WorkspaceDocument) -> Void
+    @State private var visitedFiles = false
+    @State private var visitedDetails = false
+    @State private var detailsMode = WorkspaceSidebarMode.changes
+
+    var body: some View {
+        ZStack {
+            if visitedFiles || mode == .files {
+                WorkspaceFilesView(directory: directory, isActive: visible && mode == .files, open: open)
+                    .retainedVisibility(mode == .files)
+            }
+            if visitedDetails || mode.isDetails {
+                WorkspaceDetails(
+                    directory: directory, usage: usage, hasChat: hasChat,
+                    mode: mode.isDetails ? mode : detailsMode, isActive: visible && mode.isDetails, open: open
+                )
+                .retainedVisibility(mode.isDetails)
+            }
+        }
+        .onChange(of: mode, initial: true) { _, mode in
+            if mode == .files { visitedFiles = true }
+            if mode.isDetails { visitedDetails = true; detailsMode = mode }
+        }
+    }
 }
 
 private struct ProjectHome: View {
@@ -925,8 +1040,10 @@ private struct NewTaskSheet: View {
                 Button("Cancel") { dismiss() }
                     .disabled(isCreating)
                 Button(isCreating ? "Creating…" : "Create") {
+                    guard !isCreating else { return }
+                    isCreating = true
+                    error = nil
                     Task {
-                        isCreating = true
                         defer { isCreating = false }
                         do {
                             onCreated(try await create(name))
@@ -974,6 +1091,12 @@ private final class WindowFrameView: NSView {
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
+}
+
+private struct SwitchTarget: Identifiable {
+    let row: SwarmProjectSession
+    let model: String?
+    var id: SwarmSessionID { row.id }
 }
 
 private struct LaunchTarget: Identifiable {

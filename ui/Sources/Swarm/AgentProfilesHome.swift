@@ -10,6 +10,7 @@ struct AgentProfilesHome: View {
     @State private var error: String?
     @State private var editing: SwarmRole?
     private let source = SwarmCLIProfileSource()
+    private static var cachedRoles: [SwarmRole] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -20,7 +21,11 @@ struct AgentProfilesHome: View {
             HStack {
                 Text("Agent profiles").font(.largeTitle.bold())
                 Spacer()
-                Button("Refresh") { Task { await load() } }
+                if isLoading && !roles.isEmpty { ProgressView("Refreshing profiles…").controlSize(.small) }
+                Button("Refresh") {
+                    isLoading = true
+                    Task { await load() }
+                }
                     .disabled(isLoading)
             }
             Text("These models are used when Swarm starts new agents.")
@@ -65,7 +70,10 @@ struct AgentProfilesHome: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task { await load() }
+        .task {
+            if roles.isEmpty { roles = Self.cachedRoles }
+            await load()
+        }
         .sheet(item: $editing, onDismiss: { Task { await load() } }) { role in
             ModelEditSheet(
                 role: role,
@@ -82,7 +90,10 @@ struct AgentProfilesHome: View {
         defer { isLoading = false }
         do {
             await LoginShellPath.ready()
-            roles = try await source.roles()
+            let loaded = try await source.roles()
+            try Task.checkCancellation()
+            roles = loaded
+            Self.cachedRoles = loaded
             error = nil
         } catch is CancellationError {
             return
@@ -123,13 +134,16 @@ private struct ModelEditSheet: View {
             if let error { Text(verbatim: error).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { dismiss() }.disabled(isSaving)
                 Button(isSaving ? "Saving…" : "Save") {
+                    guard !isSaving else { return }
+                    isSaving = true
+                    error = nil
+                    let requestedModel = modelName
                     Task {
-                        isSaving = true
                         defer { isSaving = false }
                         do {
-                            try await save(modelName)
+                            try await save(requestedModel)
                             dismiss()
                         } catch {
                             self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
@@ -142,5 +156,6 @@ private struct ModelEditSheet: View {
         }
         .padding(24)
         .frame(width: 440)
+        .interactiveDismissDisabled(isSaving)
     }
 }

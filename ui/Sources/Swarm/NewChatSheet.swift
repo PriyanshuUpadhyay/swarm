@@ -8,6 +8,8 @@ final class NewChatModel {
     private let preferences = ChatModelPreferences()
     private var choices: [String: String] = [:]
     private var generation = 0
+    private static var catalogs: [String: [SwarmModel]] = [:]
+    private var optionsTask: Task<Void, Never>?
 
     var provider = "codex"
     var isSwitch = false
@@ -49,6 +51,7 @@ final class NewChatModel {
         selectedModel = ChatModelChoice.initial(
             current: initialModel, saved: preferences.model(for: provider), models: []
         )
+        models = Self.catalogs[provider] ?? []
         await loadOptions()
     }
 
@@ -57,7 +60,7 @@ final class NewChatModel {
         choices[self.provider] = selectedModel
         self.provider = provider
         selectedModel = choices[provider] ?? preferences.model(for: provider) ?? ""
-        models = []
+        models = Self.catalogs[provider] ?? []
         query = ""
         modelCaption = nil
         errorMessage = nil
@@ -66,7 +69,8 @@ final class NewChatModel {
         accountSelection = nil
         accountCaption = nil
         isLoading = true
-        Task { await loadOptions() }
+        optionsTask?.cancel()
+        optionsTask = Task { await loadOptions() }
     }
 
     func selectModel(_ id: String) {
@@ -77,14 +81,18 @@ final class NewChatModel {
     }
 
     private func loadOptions() async {
+        guard !Task.isCancelled else { return }
         generation += 1
         let requestedGeneration = generation
         let requested = provider
         async let modelResult = loadModels(provider: requested)
         async let accountResult = loadAccounts(provider: requested)
         let (catalog, accounts) = await (modelResult, accountResult)
-        guard generation == requestedGeneration, provider == requested else { return }
-        models = catalog.models
+        guard !Task.isCancelled, generation == requestedGeneration, provider == requested else { return }
+        if catalog.caption == nil {
+            Self.catalogs[requested] = catalog.models
+            models = catalog.models
+        }
         modelCaption = catalog.caption
         selectedModel = ChatModelChoice.initial(current: selectedModel, saved: nil, models: models)
         accountOptions = accounts.options
@@ -138,6 +146,7 @@ final class NewChatModel {
     }
 
     func cancel() {
+        optionsTask?.cancel()
         guard phase?.canCancel == true else { return }
         isCancelling = true
         operation?.cancel()
@@ -231,11 +240,14 @@ struct NewChatSheet: View {
             TextField("Search models", text: $model.query)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Search models")
-            if model.isLoading {
+            if model.isLoading && model.models.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text("Loading models and accounts…") }
                     .frame(height: 190)
             } else {
                 modelList
+                if model.isLoading {
+                    ProgressView("Checking models and accounts…").controlSize(.small)
+                }
             }
             if let caption = model.modelCaption {
                 Text(verbatim: caption).font(.caption).foregroundStyle(.secondary)

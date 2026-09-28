@@ -138,18 +138,25 @@ struct AgentTerminalView: View {
     let store: AgentPaneStore
 
     @State private var terminal: SwarmTerminalView?
+    @State private var connectionAttempt = 0
 
     var body: some View {
         ZStack {
             if let terminal {
                 TerminalContainer(terminal: terminal)
             }
-            if store.ended.contains(store.key(session: session, agent: agent)) {
+            if terminal == nil {
+                ProgressView(connectionAttempt == 0 ? "Connecting terminal…" : "Reconnecting terminal…")
+            }
+            if terminal != nil, store.ended.contains(store.key(session: session, agent: agent)) {
                 VStack(spacing: 8) {
                     Text("Pane connection closed")
                     Button("Reconnect") {
-                        terminal = store.reconnect(session: session, agent: agent)
+                        guard terminal != nil else { return }
+                        terminal = nil
+                        connectionAttempt += 1
                     }
+                    .disabled(terminal == nil)
                 }
                     .padding(8)
                     .background(.regularMaterial)
@@ -162,8 +169,12 @@ struct AgentTerminalView: View {
                     ? Color.accentColor : Color.clear, lineWidth: 2)
                 .allowsHitTesting(false)
         }
-        .task(id: store.key(session: session, agent: agent)) {
-            terminal = store.terminal(session: session, agent: agent)
+        .task(id: store.key(session: session, agent: agent) + ":\(connectionAttempt)") {
+            do { try await Task.sleep(for: .milliseconds(50)) }
+            catch { return }
+            terminal = connectionAttempt == 0
+                ? store.terminal(session: session, agent: agent)
+                : store.reconnect(session: session, agent: agent)
         }
     }
 }

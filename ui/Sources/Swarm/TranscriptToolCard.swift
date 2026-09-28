@@ -9,6 +9,7 @@ struct TranscriptToolCard: View {
     var revealForSearch = false
     @State private var expanded = false
     @State private var inputExpanded = false
+    @State private var revealingFile = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,9 +24,15 @@ struct TranscriptToolCard: View {
                                 .textSelection(.enabled)
                             Spacer(minLength: 8)
                             if path.hasPrefix("/") {
-                                Button("Reveal file", systemImage: "folder") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                                Button(revealingFile ? "Opening Finder…" : "Reveal file", systemImage: "folder") {
+                                    revealingFile = true
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(30))
+                                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                                        revealingFile = false
+                                    }
                                 }
+                                .disabled(revealingFile)
                                 .help("Reveal file in Finder")
                             }
                         }
@@ -36,11 +43,11 @@ struct TranscriptToolCard: View {
                         Text(activity.state == .waiting ? "Waiting for tool result." : "No tool result was recorded.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
-                    ForEach(Array(activity.diffs.enumerated()), id: \.offset) { _, diff in
-                        TranscriptDiffView(diff: diff, revealForSearch: revealForSearch)
+                    ForEach(activity.diffs.indices, id: \.self) { index in
+                        TranscriptDiffView(diff: activity.diffs[index], revealForSearch: revealForSearch)
                     }
                     DisclosureGroup("Tool input", isExpanded: $inputExpanded) {
-                        TranscriptOutputView(text: activity.input.compactJSON, title: "Input")
+                        TranscriptToolInputView(input: activity.input)
                     }
                     .font(.caption)
                 }
@@ -51,7 +58,7 @@ struct TranscriptToolCard: View {
                         .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(verbatim: title).font(.callout.weight(.medium)).lineLimit(2)
-                        if let command = activity.command?.components(separatedBy: .newlines).first,
+                        if let command = activity.command.map({ String($0.prefix(200).prefix(while: { !$0.isNewline })) }),
                            !command.isEmpty, !title.contains(command) {
                             Text(verbatim: command).font(.caption.monospaced())
                                 .foregroundStyle(.secondary).lineLimit(1)
@@ -115,29 +122,38 @@ struct TranscriptOutputView: View {
     let title: String
     var revealAll = false
     @State private var showAll = false
+    @State private var preview: TranscriptTextPreview?
+    @State private var copying = false
 
     var body: some View {
-        let preview = TranscriptTextPreview(text)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 Spacer()
-                Button("Copy \(title.lowercased())", systemImage: "doc.on.doc") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                Button(copying ? "Copying…" : "Copy \(title.lowercased())", systemImage: "doc.on.doc") {
+                    copying = true
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(30))
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                        copying = false
+                    }
                 }
+                .disabled(copying)
                 .font(.caption).buttonStyle(.borderless)
             }
-            ScrollView(.horizontal) {
-                Text(verbatim: text.isEmpty ? "No output was recorded." : (showAll || revealAll ? text : preview.text))
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+            Group {
+                if showAll || revealAll {
+                    TranscriptBoundedTextView(text: text, emptyText: "No output was recorded.")
+                } else if let preview {
+                    TranscriptBoundedTextView(text: preview.text, emptyText: "No output was recorded.")
+                } else {
+                    ProgressView("Preparing preview…")
+                        .frame(height: 44, alignment: .leading)
+                }
             }
             .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
-            if preview.isTruncated {
+            if preview?.isTruncated == true {
                 HStack {
                     Text(showAll || revealAll ? "Full output shown." : "Preview only. Some output is hidden.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -148,6 +164,40 @@ struct TranscriptOutputView: View {
                 }
             }
         }
+        .task(id: text) {
+            preview = nil
+            let source = text
+            let prepared = await Task.detached(priority: .userInitiated) {
+                TranscriptTextPreview(source)
+            }.value
+            guard !Task.isCancelled else { return }
+            preview = prepared
+        }
+    }
+}
+
+private struct TranscriptToolInputView: View {
+    let input: JSONElement
+    @State private var encoded: String?
+
+    var body: some View {
+        Group {
+            if let encoded {
+                TranscriptOutputView(text: encoded, title: "Input")
+            } else {
+                ProgressView("Preparing input…")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .task(id: input) {
+            encoded = nil
+            let value = input
+            let prepared = await Task.detached(priority: .userInitiated) {
+                value.compactJSON
+            }.value
+            guard !Task.isCancelled else { return }
+            encoded = prepared
+        }
     }
 }
 
@@ -157,14 +207,23 @@ struct TranscriptDiffView: View {
     @State private var expanded = false
     @State private var split = false
     @State private var showFull = false
+    @State private var preparedDiff: TranscriptDiff?
+    @State private var limited: TranscriptDiffPreview?
+    @State private var full: TranscriptDiffPreview?
+    @State private var copying = false
+    @State private var counts: (added: Int, removed: Int)?
+    @State private var rendered = false
+    @State private var renderError = false
+
+    private struct PreviewRequest: Equatable {
+        let diff: TranscriptDiff
+        let expanded: Bool
+        let full: Bool
+    }
 
     var body: some View {
-        let added = diff.hunks.reduce(0) { $0 + $1.lines.filter { $0.hasPrefix("+") }.count }
-        let removed = diff.hunks.reduce(0) { $0 + $1.lines.filter { $0.hasPrefix("-") }.count }
         DisclosureGroup(isExpanded: $expanded) {
             if expanded {
-                let limited = TranscriptDiffPreview(diff)
-                let preview = showFull || revealForSearch ? TranscriptDiffPreview(diff, full: true) : limited
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: diff.path).font(.caption).textSelection(.enabled)
                     HStack {
@@ -173,28 +232,94 @@ struct TranscriptDiffView: View {
                             Text("Split").tag(true)
                         }.pickerStyle(.segmented).frame(width: 145)
                         Spacer()
-                        Button("Copy patch", systemImage: "doc.on.doc") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(TranscriptDiffPreview(diff, full: true).patch, forType: .string)
-                        }.font(.caption).buttonStyle(.borderless)
+                        Button(copying ? "Preparing patch…" : "Copy patch", systemImage: "doc.on.doc") {
+                            copying = true
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(30))
+                                let patch: String
+                                if let full { patch = full.patch }
+                                else {
+                                    let source = diff
+                                    let prepared = await Task.detached(priority: .userInitiated) {
+                                        TranscriptDiffPreview(source, full: true)
+                                    }.value
+                                    if source == diff { full = prepared }
+                                    patch = prepared.patch
+                                }
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(patch, forType: .string)
+                                copying = false
+                            }
+                        }
+                        .disabled(copying)
+                        .font(.caption).buttonStyle(.borderless)
                     }
-                    if let notice = preview.notice {
-                        Text(verbatim: notice).font(.caption).foregroundStyle(.secondary)
+                    if let preview = showFull || revealForSearch ? full : limited {
+                        if let notice = preview.notice {
+                            Text(verbatim: notice).font(.caption).foregroundStyle(.secondary)
+                        }
+                        ZStack {
+                            DiffWebView(text: preview.patch, isDiff: true, split: split) { success in
+                                rendered = true
+                                renderError = !success
+                            }
+                            if !rendered { ProgressView("Rendering patch…") }
+                            if renderError { Text("The patch view could not load.").foregroundStyle(.red) }
+                        }
+                        .frame(height: 300)
+                        .onChange(of: split) { _, _ in rendered = false; renderError = false }
+                        .onChange(of: preview.patch) { _, _ in rendered = false; renderError = false }
+                    } else {
+                        ProgressView("Preparing patch…")
+                            .frame(height: 44, alignment: .leading)
                     }
-                    if limited.notice != nil, !revealForSearch {
+                    if limited?.notice != nil, !revealForSearch {
                         Button(showFull ? "Show preview" : "Show full patch") { showFull.toggle() }
                             .font(.caption).buttonStyle(.borderless)
                     }
-                    DiffWebView(text: preview.patch, isDiff: true, split: split)
-                        .frame(height: 300)
                 }
                 .padding(.top, 8)
             }
         } label: {
-            Label("\((diff.path as NSString).lastPathComponent) · +\(added) −\(removed)", systemImage: "doc.text")
+            Label("\((diff.path as NSString).lastPathComponent) · +\(counts?.added.description ?? "…") −\(counts?.removed.description ?? "…")", systemImage: "doc.text")
                 .font(.callout).help(diff.path)
         }
         .onAppear { if revealForSearch { expanded = true } }
         .onChange(of: revealForSearch) { _, reveal in if reveal { expanded = true } }
+        .task(id: PreviewRequest(diff: diff, expanded: expanded, full: showFull || revealForSearch)) {
+            if preparedDiff != diff {
+                preparedDiff = diff
+                limited = nil
+                full = nil
+                rendered = false
+            }
+            guard expanded else { return }
+            let needsFull = showFull || revealForSearch
+            if needsFull ? full != nil : limited != nil { return }
+            do { try await Task.sleep(for: .milliseconds(50)) }
+            catch { return }
+            let source = diff
+            let prepared = await Task.detached(priority: .userInitiated) {
+                TranscriptDiffPreview(source, full: needsFull)
+            }.value
+            guard !Task.isCancelled else { return }
+            if needsFull { full = prepared } else { limited = prepared }
+        }
+        .task(id: diff) {
+            let source = diff
+            let result = await Task.detached(priority: .utility) {
+                var added = 0
+                var removed = 0
+                for hunk in source.hunks {
+                    for line in hunk.lines {
+                        if line.hasPrefix("+") { added += 1 }
+                        else if line.hasPrefix("-") { removed += 1 }
+                    }
+                }
+                return (added, removed)
+            }.value
+            guard !Task.isCancelled else { return }
+            counts = result
+        }
     }
 }

@@ -23,6 +23,17 @@ public enum WorkspaceFiles {
     /// Lists one directory without following symbolic links. Git metadata is omitted.
     /// At most 2,000 entries are returned; truncated listings explicitly report that limit.
     public static func list(in root: String, path: String = "") async throws -> WorkspaceFileListing {
+        let task = Task.detached(priority: .userInitiated) {
+            try listSync(in: root, path: path)
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private static func listSync(in root: String, path: String) throws -> WorkspaceFileListing {
         try withDirectory(root: root, parts: components(path, allowRoot: true)) { descriptor in
             let copy = dup(descriptor)
             guard copy >= 0 else { throw WorkspaceReadError("The directory cannot be read.") }
@@ -61,7 +72,14 @@ public enum WorkspaceFiles {
 
     /// Returns UTF-8 text up to 256 KiB, or a notice. Never follows symbolic links.
     public static func preview(in root: String, path: String) async throws -> WorkspaceFilePreview {
-        try read(in: root, path: path)
+        let task = Task.detached(priority: .userInitiated) {
+            try read(in: root, path: path)
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     static func read(in root: String, path: String) throws -> WorkspaceFilePreview {

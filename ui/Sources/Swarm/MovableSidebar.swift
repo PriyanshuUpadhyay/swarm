@@ -3,6 +3,8 @@ import SwiftUI
 enum WorkspaceSidebarMode: String, CaseIterable {
     case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage"
 
+    var isDetails: Bool { self == .changes || self == .pullRequest || self == .usage }
+
     var symbol: String {
         switch self {
         case .workspaces: "square.stack.3d.up"
@@ -35,9 +37,7 @@ struct MovableSidebar<Sidebar: View, Content: View>: View {
                 sidebar()
                     .frame(width: actualWidth, height: geometry.size.height)
                     .clipped()
-                    .opacity(visible ? 1 : 0)
-                    .allowsHitTesting(visible)
-                    .accessibilityHidden(!visible)
+                    .retainedVisibility(visible)
                     .overlay(alignment: onRight ? .leading : .trailing) {
                         if visible {
                             Rectangle().fill(.separator).frame(width: 1)

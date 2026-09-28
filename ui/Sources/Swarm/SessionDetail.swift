@@ -13,6 +13,7 @@ final class SessionDetailModel {
     var usage = ChatUsage()
     var currentModel: String?
     var snapshot: ChairTranscriptSnapshot = .loading
+    private(set) var transcriptRevision = 0
     var draft = ""
     private var sendState = ComposerSendState()
     private var loadedSessionCount = 1
@@ -40,6 +41,11 @@ final class SessionDetailModel {
         var opened = false
         defer { if !opened { openTiming.end() } }
         activate(sessionID: row.id.rawValue)
+        if snapshot == .loading {
+            // Let the selection and loading state draw before publishing a cold history page.
+            do { try await Task.sleep(for: .milliseconds(50)) }
+            catch { return }
+        }
         while !Task.isCancelled {
             let cycleTiming = SwarmPerformance.begin("TranscriptComposition")
             if isLoadingOlder {
@@ -136,7 +142,10 @@ final class SessionDetailModel {
             rows.append(TranscriptRow(kind: .error, text: message, eventID: "unavailable-\(row.id.rawValue)"))
         }
         let next: ChairTranscriptSnapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
-        if snapshot != next { snapshot = next }
+        if snapshot != next {
+            snapshot = next
+            transcriptRevision += 1
+        }
     }
 
     func setDraft(_ value: String, sessionID: String) {
@@ -177,19 +186,43 @@ final class SessionDetailModel {
     }
 }
 
+@MainActor @Observable
+final class SessionDetailStore {
+    struct Entry: Identifiable {
+        let id: SwarmSessionID
+        let model: SessionDetailModel
+    }
+
+    private(set) var entries: [Entry] = []
+    @ObservationIgnored private var recentIDs: [SwarmSessionID] = []
+
+    func activate(_ id: SwarmSessionID) {
+        recentIDs.removeAll { $0 == id }
+        recentIDs.insert(id, at: 0)
+        if !entries.contains(where: { $0.id == id }) {
+            entries.append(Entry(id: id, model: SessionDetailModel()))
+        }
+        // Keep mounted view order stable when selecting another cached chat.
+        if recentIDs.count > 3 {
+            let expired = recentIDs.removeLast()
+            entries.removeAll { $0.id == expired }
+        }
+    }
+}
+
 struct SessionDetailView: View {
     let row: SwarmProjectSession
-    let title: String
+    let model: SessionDetailModel
     let agents: [SwarmAgent]
     let panes: AgentPaneStore
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
     let isCurrentSession: () -> Bool
+    let isActive: Bool
     let isVisible: Bool
     let onUsageChanged: (ChatUsage) -> Void
     let onShowUsage: () -> Void
 
-    @State private var model = SessionDetailModel()
     @State private var followsTail = true
     @State private var atBottom = true
     @State private var userScrolling = false
@@ -201,6 +234,9 @@ struct SessionDetailView: View {
     @AppStorage("showRawData") private var showRawData = false
     @State private var findPresented = false
     @State private var findQuery = ""
+    @State private var findMatches: [String] = []
+    @State private var findMatchSet: Set<String> = []
+    @State private var isSearching = false
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
     @State private var didShowRows = false
@@ -212,20 +248,19 @@ struct SessionDetailView: View {
         HStack(spacing: 0) {
             transcriptColumn
                 .frame(minWidth: 320, maxWidth: .infinity)
-            if SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
+            if isActive, SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
                 paneColumn
                     .frame(minWidth: 360, maxWidth: .infinity)
                     .id(row.session.id.rawValue)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(title)
-        .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
+        .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "") + String(isActive)) {
+            guard isActive else { return }
             await model.poll(row: row, chairProvider: chairProvider)
         }
         .onAppear {
             SwarmPerformance.event("ChatDetailAppeared")
-            transcriptFocused = true
         }
         .onChange(of: model.usage, initial: true) { _, usage in
             if isCurrentSession() { onUsageChanged(usage) }
@@ -235,8 +270,11 @@ struct SessionDetailView: View {
             didShowRows = true
             SwarmPerformance.event("ChatRowsShown")
         }
-        .onChange(of: isVisible) { _, visible in
-            if !visible {
+        .onChange(of: isVisible, initial: true) { _, visible in
+            if visible {
+                transcriptFocused = true
+                onUsageChanged(model.usage)
+            } else {
                 transcriptFocused = false
                 composerFocused = false
                 findFieldFocused = false
@@ -273,6 +311,12 @@ struct SessionDetailView: View {
         historyAnchor = nil
         Task { @MainActor in proxy.scrollTo(anchor, anchor: .top) }
         return true
+    }
+
+    private func followLatest(using proxy: ScrollViewProxy) {
+        guard followsTail, !userScrolling, !loadingHistory, !findPresented, isVisible,
+              let id = lastVisibleID else { return }
+        proxy.scrollTo(id, anchor: .bottom)
     }
 
     private var chairProvider: String? {
@@ -340,6 +384,10 @@ struct SessionDetailView: View {
                                     rawSessionBlock
                                     ForEach(raw) { entry in
                                         rawEntry(entry)
+                                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { old, height in
+                                                guard entry.id == lastVisibleID, height > old else { return }
+                                                followLatest(using: proxy)
+                                            }
                                     }
                                 } else {
                                     let hidden = rows.filter(\.isHiddenByDefault).count
@@ -354,8 +402,13 @@ struct SessionDetailView: View {
                                             chair: self.row.provider ?? chairProvider,
                                             revealForSearch: currentMatchID == transcriptRow.eventID
                                         )
+                                        .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
                                         .padding(3)
                                         .background(matchBackground(transcriptRow.eventID))
+                                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { old, height in
+                                            guard transcriptRow.eventID == lastVisibleID, height > old else { return }
+                                            followLatest(using: proxy)
+                                        }
                                     }
                                 }
                             }
@@ -363,6 +416,7 @@ struct SessionDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     }
+                    .defaultScrollAnchor(.bottom, for: .initialOffset)
                     .contentMargins(.top, 8, for: .scrollContent)
                     .frame(maxHeight: .infinity)
                     .simultaneousGesture(TapGesture().onEnded {
@@ -384,27 +438,29 @@ struct SessionDetailView: View {
                         self.nearTop = nearTop
                         if nearTop, userScrolling { loadOlder(automatic: true) }
                     }
-                    .onScrollPhaseChange { oldPhase, phase in
-                        if oldPhase == .interacting || oldPhase == .decelerating {
-                            followsTail = TranscriptTail.follows(
-                                current: followsTail, atBottom: atBottom, userScrolled: true
-                            )
+                    .onScrollPhaseChange { _, phase, context in
+                        let wasScrolling = userScrolling
+                        userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                        if userScrolling {
+                            // Cancel tail following before layout or queued updates can move the viewport.
+                            followsTail = false
+                        } else if wasScrolling, phase == .idle {
+                            let geometry = context.geometry
+                            followsTail = geometry.contentOffset.y + geometry.containerSize.height
+                                >= geometry.contentSize.height - 32
                         }
-                        userScrolling = phase == .interacting || phase == .decelerating
                         if phase == .idle { loadedHistoryThisGesture = false }
                         if phase == .interacting, nearTop { loadOlder(automatic: true) }
                     }
                     .onChange(of: model.rows) {
-                        if !showRawData, restoreHistoryPosition(using: proxy) { return }
-                        if followsTail, !loadingHistory, !showRawData, let last = visibleRows.last {
-                            Task { @MainActor in proxy.scrollTo(last.eventID, anchor: .bottom) }
-                        }
+                        guard !showRawData else { return }
+                        if restoreHistoryPosition(using: proxy) { return }
+                        Task { @MainActor in followLatest(using: proxy) }
                     }
                     .onChange(of: model.rawEntries) {
-                        if showRawData, restoreHistoryPosition(using: proxy) { return }
-                        if followsTail, !loadingHistory, showRawData, let last = model.rawEntries.last {
-                            Task { @MainActor in proxy.scrollTo(last.id, anchor: .bottom) }
-                        }
+                        guard showRawData else { return }
+                        if restoreHistoryPosition(using: proxy) { return }
+                        Task { @MainActor in followLatest(using: proxy) }
                     }
                     .onChange(of: pendingScrollID) { _, id in
                         guard let id else { return }
@@ -423,7 +479,7 @@ struct SessionDetailView: View {
             .frame(maxHeight: .infinity)
             Divider()
             ComposerView(
-                sessionID: row.id.rawValue,
+                sessionID: row.id.rawValue, isActive: isActive,
                 draft: Binding(
                     get: { model.draft },
                     set: { model.setDraft($0, sessionID: row.id.rawValue) }
@@ -458,23 +514,16 @@ struct SessionDetailView: View {
         .focusEffectDisabled()
         .focused($transcriptFocused)
         // Scene-wide, so the menu finds the transcript without it holding keyboard focus.
-        .focusedSceneValue(\.paneFindActions, isVisible ? PaneFindActions(
-            terminalFocused: panes.focusedKey != nil,
-            open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
-        ) : nil)
-        .onChange(of: findMatches) { previousMatches, newMatches in
-            let index = PaneSearch.reconcile(
-                current: findMatchID.flatMap { previousMatches.firstIndex(of: $0) },
-                previousMatches: previousMatches,
-                newMatches: newMatches
-            )
-            findMatchID = index.map { newMatches[$0] }
+        .background {
+            if isVisible {
+                Color.clear.focusedSceneValue(\.paneFindActions, PaneFindActions(
+                    terminalFocused: panes.focusedKey != nil,
+                    open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
+                ))
+            }
         }
-        .onChange(of: findQuery) {
-            resetFindSelection()
-        }
-        .onChange(of: showRawData) {
-            resetFindSelection()
+        .task(id: searchRequest) {
+            await updateSearch()
         }
     }
 
@@ -499,10 +548,10 @@ struct SessionDetailView: View {
                 .frame(minWidth: 48)
             Button { stepFind(-1) } label: { Image(systemName: "chevron.up") }
                 .help("Previous match")
-                .disabled(findMatches.isEmpty)
+                .disabled(isSearching || findMatches.isEmpty)
             Button { stepFind(1) } label: { Image(systemName: "chevron.down") }
                 .help("Next match")
-                .disabled(findMatches.isEmpty)
+                .disabled(isSearching || findMatches.isEmpty)
             Button(action: closeFind) { Image(systemName: "xmark") }
                 .help("Close find")
         }
@@ -520,27 +569,89 @@ struct SessionDetailView: View {
         TranscriptDebugData.sessionJSON(session: row.session, agents: agents)
     }
 
-    private var searchItems: [PaneSearchItem] {
-        if showRawData {
-            return [PaneSearchItem(id: "raw-session", text: rawSessionJSON)]
-                + model.rawEntries.map { PaneSearchItem(id: $0.id, text: $0.displayText) }
-        }
-        return visibleRows.map {
-            let diffText = $0.tool?.diffs.map { diff in
-                ([diff.path] + diff.hunks.flatMap(\.lines)).joined(separator: "\n")
-            }.joined(separator: "\n")
-            let text = [$0.text, $0.detail, $0.tool?.command, $0.tool?.output, $0.tool?.path, diffText]
-                .compactMap { $0 }.joined(separator: "\n")
-            return PaneSearchItem(id: $0.eventID, text: text)
-        }
+    private struct SearchRequest: Hashable {
+        var query: String
+        var revision: Int
+        var raw: Bool
+        var hidden: Bool
+        var active: Bool
+        var agents: [SwarmAgent]
     }
 
-    private var findMatches: [String] {
-        PaneSearch.matches(query: findQuery, in: searchItems)
+    private var searchRequest: SearchRequest {
+        SearchRequest(
+            query: findQuery, revision: model.transcriptRevision, raw: showRawData,
+            hidden: showHiddenRows, active: findPresented && isActive,
+            agents: showRawData ? agents : []
+        )
+    }
+
+    private func updateSearch() async {
+        let request = searchRequest
+        guard request.active, !request.query.isEmpty else {
+            findMatches = []
+            findMatchSet = []
+            findMatchID = nil
+            isSearching = false
+            return
+        }
+        isSearching = true
+        let snapshot = model.snapshot
+        let session = row.session
+        let previous = findMatches
+        let selected = findMatchID
+        let search = Task.detached { () throws -> [String] in
+            var items: [PaneSearchItem] = []
+            if request.raw {
+                items.append(PaneSearchItem(
+                    id: "raw-session",
+                    text: TranscriptDebugData.sessionJSON(session: session, agents: request.agents)
+                ))
+            }
+            if case .rows(let rows, let raw) = snapshot {
+                if request.raw {
+                    for entry in raw {
+                        try Task.checkCancellation()
+                        items.append(PaneSearchItem(id: entry.id, text: entry.displayText))
+                    }
+                } else {
+                    for row in rows where request.hidden || !row.isHiddenByDefault {
+                        try Task.checkCancellation()
+                        let diff = row.tool?.diffs.map {
+                            ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n")
+                        }.joined(separator: "\n")
+                        let text = [row.text, row.detail, row.tool?.command, row.tool?.output, row.tool?.path, diff]
+                            .compactMap { $0 }.joined(separator: "\n")
+                        items.append(PaneSearchItem(id: row.eventID, text: text))
+                    }
+                }
+            }
+            try Task.checkCancellation()
+            return PaneSearch.matches(query: request.query, in: items)
+        }
+        do {
+            let matches = try await withTaskCancellationHandler {
+                try await search.value
+            } onCancel: {
+                search.cancel()
+            }
+            guard !Task.isCancelled, request == searchRequest else { return }
+            findMatches = matches
+            findMatchSet = Set(matches)
+            let index = PaneSearch.reconcile(
+                current: selected.flatMap { previous.firstIndex(of: $0) },
+                previousMatches: previous, newMatches: matches
+            )
+            findMatchID = index.map { matches[$0] }
+            if selected != findMatchID { pendingScrollID = findMatchID }
+            isSearching = false
+        } catch {
+            if !Task.isCancelled, request == searchRequest { isSearching = false }
+        }
     }
 
     private var currentMatchID: String? {
-        guard let findMatchID, findMatches.contains(findMatchID) else { return nil }
+        guard let findMatchID, findMatchSet.contains(findMatchID) else { return nil }
         return findMatchID
     }
 
@@ -549,6 +660,7 @@ struct SessionDetailView: View {
     }
 
     private var findCountText: String {
+        if isSearching { return "Searching…" }
         guard let findIndex, !findMatches.isEmpty else { return "0 of 0" }
         return "\(findIndex + 1) of \(findMatches.count)"
     }
@@ -560,9 +672,8 @@ struct SessionDetailView: View {
     private var rawSessionBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Session and agents").font(.caption).foregroundStyle(.secondary)
-            Text(verbatim: rawSessionJSON)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
+            TranscriptBoundedTextView(text: rawSessionJSON)
+                .environment(\.transcriptSearchQuery, currentMatchID == "raw-session" ? findQuery : "")
         }
         .id("raw-session")
         .padding(8)
@@ -574,9 +685,8 @@ struct SessionDetailView: View {
             Text("[\(entry.index)] \(entry.rowKind)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-            Text(verbatim: entry.displayText)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
+            TranscriptBoundedTextView(text: entry.displayText)
+                .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
         }
         .id(entry.id)
         .padding(8)
@@ -586,7 +696,7 @@ struct SessionDetailView: View {
     private func matchBackground(_ id: String) -> some ShapeStyle {
         guard findPresented else { return Color.clear }
         if currentMatchID == id { return Color.accentColor.opacity(0.28) }
-        if findMatches.contains(id) { return Color.yellow.opacity(0.14) }
+        if findMatchSet.contains(id) { return Color.yellow.opacity(0.14) }
         return Color.clear
     }
 
@@ -604,6 +714,7 @@ struct SessionDetailView: View {
     }
 
     private func stepFind(_ delta: Int) {
+        guard !isSearching else { return }
         let key: RoutedKey = delta < 0 ? .shiftCommandG : .commandG
         let expected: KeyRoute = delta < 0 ? .findPrevious : .findNext
         guard KeyRouting.route(focus: .transcript, key: key) == expected else { return }
@@ -664,6 +775,8 @@ private struct TranscriptRowView: View {
     let row: TranscriptRow
     let chair: String?
     var revealForSearch = false
+    @State private var copying = false
+    @State private var detailExpanded = false
 
     var body: some View {
         Group {
@@ -682,6 +795,9 @@ private struct TranscriptRowView: View {
             }
         }
         .id(row.eventID)
+        .onChange(of: revealForSearch, initial: true) { _, reveal in
+            if reveal { detailExpanded = true }
+        }
     }
 
     private var rowBody: some View {
@@ -691,26 +807,25 @@ private struct TranscriptRowView: View {
                 .foregroundStyle(.secondary)
             switch row.kind {
             case .diff:
-                if let diff = row.diff { TranscriptDiffView(diff: diff) }
+                if let diff = row.diff { TranscriptDiffView(diff: diff, revealForSearch: revealForSearch) }
             case .thought:
-                DisclosureGroup("Show reasoning") {
-                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
+                DisclosureGroup("Show reasoning", isExpanded: $detailExpanded) {
+                    TranscriptBoundedTextView(text: row.text)
                 }
             case .toolResult:
                 TranscriptOutputView(text: row.text,
                                      title: row.toolStatus == .failed ? "Failed tool result" : "Tool result",
                                      revealAll: revealForSearch)
             case .toolUse:
-                DisclosureGroup {
-                    Text(verbatim: row.detail ?? "").font(.system(.body, design: .monospaced))
+                DisclosureGroup(isExpanded: $detailExpanded) {
+                    TranscriptBoundedTextView(text: row.detail ?? "")
                 } label: {
                     Text(verbatim: row.text).font(.system(.body, design: .monospaced))
                         .lineLimit(1)
                 }
-            case .system where row.text.components(separatedBy: .newlines).count > 3:
-                DisclosureGroup {
-                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
+            case .system where row.text.split(separator: "\n", maxSplits: 3).count > 3:
+                DisclosureGroup(isExpanded: $detailExpanded) {
+                    TranscriptBoundedTextView(text: row.text)
                 } label: {
                     Text(verbatim: String(row.text.prefix(while: { !$0.isNewline })))
                         .font(.system(.body, design: .monospaced))
@@ -720,10 +835,16 @@ private struct TranscriptRowView: View {
                 Text(verbatim: row.text).foregroundStyle(.red)
             case .user, .assistant:
                 TranscriptMessageView(text: row.text)
-                Button("Copy message", systemImage: "doc.on.doc") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(row.text, forType: .string)
+                Button(copying ? "Copying…" : "Copy message", systemImage: "doc.on.doc") {
+                    copying = true
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(30))
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(row.text, forType: .string)
+                        copying = false
+                    }
                 }
+                .disabled(copying)
                 .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
                 .padding(.top, 4)
             case .result where row.endsTurn:

@@ -252,4 +252,37 @@ struct ComposerTests {
         #expect(finished == edited)
         #expect(Composer.retainedAttachments([attachment], in: finished) == [attachment])
     }
+
+    @Test("A failed send keeps the submitted draft and another chat's draft")
+    func failedSendKeepsDrafts() {
+        var state = ComposerSendState()
+        #expect(state.begin(sessionID: "one", draft: "first") == "first")
+        #expect(state.begin(sessionID: "two", draft: "second") == "second")
+        #expect(state.finish(sessionID: "one", currentDraft: "first", succeeded: false) == "first")
+        #expect(!state.isSending(sessionID: "one"))
+        #expect(state.isSending(sessionID: "two"))
+        #expect(state.finish(sessionID: "two", currentDraft: "edited second", succeeded: true)
+            == "edited second")
+    }
+
+    @Test("A missing file or folder cannot become an attachment token")
+    func invalidAttachmentSources() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ComposerAttachments-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(throws: (any Error).self) {
+            try ComposerAttachmentStore.importFile(
+                at: root.appendingPathComponent("missing.txt").path, scratchDirectory: root.path
+            )
+        }
+        #expect(throws: ComposerAttachmentError.self) {
+            try ComposerAttachmentStore.importFile(at: root.path, scratchDirectory: root.path)
+        }
+        let file = root.appendingPathComponent("readable.txt")
+        try "data".write(to: file, atomically: true, encoding: .utf8)
+        #expect(try ComposerAttachmentStore.importFile(
+            at: file.path, scratchDirectory: root.path
+        ).path == file.path)
+    }
 }

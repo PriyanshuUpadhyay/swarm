@@ -10,6 +10,7 @@ struct WorkspaceDetails: View {
     let usage: ChatUsage?
     let hasChat: Bool
     let mode: WorkspaceSidebarMode
+    var isActive = true
     let open: (WorkspaceDocument) -> Void
     @State private var branchSelected = false
 
@@ -22,18 +23,36 @@ struct WorkspaceDetails: View {
     }
 
     @State private var workspace: GitWorkspaceSnapshot?
+    @State private var workspaceDirectory: String?
+    @State private var workspaceRevision = 0
     @State private var comparison: GitBranchComparison?
+    @State private var comparisonRevision = -1
     @State private var pullRequest: PullRequestLookup?
+    @State private var pullRequestRevision = -1
     @State private var baseRef = ""
     @State private var refreshID = 0
-    @State private var loading = false
-    @State private var error: String?
+    @State private var loadingWorkspace = true
+    @State private var loadingDetail = false
+    @State private var workspaceError: String?
+    @State private var workspaceErrorDirectory: String?
+    @State private var detailError: String?
+    @State private var detailErrorDirectory: String?
+    @State private var detailErrorTab: WorkspaceDetailsTab?
+    @State private var detailErrorBaseRef: String?
 
-    private struct Request: Equatable {
+    private struct WorkspaceRequest: Equatable {
+        let directory: String
+        let refresh: Int
+        let isActive: Bool
+        let needsWorkspace: Bool
+    }
+
+    private struct DetailRequest: Equatable {
         let directory: String
         let tab: WorkspaceDetailsTab
         let baseRef: String
-        let refresh: Int
+        let revision: Int
+        let isActive: Bool
     }
 
     var body: some View {
@@ -42,10 +61,10 @@ struct WorkspaceDetails: View {
                 Text(mode.rawValue).font(.headline)
                 Spacer()
                 if tab != .usage {
-                    Button { refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
+                    Button { loadingWorkspace = true; refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
                         .help("Refresh this view")
                         .accessibilityLabel("Refresh workspace details")
-                        .disabled(loading)
+                        .disabled(loadingWorkspace || loadingDetail || !isActive)
                 }
             }
             .buttonStyle(.plain)
@@ -62,13 +81,27 @@ struct WorkspaceDetails: View {
             }
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if tab == .usage {
                         UsageDetails(usage: usage, hasChat: hasChat)
                     } else {
-                        if loading { ProgressView("Reading \(tab.rawValue)…").controlSize(.small) }
-                        if let error { Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled) }
-                        if let workspace {
+                        if loadingWorkspace || loadingDetail ||
+                           (workspaceDirectory != directory && workspaceErrorDirectory != directory) {
+                            ProgressView("Reading \(tab.rawValue)…").controlSize(.small)
+                        }
+                        if let workspaceError, workspaceErrorDirectory == directory {
+                            Text(verbatim: workspaceError).foregroundStyle(.red).textSelection(.enabled)
+                        }
+                        if let detailError, detailErrorDirectory == directory, detailErrorTab == tab,
+                           tab != .branch || detailErrorBaseRef == baseRef {
+                            Text(verbatim: detailError).foregroundStyle(.red).textSelection(.enabled)
+                        }
+                        if let workspace, workspaceDirectory == directory {
+                            if (workspaceError != nil && workspaceErrorDirectory == directory) ||
+                               (detailError != nil && detailErrorDirectory == directory && detailErrorTab == tab &&
+                                                         (tab != .branch || detailErrorBaseRef == baseRef)) {
+                                Text("Showing the last available result.").font(.caption).foregroundStyle(.secondary)
+                            }
                             Text(verbatim: workspace.branchLabel).font(.headline)
                             switch tab {
                             case .changes: changes(workspace)
@@ -76,11 +109,10 @@ struct WorkspaceDetails: View {
                             case .pullRequest: pullRequestDetails(workspace)
                             case .usage: EmptyView()
                             }
-                            if !loading {
-                                let readAt = comparison?.readAt ?? pullRequest?.match?.readAt ?? workspace.readAt
-                                Text("Read \(readAt.formatted(date: .abbreviated, time: .standard))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            let readAt = tab == .branch ? (comparison?.baseRef == baseRef ? comparison?.readAt : nil) ?? workspace.readAt
+                                : tab == .pullRequest ? pullRequest?.match?.readAt ?? workspace.readAt : workspace.readAt
+                            Text("Read \(readAt.formatted(date: .abbreviated, time: .standard))")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -89,36 +121,68 @@ struct WorkspaceDetails: View {
             }
         }
         .background(.background)
-        .task(id: Request(directory: directory, tab: tab, baseRef: baseRef, refresh: refreshID)) { await refresh() }
+        .task(id: WorkspaceRequest(directory: directory, refresh: refreshID, isActive: isActive,
+                                   needsWorkspace: tab != .usage)) {
+            await refreshWorkspace()
+        }
+        .task(id: DetailRequest(directory: directory, tab: tab, baseRef: baseRef,
+                                revision: workspaceRevision, isActive: isActive)) {
+            await refreshDetail()
+        }
     }
 
-    private func refresh() async {
-        guard tab != .usage else { return }
-        loading = true
-        error = nil
-        workspace = nil
-        comparison = nil
-        pullRequest = nil
+    private func refreshWorkspace() async {
+        guard isActive, tab != .usage else { return }
+        loadingWorkspace = true
+        workspaceError = nil
         do {
             let next = try await Git.inspect(in: directory)
             try Task.checkCancellation()
             workspace = next
-            if tab == .branch, !baseRef.isEmpty {
-                let result = try await Git.compareBranch(in: next, baseRef: baseRef)
-                try Task.checkCancellation()
-                comparison = result
-            }
-            if tab == .pullRequest {
-                let result = try await GitHubInspection().lookup(in: next)
-                try Task.checkCancellation()
-                pullRequest = result
-            }
-            loading = false
+            workspaceDirectory = directory
+            workspaceRevision += 1
         } catch {
             guard !Task.isCancelled else { return }
-            self.error = String(describing: error)
-            loading = false
+            workspaceError = String(describing: error)
+            workspaceErrorDirectory = directory
         }
+        loadingWorkspace = false
+    }
+
+    private func refreshDetail() async {
+        guard isActive, workspaceDirectory == directory, let workspace else { return }
+        guard tab == .pullRequest || (tab == .branch && !baseRef.isEmpty && workspace.head != nil) else {
+            loadingDetail = false
+            detailError = nil
+            return
+        }
+        let revision = workspaceRevision
+        let selectedBaseRef = baseRef
+        loadingDetail = true
+        detailError = nil
+        do {
+            if tab == .branch {
+                let result = try await Git.compareBranch(in: workspace, baseRef: selectedBaseRef)
+                try Task.checkCancellation()
+                guard workspaceRevision == revision, baseRef == selectedBaseRef else { return }
+                comparison = result
+                comparisonRevision = revision
+            } else {
+                let result = try await GitHubInspection().lookup(in: workspace)
+                try Task.checkCancellation()
+                guard workspaceRevision == revision else { return }
+                pullRequest = result
+                pullRequestRevision = revision
+            }
+        } catch {
+            guard !Task.isCancelled, workspaceRevision == revision,
+                  tab != .branch || baseRef == selectedBaseRef else { return }
+            detailError = String(describing: error)
+            detailErrorDirectory = directory
+            detailErrorTab = tab
+            detailErrorBaseRef = selectedBaseRef
+        }
+        loadingDetail = false
     }
 
     @ViewBuilder private func changes(_ workspace: GitWorkspaceSnapshot) -> some View {
@@ -153,7 +217,11 @@ struct WorkspaceDetails: View {
             }
             Text("Shows committed changes from the common base to HEAD. Local edits are in Changes.")
                 .font(.caption).foregroundStyle(.secondary)
-            if let comparison {
+            if let comparison, comparison.baseRef == baseRef {
+                if comparisonRevision != workspaceRevision {
+                    Text("Showing the previous comparison while it updates.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text(verbatim: "\(comparison.baseRef) @ \(comparison.baseOID.prefix(8)) → HEAD @ \(comparison.headOID.prefix(8))")
                     .font(.caption.monospaced()).textSelection(.enabled)
                     .help("Base \(comparison.baseOID)\nCommon base \(comparison.mergeBaseOID)\nHEAD \(comparison.headOID)")
@@ -172,6 +240,10 @@ struct WorkspaceDetails: View {
 
     @ViewBuilder private func pullRequestDetails(_ workspace: GitWorkspaceSnapshot) -> some View {
         if let result = pullRequest {
+            if pullRequestRevision != workspaceRevision {
+                Text("Showing the previous PR result while it updates.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let match = result.match {
                 let request = match.pullRequest
                 Text("#\(request.number) · \(request.isDraft ? "DRAFT" : request.state)").font(.headline)

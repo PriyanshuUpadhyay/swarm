@@ -148,6 +148,12 @@ public struct ComposerAttachment: Identifiable, Hashable, Sendable {
     public var name: String { (path as NSString).lastPathComponent }
 }
 
+public enum ComposerAttachmentError: LocalizedError {
+    case notAFile
+
+    public var errorDescription: String? { "Only files can be attached." }
+}
+
 public enum ComposerAttachmentStore {
     public static func saveImage(
         _ data: Data, fileExtension: String, scratchDirectory: String
@@ -167,6 +173,11 @@ public enum ComposerAttachmentStore {
         at source: String, scratchDirectory: String
     ) throws -> ComposerAttachment {
         let sourceURL = URL(fileURLWithPath: source)
+        let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey])
+        guard values.isRegularFile == true else { throw ComposerAttachmentError.notAFile }
+        guard FileManager.default.isReadableFile(atPath: sourceURL.path) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
         guard isImage(pathExtension: sourceURL.pathExtension) else {
             return ComposerAttachment(path: sourceURL.path)
         }

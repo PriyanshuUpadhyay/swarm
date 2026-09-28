@@ -5,24 +5,38 @@ import SwarmCore
 /// Renders a transcript message as structured native SwiftUI blocks.
 struct TranscriptMessageView: View {
     let text: String
+    @State private var blocks: [TranscriptMessageBlock]?
 
     var body: some View {
-        let blocks = TranscriptMessageBlocks.parse(text)
-        if blocks.isEmpty {
-            EmptyView()
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(blocks) { block in
-                    TranscriptBlockView(block: block)
+        let small = text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) == nil
+        let displayed = small ? TranscriptMessageBlocks.parse(text) : blocks
+        return Group {
+            if let blocks = displayed, !blocks.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(blocks) { block in
+                        TranscriptBlockView(block: block)
+                    }
                 }
+                .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+                        return .handled
+                    }
+                    return .systemAction
+                })
+            } else if displayed == nil {
+                ProgressView("Preparing message…")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .textSelection(.enabled)
-            .environment(\.openURL, OpenURLAction { url in
-                guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
-                    return .handled
-                }
-                return .systemAction
-            })
+        }
+        .task(id: text) {
+            guard !small else { return }
+            let source = text
+            let prepared = await Task.detached(priority: .userInitiated) {
+                TranscriptMessageBlocks.parse(source)
+            }.value
+            guard !Task.isCancelled else { return }
+            blocks = prepared
         }
     }
 }
@@ -33,10 +47,16 @@ private struct TranscriptBlockView: View {
     var body: some View {
         switch block {
         case let .paragraph(_, text):
-            Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
-                .font(.body)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) != nil {
+                    TranscriptBoundedTextView(text: text)
+                } else {
+                    Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
+                        .font(.body)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
 
         case let .heading(_, level, text):
             Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
@@ -52,41 +72,40 @@ private struct TranscriptBlockView: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(.secondary.opacity(0.5))
                     .frame(width: 3)
-                Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) != nil {
+                    TranscriptBoundedTextView(text: text)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(.vertical, 2)
 
         case let .unorderedList(_, items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            LazyVStack(alignment: .leading, spacing: 5) {
+                ForEach(items.indices, id: \.self) { index in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("•")
                             .font(.body.weight(.bold))
                             .foregroundStyle(.secondary)
-                        Text(TranscriptMessageBlocks.parseInlineMarkdown(item))
-                            .font(.body)
-                            .lineSpacing(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        TranscriptListItemText(text: items[index])
                     }
                 }
             }
 
         case let .orderedList(_, startIndex, items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+            LazyVStack(alignment: .leading, spacing: 5) {
+                ForEach(items.indices, id: \.self) { index in
                     let itemNumber = startIndex + index
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(itemNumber).")
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
-                        Text(TranscriptMessageBlocks.parseInlineMarkdown(item))
-                            .font(.body)
-                            .lineSpacing(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        TranscriptListItemText(text: items[index])
                     }
                 }
             }
@@ -113,10 +132,26 @@ private struct TranscriptBlockView: View {
     }
 }
 
+private struct TranscriptListItemText: View {
+    let text: String
+
+    var body: some View {
+        if text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) != nil {
+            TranscriptBoundedTextView(text: text)
+        } else {
+            Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
+                .font(.body)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 private struct CodeBlockView: View {
     let language: String?
     let code: String
     @State private var copied = false
+    @State private var copying = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -126,17 +161,21 @@ private struct CodeBlockView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
-                    copied = true
+                    copying = true
                     Task {
+                        try? await Task.sleep(for: .milliseconds(30))
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(code, forType: .string)
+                        copying = false
+                        copied = true
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
                         copied = false
                     }
                 } label: {
-                    Label(copied ? "Copied" : "Copy code", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copying ? "Copying…" : copied ? "Copied" : "Copy code", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .labelStyle(.iconOnly)
                 }
+                .disabled(copying)
                 .buttonStyle(.borderless)
                 .font(.caption)
                 .accessibilityLabel(accessibilityLabelText)
@@ -146,13 +185,7 @@ private struct CodeBlockView: View {
             .padding(.vertical, 6)
             .background(.quaternary.opacity(0.3))
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                Text(verbatim: code)
-                    .font(.system(.callout, design: .monospaced))
-                    .fixedSize(horizontal: true, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-            }
+            TranscriptBoundedTextView(text: code)
         }
         .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
         .overlay(
@@ -174,6 +207,7 @@ private struct TableBlockView: View {
     let rows: [[String]]
     let rawText: String
     @State private var copied = false
+    @State private var copying = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -183,17 +217,21 @@ private struct TableBlockView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(rawText, forType: .string)
-                    copied = true
+                    copying = true
                     Task {
+                        try? await Task.sleep(for: .milliseconds(30))
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(rawText, forType: .string)
+                        copying = false
+                        copied = true
                         try? await Task.sleep(nanoseconds: 1_500_000_000)
                         copied = false
                     }
                 } label: {
-                    Label(copied ? "Copied" : "Copy table", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copying ? "Copying…" : copied ? "Copied" : "Copy table", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .labelStyle(.iconOnly)
                 }
+                .disabled(copying)
                 .buttonStyle(.borderless)
                 .font(.caption)
                 .accessibilityLabel("Copy table")
@@ -203,27 +241,29 @@ private struct TableBlockView: View {
             .padding(.vertical, 6)
             .background(.quaternary.opacity(0.3))
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                    if !headers.isEmpty {
-                        GridRow {
-                            ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
-                                Text(TranscriptMessageBlocks.parseInlineMarkdown(header))
-                                    .font(.body.weight(.semibold))
+            if rows.count > 30 || headers.count > 20 || rows.contains(where: { $0.count > 20 }) {
+                TranscriptBoundedTextView(text: rawText)
+            } else {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                        if !headers.isEmpty {
+                            GridRow {
+                                ForEach(headers.indices, id: \.self) { index in
+                                    TranscriptTableCell(text: headers[index], isHeader: true)
+                                }
+                            }
+                            Divider()
+                        }
+                        ForEach(rows.indices, id: \.self) { rowIndex in
+                            GridRow {
+                                ForEach(rows[rowIndex].indices, id: \.self) { cellIndex in
+                                    TranscriptTableCell(text: rows[rowIndex][cellIndex])
+                                }
                             }
                         }
-                        Divider()
                     }
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                        GridRow {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(TranscriptMessageBlocks.parseInlineMarkdown(cell))
-                                    .font(.body)
-                            }
-                        }
-                    }
+                    .padding(10)
                 }
-                .padding(10)
             }
         }
         .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
@@ -234,17 +274,25 @@ private struct TableBlockView: View {
     }
 }
 
+private struct TranscriptTableCell: View {
+    let text: String
+    var isHeader = false
+
+    var body: some View {
+        if text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) != nil {
+            TranscriptBoundedTextView(text: text)
+        } else {
+            Text(TranscriptMessageBlocks.parseInlineMarkdown(text))
+                .font(isHeader ? .body.weight(.semibold) : .body)
+        }
+    }
+}
+
 private struct RawMonospaceBlockView: View {
     let text: String
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            Text(verbatim: text)
-                .font(.system(.callout, design: .monospaced))
-                .fixedSize(horizontal: true, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-        }
+        TranscriptBoundedTextView(text: text)
         .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6)
