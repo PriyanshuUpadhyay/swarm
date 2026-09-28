@@ -6,11 +6,12 @@ use std::io::Write;
 
 const HERDR_CONTEXT: &str = r#"[agent-host: herdr]
 This session is running inside Herdr. The top-level session is the orchestrator.
-- Every worker must be a visible foreground pane split from HERDR_PANE_ID.
+- A pane worker is a visible foreground pane split from HERDR_PANE_ID.
 - Set `SWARM_ADAPTER=herdr`. Open one session per run with `swarm session new lane`, export `SWARM_SESSION_ID` and `SWARM_AGENT_ID=orchestrator`, then `swarm agent add orchestrator orchestrator`.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
-- Do not use provider-native subagents, headless CLIs, detached processes, or background workers.
+- Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
+- Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
@@ -19,8 +20,6 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Never spawn visible panes: `swarm launch`, `swarm spawn` and every `herdr` surface-creating command (`pane split`, `pane run`, `agent start`, `tab create`, `workspace create`, `worktree create`) are orchestrator-only and are refused for worker sessions.
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
-
-const CODEX_HERDR_DELEGATION: &str = r#"- `spawn_agent`, `wait_agent` and the rest of the codex collaboration family are not a delegation path here: their workers run in-process and Herdr cannot show them. That holds however explicitly a task asks for sub-agents or parallel work — when you cannot create a visible pane, report that and stop; never substitute a hidden worker."#;
 
 const CODEX_SOCKET_PROBE: &str = r#"- The `swarm launch` line above states the general contract; these two cases resolve it for you and supersede it. Settle your spawn path ONCE, by testing the control socket with a single `herdr status`, then stay on the answer:
   - `herdr status` answers → you are the unsandboxed driver. Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`.
@@ -33,7 +32,7 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     }
     let mut context = match is_worker(&env) {
         true => HERDR_WORKER_CONTEXT.to_string(),
-        false if provider == "codex" => format!("{HERDR_CONTEXT}\n{CODEX_HERDR_DELEGATION}\n{CODEX_SOCKET_PROBE}"),
+        false if provider == "codex" => format!("{HERDR_CONTEXT}\n{CODEX_SOCKET_PROBE}"),
         false => HERDR_CONTEXT.to_string(),
     };
     let adapter = match provider {
@@ -108,18 +107,18 @@ mod tests {
     }
 
     #[test]
-    fn only_the_codex_orchestrator_gets_the_delegation_and_probe_lines() {
+    fn only_the_codex_orchestrator_gets_the_probe_lines() {
         let codex = context("codex", env(&HERDR)).unwrap();
-        assert!(codex.contains("Settle your spawn path ONCE") && codex.contains("spawn_agent"));
+        assert!(codex.contains("Settle your spawn path ONCE"));
         assert!(codex.find("[agent-host: herdr]") < codex.find("[agent-runtime: codex]"));
-        assert!(!context("claude", env(&HERDR)).unwrap().contains("spawn_agent"));
+        assert!(!context("claude", env(&HERDR)).unwrap().contains("Settle your spawn path ONCE"));
     }
 
     #[test]
     fn a_worker_marker_gives_the_worker_contract_but_the_orchestrator_seat_does_not() {
         for marker in [("HERDR_AGENT_PANE", "1"), ("SWARM_AGENT_ID", "cl-seat-1")] {
             let body = context("codex", env(&[HERDR[0], HERDR[1], marker])).unwrap();
-            assert!(body.contains("[agent-host: herdr — worker]") && !body.contains("spawn_agent"), "{marker:?}");
+            assert!(body.contains("[agent-host: herdr — worker]") && !body.contains("Settle your spawn path ONCE"), "{marker:?}");
         }
         let seat = context("claude", env(&[HERDR[0], HERDR[1], ("SWARM_AGENT_ID", "orchestrator")])).unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
