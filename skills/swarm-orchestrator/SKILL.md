@@ -47,7 +47,10 @@ messages as kind `relay:<recipient>` and forward them yourself.
 ## Health and cleanup
 
 ```sh
-swarm sweep --every 5 &                                 # a dead pane arrives as a summary from that child
+swarm sweep --every 30                                  # a dead pane arrives as a summary from that child
 SWARM_SUMMARIZER='<command that reads a log on stdin>' swarm drain   # summarize children that died without finish
 swarm close <id>
 ```
+
+Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
+stops with the session.
