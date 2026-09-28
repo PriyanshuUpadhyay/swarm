@@ -50,6 +50,7 @@ fn a_denied_herdr_socket_refuses_every_call_that_starts_a_run() {
     for args in [
         &["session", "new", "lane"][..],
         &["agent", "add", "orchestrator", "orchestrator"],
+        &["launch", "seat", "review.deep"],
     ] {
         let output = swarm(&home, &herdr, args);
         assert!(!output.status.success(), "{args:?} passed");
