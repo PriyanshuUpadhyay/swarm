@@ -848,7 +848,7 @@ pub fn translateFollowWindowWithLog(
     while (true) {
         const read_len = try file.readPositionalAll(io, &input_buffer, offset);
         if (read_len == 0) {
-            if (std.c.getppid() == 1) return;
+            if (std.posix.getppid() == 1) return;
             try std.Io.sleep(io, .fromMilliseconds(200), .awake);
             continue;
         }
