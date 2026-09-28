@@ -25,15 +25,23 @@ pub const SHIPPED: [(&str, &str); 3] = [
 ];
 
 pub fn shipped(name: &str) -> Option<&'static str> {
-    SHIPPED.iter().find(|(shipped, _)| *shipped == name).map(|(_, text)| *text)
+    SHIPPED
+        .iter()
+        .find(|(shipped, _)| *shipped == name)
+        .map(|(_, text)| *text)
 }
 
 type Verbs = std::collections::HashMap<String, String>;
 
 fn verbs(name: &str, text: &str) -> Result<Verbs, Box<dyn std::error::Error>> {
     let mut verbs = Verbs::new();
-    for line in text.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')) {
-        let (key, value) = line.split_once('=').ok_or(format!("adapter {name}: bad line {line:?}"))?;
+    for line in text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+    {
+        let (key, value) = line
+            .split_once('=')
+            .ok_or(format!("adapter {name}: bad line {line:?}"))?;
         verbs.insert(key.trim().to_string(), value.trim().to_string());
     }
     Ok(verbs)
@@ -41,7 +49,9 @@ fn verbs(name: &str, text: &str) -> Result<Verbs, Box<dyn std::error::Error>> {
 
 /// The verbs a deployed file states differently from the text shipped for the same adapter.
 pub fn overrides(name: &str, deployed: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let Some(base) = shipped(name) else { return Ok(Vec::new()) };
+    let Some(base) = shipped(name) else {
+        return Ok(Vec::new());
+    };
     let base = verbs(name, base)?;
     let mut named: Vec<String> = verbs(name, deployed)?
         .into_iter()
@@ -57,7 +67,11 @@ pub fn parse(name: &str, text: &str) -> Result<Adapter, Box<dyn std::error::Erro
 }
 
 fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Error>> {
-    let mut take = |verb: &str| verbs.remove(verb).ok_or(format!("adapter {name}: missing {verb}"));
+    let mut take = |verb: &str| {
+        verbs
+            .remove(verb)
+            .ok_or(format!("adapter {name}: missing {verb}"))
+    };
     let adapter = Adapter {
         name: name.to_string(),
         caller: take("self")?,
@@ -107,7 +121,11 @@ impl Adapter {
         command
     }
 
-    pub fn run(&self, verb: &str, vars: &[(&str, &str)]) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn run(
+        &self,
+        verb: &str,
+        vars: &[(&str, &str)],
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let line = match verb {
             "self" => &self.caller,
             "spawn" => &self.spawn,
@@ -123,13 +141,23 @@ impl Adapter {
         };
         let output = self.command(line, vars).output()?;
         if !output.status.success() {
-            return Err(format!("{verb} failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+            return Err(format!(
+                "{verb} failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )
+            .into());
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    pub fn attach(&self, vars: &[(&str, &str)]) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
-        let line = self.attach.as_ref().ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?;
+    pub fn attach(
+        &self,
+        vars: &[(&str, &str)],
+    ) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        let line = self
+            .attach
+            .as_ref()
+            .ok_or_else(|| format!("swarm: adapter {} has no attach", self.name))?;
         Ok(self.command(line, vars).status()?)
     }
 
@@ -142,12 +170,17 @@ impl Adapter {
 
 pub fn listing_has_pane(listing: &str, pane: &str) -> bool {
     let is_id_char = |c: char| c.is_alphanumeric() || "%:_-".contains(c);
-    listing.split(|c: char| !is_id_char(c)).any(|token| token == pane)
+    listing
+        .split(|c: char| !is_id_char(c))
+        .any(|token| token == pane)
 }
 
 /// One shell line with every argument single-quoted, so spaces and quotes stay data.
 pub fn shell_line(args: &[String]) -> String {
-    let quoted: Vec<String> = args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect();
+    let quoted: Vec<String> = args
+        .iter()
+        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+        .collect();
     quoted.join(" ")
 }
 
@@ -164,9 +197,16 @@ mod tests {
         assert_eq!(adapter.name, "herdr");
         assert_eq!(adapter.attach, None);
         assert_eq!(adapter.interrupt, None);
-        let missing = parse("herdr", "spawn = a\nring = b\nlist = c\nclose = d\ncapture = e\n").unwrap_err().to_string();
+        let missing = parse(
+            "herdr",
+            "spawn = a\nring = b\nlist = c\nclose = d\ncapture = e\n",
+        )
+        .unwrap_err()
+        .to_string();
         assert_eq!(missing, "adapter herdr: missing self");
-        let unknown = parse("herdr", &format!("{FULL}dance = d\n")).unwrap_err().to_string();
+        let unknown = parse("herdr", &format!("{FULL}dance = d\n"))
+            .unwrap_err()
+            .to_string();
         assert_eq!(unknown, "adapter herdr: unknown key dance");
         assert!(parse("herdr", "spawn\n").is_err());
     }
@@ -177,7 +217,11 @@ mod tests {
         assert_eq!(adapter.attach.as_deref(), Some("exit 7"));
         assert_eq!(adapter.attach(&[]).unwrap().code(), Some(7));
         assert_eq!(
-            parse("fake", FULL).unwrap().attach(&[]).unwrap_err().to_string(),
+            parse("fake", FULL)
+                .unwrap()
+                .attach(&[])
+                .unwrap_err()
+                .to_string(),
             "swarm: adapter fake has no attach"
         );
     }
@@ -185,7 +229,10 @@ mod tests {
     #[test]
     fn shipped_herdr_attaches_by_agent_pane() {
         let adapter = parse("herdr", shipped("herdr").unwrap()).unwrap();
-        assert_eq!(adapter.attach.as_deref(), Some("herdr agent attach \"$SWARM_PANE\""));
+        assert_eq!(
+            adapter.attach.as_deref(),
+            Some("herdr agent attach \"$SWARM_PANE\"")
+        );
     }
 
     #[test]
@@ -193,7 +240,11 @@ mod tests {
         let adapter = parse("fake", &format!("{FULL}interrupt = printf interrupted\n")).unwrap();
         assert_eq!(adapter.run("interrupt", &[]).unwrap(), "interrupted");
         assert_eq!(
-            parse("fake", FULL).unwrap().run("interrupt", &[]).unwrap_err().to_string(),
+            parse("fake", FULL)
+                .unwrap()
+                .run("interrupt", &[])
+                .unwrap_err()
+                .to_string(),
             "swarm: adapter fake has no interrupt"
         );
     }
@@ -203,11 +254,23 @@ mod tests {
         let fake = "self = echo current\nspawn = echo spawned $SWARM_NAME\nring = printf '%s' \"$SWARM_TEXT\"\nlist = echo a b\nclose = echo boom >&2; exit 3\ncapture = echo text of $SWARM_PANE\n";
         let adapter = parse("fake", fake).unwrap();
         assert_eq!(adapter.run("self", &[]).unwrap(), "current");
-        assert_eq!(adapter.run("spawn", &[("name", "coder")]).unwrap(), "spawned coder");
-        assert_eq!(adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(), "hi; rm -rf x");
-        assert_eq!(adapter.run("close", &[]).unwrap_err().to_string(), "close failed: boom");
+        assert_eq!(
+            adapter.run("spawn", &[("name", "coder")]).unwrap(),
+            "spawned coder"
+        );
+        assert_eq!(
+            adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(),
+            "hi; rm -rf x"
+        );
+        assert_eq!(
+            adapter.run("close", &[]).unwrap_err().to_string(),
+            "close failed: boom"
+        );
         assert!(adapter.run("dance", &[]).is_err());
-        assert_eq!(adapter.run("capture", &[("pane", "%3")]).unwrap(), "text of %3");
+        assert_eq!(
+            adapter.run("capture", &[("pane", "%3")]).unwrap(),
+            "text of %3"
+        );
     }
 
     #[test]
@@ -233,12 +296,24 @@ mod tests {
         let merged = load(&root, "herdr").unwrap();
         assert_eq!(merged.spawn, "python3 split.py");
         assert_eq!(merged.caller, base.caller);
-        assert_eq!(overrides("herdr", "spawn = python3 split.py\n").unwrap(), ["spawn"]);
-        assert!(overrides("herdr", shipped("herdr").unwrap()).unwrap().is_empty());
+        assert_eq!(
+            overrides("herdr", "spawn = python3 split.py\n").unwrap(),
+            ["spawn"]
+        );
+        assert!(
+            overrides("herdr", shipped("herdr").unwrap())
+                .unwrap()
+                .is_empty()
+        );
 
         std::fs::write(adapters.join("own.conf"), FULL).unwrap();
         assert_eq!(load(&root, "own").unwrap().ring, "herdr pane send-text");
-        assert!(load(&root, "missing").unwrap_err().to_string().contains("missing.conf"));
+        assert!(
+            load(&root, "missing")
+                .unwrap_err()
+                .to_string()
+                .contains("missing.conf")
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

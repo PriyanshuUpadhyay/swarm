@@ -47,17 +47,30 @@ pub struct Model {
 
 pub fn claude_models() -> Vec<Model> {
     [
-        "default", "sonnet", "opus", "haiku", "fable", "best", "sonnet[1m]", "opus[1m]", "opusplan",
+        "default",
+        "sonnet",
+        "opus",
+        "haiku",
+        "fable",
+        "best",
+        "sonnet[1m]",
+        "opus[1m]",
+        "opusplan",
     ]
-        .into_iter()
-        .map(|id| Model { id: id.into(), label: id.into() })
-        .collect()
+    .into_iter()
+    .map(|id| Model {
+        id: id.into(),
+        label: id.into(),
+    })
+    .collect()
 }
 
 pub fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
-    let value: serde_json::Value = serde_json::from_slice(json)
-        .map_err(|error| format!("codex model JSON: {error}"))?;
-    let rows = value["models"].as_array().ok_or("codex model JSON has no models")?;
+    let value: serde_json::Value =
+        serde_json::from_slice(json).map_err(|error| format!("codex model JSON: {error}"))?;
+    let rows = value["models"]
+        .as_array()
+        .ok_or("codex model JSON has no models")?;
     Ok(rows
         .iter()
         .filter_map(|row| {
@@ -66,7 +79,10 @@ pub fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
             }
             let id = row["slug"].as_str()?;
             let label = row["display_name"].as_str().unwrap_or(id);
-            Some(Model { id: id.into(), label: label.into() })
+            Some(Model {
+                id: id.into(),
+                label: label.into(),
+            })
         })
         .collect())
 }
@@ -76,7 +92,10 @@ pub fn agy_models(output: &str) -> Vec<Model> {
         .lines()
         .filter_map(|line| {
             let (id, label) = line.split_once('\t')?;
-            (!id.is_empty() && !label.is_empty()).then(|| Model { id: id.into(), label: label.into() })
+            (!id.is_empty() && !label.is_empty()).then(|| Model {
+                id: id.into(),
+                label: label.into(),
+            })
         })
         .collect()
 }
@@ -88,16 +107,27 @@ mod model_tests {
     #[test]
     fn catalogs_show_listed_codex_models_and_agy_models() {
         let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
-        assert_eq!(codex_models(codex).unwrap(), vec![Model { id: "gpt-6-sol".into(), label: "GPT-6-Sol".into() }]);
+        assert_eq!(
+            codex_models(codex).unwrap(),
+            vec![Model {
+                id: "gpt-6-sol".into(),
+                label: "GPT-6-Sol".into()
+            }]
+        );
         assert!(codex_models(b"not json").is_err());
-        assert_eq!(agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
-            vec![Model { id: "gemini-3.8-flash-high".into(), label: "Gemini 3.8 Flash (High)".into() }]);
+        assert_eq!(
+            agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
+            vec![Model {
+                id: "gemini-3.8-flash-high".into(),
+                label: "Gemini 3.8 Flash (High)".into()
+            }]
+        );
     }
 }
 
 pub fn translate_roles(config: &serde_json::Value) -> Result<RoleList, String> {
-    let config: RoutingConfig =
-        serde_json::from_value(config.clone()).map_err(|error| format!("routing config: {error}"))?;
+    let config: RoutingConfig = serde_json::from_value(config.clone())
+        .map_err(|error| format!("routing config: {error}"))?;
     let mut roles = Vec::with_capacity(config.routes.len());
     let mut choices = Vec::new();
     for (role, runner_ids) in config.routes {
@@ -118,15 +148,24 @@ pub fn translate_roles(config: &serde_json::Value) -> Result<RoleList, String> {
             fallbacks: fallbacks.to_vec(),
         });
         for runner in runner_ids {
-            let details = config.runners.get(&runner)
+            let details = config
+                .runners
+                .get(&runner)
                 .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
-            if choices.iter().any(|choice: &Role| choice.role == role && choice.provider == details.provider) {
+            if choices
+                .iter()
+                .any(|choice: &Role| choice.role == role && choice.provider == details.provider)
+            {
                 continue;
             }
             choices.push(Role {
-                role: role.clone(), runner, provider: details.provider.clone(),
-                model: details.model.clone(), effort: details.effort.clone(),
-                sandbox: details.sandbox.clone(), fallbacks: Vec::new(),
+                role: role.clone(),
+                runner,
+                provider: details.provider.clone(),
+                model: details.model.clone(),
+                effort: details.effort.clone(),
+                sandbox: details.sandbox.clone(),
+                fallbacks: Vec::new(),
             });
         }
     }
@@ -195,7 +234,9 @@ fn account_environment_with_env(
                 ("CLAUDE_CONFIG_DIR".to_string(), dir.to_string()),
                 (
                     "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_string(),
-                    home.join(format!(".claude-{name}")).to_string_lossy().into_owned(),
+                    home.join(format!(".claude-{name}"))
+                        .to_string_lossy()
+                        .into_owned(),
                 ),
             ])
         }
@@ -370,8 +411,23 @@ mod tests {
         assert_eq!(result.roles[1].fallbacks, ["codexBackup"]);
         assert_eq!(result.roles[1].effort, None);
         assert_eq!(result.roles[1].sandbox, None);
-        assert_eq!(result.choices.iter().filter(|choice| choice.role == "ORCHESTRATOR").count(), 2);
-        assert_eq!(result.choices.iter().find(|choice| choice.role == "ORCHESTRATOR" && choice.provider == "codex").unwrap().model, "gpt-backup");
+        assert_eq!(
+            result
+                .choices
+                .iter()
+                .filter(|choice| choice.role == "ORCHESTRATOR")
+                .count(),
+            2
+        );
+        assert_eq!(
+            result
+                .choices
+                .iter()
+                .find(|choice| choice.role == "ORCHESTRATOR" && choice.provider == "codex")
+                .unwrap()
+                .model,
+            "gpt-backup"
+        );
     }
 
     #[test]
@@ -389,7 +445,9 @@ mod tests {
             "/profiles/work"
         );
         // Without the credential tree the pane starts at "Not logged in".
-        assert!(result.accounts[0].env["CLAUDE_SECURESTORAGE_CONFIG_DIR"].ends_with("/.claude-work"));
+        assert!(
+            result.accounts[0].env["CLAUDE_SECURESTORAGE_CONFIG_DIR"].ends_with("/.claude-work")
+        );
         assert_eq!(result.accounts[0].remaining_pct, Some(52));
         assert_eq!(result.accounts.len(), 2);
         assert_eq!(resolve_account(&result, "auto").unwrap().name, "work");
@@ -402,16 +460,20 @@ mod tests {
     #[test]
     fn claude_secure_storage_uses_home_and_ignores_swarm_home() {
         let requested = std::cell::RefCell::new(Vec::new());
-        let environment = account_environment_with_env("claude", "work", "/profiles/work", |name| {
-            requested.borrow_mut().push(name.to_string());
-            match name {
-                "HOME" => Some("/login-home".into()),
-                "SWARM_HOME" => Some("/swarm-home".into()),
-                _ => None,
-            }
-        });
+        let environment =
+            account_environment_with_env("claude", "work", "/profiles/work", |name| {
+                requested.borrow_mut().push(name.to_string());
+                match name {
+                    "HOME" => Some("/login-home".into()),
+                    "SWARM_HOME" => Some("/swarm-home".into()),
+                    _ => None,
+                }
+            });
 
-        assert_eq!(environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"], "/login-home/.claude-work");
+        assert_eq!(
+            environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+            "/login-home/.claude-work"
+        );
         assert_eq!(*requested.borrow(), ["HOME"]);
     }
 

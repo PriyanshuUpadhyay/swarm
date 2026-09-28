@@ -25,7 +25,9 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version == 0 {
         tx.execute_batch(MIGRATIONS[0])?;
     } else if version != 1 && version != 2 {
-        return Err("database made by another swarm build; use another SWARM_HOME or delete it".into());
+        return Err(
+            "database made by another swarm build; use another SWARM_HOME or delete it".into(),
+        );
     }
     if version < 2 {
         tx.execute_batch(MIGRATIONS[1])?;
@@ -66,7 +68,10 @@ pub fn claim_next(connection: &Connection) -> Result<Option<i64>, Box<dyn std::e
 }
 
 /// (session_id, agent_id, kind, attempts) of one job.
-pub fn job(connection: &Connection, job_id: i64) -> Result<(String, String, String, i64), Box<dyn std::error::Error>> {
+pub fn job(
+    connection: &Connection,
+    job_id: i64,
+) -> Result<(String, String, String, i64), Box<dyn std::error::Error>> {
     let row = connection.query_row(
         "SELECT session_id, agent_id, kind, attempts FROM job WHERE id = ?1",
         [job_id],
@@ -75,7 +80,10 @@ pub fn job(connection: &Connection, job_id: i64) -> Result<(String, String, Stri
     Ok(row)
 }
 
-pub fn finish_job(connection: &Connection, job_id: i64) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn finish_job(
+    connection: &Connection,
+    job_id: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let changed = connection.execute(
         "UPDATE job SET state = 'done' WHERE id = ?1 AND state = 'running'",
         [job_id],
@@ -174,7 +182,12 @@ pub fn inbox(
          ORDER BY seq",
     )?;
     let rows = statement.query_map((session_id, agent_id), |r| {
-        Ok(Pending { seq: r.get(0)?, sender_id: r.get(1)?, kind: r.get(2)?, body_path: r.get(3)? })
+        Ok(Pending {
+            seq: r.get(0)?,
+            sender_id: r.get(1)?,
+            kind: r.get(2)?,
+            body_path: r.get(3)?,
+        })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -354,7 +367,12 @@ pub fn remove_agent(
     Ok(())
 }
 
-pub fn set_provider(connection: &Connection, session_id: &str, agent_id: &str, provider: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn set_provider(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    provider: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "UPDATE agent SET provider = ?3 WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, provider),
@@ -375,8 +393,8 @@ pub fn set_pane(
     if pane_id.trim().is_empty() {
         return Err(format!("swarm: adapter gave no pane for {agent_id}").into());
     }
-    let moves_orchestrator = orchestrator_of(connection, session_id)
-        .is_ok_and(|orchestrator| orchestrator == agent_id);
+    let moves_orchestrator =
+        orchestrator_of(connection, session_id).is_ok_and(|orchestrator| orchestrator == agent_id);
     connection.execute(
         "UPDATE agent AS existing
          SET pane_id = CASE WHEN existing.session_id = ?2 AND existing.id = ?3 THEN ?1 ELSE NULL END
@@ -414,12 +432,21 @@ pub struct AgentRow {
     pub created_at: i64,
 }
 
-pub fn agents(connection: &Connection, session_id: &str) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
+pub fn agents(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT id, role, pane_id, provider, created_at FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
-        Ok(AgentRow { id: row.get(0)?, role: row.get(1)?, pane: row.get(2)?, provider: row.get(3)?, created_at: row.get(4)? })
+        Ok(AgentRow {
+            id: row.get(0)?,
+            role: row.get(1)?,
+            pane: row.get(2)?,
+            provider: row.get(3)?,
+            created_at: row.get(4)?,
+        })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -532,7 +559,11 @@ pub fn rering_due(
     Ok(due)
 }
 
-pub fn clear_pane(connection: &Connection, session_id: &str, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn clear_pane(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
         "UPDATE agent SET pane_id = NULL WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id),
@@ -541,7 +572,11 @@ pub fn clear_pane(connection: &Connection, session_id: &str, agent_id: &str) -> 
 }
 
 /// Session agents that have a pane, except the caller, as (agent_id, pane_id) by id.
-pub fn live_children(connection: &Connection, session_id: &str, except: &str) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+pub fn live_children(
+    connection: &Connection,
+    session_id: &str,
+    except: &str,
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT id, pane_id FROM agent WHERE session_id = ?1 AND pane_id IS NOT NULL AND id != ?2 ORDER BY id",
     )?;
@@ -549,7 +584,11 @@ pub fn live_children(connection: &Connection, session_id: &str, except: &str) ->
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn has_summary(connection: &Connection, session_id: &str, sender_id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn has_summary(
+    connection: &Connection,
+    session_id: &str,
+    sender_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let count: i64 = connection.query_row(
         "SELECT count(*) FROM message WHERE session_id = ?1 AND sender_id = ?2 AND kind = 'summary'",
         (session_id, sender_id),
@@ -567,7 +606,11 @@ pub fn route(
     recipient: &str,
     kind: &str,
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
-    let mode: String = connection.query_row("SELECT talk_mode FROM session WHERE id = ?1", [session_id], |r| r.get(0))?;
+    let mode: String = connection.query_row(
+        "SELECT talk_mode FROM session WHERE id = ?1",
+        [session_id],
+        |r| r.get(0),
+    )?;
     let orchestrator = orchestrator_of(connection, session_id)?;
     if mode == "open" || sender == orchestrator || recipient == orchestrator {
         return Ok((recipient.to_string(), kind.to_string()));
@@ -578,7 +621,10 @@ pub fn route(
     Ok((orchestrator, format!("relay:{recipient}")))
 }
 
-pub fn orchestrator_of(connection: &Connection, session_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn orchestrator_of(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let id = connection
         .query_row(
             "SELECT id FROM agent
@@ -591,7 +637,12 @@ pub fn orchestrator_of(connection: &Connection, session_id: &str) -> Result<Stri
     Ok(id)
 }
 
-pub fn ack(connection: &Connection, session_id: &str, seq: i64, agent_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn ack(
+    connection: &Connection,
+    session_id: &str,
+    seq: i64,
+    agent_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let changed = connection.execute(
         "INSERT INTO read_mark (session_id, message_seq, agent_id)
          SELECT session_id, seq, recipient_id FROM message
@@ -613,7 +664,9 @@ pub fn ack(connection: &Connection, session_id: &str, seq: i64, agent_id: &str) 
             |row| row.get(0),
         )?
     {
-        return Err(format!("message {seq} is not for agent {agent_id} in session {session_id}").into());
+        return Err(
+            format!("message {seq} is not for agent {agent_id} in session {session_id}").into(),
+        );
     }
     Ok(())
 }
@@ -670,7 +723,15 @@ mod tests {
     fn claims_due_queued_job() {
         let connection = seed(0);
         assert_eq!(claim_next(&connection).unwrap(), Some(7));
-        assert_eq!(job(&connection, 7).unwrap(), (SESSION.to_string(), CODER.to_string(), "build".to_string(), 1));
+        assert_eq!(
+            job(&connection, 7).unwrap(),
+            (
+                SESSION.to_string(),
+                CODER.to_string(),
+                "build".to_string(),
+                1
+            )
+        );
         assert_eq!(state_and_attempts(&connection), ("running".into(), 1));
     }
 
@@ -740,16 +801,41 @@ mod tests {
     fn sends_message_row_and_file() {
         let mut connection = seed(0);
         let root = temp_root("send");
-        let seq = send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "hello").unwrap();
+        let seq = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "note",
+            "hello",
+        )
+        .unwrap();
         assert_eq!(seq, 0);
         let body_path: String = connection
-            .query_row("SELECT body_path FROM message WHERE seq = 0", [], |r| r.get(0))
+            .query_row("SELECT body_path FROM message WHERE seq = 0", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(body_path, format!("runs/{SESSION}/0.txt"));
-        assert_eq!(std::fs::read_to_string(root.join(body_path)).unwrap(), "hello");
+        assert_eq!(
+            std::fs::read_to_string(root.join(body_path)).unwrap(),
+            "hello"
+        );
         assert!(!root.join(format!("runs/{SESSION}/0.tmp")).exists());
 
-        assert!(send_message(&mut connection, &root, SESSION, ORCHESTRATOR, OUTSIDER, "note", "x").is_err());
+        assert!(
+            send_message(
+                &mut connection,
+                &root,
+                SESSION,
+                ORCHESTRATOR,
+                OUTSIDER,
+                "note",
+                "x"
+            )
+            .is_err()
+        );
         let count: i64 = connection
             .query_row("SELECT count(*) FROM message", [], |r| r.get(0))
             .unwrap();
@@ -761,31 +847,115 @@ mod tests {
     fn inbox_lists_pending_in_seq_order_and_stamps_seen_once() {
         let mut connection = seed(0);
         let root = temp_root("inbox");
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "one").unwrap();
-        send_message(&mut connection, &root, SESSION, CODER, ORCHESTRATOR, "note", "reply").unwrap();
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "two").unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "note",
+            "one",
+        )
+        .unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            CODER,
+            ORCHESTRATOR,
+            "note",
+            "reply",
+        )
+        .unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "two",
+        )
+        .unwrap();
 
         let pending = inbox(&connection, SESSION, CODER).unwrap();
         let seen: Vec<(i64, &str, &str, &str)> = pending
             .iter()
-            .map(|m| (m.seq, m.sender_id.as_str(), m.kind.as_str(), m.body_path.as_str()))
+            .map(|m| {
+                (
+                    m.seq,
+                    m.sender_id.as_str(),
+                    m.kind.as_str(),
+                    m.body_path.as_str(),
+                )
+            })
             .collect();
-        assert_eq!(seen, [(0, ORCHESTRATOR, "note", format!("runs/{SESSION}/0.txt").as_str()), (2, ORCHESTRATOR, "ask", format!("runs/{SESSION}/2.txt").as_str())]);
-        let seen_at: i64 = connection.query_row("SELECT seen_at FROM message WHERE seq = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(
+            seen,
+            [
+                (
+                    0,
+                    ORCHESTRATOR,
+                    "note",
+                    format!("runs/{SESSION}/0.txt").as_str()
+                ),
+                (
+                    2,
+                    ORCHESTRATOR,
+                    "ask",
+                    format!("runs/{SESSION}/2.txt").as_str()
+                )
+            ]
+        );
+        let seen_at: i64 = connection
+            .query_row("SELECT seen_at FROM message WHERE seq = 0", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert!(seen_at > 0);
-        connection.execute("UPDATE message SET seen_at = 7 WHERE seq = 0", []).unwrap();
+        connection
+            .execute("UPDATE message SET seen_at = 7 WHERE seq = 0", [])
+            .unwrap();
         inbox(&connection, SESSION, CODER).unwrap();
-        assert_eq!(connection.query_row("SELECT seen_at FROM message WHERE seq = 0", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
+        assert_eq!(
+            connection
+                .query_row("SELECT seen_at FROM message WHERE seq = 0", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            7
+        );
         assert_eq!(inbox(&connection, SESSION, ORCHESTRATOR).unwrap().len(), 1);
-        assert!(inbox(&connection, OTHER_SESSION, OUTSIDER).unwrap().is_empty());
+        assert!(
+            inbox(&connection, OTHER_SESSION, OUTSIDER)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn ack_marks_once_and_only_for_recipient() {
         let mut connection = seed(0);
         let root = temp_root("ack");
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "one").unwrap();
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "note", "two").unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "note",
+            "one",
+        )
+        .unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "note",
+            "two",
+        )
+        .unwrap();
 
         assert!(ack(&connection, SESSION, 0, ORCHESTRATOR).is_err());
         assert!(ack(&connection, OTHER_SESSION, 0, CODER).is_err());
@@ -830,29 +1000,68 @@ mod tests {
         assert!(second_agent.created_at > 0);
         assert!(add_agent(&connection, &second, ORCHESTRATOR, "orchestrator").is_err());
         assert!(add_agent(&connection, "missing", "ghost", "coder").is_err());
-        assert_eq!(pane_of(&connection, &first, ORCHESTRATOR).unwrap().as_deref(), Some("%1"));
-        assert_eq!(pane_of(&connection, &second, ORCHESTRATOR).unwrap().as_deref(), Some("%2"));
+        assert_eq!(
+            pane_of(&connection, &first, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%1")
+        );
+        assert_eq!(
+            pane_of(&connection, &second, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%2")
+        );
     }
 
     #[test]
     fn an_orchestrator_pane_moves_only_within_one_adapter() {
         let connection = open(Path::new(":memory:")).unwrap();
-        let tmux = create_session(&connection, "lane", Path::new("/tmux"), None, Some("tmux")).unwrap();
-        let same = create_session(&connection, "lane", Path::new("/same"), None, Some("tmux")).unwrap();
-        let solo = create_session(&connection, "lane", Path::new("/solo"), None, Some("tmux-solo")).unwrap();
+        let tmux =
+            create_session(&connection, "lane", Path::new("/tmux"), None, Some("tmux")).unwrap();
+        let same =
+            create_session(&connection, "lane", Path::new("/same"), None, Some("tmux")).unwrap();
+        let solo = create_session(
+            &connection,
+            "lane",
+            Path::new("/solo"),
+            None,
+            Some("tmux-solo"),
+        )
+        .unwrap();
         for session in [&tmux, &same, &solo] {
             add_agent(&connection, session, ORCHESTRATOR, "code.complex").unwrap();
         }
 
         set_pane(&connection, &tmux, ORCHESTRATOR, "%0").unwrap();
         set_pane(&connection, &solo, ORCHESTRATOR, "%0").unwrap();
-        assert_eq!(pane_of(&connection, &tmux, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
-        assert_eq!(pane_of(&connection, &solo, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+        assert_eq!(
+            pane_of(&connection, &tmux, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%0")
+        );
+        assert_eq!(
+            pane_of(&connection, &solo, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%0")
+        );
 
         set_pane(&connection, &same, ORCHESTRATOR, "%0").unwrap();
         assert_eq!(pane_of(&connection, &tmux, ORCHESTRATOR).unwrap(), None);
-        assert_eq!(pane_of(&connection, &same, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
-        assert_eq!(pane_of(&connection, &solo, ORCHESTRATOR).unwrap().as_deref(), Some("%0"));
+        assert_eq!(
+            pane_of(&connection, &same, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%0")
+        );
+        assert_eq!(
+            pane_of(&connection, &solo, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%0")
+        );
     }
 
     /// A stale adapter answered `self` with nothing. The empty answer was stored, and the chat
@@ -860,11 +1069,18 @@ mod tests {
     #[test]
     fn an_empty_pane_is_refused() {
         let connection = seed(0);
-        let refused = set_pane(&connection, SESSION, ORCHESTRATOR, "  ").unwrap_err().to_string();
+        let refused = set_pane(&connection, SESSION, ORCHESTRATOR, "  ")
+            .unwrap_err()
+            .to_string();
         assert_eq!(refused, "swarm: adapter gave no pane for orchestrator");
         assert_eq!(pane_of(&connection, SESSION, ORCHESTRATOR).unwrap(), None);
         set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
-        assert_eq!(pane_of(&connection, SESSION, ORCHESTRATOR).unwrap().as_deref(), Some("%1"));
+        assert_eq!(
+            pane_of(&connection, SESSION, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%1")
+        );
     }
 
     #[test]
@@ -887,7 +1103,11 @@ mod tests {
         all.sort();
         assert_eq!(all, (1..=200).collect::<Vec<i64>>());
         let (done, once): (i64, i64) = connection
-            .query_row("SELECT sum(state = 'done'), sum(attempts = 1) FROM job", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT sum(state = 'done'), sum(attempts = 1) FROM job",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!((done, once), (200, 200));
     }
@@ -897,7 +1117,10 @@ mod tests {
         let connection = seed(0);
         assert_eq!(pane_of(&connection, SESSION, CODER).unwrap(), None);
         set_pane(&connection, SESSION, CODER, "w8A:p2").unwrap();
-        assert_eq!(pane_of(&connection, SESSION, CODER).unwrap().as_deref(), Some("w8A:p2"));
+        assert_eq!(
+            pane_of(&connection, SESSION, CODER).unwrap().as_deref(),
+            Some("w8A:p2")
+        );
         assert!(pane_of(&connection, OTHER_SESSION, CODER).is_err());
         assert!(pane_of(&connection, SESSION, "ghost").is_err());
     }
@@ -906,20 +1129,55 @@ mod tests {
     fn rings_only_unread_and_rerings_once_until_seen() {
         let mut connection = seed(0);
         let root = temp_root("old-unread");
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "old").unwrap();
-        send_message(&mut connection, &root, SESSION, ORCHESTRATOR, CODER, "ask", "new").unwrap();
-        connection.execute("UPDATE message SET created_at = unixepoch() - 61 WHERE seq = 0", []).unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "old",
+        )
+        .unwrap();
+        send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "new",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61 WHERE seq = 0",
+                [],
+            )
+            .unwrap();
 
         assert!(!has_rung_unread(&connection, SESSION, CODER).unwrap());
         assert!(!rering_due(&connection, SESSION, CODER, 62).unwrap());
         assert!(!rering_due(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
         assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
-        connection.execute("UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE seq = 0", []).unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE seq = 0",
+                [],
+            )
+            .unwrap();
         assert!(has_rung_unread(&connection, SESSION, CODER).unwrap());
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
-        connection.execute("UPDATE message SET rung_at = unixepoch() - 61 WHERE seq = 0", []).unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - 61 WHERE seq = 0",
+                [],
+            )
+            .unwrap();
         assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
-        connection.execute("UPDATE message SET rings = 2 WHERE seq = 0", []).unwrap();
+        connection
+            .execute("UPDATE message SET rings = 2 WHERE seq = 0", [])
+            .unwrap();
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
         inbox(&connection, SESSION, CODER).unwrap();
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
@@ -932,12 +1190,19 @@ mod tests {
     fn finds_the_session_orchestrator() {
         let connection = seed(0);
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
-        connection.execute(
-            "UPDATE agent SET role = 'code.complex' WHERE session_id = ?1 AND id = ?2",
-            (SESSION, ORCHESTRATOR),
-        ).unwrap();
+        connection
+            .execute(
+                "UPDATE agent SET role = 'code.complex' WHERE session_id = ?1 AND id = ?2",
+                (SESSION, ORCHESTRATOR),
+            )
+            .unwrap();
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
-        assert_eq!(orchestrator_of(&connection, OTHER_SESSION).unwrap_err().to_string(), format!("session {OTHER_SESSION} has no orchestrator"));
+        assert_eq!(
+            orchestrator_of(&connection, OTHER_SESSION)
+                .unwrap_err()
+                .to_string(),
+            format!("session {OTHER_SESSION} has no orchestrator")
+        );
     }
 
     #[test]
@@ -945,11 +1210,27 @@ mod tests {
         let mut connection = seed(0);
         set_pane(&connection, SESSION, CODER, "%2").unwrap();
         set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
-        assert_eq!(live_children(&connection, SESSION, ORCHESTRATOR).unwrap(), [(CODER.to_string(), "%2".to_string())]);
+        assert_eq!(
+            live_children(&connection, SESSION, ORCHESTRATOR).unwrap(),
+            [(CODER.to_string(), "%2".to_string())]
+        );
         clear_pane(&connection, SESSION, CODER).unwrap();
-        assert!(live_children(&connection, SESSION, ORCHESTRATOR).unwrap().is_empty());
+        assert!(
+            live_children(&connection, SESSION, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
         assert!(!has_summary(&connection, SESSION, CODER).unwrap());
-        send_message(&mut connection, &temp_root("summary"), SESSION, CODER, ORCHESTRATOR, "summary", "done").unwrap();
+        send_message(
+            &mut connection,
+            &temp_root("summary"),
+            SESSION,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
         assert!(has_summary(&connection, SESSION, CODER).unwrap());
     }
 
@@ -957,21 +1238,47 @@ mod tests {
     fn routes_by_talk_mode() {
         let connection = seed(0);
         connection.execute_batch(&format!("INSERT INTO agent (id, session_id, role) VALUES ('reviewer', '{SESSION}', 'reviewer')")).unwrap();
-        let set_mode = |mode: &str| connection.execute("UPDATE session SET talk_mode = ?1 WHERE id = ?2", (mode, SESSION)).unwrap();
-        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap_err().to_string(), "lane: coder cannot message reviewer");
-        assert_eq!(route(&connection, SESSION, CODER, ORCHESTRATOR, "ask").unwrap(), (ORCHESTRATOR.into(), "ask".into()));
+        let set_mode = |mode: &str| {
+            connection
+                .execute(
+                    "UPDATE session SET talk_mode = ?1 WHERE id = ?2",
+                    (mode, SESSION),
+                )
+                .unwrap()
+        };
+        assert_eq!(
+            route(&connection, SESSION, CODER, "reviewer", "ask")
+                .unwrap_err()
+                .to_string(),
+            "lane: coder cannot message reviewer"
+        );
+        assert_eq!(
+            route(&connection, SESSION, CODER, ORCHESTRATOR, "ask").unwrap(),
+            (ORCHESTRATOR.into(), "ask".into())
+        );
         set_mode("relay");
-        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), (ORCHESTRATOR.into(), "relay:reviewer".into()));
+        assert_eq!(
+            route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(),
+            (ORCHESTRATOR.into(), "relay:reviewer".into())
+        );
         set_mode("open");
-        assert_eq!(route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(), ("reviewer".into(), "ask".into()));
+        assert_eq!(
+            route(&connection, SESSION, CODER, "reviewer", "ask").unwrap(),
+            ("reviewer".into(), "ask".into())
+        );
     }
 
     #[test]
     fn session_ids_are_never_reused() {
         let connection = open(Path::new(":memory:")).unwrap();
         let first = create_session(&connection, "lane", Path::new("/first"), None, None).unwrap();
-        connection.execute("DELETE FROM session WHERE id = ?1", [&first]).unwrap();
-        assert_ne!(create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(), first);
+        connection
+            .execute("DELETE FROM session WHERE id = ?1", [&first])
+            .unwrap();
+        assert_ne!(
+            create_session(&connection, "lane", Path::new("/second"), None, None).unwrap(),
+            first
+        );
     }
 
     #[test]
@@ -980,12 +1287,17 @@ mod tests {
         connection.execute_batch(MIGRATIONS[0]).unwrap();
         connection.pragma_update(None, "user_version", 1).unwrap();
         migrate(&mut connection).unwrap();
-        let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap();
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(version, 2);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
-        assert_eq!(sessions(&connection).unwrap()[0].continuation_of.as_deref(), Some(old.as_str()));
+        assert_eq!(
+            sessions(&connection).unwrap()[0].continuation_of.as_deref(),
+            Some(old.as_str())
+        );
         assert!(continue_session(&connection, &old, &new).is_err());
     }
 
@@ -995,10 +1307,14 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let db = root.join("swarm.db");
         let connection = Connection::open(&db).unwrap();
-        connection.execute_batch("PRAGMA user_version = 11").unwrap();
+        connection
+            .execute_batch("PRAGMA user_version = 11")
+            .unwrap();
         drop(connection);
 
-        assert_eq!(open(&db).unwrap_err().to_string(),
-                   "database made by another swarm build; use another SWARM_HOME or delete it");
+        assert_eq!(
+            open(&db).unwrap_err().to_string(),
+            "database made by another swarm build; use another SWARM_HOME or delete it"
+        );
     }
 }

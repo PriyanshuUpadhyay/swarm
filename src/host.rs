@@ -23,7 +23,9 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
-    if env("HERDR_ENV").as_deref() != Some("1") || env("HERDR_PANE_ID").is_none_or(|pane| pane.is_empty()) {
+    if env("HERDR_ENV").as_deref() != Some("1")
+        || env("HERDR_PANE_ID").is_none_or(|pane| pane.is_empty())
+    {
         return None;
     }
     let mut context = match is_worker(&env) {
@@ -41,7 +43,8 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
 
 /// True in a pane an orchestrator spawned: `swarm spawn` names every child but the orchestrator.
 pub fn is_worker(env: impl Fn(&str) -> Option<String>) -> bool {
-    env("HERDR_AGENT_PANE").as_deref() == Some("1") || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
+    env("HERDR_AGENT_PANE").as_deref() == Some("1")
+        || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
 }
 
 /// The hook output each provider reads. Codex takes only `additionalContext` into the
@@ -88,15 +91,26 @@ mod tests {
     use super::*;
 
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let pairs: Vec<(String, String)> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        move |name| pairs.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone())
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+        }
     }
 
     const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
 
     #[test]
     fn outside_a_host_codex_gets_an_empty_object_and_claude_nothing() {
-        assert_eq!(render("codex", context("codex", env(&[])).as_deref()), "{}\n");
+        assert_eq!(
+            render("codex", context("codex", env(&[])).as_deref()),
+            "{}\n"
+        );
         assert_eq!(render("claude", context("claude", env(&[])).as_deref()), "");
         assert_eq!(render("agy", None), "{\"injectSteps\":[]}\n");
     }
@@ -106,7 +120,10 @@ mod tests {
         let codex = context("codex", env(&HERDR)).unwrap();
         let claude = context("claude", env(&HERDR)).unwrap();
         assert!(codex.find("[agent-host: herdr]") < codex.find("[agent-runtime: codex]"));
-        assert_eq!(codex.split("\n\n[agent-runtime").next(), claude.split("\n\n[agent-runtime").next());
+        assert_eq!(
+            codex.split("\n\n[agent-runtime").next(),
+            claude.split("\n\n[agent-runtime").next()
+        );
         assert!(!codex.contains("herdr status"));
     }
 
@@ -116,7 +133,11 @@ mod tests {
             let body = context("codex", env(&[HERDR[0], HERDR[1], marker])).unwrap();
             assert!(body.contains("[agent-host: herdr — worker]"), "{marker:?}");
         }
-        let seat = context("claude", env(&[HERDR[0], HERDR[1], ("SWARM_AGENT_ID", "orchestrator")])).unwrap();
+        let seat = context(
+            "claude",
+            env(&[HERDR[0], HERDR[1], ("SWARM_AGENT_ID", "orchestrator")]),
+        )
+        .unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
     }
 }

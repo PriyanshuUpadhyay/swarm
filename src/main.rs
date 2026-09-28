@@ -6,7 +6,10 @@ const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 /// The ring is typed into the recipient's prompt, so it names the next step. An agent that did
 /// not load the swarm skill otherwise takes the bare ring as the whole task and waits.
 fn ring_text(root: &std::path::Path) -> String {
-    format!("swarm: new message. Run swarm inbox, read each body at {}/<body_path>, then swarm ack <seq>.", root.display())
+    format!(
+        "swarm: new message. Run swarm inbox, read each body at {}/<body_path>, then swarm ack <seq>.",
+        root.display()
+    )
 }
 
 fn init() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,7 +56,10 @@ fn identity() -> Result<(String, String), String> {
     Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
 }
 
-fn run_tool(executable: &str, args: &[&str]) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+fn run_tool(
+    executable: &str,
+    args: &[&str],
+) -> Result<std::process::Output, Box<dyn std::error::Error>> {
     std::process::Command::new(executable)
         .args(args)
         .output()
@@ -63,9 +69,14 @@ fn run_tool(executable: &str, args: &[&str]) -> Result<std::process::Output, Box
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     let output = run_tool(executable, args)?;
     if !output.status.success() {
-        return Err(format!("swarm: {executable} failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+        return Err(format!(
+            "swarm: {executable} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
     }
-    String::from_utf8(output.stdout).map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
+    String::from_utf8(output.stdout)
+        .map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
 }
 
 fn yelo_command() -> String {
@@ -86,14 +97,20 @@ fn set_role_model(runner: &str, model: &str) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn resolve_role(role: &str, provider: Option<&str>) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
+fn resolve_role(
+    role: &str,
+    provider: Option<&str>,
+) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
     let fail = |error: String| format!("swarm: cannot resolve role {role}: {error}");
     let (_, config) = swarm::routing::load().map_err(fail)?;
     let value = swarm::routing::resolve(&config, role, provider).map_err(fail)?;
     serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
 }
 
-fn load_accounts(provider: &str, with_pick: bool) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
+fn load_accounts(
+    provider: &str,
+    with_pick: bool,
+) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
     if provider == "agy" {
         return Ok(swarm::profiles::empty_accounts(provider));
     }
@@ -101,7 +118,10 @@ fn load_accounts(provider: &str, with_pick: bool) -> Result<swarm::profiles::Acc
         return Err(format!("swarm: unknown provider {provider}").into());
     }
     let command = yelo_command();
-    let list = tool_stdout(&command, &["profile", "list", "--cli", provider, "--usage", "--json"])?;
+    let list = tool_stdout(
+        &command,
+        &["profile", "list", "--cli", provider, "--usage", "--json"],
+    )?;
     let pick_json = if with_pick {
         let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
         pick.status
@@ -137,7 +157,10 @@ fn parse_chair(value: &str) -> Result<Option<(&str, &str)>, String> {
 }
 
 fn env_chair() -> Option<(String, String)> {
-    for (provider, variable) in [("claude", "CLAUDE_CODE_SESSION_ID"), ("codex", "CODEX_THREAD_ID")] {
+    for (provider, variable) in [
+        ("claude", "CLAUDE_CODE_SESSION_ID"),
+        ("codex", "CODEX_THREAD_ID"),
+    ] {
         if let Ok(id) = env::var(variable) {
             return valid_chair_id(&id).then(|| (provider.to_string(), id));
         }
@@ -164,7 +187,9 @@ fn default_codex_home() -> Result<std::path::PathBuf, String> {
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
     let config = env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".claude")))?;
+        .or_else(|| {
+            env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".claude"))
+        })?;
     std::fs::read_dir(config.join("projects"))
         .ok()?
         .filter_map(Result::ok)
@@ -175,7 +200,9 @@ fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
 fn codex_chair_log(id: &str, days: &[String; 3]) -> Option<std::path::PathBuf> {
     let home = env::var_os("CODEX_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex")))?;
+        .or_else(|| {
+            env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+        })?;
     let suffix = format!("-{id}.jsonl");
     days.iter()
         .filter_map(|day| std::fs::read_dir(home.join("sessions").join(day)).ok())
@@ -219,7 +246,11 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     while index < args.len() {
         match args[index].as_str() {
             "--" if provider.is_none() || account.is_some() => {
-                return Ok(SpawnOptions { provider, account, command: &args[index + 1..] });
+                return Ok(SpawnOptions {
+                    provider,
+                    account,
+                    command: &args[index + 1..],
+                });
             }
             "--provider" if provider.is_none() && index + 1 < args.len() => {
                 provider = Some(args[index + 1].as_str());
@@ -235,7 +266,11 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     if provider.is_some() && account.is_none() {
         return Err(USAGE.to_string());
     }
-    Ok(SpawnOptions { provider, account, command: &[] })
+    Ok(SpawnOptions {
+        provider,
+        account,
+        command: &[],
+    })
 }
 
 /// Refuse a sender or recipient that is not an agent in the session, and a recipient without a
@@ -253,7 +288,10 @@ fn deliver(
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let agents = swarm::store::agents(connection, session_id)?;
     let agent = |id: &str| {
-        agents.iter().find(|agent| agent.id == id).ok_or_else(|| format!("swarm: {id} is not an agent in session {session_id}"))
+        agents
+            .iter()
+            .find(|agent| agent.id == id)
+            .ok_or_else(|| format!("swarm: {id} is not an agent in session {session_id}"))
     };
     agent(sender)?;
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
@@ -261,7 +299,9 @@ fn deliver(
         .pane
         .clone()
         .ok_or_else(|| format!("swarm: {recipient} has no pane; nothing would ring it"))?;
-    let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
+    let seq = swarm::store::send_message(
+        connection, root, session_id, sender, &recipient, &kind, body,
+    )?;
     if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
         connection.execute(
             "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
@@ -286,23 +326,24 @@ fn ack(
 ) -> Result<(), Box<dyn std::error::Error>> {
     swarm::store::ack(connection, session_id, seq, agent_id)?;
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)?
-        && swarm::store::has_unrung_unread(connection, session_id, agent_id)? {
-            connection.execute(
-                "UPDATE message SET rung_at = unixepoch(), rings = 1
+        && swarm::store::has_unrung_unread(connection, session_id, agent_id)?
+    {
+        connection.execute(
+            "UPDATE message SET rung_at = unixepoch(), rings = 1
                  WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
                    AND NOT EXISTS (
                        SELECT 1 FROM read_mark
                        WHERE read_mark.session_id = message.session_id
                          AND message_seq = message.seq AND agent_id = ?2
                    )",
-                (session_id, agent_id),
-            )?;
-            let ring = swarm::adapter::load(root, adapter_name)
-                .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
-            if let Err(error) = ring {
-                eprintln!("swarm: ring failed: {error}");
-            }
+            (session_id, agent_id),
+        )?;
+        let ring = swarm::adapter::load(root, adapter_name)
+            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+        if let Err(error) = ring {
+            eprintln!("swarm: ring failed: {error}");
         }
+    }
     Ok(())
 }
 
@@ -366,7 +407,10 @@ fn register_spawned_pane(
 
 /// What the provider CLI on PATH knows as models, for `swarm::bus::model_known`. None when the
 /// check cannot run; agy is skipped because `agy models` asks the network (about 5 s).
-fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String, String>) -> Option<Vec<u8>> {
+fn model_catalog(
+    provider: &str,
+    account_env: &std::collections::BTreeMap<String, String>,
+) -> Option<Vec<u8>> {
     match provider {
         "claude" => env::split_paths(&env::var_os("PATH")?)
             .map(|dir| dir.join("claude"))
@@ -386,16 +430,26 @@ fn model_catalog(provider: &str, account_env: &std::collections::BTreeMap<String
 fn list_models(provider: &str) -> Result<swarm::profiles::ModelList, Box<dyn std::error::Error>> {
     let models = match provider {
         "claude" => swarm::profiles::claude_models(),
-        "codex" => swarm::profiles::codex_models(tool_stdout("codex", &["debug", "models"])?.as_bytes())?,
+        "codex" => {
+            swarm::profiles::codex_models(tool_stdout("codex", &["debug", "models"])?.as_bytes())?
+        }
         "agy" => swarm::profiles::agy_models(&tool_stdout("agy", &["models"])?),
         _ => return Err(format!("swarm: unsupported model provider {provider}").into()),
     };
-    if models.is_empty() { return Err(format!("swarm: {provider} returned no models").into()); }
-    Ok(swarm::profiles::ModelList { provider: provider.into(), models })
+    if models.is_empty() {
+        return Err(format!("swarm: {provider} returned no models").into());
+    }
+    Ok(swarm::profiles::ModelList {
+        provider: provider.into(),
+        models,
+    })
 }
 
 /// Where `launch` may pre-trust Codex and AGY for `cwd`; see `swarm::bus::trust_target`.
-fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<std::path::PathBuf, String> {
+fn trust_target(
+    cwd: &std::path::Path,
+    user_home: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
     let git_root = std::process::Command::new("git")
         .arg("-C")
         .arg(cwd)
@@ -403,8 +457,12 @@ fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<st
         .output()
         .ok()
         .filter(|output| output.status.success())
-        .and_then(|output| std::fs::canonicalize(String::from_utf8_lossy(&output.stdout).trim()).ok());
-    let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(user_home).map_err(|error| error.to_string())?);
+        .and_then(|output| {
+            std::fs::canonicalize(String::from_utf8_lossy(&output.stdout).trim()).ok()
+        });
+    let uid = std::os::unix::fs::MetadataExt::uid(
+        &std::fs::metadata(user_home).map_err(|error| error.to_string())?,
+    );
     let swarm_home = swarm::paths::home().map_err(|error| error.to_string())?;
     let scratch_roots: Vec<_> = [
         std::path::PathBuf::from("/private/tmp/councils"),
@@ -415,7 +473,12 @@ fn trust_target(cwd: &std::path::Path, user_home: &std::path::Path) -> Result<st
     .iter()
     .filter_map(|root| std::fs::canonicalize(root).ok())
     .collect();
-    swarm::bus::trust_target(cwd, git_root.as_deref(), &std::fs::canonicalize(user_home).map_err(|error| error.to_string())?, &scratch_roots)
+    swarm::bus::trust_target(
+        cwd,
+        git_root.as_deref(),
+        &std::fs::canonicalize(user_home).map_err(|error| error.to_string())?,
+        &scratch_roots,
+    )
 }
 
 fn spawn_agent(
@@ -436,27 +499,48 @@ fn spawn_agent(
                 .ok_or_else(|| format!("swarm: unknown role {role}"))?,
         };
         let accounts = load_accounts(&provider, true)?;
-        Some(swarm::profiles::resolve_account(&accounts, requested).map_err(|error| format!("swarm: {error}"))?.clone())
+        Some(
+            swarm::profiles::resolve_account(&accounts, requested)
+                .map_err(|error| format!("swarm: {error}"))?
+                .clone(),
+        )
     } else {
         None
     };
     let session_id = session_id()?;
-    let provider = options.provider.or_else(|| options.command.first().map(String::as_str))
+    let provider = options
+        .provider
+        .or_else(|| options.command.first().map(String::as_str))
         .filter(|provider| matches!(*provider, "claude" | "codex" | "agy"))
         .map(str::to_string);
     // Warn, do not refuse: an unknown name usually means the role config or the CLI is stale,
     // and the pane shows the real error if the model does not run.
-    if let (Some(provider), Some(model)) = (provider.as_deref(), swarm::bus::command_model(options.command)) {
-        let account_env = account.as_ref().map(|account| account.env.clone()).unwrap_or_default();
-        if model_catalog(provider, &account_env).is_some_and(|catalog| !swarm::bus::model_known(provider, &catalog, model)) {
-            eprintln!("swarm: warning: the installed {provider} CLI does not list model {model}; the role config may need an update");
+    if let (Some(provider), Some(model)) = (
+        provider.as_deref(),
+        swarm::bus::command_model(options.command),
+    ) {
+        let account_env = account
+            .as_ref()
+            .map(|account| account.env.clone())
+            .unwrap_or_default();
+        if model_catalog(provider, &account_env)
+            .is_some_and(|catalog| !swarm::bus::model_known(provider, &catalog, model))
+        {
+            eprintln!(
+                "swarm: warning: the installed {provider} CLI does not list model {model}; the role config may need an update"
+            );
         }
     }
     let adapter = swarm::adapter::load(root, &adapter_name())?;
     let session = session_id.to_string();
     let home = swarm::paths::home()?;
     let current_adapter = adapter_name();
-    let vars = [("session_id", session.as_str()), ("agent_id", agent_id), ("home", home.as_str()), ("adapter", current_adapter.as_str())];
+    let vars = [
+        ("session_id", session.as_str()),
+        ("agent_id", agent_id),
+        ("home", home.as_str()),
+        ("adapter", current_adapter.as_str()),
+    ];
     let pane = register_spawned_pane(
         connection,
         &adapter,
@@ -471,13 +555,21 @@ fn spawn_agent(
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
             let mut args = vec!["env".to_string(), "--".to_string()];
-            args.extend(account.env.iter().map(|(key, value)| format!("{key}={value}")));
+            args.extend(
+                account
+                    .env
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}")),
+            );
             args.extend_from_slice(options.command);
             swarm::adapter::shell_line(&args)
         } else {
             swarm::adapter::shell_line(options.command)
         };
-        adapter.run("ring", &[("pane", &pane), ("text", &format!("{child}; {hook}"))])?;
+        adapter.run(
+            "ring",
+            &[("pane", &pane), ("text", &format!("{child}; {hook}"))],
+        )?;
     }
     println!("{pane}");
     if let Some(account) = account {
@@ -489,7 +581,8 @@ fn spawn_agent(
 fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-    let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?.ok_or("swarm: no pane recorded")?;
+    let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
+        .ok_or("swarm: no pane recorded")?;
     swarm::adapter::load(&root, &adapter_name())?.attach(&[("pane", &pane)])
 }
 
@@ -505,7 +598,16 @@ fn report_dead(
     swarm::store::clear_pane(connection, session_id, child)?;
     if !swarm::store::has_summary(connection, session_id, child)? {
         let orchestrator = swarm::store::orchestrator_of(connection, session_id)?;
-        deliver(connection, root, &adapter_name(), session_id, child, &orchestrator, "summary", note)?;
+        deliver(
+            connection,
+            root,
+            &adapter_name(),
+            session_id,
+            child,
+            &orchestrator,
+            "summary",
+            note,
+        )?;
         swarm::store::enqueue_job(connection, session_id, child, "summarize")?;
     }
     Ok(())
@@ -564,11 +666,22 @@ fn sweep_once(
 }
 
 /// Feed the agent's captured log to the summarizer shell command and return its output.
-fn summarize_log(log: &std::path::Path, summarizer: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn summarize_log(
+    log: &std::path::Path,
+    summarizer: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let input = std::fs::File::open(log).map_err(|e| format!("{}: {e}", log.display()))?;
-    let output = std::process::Command::new("sh").arg("-c").arg(summarizer).stdin(input).output()?;
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(summarizer)
+        .stdin(input)
+        .output()?;
     if !output.status.success() {
-        return Err(format!("summarizer failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into());
+        return Err(format!(
+            "summarizer failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
@@ -589,7 +702,16 @@ fn process_summary_job(
     let result = (|| {
         let summary = summarize_log(&log, summarizer)?;
         let orchestrator = swarm::store::orchestrator_of(connection, &session)?;
-        deliver(connection, root, adapter_name, &session, &agent, &orchestrator, "summary", &summary)?;
+        deliver(
+            connection,
+            root,
+            adapter_name,
+            &session,
+            &agent,
+            &orchestrator,
+            "summary",
+            &summary,
+        )?;
         std::fs::remove_file(&log)?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })();
@@ -624,47 +746,79 @@ fn set_chair_for_caller(
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
-    if let [flag] = args && (flag == "--version" || flag == "-V") {
-        println!("swarm {} {}", env!("CARGO_PKG_VERSION"), env!("SWARM_BUILD_COMMIT"));
+    if let [flag] = args
+        && (flag == "--version" || flag == "-V")
+    {
+        println!(
+            "swarm {} {}",
+            env!("CARGO_PKG_VERSION"),
+            env!("SWARM_BUILD_COMMIT")
+        );
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("init") {
         return init();
     }
-    if let [cmd, json] = args && cmd == "roles" && json == "--json" {
+    if let [cmd, json] = args
+        && cmd == "roles"
+        && json == "--json"
+    {
         return print_json(&load_roles()?);
     }
-    if let [cmd] = args && cmd == "herdr-split" {
+    if let [cmd] = args
+        && cmd == "herdr-split"
+    {
         let orchestrator = env_var("HERDR_PANE_ID")?;
         let cwd = env::current_dir()?;
-        println!("{}", swarm::herdr::split(&orchestrator, &cwd.to_string_lossy(), |name| env::var(name).ok())?);
+        println!(
+            "{}",
+            swarm::herdr::split(&orchestrator, &cwd.to_string_lossy(), |name| env::var(name)
+                .ok())?
+        );
         return Ok(());
     }
     if let [cmd, flag, provider] = args
-        && cmd == "host-context" && flag == "--provider" && matches!(provider.as_str(), "claude" | "codex" | "agy")
+        && cmd == "host-context"
+        && flag == "--provider"
+        && matches!(provider.as_str(), "claude" | "codex" | "agy")
     {
         let mut payload = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
         swarm::host::contain_worker_history(provider, &payload, &env_var("HOME")?);
-        print!("{}", swarm::host::render(provider, swarm::host::context(provider, |name| env::var(name).ok()).as_deref()));
+        print!(
+            "{}",
+            swarm::host::render(
+                provider,
+                swarm::host::context(provider, |name| env::var(name).ok()).as_deref()
+            )
+        );
         return Ok(());
     }
-    if let [cmd, sub, role, rest @ ..] = args && cmd == "roles" && sub == "get" {
+    if let [cmd, sub, role, rest @ ..] = args
+        && cmd == "roles"
+        && sub == "get"
+    {
         let provider = match rest {
             [] => None,
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
         let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-        let resolved = swarm::routing::resolve(&config, role, provider).map_err(|error| format!("swarm: {error}"))?;
+        let resolved = swarm::routing::resolve(&config, role, provider)
+            .map_err(|error| format!("swarm: {error}"))?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
-    if let [cmd, sub, runner, model] = args && cmd == "roles" && sub == "set-model" {
+    if let [cmd, sub, runner, model] = args
+        && cmd == "roles"
+        && sub == "set-model"
+    {
         return set_role_model(runner, model);
     }
     if let [cmd, provider_flag, provider, json] = args
-        && cmd == "models" && provider_flag == "--provider" && json == "--json"
+        && cmd == "models"
+        && provider_flag == "--provider"
+        && json == "--json"
     {
         return print_json(&list_models(provider)?);
     }
@@ -675,19 +829,28 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return print_json(&load_accounts(provider, true)?);
     }
-    if let [cmd, json] = args && cmd == "usage" && json == "--json" {
+    if let [cmd, json] = args
+        && cmd == "usage"
+        && json == "--json"
+    {
         let command = yelo_command();
         let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = [load_accounts("claude", false)?, load_accounts("codex", false)?];
-        let (usage, skipped) =
-            swarm::profiles::translate_usage(&json, &accounts).map_err(|error| format!("swarm: {error}"))?;
+        let accounts = [
+            load_accounts("claude", false)?,
+            load_accounts("codex", false)?,
+        ];
+        let (usage, skipped) = swarm::profiles::translate_usage(&json, &accounts)
+            .map_err(|error| format!("swarm: {error}"))?;
         for reason in skipped {
             eprintln!("swarm: skipped usage row: {reason}");
         }
         return print_json(&usage);
     }
     let root = swarm::paths::root_dir()?;
-    if let [cmd, sub, name] = args && cmd == "adapter" && sub == "check" {
+    if let [cmd, sub, name] = args
+        && cmd == "adapter"
+        && sub == "check"
+    {
         swarm::adapter::load(&root, name)?;
         // Which verbs a deployed file takes over, because a parse alone says nothing: the file
         // that stopped every chat parsed cleanly and answered `self` with the wrong line.
@@ -732,18 +895,26 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 &connection,
                 talk_mode,
                 &env::current_dir()?,
-                chair.as_ref().map(|(provider, id)| (provider.as_str(), id.as_str())),
+                chair
+                    .as_ref()
+                    .map(|(provider, id)| (provider.as_str(), id.as_str())),
                 Some(&adapter),
             )?
         );
         return Ok(());
     }
-    if let [cmd, sub, value] = args && cmd == "session" && sub == "chair" {
+    if let [cmd, sub, value] = args
+        && cmd == "session"
+        && sub == "chair"
+    {
         let (session_id, agent_id) = identity()?;
         set_chair_for_caller(&connection, &session_id, &agent_id, parse_chair(value)?)?;
         return Ok(());
     }
-    if let [cmd, sub, new_id, old_id] = args && cmd == "session" && sub == "continue" {
+    if let [cmd, sub, new_id, old_id] = args
+        && cmd == "session"
+        && sub == "continue"
+    {
         return swarm::store::continue_session(&connection, new_id, old_id);
     }
     if let [cmd, sub, ids @ ..] = args
@@ -751,15 +922,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && sub == "archive"
         && !ids.is_empty()
     {
-        let ids = ids.iter().map(|id| {
-            let id = uuid::Uuid::parse_str(id).map_err(|_| USAGE)?;
-            if id.get_version_num() != 7 { return Err(USAGE); }
-            Ok(id.to_string())
-        }).collect::<Result<Vec<_>, &str>>()?;
+        let ids = ids
+            .iter()
+            .map(|id| {
+                let id = uuid::Uuid::parse_str(id).map_err(|_| USAGE)?;
+                if id.get_version_num() != 7 {
+                    return Err(USAGE);
+                }
+                Ok(id.to_string())
+            })
+            .collect::<Result<Vec<_>, &str>>()?;
         swarm::store::archive_sessions(&mut connection, &ids)?;
         return Ok(());
     }
-    if let [cmd, json] = args && cmd == "sessions" && json == "--json" {
+    if let [cmd, json] = args
+        && cmd == "sessions"
+        && json == "--json"
+    {
         let mut sessions = Vec::new();
         for row in swarm::store::sessions(&connection)? {
             let chair_log = resolved_chair_log(&row);
@@ -786,10 +965,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         return print_json(&swarm::bus::SessionList { sessions });
     }
-    if let [cmd, sub, agent_id, role] = args && cmd == "agent" && sub == "add" {
-        return add_agent(&connection, &root, &adapter_name(), &session_id()?, agent_id, role);
+    if let [cmd, sub, agent_id, role] = args
+        && cmd == "agent"
+        && sub == "add"
+    {
+        return add_agent(
+            &connection,
+            &root,
+            &adapter_name(),
+            &session_id()?,
+            agent_id,
+            role,
+        );
     }
-    if let [cmd, json] = args && cmd == "agents" && json == "--json" {
+    if let [cmd, json] = args
+        && cmd == "agents"
+        && json == "--json"
+    {
         let session_id = session_id()?;
         let rows = swarm::store::agents(&connection, &session_id)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
@@ -803,11 +995,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let agents = rows
             .into_iter()
             .map(|row| {
-                let alive = row
-                    .pane
-                    .as_deref()
-                    .and_then(|pane| listing.as_deref().map(|list| swarm::adapter::listing_has_pane(list, pane)));
-                swarm::bus::Agent { id: row.id, role: row.role, pane: row.pane, provider: row.provider, created_at: row.created_at, alive }
+                let alive = row.pane.as_deref().and_then(|pane| {
+                    listing
+                        .as_deref()
+                        .map(|list| swarm::adapter::listing_has_pane(list, pane))
+                });
+                swarm::bus::Agent {
+                    id: row.id,
+                    role: row.role,
+                    pane: row.pane,
+                    provider: row.provider,
+                    created_at: row.created_at,
+                    alive,
+                }
             })
             .collect();
         #[derive(serde::Serialize)]
@@ -820,7 +1020,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             attachable: adapter.attach.is_some(),
         });
     }
-    if let [cmd, rest @ ..] = args && cmd == "messages" {
+    if let [cmd, rest @ ..] = args
+        && cmd == "messages"
+    {
         let after = match rest {
             [json] if json == "--json" => -1,
             [json, flag, seq] if json == "--json" && flag == "--after" => {
@@ -842,12 +1044,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         return print_json(&swarm::bus::MessageList { messages });
     }
-    if let [cmd, agent_id, role, rest @ ..] = args && cmd == "launch" {
+    if let [cmd, agent_id, role, rest @ ..] = args
+        && cmd == "launch"
+    {
         if !swarm::bus::valid_agent_id(agent_id) {
             return Err(format!("swarm: bad agent id {agent_id}").into());
         }
         let herdr_agent_pane = env::var("HERDR_AGENT_PANE").ok();
-        if let Some(reason) = swarm::bus::launch_refusal(env::var("SWARM_AGENT_ID").ok().as_deref(), herdr_agent_pane.as_deref()) {
+        if let Some(reason) = swarm::bus::launch_refusal(
+            env::var("SWARM_AGENT_ID").ok().as_deref(),
+            herdr_agent_pane.as_deref(),
+        ) {
             return Err(reason.into());
         }
         // Fail before any trust write, so a stray launch outside a session changes nothing.
@@ -856,25 +1063,34 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some(index) => (&rest[..index], &rest[index + 1..]),
             None => (rest, &[][..]),
         };
-        let (mut account, mut cwd, mut requested_provider, mut requested_model) = (None, None, None, None);
+        let (mut account, mut cwd, mut requested_provider, mut requested_model) =
+            (None, None, None, None);
         for pair in options.chunks(2) {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
                 [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
-                [flag, value] if flag == "--provider" && matches!(value.as_str(), "claude" | "codex" | "agy") => requested_provider = Some(value.as_str()),
+                [flag, value]
+                    if flag == "--provider"
+                        && matches!(value.as_str(), "claude" | "codex" | "agy") =>
+                {
+                    requested_provider = Some(value.as_str())
+                }
                 [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
                 _ => return Err(USAGE.into()),
             }
         }
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
-        let cwd = std::fs::canonicalize(&cwd).map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
+        let cwd = std::fs::canonicalize(&cwd)
+            .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
         let resolved = if role == "chat" {
             swarm::bus::chat_role(
                 requested_provider.ok_or("swarm: chat needs --provider")?,
                 requested_model.ok_or("swarm: chat needs --model")?,
             )?
         } else {
-            if requested_model.is_some() { return Err("swarm: --model requires the chat role".into()); }
+            if requested_model.is_some() {
+                return Err("swarm: --model requires the chat role".into());
+            }
             resolve_role(role, requested_provider)?
         };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
@@ -901,28 +1117,42 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         homes.extend(
                             std::fs::read_dir(&user_home)?
                                 .filter_map(Result::ok)
-                                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".codex-") && entry.path().is_dir())
+                                .filter(|entry| {
+                                    entry.file_name().to_string_lossy().starts_with(".codex-")
+                                        && entry.path().is_dir()
+                                })
                                 .map(|entry| entry.path()),
                         );
                         homes.sort();
                         homes.dedup();
                         homes
                     };
-                    swarm::bus::with_lock(&lock, || homes.iter().try_for_each(|home| swarm::bus::ensure_codex_trust(home, &target)))?;
+                    swarm::bus::with_lock(&lock, || {
+                        homes
+                            .iter()
+                            .try_for_each(|home| swarm::bus::ensure_codex_trust(home, &target))
+                    })?;
                 }
                 Ok(target) => {
                     let settings = user_home.join(".gemini/antigravity-cli/settings.json");
-                    swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_trust(&settings, &target))?;
+                    swarm::bus::with_lock(&lock, || {
+                        swarm::bus::ensure_agy_trust(&settings, &target)
+                    })?;
                 }
-                Err(reason) => eprintln!("swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"),
+                Err(reason) => eprintln!(
+                    "swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"
+                ),
             },
             // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
             Some("claude") if agent_id != "orchestrator" => {
-                let (dir, args) = swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                let (dir, args) =
+                    swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
                 std::fs::create_dir_all(&dir)?;
                 pane_dir = std::fs::canonicalize(&dir)?;
                 let config = user_home.join(".claude.json");
-                swarm::bus::with_lock(&lock, || swarm::bus::ensure_claude_trust(&config, &pane_dir))?;
+                swarm::bus::with_lock(&lock, || {
+                    swarm::bus::ensure_claude_trust(&config, &pane_dir)
+                })?;
                 extra = args;
             }
             _ => {}
@@ -935,27 +1165,43 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             &root,
             agent_id,
             role,
-            SpawnOptions { provider: provider.as_deref(), account, command: &command },
+            SpawnOptions {
+                provider: provider.as_deref(),
+                account,
+                command: &command,
+            },
         );
     }
-    if let [cmd, agent_id, role, rest @ ..] = args && cmd == "spawn" {
+    if let [cmd, agent_id, role, rest @ ..] = args
+        && cmd == "spawn"
+    {
         let options = parse_spawn_options(rest)?;
         return spawn_agent(&connection, &root, agent_id, role, options);
     }
-    if let [cmd] = args && cmd == "drain" {
+    if let [cmd] = args
+        && cmd == "drain"
+    {
         let summarizer = env_var("SWARM_SUMMARIZER")?;
         while let Some(job_id) = swarm::store::claim_next(&connection)? {
-            println!("{}", process_summary_job(&mut connection, &root, &adapter_name(), &summarizer, job_id)?);
+            println!(
+                "{}",
+                process_summary_job(&mut connection, &root, &adapter_name(), &summarizer, job_id)?
+            );
         }
         return Ok(());
     }
-    if let [cmd, child] = args && cmd == "close" {
+    if let [cmd, child] = args
+        && cmd == "close"
+    {
         let session_id = session_id()?;
-        let pane = swarm::store::pane_of(&connection, &session_id, child)?.ok_or("swarm: no pane recorded")?;
+        let pane = swarm::store::pane_of(&connection, &session_id, child)?
+            .ok_or("swarm: no pane recorded")?;
         swarm::adapter::load(&root, &adapter_name())?.run("close", &[("pane", &pane)])?;
         return swarm::store::clear_pane(&connection, &session_id, child);
     }
-    if let [cmd, agent_id] = args && cmd == "type" {
+    if let [cmd, agent_id] = args
+        && cmd == "type"
+    {
         let text = std::io::read_to_string(std::io::stdin())?;
         if text.trim().is_empty() {
             return Err("swarm: empty text".into());
@@ -964,12 +1210,16 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("swarm: no pane recorded")?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
         if !adapter.has_pane(&pane)? {
-            return Err("swarm: this chat's pane has closed; start a new chat or switch model".into());
+            return Err(
+                "swarm: this chat's pane has closed; start a new chat or switch model".into(),
+            );
         }
         adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
         return Ok(());
     }
-    if let [cmd, agent_id] = args && cmd == "interrupt" {
+    if let [cmd, agent_id] = args
+        && cmd == "interrupt"
+    {
         let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
             .ok_or("swarm: no pane recorded")?;
         swarm::adapter::load(&root, &adapter_name())?.run("interrupt", &[("pane", &pane)])?;
@@ -979,20 +1229,40 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     match args {
         [cmd, recipient, kind] if cmd == "send" => {
             let body = std::io::read_to_string(std::io::stdin())?;
-            let seq = deliver(&mut connection, &root, &adapter_name(), &session_id, &agent_id, recipient, kind, &body)?;
+            let seq = deliver(
+                &mut connection,
+                &root,
+                &adapter_name(),
+                &session_id,
+                &agent_id,
+                recipient,
+                kind,
+                &body,
+            )?;
             println!("{seq}");
             Ok(())
         }
         [cmd] if cmd == "finish" => {
             let summary = std::io::read_to_string(std::io::stdin())?;
             let orchestrator = swarm::store::orchestrator_of(&connection, &session_id)?;
-            let seq = deliver(&mut connection, &root, &adapter_name(), &session_id, &agent_id, &orchestrator, "summary", &summary)?;
+            let seq = deliver(
+                &mut connection,
+                &root,
+                &adapter_name(),
+                &session_id,
+                &agent_id,
+                &orchestrator,
+                "summary",
+                &summary,
+            )?;
             println!("{seq}");
             Ok(())
         }
         [cmd] if cmd == "exited" => {
-            let pane = swarm::store::pane_of(&connection, &session_id, &agent_id)?.ok_or("swarm: no pane recorded")?;
-            let text = swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
+            let pane = swarm::store::pane_of(&connection, &session_id, &agent_id)?
+                .ok_or("swarm: no pane recorded")?;
+            let text =
+                swarm::adapter::load(&root, &adapter_name())?.run("capture", &[("pane", &pane)])?;
             let run_dir = root.join(format!("runs/{session_id}"));
             std::fs::create_dir_all(&run_dir)?;
             swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
@@ -1002,7 +1272,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         [cmd, rest @ ..] if cmd == "sweep" => {
             let every = match rest {
                 [] => None,
-                [flag, secs] if flag == "--every" => Some(secs.parse::<u64>().ok().filter(|s| *s > 0).ok_or(USAGE)?),
+                [flag, secs] if flag == "--every" => {
+                    Some(secs.parse::<u64>().ok().filter(|s| *s > 0).ok_or(USAGE)?)
+                }
                 _ => return Err(USAGE.into()),
             };
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
@@ -1024,7 +1296,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, seq] if cmd == "ack" => {
             let seq: i64 = seq.parse().map_err(|_| format!("swarm: bad seq {seq}"))?;
-            ack(&mut connection, &root, &adapter_name(), &session_id, &agent_id, seq)
+            ack(
+                &mut connection,
+                &root,
+                &adapter_name(),
+                &session_id,
+                &agent_id,
+                seq,
+            )
         }
         _ => Err(USAGE.into()),
     }
@@ -1036,7 +1315,11 @@ fn main() {
         && cmd == "attach"
     {
         match attach(agent_id) {
-            Ok(status) => std::process::exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(0))),
+            Ok(status) => std::process::exit(
+                status
+                    .code()
+                    .unwrap_or_else(|| 128 + status.signal().unwrap_or(0)),
+            ),
             Err(error) => {
                 eprintln!("{error}");
                 std::process::exit(1);
@@ -1069,13 +1352,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
-        swarm::store::send_message(&mut connection, &root, &session, ORCHESTRATOR, CODER, "ask", "one").unwrap();
-        swarm::store::send_message(&mut connection, &root, &session, ORCHESTRATOR, CODER, "ask", "two").unwrap();
-        connection.execute("UPDATE message SET created_at = unixepoch() - 61", []).unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "two",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61", [])
+            .unwrap();
 
         let adapter = swarm::adapter::parse(
             "fake",
@@ -1086,15 +1396,24 @@ mod tests {
         sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
         let ring = format!("%2:{}\n", ring_text(&root));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
-        connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
+        connection
+            .execute("UPDATE message SET rung_at = unixepoch() - 61", [])
+            .unwrap();
         sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
 
         swarm::store::inbox(&connection, &session, CODER).unwrap();
-        connection.execute("UPDATE message SET rung_at = unixepoch() - 61", []).unwrap();
+        connection
+            .execute("UPDATE message SET rung_at = unixepoch() - 61", [])
+            .unwrap();
         sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
         swarm::store::ack(&connection, &session, 1, CODER).unwrap();
-        connection.execute("UPDATE message SET seen_at = NULL, rung_at = unixepoch() - 61 WHERE seq = 1", []).unwrap();
+        connection
+            .execute(
+                "UPDATE message SET seen_at = NULL, rung_at = unixepoch() - 61 WHERE seq = 1",
+                [],
+            )
+            .unwrap();
         sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
 
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), ring.repeat(2));
@@ -1104,7 +1423,14 @@ mod tests {
     fn sweep_reports_a_dead_child_as_before() {
         let root = std::env::temp_dir().join(format!("swarm-dead-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
@@ -1117,7 +1443,10 @@ mod tests {
 
         sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
 
-        assert_eq!(swarm::store::pane_of(&connection, &session, CODER).unwrap(), None);
+        assert_eq!(
+            swarm::store::pane_of(&connection, &session, CODER).unwrap(),
+            None
+        );
         assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
     }
 
@@ -1137,13 +1466,40 @@ mod tests {
         )
         .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
 
-        let first = deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "first").unwrap();
-        let second = deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "second").unwrap();
+        let first = deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "first",
+        )
+        .unwrap();
+        let second = deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "second",
+        )
+        .unwrap();
         assert_eq!((first, second), (0, 1));
         let ring = format!("%2:{}\n", ring_text(&root));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
@@ -1152,28 +1508,65 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
         ack(&mut connection, &root, "fake", &session, CODER, second).unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
-        deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "third").unwrap();
+        deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "third",
+        )
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(3));
 
         // The coder listed "third" but has not acked it, so "fourth" is news and must ring.
         swarm::store::inbox(&connection, &session, CODER).unwrap();
-        deliver(&mut connection, &root, "fake", &session, ORCHESTRATOR, CODER, "ask", "fourth").unwrap();
+        deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "fourth",
+        )
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(4));
     }
 
     #[test]
     fn sweep_rerings_its_own_chair_for_an_old_unseen_finish() {
-        let root = std::env::temp_dir().join(format!("swarm-sweep-chair-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-sweep-chair-test-{}", std::process::id()));
         let ring_log = root.join("rings");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
-        swarm::store::send_message(&mut connection, &root, &session, CODER, ORCHESTRATOR, "summary", "done").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
         connection.execute("UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61, rings = 1", []).unwrap();
         let adapter = swarm::adapter::parse(
             "fake",
@@ -1201,19 +1594,53 @@ mod tests {
         )
         .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        add_agent(&connection, &root, "fake", &session, ORCHESTRATOR, "orchestrator").unwrap();
+        add_agent(
+            &connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            "orchestrator",
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
-        deliver(&mut connection, &root, "fake", &session, CODER, ORCHESTRATOR, "summary", "done").unwrap();
+        deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
 
-        assert_eq!(swarm::store::pane_of(&connection, &session, ORCHESTRATOR).unwrap().as_deref(), Some("%9"));
-        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+        assert_eq!(
+            swarm::store::pane_of(&connection, &session, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%9")
+        );
+        assert_eq!(
+            std::fs::read_to_string(ring_log).unwrap(),
+            format!("%9:{}\n", ring_text(&root))
+        );
     }
 
     #[test]
     fn a_routing_role_chair_receives_a_child_finish() {
-        let root = std::env::temp_dir().join(format!("swarm-routing-chair-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-routing-chair-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         let ring_log = root.join("rings");
         let _ = std::fs::remove_dir_all(&root);
@@ -1227,29 +1654,65 @@ mod tests {
         )
         .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, Some("fake")).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            Some("fake"),
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "code.complex").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%9").unwrap();
 
         let chair = swarm::store::orchestrator_of(&connection, &session).unwrap();
-        deliver(&mut connection, &root, "fake", &session, CODER, &chair, "summary", "done").unwrap();
+        deliver(
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            CODER,
+            &chair,
+            "summary",
+            "done",
+        )
+        .unwrap();
 
-        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), format!("%9:{}\n", ring_text(&root)));
+        assert_eq!(
+            std::fs::read_to_string(ring_log).unwrap(),
+            format!("%9:{}\n", ring_text(&root))
+        );
     }
 
     #[test]
     fn only_the_orchestrator_can_set_the_session_chair() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "code.complex").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
 
         let error = set_chair_for_caller(&connection, &session, CODER, Some(("claude", "wrong")))
             .unwrap_err()
             .to_string();
-        assert_eq!(error, "swarm: only the orchestrator can set the session chair");
-        set_chair_for_caller(&connection, &session, ORCHESTRATOR, Some(("claude", "right"))).unwrap();
+        assert_eq!(
+            error,
+            "swarm: only the orchestrator can set the session chair"
+        );
+        set_chair_for_caller(
+            &connection,
+            &session,
+            ORCHESTRATOR,
+            Some(("claude", "right")),
+        )
+        .unwrap();
         let stored = swarm::store::sessions(&connection).unwrap();
         assert_eq!(stored[0].chair_id.as_deref(), Some("right"));
     }
@@ -1257,15 +1720,29 @@ mod tests {
     #[test]
     fn a_failed_adapter_spawn_rolls_back_the_agent() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         let failed = swarm::adapter::parse(
             "failed",
             "self = true\nspawn = echo refused >&2; exit 1\nring = true\nlist = true\nclose = true\ncapture = true\n",
         )
         .unwrap();
 
-        assert!(register_spawned_pane(&connection, &failed, &session, CODER, "coder", None, &[]).is_err());
-        assert!(swarm::store::agents(&connection, &session).unwrap().is_empty());
+        assert!(
+            register_spawned_pane(&connection, &failed, &session, CODER, "coder", None, &[])
+                .is_err()
+        );
+        assert!(
+            swarm::store::agents(&connection, &session)
+                .unwrap()
+                .is_empty()
+        );
 
         let working = swarm::adapter::parse(
             "working",
@@ -1273,29 +1750,49 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            register_spawned_pane(&connection, &working, &session, CODER, "coder", None, &[]).unwrap(),
+            register_spawned_pane(&connection, &working, &session, CODER, "coder", None, &[])
+                .unwrap(),
             "%2"
         );
     }
 
     #[test]
     fn a_failed_dead_agent_report_still_clears_its_pane() {
-        let root = std::env::temp_dir().join(format!("swarm-dead-report-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-dead-report-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
 
         assert!(report_dead(&mut connection, &root, &session, CODER, "dead").is_err());
-        assert_eq!(swarm::store::pane_of(&connection, &session, CODER).unwrap(), None);
+        assert_eq!(
+            swarm::store::pane_of(&connection, &session, CODER).unwrap(),
+            None
+        );
     }
 
     #[test]
     fn a_failed_summary_delivery_keeps_the_log_and_releases_the_job() {
-        let root = std::env::temp_dir().join(format!("swarm-summary-retry-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-summary-retry-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         let log = root.join(format!("runs/{session}/{CODER}.log"));
@@ -1308,13 +1805,18 @@ mod tests {
 
         assert!(result.contains("orchestrator has no pane"));
         assert!(log.exists());
-        let state: String = connection.query_row("SELECT state FROM job WHERE id = ?1", [job], |row| row.get(0)).unwrap();
+        let state: String = connection
+            .query_row("SELECT state FROM job WHERE id = ?1", [job], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(state, "queued");
     }
 
     #[test]
     fn default_codex_trust_uses_codex_home_or_login_home() {
-        let root = std::env::temp_dir().join(format!("swarm-default-codex-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-default-codex-test-{}", std::process::id()));
         let login = root.join("login");
         let codex = default_codex_home_with_env(|name| match name {
             "HOME" => Some(login.clone().into_os_string()),
@@ -1326,14 +1828,18 @@ mod tests {
 
         let override_home = root.join("override");
         assert_eq!(
-            default_codex_home_with_env(|name| (name == "CODEX_HOME").then(|| override_home.clone().into_os_string())).unwrap(),
+            default_codex_home_with_env(
+                |name| (name == "CODEX_HOME").then(|| override_home.clone().into_os_string())
+            )
+            .unwrap(),
             override_home
         );
     }
 
     #[test]
     fn a_chair_pane_moves_to_the_new_session() {
-        let root = std::env::temp_dir().join(format!("swarm-chair-move-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-chair-move-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         std::fs::create_dir_all(&adapters).unwrap();
         std::fs::write(
@@ -1342,19 +1848,58 @@ mod tests {
         )
         .unwrap();
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let first = swarm::store::create_session(&connection, "lane", std::path::Path::new("/first"), None, None).unwrap();
-        let second = swarm::store::create_session(&connection, "lane", std::path::Path::new("/second"), None, None).unwrap();
+        let first = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/first"),
+            None,
+            None,
+        )
+        .unwrap();
+        let second = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/second"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        add_agent(&connection, &root, "fake", &first, ORCHESTRATOR, "orchestrator").unwrap();
-        add_agent(&connection, &root, "fake", &second, ORCHESTRATOR, "orchestrator").unwrap();
+        add_agent(
+            &connection,
+            &root,
+            "fake",
+            &first,
+            ORCHESTRATOR,
+            "orchestrator",
+        )
+        .unwrap();
+        add_agent(
+            &connection,
+            &root,
+            "fake",
+            &second,
+            ORCHESTRATOR,
+            "orchestrator",
+        )
+        .unwrap();
 
-        assert_eq!(swarm::store::pane_of(&connection, &first, ORCHESTRATOR).unwrap(), None);
-        assert_eq!(swarm::store::pane_of(&connection, &second, ORCHESTRATOR).unwrap().as_deref(), Some("%1"));
+        assert_eq!(
+            swarm::store::pane_of(&connection, &first, ORCHESTRATOR).unwrap(),
+            None
+        );
+        assert_eq!(
+            swarm::store::pane_of(&connection, &second, ORCHESTRATOR)
+                .unwrap()
+                .as_deref(),
+            Some("%1")
+        );
     }
 
     #[test]
     fn orchestrator_registration_sets_the_session_adapter() {
-        let root = std::env::temp_dir().join(format!("swarm-chair-adapter-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-chair-adapter-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         std::fs::create_dir_all(&adapters).unwrap();
         std::fs::write(
@@ -1372,7 +1917,15 @@ mod tests {
         )
         .unwrap();
 
-        add_agent(&connection, &root, "fake", &session, ORCHESTRATOR, "orchestrator").unwrap();
+        add_agent(
+            &connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            "orchestrator",
+        )
+        .unwrap();
 
         let stored = swarm::store::sessions(&connection).unwrap();
         assert_eq!(stored[0].adapter.as_deref(), Some("fake"));
@@ -1380,7 +1933,8 @@ mod tests {
 
     #[test]
     fn refused_orchestrator_registration_leaves_no_agent() {
-        let root = std::env::temp_dir().join(format!("swarm-empty-chair-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-empty-chair-test-{}", std::process::id()));
         let adapters = root.join("adapters");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&adapters).unwrap();
@@ -1390,48 +1944,113 @@ mod tests {
         )
         .unwrap();
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        let error = add_agent(&connection, &root, "fake", &session, ORCHESTRATOR, "orchestrator")
-            .unwrap_err()
-            .to_string();
+        let error = add_agent(
+            &connection,
+            &root,
+            "fake",
+            &session,
+            ORCHESTRATOR,
+            "orchestrator",
+        )
+        .unwrap_err()
+        .to_string();
 
         assert_eq!(error, "swarm: adapter gave no pane for orchestrator");
-        assert!(swarm::store::agents(&connection, &session).unwrap().is_empty());
+        assert!(
+            swarm::store::agents(&connection, &session)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn deliver_to_agent_without_pane_writes_no_message() {
         let root = std::env::temp_dir().join(format!("swarm-no-pane-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
 
         let error = deliver(
-            &mut connection, &root, "fake", &session, CODER, ORCHESTRATOR, "summary", "done",
+            &mut connection,
+            &root,
+            "fake",
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
         )
         .unwrap_err()
         .to_string();
 
-        assert_eq!(error, "swarm: orchestrator has no pane; nothing would ring it");
-        assert_eq!(swarm::store::messages(&connection, &session, -1).unwrap().len(), 0);
+        assert_eq!(
+            error,
+            "swarm: orchestrator has no pane; nothing would ring it"
+        );
+        assert_eq!(
+            swarm::store::messages(&connection, &session, -1)
+                .unwrap()
+                .len(),
+            0
+        );
     }
 
     #[test]
     fn deliver_from_or_to_an_unknown_agent_writes_no_message() {
-        let root = std::env::temp_dir().join(format!("swarm-unknown-agent-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("swarm-unknown-agent-test-{}", std::process::id()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
-        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
 
         for (sender, recipient) in [("ghost", ORCHESTRATOR), (ORCHESTRATOR, "ghost")] {
-            let error = deliver(&mut connection, &root, "fake", &session, sender, recipient, "ask", "hi")
-                .unwrap_err()
-                .to_string();
-            assert_eq!(error, format!("swarm: ghost is not an agent in session {session}"));
+            let error = deliver(
+                &mut connection,
+                &root,
+                "fake",
+                &session,
+                sender,
+                recipient,
+                "ask",
+                "hi",
+            )
+            .unwrap_err()
+            .to_string();
+            assert_eq!(
+                error,
+                format!("swarm: ghost is not an agent in session {session}")
+            );
         }
-        assert_eq!(swarm::store::messages(&connection, &session, -1).unwrap().len(), 0);
+        assert_eq!(
+            swarm::store::messages(&connection, &session, -1)
+                .unwrap()
+                .len(),
+            0
+        );
     }
 }

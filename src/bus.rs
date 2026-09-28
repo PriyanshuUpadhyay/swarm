@@ -15,7 +15,9 @@ pub struct ResolvedRole {
 pub fn chat_role(provider: &str, model: &str) -> Result<ResolvedRole, String> {
     if model.is_empty()
         || model.starts_with('-')
-        || model.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+        || model
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch.is_control())
     {
         return Err("swarm: model must be one non-empty name".into());
     }
@@ -97,7 +99,12 @@ pub fn valid_agent_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
 }
 
-pub fn argv(agent_id: &str, role: &str, resolved: &ResolvedRole, swarm_home: &str) -> Result<Vec<String>, String> {
+pub fn argv(
+    agent_id: &str,
+    role: &str,
+    resolved: &ResolvedRole,
+    swarm_home: &str,
+) -> Result<Vec<String>, String> {
     let provider = required(role, "provider", resolved.provider.as_deref())?;
     let effort = || required(role, "effort", resolved.effort.as_deref());
     let model = || required(role, "model", resolved.model.as_deref());
@@ -196,7 +203,9 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 pub fn model_known(provider: &str, catalog: &[u8], model: &str) -> bool {
     if provider == "claude" {
         let quoted = format!("\"{model}\"");
-        return catalog.windows(quoted.len()).any(|window| window == quoted.as_bytes());
+        return catalog
+            .windows(quoted.len())
+            .any(|window| window == quoted.as_bytes());
     }
     serde_json::from_slice::<serde_json::Value>(catalog)
         .ok()
@@ -221,8 +230,7 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
         addition.push('\n');
     }
     addition.push_str(&format!("{table}\ntrust_level = \"trusted\"\n"));
-    std::fs::create_dir_all(home)
-        .map_err(|error| format!("cannot create Codex home: {error}"))?;
+    std::fs::create_dir_all(home).map_err(|error| format!("cannot create Codex home: {error}"))?;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -233,8 +241,12 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
 
 /// Why a caller may not launch an agent, or None. A pane `swarm spawn` made carries its own
 /// agent id, and only the orchestrator starts children; Herdr marks its own agent panes too.
-pub fn launch_refusal(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> Option<&'static str> {
-    let child = swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1");
+pub fn launch_refusal(
+    swarm_agent: Option<&str>,
+    herdr_agent_pane: Option<&str>,
+) -> Option<&'static str> {
+    let child =
+        swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1");
     child.then_some("swarm: a child agent cannot launch agents; ask the orchestrator")
 }
 
@@ -242,8 +254,11 @@ pub fn launch_refusal(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>)
 /// the second, independent check, so a config edited past the router still cannot reach a pane.
 pub fn fable_refusal(agent_id: &str, role: &str, model: Option<&str>) -> Option<String> {
     let fable = model.is_some_and(|model| model.to_ascii_lowercase().contains("fable"));
-    (fable && agent_id != "orchestrator" && !role.starts_with("review.") && !role.starts_with("council."))
-        .then(|| format!("swarm: Fable is a child only for review.* and council.* (role {role})"))
+    (fable
+        && agent_id != "orchestrator"
+        && !role.starts_with("review.")
+        && !role.starts_with("council."))
+    .then(|| format!("swarm: Fable is a child only for review.* and council.* (role {role})"))
 }
 
 /// Why this session has no spawn path, from the stderr of `herdr status`, or None. A sandbox that
@@ -258,8 +273,22 @@ pub fn socket_refusal(herdr_status_stderr: &str) -> Option<&'static str> {
 /// Provider flags the role owns; a caller's extra args may not set them.
 fn owned_flags(provider: &str) -> &'static [&'static str] {
     match provider {
-        "codex" => &["-m", "--model", "-s", "--sandbox", "-a", "--ask-for-approval"],
-        _ => &["--model", "--effort", "--permission-mode", "--mode", "--dangerously-skip-permissions", "--yolo"],
+        "codex" => &[
+            "-m",
+            "--model",
+            "-s",
+            "--sandbox",
+            "-a",
+            "--ask-for-approval",
+        ],
+        _ => &[
+            "--model",
+            "--effort",
+            "--permission-mode",
+            "--mode",
+            "--dangerously-skip-permissions",
+            "--yolo",
+        ],
     }
 }
 
@@ -289,7 +318,12 @@ pub fn extra_args(provider: &str, extra: &[String]) -> Result<Vec<String>, Strin
 /// out of the caller's /resume picker; `--add-dir` gives it the tree back. Its session id takes a
 /// reserved prefix so tools can tell a worker transcript apart. A resuming child keeps its cwd,
 /// because its transcript already lives under the original one.
-pub fn claude_child(agent_id: &str, cwd: &std::path::Path, extra: &[String], session_id: &uuid::Uuid) -> (std::path::PathBuf, Vec<String>) {
+pub fn claude_child(
+    agent_id: &str,
+    cwd: &std::path::Path,
+    extra: &[String],
+    session_id: &uuid::Uuid,
+) -> (std::path::PathBuf, Vec<String>) {
     const RESUME: &[&str] = &["-r", "--resume", "-c", "--continue", "--fork-session"];
     if has_flag(extra, RESUME) {
         return (cwd.to_path_buf(), extra.to_vec());
@@ -325,42 +359,61 @@ pub fn trust_target(
             let root = scratch_roots
                 .iter()
                 .find(|root| cwd.starts_with(root) && cwd != root.as_path())
-                .ok_or_else(|| format!("{} is not in a git repository or a scratch dir", cwd.display()))?;
+                .ok_or_else(|| {
+                    format!(
+                        "{} is not in a git repository or a scratch dir",
+                        cwd.display()
+                    )
+                })?;
             (cwd.to_path_buf(), root.clone())
         }
     };
     if target == home || target.parent().is_none() {
         return Err(format!("{} is too broad to trust", target.display()));
     }
-    let uid = std::fs::metadata(home).map_err(|error| format!("{}: {error}", home.display()))?.uid();
+    let uid = std::fs::metadata(home)
+        .map_err(|error| format!("{}: {error}", home.display()))?
+        .uid();
     let mut dir = target.as_path();
     loop {
         let meta = std::fs::metadata(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         if meta.uid() != uid || meta.mode() & 0o022 != 0 {
-            return Err(format!("{} must be yours and closed to group and world writes", dir.display()));
+            return Err(format!(
+                "{} must be yours and closed to group and world writes",
+                dir.display()
+            ));
         }
         if dir == top {
             return Ok(target);
         }
-        dir = dir.parent().ok_or_else(|| format!("{} left its root", target.display()))?;
+        dir = dir
+            .parent()
+            .ok_or_else(|| format!("{} left its root", target.display()))?;
     }
 }
 
 /// Run `change` while holding `lock`, so two launches cannot both read a settings file and the
 /// second write drop the first one's trust entry.
-pub fn with_lock<T>(lock: &std::path::Path, change: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+pub fn with_lock<T>(
+    lock: &std::path::Path,
+    change: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(lock)
         .map_err(|error| format!("swarm: cannot open {}: {error}", lock.display()))?;
-    file.lock().map_err(|error| format!("swarm: cannot lock {}: {error}", lock.display()))?;
+    file.lock()
+        .map_err(|error| format!("swarm: cannot lock {}: {error}", lock.display()))?;
     change()
 }
 
 /// Mark `dir` trusted in Claude's `~/.claude.json`, so a child does not boot into the folder-trust
 /// dialog and wait there with nobody to answer. Returns whether the file changed.
-pub fn ensure_claude_trust(config: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
+pub fn ensure_claude_trust(
+    config: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<bool, String> {
     let mut value = read_json_object(config)?;
     let key = dir.to_string_lossy().into_owned();
     let project = value
@@ -403,11 +456,13 @@ pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Re
 fn read_json_object(path: &std::path::Path) -> Result<serde_json::Value, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({})),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(serde_json::json!({}));
+        }
         Err(error) => return Err(format!("swarm: cannot read {}: {error}", path.display())),
     };
-    let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|error| format!("swarm: cannot parse {}: {error}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("swarm: cannot parse {}: {error}", path.display()))?;
     value
         .is_object()
         .then_some(value)
@@ -418,7 +473,9 @@ fn read_json_object(path: &std::path::Path) -> Result<serde_json::Value, String>
 /// credentials and a running CLI may read it at any moment.
 fn write_json(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
-    let dir = path.parent().ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
     std::fs::create_dir_all(dir).map_err(fail)?;
     let tmp = dir.join(format!(
         ".{}.swarm-{}",
@@ -563,7 +620,11 @@ mod tests {
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
 
         let child_claude_args = argv("coder", "coder", &claude, "/home").unwrap();
-        assert!(!child_claude_args.iter().any(|arg| arg.contains("SessionStart")));
+        assert!(
+            !child_claude_args
+                .iter()
+                .any(|arg| arg.contains("SessionStart"))
+        );
     }
 
     #[test]
@@ -576,7 +637,13 @@ mod tests {
         ensure_codex_trust(&root, std::path::Path::new("/one")).unwrap();
         assert_eq!(std::fs::read_to_string(&config).unwrap(), once);
         ensure_codex_trust(&root, std::path::Path::new("/two")).unwrap();
-        assert_eq!(std::fs::read_to_string(&config).unwrap().matches("trust_level = \"trusted\"").count(), 2);
+        assert_eq!(
+            std::fs::read_to_string(&config)
+                .unwrap()
+                .matches("trust_level = \"trusted\"")
+                .count(),
+            2
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -600,7 +667,8 @@ mod tests {
 
     #[test]
     fn a_denied_herdr_socket_refuses_launch() {
-        let denied = r#"Error: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }"#;
+        let denied =
+            r#"Error: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }"#;
         assert!(socket_refusal(denied).is_some());
         assert!(socket_refusal("").is_none());
     }
@@ -609,9 +677,18 @@ mod tests {
     fn extra_args_keep_role_flags_out_and_agy_interactive() {
         assert!(extra_args("claude", &strings(&["--model=opus"])).is_err());
         assert!(extra_args("codex", &strings(&["-s", "danger-full-access"])).is_err());
-        assert_eq!(extra_args("claude", &strings(&["--", "--model"])).unwrap(), strings(&["--", "--model"]));
-        assert_eq!(extra_args("agy", &strings(&["fix the bug"])).unwrap(), strings(&["-i", "fix the bug"]));
-        assert_eq!(extra_args("agy", &strings(&["-i", "fix"])).unwrap(), strings(&["-i", "fix"]));
+        assert_eq!(
+            extra_args("claude", &strings(&["--", "--model"])).unwrap(),
+            strings(&["--", "--model"])
+        );
+        assert_eq!(
+            extra_args("agy", &strings(&["fix the bug"])).unwrap(),
+            strings(&["-i", "fix the bug"])
+        );
+        assert_eq!(
+            extra_args("agy", &strings(&["-i", "fix"])).unwrap(),
+            strings(&["-i", "fix"])
+        );
     }
 
     #[test]
@@ -622,12 +699,18 @@ mod tests {
         assert_eq!(dir, std::path::Path::new("/repo/.herdr/workers"));
         assert_eq!(args[0], "--session-id");
         assert!(args[1].starts_with("aaaaaaaa-") && uuid::Uuid::parse_str(&args[1]).is_ok());
-        assert_eq!(args[2..], strings(&["-n", "coder", "--verbose", "--add-dir", "/repo"]));
+        assert_eq!(
+            args[2..],
+            strings(&["-n", "coder", "--verbose", "--add-dir", "/repo"])
+        );
 
         let (_, named) = claude_child("coder", cwd, &strings(&["--name", "x"]), &id);
         assert!(!named.contains(&"-n".to_string()));
         let (dir, resumed) = claude_child("coder", cwd, &strings(&["--resume", "abc"]), &id);
-        assert_eq!((dir.as_path(), resumed), (cwd, strings(&["--resume", "abc"])));
+        assert_eq!(
+            (dir.as_path(), resumed),
+            (cwd, strings(&["--resume", "abc"]))
+        );
     }
 
     #[test]
@@ -637,21 +720,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let config = root.join(".claude.json");
-        std::fs::write(&config, r#"{"zeta":1,"projects":{"/other":{"allowedTools":[]}},"alpha":2}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"zeta":1,"projects":{"/other":{"allowedTools":[]}},"alpha":2}"#,
+        )
+        .unwrap();
         std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o600)).unwrap();
 
-        assert!(ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap());
-        assert!(!ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap());
-        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        assert_eq!(value.as_object().unwrap().keys().collect::<Vec<_>>(), ["zeta", "projects", "alpha"]);
-        assert_eq!(value["projects"]["/repo/.herdr/workers"]["hasTrustDialogAccepted"], true);
-        assert_eq!(value["projects"]["/other"]["allowedTools"], serde_json::json!([]));
-        assert_eq!(std::fs::metadata(&config).unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(
+            ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap()
+        );
+        assert!(
+            !ensure_claude_trust(&config, std::path::Path::new("/repo/.herdr/workers")).unwrap()
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(
+            value.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["zeta", "projects", "alpha"]
+        );
+        assert_eq!(
+            value["projects"]["/repo/.herdr/workers"]["hasTrustDialogAccepted"],
+            true
+        );
+        assert_eq!(
+            value["projects"]["/other"]["allowedTools"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            std::fs::metadata(&config).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
 
         let settings = root.join("agy/settings.json");
         assert!(ensure_agy_trust(&settings, std::path::Path::new("/repo")).unwrap());
         assert!(!ensure_agy_trust(&settings, std::path::Path::new("/repo")).unwrap());
-        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(value["trustedWorkspaces"], serde_json::json!(["/repo"]));
 
         std::fs::write(&config, "[]").unwrap();
@@ -662,9 +767,15 @@ mod tests {
     #[test]
     fn trust_reaches_only_a_git_root_or_a_scratch_dir_that_is_closed_to_others() {
         use std::os::unix::fs::PermissionsExt;
-        let base = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("swarm-trust-scope-{}", std::process::id()));
+        let base = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("swarm-trust-scope-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        let (home, repo, scratch) = (base.join("home"), base.join("home/repo"), base.join("scratch"));
+        let (home, repo, scratch) = (
+            base.join("home"),
+            base.join("home/repo"),
+            base.join("scratch"),
+        );
         let (seat, open) = (scratch.join("run/seat"), scratch.join("open"));
         for dir in [&repo.join("sub"), &seat, &open] {
             std::fs::create_dir_all(dir).unwrap();
@@ -675,7 +786,10 @@ mod tests {
         std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
         let roots = [scratch.clone()];
 
-        assert_eq!(trust_target(&repo.join("sub"), Some(&repo), &home, &roots), Ok(repo.clone()));
+        assert_eq!(
+            trust_target(&repo.join("sub"), Some(&repo), &home, &roots),
+            Ok(repo.clone())
+        );
         assert_eq!(trust_target(&seat, None, &home, &roots), Ok(seat.clone()));
         assert!(trust_target(&home, None, &home, &roots).is_err());
         assert!(trust_target(&home, Some(&home), &home, &roots).is_err());
@@ -701,8 +815,11 @@ mod tests {
                 })
             })
             .collect();
-        threads.into_iter().for_each(|thread| thread.join().unwrap());
-        let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        threads
+            .into_iter()
+            .for_each(|thread| thread.join().unwrap());
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
         assert_eq!(value["trustedWorkspaces"].as_array().unwrap().len(), 8);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -747,7 +864,10 @@ mod tests {
         let resolved = chat_role("codex", "gpt-6-sol").unwrap();
         let args = argv("orchestrator", "chat", &resolved, "/home").unwrap();
         assert!(args.windows(2).any(|pair| pair == ["--model", "gpt-6-sol"]));
-        assert!(args.windows(2).any(|pair| pair == ["--sandbox", "workspace-write"]));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--sandbox", "workspace-write"])
+        );
         assert!(chat_role("claude", "--bad").is_err());
         assert!(chat_role("unknown", "model").is_err());
     }
@@ -755,10 +875,24 @@ mod tests {
     #[test]
     fn finds_the_command_model_and_checks_it_against_the_catalog() {
         let command = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
-        assert_eq!(command_model(&command(&["claude", "--model", "opus[1m]", "--effort", "high"])), Some("opus"));
-        assert_eq!(command_model(&command(&["codex", "-m", "gpt-6-sol"])), Some("gpt-6-sol"));
-        assert_eq!(command_model(&command(&["codex", "--model=gpt-6-luna"])), Some("gpt-6-luna"));
-        assert_eq!(command_model(&command(&["agy", "--", "--model", "x"])), None);
+        assert_eq!(
+            command_model(&command(&[
+                "claude", "--model", "opus[1m]", "--effort", "high"
+            ])),
+            Some("opus")
+        );
+        assert_eq!(
+            command_model(&command(&["codex", "-m", "gpt-6-sol"])),
+            Some("gpt-6-sol")
+        );
+        assert_eq!(
+            command_model(&command(&["codex", "--model=gpt-6-luna"])),
+            Some("gpt-6-luna")
+        );
+        assert_eq!(
+            command_model(&command(&["agy", "--", "--model", "x"])),
+            None
+        );
 
         let binary = br#"aliases:{opus:{default:"claude-opus-5-5"}},x="opus""#;
         assert!(model_known("claude", binary, "claude-opus-5-5"));
