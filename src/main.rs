@@ -238,8 +238,8 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     Ok(SpawnOptions { provider, account, command: &[] })
 }
 
-/// Refuse a recipient without a pane, then store the message and ring it. The bell is a hint
-/// (R9), so a ring failure only warns.
+/// Refuse a sender or recipient that is not an agent in the session, and a recipient without a
+/// pane, then store the message and ring it. The bell is a hint (R9), so a ring failure only warns.
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     connection: &mut rusqlite::Connection,
@@ -251,8 +251,15 @@ fn deliver(
     kind: &str,
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
+    let agents = swarm::store::agents(connection, session_id)?;
+    let agent = |id: &str| {
+        agents.iter().find(|agent| agent.id == id).ok_or_else(|| format!("swarm: {id} is not an agent in session {session_id}"))
+    };
+    agent(sender)?;
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
-    let pane = swarm::store::pane_of(connection, session_id, &recipient)?
+    let pane = agent(&recipient)?
+        .pane
+        .clone()
         .ok_or_else(|| format!("swarm: {recipient} has no pane; nothing would ring it"))?;
     let seq = swarm::store::send_message(connection, root, session_id, sender, &recipient, &kind, body)?;
     if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
@@ -1400,6 +1407,23 @@ mod tests {
         .to_string();
 
         assert_eq!(error, "swarm: orchestrator has no pane; nothing would ring it");
+        assert_eq!(swarm::store::messages(&connection, &session, -1).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn deliver_from_or_to_an_unknown_agent_writes_no_message() {
+        let root = std::env::temp_dir().join(format!("swarm-unknown-agent-test-{}", std::process::id()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", std::path::Path::new("/test"), None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+
+        for (sender, recipient) in [("ghost", ORCHESTRATOR), (ORCHESTRATOR, "ghost")] {
+            let error = deliver(&mut connection, &root, "fake", &session, sender, recipient, "ask", "hi")
+                .unwrap_err()
+                .to_string();
+            assert_eq!(error, format!("swarm: ghost is not an agent in session {session}"));
+        }
         assert_eq!(swarm::store::messages(&connection, &session, -1).unwrap().len(), 0);
     }
 }
