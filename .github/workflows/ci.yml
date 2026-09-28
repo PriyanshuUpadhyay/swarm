@@ -12,8 +12,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo clippy -- -D warnings
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  zig:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/transcript
+    steps:
+      - uses: actions/checkout@v4
+      # Zig asks CI not to download from ziglang.org; this action uses the signed community mirrors.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - run: zig fmt --check .
+      - run: zig build test
 
   public-safety:
     runs-on: ubuntu-latest
