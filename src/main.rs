@@ -864,9 +864,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
-    // A sandbox that denies the Herdr socket usually denies this database too, so a launch checks
-    // the socket first, and the caller reads that reason, not a database error.
-    if args.first().map(String::as_str) == Some("launch") && adapter_name() == "herdr" {
+    // A sandbox that denies the Herdr socket usually denies this database too, so the three calls
+    // that start an orchestrator run check the socket first, and the caller reads that reason, not
+    // a database error.
+    let starts_a_run = match args {
+        [cmd, ..] if cmd == "launch" => true,
+        [cmd, sub, ..] => (cmd == "session" && sub == "new") || (cmd == "agent" && sub == "add"),
+        _ => false,
+    };
+    if starts_a_run && adapter_name() == "herdr" {
         let status = run_tool("herdr", &["status"])?;
         if let Some(reason) = swarm::bus::socket_refusal(&String::from_utf8_lossy(&status.stderr)) {
             return Err(reason.into());
