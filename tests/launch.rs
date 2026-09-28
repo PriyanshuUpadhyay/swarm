@@ -80,6 +80,9 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     for dir in &profiles {
         std::fs::create_dir_all(dir).unwrap();
     }
+    // yelo keeps its own data next to the profiles, in hidden dirs that no pane reads.
+    let hidden = home.join(".claude/.profiles/.session-map");
+    std::fs::create_dir_all(&hidden).unwrap();
     let rows: Vec<_> = profiles
         .iter()
         .zip(["a", "b"])
@@ -136,6 +139,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     // No --account: yelo's `claude` in the pane picks any profile, or ~/.claude.json without yelo.
     let any = launch("seat-any", "any", None);
     assert!(trusted(&home.join(".claude.json"), &any));
+    assert!(!hidden.join(".claude.json").exists());
     for dir in &profiles {
         assert!(
             trusted(&dir.join(".claude.json"), &any),

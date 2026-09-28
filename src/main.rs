@@ -1169,7 +1169,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         configs.extend(
                             profiles
                                 .filter_map(Result::ok)
-                                .filter(|entry| entry.path().is_dir())
+                                // yelo keeps its own data in hidden dirs here; a profile is not hidden.
+                                .filter(|entry| {
+                                    !entry.file_name().to_string_lossy().starts_with('.')
+                                        && entry.path().is_dir()
+                                })
                                 .map(|entry| entry.path().join(".claude.json")),
                         );
                     }
