@@ -21,10 +21,6 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
-const CODEX_SOCKET_PROBE: &str = r#"- The `swarm launch` line above states the general contract; these two cases resolve it for you and supersede it. Settle your spawn path ONCE, by testing the control socket with a single `herdr status`, then stay on the answer:
-  - `herdr status` answers → you are the unsandboxed driver. Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`.
-  - `herdr status` answers `PermissionDenied` → your sandbox denies that socket, so every direct `swarm` or `herdr` call is denied for the same reason. You have no spawn path: report that and stop. Do not retry the call, and do not request an escalated sandbox to force one through — escalation spends a user approval on a path this session is not meant to use."#;
-
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     if env("HERDR_ENV").as_deref() != Some("1") || env("HERDR_PANE_ID").is_none_or(|pane| pane.is_empty()) {
@@ -32,7 +28,6 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     }
     let mut context = match is_worker(&env) {
         true => HERDR_WORKER_CONTEXT.to_string(),
-        false if provider == "codex" => format!("{HERDR_CONTEXT}\n{CODEX_SOCKET_PROBE}"),
         false => HERDR_CONTEXT.to_string(),
     };
     let adapter = match provider {
@@ -107,18 +102,19 @@ mod tests {
     }
 
     #[test]
-    fn only_the_codex_orchestrator_gets_the_probe_lines() {
+    fn codex_and_claude_orchestrators_get_the_same_host_contract() {
         let codex = context("codex", env(&HERDR)).unwrap();
-        assert!(codex.contains("Settle your spawn path ONCE"));
+        let claude = context("claude", env(&HERDR)).unwrap();
         assert!(codex.find("[agent-host: herdr]") < codex.find("[agent-runtime: codex]"));
-        assert!(!context("claude", env(&HERDR)).unwrap().contains("Settle your spawn path ONCE"));
+        assert_eq!(codex.split("\n\n[agent-runtime").next(), claude.split("\n\n[agent-runtime").next());
+        assert!(!codex.contains("herdr status"));
     }
 
     #[test]
     fn a_worker_marker_gives_the_worker_contract_but_the_orchestrator_seat_does_not() {
         for marker in [("HERDR_AGENT_PANE", "1"), ("SWARM_AGENT_ID", "cl-seat-1")] {
             let body = context("codex", env(&[HERDR[0], HERDR[1], marker])).unwrap();
-            assert!(body.contains("[agent-host: herdr — worker]") && !body.contains("Settle your spawn path ONCE"), "{marker:?}");
+            assert!(body.contains("[agent-host: herdr — worker]"), "{marker:?}");
         }
         let seat = context("claude", env(&[HERDR[0], HERDR[1], ("SWARM_AGENT_ID", "orchestrator")])).unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
