@@ -1155,9 +1155,30 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
                 std::fs::create_dir_all(&dir)?;
                 pane_dir = std::fs::canonicalize(&dir)?;
-                let config = user_home.join(".claude.json");
+                // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
+                // yelo's `claude` in the pane points that at the profile it picks, and a pane with
+                // no yelo reads ~/.claude.json, so each of them needs the entry.
+                let configs = if let Some(account_name) = account {
+                    let accounts = load_accounts("claude", true)?;
+                    let account = swarm::profiles::resolve_account(&accounts, account_name)
+                        .map_err(|error| format!("swarm: {error}"))?;
+                    vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                } else {
+                    let mut configs = vec![user_home.join(".claude.json")];
+                    if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles")) {
+                        configs.extend(
+                            profiles
+                                .filter_map(Result::ok)
+                                .filter(|entry| entry.path().is_dir())
+                                .map(|entry| entry.path().join(".claude.json")),
+                        );
+                    }
+                    configs
+                };
                 swarm::bus::with_lock(&lock, || {
-                    swarm::bus::ensure_claude_trust(&config, &pane_dir)
+                    configs.iter().try_for_each(|config| {
+                        swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
+                    })
                 })?;
                 extra = args;
             }

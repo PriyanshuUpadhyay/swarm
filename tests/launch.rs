@@ -64,3 +64,89 @@ fn a_denied_herdr_socket_refuses_every_call_that_starts_a_run() {
     let output = swarm(&home, &herdr, &["session", "new", "lane"]);
     assert!(output.status.success(), "{}", stderr(&output));
 }
+
+fn trusted(config: &Path, dir: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(config) else {
+        return false;
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    value["projects"][dir.to_string_lossy().as_ref()]["hasTrustDialogAccepted"] == true
+}
+
+#[test]
+fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
+    let home = scratch("trust");
+    let profiles = ["a", "b"].map(|name| home.join(".claude/.profiles").join(name));
+    for dir in &profiles {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let rows: Vec<_> = profiles
+        .iter()
+        .zip(["a", "b"])
+        .map(|(dir, name)| {
+            serde_json::json!({"name": name, "dir": dir, "signed_in": true, "remaining": 50})
+        })
+        .collect();
+    tool(
+        &home,
+        "yelo",
+        &format!(
+            "case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{}' ;; esac",
+            serde_json::Value::from(rows)
+        ),
+    );
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"review.deep": ["claude-opus"]},
+            "runners": {"claude-opus": {"provider": "claude", "model": "opus", "effort": "high"}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(&home, &fake, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let launch = |seat: &str, repo: &str, account: Option<&str>| {
+        let cwd = home.join(repo);
+        std::fs::create_dir_all(&cwd).unwrap();
+        let cwd = cwd.to_string_lossy().into_owned();
+        let mut args = vec!["launch", seat, "review.deep", "--cwd", &cwd];
+        if let Some(account) = account {
+            args.extend(["--account", account]);
+        }
+        let output = swarm(&home, &env, &args);
+        assert!(output.status.success(), "{seat}: {}", stderr(&output));
+        home.join(repo).join(".herdr/workers")
+    };
+
+    // No --account: yelo's `claude` in the pane picks any profile, or ~/.claude.json without yelo.
+    let any = launch("seat-any", "any", None);
+    assert!(trusted(&home.join(".claude.json"), &any));
+    for dir in &profiles {
+        assert!(
+            trusted(&dir.join(".claude.json"), &any),
+            "{}",
+            dir.display()
+        );
+    }
+
+    // --account b: the pane gets b's CLAUDE_CONFIG_DIR, so only b's config needs the entry.
+    let only_b = launch("seat-b", "only-b", Some("b"));
+    assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
+    assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
+    assert!(!trusted(&home.join(".claude.json"), &only_b));
+}
