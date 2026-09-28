@@ -29,3 +29,41 @@ jobs:
       - run: scripts/public-safety.sh
         env:
           PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+
+  # swarm needs nothing from a dotfiles checkout: an empty HOME launches a chat and a shipped role.
+  # The stub agent CLIs keep the panes alive; `debug` fails so the model check is skipped.
+  clean-home:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y tmux
+      - run: cargo install --locked --path . --root "$RUNNER_TEMP/swarm"
+      - name: Launch with an empty HOME
+        run: |
+          mkdir "$RUNNER_TEMP/stub"
+          cat > "$RUNNER_TEMP/stub/claude" <<'STUB'
+          #!/bin/sh
+          [ "${1:-}" = debug ] && exit 1
+          exec sleep 300
+          STUB
+          cp "$RUNNER_TEMP/stub/claude" "$RUNNER_TEMP/stub/codex"
+          chmod +x "$RUNNER_TEMP"/stub/*
+          HOME=$(mktemp -d)
+          export HOME PATH="$RUNNER_TEMP/stub:$RUNNER_TEMP/swarm/bin:$PATH" SWARM_ADAPTER=tmux
+          tmux new-session -d
+          TMUX="$(tmux display -p '#{socket_path}'),1,0"
+          TMUX_PANE=$(tmux display -p '#{pane_id}')
+          export TMUX TMUX_PANE
+          swarm init
+          SWARM_SESSION_ID=$(swarm session new lane)
+          export SWARM_SESSION_ID SWARM_AGENT_ID=orchestrator
+          swarm agent add orchestrator orchestrator
+          chat=$(swarm launch chat-seat chat --provider claude --model claude-sonnet-5)
+          role=$(swarm launch role-seat code.complex)
+          for pane in "$chat" "$role"; do
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              [ "$(tmux display -p -t "$pane" '#{pane_current_command}')" = sleep ] && continue 2
+              sleep 1
+            done
+            echo "pane $pane never ran the agent CLI" >&2; exit 1
+          done
