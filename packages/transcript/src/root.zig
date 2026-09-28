@@ -375,9 +375,9 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         return events.items;
     }
     if (oneOf(record_type, &.{
-        "last-prompt",        "atis-latch",          "mode",                      "permission-mode",          "file-history-snapshot",
-        "file-history-delta", "queue-operation",     "pr-link",                   "bridge-session",
-        "frame-link",         "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",
+        "last-prompt",         "atis-latch",                "mode",                     "permission-mode", "file-history-snapshot",
+        "file-history-delta",  "queue-operation",           "pr-link",                  "bridge-session",  "frame-link",
+        "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;

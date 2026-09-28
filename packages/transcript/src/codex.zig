@@ -82,10 +82,10 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         } else if (std.mem.eql(u8, payload_type, "user_message")) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "event_msg/user_message" } });
         } else if (root.oneOf(payload_type, &.{
-            "agent_message",      "exec_command_end",        "patch_apply_end",
-            "mcp_tool_call_end",  "web_search_end",          "item_completed",
-            "thread_settings_applied", "entered_review_mode",
-            "exited_review_mode", "sub_agent_activity",
+            "agent_message",           "exec_command_end",    "patch_apply_end",
+            "mcp_tool_call_end",       "web_search_end",      "item_completed",
+            "thread_settings_applied", "entered_review_mode", "exited_review_mode",
+            "sub_agent_activity",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "event_msg/{s}", .{payload_type}) } });
         } else {
