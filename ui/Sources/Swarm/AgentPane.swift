@@ -9,12 +9,14 @@ import SwarmCore
 final class SwarmTerminalView: LocalProcessTerminalView {
     var onEnded: (() -> Void)?
     var onFocusChange: ((Bool) -> Void)?
+    var onAttach: (() -> Void)?
     private(set) var ended = false
     private var stopping = false
     private var scrolledOnAttach = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        optionAsMetaKey = true
         applySystemColors()
     }
 
@@ -60,6 +62,25 @@ final class SwarmTerminalView: LocalProcessTerminalView {
         super.send(source: source, data: data)
     }
 
+    // SwiftTerm's keyDown cannot be overridden from this module, and it takes every ⌘ key.
+    // Key equivalents arrive here first, so KeyRouting decides (docs/decisions/0023).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, let chord = KeyChord(event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        switch KeyRouting.route(focus: .terminal, key: chord) {
+        case .terminal, .ignore, .app(.stop):
+            // ⌘. belongs to the composer's stop button, which is not a menu item.
+            return super.performKeyEquivalent(with: event)
+        case .blocked:
+            return true
+        case .app:
+            // An app key never reaches the agent, also when its menu item is disabled.
+            _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
+            return true
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
@@ -76,7 +97,7 @@ final class SwarmTerminalView: LocalProcessTerminalView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { onFocusChange?(false) }
+        if window == nil { onFocusChange?(false) } else { onAttach?() }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -110,6 +131,10 @@ final class AgentPaneStore {
     private(set) var focusedKey: String?
     /// The pane that fills the main area. Keys set it; the strip only shows it.
     var zoomedKey: String?
+    /// The pane a key last moved focus to; the strip scrolls it into view.
+    private(set) var revealKey: String?
+    /// Focus waits here for a terminal that is not in a window yet, or that is moving hosts.
+    @ObservationIgnored private var pendingFocusKey: String?
 
     func clearFocus() { focusedKey = nil }
 
@@ -144,6 +169,11 @@ final class AgentPaneStore {
                 self.focusedKey = nil
             }
         }
+        terminal.onAttach = { [weak self, weak terminal] in
+            guard let self, let terminal, self.pendingFocusKey == key else { return }
+            self.pendingFocusKey = nil
+            Task { @MainActor in terminal.window?.makeFirstResponder(terminal) }
+        }
         terminal.start(launch())
         terminals[key] = terminal
         return terminal
@@ -159,10 +189,42 @@ final class AgentPaneStore {
         reconnect(key: key(session: session, agent: agent), launch: attachLaunch(session: session, agent: agent))
     }
 
+    /// Focuses the terminal now, or when it next enters a window.
     func focus(key: String) {
-        guard let terminal = terminals[key] else { return }
-        terminal.window?.makeFirstResponder(terminal)
+        revealKey = key
+        if let terminal = terminals[key], let window = terminal.window {
+            window.makeFirstResponder(terminal)
+        } else {
+            pendingFocusKey = key
+        }
     }
+
+    /// Moves focus among `keys`, in strip order. Returns false when focus lands on the chat page,
+    /// which the caller focuses.
+    func moveFocus(_ direction: FocusDirection, among keys: [String]) -> Bool {
+        let current = keys.firstIndex { $0 == focusedKey }.map(PaneStripLayout.Focus.pane) ?? .chat
+        switch PaneStripLayout.move(from: current, count: keys.count, direction: direction) {
+        case .chat:
+            revealKey = nil
+            return false
+        case .pane(let index):
+            focus(key: keys[index])
+            return true
+        }
+    }
+
+    /// Zooms the focused pane, or returns the zoomed one to the strip. The terminal moves to a
+    /// new host either way, so it takes focus again when it arrives.
+    func toggleZoom() {
+        guard let key = zoomedKey ?? focusedKey else { return }
+        zoomedKey = zoomedKey == nil ? key : nil
+        pendingFocusKey = key
+    }
+
+    /// The strip shows the chat page again, as when focus moves to it.
+    func revealChat() { revealKey = nil }
+
+    func optionAsMeta(key: String) -> Bool? { terminals[key]?.optionAsMetaKey }
 
     /// Stops every terminal outside `session`, so a chat or workspace switch frees the old panes.
     func stop(keepingSession session: SwarmSessionID?) {
@@ -172,6 +234,8 @@ final class AgentPaneStore {
             ended.remove(key)
             if focusedKey == key { focusedKey = nil }
             if zoomedKey == key { zoomedKey = nil }
+            if revealKey == key { revealKey = nil }
+            if pendingFocusKey == key { pendingFocusKey = nil }
             stop(terminal)
         }
     }

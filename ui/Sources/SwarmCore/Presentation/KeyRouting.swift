@@ -4,25 +4,125 @@ public enum FocusedSurface: Sendable {
     case terminal, transcript, sidebar
 }
 
-public enum RoutedKey: Sendable, Equatable {
-    case escape, commandN, commandF, commandG, shiftCommandG, other
+/// One key press: the key without modifiers, and the modifiers held.
+public struct KeyChord: Sendable, Hashable {
+    public enum Key: Sendable, Hashable {
+        case character(Character)
+        case returnKey, escape, left, right, up, down
+    }
+
+    public struct Modifiers: OptionSet, Sendable, Hashable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+        public static let command = Modifiers(rawValue: 1)
+        public static let shift = Modifiers(rawValue: 2)
+        public static let option = Modifiers(rawValue: 4)
+        public static let control = Modifiers(rawValue: 8)
+    }
+
+    public var key: Key
+    public var modifiers: Modifiers
+
+    public init(_ key: Key, _ modifiers: Modifiers = []) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+
+    public init(_ character: Character, _ modifiers: Modifiers = []) {
+        self.init(.character(character), modifiers)
+    }
+}
+
+extension KeyChord {
+    /// A test chord from text such as "opt+cmd+right" or "cmd+1"; nil for a word it does not know.
+    public init?(script: String) {
+        var modifiers: Modifiers = []
+        var key: Key?
+        for part in script.lowercased().split(separator: "+") {
+            switch part {
+            case "cmd": modifiers.insert(.command)
+            case "shift": modifiers.insert(.shift)
+            case "opt": modifiers.insert(.option)
+            case "ctrl": modifiers.insert(.control)
+            case "return": key = .returnKey
+            case "esc": key = .escape
+            case "left": key = .left
+            case "right": key = .right
+            case "up": key = .up
+            case "down": key = .down
+            case _ where part.count == 1: key = .character(part.first!)
+            default: return nil
+            }
+        }
+        guard let key else { return nil }
+        self.init(key, modifiers)
+    }
+}
+
+public enum FocusDirection: Sendable, Hashable, CaseIterable {
+    case left, right, up, down
+}
+
+/// Every app action that has a key (docs/decisions/0023). The menu takes its keys from `chord`.
+public enum AppKey: Sendable, Hashable {
+    case newChat, newWorkspace, nextWorkspace, previousWorkspace
+    case selectTab(Int), nextTab, previousTab
+    case moveFocus(FocusDirection), zoom, focusComposer
+    case toggleSidebar, moveSidebar, sidebarView(Int), showChanges
+    case search, find, findNext, findPrevious, stop
+
+    public static let table: [(AppKey, KeyChord)] = [
+        (.newChat, KeyChord("n", .command)),
+        (.newWorkspace, KeyChord("n", [.command, .shift])),
+        (.nextWorkspace, KeyChord(.down, [.control, .command])),
+        (.previousWorkspace, KeyChord(.up, [.control, .command])),
+        (.nextTab, KeyChord("]", [.command, .shift])),
+        (.previousTab, KeyChord("[", [.command, .shift])),
+        (.moveFocus(.left), KeyChord(.left, [.option, .command])),
+        (.moveFocus(.right), KeyChord(.right, [.option, .command])),
+        (.moveFocus(.up), KeyChord(.up, [.option, .command])),
+        (.moveFocus(.down), KeyChord(.down, [.option, .command])),
+        (.zoom, KeyChord(.returnKey, .command)),
+        (.focusComposer, KeyChord("l", .command)),
+        (.toggleSidebar, KeyChord("b", .command)),
+        (.moveSidebar, KeyChord("b", [.command, .shift])),
+        (.showChanges, KeyChord("i", [.option, .command])),
+        (.search, KeyChord("k", .command)),
+        (.find, KeyChord("f", .command)),
+        (.findNext, KeyChord("g", .command)),
+        (.findPrevious, KeyChord("g", [.command, .shift])),
+        (.stop, KeyChord(".", .command)),
+    ] + (1...9).map { (.selectTab($0), KeyChord(Character(String($0)), .command)) }
+      + (1...5).map { (.sidebarView($0), KeyChord(Character(String($0)), [.option, .command])) }
+
+    public var chord: KeyChord { Self.table.first { $0.0 == self }!.1 }
+
+    public static func action(for chord: KeyChord) -> AppKey? {
+        table.first { $0.1 == chord }?.0
+    }
 }
 
 public enum KeyRoute: Sendable, Equatable {
-    case terminal, openNewWorkspace
-    case openFind, findNext, findPrevious, ignore
+    case app(AppKey)
+    /// Goes to the focused terminal as the agent's input.
+    case terminal
+    /// Taken by no one, such as ⌥⌘O, which would flip the terminal's Option-as-Meta.
+    case blocked
+    case ignore
 }
 
 public enum KeyRouting {
-    public static func route(focus: FocusedSurface, key: RoutedKey) -> KeyRoute {
-        if key == .commandN { return .openNewWorkspace }
-        return switch (focus, key) {
-        case (.terminal, _): .terminal
-        case (.transcript, .commandF): .openFind
-        case (.transcript, .commandG): .findNext
-        case (.transcript, .shiftCommandG): .findPrevious
-        default: .ignore
+    static let blocked: Set<KeyChord> = [KeyChord("o", [.option, .command])]
+
+    /// App keys win in every focus. In a terminal, find keys use the terminal's own find, and
+    /// every key the app does not list, such as ⌃C, Esc, or ⌘←, goes to the agent.
+    public static func route(focus: FocusedSurface, key: KeyChord) -> KeyRoute {
+        if blocked.contains(key) { return .blocked }
+        if let action = AppKey.action(for: key) {
+            if focus == .terminal, [.find, .findNext, .findPrevious].contains(action) { return .terminal }
+            return .app(action)
         }
+        return focus == .terminal ? .terminal : .ignore
     }
 }
 

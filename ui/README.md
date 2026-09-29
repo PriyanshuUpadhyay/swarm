@@ -57,10 +57,18 @@ The picker reports each step. Cancel stops the switch before the new agent start
 agent may still finish its summary. After launch, cancellation is disabled until the operation
 finishes. The chats are linked only after the new agent receives the context.
 
-One sidebar switches between Workspaces, Files, Changes, PR, and Usage. The toolbar menu moves
-it left or right; ⌘B hides or shows it, and ⌥⌘I opens Changes. Drag its inner edge to resize it.
-Its side, width, and selected view survive restarts. The composer usage line selects Usage.
+One sidebar switches between Workspaces, Files, Changes, PR, and Usage. ⇧⌘B or the toolbar menu
+moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘5 pick a view, and ⌥⌘I opens Changes.
+Drag its inner edge to resize it. Its side, width, and selected view survive restarts. The composer usage line selects Usage.
 Reads run when a view opens or Refresh is pressed; they do not fetch or change Git.
+
+Every app key is a menu command, so it works while an agent pane has focus. ⌘N starts a chat
+in the workspace and ⇧⌘N a new workspace. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
+a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat
+and the panes, and the strip scrolls to the focused pane. ⌘↩ zooms the focused pane and returns
+it. ⌘L focuses the composer, and ⌘K searches workspaces. ⌘F, ⌘G, and ⇧⌘G find in the chat or
+in the focused pane. A pane gets every other key, including all ⌃ keys, Esc, and ⌘← and ⌘→.
+⌥⌘O goes nowhere, so the pane keeps Option as Meta.
 
 Files lists folders on demand, includes hidden files, and omits `.git`. File previews are read-only,
 limited to 256 KiB, and do not follow symbolic links. Each folder lists at most 2,000 entries and

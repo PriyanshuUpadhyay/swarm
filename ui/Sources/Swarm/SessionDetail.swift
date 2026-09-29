@@ -501,10 +501,7 @@ struct SessionDetailView: View {
         // Scene-wide, so the menu finds the transcript without it holding keyboard focus.
         .background {
             if isVisible {
-                Color.clear.focusedSceneValue(\.paneFindActions, PaneFindActions(
-                    terminalFocused: panes.focusedKey != nil,
-                    open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
-                ))
+                Color.clear.focusedSceneValue(\.chatKeyActions, chatKeyActions)
             }
         }
         .task(id: searchRequest) {
@@ -686,7 +683,6 @@ struct SessionDetailView: View {
     }
 
     private func openFind() {
-        guard KeyRouting.route(focus: .transcript, key: .commandF) == .openFind else { return }
         findPresented = true
         resetFindSelection()
         Task { @MainActor in findFieldFocused = true }
@@ -700,9 +696,6 @@ struct SessionDetailView: View {
 
     private func stepFind(_ delta: Int) {
         guard !isSearching else { return }
-        let key: RoutedKey = delta < 0 ? .shiftCommandG : .commandG
-        let expected: KeyRoute = delta < 0 ? .findPrevious : .findNext
-        guard KeyRouting.route(focus: .transcript, key: key) == expected else { return }
         let index = PaneSearch.step(current: findIndex, count: findMatches.count, delta: delta)
         findMatchID = index.map { findMatches[$0] }
         pendingScrollID = currentMatchID
@@ -711,6 +704,31 @@ struct SessionDetailView: View {
     private func resetFindSelection() {
         findMatchID = findMatches.first
         pendingScrollID = findMatches.first
+    }
+
+    private var paneKeys: [String] {
+        guard isActive else { return [] }
+        return SwarmPanePolicy.cells(session: row.session, agents: agents).map {
+            AgentPaneStore.key(session: row.session.id, agent: $0.agent.id.rawValue)
+        }
+    }
+
+    private var chatKeyActions: ChatKeyActions {
+        let keys = paneKeys
+        return ChatKeyActions(
+            terminalFocused: panes.focusedKey != nil,
+            open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) },
+            focusComposer: {
+                panes.revealChat()
+                composerFocused = true
+            },
+            moveFocus: { direction in
+                guard !panes.moveFocus(direction, among: keys) else { return }
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                transcriptFocused = true
+            },
+            zoom: { panes.toggleZoom() }
+        )
     }
 
     private var paneStrip: some View {
@@ -729,6 +747,7 @@ struct SessionDetailView: View {
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
             zoomedID: agentCells.first { key($0.agent.id.rawValue) == panes.zoomedKey }?.agent.id.rawValue,
+            revealID: agentCells.first { key($0.agent.id.rawValue) == panes.revealKey }?.agent.id.rawValue,
             onFocus: { panes.focus(key: key($0)) },
             onZoom: { panes.zoomedKey = $0.map(key) },
             onReconnect: { id in

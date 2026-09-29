@@ -18,6 +18,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let cells: [PaneCell]
     let focusedID: String?
     let zoomedID: String?
+    /// The pane a key moved focus to; nil shows the chat page. The strip scrolls to it.
+    let revealID: String?
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
     let onReconnect: (String) -> Void
@@ -29,34 +31,44 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         let zoomed = cells.first { $0.id == zoomedID }
         ZStack {
             // The chat stays in the scroll view with no panes, so it keeps its identity and state.
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    chat()
-                        .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
-                            axis == .horizontal && hasPanes ? PaneStripLayout.widths(main: length).chat : length
-                        }
-                    ForEach(columns, id: \.first?.id) { column in
-                        VStack(spacing: 0) {
-                            ForEach(column) { cell in
-                                paneView(cell, showsContent: cell.id != zoomed?.id)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 0) {
+                        chat()
+                            .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
+                                axis == .horizontal && hasPanes ? PaneStripLayout.widths(main: length).chat : length
+                            }
+                            .id(Self.chatID)
+                        ForEach(columns, id: \.[0].id) { column in
+                            VStack(spacing: 0) {
+                                ForEach(column) { cell in
+                                    paneView(cell, showsContent: cell.id != zoomed?.id)
+                                }
+                            }
+                            .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
+                                axis == .horizontal ? PaneStripLayout.widths(main: length).column : length
                             }
                         }
-                        .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
-                            axis == .horizontal ? PaneStripLayout.widths(main: length).column : length
-                        }
                     }
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
+                .scrollTargetBehavior(.viewAligned)
+                .scrollDisabled(!hasPanes)
+                .scrollIndicators(hasPanes ? .automatic : .hidden)
+                .onChange(of: revealID) { _, id in
+                    // No animation: a key moved focus here.
+                    let column = columns.first { $0.contains { $0.id == id } }?.first?.id
+                    proxy.scrollTo(column ?? Self.chatID)
+                }
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollDisabled(!hasPanes)
-            .scrollIndicators(hasPanes ? .automatic : .hidden)
             .retainedVisibility(zoomed == nil)
             if let zoomed {
                 paneView(zoomed, showsContent: true)
             }
         }
     }
+
+    private static var chatID: String { "pane-strip-chat" }
 
     private var columns: [[PaneCell]] {
         PaneStripLayout.columns(count: cells.count).map { $0.map { cells[$0] } }

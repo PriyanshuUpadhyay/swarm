@@ -3,24 +3,6 @@ import Observation
 import SwiftUI
 import SwarmCore
 
-struct PaneFindActions {
-    var terminalFocused: Bool
-    var open: () -> Void
-    var next: () -> Void
-    var previous: () -> Void
-}
-
-private struct PaneFindActionsKey: FocusedValueKey {
-    typealias Value = PaneFindActions
-}
-
-extension FocusedValues {
-    var paneFindActions: PaneFindActions? {
-        get { self[PaneFindActionsKey.self] }
-        set { self[PaneFindActionsKey.self] = newValue }
-    }
-}
-
 @MainActor @Observable
 final class SessionsTreeModel {
     private let bus = SwarmCLIBus()
@@ -374,16 +356,15 @@ private struct SessionsWindow: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button { sidebarVisible.toggle() } label: { Label("Toggle sidebar", systemImage: sidebarOnRight ? "sidebar.right" : "sidebar.left") }
-                    .keyboardShortcut("b", modifiers: .command)
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button(sidebarOnRight ? "Move sidebar left" : "Move sidebar right") { sidebarOnRight.toggle() }
                     Button("Show changes") { storedSidebarMode = WorkspaceSidebarMode.changes.rawValue; sidebarVisible = true }
-                        .keyboardShortcut("i", modifiers: [.command, .option])
                 } label: { Label("Sidebar options", systemImage: "ellipsis") }
             }
         }
+        .focusedSceneValue(\.windowKeyActions, keyActions)
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
@@ -533,6 +514,58 @@ private struct SessionsWindow: View {
         }
     }
 
+    private func toggleSearch() {
+        searching.toggle()
+        searchFocused = searching
+        if !searching { search = "" }
+    }
+
+    private var keyActions: WindowKeyActions {
+        WindowKeyActions(
+            newChat: workspaceDirectory.map { directory in { newChatDirectory = directory } },
+            newWorkspace: { showingCreate = true },
+            stepWorkspace: { delta in
+                let order = visibleWorkspaces.filter { model.navigation.pinned.contains($0.id) }
+                    + visibleWorkspaces.filter { !model.navigation.pinned.contains($0.id) }
+                let listed = order.filter { !model.navigation.archived.contains($0.id) }
+                let current = listed.firstIndex { $0.id == model.selectedWorkspace?.id }
+                guard let index = PaneSearch.step(current: current, count: listed.count, delta: delta) else { return }
+                selectedProjectID = nil
+                model.selectWorkspace(listed[index])
+            },
+            selectTab: { number in
+                guard let row = model.selectedSession else { return }
+                let chats = model.tree.workspaceChats(for: row.id)
+                if chats.indices.contains(number - 1) { model.select(chats[number - 1].id) }
+            },
+            stepTab: { delta in
+                guard let row = model.selectedSession else { return }
+                let chats = model.tree.workspaceChats(for: row.id)
+                let current = chats.firstIndex { $0.id == row.id }
+                if let index = PaneSearch.step(current: current, count: chats.count, delta: delta) {
+                    model.select(chats[index].id)
+                }
+            },
+            toggleSidebar: { sidebarVisible.toggle() },
+            moveSidebar: { sidebarOnRight.toggle() },
+            sidebarView: { number in
+                let mode = WorkspaceSidebarMode.allCases[number - 1]
+                storedSidebarMode = mode.rawValue
+                sidebarVisible = true
+                if mode == .workspaces { documentVisible = false }
+            },
+            showChanges: {
+                storedSidebarMode = WorkspaceSidebarMode.changes.rawValue
+                sidebarVisible = true
+            },
+            search: {
+                storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+                sidebarVisible = true
+                toggleSearch()
+            }
+        )
+    }
+
     private func openDocument(_ value: WorkspaceDocument) {
         NSApp.keyWindow?.makeFirstResponder(nil)
         panes.clearFocus()
@@ -554,18 +587,8 @@ private struct SessionsWindow: View {
                     showingArchive = false
                     model.showHome()
                 } label: { Label("Home", systemImage: "house") }
-                Button {
-                    if KeyRouting.route(focus: .sidebar, key: .commandN) == .openNewWorkspace {
-                        showingCreate = true
-                    }
-                } label: { Label("Create", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button {
-                    searching.toggle()
-                    searchFocused = searching
-                    if !searching { search = "" }
-                } label: { Label("Search", systemImage: "magnifyingglass") }
-                    .keyboardShortcut("k", modifiers: .command)
+                Button { showingCreate = true } label: { Label("Create", systemImage: "plus") }
+                Button(action: toggleSearch) { Label("Search", systemImage: "magnifyingglass") }
                 if searching {
                     TextField("Search workspaces", text: $search)
                         .textFieldStyle(.roundedBorder)
@@ -1124,7 +1147,7 @@ struct SwarmApp: App {
         }
             .commands {
                 DebugCommands()
-                PaneFindCommands()
+                AppKeyCommands()
             }
     }
 }
@@ -1138,38 +1161,6 @@ private struct DebugCommands: Commands {
             Toggle("Show Raw Data", isOn: $showRawData)
                 .keyboardShortcut("r", modifiers: [.command, .option])
             Toggle("Performance Logging", isOn: $performanceLogging)
-        }
-    }
-}
-
-private struct PaneFindCommands: Commands {
-    @FocusedValue(\.paneFindActions) private var actions
-
-    var body: some Commands {
-        CommandGroup(after: .textEditing) {
-            Divider()
-            Button("Find…") { route(.commandF, action: .showFindPanel) }
-                .keyboardShortcut("f", modifiers: .command)
-            Button("Find Next") { route(.commandG, action: .next) }
-                .keyboardShortcut("g", modifiers: .command)
-            Button("Find Previous") { route(.shiftCommandG, action: .previous) }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-        }
-    }
-
-    private func route(_ key: RoutedKey, action: NSFindPanelAction) {
-        let focus: FocusedSurface = actions?.terminalFocused == false ? .transcript : .terminal
-        switch KeyRouting.route(focus: focus, key: key) {
-        case .openFind: actions?.open()
-        case .findNext: actions?.next()
-        case .findPrevious: actions?.previous()
-        case .terminal:
-            let item = NSMenuItem()
-            item.tag = Int(action.rawValue)
-            NSApp.sendAction(
-                #selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item
-            )
-        default: break
         }
     }
 }
