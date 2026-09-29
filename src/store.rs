@@ -16,6 +16,7 @@ pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Err
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001.sql"),
     include_str!("../migrations/0002.sql"),
+    include_str!("../migrations/0003.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -24,14 +25,17 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
         tx.execute_batch(MIGRATIONS[0])?;
-    } else if version != 1 && version != 2 {
+    } else if !(1..=3).contains(&version) {
         return Err(
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
     }
     if version < 2 {
         tx.execute_batch(MIGRATIONS[1])?;
-        tx.pragma_update(None, "user_version", 2)?;
+    }
+    if version < 3 {
+        tx.execute_batch(MIGRATIONS[2])?;
+        tx.pragma_update(None, "user_version", 3)?;
     }
 
     tx.commit()?;
@@ -430,6 +434,29 @@ pub struct AgentRow {
     pub pane: Option<String>,
     pub provider: Option<String>,
     pub created_at: i64,
+    pub state: Option<String>,
+    pub state_at: Option<i64>,
+    pub state_source: Option<String>,
+    pub state_detail: Option<String>,
+}
+
+/// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
+/// states and sources.
+pub fn set_state(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    state: &str,
+    source: &str,
+    detail: Option<&str>,
+    now: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5, state_at = ?6
+         WHERE session_id = ?1 AND id = ?2",
+        (session_id, agent_id, state, source, detail, now),
+    )?;
+    Ok(())
 }
 
 pub fn agents(
@@ -437,7 +464,8 @@ pub fn agents(
     session_id: &str,
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT id, role, pane_id, provider, created_at FROM agent WHERE session_id = ?1 ORDER BY id",
+        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail
+         FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
         Ok(AgentRow {
@@ -446,6 +474,10 @@ pub fn agents(
             pane: row.get(2)?,
             provider: row.get(3)?,
             created_at: row.get(4)?,
+            state: row.get(5)?,
+            state_at: row.get(6)?,
+            state_source: row.get(7)?,
+            state_detail: row.get(8)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -1290,7 +1322,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -1299,6 +1331,55 @@ mod tests {
             Some(old.as_str())
         );
         assert!(continue_session(&connection, &old, &new).is_err());
+    }
+
+    #[test]
+    fn migration_adds_agent_state_to_a_version_two_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(MIGRATIONS[0]).unwrap();
+        connection.execute_batch(MIGRATIONS[1]).unwrap();
+        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role) VALUES ('{CODER}', '{SESSION}', 'coder');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state, None);
+        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
+        let coder = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state_at, Some(1_700));
+        assert_eq!(coder.state_source.as_deref(), Some("hook"));
+    }
+
+    #[test]
+    fn sets_state_only_for_one_agent_and_refuses_unknown_values() {
+        let connection = seed(0);
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "failed",
+            "hook",
+            Some("rate_limit"),
+            42,
+        )
+        .unwrap();
+        let rows = agents(&connection, SESSION).unwrap();
+        let coder = rows.iter().find(|row| row.id == CODER).unwrap();
+        let orchestrator = rows.iter().find(|row| row.id == ORCHESTRATOR).unwrap();
+        assert_eq!(coder.state.as_deref(), Some("failed"));
+        assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
+        assert_eq!(orchestrator.state, None);
+        assert!(set_state(&connection, SESSION, CODER, "asleep", "hook", None, 42).is_err());
+        assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, 42).is_err());
     }
 
     #[test]
@@ -1316,5 +1397,10 @@ mod tests {
             open(&db).unwrap_err().to_string(),
             "database made by another swarm build; use another SWARM_HOME or delete it"
         );
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA user_version = 4")
+            .unwrap();
+        assert!(open(&db).is_err());
     }
 }
