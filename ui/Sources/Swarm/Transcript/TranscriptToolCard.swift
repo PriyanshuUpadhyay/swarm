@@ -13,16 +13,50 @@ struct TranscriptToolCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DisclosureGroup(isExpanded: $expanded) {
-                VStack(alignment: .leading, spacing: 12) {
+            // One line when closed: glyph, tool, target, duration, result. Click or Space opens it.
+            Button { expanded.toggle() } label: {
+                HStack(spacing: DesignTokens.Spacing.s) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Image(systemName: activity.command == nil ? "wrench.and.screwdriver" : "terminal")
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: activity.name).fontWeight(.medium).lineLimit(1).layoutPriority(1)
+                    if let target {
+                        Text(verbatim: target)
+                            .font(DesignTokens.mono)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: DesignTokens.Spacing.s)
+                    if let duration = activity.duration {
+                        Text(TranscriptToolActivity.durationLabel(duration))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: stateSymbol)
+                        .foregroundStyle(stateColor)
+                        .help(stateLabel + ". The status describes the tool result; read the output for verification results.")
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(activity.name) \(target ?? ""), \(stateLabel)")
+            .accessibilityHint(expanded ? "Hides the tool details" : "Shows the tool details")
+            .accessibilityIdentifier("transcript-tool-card")
+            if expanded {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                    Text(verbatim: title).font(.callout).foregroundStyle(.secondary)
                     if let command = activity.command {
                         TranscriptOutputView(text: command, title: "Command")
                     }
                     if let path = activity.path {
                         HStack {
-                            Text(verbatim: path).font(.caption.monospaced())
+                            Text(verbatim: path).font(DesignTokens.mono)
                                 .textSelection(.enabled)
-                            Spacer(minLength: 8)
+                            Spacer(minLength: DesignTokens.Spacing.s)
                             if path.hasPrefix("/") {
                                 Button(revealingFile ? "Opening Finder…" : "Reveal file", systemImage: "folder") {
                                     revealingFile = true
@@ -51,32 +85,13 @@ struct TranscriptToolCard: View {
                     }
                     .font(.caption)
                 }
-                .padding(.top, 10)
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: activity.command == nil ? "wrench.and.screwdriver" : "terminal")
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(verbatim: title).font(.callout.weight(.medium)).lineLimit(2)
-                        if let command = activity.command.map({ String($0.prefix(200).prefix(while: { !$0.isNewline })) }),
-                           !command.isEmpty, !title.contains(command) {
-                            Text(verbatim: command).font(.caption.monospaced())
-                                .foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    Label(stateLabel, systemImage: stateSymbol)
-                        .font(.caption).foregroundStyle(stateColor)
-                        .fixedSize()
-                        .help("The status describes the tool result. Read the output for verification results.")
-                }
-                .padding(.vertical, 2)
+                .padding(.top, DesignTokens.Spacing.s)
+                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
             }
-            .accessibilityIdentifier("transcript-tool-card")
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary))
+        .padding(.horizontal, DesignTokens.Spacing.s)
+        .padding(.vertical, DesignTokens.Spacing.xs)
+        .background(expanded ? DesignTokens.userMessageFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         .buttonStyle(.borderless)
         .onAppear {
             if activity.state == .failed || revealForSearch { expanded = true }
@@ -86,6 +101,13 @@ struct TranscriptToolCard: View {
         .onChange(of: revealForSearch) { _, reveal in
             if reveal { expanded = true; inputExpanded = true }
         }
+    }
+
+    /// The file name, or the command's first line.
+    private var target: String? {
+        if let path = activity.path { return (path as NSString).lastPathComponent }
+        return activity.command.map { String($0.prefix(200).prefix(while: { !$0.isNewline })) }
+            .flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private var stateLabel: String {

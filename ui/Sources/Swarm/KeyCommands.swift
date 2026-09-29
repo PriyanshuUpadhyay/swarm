@@ -63,9 +63,6 @@ struct WindowKeyActions {
 /// Actions of the visible chat page and its panes.
 struct ChatKeyActions {
     var terminalFocused: Bool
-    var open: () -> Void
-    var next: () -> Void
-    var previous: () -> Void
     var focusComposer: () -> Void
     var moveFocus: (FocusDirection) -> Void
     var zoom: () -> Void
@@ -83,6 +80,7 @@ extension FocusedValues {
 struct AppKeyCommands: Commands {
     @FocusedValue(\.windowKeyActions) private var window
     @FocusedValue(\.chatKeyActions) private var chat
+    @FocusedValue(\.transcriptFindActions) private var transcript
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -141,9 +139,9 @@ struct AppKeyCommands: Commands {
     private func route(_ key: AppKey, action: NSFindPanelAction) {
         let focus: FocusedSurface = chat?.terminalFocused == false ? .transcript : .terminal
         switch KeyRouting.route(focus: focus, key: key.chord) {
-        case .app(.find): chat?.open()
-        case .app(.findNext): chat?.next()
-        case .app(.findPrevious): chat?.previous()
+        case .app(.find): transcript?.open()
+        case .app(.findNext): transcript?.next()
+        case .app(.findPrevious): transcript?.previous()
         case .terminal:
             let item = NSMenuItem()
             item.tag = Int(action.rawValue)
