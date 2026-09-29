@@ -45,9 +45,15 @@ cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/trans
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
-# The app picks its swarm home from this branch; see SwarmHome and ADR 0027.
-/usr/libexec/PlistBuddy -c "Add :SwarmBuildBranch string $(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" \
-  "$app/Contents/Info.plist"
+# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. A detached HEAD is
+# "" (no branch). plutil takes the value as one argv string, so no quote in a branch name is parsed;
+# the read-back refuses a build whose plist says another branch.
+branch="$(git -C "$repo" symbolic-ref --short -q HEAD || true)"
+plutil -insert SwarmBuildBranch -string "$branch" "$app/Contents/Info.plist"
+if [[ "$(plutil -extract SwarmBuildBranch raw -o - "$app/Contents/Info.plist")" != "$branch" ]]; then
+  print -u2 "SwarmBuildBranch in Info.plist does not read back as '$branch'"
+  exit 1
+fi
 codesign --force --deep -s - "$app"
 print "==> $app"
 
