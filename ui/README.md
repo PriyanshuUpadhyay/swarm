@@ -62,6 +62,10 @@ moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘5 pick a view, 
 Drag its inner edge to resize it. Its side, width, and selected view survive restarts. The composer usage line selects Usage.
 Reads run when a view opens or Refresh is pressed; they do not fetch or change Git.
 
+Agent panes sit in columns to the right of the chat. Drag a column's right edge to set the width
+of every column, or the line inside a two-pane column to split it; a double-click resets either.
+The width and splits survive restarts.
+
 Every app key is a menu command, so it works while an agent pane has focus. ⌘N starts a chat
 in the workspace and ⇧⌘N a new workspace. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
 a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat

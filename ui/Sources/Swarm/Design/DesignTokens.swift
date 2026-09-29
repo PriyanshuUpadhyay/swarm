@@ -46,7 +46,7 @@ enum DesignTokens {
         static let collapsedOutput: CGFloat = 44
         static let segmentedPicker: CGFloat = 150
         static let quoteBar: CGFloat = 3
-        /// The sidebar's resize grip.
+        /// A resize grip's hit area: the sidebar edge and the pane strip dividers.
         static let dragHandle: CGFloat = 7
         /// The command palette and its result list.
         static let palette: CGFloat = 640
