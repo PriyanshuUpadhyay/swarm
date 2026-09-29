@@ -191,18 +191,21 @@ fn codex_failure(lines: &[&str]) -> Option<String> {
 
 /// What one screen read shows, with a failure's message. `screen` is the adapter's screen verb
 /// output: Herdr's status JSON or the pane's bottom rows. Herdr's status has no failure, so an
-/// idle Herdr pane also has its text read through `capture` for the provider's error row.
+/// idle Codex pane on Herdr also has its text read through `capture` for the error row; when
+/// that read fails, the pane is unknown.
 pub fn read_pane(
     provider: &str,
     screen: &str,
     capture: impl FnOnce() -> Option<String>,
 ) -> Option<(ScreenState, Option<String>)> {
     if let Some(state) = herdr_state(screen) {
-        if state != ScreenState::Idle {
+        // Only Codex shows a failure as an error row; an idle status needs no text otherwise.
+        if state != ScreenState::Idle || provider != "codex" {
             return Some((state, None));
         }
-        let detail = capture().and_then(|text| failure_detail(provider, &text));
-        return Some(match detail {
+        // A read that fails or runs late proves nothing, so the pane is unknown, not idle.
+        let text = capture()?;
+        return Some(match failure_detail(provider, &text) {
             Some(detail) => (ScreenState::Failed, Some(detail)),
             None => (state, None),
         });
@@ -338,8 +341,18 @@ mod tests {
             read_pane("codex", idle, || Some(fixture!("codex-idle").to_string())),
             Some((ScreenState::Idle, None))
         );
+        // A failed or late text read proves nothing, so the pane is unknown, not idle, and a
+        // failure the screen stored stays with nothing written.
+        assert_eq!(read_pane("codex", idle, || None), None);
+        let unknown = read_pane("codex", idle, || None).map(|(state, _)| state);
         assert_eq!(
-            read_pane("codex", idle, || None),
+            resolve(Some("failed"), Some(900), Some("screen"), unknown, 1_000),
+            (Some("failed".into()), None)
+        );
+        // Only Codex has an error row to look for; other providers keep Herdr's idle.
+        let no_read = || -> Option<String> { panic!("no text read for claude") };
+        assert_eq!(
+            read_pane("claude", idle, no_read),
             Some((ScreenState::Idle, None))
         );
         let never = || -> Option<String> { panic!("a working pane needs no text read") };
