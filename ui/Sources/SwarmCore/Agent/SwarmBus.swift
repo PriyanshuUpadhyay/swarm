@@ -18,10 +18,17 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     public var pane: String?
     public var alive: Bool?
     public var createdAt: Int?
+    /// working, waiting, done, failed, or null. Text, so a new value still decodes; views read
+    /// `status`.
+    public var state: String?
+    public var stateAtS: Int?
+    /// hook or screen.
+    public var stateSource: String?
+    public var stateDetail: String?
 
     public init(
         id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
-        provider: String? = nil, createdAt: Int? = nil
+        provider: String? = nil, createdAt: Int? = nil, state: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -29,6 +36,7 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
         self.pane = pane
         self.alive = alive
         self.createdAt = createdAt
+        self.state = state
     }
 }
 
