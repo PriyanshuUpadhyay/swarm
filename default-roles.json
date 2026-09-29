@@ -116,6 +116,63 @@
       "model": "gemini-3.8-flash-medium",
       "effort": "medium",
       "permission": "skip"
+    },
+    "codex-astra-xhigh-agent": {
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "effort": "xhigh",
+      "sandbox": "workspace-write",
+      "approval": "never"
+    },
+    "codex-sol-medium-agent": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "sandbox": "workspace-write",
+      "approval": "never"
+    },
+    "claude-fable-high-agent": {
+      "provider": "claude",
+      "model": "claude-fable-5-1",
+      "effort": "high",
+      "permission": "auto"
     }
+  },
+  "substitutes": {
+    "claude-fable-xhigh-agent": [
+      "codex-astra-xhigh-agent"
+    ],
+    "claude-opus-xhigh-agent": [
+      "codex-sol-xhigh-agent"
+    ],
+    "claude-opus-high-agent": [
+      "codex-sol-high-agent"
+    ],
+    "claude-sonnet-high-agent": [
+      "codex-sol-high-agent"
+    ],
+    "claude-sonnet-medium-agent": [
+      "codex-sol-medium-agent"
+    ],
+    "codex-astra-high-agent": [
+      "claude-fable-high-agent"
+    ],
+    "codex-sol-xhigh-agent": [
+      "claude-opus-xhigh-agent"
+    ],
+    "codex-sol-high-agent": [
+      "claude-opus-high-agent"
+    ],
+    "codex-luna-low-agent": [
+      "claude-sonnet-medium-agent"
+    ],
+    "agy-flash-high-agent": [
+      "claude-sonnet-high-agent",
+      "codex-sol-high-agent"
+    ],
+    "agy-flash-medium-agent": [
+      "codex-luna-low-agent",
+      "claude-sonnet-medium-agent"
+    ]
   }
 }
