@@ -389,7 +389,10 @@ private struct SessionsWindow: View {
             if id != nil { selectedProjectID = nil }
         }
         .background(WindowFrameRestorer())
-        .task { if SwarmOpenScript.isActive { await runOpenScript() } }
+        .task {
+            if SwarmOpenScript.opensPalette { showingPalette = true }
+            if SwarmOpenScript.isActive { await runOpenScript() }
+        }
         .task {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()

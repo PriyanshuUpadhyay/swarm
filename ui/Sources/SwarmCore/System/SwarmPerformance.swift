@@ -63,6 +63,11 @@ public enum SwarmOpenScript {
 
     public static var isActive: Bool { rounds > 0 }
 
+    /// Screenshot aid: `SWARM_OPEN_PALETTE=1` opens the command palette when the window appears.
+    public static var opensPalette: Bool {
+        ProcessInfo.processInfo.environment["SWARM_OPEN_PALETTE"] == "1"
+    }
+
     /// p50, p95, and max of millisecond samples, nearest rank.
     public static func summary(_ samples: [Double]) -> (p50: Double, p95: Double, max: Double)? {
         guard !samples.isEmpty else { return nil }
