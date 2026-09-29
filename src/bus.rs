@@ -335,10 +335,30 @@ pub fn ensure_codex_hook_trust(
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
     // A key with an escape can name the same table in a spelling this line match cannot see.
+    // It counts only where it can name a hook: not below a path that starts with a plain key
+    // other than `hooks`.
     let other_form = |key: &str| {
+        let not_hooks = |path: &str| {
+            let first = path
+                .split(['.', ']', '='])
+                .next()
+                .unwrap_or_default()
+                .trim();
+            !first.is_empty() && !first.starts_with(['"', '\'']) && first != "hooks"
+        };
+        // None before the first header; then whether the current table is not a hooks table.
+        let mut table_not_hooks = None;
         existing.lines().map(toml_code).any(|code| {
-            code.contains(key)
-                || (code.contains('\\') && (code.starts_with('[') || code.starts_with("hooks")))
+            if code.contains(key) {
+                return true;
+            }
+            if let Some(header) = code.strip_prefix('[') {
+                let other = not_hooks(header.trim_start_matches('['));
+                table_not_hooks = Some(other);
+                return code.contains('\\') && !other;
+            }
+            let name = code.split('=').next().unwrap_or_default();
+            name.contains('\\') && !table_not_hooks.unwrap_or_else(|| not_hooks(name))
         })
     };
     for (key, hash) in entries {
@@ -1025,6 +1045,17 @@ mod tests {
         std::fs::write(&config, &escaped).unwrap();
         assert!(ensure_codex_hook_trust(&home, &entries).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), escaped);
+
+        // So is an escaped key inside the hooks table.
+        let dotted_escaped = dotted.replacen('/', "\\u002f", 1);
+        std::fs::write(&config, &dotted_escaped).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), dotted_escaped);
+        // An escape in a table that is not a hooks table does not block setup.
+        let project = "[projects.\"\\u002ftmp/project\"]\ntrust_level = \"trusted\"\n";
+        std::fs::write(&config, project).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
 
         // A commented-out old entry is not an entry, so the missing ones are added.
         let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
