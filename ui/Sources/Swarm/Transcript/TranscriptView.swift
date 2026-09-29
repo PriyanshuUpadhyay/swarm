@@ -39,6 +39,11 @@ struct TranscriptView<Composer: View>: View {
     @State private var loadingHistory = false
     /// The row at the top edge. SwiftUI keeps it in place when older rows load above it.
     @State private var topRowID: String?
+    /// The rows shown when a scroll started. SwiftUI keeps the top row in place only while the
+    /// scroll is still, so rows that arrive during a scroll are shown when it stops.
+    @State private var heldSnapshot: ChairTranscriptSnapshot?
+
+    private var shownSnapshot: ChairTranscriptSnapshot { heldSnapshot ?? snapshot }
     @State private var loadedHistoryThisGesture = false
     @State private var showHiddenRows = false
     @AppStorage("showRawData") private var showRawData = false
@@ -55,12 +60,12 @@ struct TranscriptView<Composer: View>: View {
     @FocusState private var findFieldFocused: Bool
 
     private var rows: [TranscriptRow] {
-        if case .rows(let rows, _) = snapshot { return rows }
+        if case .rows(let rows, _) = shownSnapshot { return rows }
         return []
     }
 
     private var rawEntries: [RawTranscriptEntry] {
-        if case .rows(_, let raw) = snapshot { return raw }
+        if case .rows(_, let raw) = shownSnapshot { return raw }
         return []
     }
 
@@ -137,7 +142,7 @@ struct TranscriptView<Composer: View>: View {
                 if let historyError {
                     Text(verbatim: historyError).font(.caption).foregroundStyle(.red)
                 }
-                switch snapshot {
+                switch shownSnapshot {
                 case .loading:
                     DelayedProgress("Loading chat…")
                 case .waiting:
@@ -216,12 +221,16 @@ struct TranscriptView<Composer: View>: View {
             if userScrolling {
                 // Cancel tail following before layout or queued updates can move the viewport.
                 followsTail = false
+                if !wasScrolling { heldSnapshot = snapshot }
             } else if wasScrolling, phase == .idle {
                 let geometry = context.geometry
                 followsTail = geometry.contentOffset.y + geometry.containerSize.height
                     >= geometry.contentSize.height + geometry.contentInsets.bottom - 32
             }
-            if phase == .idle { loadedHistoryThisGesture = false }
+            if phase == .idle {
+                loadedHistoryThisGesture = false
+                heldSnapshot = nil
+            }
             if phase == .interacting, nearTop { startLoadingOlder(automatic: true) }
         }
         .onChange(of: rows) {
