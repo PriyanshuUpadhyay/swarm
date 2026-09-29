@@ -617,7 +617,9 @@ pub fn clear_pane(
     agent_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
-        "UPDATE agent SET pane_id = NULL WHERE session_id = ?1 AND id = ?2",
+        // A closed agent reports nothing, so it shows as ended rather than its last state.
+        "UPDATE agent SET pane_id = NULL, state = NULL, state_at = NULL, state_source = NULL,
+         state_detail = NULL WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id),
     )?;
     Ok(())
@@ -1424,6 +1426,38 @@ mod tests {
         let orchestrator_unset =
             set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, None).unwrap();
         assert!(orchestrator_unset);
+    }
+
+    #[test]
+    fn closing_a_pane_clears_the_agents_state() {
+        let connection = seed(0);
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        set_state(
+            &connection,
+            SESSION,
+            CODER,
+            "failed",
+            "hook",
+            Some("quota"),
+            42,
+        )
+        .unwrap();
+        clear_pane(&connection, SESSION, CODER).unwrap();
+        let coder = agents(&connection, SESSION)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == CODER)
+            .unwrap();
+        assert_eq!(coder.pane, None);
+        assert_eq!(
+            (
+                coder.state,
+                coder.state_at,
+                coder.state_source,
+                coder.state_detail
+            ),
+            (None, None, None, None)
+        );
     }
 
     #[test]

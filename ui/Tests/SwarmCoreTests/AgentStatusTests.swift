@@ -46,5 +46,8 @@ struct AgentStatusTests {
         ))
         #expect(older.state == nil)
         #expect(older.status == .ended)
+        // swarm close clears the pane and the state; the agent shows as ended, not done.
+        let closed = SwarmAgent(id: .init("coder"), role: "code", pane: nil, alive: nil)
+        #expect(closed.status == .ended)
     }
 }

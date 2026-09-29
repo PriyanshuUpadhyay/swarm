@@ -144,7 +144,7 @@ struct SessionsTreeTests {
         let api = session("api-session", cwd: "/api")
         let docs = session("docs-session", cwd: "/docs")
         func agent(_ id: String, _ state: String?) -> SwarmAgent {
-            SwarmAgent(id: .init(id), role: "code", pane: nil, alive: true, state: state)
+            SwarmAgent(id: .init(id), role: "code", pane: "%\(id)", alive: true, state: state)
         }
         let tree = build([api, docs], agentsBySession: [
             api.id: [agent("reviewer", "waiting"), agent("coder", "working"), agent("tester", "working")],

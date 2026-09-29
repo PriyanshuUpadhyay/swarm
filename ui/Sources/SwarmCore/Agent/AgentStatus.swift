@@ -31,5 +31,6 @@ public enum AgentStatus: String, Sendable, Hashable, CaseIterable {
 }
 
 extension SwarmAgent {
-    public var status: AgentStatus { AgentStatus(alive: alive, state: state) }
+    /// An agent without a pane was closed, reported dead, or never started, so it is ended.
+    public var status: AgentStatus { pane == nil ? .ended : AgentStatus(alive: alive, state: state) }
 }
