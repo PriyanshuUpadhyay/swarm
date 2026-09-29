@@ -47,29 +47,19 @@ struct ComposerView: View {
     @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             if menuVisible { completionMenu }
             VStack(alignment: .leading, spacing: 0) {
                 if !attachments.isEmpty { attachmentRow }
                 editor
                 footer
-                if let usageLabel, let showUsage {
-                    Button(action: showUsage) {
-                        Text(usageLabel).font(.caption).foregroundStyle(.secondary)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Usage details: \(usageLabel)")
-                    .help("Context, cache, and estimated cost for this agent session")
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                }
             }
-            .background(.background)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isDropTarget ? Color.accentColor : Color.secondary.opacity(0.25))
+                if isDropTarget {
+                    RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: DesignTokens.Size.focusRing)
+                }
             }
             if let actionError {
                 Text(verbatim: actionError).font(.caption).foregroundStyle(.red)
@@ -160,11 +150,11 @@ struct ComposerView: View {
             }
             .lineLimit(1...8)
             .textFieldStyle(.plain)
-            .font(.body)
+            .font(DesignTokens.body)
             .focused(focus)
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .padding(.horizontal, DesignTokens.Spacing.m)
+            .padding(.top, DesignTokens.Spacing.m)
+            .padding(.bottom, DesignTokens.Spacing.s)
             .simultaneousGesture(TapGesture().onEnded {
                 dismissMenu()
                 focus.wrappedValue = true
@@ -182,10 +172,10 @@ struct ComposerView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignTokens.Spacing.s) {
             if let selectModel {
                 Button(action: selectModel) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
                         Text(modelLabel).lineLimit(1).truncationMode(.middle)
                         Image(systemName: "chevron.down").font(.caption2)
                     }
@@ -196,6 +186,14 @@ struct ComposerView: View {
                 .help(modelSwitchDisabledReason ?? "Choose a model for this chat")
                 .disabled(modelSwitchDisabledReason != nil)
             }
+            if let usageLabel, let showUsage {
+                Button(action: showUsage) {
+                    Text(usageLabel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Usage details: \(usageLabel)")
+                .help("Context, cache, and estimated cost for this agent session")
+            }
             if showsStop {
                 Text("⌘. stops")
                     .font(.caption2)
@@ -205,7 +203,7 @@ struct ComposerView: View {
             if showsStop {
                 Button(action: stop) {
                     Image(systemName: isStopping ? "hourglass" : "stop.fill")
-                        .frame(width: 26, height: 26)
+                        .frame(width: DesignTokens.Size.iconButton, height: DesignTokens.Size.iconButton)
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.circle)
@@ -219,8 +217,8 @@ struct ComposerView: View {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.background)
-                        .frame(width: 26, height: 26)
-                        .background(.primary, in: RoundedRectangle(cornerRadius: 7))
+                        .frame(width: DesignTokens.Size.iconButton, height: DesignTokens.Size.iconButton)
+                        .background(.primary, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
                 }
                 .buttonStyle(.plain)
                 .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending
@@ -228,15 +226,15 @@ struct ComposerView: View {
                 .help("Send (Return)")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .padding(.horizontal, DesignTokens.Spacing.m)
+        .padding(.bottom, DesignTokens.Spacing.s)
     }
 
     private var attachmentRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignTokens.Spacing.s) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: 5) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
                         Image(systemName: ComposerAttachmentStore.isImage(
                             pathExtension: (attachment.path as NSString).pathExtension
                         ) ? "photo" : "doc")
@@ -252,13 +250,13 @@ struct ComposerView: View {
                         .accessibilityLabel("Remove \(attachment.name)")
                     }
                     .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DesignTokens.Spacing.s)
+                    .padding(.vertical, DesignTokens.Spacing.xs)
                     .background(.quaternary, in: Capsule())
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 8)
+            .padding(.horizontal, DesignTokens.Spacing.m)
+            .padding(.top, DesignTokens.Spacing.s)
         }
     }
 
@@ -269,30 +267,27 @@ struct ComposerView: View {
                 Text(emptyMenuText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(10)
+                    .padding(DesignTokens.Spacing.m)
             } else {
                 ForEach(0..<completionCount, id: \.self) { index in
                     Button { pick(index) } label: {
                         completionRow(index)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .padding(.horizontal, DesignTokens.Spacing.m)
+                            .padding(.vertical, DesignTokens.Spacing.s)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(index == selectedIndex ? Color.accentColor.opacity(0.18) : .clear)
+                            .background(index == selectedIndex ? DesignTokens.currentMatchFill : .clear)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .frame(maxWidth: 480)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 10).stroke(.separator) }
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        .frame(maxWidth: DesignTokens.Size.menuWidth)
+        .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
     }
 
     private func completionRow(_ index: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: completionName(index)).font(.system(.body, design: .monospaced))
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+            Text(verbatim: completionName(index)).font(DesignTokens.mono)
             Text(verbatim: completionDetail(index))
                 .font(.caption)
                 .foregroundStyle(.secondary)

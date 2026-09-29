@@ -34,6 +34,8 @@ enum DesignTokens {
         static let glyphSlot: CGFloat = 16
         /// A small square control, such as an icon button.
         static let iconButton: CGFloat = 26
+        /// The composer's slash and mention menu.
+        static let menuWidth: CGFloat = 480
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
     }
