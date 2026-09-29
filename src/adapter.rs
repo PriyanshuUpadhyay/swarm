@@ -157,30 +157,54 @@ impl Adapter {
     /// longer than `timeout`. The listing calls it once per live agent, so a slow pane must not
     /// hold the listing up.
     pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
+        use std::os::unix::process::CommandExt;
+        // Its own process group, so the deadline can also stop a grandchild that holds stdout.
         let mut child = self
             .command(self.screen.as_ref()?, vars)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
+            .process_group(0)
             .spawn()
             .ok()?;
+        let group = child.id() as i32;
+        let mut stdout = child.stdout.take()?;
+        // The read runs apart from the deadline: a child that exits while a grandchild keeps the
+        // pipe open would otherwise block read_to_string past it.
+        let (sender, output) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let read = std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text);
+            let _ = sender.send(read);
+        });
         let deadline = std::time::Instant::now() + timeout;
-        loop {
+        let status = loop {
             match child.try_wait() {
-                Ok(Some(status)) if status.success() => break,
+                Ok(Some(status)) => break Some(status),
                 Ok(None) if std::time::Instant::now() < deadline => {
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
-                Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                _ => return None,
+                _ => break None,
             }
-        }
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut child.stdout.take()?, &mut text).ok()?;
-        Some(text)
+        };
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let text = match status {
+            Some(status) if status.success() => match output.recv_timeout(remaining) {
+                Ok(read) => read.ok(),
+                Err(_) => {
+                    // Output is complete once the verb exits; stop what holds the pipe.
+                    kill_group(group);
+                    output
+                        .recv_timeout(std::time::Duration::from_millis(100))
+                        .ok()
+                        .and_then(Result::ok)
+                }
+            },
+            _ => None,
+        };
+        kill_group(group);
+        let _ = child.kill();
+        let _ = child.wait();
+        text
     }
 
     pub fn attach(
@@ -198,6 +222,19 @@ impl Adapter {
     pub fn has_pane(&self, pane: &str) -> Result<bool, Box<dyn std::error::Error>> {
         let listing = self.run("list", &[])?;
         Ok(listing_has_pane(&listing, pane))
+    }
+}
+
+/// Sends SIGKILL to a whole process group. A group that has already exited is fine.
+fn kill_group(group: i32) {
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    const SIGKILL: i32 = 9;
+    // SAFETY: kill(2) takes plain integers and has no memory effects on this process; a negative
+    // pid names the group that `process_group(0)` gave the child.
+    unsafe {
+        kill(-group, SIGKILL);
     }
 }
 
@@ -319,6 +356,15 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
         assert_eq!(with("exit 1").screen(&[], timeout), None);
         assert_eq!(parse("probe", FULL).unwrap().screen(&[], timeout), None);
+    }
+
+    #[test]
+    fn screen_returns_by_the_deadline_when_a_child_keeps_stdout_open() {
+        let adapter = parse("probe", &format!("{FULL}screen = sleep 5 & printf rows\n")).unwrap();
+        let started = std::time::Instant::now();
+        let text = adapter.screen(&[], std::time::Duration::from_millis(300));
+        assert!(started.elapsed() < std::time::Duration::from_millis(700));
+        assert_eq!(text.as_deref(), Some("rows"));
     }
 
     #[test]
