@@ -26,6 +26,9 @@ struct KeyRoutingTests {
             (KeyChord("5", [.option, .command]), .sidebarView(5)),
             (KeyChord("i", [.option, .command]), .showChanges),
             (KeyChord("k", .command), .search),
+            (KeyChord("f", .command), .find),
+            (KeyChord("g", .command), .findNext),
+            (KeyChord("g", [.command, .shift]), .findPrevious),
             (KeyChord(".", .command), .stop),
         ]
         for (chord, action) in appKeys {
