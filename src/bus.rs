@@ -176,14 +176,18 @@ pub fn argv(
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            // The user trusts these once in Codex `/hooks`; the trust holds only while each value
-            // stays byte-identical, so nothing per launch goes in it. The pane env names the agent.
+            // `swarm hooks setup` trusts these for the owner (`codex_hook_trust`); the trust holds
+            // only while each value stays byte-identical, so nothing per launch goes in it. The
+            // pane env names the agent. The empty first group puts swarm's hook in group 1, so
+            // its trust key differs from another tool's `-c` hook in group 0.
             let command = serde_json::to_string(&state_hook_command("codex")?)
                 .expect("string serialization cannot fail");
             for event in CODEX_STATE_EVENTS {
                 args.extend([
                     "-c".into(),
-                    format!("hooks.{event}=[{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"),
+                    format!(
+                        "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"
+                    ),
                 ]);
             }
             Ok(args)
@@ -266,6 +270,116 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
         .open(path)
         .and_then(|mut file| std::io::Write::write_all(&mut file, addition.as_bytes()))
         .map_err(|error| format!("cannot update Codex config: {error}"))
+}
+
+/// The Codex `hooks.state` key and trusted hash of each state hook `swarm launch` passes with
+/// `-c`, as Codex computes them (codex-rs `hooks/src/engine/discovery.rs` `hook_hash` and
+/// `config/src/fingerprint.rs` `version_for_toml`): the SHA-256 of the hook's identity as JSON with
+/// sorted keys. `tests` pins the values a real Codex 0.159.0 app-server reported.
+pub fn codex_hook_trust(command: &str) -> Vec<(String, String)> {
+    use sha2::Digest;
+    CODEX_STATE_EVENTS
+        .iter()
+        .map(|event| {
+            let label = codex_event_label(event);
+            // Keys in sorted order; with `preserve_order` the map keeps them so.
+            let identity = serde_json::json!({
+                "event_name": label,
+                "hooks": [{"async": false, "command": command, "timeout": 3, "type": "command"}],
+            });
+            let digest = sha2::Sha256::digest(identity.to_string().as_bytes());
+            let hash: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+            (
+                format!("/<session-flags>/config.toml:{label}:1:0"),
+                format!("sha256:{hash}"),
+            )
+        })
+        .collect()
+}
+
+/// Codex's snake_case name for a hook event, as its trust keys use it.
+fn codex_event_label(event: &str) -> String {
+    let mut label = String::new();
+    for (index, character) in event.chars().enumerate() {
+        if character.is_ascii_uppercase() && index > 0 {
+            label.push('_');
+        }
+        label.push(character.to_ascii_lowercase());
+    }
+    label
+}
+
+/// Write each trust entry into a Codex home's `config.toml`, replacing the hash of an entry
+/// that is already there and keeping every other line. Returns whether the file changed.
+pub fn ensure_codex_hook_trust(
+    home: &std::path::Path,
+    entries: &[(String, String)],
+) -> Result<bool, String> {
+    let path = home.join("config.toml");
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
+    for (key, hash) in entries {
+        let table = format!(
+            "[hooks.state.{}]",
+            serde_json::to_string(key).expect("string serialization cannot fail")
+        );
+        let value = format!(
+            "trusted_hash = {}",
+            serde_json::to_string(hash).expect("string")
+        );
+        match lines.iter().position(|line| line.trim() == table) {
+            Some(start) => {
+                let end = lines[start + 1..]
+                    .iter()
+                    .position(|line| line.trim_start().starts_with('['))
+                    .map_or(lines.len(), |offset| start + 1 + offset);
+                match (start + 1..end)
+                    .find(|&index| lines[index].trim_start().starts_with("trusted_hash"))
+                {
+                    Some(index) => lines[index] = value,
+                    None => lines.insert(start + 1, value),
+                }
+            }
+            None => {
+                if lines.last().is_some_and(|line| !line.trim().is_empty()) {
+                    lines.push(String::new());
+                }
+                lines.extend([table, value]);
+            }
+        }
+    }
+    let text = lines.join("\n") + "\n";
+    if text == existing {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(home).map_err(|error| format!("cannot create Codex home: {error}"))?;
+    std::fs::write(&path, text).map_err(|error| format!("cannot update Codex config: {error}"))?;
+    Ok(true)
+}
+
+/// Whether a Codex home's `config.toml` trusts every entry.
+pub fn codex_hooks_trusted(home: &std::path::Path, entries: &[(String, String)]) -> bool {
+    let text = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    entries.iter().all(|(key, hash)| {
+        let table = format!(
+            "[hooks.state.{}]",
+            serde_json::to_string(key).expect("string")
+        );
+        let value = format!(
+            "trusted_hash = {}",
+            serde_json::to_string(hash).expect("string")
+        );
+        lines
+            .iter()
+            .position(|line| *line == table)
+            .is_some_and(|start| {
+                lines[start + 1..]
+                    .iter()
+                    .take_while(|line| !line.starts_with('['))
+                    .any(|line| *line == value)
+            })
+    })
 }
 
 /// Why a caller may not launch an agent, or None. A pane `swarm spawn` made carries its own
@@ -576,15 +690,7 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 /// Every other group is kept, and a file that is not a JSON object is refused, not replaced.
 /// Returns whether the file changed.
 pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, String> {
-    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
-    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
-    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
-    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
-    let group = serde_json::json!({
-        "PreInvocation": [handler("PreInvocation")],
-        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
-        "Stop": [handler("Stop")],
-    });
+    let group = agy_group(command);
     let mut value = read_json_object(path)?;
     let groups = value
         .as_object_mut()
@@ -594,6 +700,23 @@ pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, S
     }
     groups.insert("swarm".into(), group);
     write_json(path, &value).map(|()| true)
+}
+
+/// Whether AGY's `hooks.json` holds swarm's group as `ensure_agy_hooks` writes it.
+pub fn agy_hooks_set(path: &std::path::Path, command: &str) -> bool {
+    read_json_object(path).is_ok_and(|value| value.get("swarm") == Some(&agy_group(command)))
+}
+
+fn agy_group(command: &str) -> serde_json::Value {
+    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
+    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
+    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
+    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
+    serde_json::json!({
+        "PreInvocation": [handler("PreInvocation")],
+        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
+        "Stop": [handler("Stop")],
+    })
 }
 
 fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
@@ -748,10 +871,86 @@ mod tests {
             coder,
             CODEX_STATE_EVENTS
                 .map(|event| format!(
-                    "hooks.{event}=[{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
+                    "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
                 ))
                 .to_vec()
         );
+    }
+
+    #[test]
+    fn codex_hook_trust_matches_the_hashes_a_real_codex_reports() {
+        // `codex app-server` 0.159.0 `hooks/list`, empty CODEX_HOME, 2026-09-29, for these `-c`
+        // hooks with the command below.
+        let reported = [
+            (
+                "user_prompt_submit",
+                "6ada9e2b38032d391c688b4b57e23d57dc704db197c59846631231b6de096fa3",
+            ),
+            (
+                "pre_tool_use",
+                "1aae45a70c770d9f20e8b9bb0606f189958d43d2cfd087e63bb2a929c354c43f",
+            ),
+            (
+                "post_tool_use",
+                "8e869f2203b834c487812e07bb16ef48cab40dd79e4e4c8b5be9970e3e6a3c27",
+            ),
+            (
+                "permission_request",
+                "fb62179a34ddeb588a7474baeb6c99f976299120c70f7b5c495e76d904e7321a",
+            ),
+            (
+                "stop",
+                "64466f2454b871f7b36673eaea4506ac61f374a030bf4b162cc432ae54612cc5",
+            ),
+            (
+                "interrupt",
+                "e24a3286d74cee9090a79c7dcf48e828202cfcccb8a511ecfadc4d0786234a8c",
+            ),
+        ];
+        assert_eq!(
+            codex_hook_trust("'/opt/homebrew/bin/swarm' hook codex"),
+            reported
+                .map(|(label, hash)| (
+                    format!("/<session-flags>/config.toml:{label}:1:0"),
+                    format!("sha256:{hash}")
+                ))
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn codex_hook_trust_is_written_once_and_keeps_every_other_line() {
+        let home = std::env::temp_dir().join(format!("swarm-codex-trust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        assert!(!codex_hooks_trusted(&home, &entries));
+
+        // A fresh Mac has no Codex home at all.
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
+        assert!(!ensure_codex_hook_trust(&home, &entries).unwrap());
+
+        // Another tool's group-0 entry stays; a moved binary replaces only swarm's hashes.
+        let other = "[hooks.state.\"/<session-flags>/config.toml:stop:0:0\"]\ntrusted_hash = \"sha256:other\"";
+        let config = home.join("config.toml");
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(&config, format!("model = \"x\"\n{other}\n\n{text}")).unwrap();
+        let moved = codex_hook_trust("'/opt/swarm' hook codex");
+        assert!(!codex_hooks_trusted(&home, &moved));
+        assert!(ensure_codex_hook_trust(&home, &moved).unwrap());
+        assert!(codex_hooks_trusted(&home, &moved));
+        assert!(!codex_hooks_trusted(&home, &entries));
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(
+            text.starts_with(&format!("model = \"x\"\n{other}\n")),
+            "{text}"
+        );
+        assert_eq!(
+            text.matches("[hooks.state.").count(),
+            1 + moved.len(),
+            "{text}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
