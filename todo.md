@@ -19,3 +19,11 @@ not from real screens (`tests/fixtures/screens/README.md`). Research the real Co
 screens for idle, working, approval, and failure, capture them under a private tmux server, and
 replace the synthesized fixtures. Also research how to confirm a state for an adapter that has no
 `screen` verb; today its hook state turns to unknown after 45 s.
+
+## Main-thread stops with 12 live panes
+
+With 12 streaming stress panes, the Animation Hitches instrument recorded hangs of 0.27 to 1.4 s,
+but no hitch over 33 ms. In the one hang traced with Time Profiler, no Swarm thread ran at all, and
+the machine load was 5 to 18 on 10 cores. Find out on a quiet machine whether the app or the
+system causes them (`SWARM_PANE_STRESS=12`, see ui/README.md).
+
