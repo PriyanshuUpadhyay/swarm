@@ -21,16 +21,42 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
+// The app opens the session and launches the chair as `orchestrator` before the CLI starts, so
+// the chair must not open a second session that the app would not show.
+const APP_CONTEXT: &str = r#"[agent-host: swarm-app]
+This session is a chair that the Swarm app started. The top-level session is the orchestrator.
+- The swarm session is already open and this chair is registered as `orchestrator`; `SWARM_SESSION_ID`, `SWARM_AGENT_ID` and `SWARM_ADAPTER` are set. Do not run `swarm session new` or `swarm agent add`.
+- A pane worker is a child agent CLI in its own tmux session; the app shows each child as a visible column beside the chat.
+- Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
+- Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
+- Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
+- Do not use headless CLIs or detached processes.
+- For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md` and skip its Session section.
+- Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
+
+const APP_WORKER_CONTEXT: &str = r#"[agent-host: swarm-app — worker]
+This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
+- Never spawn panes: `swarm launch` and `swarm spawn` are orchestrator-only and are refused for worker sessions.
+- Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
+- Report results to the orchestrator only; do not notify the user."#;
+
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
+/// Herdr wins over the app's tmux host when both match, because its pane is the one on screen.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
-    if env("HERDR_ENV").as_deref() != Some("1")
-        || env("HERDR_PANE_ID").is_none_or(|pane| pane.is_empty())
+    let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
+    let (chair, worker) = if env("HERDR_ENV").as_deref() == Some("1") && set("HERDR_PANE_ID") {
+        (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
+    } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-solo")
+        && set("SWARM_SESSION_ID")
+        && set("TMUX_PANE")
     {
+        (APP_CONTEXT, APP_WORKER_CONTEXT)
+    } else {
         return None;
-    }
+    };
     let mut context = match is_worker(&env) {
-        true => HERDR_WORKER_CONTEXT.to_string(),
-        false => HERDR_CONTEXT.to_string(),
+        true => worker.to_string(),
+        false => chair.to_string(),
     };
     let adapter = match provider {
         "claude" => "~/.claude/skills/orchestrate-claude/SKILL.md",
@@ -171,6 +197,58 @@ mod tests {
         )
         .unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
+    }
+
+    const APP_CHAIR: [(&str, &str); 4] = [
+        ("SWARM_ADAPTER", "tmux-solo"),
+        ("SWARM_SESSION_ID", "01a0eda3-3d95-7f40-a754-77b47626e7ee"),
+        ("SWARM_AGENT_ID", "orchestrator"),
+        ("TMUX_PANE", "%0"),
+    ];
+
+    #[test]
+    fn an_app_chair_gets_the_app_contract_with_its_runtime() {
+        for provider in ["codex", "claude"] {
+            let chair = context(provider, env(&APP_CHAIR)).unwrap();
+            assert!(chair.starts_with("[agent-host: swarm-app]\n"), "{provider}");
+            assert!(chair.contains("Do not run `swarm session new`"));
+            assert!(chair.contains(&format!("\n\n[agent-runtime: {provider}]\n")));
+        }
+    }
+
+    #[test]
+    fn a_child_of_an_app_chair_gets_the_app_worker_contract() {
+        let mut seat = APP_CHAIR;
+        seat[2] = ("SWARM_AGENT_ID", "cl-seat-1");
+        let body = context("codex", env(&seat)).unwrap();
+        assert!(body.starts_with("[agent-host: swarm-app — worker]\n"));
+    }
+
+    #[test]
+    fn the_app_contract_needs_the_solo_adapter_a_session_and_a_tmux_pane() {
+        for index in 0..APP_CHAIR.len() {
+            if APP_CHAIR[index].0 == "SWARM_AGENT_ID" {
+                continue;
+            }
+            let mut partial = APP_CHAIR;
+            partial[index].1 = "";
+            assert_eq!(
+                context("codex", env(&partial)),
+                None,
+                "{:?}",
+                APP_CHAIR[index]
+            );
+        }
+        let mut plain_tmux = APP_CHAIR;
+        plain_tmux[0] = ("SWARM_ADAPTER", "tmux");
+        assert_eq!(context("codex", env(&plain_tmux)), None);
+    }
+
+    #[test]
+    fn herdr_wins_when_an_app_chair_env_is_also_present() {
+        let both: Vec<_> = HERDR.iter().chain(APP_CHAIR.iter()).copied().collect();
+        let body = context("claude", env(&both)).unwrap();
+        assert!(body.starts_with("[agent-host: herdr]\n"));
     }
 
     #[test]
