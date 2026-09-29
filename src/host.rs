@@ -86,6 +86,38 @@ pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
     let _ = child.wait();
 }
 
+/// The agent state one provider hook event reports, with its detail, or None when the event says
+/// nothing about state. `swarm hook` calls this; see ADR 0021 for the table. AGY puts no event
+/// name in its payload, so the caller passes it; Claude and Codex send `hook_event_name`.
+pub fn hook_state(
+    provider: &str,
+    event: &str,
+    payload: &serde_json::Value,
+) -> Option<(&'static str, Option<String>)> {
+    let text = |name: &str| payload.get(name).and_then(serde_json::Value::as_str);
+    let error = text("error").filter(|error| !error.is_empty());
+    let state = match (provider, event) {
+        // An in-process Claude subagent's events are not the pane's state.
+        ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
+        ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => "working",
+        ("claude" | "codex", "PermissionRequest") | ("claude", "Elicitation") => "waiting",
+        ("claude" | "codex", "Stop") | ("codex", "Interrupt") => "done",
+        ("claude", "StopFailure") => return Some(("failed", error.map(str::to_string))),
+        ("claude", "Notification") => match text("notification_type")? {
+            "permission_prompt" | "elicitation_dialog" | "agent_needs_input" => "waiting",
+            "idle_prompt" => "done",
+            _ => return None,
+        },
+        ("agy", "PreInvocation" | "PreToolUse") => "working",
+        ("agy", "Stop") => match error {
+            Some(error) => return Some(("failed", Some(error.to_string()))),
+            None => "done",
+        },
+        _ => return None,
+    };
+    Some((state, None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +171,150 @@ mod tests {
         )
         .unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
+    }
+
+    #[test]
+    fn maps_every_hook_event_in_the_state_table() {
+        use serde_json::json;
+        let empty = json!({});
+        let notification = |kind: &str| json!({"notification_type": kind});
+        type Expected<'a> = Option<(&'a str, Option<&'a str>)>;
+        let cases: &[(&str, &str, serde_json::Value, Expected)] = &[
+            (
+                "claude",
+                "UserPromptSubmit",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "claude",
+                "PreToolUse",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "claude",
+                "PostToolUse",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "claude",
+                "PermissionRequest",
+                empty.clone(),
+                Some(("waiting", None)),
+            ),
+            (
+                "claude",
+                "Elicitation",
+                empty.clone(),
+                Some(("waiting", None)),
+            ),
+            (
+                "claude",
+                "Notification",
+                notification("permission_prompt"),
+                Some(("waiting", None)),
+            ),
+            (
+                "claude",
+                "Notification",
+                notification("elicitation_dialog"),
+                Some(("waiting", None)),
+            ),
+            (
+                "claude",
+                "Notification",
+                notification("agent_needs_input"),
+                Some(("waiting", None)),
+            ),
+            (
+                "claude",
+                "Notification",
+                notification("idle_prompt"),
+                Some(("done", None)),
+            ),
+            ("claude", "Notification", notification("auth_success"), None),
+            ("claude", "Notification", empty.clone(), None),
+            ("claude", "Stop", empty.clone(), Some(("done", None))),
+            (
+                "claude",
+                "StopFailure",
+                json!({"error": "rate_limit"}),
+                Some(("failed", Some("rate_limit"))),
+            ),
+            (
+                "claude",
+                "StopFailure",
+                empty.clone(),
+                Some(("failed", None)),
+            ),
+            (
+                "claude",
+                "PreToolUse",
+                json!({"agent_id": "explorer"}),
+                None,
+            ),
+            (
+                "claude",
+                "Stop",
+                json!({"agent_id": ""}),
+                Some(("done", None)),
+            ),
+            ("claude", "SessionStart", empty.clone(), None),
+            ("claude", "Interrupt", empty.clone(), None),
+            (
+                "codex",
+                "UserPromptSubmit",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "codex",
+                "PreToolUse",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "codex",
+                "PostToolUse",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            (
+                "codex",
+                "PermissionRequest",
+                empty.clone(),
+                Some(("waiting", None)),
+            ),
+            ("codex", "Stop", empty.clone(), Some(("done", None))),
+            ("codex", "Interrupt", empty.clone(), Some(("done", None))),
+            ("codex", "StopFailure", empty.clone(), None),
+            ("codex", "SessionStart", empty.clone(), None),
+            (
+                "agy",
+                "PreInvocation",
+                empty.clone(),
+                Some(("working", None)),
+            ),
+            ("agy", "PreToolUse", empty.clone(), Some(("working", None))),
+            ("agy", "Stop", empty.clone(), Some(("done", None))),
+            ("agy", "Stop", json!({"error": ""}), Some(("done", None))),
+            (
+                "agy",
+                "Stop",
+                json!({"error": "quota"}),
+                Some(("failed", Some("quota"))),
+            ),
+            ("agy", "PostToolUse", empty.clone(), None),
+            ("gemini", "Stop", empty.clone(), None),
+        ];
+        for (provider, event, payload, expected) in cases {
+            let got = hook_state(provider, event, payload);
+            let got = got
+                .as_ref()
+                .map(|(state, detail)| (*state, detail.as_deref()));
+            assert_eq!(got, *expected, "{provider} {event} {payload}");
+        }
     }
 }

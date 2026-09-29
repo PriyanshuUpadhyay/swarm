@@ -48,6 +48,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
+| `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
 | `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the role's runner as JSON: its fields plus `role`, `runnerId`, and `fallbackRunnerIds`. |

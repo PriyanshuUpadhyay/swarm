@@ -33,19 +33,84 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
 }
 
 fn session_id() -> Result<String, String> {
-    let id = env_var("SWARM_SESSION_ID")?;
-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())?;
+    valid_session_id(&env_var("SWARM_SESSION_ID")?)
+}
+
+fn valid_session_id(id: &str) -> Result<String, String> {
+    let id = uuid::Uuid::parse_str(id).map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())?;
     if id.get_version_num() != 7 {
         return Err("swarm: bad SWARM_SESSION_ID".to_string());
     }
     Ok(id.to_string())
+}
+
+/// (session, agent, state, detail)
+type HookReport = (String, String, &'static str, Option<String>);
+
+/// What one hook call reports, or None when the caller is no swarm agent or the event says
+/// nothing about state. `args` is `<provider> [event]`; AGY sends no event name in its payload,
+/// so its hook command names the event.
+fn hook_report(
+    args: &[String],
+    payload: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Option<HookReport>, Box<dyn std::error::Error>> {
+    let (provider, event) = match args {
+        [provider] => (provider, None),
+        [provider, event] => (provider, Some(event.as_str())),
+        _ => return Err(USAGE.into()),
+    };
+    if !matches!(provider.as_str(), "claude" | "codex" | "agy") {
+        return Err(USAGE.into());
+    }
+    let (Some(session), Some(agent)) = (env("SWARM_SESSION_ID"), env("SWARM_AGENT_ID")) else {
+        return Ok(None);
+    };
+    let payload: serde_json::Value = match payload.trim() {
+        "" => serde_json::json!({}),
+        text => serde_json::from_str(text)?,
+    };
+    let event = event
+        .or_else(|| payload.get("hook_event_name")?.as_str())
+        .unwrap_or_default();
+    let Some((state, detail)) = swarm::host::hook_state(provider, event, &payload) else {
+        return Ok(None);
+    };
+    Ok(Some((valid_session_id(&session)?, agent, state, detail)))
+}
+
+/// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
+/// and the caller always gets `{}` and exit 0.
+fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut payload = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
+    let Some((session, agent, state, detail)) =
+        hook_report(args, &payload, |name| env::var(name).ok())?
+    else {
+        return Ok(());
+    };
+    let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
+    connection.busy_timeout(std::time::Duration::from_secs(1))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    swarm::store::set_state(
+        &connection,
+        &session,
+        &agent,
+        state,
+        "hook",
+        detail.as_deref(),
+        now,
+    )
 }
 
 fn adapter_name() -> String {
@@ -1013,6 +1078,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     provider: row.provider,
                     created_at: row.created_at,
                     alive,
+                    state: row.state,
+                    state_at_s: row.state_at,
+                    state_source: row.state_source,
+                    state_detail: row.state_detail,
                 }
             })
             .collect();
@@ -1373,6 +1442,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [cmd, rest @ ..] = args.as_slice()
+        && cmd == "hook"
+    {
+        if let Err(error) = hook(rest) {
+            eprintln!("{error}");
+        }
+        println!("{{}}");
+        return;
+    }
     if let [cmd, agent_id] = args.as_slice()
         && cmd == "attach"
     {
@@ -1400,6 +1478,49 @@ mod tests {
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
+
+    #[test]
+    fn a_hook_outside_a_swarm_agent_reports_nothing() {
+        let claude = ["claude".to_string()];
+        let waiting = r#"{"hook_event_name":"PermissionRequest"}"#;
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let no_env = |_: &str| None;
+        assert!(hook_report(&claude, waiting, no_env).unwrap().is_none());
+        let session_only = |name: &str| (name == "SWARM_SESSION_ID").then(|| session.to_string());
+        assert!(
+            hook_report(&claude, waiting, session_only)
+                .unwrap()
+                .is_none()
+        );
+        assert!(hook_report(&claude, "not json", no_env).unwrap().is_none());
+
+        let coder = |name: &str| match name {
+            "SWARM_SESSION_ID" => Some(session.to_string()),
+            "SWARM_AGENT_ID" => Some(CODER.to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            hook_report(&claude, waiting, coder).unwrap(),
+            Some((session.to_string(), CODER.to_string(), "waiting", None))
+        );
+        assert!(
+            hook_report(&claude, r#"{"hook_event_name":"SessionStart"}"#, coder)
+                .unwrap()
+                .is_none()
+        );
+        assert!(hook_report(&claude, "not json", coder).is_err());
+        let agy_stop = ["agy".to_string(), "Stop".to_string()];
+        assert_eq!(
+            hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
+            Some((
+                session.to_string(),
+                CODER.to_string(),
+                "failed",
+                Some("quota".to_string())
+            ))
+        );
+        assert!(hook_report(&["gemini".to_string()], waiting, coder).is_err());
+    }
 
     #[test]
     fn model_edit_rejects_blank_names() {
