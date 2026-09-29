@@ -102,6 +102,7 @@ Run `make build` to compile the Swift targets.
 Run `make test` to build the transcript tool and run tests.
 Run `make lint` to check the source boundaries.
 Run `make app` to build `.build/release/Swarm.app`.
-Run `make install` to put it in `~/Applications` and keep the old app.
+Run `make install` to put it in `~/Applications`, keep the old app, and install the `swarm` CLI
+from this checkout. `make app` never changes the installed CLI or `~/.swarm`.
 Run `make run` to build and launch the app.
 For a development build, set `SWARM_HOME=~/.swarm-<branch>` to keep its data apart.
