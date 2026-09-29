@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TranscriptTool
 
 public enum ChairTranscriptSource: Sendable, Equatable {
@@ -50,7 +51,43 @@ public actor SwarmChairTranscript {
     private var discoveredProvider: String?
     private var discoveredChairID: SwarmChairID?
     private var discoveredLog: URL?
-    private var homesByProvider: [String: [URL]] = [:]
+    /// Account homes per provider with the time they were read. They expire after
+    /// `accountHomesTTL`, so the same reader finds a log in an account added later.
+    private var homesByProvider: [String: (homes: [URL], at: Date)] = [:]
+    private let accountHomesTTL: TimeInterval
+    /// Shared by every reader of the swarm CLI's profiles, keyed by source, home, and provider.
+    /// Each chat open made a new reader that ran `swarm profiles` again, about 130 ms of a cold
+    /// open. Any other source, such as a test's, keeps its own list.
+    private static let homesCache = Mutex<[String: (homes: [URL], at: Date)]>([:])
+
+    private func homes(provider: String) async -> [URL] {
+        let ttl = accountHomesTTL
+        let fresh = { (read: Date) in Date.now.timeIntervalSince(read) < ttl }
+        if let own = homesByProvider[provider], fresh(own.at) { return own.homes }
+        let key = profiles is SwarmCLIProfileSource
+            ? "\(type(of: profiles))|\(home.path)|\(provider)" : nil
+        if let key, let shared = Self.homesCache.withLock({ $0[key] }), fresh(shared.at) {
+            homesByProvider[provider] = shared
+            return shared.homes
+        }
+        let timing = SwarmPerformance.begin("AccountHomes")
+        let accounts = try? await profiles.accounts(provider: provider)
+        timing.end(count: accounts?.accounts.count)
+        let homes = ChairLogDiscovery.homes(
+            provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+        )
+        let entry = (homes: homes, at: Date.now)
+        homesByProvider[provider] = entry
+        if let key { Self.homesCache.withLock { $0[key] = entry } }
+        return homes
+    }
+
+    /// Fills the shared account homes before any chat opens, so a first open skips the profile
+    /// lookup. Cheap while the cache is fresh; the app calls it on each refresh.
+    public func prefetchHomes() async {
+        for provider in ["claude", "codex"] { _ = await homes(provider: provider) }
+    }
+
     private var log: URL?
     private var reader: ToolTranscriptReader?
     public private(set) var currentModel: String?
@@ -62,11 +99,14 @@ public actor SwarmChairTranscript {
     public init(
         binary: URL? = nil,
         profiles: any SwarmProfileSource = SwarmCLIProfileSource(),
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        // ponytail: a 60 s expiry, not an invalidation; an account added within it waits.
+        accountHomesTTL: TimeInterval = 60
     ) {
         self.binary = binary
         self.profiles = profiles
         self.home = home
+        self.accountHomesTTL = accountHomesTTL
     }
 
     public func poll(
@@ -146,20 +186,14 @@ public actor SwarmChairTranscript {
         guard session.chairLog.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true,
               let provider,
               provider == "claude" || provider == "codex" else { return nil }
-        if homesByProvider[provider] == nil {
-            let accounts = try? await profiles.accounts(provider: provider)
-            homesByProvider[provider] = ChairLogDiscovery.homes(
-                provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [],
-                userHome: home
-            )
-        }
+        let homes = await homes(provider: provider)
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID
             || discoveredLog.map({ !FileManager.default.fileExists(atPath: $0.path) }) ?? true {
             discoveredLog = ChairLogDiscovery.path(
                 provider: provider, chairID: session.chairID?.rawValue,
                 cwd: session.cwd, createdAt: session.createdAt,
-                homes: homesByProvider[provider] ?? []
+                homes: homes
             )
             discoveredSession = session.id
             discoveredProvider = provider

@@ -1,0 +1,122 @@
+import SwiftUI
+import SwarmCore
+
+struct ChatTabActions {
+    var select: (String) -> Void
+    var newChat: () -> Void
+    var close: (String) -> Void
+    var archive: (String) -> Void
+}
+
+/// The workspace's chats as tabs: status glyph, title, and provider badge. A tab fits its title
+/// between 120 and 220 pt.
+struct ChatTabsView: View {
+    let workspaceTitle: String?
+    let tabs: [ChatTab]
+    let selectedID: String
+    let actions: ChatTabActions
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.s) {
+            if let workspaceTitle {
+                Text(workspaceTitle)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: DesignTokens.Size.tabMaxWidth, alignment: .leading)
+                    .padding(.leading, DesignTokens.Spacing.m)
+            }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        ForEach(tabs) { tab in
+                            ChatTabView(tab: tab, selected: tab.id == selectedID, actions: actions)
+                                .id(tab.id)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .onAppear { proxy.scrollTo(selectedID) }
+                .onChange(of: selectedID) { _, id in proxy.scrollTo(id) }
+            }
+            Button("New chat in this workspace", systemImage: "plus", action: actions.newChat)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("New chat in this workspace")
+                .padding(.trailing, DesignTokens.Spacing.m)
+        }
+        .padding(.vertical, DesignTokens.Spacing.xs)
+    }
+}
+
+private struct ChatTabView: View {
+    let tab: ChatTab
+    let selected: Bool
+    let actions: ChatTabActions
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { actions.select(tab.id) } label: {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    if let status = tab.status { StatusGlyph(status: status).font(.caption).fixedSize() }
+                    // The title gives way first, so the badge always shows whole.
+                    Text(tab.title).lineLimit(1).truncationMode(.tail)
+                    if let badge = tab.badge {
+                        Text(badge).font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize()
+                            .layoutPriority(1)
+                    }
+                }
+                .padding(.leading, DesignTokens.Spacing.s)
+                .padding(.vertical, DesignTokens.Spacing.s)
+                .contentShape(Rectangle())
+            }
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            Button { actions.archive(tab.id) } label: {
+                Image(systemName: "archivebox")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(DesignTokens.Spacing.s)
+                    .contentShape(Rectangle())
+                    .fixedSize()
+            }
+            .help("Archive chat")
+            .accessibilityLabel("Archive \(tab.title)")
+        }
+        .frame(minWidth: DesignTokens.Size.tabMinWidth, alignment: .leading)
+        .modifier(CappedWidth(max: DesignTokens.Size.tabMaxWidth))
+        .buttonStyle(.plain)
+        .background(selected ? DesignTokens.selectionFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
+        .contextMenu {
+            Button("New chat here", action: actions.newChat)
+            Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
+            Button("Archive chat") { actions.archive(tab.id) }
+        }
+    }
+}
+
+/// A horizontal scroll view offers its content unlimited width, so a max-width frame alone lets a
+/// long title overflow and clip. This offers the tab at most `max`, so its title truncates.
+private struct CappedWidth: ViewModifier {
+    let max: CGFloat
+
+    func body(content: Content) -> some View {
+        CappedWidthLayout(max: max) { content }
+    }
+}
+
+private struct CappedWidthLayout: Layout {
+    let max: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: min(proposal.width ?? max, max), height: proposal.height)
+    }
+}

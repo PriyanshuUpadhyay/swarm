@@ -9,6 +9,8 @@ pub struct Adapter {
     pub capture: String,
     pub attach: Option<String>,
     pub interrupt: Option<String>,
+    /// Prints a pane's visible rows, or Herdr's JSON for the agent in it (ADR 0021).
+    pub screen: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -82,6 +84,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         capture: take("capture")?,
         attach: verbs.remove("attach"),
         interrupt: verbs.remove("interrupt"),
+        screen: verbs.remove("screen"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -150,6 +153,78 @@ impl Adapter {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// The `screen` verb's output, or None when the adapter has none, it fails, or it takes
+    /// longer than `timeout`. The listing calls it once per live agent, so a slow pane must not
+    /// hold the listing up.
+    pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
+        self.read_bounded(self.screen.as_ref()?, vars, timeout)
+    }
+
+    /// The `capture` verb's output under the same limit as `screen`.
+    pub fn capture_within(
+        &self,
+        vars: &[(&str, &str)],
+        timeout: std::time::Duration,
+    ) -> Option<String> {
+        self.read_bounded(&self.capture, vars, timeout)
+    }
+
+    fn read_bounded(
+        &self,
+        line: &str,
+        vars: &[(&str, &str)],
+        timeout: std::time::Duration,
+    ) -> Option<String> {
+        use std::os::unix::process::CommandExt;
+        // Its own process group, so the deadline can also stop a grandchild that holds stdout.
+        let mut child = self
+            .command(line, vars)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .process_group(0)
+            .spawn()
+            .ok()?;
+        let group = child.id() as i32;
+        let mut stdout = child.stdout.take()?;
+        // The read runs apart from the deadline: a child that exits while a grandchild keeps the
+        // pipe open would otherwise block read_to_string past it.
+        let (sender, output) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let read = std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text);
+            let _ = sender.send(read);
+        });
+        let deadline = std::time::Instant::now() + timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                _ => break None,
+            }
+        };
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let text = match status {
+            Some(status) if status.success() => match output.recv_timeout(remaining) {
+                Ok(read) => read.ok(),
+                Err(_) => {
+                    // Output is complete once the verb exits; stop what holds the pipe.
+                    kill_group(group);
+                    output
+                        .recv_timeout(std::time::Duration::from_millis(100))
+                        .ok()
+                        .and_then(Result::ok)
+                }
+            },
+            _ => None,
+        };
+        kill_group(group);
+        let _ = child.kill();
+        let _ = child.wait();
+        text
+    }
+
     pub fn attach(
         &self,
         vars: &[(&str, &str)],
@@ -165,6 +240,19 @@ impl Adapter {
     pub fn has_pane(&self, pane: &str) -> Result<bool, Box<dyn std::error::Error>> {
         let listing = self.run("list", &[])?;
         Ok(listing_has_pane(&listing, pane))
+    }
+}
+
+/// Sends SIGKILL to a whole process group. A group that has already exited is fine.
+fn kill_group(group: i32) {
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    const SIGKILL: i32 = 9;
+    // SAFETY: kill(2) takes plain integers and has no memory effects on this process; a negative
+    // pid names the group that `process_group(0)` gave the child.
+    unsafe {
+        kill(-group, SIGKILL);
     }
 }
 
@@ -271,6 +359,30 @@ mod tests {
             adapter.run("capture", &[("pane", "%3")]).unwrap(),
             "text of %3"
         );
+    }
+
+    #[test]
+    fn screen_gives_up_on_a_slow_or_failing_verb() {
+        let with = |line: &str| parse("probe", &format!("{FULL}screen = {line}\n")).unwrap();
+        let timeout = std::time::Duration::from_millis(300);
+        assert_eq!(
+            with(r#"printf '%s' "rows of $SWARM_PANE""#).screen(&[("pane", "%3")], timeout),
+            Some("rows of %3".into())
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(with("exec sleep 5").screen(&[], timeout), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(with("exit 1").screen(&[], timeout), None);
+        assert_eq!(parse("probe", FULL).unwrap().screen(&[], timeout), None);
+    }
+
+    #[test]
+    fn screen_returns_by_the_deadline_when_a_child_keeps_stdout_open() {
+        let adapter = parse("probe", &format!("{FULL}screen = sleep 5 & printf rows\n")).unwrap();
+        let started = std::time::Instant::now();
+        let text = adapter.screen(&[], std::time::Duration::from_millis(300));
+        assert!(started.elapsed() < std::time::Duration::from_millis(700));
+        assert_eq!(text.as_deref(), Some("rows"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import Synchronization
 import SwarmCore
 
 @MainActor @Observable
@@ -12,7 +13,8 @@ final class SessionDetailModel {
 
     var usage = ChatUsage()
     var currentModel: String?
-    var snapshot: ChairTranscriptSnapshot = .loading
+    var snapshot: ChairTranscriptSnapshot
+    private(set) var transcriptRevision = 0
     var draft = ""
     private var sendState = ComposerSendState()
     private var loadedSessionCount = 1
@@ -20,6 +22,18 @@ final class SessionDetailModel {
     var hasOlder = false
     var isLoadingOlder = false
     var historyError: String?
+
+    /// Starts from the chat's last known content, so reopening it shows that at once while the
+    /// transcript reloads and updates it in place.
+    init(lastKnown: ChairTranscriptSnapshot? = nil) {
+        snapshot = lastKnown ?? .loading
+        Self.live.withLock { $0 += 1 }
+    }
+
+    deinit { Self.live.withLock { $0 -= 1 } }
+
+    /// Models alive now; the open script prints it to show freed chats really go.
+    nonisolated static let live = Mutex(0)
 
     func isSending(sessionID: String) -> Bool {
         sendState.isSending(sessionID: sessionID)
@@ -136,7 +150,18 @@ final class SessionDetailModel {
             rows.append(TranscriptRow(kind: .error, text: message, eventID: "unavailable-\(row.id.rawValue)"))
         }
         let next: ChairTranscriptSnapshot = rows.isEmpty ? latest : .rows(rows, raw: raw)
-        if snapshot != next { snapshot = next }
+        if snapshot != next {
+            snapshot = next
+            transcriptRevision += 1
+        }
+    }
+
+    /// Drops the chat's transcript readers, which stops their `transcript --follow` processes.
+    /// The store calls this when it frees the chat, whoever else still holds the model.
+    func release() {
+        transcripts.removeAll()
+        snapshots.removeAll()
+        snapshot = .loading
     }
 
     func setDraft(_ value: String, sessionID: String) {
@@ -177,55 +202,60 @@ final class SessionDetailModel {
     }
 }
 
+@MainActor @Observable
+final class SessionDetailStore {
+    struct Entry: Identifiable {
+        let id: SwarmSessionID
+        let model: SessionDetailModel
+    }
+
+    private(set) var entries: [Entry] = []
+    /// The last rows of the four most recent chats (ADR 0025). Readers, processes, and poll tasks
+    /// are still freed on a switch; this keeps only their output.
+    @ObservationIgnored private var lastKnown = RecentValues<SwarmSessionID, ChairTranscriptSnapshot>(capacity: 4)
+
+    private func remember(_ snapshot: ChairTranscriptSnapshot, for id: SwarmSessionID) {
+        if case .rows = snapshot { lastKnown.set(snapshot, for: id) }
+    }
+
+    /// Keeps only the selected chat, so a switch frees the previous transcript and poll (ADR 0025).
+    func activate(_ id: SwarmSessionID?) {
+        if let id, entries.count == 1, entries[0].id == id { return }
+        let kept = entries.first { $0.id == id }
+        for entry in entries where entry.id != id {
+            remember(entry.model.snapshot, for: entry.id)
+            entry.model.release()
+        }
+        entries = id.map { [kept ?? Entry(id: $0, model: SessionDetailModel(lastKnown: lastKnown[$0]))] } ?? []
+    }
+}
+
 struct SessionDetailView: View {
     let row: SwarmProjectSession
-    let title: String
+    let model: SessionDetailModel
     let agents: [SwarmAgent]
     let panes: AgentPaneStore
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
     let isCurrentSession: () -> Bool
+    let isActive: Bool
     let isVisible: Bool
     let onUsageChanged: (ChatUsage) -> Void
     let onShowUsage: () -> Void
 
-    @State private var model = SessionDetailModel()
-    @State private var followsTail = true
-    @State private var atBottom = true
-    @State private var userScrolling = false
-    @State private var nearTop = false
-    @State private var loadingHistory = false
-    @State private var historyAnchor: String?
-    @State private var loadedHistoryThisGesture = false
-    @State private var showHiddenRows = false
-    @AppStorage("showRawData") private var showRawData = false
-    @State private var findPresented = false
-    @State private var findQuery = ""
-    @State private var findMatchID: String?
-    @State private var pendingScrollID: String?
     @State private var didShowRows = false
     @FocusState private var composerFocused: Bool
-    @FocusState private var findFieldFocused: Bool
     @FocusState private var transcriptFocused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            transcriptColumn
-                .frame(minWidth: 320, maxWidth: .infinity)
-            if SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
-                paneColumn
-                    .frame(minWidth: 360, maxWidth: .infinity)
-                    .id(row.session.id.rawValue)
-            }
-        }
+        paneStrip
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(title)
-        .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "")) {
+        .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "") + String(isActive)) {
+            guard isActive else { return }
             await model.poll(row: row, chairProvider: chairProvider)
         }
         .onAppear {
             SwarmPerformance.event("ChatDetailAppeared")
-            transcriptFocused = true
         }
         .onChange(of: model.usage, initial: true) { _, usage in
             if isCurrentSession() { onUsageChanged(usage) }
@@ -235,44 +265,20 @@ struct SessionDetailView: View {
             didShowRows = true
             SwarmPerformance.event("ChatRowsShown")
         }
-        .onChange(of: isVisible) { _, visible in
-            if !visible {
+        .onChange(of: isVisible, initial: true) { _, visible in
+            if visible {
+                transcriptFocused = true
+                onUsageChanged(model.usage)
+            } else {
                 transcriptFocused = false
                 composerFocused = false
-                findFieldFocused = false
             }
         }
         .onChange(of: panes.focusedKey) { _, key in
             guard key != nil else { return }
             transcriptFocused = false
             composerFocused = false
-            findFieldFocused = false
         }
-    }
-
-    private func loadOlder(automatic: Bool = false) {
-        guard model.hasOlder, !loadingHistory, !automatic || !loadedHistoryThisGesture else { return }
-        loadedHistoryThisGesture = true
-        loadingHistory = true
-        followsTail = false
-        historyAnchor = showRawData ? model.rawEntries.first?.id : visibleRows.first?.eventID
-        let oldRows = model.rows
-        let oldRaw = model.rawEntries
-        Task { @MainActor in
-            await model.loadOlder(row: row, chairProvider: chairProvider)
-            // The row-change handler restores position after SwiftUI has received the new rows.
-            if model.historyError != nil || (showRawData ? model.rawEntries == oldRaw : model.rows == oldRows) {
-                historyAnchor = nil
-            }
-            loadingHistory = false
-        }
-    }
-
-    private func restoreHistoryPosition(using proxy: ScrollViewProxy) -> Bool {
-        guard let anchor = historyAnchor else { return false }
-        historyAnchor = nil
-        Task { @MainActor in proxy.scrollTo(anchor, anchor: .top) }
-        return true
     }
 
     private var chairProvider: String? {
@@ -295,453 +301,132 @@ struct SessionDetailView: View {
     }
 
     private var transcriptColumn: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Transcript").font(.headline)
-                Spacer()
-                if showRawData {
-                    Text("RAW")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                        .foregroundStyle(.orange)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            Divider()
-            if findPresented { findBar }
-            ScrollViewReader { proxy in
-                VStack(spacing: 0) {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            if model.hasOlder {
-                                Button(model.isLoadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
-                                    loadOlder()
-                                }
-                                .disabled(model.isLoadingOlder)
-                            }
-                            if let error = model.historyError {
-                                Text(verbatim: error).font(.caption).foregroundStyle(.red)
-                            }
-                            switch model.snapshot {
-                            case .loading:
-                                ProgressView("Loading chat…")
-                            case .waiting:
-                                Text(ChairTranscriptSnapshot.waitingMessage(isRunning: row.isRunning))
-                                    .foregroundStyle(.secondary)
-                            case .notice(let message):
-                                Text(verbatim: message).foregroundStyle(.secondary)
-                            case .unavailable(let message):
-                                Text(verbatim: message).foregroundStyle(.red)
-                            case .rows(let rows, let raw):
-                                if showRawData {
-                                    rawSessionBlock
-                                    ForEach(raw) { entry in
-                                        rawEntry(entry)
-                                    }
-                                } else {
-                                    let hidden = rows.filter(\.isHiddenByDefault).count
-                                    if hidden > 0 {
-                                        Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
-                                            showHiddenRows.toggle()
-                                        }
-                                    }
-                                    ForEach(visibleRows) { transcriptRow in
-                                        TranscriptRowView(
-                                            row: transcriptRow,
-                                            chair: self.row.provider ?? chairProvider,
-                                            revealForSearch: currentMatchID == transcriptRow.eventID
-                                        )
-                                        .padding(3)
-                                        .background(matchBackground(transcriptRow.eventID))
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                    }
-                    .contentMargins(.top, 8, for: .scrollContent)
-                    .frame(maxHeight: .infinity)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        transcriptFocused = true
-                        panes.clearFocus()
-                    })
-                    .onScrollGeometryChange(for: Bool.self) { geometry in
-                        geometry.contentOffset.y + geometry.containerSize.height
-                            >= geometry.contentSize.height - 32
-                    } action: { _, atBottom in
-                        self.atBottom = atBottom
-                        followsTail = TranscriptTail.follows(
-                            current: followsTail, atBottom: atBottom, userScrolled: userScrolling
-                        )
-                    }
-                    .onScrollGeometryChange(for: Bool.self) { geometry in
-                        geometry.contentOffset.y < 120
-                    } action: { _, nearTop in
-                        self.nearTop = nearTop
-                        if nearTop, userScrolling { loadOlder(automatic: true) }
-                    }
-                    .onScrollPhaseChange { oldPhase, phase in
-                        if oldPhase == .interacting || oldPhase == .decelerating {
-                            followsTail = TranscriptTail.follows(
-                                current: followsTail, atBottom: atBottom, userScrolled: true
-                            )
-                        }
-                        userScrolling = phase == .interacting || phase == .decelerating
-                        if phase == .idle { loadedHistoryThisGesture = false }
-                        if phase == .interacting, nearTop { loadOlder(automatic: true) }
-                    }
-                    .onChange(of: model.rows) {
-                        if !showRawData, restoreHistoryPosition(using: proxy) { return }
-                        if followsTail, !loadingHistory, !showRawData, let last = visibleRows.last {
-                            Task { @MainActor in proxy.scrollTo(last.eventID, anchor: .bottom) }
-                        }
-                    }
-                    .onChange(of: model.rawEntries) {
-                        if showRawData, restoreHistoryPosition(using: proxy) { return }
-                        if followsTail, !loadingHistory, showRawData, let last = model.rawEntries.last {
-                            Task { @MainActor in proxy.scrollTo(last.id, anchor: .bottom) }
-                        }
-                    }
-                    .onChange(of: pendingScrollID) { _, id in
-                        guard let id else { return }
-                        proxy.scrollTo(id, anchor: .center)
-                        pendingScrollID = nil
-                    }
-                    if !followsTail {
-                        Button("Jump to latest") {
-                            followsTail = true
-                            if let id = lastVisibleID { proxy.scrollTo(id, anchor: .bottom) }
-                        }
-                        .padding(6)
-                    }
-                }
-            }
-            .frame(maxHeight: .infinity)
-            Divider()
-            ComposerView(
-                sessionID: row.id.rawValue,
-                draft: Binding(
-                    get: { model.draft },
-                    set: { model.setDraft($0, sessionID: row.id.rawValue) }
-                ),
-                isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
-                isSending: model.isSending(sessionID: row.id.rawValue),
-                modelLabel: modelLabel,
-                modelSwitchDisabledReason: modelSwitchDisabledReason,
-                selectModel: { onSwitchModel(model.currentModel) },
-                usageLabel: model.usage.summary,
-                showUsage: onShowUsage,
-                sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
-                    ? "This chat's pane has closed. Start a new chat or switch model."
-                    : nil,
-                commandSource: commandSource ?? ComposerCommandSource(
-                    provider: row.provider ?? chairProvider,
-                    homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
-                    projectDirectory: row.session.cwd
-                ),
-                mentionSource: ComposerMentionSource(root: row.session.cwd),
-                scratchDirectory: AgentScratchDirectory.current(),
-                focus: $composerFocused,
-                send: { try await model.send($0, session: row.session) },
-                interrupt: { try await model.interrupt(session: row.session) },
-                onFocused: { panes.clearFocus() },
-                isCurrentSession: isCurrentSession
-            )
-            .id(row.id.rawValue)
-            .padding(12)
+        // Built here, so the transcript holds the composer value and not a closure over this
+        // view; the menu keeps transcript find closures alive, and this view holds the model.
+        let composer = ComposerView(
+            sessionID: row.id.rawValue, isActive: isActive,
+            draft: Binding(
+                get: { [weak model] in model?.draft ?? "" },
+                set: { [weak model, id = row.id.rawValue] in model?.setDraft($0, sessionID: id) }
+            ),
+            isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
+            isSending: model.isSending(sessionID: row.id.rawValue),
+            modelLabel: modelLabel,
+            modelSwitchDisabledReason: modelSwitchDisabledReason,
+            selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
+            usageLabel: model.usage.summary,
+            showUsage: onShowUsage,
+            sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
+                ? "This chat's pane has closed. Start a new chat or switch model."
+                : nil,
+            commandSource: commandSource ?? ComposerCommandSource(
+                provider: row.provider ?? chairProvider,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+                projectDirectory: row.session.cwd
+            ),
+            mentionSource: ComposerMentionSource(root: row.session.cwd),
+            scratchDirectory: AgentScratchDirectory.current(),
+            focus: $composerFocused,
+            send: { [weak model, session = row.session] in try await model?.send($0, session: session) },
+            interrupt: { [weak model, session = row.session] in try await model?.interrupt(session: session) },
+            onFocused: { [panes] in panes.clearFocus() },
+            isCurrentSession: isCurrentSession
+        )
+        .id(row.id.rawValue)
+        return TranscriptView(
+            snapshot: model.snapshot, revision: model.transcriptRevision,
+            hasOlder: model.hasOlder, isLoadingOlder: model.isLoadingOlder,
+            historyError: model.historyError,
+            waitingMessage: ChairTranscriptSnapshot.waitingMessage(isRunning: row.isRunning),
+            chair: row.provider ?? chairProvider,
+            rawSessionJSON: TranscriptDebugData.sessionJSON(session: row.session, agents: agents),
+            isActive: isActive, isVisible: isVisible,
+            loadOlder: { [weak model, row, chairProvider] in
+                await model?.loadOlder(row: row, chairProvider: chairProvider)
+            },
+            onTap: { [panes] in panes.clearFocus() },
+            focus: $transcriptFocused
+        ) {
+            composer
         }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($transcriptFocused)
-        // Scene-wide, so the menu finds the transcript without it holding keyboard focus.
-        .focusedSceneValue(\.paneFindActions, isVisible ? PaneFindActions(
+        // Scene-wide, so the menu finds the chat without it holding keyboard focus.
+        .background {
+            if isVisible {
+                Color.clear.focusedSceneValue(\.chatKeyActions, chatKeyActions)
+            }
+        }
+    }
+
+    private var paneKeys: [String] {
+        guard isActive else { return [] }
+        return SwarmPanePolicy.cells(session: row.session, agents: agents).map {
+            AgentPaneStore.key(session: row.session.id, agent: $0.agent.id.rawValue)
+        }
+    }
+
+    private var chatKeyActions: ChatKeyActions {
+        // The menu bar keeps old command closures alive, so these capture only what they use:
+        // capturing the view kept every freed chat's model (and its rows) with them.
+        let keys = paneKeys
+        let composerFocus = $composerFocused
+        let transcriptFocus = $transcriptFocused
+        return ChatKeyActions(
             terminalFocused: panes.focusedKey != nil,
-            open: openFind, next: { stepFind(1) }, previous: { stepFind(-1) }
-        ) : nil)
-        .onChange(of: findMatches) { previousMatches, newMatches in
-            let index = PaneSearch.reconcile(
-                current: findMatchID.flatMap { previousMatches.firstIndex(of: $0) },
-                previousMatches: previousMatches,
-                newMatches: newMatches
-            )
-            findMatchID = index.map { newMatches[$0] }
-        }
-        .onChange(of: findQuery) {
-            resetFindSelection()
-        }
-        .onChange(of: showRawData) {
-            resetFindSelection()
-        }
-    }
-
-    private var findBar: some View {
-        HStack(spacing: 8) {
-            TextField("Find in loaded messages", text: $findQuery)
-                .textFieldStyle(.roundedBorder)
-                .focused($findFieldFocused)
-                .onSubmit { stepFind(1) }
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.shift) else { return .ignored }
-                    stepFind(-1)
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    closeFind()
-                    return .handled
-                }
-            Text(findCountText)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 48)
-            Button { stepFind(-1) } label: { Image(systemName: "chevron.up") }
-                .help("Previous match")
-                .disabled(findMatches.isEmpty)
-            Button { stepFind(1) } label: { Image(systemName: "chevron.down") }
-                .help("Next match")
-                .disabled(findMatches.isEmpty)
-            Button(action: closeFind) { Image(systemName: "xmark") }
-                .help("Close find")
-        }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
-    }
-
-    private var visibleRows: [TranscriptRow] {
-        model.rows.filter { showHiddenRows || !$0.isHiddenByDefault }
-    }
-
-    private var rawSessionJSON: String {
-        TranscriptDebugData.sessionJSON(session: row.session, agents: agents)
-    }
-
-    private var searchItems: [PaneSearchItem] {
-        if showRawData {
-            return [PaneSearchItem(id: "raw-session", text: rawSessionJSON)]
-                + model.rawEntries.map { PaneSearchItem(id: $0.id, text: $0.displayText) }
-        }
-        return visibleRows.map {
-            let diffText = $0.tool?.diffs.map { diff in
-                ([diff.path] + diff.hunks.flatMap(\.lines)).joined(separator: "\n")
-            }.joined(separator: "\n")
-            let text = [$0.text, $0.detail, $0.tool?.command, $0.tool?.output, $0.tool?.path, diffText]
-                .compactMap { $0 }.joined(separator: "\n")
-            return PaneSearchItem(id: $0.eventID, text: text)
-        }
-    }
-
-    private var findMatches: [String] {
-        PaneSearch.matches(query: findQuery, in: searchItems)
-    }
-
-    private var currentMatchID: String? {
-        guard let findMatchID, findMatches.contains(findMatchID) else { return nil }
-        return findMatchID
-    }
-
-    private var findIndex: Int? {
-        findMatchID.flatMap { findMatches.firstIndex(of: $0) }
-    }
-
-    private var findCountText: String {
-        guard let findIndex, !findMatches.isEmpty else { return "0 of 0" }
-        return "\(findIndex + 1) of \(findMatches.count)"
-    }
-
-    private var lastVisibleID: String? {
-        showRawData ? model.rawEntries.last?.id : visibleRows.last?.eventID
-    }
-
-    private var rawSessionBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Session and agents").font(.caption).foregroundStyle(.secondary)
-            Text(verbatim: rawSessionJSON)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-        }
-        .id("raw-session")
-        .padding(8)
-        .background(matchBackground("raw-session"))
-    }
-
-    private func rawEntry(_ entry: RawTranscriptEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("[\(entry.index)] \(entry.rowKind)")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-            Text(verbatim: entry.displayText)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-        }
-        .id(entry.id)
-        .padding(8)
-        .background(matchBackground(entry.id))
-    }
-
-    private func matchBackground(_ id: String) -> some ShapeStyle {
-        guard findPresented else { return Color.clear }
-        if currentMatchID == id { return Color.accentColor.opacity(0.28) }
-        if findMatches.contains(id) { return Color.yellow.opacity(0.14) }
-        return Color.clear
-    }
-
-    private func openFind() {
-        guard KeyRouting.route(focus: .transcript, key: .commandF) == .openFind else { return }
-        findPresented = true
-        resetFindSelection()
-        Task { @MainActor in findFieldFocused = true }
-    }
-
-    private func closeFind() {
-        findPresented = false
-        findFieldFocused = false
-        transcriptFocused = true
-    }
-
-    private func stepFind(_ delta: Int) {
-        let key: RoutedKey = delta < 0 ? .shiftCommandG : .commandG
-        let expected: KeyRoute = delta < 0 ? .findPrevious : .findNext
-        guard KeyRouting.route(focus: .transcript, key: key) == expected else { return }
-        let index = PaneSearch.step(current: findIndex, count: findMatches.count, delta: delta)
-        findMatchID = index.map { findMatches[$0] }
-        pendingScrollID = currentMatchID
-    }
-
-    private func resetFindSelection() {
-        findMatchID = findMatches.first
-        pendingScrollID = findMatches.first
-    }
-
-    private var paneColumn: some View {
-        let cells = SwarmPanePolicy.cells(session: row.session, agents: agents)
-        return Group {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(cells) { cell in
-                        AgentCellView(session: row.session, cell: cell, panes: panes)
-                            .frame(height: 320)
-                    }
-                }
-                .padding(8)
+            focusComposer: { [panes] in
+                panes.revealChat()
+                composerFocus.wrappedValue = true
+            },
+            moveFocus: { [panes] direction in
+                guard !panes.moveFocus(direction, among: keys) else { return }
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                transcriptFocus.wrappedValue = true
+            },
+            zoom: { [panes] in panes.toggleZoom() },
+            stop: { [weak model, session = row.session] in
+                Task { try? await model?.interrupt(session: session) }
             }
-        }
+        )
     }
-}
 
-private struct AgentCellView: View {
-    let session: SwarmSession
-    let cell: SwarmAgentCell
-    let panes: AgentPaneStore
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text("\(cell.agent.id.rawValue) · \(cell.agent.role) · \(cell.agent.provider ?? "unknown") · \(cell.agent.alive == false ? "ended" : "live")")
-                .font(.caption)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Group {
-                switch cell.kind {
-                case .attach:
-                    AgentTerminalView(session: session, agent: cell.agent, store: panes)
-                case .notice(let reason):
-                    ContentUnavailableView(reason, systemImage: "terminal")
-                }
+    private var paneStrip: some View {
+        let session = row.session
+        let agentCells = isActive ? SwarmPanePolicy.cells(session: session, agents: agents) : []
+        let byID = Dictionary(agentCells.map { ($0.agent.id.rawValue, $0) }) { first, _ in first }
+        func key(_ id: String) -> String { AgentPaneStore.key(session: session.id, agent: id) }
+        return PaneStrip(
+            cells: agentCells.map { cell in
+                PaneCell(
+                    id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
+                    model: cell.agent.provider ?? "unknown",
+                    // A closed pane connection shows as ended even while the agent lives.
+                    status: panes.ended.contains(key(cell.agent.id.rawValue)) ? .ended : cell.agent.status
+                )
+            },
+            focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
+            zoomedID: agentCells.first { key($0.agent.id.rawValue) == panes.zoomedKey }?.agent.id.rawValue,
+            revealID: agentCells.first { key($0.agent.id.rawValue) == panes.revealKey }?.agent.id.rawValue,
+            revealCount: panes.revealCount,
+            splitScope: session.id.rawValue,
+            onFocus: { panes.focus(key: key($0)) },
+            // The same path as ⌘↩: the moved terminal takes focus again.
+            onZoom: { panes.toggleZoom(key: $0.map(key)) },
+            onReconnect: { id in
+                if let agent = byID[id]?.agent { panes.reconnect(session: session, agent: agent) }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(6)
-        .background(.background)
-        .overlay { RoundedRectangle(cornerRadius: 4).stroke(.separator) }
-    }
-}
-
-private struct TranscriptRowView: View {
-    let row: TranscriptRow
-    let chair: String?
-    var revealForSearch = false
-
-    var body: some View {
-        Group {
-            if let activity = row.tool {
-                TranscriptToolCard(title: row.text, activity: activity, revealForSearch: revealForSearch)
-                    .frame(maxWidth: 880, alignment: .leading)
-            } else if row.kind == .user {
-                rowBody
-                    .padding(14)
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .background { RoundedRectangle(cornerRadius: 10).fill(.quaternary) }
-            } else if row.kind == .assistant {
-                rowBody.frame(maxWidth: 880, alignment: .leading).padding(.vertical, 6)
-            } else {
-                rowBody
+        ) {
+            transcriptColumn
+        } pane: { cell in
+            switch byID[cell.id]?.kind {
+            case .attach?:
+                AgentTerminalView(key: key(cell.id), store: panes) {
+                    guard !SwarmOpenScript.isActive, let agent = byID[cell.id]?.agent else { return }
+                    _ = panes.terminal(session: session, agent: agent)
+                }
+            case .notice(let reason)?:
+                ContentUnavailableView(reason, systemImage: "terminal")
+            case nil:
+                EmptyView()
             }
-        }
-        .id(row.eventID)
-    }
-
-    private var rowBody: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(row.label(chair: chair))
-                .font(labelFont)
-                .foregroundStyle(.secondary)
-            switch row.kind {
-            case .diff:
-                if let diff = row.diff { TranscriptDiffView(diff: diff) }
-            case .thought:
-                DisclosureGroup("Show reasoning") {
-                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            case .toolResult:
-                TranscriptOutputView(text: row.text,
-                                     title: row.toolStatus == .failed ? "Failed tool result" : "Tool result",
-                                     revealAll: revealForSearch)
-            case .toolUse:
-                DisclosureGroup {
-                    Text(verbatim: row.detail ?? "").font(.system(.body, design: .monospaced))
-                } label: {
-                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
-                        .lineLimit(1)
-                }
-            case .system where row.text.components(separatedBy: .newlines).count > 3:
-                DisclosureGroup {
-                    Text(verbatim: row.text).font(.system(.body, design: .monospaced))
-                } label: {
-                    Text(verbatim: String(row.text.prefix(while: { !$0.isNewline })))
-                        .font(.system(.body, design: .monospaced))
-                        .lineLimit(1)
-                }
-            case .error:
-                Text(verbatim: row.text).foregroundStyle(.red)
-            case .user, .assistant:
-                TranscriptMessageView(text: row.text)
-                Button("Copy message", systemImage: "doc.on.doc") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(row.text, forType: .string)
-                }
-                .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
-                .padding(.top, 4)
-            case .result where row.endsTurn:
-                Label(row.text == "aborted" ? "Turn interrupted" : "Turn finished",
-                      systemImage: row.text == "aborted" ? "stop.circle" : "checkmark.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-            default:
-                Text(verbatim: row.text)
-            }
-        }
-    }
-
-    private var labelFont: Font {
-        switch row.kind {
-        case .thought, .toolUse, .toolResult, .result, .system:
-            .system(.callout, design: .monospaced)
-        default:
-            .caption
         }
     }
 }

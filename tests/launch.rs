@@ -20,12 +20,14 @@ fn tool(home: &Path, name: &str, body: &str) {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// Runs the built binary with only HOME, PATH, and the given variables set.
+/// Runs the built binary with only HOME, PATH, and the given variables set. SWARM_HOME pins the
+/// data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
 fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
     command
         .env_clear()
         .env("HOME", home)
+        .env("SWARM_HOME", home)
         .env(
             "PATH",
             format!("{}:/usr/bin:/bin", home.join("bin").display()),

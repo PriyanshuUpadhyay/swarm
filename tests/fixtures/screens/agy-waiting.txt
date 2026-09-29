@@ -1,0 +1,7 @@
+ Agent is requesting permission for: run_command
+   touch /tmp/work/probe.txt
+
+ Do you want to proceed?
+ > Yes
+   No
+ tab amend · edit command

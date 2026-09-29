@@ -1,19 +1,5 @@
 import SwiftUI
 
-enum WorkspaceSidebarMode: String, CaseIterable {
-    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage"
-
-    var symbol: String {
-        switch self {
-        case .workspaces: "square.stack.3d.up"
-        case .files: "folder"
-        case .changes: "arrow.triangle.branch"
-        case .pullRequest: "arrow.triangle.pull"
-        case .usage: "chart.pie"
-        }
-    }
-}
-
 struct MovableSidebar<Sidebar: View, Content: View>: View {
     let visible: Bool
     let onRight: Bool
@@ -35,13 +21,11 @@ struct MovableSidebar<Sidebar: View, Content: View>: View {
                 sidebar()
                     .frame(width: actualWidth, height: geometry.size.height)
                     .clipped()
-                    .opacity(visible ? 1 : 0)
-                    .allowsHitTesting(visible)
-                    .accessibilityHidden(!visible)
+                    .retainedVisibility(visible)
                     .overlay(alignment: onRight ? .leading : .trailing) {
                         if visible {
-                            Rectangle().fill(.separator).frame(width: 1)
-                                .frame(width: 7).contentShape(Rectangle())
+                            Rectangle().fill(.separator).frame(width: DesignTokens.Size.hairline)
+                                .frame(width: DesignTokens.Size.dragHandle).contentShape(Rectangle())
                                 .gesture(DragGesture().onChanged { value in
                                     if dragStart == nil { dragStart = actualWidth }
                                     width = min(440, max(230, (dragStart ?? actualWidth) + value.translation.width * (onRight ? -1 : 1)))

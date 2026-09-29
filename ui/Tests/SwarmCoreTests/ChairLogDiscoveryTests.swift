@@ -49,6 +49,30 @@ struct ChairLogDiscoveryTests {
         #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
     }
 
+    @Test("A reader finds a log in an account added after its first look")
+    func accountAddedLater() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let cwd = "/work/\(UUID().uuidString)"
+        let first = fixture.root.appendingPathComponent(".codex-first")
+        let added = fixture.root.appendingPathComponent(".codex-added")
+        let profiles = ChangingProfiles(SwarmAccountList(
+            provider: "codex", source: "fixture", accounts: [account("first", home: first)], auto: "first"
+        ))
+        let session = SwarmSession(
+            id: .init("added-account"), talkMode: "lane", adapter: "tmux-solo",
+            cwd: cwd, createdAt: 1_790_079_961, chairProvider: "codex", chairID: nil,
+            chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
+        )
+        let transcript = SwarmChairTranscript(profiles: profiles, home: fixture.root, accountHomesTTL: 0)
+        #expect(await transcript.discoveredLog(for: session) == nil)
+        profiles.set(SwarmAccountList(provider: "codex", source: "fixture", accounts: [
+            account("first", home: first), account("added", home: added)
+        ], auto: "first"))
+        let log = try fixture.codexLog(home: added, name: "late", cwd: cwd, at: "2026-09-22T12:26:05Z")
+        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL == log.standardizedFileURL)
+    }
+
     @Test("A nearer log replaces the discovered transcript and title")
     func nearerLogReplacesCachedLog() async throws {
         let fixture = try Fixture()
@@ -262,6 +286,29 @@ struct ChairLogDiscoveryTests {
         )?.standardizedFileURL == log.standardizedFileURL)
     }
 
+    @Test("A log found by chair id is reused until its file is gone")
+    func chairIDLogReused() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let chairID = UUID().uuidString
+        func lookup() -> String? {
+            ChairLogDiscovery.path(
+                provider: "codex", chairID: chairID, cwd: "/work", createdAt: 1_790_079_961,
+                homes: [home]
+            )?.lastPathComponent
+        }
+        let found = try fixture.codexLog(home: home, name: "b-\(chairID)", cwd: "/work", at: "2026-09-22T12:26:02Z")
+        #expect(lookup() == found.lastPathComponent)
+
+        // A fresh search would pick this one, because it sorts first.
+        let later = try fixture.codexLog(home: home, name: "a-\(chairID)", cwd: "/work", at: "2026-09-22T12:26:02Z")
+        #expect(lookup() == found.lastPathComponent)
+
+        try FileManager.default.removeItem(at: found)
+        #expect(lookup() == later.lastPathComponent)
+    }
+
     @Test("Uses the time window when no chair id is available")
     func noChairIDUsesWindow() throws {
         let fixture = try Fixture()
@@ -320,6 +367,24 @@ struct ChairLogDiscoveryTests {
             remainingPct: nil, summary: nil
         )
     }
+}
+
+/// Accounts that a test can change after a reader first reads them.
+private final class ChangingProfiles: SwarmProfileSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: SwarmAccountList
+
+    init(_ list: SwarmAccountList) { self.list = list }
+
+    func set(_ list: SwarmAccountList) {
+        lock.withLock { self.list = list }
+    }
+
+    func roles() async throws -> [SwarmRole] { [] }
+    func accounts(provider: String) async throws -> SwarmAccountList {
+        lock.withLock { list }
+    }
+    func usage() async throws -> [SwarmUsageMeter] { [] }
 }
 
 private struct FixtureProfiles: SwarmProfileSource {

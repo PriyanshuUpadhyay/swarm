@@ -14,13 +14,20 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapter
 
 ## Environment
 
-Set `SWARM_HOME` by hand for each process that needs a separate data set. For example, a development
-process can use `SWARM_HOME=~/.swarm-<branch>`. Nothing sets it from the branch or build. When it is
-not set, the binary uses `HOME`. The data directory is always `$SWARM_HOME/.swarm`.
+When `SWARM_HOME` is not set, a build from `main` (or from a detached HEAD) uses `HOME`, and a
+build from any other branch uses `~/.swarm-<branch>`, so a branch build never touches the real data
+(ADR 0027). A branch name with a character outside `[a-z0-9._-]`, one that starts with `.` or
+`-`, or one over 200 bytes gets its letters made lowercase and its other unsafe bytes made `-`, is cut
+to 200 bytes, and gets a hash of the whole name added, so `feat/login` uses
+`~/.swarm-feat-login+407712bf7898fb7f` and never meets `feat-login`. An uppercase letter also takes
+the hash, because the default macOS disk ignores case, so `Feature` and `feature` get two folders. `branch_folder` in `src/paths.rs`
+states the exact rule.
+`swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins. The data
+directory is always `$SWARM_HOME/.swarm`.
 
 | Variable | Meaning |
 |---|---|
-| `SWARM_HOME` | Parent of the `.swarm/` data directory. Set it for each process. Defaults to `$HOME`. |
+| `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
 | `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
 | `AGENT_ROUTING_CONFIG` | Routing config file. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
@@ -48,6 +55,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
+| `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
 | `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the role's runner as JSON: its fields plus `role`, `runnerId`, and `fallbackRunnerIds`. |
@@ -57,7 +65,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `usage --json` | any | List account use meters as JSON. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
-| `agents --json` | session | List agents, pane state, and adapter attach support as JSON. |
+| `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `working`, `waiting`, or `done` when the screen shows it and no hook reported in the last 10 s. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
 | `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve a routed role, or use `chat --provider <provider> --model <name>` for a direct model choice. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |

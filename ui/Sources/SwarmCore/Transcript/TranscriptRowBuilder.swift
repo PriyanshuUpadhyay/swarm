@@ -1,12 +1,6 @@
 import Foundation
 import TranscriptTool
 
-public enum TranscriptTail {
-    public static func follows(current: Bool, atBottom: Bool, userScrolled: Bool) -> Bool {
-        userScrolled ? atBottom : current
-    }
-}
-
 /// The text rows a chat can draw from typed transcript events.
 public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Hashable {
@@ -109,7 +103,7 @@ public enum TranscriptRowBuilder {
                 continue
             }
             guard var row = row(from: event, index: index + indexOffset) else { continue }
-            if case .toolCall(_, let name, let input, let status, _) = event {
+            if case .toolCall(_, let name, let input, let status, let callMeta) = event {
                 let relatedUpdates = (updates[index] ?? []).sorted()
                 let lastUpdate = relatedUpdates.last.map { events[$0] }
                 let relatedDiffs = (diffs[index] ?? []).sorted().compactMap { offset -> TranscriptDiff? in
@@ -118,9 +112,11 @@ public enum TranscriptRowBuilder {
                 }
                 var output: String?
                 var finalStatus = status
-                if case .toolCallUpdate(_, let updateStatus, let content, _) = lastUpdate {
+                var duration: Double?
+                if case .toolCallUpdate(_, let updateStatus, let content, let updateMeta) = lastUpdate {
                     output = content
                     finalStatus = updateStatus
+                    duration = TranscriptToolActivity.duration(from: callMeta.timestamp, to: updateMeta.timestamp)
                 }
                 let state: TranscriptToolActivity.State
                 switch finalStatus {
@@ -136,7 +132,7 @@ public enum TranscriptRowBuilder {
                 row.tool = TranscriptToolActivity(
                     name: name, input: input, output: output, diffs: relatedDiffs,
                     state: state, command: TranscriptToolActivity.command(in: input, name: name),
-                    path: TranscriptToolActivity.path(in: input)
+                    path: TranscriptToolActivity.path(in: input), duration: duration
                 )
             }
             if let last = rows.last, last.kind == row.kind, lastSourceID == row.eventID,

@@ -3,19 +3,83 @@ import Testing
 
 @Suite("Key routing")
 struct KeyRoutingTests {
-    @Test("Keys go only to their focused surface")
+    @Test("App keys win in every focus; the terminal gets every other key")
     func table() {
-        #expect(KeyRouting.route(focus: .terminal, key: .escape) == .terminal)
-        #expect(KeyRouting.route(focus: .terminal, key: .other) == .terminal)
-        #expect(KeyRouting.route(focus: .transcript, key: .escape) == .ignore)
-        #expect(KeyRouting.route(focus: .transcript, key: .commandF) == .openFind)
-        #expect(KeyRouting.route(focus: .transcript, key: .commandG) == .findNext)
-        #expect(KeyRouting.route(focus: .transcript, key: .shiftCommandG) == .findPrevious)
-        #expect(KeyRouting.route(focus: .terminal, key: .commandF) == .terminal)
-        #expect(KeyRouting.route(focus: .sidebar, key: .escape) == .ignore)
-        for focus in [FocusedSurface.terminal, .transcript, .sidebar] {
-            #expect(KeyRouting.route(focus: focus, key: .commandN) == .openNewWorkspace)
+        let surfaces: [FocusedSurface] = [.terminal, .transcript, .sidebar]
+        let appKeys: [(KeyChord, AppKey)] = [
+            (KeyChord("n", .command), .newChat),
+            (KeyChord("n", [.command, .shift]), .newWorkspace),
+            (KeyChord(.down, [.control, .command]), .nextWorkspace),
+            (KeyChord(.up, [.control, .command]), .previousWorkspace),
+            (KeyChord("1", .command), .selectTab(1)),
+            (KeyChord("9", .command), .selectTab(9)),
+            (KeyChord("]", [.command, .shift]), .nextTab),
+            (KeyChord("[", [.command, .shift]), .previousTab),
+            (KeyChord(.left, [.option, .command]), .moveFocus(.left)),
+            (KeyChord(.right, [.option, .command]), .moveFocus(.right)),
+            (KeyChord(.up, [.option, .command]), .moveFocus(.up)),
+            (KeyChord(.down, [.option, .command]), .moveFocus(.down)),
+            (KeyChord(.returnKey, .command), .zoom),
+            (KeyChord("l", .command), .focusComposer),
+            (KeyChord("b", .command), .toggleSidebar),
+            (KeyChord("b", [.command, .shift]), .moveSidebar),
+            (KeyChord("1", [.option, .command]), .sidebarView(1)),
+            (KeyChord("5", [.option, .command]), .sidebarView(5)),
+            (KeyChord("i", [.option, .command]), .showChanges),
+            (KeyChord("k", .command), .search),
+            (KeyChord(".", .command), .stop),
+        ]
+        for (chord, action) in appKeys {
+            #expect(AppKey.action(for: chord) == action)
+            #expect(action.chord == chord)
+            for focus in surfaces { #expect(KeyRouting.route(focus: focus, key: chord) == .app(action)) }
         }
+        #expect(AppKey.action(for: KeyChord("6", [.option, .command])) == nil)
+        #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
+    }
+
+    @Test("A terminal gets every key without ⌘; other ⌘ keys go nowhere, except copy, paste, select all")
+    func terminalPolicy() {
+        let toTerminal = [
+            KeyChord("c", .control), KeyChord("r", .control), KeyChord(.escape), KeyChord("x"),
+            KeyChord(.returnKey), KeyChord(.left, .option), KeyChord("b", .option),
+            KeyChord("d", [.control, .shift]), KeyChord(.up),
+        ]
+        for chord in toTerminal {
+            #expect(KeyRouting.route(focus: .terminal, key: chord) == .terminal)
+            #expect(KeyRouting.route(focus: .transcript, key: chord) == .ignore)
+        }
+        for chord in [KeyChord(.left, .command), KeyChord(.right, .command), KeyChord("e", .command),
+                      KeyChord("j", .command), KeyChord("c", [.command, .shift])] {
+            #expect(KeyRouting.route(focus: .terminal, key: chord) == .blocked)
+        }
+        for character in ["c", "v", "a"] as [Character] {
+            #expect(KeyRouting.route(focus: .terminal, key: KeyChord(character, .command)) == .edit)
+            #expect(KeyRouting.route(focus: .transcript, key: KeyChord(character, .command)) == .ignore)
+        }
+        let optionMeta = KeyChord("o", [.option, .command])
+        for focus in [FocusedSurface.terminal, .transcript, .sidebar] {
+            #expect(KeyRouting.route(focus: focus, key: optionMeta) == .blocked)
+        }
+    }
+
+    @Test("Find keys open the chat's find, and the terminal's own find in a pane")
+    func findKeys() {
+        let find = KeyChord("f", .command)
+        #expect(KeyRouting.route(focus: .transcript, key: find) == .app(.find))
+        #expect(KeyRouting.route(focus: .terminal, key: find) == .terminal)
+        #expect(KeyRouting.route(focus: .terminal, key: KeyChord("g", .command)) == .terminal)
+        #expect(KeyRouting.route(focus: .transcript, key: KeyChord("g", [.command, .shift]))
+            == .app(.findPrevious))
+    }
+
+    @Test("Key script words read as chords")
+    func script() {
+        #expect(KeyChord(script: "opt+cmd+right") == KeyChord(.right, [.option, .command]))
+        #expect(KeyChord(script: "cmd+1") == KeyChord("1", .command))
+        #expect(KeyChord(script: "cmd+return") == KeyChord(.returnKey, .command))
+        #expect(KeyChord(script: "cmd") == nil)
+        #expect(KeyChord(script: "hyper+x") == nil)
     }
 
     @Test("Find matches visible text and wraps in both directions")

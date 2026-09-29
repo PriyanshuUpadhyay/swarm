@@ -15,28 +15,39 @@ public final class SwarmProjectStore {
     }
 
     @discardableResult
-    public func add(_ url: URL) throws -> String {
-        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              isDirectory.boolValue else {
-            throw SwarmProjectError.notDirectory(path)
-        }
-        var saved = paths()
-        saved.removeAll { $0 == path }
-        saved.append(path)
-        defaults.set(saved, forKey: key)
+    public func add(_ url: URL) async throws -> String {
+        let path = try await Task.detached { try Self.directoryPath(url) }.value
+        remember(path)
         return path
     }
 
     @discardableResult
-    public func create(at url: URL) throws -> String {
-        let path = url.standardizedFileURL.path
-        guard !FileManager.default.fileExists(atPath: path) else {
-            throw SwarmProjectError.alreadyExists(path)
-        }
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
-        return try add(url)
+    public func create(at url: URL) async throws -> String {
+        let path = try await Task.detached {
+            let path = url.standardizedFileURL.path
+            guard !FileManager.default.fileExists(atPath: path) else {
+                throw SwarmProjectError.alreadyExists(path)
+            }
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+            return try Self.directoryPath(url)
+        }.value
+        remember(path)
+        return path
+    }
+
+    nonisolated private static func directoryPath(_ url: URL) throws -> String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { throw SwarmProjectError.notDirectory(path) }
+        return path
+    }
+
+    private func remember(_ path: String) {
+        var saved = paths()
+        saved.removeAll { $0 == path }
+        saved.append(path)
+        defaults.set(saved, forKey: key)
     }
 }
 

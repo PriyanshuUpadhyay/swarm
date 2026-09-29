@@ -57,10 +57,24 @@ The picker reports each step. Cancel stops the switch before the new agent start
 agent may still finish its summary. After launch, cancellation is disabled until the operation
 finishes. The chats are linked only after the new agent receives the context.
 
-One sidebar switches between Workspaces, Files, Changes, PR, and Usage. The toolbar menu moves
-it left or right; ⌘B hides or shows it, and ⌥⌘I opens Changes. Drag its inner edge to resize it.
-Its side, width, and selected view survive restarts. The composer usage line selects Usage.
+One sidebar switches between Workspaces, Files, Changes, PR, and Usage. ⇧⌘B or the toolbar menu
+moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘5 pick a view, and ⌥⌘I opens Changes.
+Drag its inner edge to resize it. Its side, width, and selected view survive restarts. The composer usage line selects Usage.
 Reads run when a view opens or Refresh is pressed; they do not fetch or change Git.
+
+Agent panes sit in columns to the right of the chat. Drag a column's right edge to set the width
+of every column, or the line inside a two-pane column to split it; a double-click resets either.
+The width and splits survive restarts.
+
+Every app key is a menu command, so it works while an agent pane has focus. ⌘N starts a chat
+in the workspace and ⇧⌘N a new workspace. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
+a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat
+and the panes, and the strip scrolls to the focused pane. ⌘↩ zooms the focused pane and returns
+it. ⌘L focuses the composer. ⌘K opens the command palette, which finds actions, workspaces,
+chats, and agents; every query word must match. ⌘F, ⌘G, and ⇧⌘G find in the chat or in the
+focused pane. A pane gets every key without ⌘, including all ⌃ and ⌥ keys and Esc. In a pane,
+⌘C, ⌘V, and ⌘A copy, paste, and select all; any other ⌘ key that is not an app or menu key
+goes nowhere, so ⌥⌘O cannot turn off Option as Meta.
 
 Files lists folders on demand, includes hidden files, and omits `.git`. File previews are read-only,
 limited to 256 KiB, and do not follow symbolic links. Each folder lists at most 2,000 entries and
@@ -94,6 +108,8 @@ Run `make build` to compile the Swift targets.
 Run `make test` to build the transcript tool and run tests.
 Run `make lint` to check the source boundaries.
 Run `make app` to build `.build/release/Swarm.app`.
-Run `make install` to put it in `~/Applications` and keep the old app.
+Run `make install` to put it in `~/Applications`, keep the old app, and install the `swarm` CLI
+from this checkout. `make app` never changes the installed CLI or `~/.swarm`.
 Run `make run` to build and launch the app.
-For a development build, set `SWARM_HOME=~/.swarm-<branch>` to keep its data apart.
+A build from a branch other than `main` keeps its data in `~/.swarm-<branch>` and passes that
+`SWARM_HOME` to every `swarm` it starts. An explicit `SWARM_HOME` in the app's environment wins.

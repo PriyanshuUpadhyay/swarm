@@ -52,3 +52,27 @@ public enum SwarmPerformance {
         }
     }
 }
+
+/// Measurement aid: `SWARM_OPEN_SCRIPT=N` makes the window open every workspace and chat in turn,
+/// N rounds, and print how long each took to show content. Panes do not attach in this mode, so a
+/// run against a real home never touches live agents.
+public enum SwarmOpenScript {
+    public static var rounds: Int {
+        Int(ProcessInfo.processInfo.environment["SWARM_OPEN_SCRIPT"] ?? "") ?? 0
+    }
+
+    public static var isActive: Bool { rounds > 0 }
+
+    /// Screenshot aid: `SWARM_OPEN_PALETTE=1` opens the command palette when the window appears.
+    public static var opensPalette: Bool {
+        ProcessInfo.processInfo.environment["SWARM_OPEN_PALETTE"] == "1"
+    }
+
+    /// p50, p95, and max of millisecond samples, nearest rank.
+    public static func summary(_ samples: [Double]) -> (p50: Double, p95: Double, max: Double)? {
+        guard !samples.isEmpty else { return nil }
+        let sorted = samples.sorted()
+        func rank(_ p: Double) -> Double { sorted[Swift.max(0, Int((p * Double(sorted.count)).rounded(.up)) - 1)] }
+        return (rank(0.5), rank(0.95), sorted[sorted.count - 1])
+    }
+}

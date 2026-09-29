@@ -33,19 +33,103 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
 }
 
 fn session_id() -> Result<String, String> {
-    let id = env_var("SWARM_SESSION_ID")?;
-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())?;
+    valid_session_id(&env_var("SWARM_SESSION_ID")?)
+}
+
+fn valid_session_id(id: &str) -> Result<String, String> {
+    let id = uuid::Uuid::parse_str(id).map_err(|_| "swarm: bad SWARM_SESSION_ID".to_string())?;
     if id.get_version_num() != 7 {
         return Err("swarm: bad SWARM_SESSION_ID".to_string());
     }
     Ok(id.to_string())
+}
+
+/// (session, agent, state, detail)
+type HookReport = (String, String, &'static str, Option<String>);
+
+/// What one hook call reports, or None when the caller is no swarm agent or the event says
+/// nothing about state. `args` is `<provider> [event]`; AGY sends no event name in its payload,
+/// so its hook command names the event.
+fn hook_report(
+    args: &[String],
+    payload: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Option<HookReport>, Box<dyn std::error::Error>> {
+    let (provider, event) = match args {
+        [provider] => (provider, None),
+        [provider, event] => (provider, Some(event.as_str())),
+        _ => return Err(USAGE.into()),
+    };
+    if !matches!(provider.as_str(), "claude" | "codex" | "agy") {
+        return Err(USAGE.into());
+    }
+    let (Some(session), Some(agent)) = (env("SWARM_SESSION_ID"), env("SWARM_AGENT_ID")) else {
+        return Ok(None);
+    };
+    let payload: serde_json::Value = match payload.trim() {
+        "" => serde_json::json!({}),
+        text => serde_json::from_str(text)?,
+    };
+    let event = event
+        .or_else(|| payload.get("hook_event_name")?.as_str())
+        .unwrap_or_default();
+    let Some((state, detail)) = swarm::host::hook_state(provider, event, &payload) else {
+        return Ok(None);
+    };
+    Ok(Some((valid_session_id(&session)?, agent, state, detail)))
+}
+
+/// All of `reader` if it closes within `limit`, else None. The read runs on its own thread, so
+/// a writer that keeps the pipe open cannot hold the caller past the limit.
+fn read_within<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+    limit: std::time::Duration,
+) -> Option<String> {
+    let (sender, text) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut payload = String::new();
+        let _ = sender.send(reader.read_to_string(&mut payload).map(|_| payload));
+    });
+    text.recv_timeout(limit).ok()?.ok()
+}
+
+/// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
+/// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
+/// the bus 1 s.
+fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // A caller that is no swarm agent is done before its stdin is read.
+    if env::var_os("SWARM_SESSION_ID").is_none() || env::var_os("SWARM_AGENT_ID").is_none() {
+        return Ok(());
+    }
+    let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2))
+        .ok_or("swarm hook: stdin did not close within 2 s")?;
+    let Some((session, agent, state, detail)) =
+        hook_report(args, &payload, |name| env::var(name).ok())?
+    else {
+        return Ok(());
+    };
+    let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
+    connection.busy_timeout(std::time::Duration::from_secs(1))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    swarm::store::set_state(
+        &connection,
+        &session,
+        &agent,
+        state,
+        "hook",
+        detail.as_deref(),
+        now,
+    )
 }
 
 fn adapter_name() -> String {
@@ -488,6 +572,10 @@ fn spawn_agent(
     role: &str,
     options: SpawnOptions<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Before any pane, file, or bus work: the id names a pane, a bus row, and a run script.
+    if !swarm::bus::valid_agent_id(agent_id) {
+        return Err(format!("swarm: bad agent id {agent_id}").into());
+    }
     let account = if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
@@ -566,9 +654,10 @@ fn spawn_agent(
         } else {
             swarm::adapter::shell_line(options.command)
         };
+        let line = script_line(root, &session_id, agent_id, &child)?;
         adapter.run(
             "ring",
-            &[("pane", &pane), ("text", &format!("{child}; {hook}"))],
+            &[("pane", &pane), ("text", &format!("{line}; {hook}"))],
         )?;
     }
     println!("{pane}");
@@ -576,6 +665,50 @@ fn spawn_agent(
         eprintln!("account {}", account.name);
     }
     Ok(())
+}
+
+/// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
+/// A ring types into a new pane before its shell is ready, and the terminal then keeps only the
+/// first 1024 bytes of the line, so a long argv never reaches the shell whole. The pane's own
+/// shell sources the file, so its functions (such as yelo's `codex`) still pick the account.
+fn script_line(
+    root: &std::path::Path,
+    session_id: &str,
+    agent_id: &str,
+    command: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    // Both ids become path parts; a `../` in either would write and source a file outside runs/.
+    if !swarm::bus::valid_agent_id(agent_id) {
+        return Err(format!("swarm: bad agent id {agent_id}").into());
+    }
+    valid_session_id(session_id)?;
+    let dir = root.join(format!("runs/{session_id}"));
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    // The line can carry an account's env, so only the owner reads it.
+    let path = dir.join(format!("{agent_id}.sh"));
+    let tmp = dir.join(format!(".{agent_id}.sh.{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, format!("{command}\n").as_bytes())
+        })
+        .and_then(|()| std::fs::rename(&tmp, &path));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("swarm: cannot write {}: {error}", path.display()).into());
+    }
+    Ok(format!(
+        ". {}",
+        swarm::adapter::shell_line(&[path.to_string_lossy().into_owned()])
+    ))
 }
 
 fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
@@ -591,6 +724,7 @@ fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error
 fn report_dead(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
+    adapter_name: &str,
     session_id: &str,
     child: &str,
     note: &str,
@@ -601,7 +735,7 @@ fn report_dead(
         deliver(
             connection,
             root,
-            &adapter_name(),
+            adapter_name,
             session_id,
             child,
             &orchestrator,
@@ -659,7 +793,7 @@ fn sweep_once(
             continue;
         }
         let note = format!("agent {child} died without a summary");
-        report_dead(connection, root, session_id, &child, &note)?;
+        report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
         println!("dead {child}");
     }
     Ok(())
@@ -750,9 +884,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && (flag == "--version" || flag == "-V")
     {
         println!(
-            "swarm {} {}",
+            "swarm {} {} {}",
             env!("CARGO_PKG_VERSION"),
-            env!("SWARM_BUILD_COMMIT")
+            env!("SWARM_BUILD_COMMIT"),
+            env!("SWARM_BUILD_BRANCH")
         );
         return Ok(());
     }
@@ -998,24 +1133,99 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 None
             }
         };
-        let agents = rows
-            .into_iter()
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as i64;
+        let alive: Vec<Option<bool>> = rows
+            .iter()
             .map(|row| {
-                let alive = row.pane.as_deref().and_then(|pane| {
+                row.pane.as_deref().and_then(|pane| {
                     listing
                         .as_deref()
                         .map(|list| swarm::adapter::listing_has_pane(list, pane))
-                });
-                swarm::bus::Agent {
-                    id: row.id,
-                    role: row.role,
-                    pane: row.pane,
-                    provider: row.provider,
-                    created_at: row.created_at,
-                    alive,
-                }
+                })
             })
             .collect();
+        // The screen check (ADR 0021) reads each live pane once per listing, all at the same
+        // time, so six agents cost about one capture.
+        let screens: Vec<Option<(swarm::screen::ScreenState, Option<String>)>> =
+            std::thread::scope(|scope| {
+                let adapter = &adapter;
+                let reads: Vec<_> = rows
+                    .iter()
+                    .zip(&alive)
+                    .map(|(row, alive)| {
+                        let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
+                            (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                            _ => None,
+                        };
+                        scope.spawn(move || {
+                            let (pane, provider) = target?;
+                            let output = adapter
+                                .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                            swarm::screen::read_pane(provider, &output, || {
+                                adapter.capture_within(
+                                    &[("pane", pane)],
+                                    std::time::Duration::from_millis(300),
+                                )
+                            })
+                        })
+                    })
+                    .collect();
+                reads
+                    .into_iter()
+                    .map(|read| read.join().ok().flatten())
+                    .collect()
+            });
+        let mut agents = Vec::new();
+        for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+            let (screen, detail) = screen.unzip();
+            let detail = detail.flatten();
+            let (state, write) = swarm::screen::resolve(
+                row.state.as_deref(),
+                row.state_at,
+                row.state_source.as_deref(),
+                screen,
+                now,
+            );
+            if let Some(seen) = write {
+                let detail = detail.filter(|_| seen == "failed");
+                match swarm::store::set_screen_state(
+                    &connection,
+                    &session_id,
+                    &row.id,
+                    seen,
+                    detail.as_deref(),
+                    now,
+                    (
+                        row.state.as_deref(),
+                        row.state_source.as_deref(),
+                        row.state_at,
+                    ),
+                ) {
+                    Ok(true) => {
+                        (row.state_at, row.state_source, row.state_detail) =
+                            (Some(now), Some("screen".into()), detail);
+                    }
+                    // A newer hook report landed after this listing read the row; it stands,
+                    // and the next listing shows it.
+                    Ok(false) => {}
+                    Err(error) => eprintln!("swarm: {error}"),
+                }
+            }
+            agents.push(swarm::bus::Agent {
+                id: row.id,
+                role: row.role,
+                pane: row.pane,
+                provider: row.provider,
+                created_at: row.created_at,
+                alive,
+                state,
+                state_at_s: row.state_at,
+                state_source: row.state_source,
+                state_detail: row.state_detail,
+            });
+        }
         #[derive(serde::Serialize)]
         struct AgentListOutput {
             agents: Vec<swarm::bus::Agent>,
@@ -1121,6 +1331,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
+        if provider.as_deref() == Some("agy") {
+            let hooks = user_home.join(".gemini/config/hooks.json");
+            let command = swarm::bus::state_hook_command("agy")?;
+            swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_hooks(&hooks, &command))?;
+        }
         match provider.as_deref() {
             Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
                 Ok(target) if provider == "codex" => {
@@ -1329,7 +1544,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(&run_dir)?;
             swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
             let note = format!("agent {agent_id} exited without a summary");
-            report_dead(&mut connection, &root, &session_id, &agent_id, &note)
+            report_dead(
+                &mut connection,
+                &root,
+                &adapter_name(),
+                &session_id,
+                &agent_id,
+                &note,
+            )
         }
         [cmd, rest @ ..] if cmd == "sweep" => {
             let every = match rest {
@@ -1373,6 +1595,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [cmd, rest @ ..] = args.as_slice()
+        && cmd == "hook"
+    {
+        if let Err(error) = hook(rest) {
+            eprintln!("{error}");
+        }
+        println!("{{}}");
+        return;
+    }
     if let [cmd, agent_id] = args.as_slice()
         && cmd == "attach"
     {
@@ -1400,6 +1631,89 @@ mod tests {
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
+
+    #[test]
+    fn a_run_script_refuses_an_agent_id_that_leaves_runs() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-script-escape-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let session = "0199a000-0000-7000-8000-000000000001";
+        for bad in ["../../x", "../x", "a/b", "X", ""] {
+            assert!(script_line(&root, session, bad, "true").is_err(), "{bad}");
+        }
+        assert!(script_line(&root, "../session", "coder", "true").is_err());
+        assert!(!root.join("x.sh").exists() && !root.parent().unwrap().join("x.sh").exists());
+        assert!(!root.join("runs").exists());
+        let line = script_line(&root, session, "coder", "true").unwrap();
+        assert!(
+            line.ends_with(&format!("runs/{session}/coder.sh'")),
+            "{line}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        std::io::Write::write_all(&mut writer, b"{}").unwrap();
+        let started = std::time::Instant::now();
+        assert_eq!(
+            read_within(reader, std::time::Duration::from_millis(200)),
+            None
+        );
+        assert!(started.elapsed() < std::time::Duration::from_millis(600));
+        drop(writer);
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        std::io::Write::write_all(&mut writer, b"{}").unwrap();
+        drop(writer);
+        assert_eq!(
+            read_within(reader, std::time::Duration::from_millis(200)).as_deref(),
+            Some("{}")
+        );
+    }
+
+    #[test]
+    fn a_hook_outside_a_swarm_agent_reports_nothing() {
+        let claude = ["claude".to_string()];
+        let waiting = r#"{"hook_event_name":"PermissionRequest"}"#;
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let no_env = |_: &str| None;
+        assert!(hook_report(&claude, waiting, no_env).unwrap().is_none());
+        let session_only = |name: &str| (name == "SWARM_SESSION_ID").then(|| session.to_string());
+        assert!(
+            hook_report(&claude, waiting, session_only)
+                .unwrap()
+                .is_none()
+        );
+        assert!(hook_report(&claude, "not json", no_env).unwrap().is_none());
+
+        let coder = |name: &str| match name {
+            "SWARM_SESSION_ID" => Some(session.to_string()),
+            "SWARM_AGENT_ID" => Some(CODER.to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            hook_report(&claude, waiting, coder).unwrap(),
+            Some((session.to_string(), CODER.to_string(), "waiting", None))
+        );
+        assert!(
+            hook_report(&claude, r#"{"hook_event_name":"SessionStart"}"#, coder)
+                .unwrap()
+                .is_none()
+        );
+        assert!(hook_report(&claude, "not json", coder).is_err());
+        let agy_stop = ["agy".to_string(), "Stop".to_string()];
+        assert_eq!(
+            hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
+            Some((
+                session.to_string(),
+                CODER.to_string(),
+                "failed",
+                Some("quota".to_string())
+            ))
+        );
+        assert!(hook_report(&["gemini".to_string()], waiting, coder).is_err());
+    }
 
     #[test]
     fn model_edit_rejects_blank_names() {
@@ -1484,6 +1798,18 @@ mod tests {
     #[test]
     fn sweep_reports_a_dead_child_as_before() {
         let root = std::env::temp_dir().join(format!("swarm-dead-test-{}", std::process::id()));
+        let ring_log = root.join("rings");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        // The dead-child report must ring through the sweep's adapter, never the real host's.
+        std::fs::write(
+            root.join("adapters/fake.conf"),
+            format!(
+                "self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE\" >> '{}'\nlist = true\nclose = true\ncapture = true\n",
+                ring_log.display()
+            ),
+        )
+        .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(
             &connection,
@@ -1510,6 +1836,7 @@ mod tests {
             None
         );
         assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
 
     #[test]
@@ -1780,6 +2107,35 @@ mod tests {
     }
 
     #[test]
+    fn a_long_command_is_rung_as_a_short_line_that_sources_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("swarm-script-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let command = format!("'claude' '--settings' '{}'", "x".repeat(2000));
+
+        let line = script_line(&root, session, CODER, &command).unwrap();
+        let script = root.join(format!("runs/{session}/{CODER}.sh"));
+        assert_eq!(line, format!(". '{}'", script.display()));
+        assert!(line.len() < 256);
+        assert_eq!(
+            std::fs::read_to_string(&script).unwrap(),
+            format!("{command}\n")
+        );
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&script), 0o600);
+        assert_eq!(mode(script.parent().unwrap()), 0o700);
+
+        std::fs::write(&script, "echo ran\n").unwrap();
+        let shell = std::process::Command::new("sh")
+            .args(["-c", &format!("{line}; echo after")])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&shell.stdout), "ran\nafter\n");
+    }
+
+    #[test]
     fn a_failed_adapter_spawn_rolls_back_the_agent() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(
@@ -1835,7 +2191,7 @@ mod tests {
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
 
-        assert!(report_dead(&mut connection, &root, &session, CODER, "dead").is_err());
+        assert!(report_dead(&mut connection, &root, "fake", &session, CODER, "dead").is_err());
         assert_eq!(
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None

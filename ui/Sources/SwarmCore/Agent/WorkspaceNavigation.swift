@@ -7,6 +7,11 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     public var chats: [SwarmProjectSession] { workspace.sessions.filter { $0.totalAgents != 0 } }
     public var lastActivity: Int { chats.map(\.lastActivity).max() ?? 0 }
     public var isRunning: Bool { chats.contains { $0.isRunning == true } }
+    /// Sets the row's glyph only; it never changes the row order.
+    public var status: AgentStatus? { AgentStatus.aggregate(chats.compactMap(\.status)) }
+    public var statusCounts: [AgentStatus: Int] {
+        chats.reduce(into: [:]) { total, chat in total.merge(chat.statusCounts, uniquingKeysWith: +) }
+    }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
     public static func list(in tree: SessionsTree) -> [Self] {
@@ -37,12 +42,26 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func detail(for entry: WorkspaceEntry, among entries: [WorkspaceEntry]) -> String {
+        detail(for: entry, idsByTitle: idsByTitle(entries))
+    }
+
+    /// Titles that compare equal ignoring case in the user's locale share a key, as
+    /// `localizedCaseInsensitiveCompare` would decide ("Straße" and "STRASSE").
+    static func titleKey(_ title: String) -> String {
+        title.folding(options: [.caseInsensitive], locale: .current)
+    }
+
+    /// Workspace ids under each case-folded title, computed once for a whole list.
+    public func idsByTitle(_ entries: [WorkspaceEntry]) -> [String: [String]] {
+        Dictionary(grouping: entries.map { (Self.titleKey(title(for: $0)), $0.id) }, by: \.0)
+            .mapValues { $0.map(\.1) }
+    }
+
+    public func detail(for entry: WorkspaceEntry, idsByTitle: [String: [String]]) -> String {
         var parts: [String] = []
-        let duplicates = entries.filter {
-            $0.id != entry.id && title(for: $0).localizedCaseInsensitiveCompare(title(for: entry)) == .orderedSame
-        }
+        let duplicates = (idsByTitle[Self.titleKey(title(for: entry))] ?? []).filter { $0 != entry.id }
         if !duplicates.isEmpty {
-            parts.append(pathQualifier(for: entry.id, others: duplicates.map(\.id)))
+            parts.append(pathQualifier(for: entry.id, others: duplicates))
         }
         if customName(for: entry) != nil, !parts.contains(entry.project.name) {
             parts.append(entry.project.name)

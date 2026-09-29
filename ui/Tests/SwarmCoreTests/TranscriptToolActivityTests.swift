@@ -16,6 +16,19 @@ struct TranscriptToolActivityTests {
         #expect(TranscriptToolActivity.path(in: .object(["AbsolutePath": .string(path)])) == path)
     }
 
+    @Test("A tool's duration runs from its call to its result")
+    func duration() {
+        #expect(TranscriptToolActivity.duration(from: "2026-09-29T10:00:00Z", to: "2026-09-29T10:00:12Z") == 12)
+        #expect(TranscriptToolActivity.duration(
+            from: "2026-09-29T10:00:00.250Z", to: "2026-09-29T10:00:00.750Z"
+        ) == 0.5)
+        #expect(TranscriptToolActivity.duration(from: "", to: "2026-09-29T10:00:12Z") == nil)
+        #expect(TranscriptToolActivity.duration(from: "2026-09-29T10:00:12Z", to: "2026-09-29T10:00:00Z") == nil)
+        #expect(TranscriptToolActivity.durationLabel(0.42) == "0.4s")
+        #expect(TranscriptToolActivity.durationLabel(12.4) == "12s")
+        #expect(TranscriptToolActivity.durationLabel(185) == "3m 5s")
+    }
+
     @Test("Raw exec input is a command, while nested JavaScript is not guessed")
     func rawInput() {
         #expect(TranscriptToolActivity.command(in: .string("ls -la"), name: "exec_command") == "ls -la")

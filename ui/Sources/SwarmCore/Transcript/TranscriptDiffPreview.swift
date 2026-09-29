@@ -2,7 +2,7 @@ import Foundation
 import TranscriptTool
 
 /// Defaults to a limited display copy. Explicit full views and copy actions use all saved lines.
-public struct TranscriptDiffPreview {
+public struct TranscriptDiffPreview: Sendable {
     public let patch: String
     public let omittedLines: Int
     public let shortenedLines: Int

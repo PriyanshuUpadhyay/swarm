@@ -81,6 +81,8 @@ public enum Shell {
         env["PATH"] = LoginShellPath
             .merge(discovered: discovered, inherited: inherited, guessed: extraPaths)
             .joined(separator: ":")
+        // Every child, and every `swarm` it starts in turn, uses this build's home (ADR 0027).
+        env["SWARM_HOME"] = SwarmHome.current(environment: env)
         return env
     }
 

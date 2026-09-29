@@ -19,4 +19,17 @@ struct TranscriptTextPreviewTests {
         #expect(preview.text.hasSuffix("line 119"))
         #expect(preview.isTruncated)
     }
+
+    @Test func chunksKeepOrdinaryLinesTogether() {
+        let chunks = TranscriptTextChunks("first\nsecond\nthird\n", limit: 10)
+        #expect(chunks.pieces == ["first\n", "second\n", "third\n"])
+    }
+
+    @Test func chunksKeepEveryCharacterInOrder() {
+        let source = "αβγ\n\n" + String(repeating: "👩🏽‍💻", count: 17) + "\nlast\n"
+        let chunks = TranscriptTextChunks(source, limit: 5)
+        #expect(chunks.pieces.joined() == source)
+        #expect(chunks.pieces.allSatisfy { $0.count <= 5 })
+        #expect(TranscriptTextChunks("", limit: 5).pieces.isEmpty)
+    }
 }

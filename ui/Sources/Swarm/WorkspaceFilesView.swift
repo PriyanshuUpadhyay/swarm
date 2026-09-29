@@ -3,22 +3,27 @@ import SwarmCore
 
 struct WorkspaceFilesView: View {
     let directory: String
+    var isActive = true
     let open: (WorkspaceDocument) -> Void
     @State private var refreshID = 0
+    @State private var refreshing = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Files").font(.headline)
                 Spacer()
-                Button { refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
+                if refreshing { DelayedProgress().accessibilityLabel("Refreshing files") }
+                Button { refreshing = true; refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).accessibilityLabel("Refresh files")
-            }.padding(12)
+                    .disabled(refreshing || !isActive)
+            }.padding(DesignTokens.Spacing.m)
             Divider()
             ScrollView {
-                WorkspaceFolder(directory: directory, path: "", open: open)
-                    .id(refreshID)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                WorkspaceFolder(directory: directory, path: "", refreshID: refreshID, isActive: isActive, open: open) {
+                    refreshing = false
+                }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(DesignTokens.Spacing.m)
             }
         }
     }
@@ -27,29 +32,62 @@ struct WorkspaceFilesView: View {
 private struct WorkspaceFolder: View {
     let directory: String
     let path: String
+    let refreshID: Int
+    let isActive: Bool
     let open: (WorkspaceDocument) -> Void
+    var onFinish: (@MainActor () -> Void)? = nil
     @State private var listing: WorkspaceFileListing?
+    @State private var listingDirectory: String?
     @State private var error: String?
+    @State private var errorDirectory: String?
+    @State private var loading = true
+
+    private struct Request: Equatable {
+        let directory: String
+        let path: String
+        let refreshID: Int
+        let isActive: Bool
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if let error { Text(verbatim: error).foregroundStyle(.red) }
-            else if let listing {
+        LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            if loading || (listingDirectory != directory && errorDirectory != directory) {
+                DelayedProgress("Reading files…")
+            }
+            if let error, errorDirectory == directory {
+                Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
+            }
+            if let listing, listingDirectory == directory {
+                if error != nil && errorDirectory == directory {
+                    Text("Showing the last file list.").font(.caption).foregroundStyle(.secondary)
+                }
                 ForEach(listing.entries) { entry in
-                    WorkspaceFileRow(directory: directory, entry: entry, open: open)
+                    WorkspaceFileRow(directory: directory, entry: entry, refreshID: refreshID, isActive: isActive, open: open)
                 }
                 if listing.entries.isEmpty { Text("Empty folder").foregroundStyle(.secondary) }
                 if listing.truncated { Text("Showing 2,000 entries. This folder exceeds the list limit.").foregroundStyle(.secondary) }
-            } else { ProgressView().controlSize(.small) }
+            } else if !loading && errorDirectory == directory && error == nil {
+                Text("No files to show.").foregroundStyle(.secondary)
+            }
         }
-        .task {
+        .task(id: Request(directory: directory, path: path, refreshID: refreshID, isActive: isActive)) {
+            guard isActive else { return }
+            loading = true
+            error = nil
             do {
                 let value = try await WorkspaceFiles.list(in: directory, path: path)
                 try Task.checkCancellation()
                 listing = value
+                listingDirectory = directory
             } catch {
-                if !Task.isCancelled { self.error = String(describing: error) }
+                if !Task.isCancelled {
+                    self.error = String(describing: error)
+                    errorDirectory = directory
+                }
             }
+            guard !Task.isCancelled else { return }
+            loading = false
+            onFinish?()
         }
     }
 }
@@ -57,13 +95,17 @@ private struct WorkspaceFolder: View {
 private struct WorkspaceFileRow: View {
     let directory: String
     let entry: WorkspaceFileEntry
+    let refreshID: Int
+    let isActive: Bool
     let open: (WorkspaceDocument) -> Void
     @State private var expanded = false
 
     var body: some View {
         if entry.kind == .directory {
             DisclosureGroup(isExpanded: $expanded) {
-                if expanded { WorkspaceFolder(directory: directory, path: entry.path, open: open) }
+                if expanded {
+                    WorkspaceFolder(directory: directory, path: entry.path, refreshID: refreshID, isActive: isActive, open: open)
+                }
             } label: {
                 Label(entry.name, systemImage: "folder").lineLimit(1).help(entry.path)
             }
@@ -79,7 +121,7 @@ private struct WorkspaceFileRow: View {
                     .lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).padding(.vertical, 3).help(entry.path)
+            .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs).help(entry.path)
             .accessibilityLabel("Preview \(entry.path)")
         }
     }

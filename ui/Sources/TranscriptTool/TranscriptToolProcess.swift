@@ -72,6 +72,24 @@ private final class TranscriptProcessLifecycle: @unchecked Sendable {
     }
 }
 
+/// Stderr bytes gathered on one GCD thread and read on another after the group wait.
+private final class StderrBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        bytes.append(chunk)
+        lock.unlock()
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return bytes
+    }
+}
+
 /// Spawns and supervises the Zig transcript CLI process.
 ///
 /// The process runs long-lived with `--follow` to stream transcript updates as the CLI writes
@@ -119,7 +137,11 @@ public final class TranscriptToolProcess: Sendable {
                 lifecycle.stop()
             }
 
-            Task {
+            // The reads below block until the process writes. On the Swift concurrency pool they
+            // held two of its few threads per open transcript, and a few chat switches starved
+            // every other task in the app, so they run on GCD threads instead.
+            let queue = DispatchQueue.global(qos: .userInitiated)
+            queue.async {
                 let stdoutHandle = stdoutPipe.fileHandleForReading
                 let stderrHandle = stderrPipe.fileHandleForReading
 
@@ -134,14 +156,16 @@ public final class TranscriptToolProcess: Sendable {
                 }
 
                 // Consume stderr concurrently to prevent pipe buffer deadlocks.
-                let stderrTask = Task {
-                    var buffer = Data()
+                let stderrBuffer = StderrBuffer()
+                let stderrDone = DispatchGroup()
+                stderrDone.enter()
+                queue.async {
                     while true {
                         let chunk = stderrHandle.availableData
                         if chunk.isEmpty { break }
-                        buffer.append(chunk)
+                        stderrBuffer.append(chunk)
                     }
-                    return buffer
+                    stderrDone.leave()
                 }
 
                 var pending = Data()
@@ -171,10 +195,10 @@ public final class TranscriptToolProcess: Sendable {
 
                 lifecycle.stop()
                 lifecycle.reap()
-                let stderrBuffer = await stderrTask.value
+                stderrDone.wait()
 
                 if let status = lifecycle.terminationStatus, status != 0 {
-                    let stderrText = String(decoding: stderrBuffer, as: UTF8.self)
+                    let stderrText = String(decoding: stderrBuffer.data, as: UTF8.self)
                     continuation.finish(
                         throwing: TranscriptToolError.processExited(
                             status: status, stderr: stderrText

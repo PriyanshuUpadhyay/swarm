@@ -10,9 +10,10 @@ struct AgentProfilesHome: View {
     @State private var error: String?
     @State private var editing: SwarmRole?
     private let source = SwarmCLIProfileSource()
+    private static var cachedRoles: [SwarmRole] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             HStack {
                 Button("Open Project…", action: onOpenProject)
                 Button("Create Project…", action: onCreateProject)
@@ -20,7 +21,11 @@ struct AgentProfilesHome: View {
             HStack {
                 Text("Agent profiles").font(.largeTitle.bold())
                 Spacer()
-                Button("Refresh") { Task { await load() } }
+                if isLoading && !roles.isEmpty { DelayedProgress("Refreshing profiles…") }
+                Button("Refresh") {
+                    isLoading = true
+                    Task { await load() }
+                }
                     .disabled(isLoading)
             }
             Text("These models are used when Swarm starts new agents.")
@@ -32,7 +37,7 @@ struct AgentProfilesHome: View {
                 Text(verbatim: error).foregroundStyle(.red)
             }
             if isLoading && roles.isEmpty {
-                ProgressView("Loading profiles")
+                DelayedProgress("Loading profiles")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if roles.isEmpty {
                 ContentUnavailableView("No agent profiles", systemImage: "person.crop.rectangle")
@@ -40,15 +45,15 @@ struct AgentProfilesHome: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(roles) { role in
-                            HStack(spacing: 16) {
-                                VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: DesignTokens.Spacing.l) {
+                                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                                     Text(role.role).font(.headline)
                                     Text("\(role.provider) · \(role.runner)")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(role.model).font(.system(.body, design: .monospaced))
+                                VStack(alignment: .trailing, spacing: DesignTokens.Spacing.xs) {
+                                    Text(role.model).font(DesignTokens.mono)
                                     if let effort = role.effort {
                                         Text("\(effort) effort")
                                             .font(.caption).foregroundStyle(.secondary)
@@ -56,16 +61,19 @@ struct AgentProfilesHome: View {
                                 }
                                 Button("Edit") { editing = role }
                             }
-                            .padding(.vertical, 12)
+                            .padding(.vertical, DesignTokens.Spacing.m)
                             Divider()
                         }
                     }
                 }
             }
         }
-        .padding(24)
+        .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task { await load() }
+        .task {
+            if roles.isEmpty { roles = Self.cachedRoles }
+            await load()
+        }
         .sheet(item: $editing, onDismiss: { Task { await load() } }) { role in
             ModelEditSheet(
                 role: role,
@@ -82,7 +90,10 @@ struct AgentProfilesHome: View {
         defer { isLoading = false }
         do {
             await LoginShellPath.ready()
-            roles = try await source.roles()
+            let loaded = try await source.roles()
+            try Task.checkCancellation()
+            roles = loaded
+            Self.cachedRoles = loaded
             error = nil
         } catch is CancellationError {
             return
@@ -110,7 +121,7 @@ private struct ModelEditSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text("Edit model").font(.title2)
             LabeledContent("Profile", value: role.role)
             LabeledContent("Runner", value: role.runner)
@@ -123,13 +134,16 @@ private struct ModelEditSheet: View {
             if let error { Text(verbatim: error).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { dismiss() }.disabled(isSaving)
                 Button(isSaving ? "Saving…" : "Save") {
+                    guard !isSaving else { return }
+                    isSaving = true
+                    error = nil
+                    let requestedModel = modelName
                     Task {
-                        isSaving = true
                         defer { isSaving = false }
                         do {
-                            try await save(modelName)
+                            try await save(requestedModel)
                             dismiss()
                         } catch {
                             self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
@@ -140,7 +154,8 @@ private struct ModelEditSheet: View {
                     || modelName == role.model)
             }
         }
-        .padding(24)
-        .frame(width: 440)
+        .padding(DesignTokens.Spacing.xl)
+        .frame(width: DesignTokens.Size.narrowSheet)
+        .interactiveDismissDisabled(isSaving)
     }
 }

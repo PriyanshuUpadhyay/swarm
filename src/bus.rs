@@ -44,6 +44,12 @@ pub struct Agent {
     pub provider: Option<String>,
     pub created_at: i64,
     pub alive: Option<bool>,
+    /// `working`, `waiting`, `done`, or `failed`; null until the first report (ADR 0021).
+    pub state: Option<String>,
+    pub state_at_s: Option<i64>,
+    /// `hook` or `screen`.
+    pub state_source: Option<String>,
+    pub state_detail: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -120,13 +126,22 @@ pub fn argv(
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
+            let handler = |command: String| serde_json::json!([{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]);
+            let state = state_hook_command("claude")?;
+            let mut hooks = serde_json::Map::new();
             if agent_id == "orchestrator" {
-                let command = chair_hook_command("claude")?;
-                args.extend([
-                    "--settings".into(),
-                    serde_json::json!({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]}}).to_string(),
-                ]);
+                hooks.insert(
+                    "SessionStart".into(),
+                    handler(chair_hook_command("claude")?),
+                );
             }
+            for event in CLAUDE_STATE_EVENTS {
+                hooks.insert(event.into(), handler(state.clone()));
+            }
+            args.extend([
+                "--settings".into(),
+                serde_json::json!({ "hooks": hooks }).to_string(),
+            ]);
             Ok(args)
         }
         "codex" => {
@@ -156,6 +171,16 @@ pub fn argv(
             }
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
+            }
+            // The user trusts these once in Codex `/hooks`; the trust holds only while each value
+            // stays byte-identical, so nothing per launch goes in it. The pane env names the agent.
+            let command = serde_json::to_string(&state_hook_command("codex")?)
+                .expect("string serialization cannot fail");
+            for event in CODEX_STATE_EVENTS {
+                args.extend([
+                    "-c".into(),
+                    format!("hooks.{event}=[{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"),
+                ]);
             }
             Ok(args)
         }
@@ -500,15 +525,71 @@ fn write_json(path: &std::path::Path, value: &serde_json::Value) -> Result<(), S
         })
 }
 
-fn chair_hook_command(provider: &str) -> Result<String, String> {
+/// This executable's path, single-quoted for a shell command line.
+fn quoted_exe() -> Result<String, String> {
     let exe = std::env::current_exe()
         .map_err(|error| format!("swarm: cannot find executable: {error}"))?
         .to_string_lossy()
         .replace('\'', "'\\''");
+    Ok(format!("'{exe}'"))
+}
+
+fn chair_hook_command(provider: &str) -> Result<String, String> {
+    let exe = quoted_exe()?;
     // Both CLI SessionStart payloads include a top-level session_id string.
     Ok(format!(
-        "id=$(sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9-]\\{{1,64\\}}\\)\".*/\\1/p'); [ -n \"$id\" ] && '{exe}' session chair {provider}:\"$id\""
+        "id=$(sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9-]\\{{1,64\\}}\\)\".*/\\1/p'); [ -n \"$id\" ] && {exe} session chair {provider}:\"$id\""
     ))
+}
+
+/// The command a provider hook runs to report agent state (ADR 0021).
+pub fn state_hook_command(provider: &str) -> Result<String, String> {
+    Ok(format!("{} hook {provider}", quoted_exe()?))
+}
+
+const CLAUDE_STATE_EVENTS: [&str; 8] = [
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "Elicitation",
+    "Notification",
+    "Stop",
+    "StopFailure",
+];
+
+const CODEX_STATE_EVENTS: [&str; 6] = [
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "Stop",
+    "Interrupt",
+];
+
+/// Put the `swarm` group in AGY's global `hooks.json`, which has no per-process hook flag.
+/// `command` is `state_hook_command("agy")`; AGY sends no event name, so each handler names it.
+/// Every other group is kept, and a file that is not a JSON object is refused, not replaced.
+/// Returns whether the file changed.
+pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, String> {
+    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
+    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
+    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
+    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
+    let group = serde_json::json!({
+        "PreInvocation": [handler("PreInvocation")],
+        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
+        "Stop": [handler("Stop")],
+    });
+    let mut value = read_json_object(path)?;
+    let groups = value
+        .as_object_mut()
+        .expect("read_json_object returns an object");
+    if groups.get("swarm") == Some(&group) {
+        return Ok(false);
+    }
+    groups.insert("swarm".into(), group);
+    write_json(path, &value).map(|()| true)
 }
 
 fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
@@ -580,7 +661,7 @@ mod tests {
                 "never"
             ]
         );
-        assert_eq!(codex_args.len(), 13);
+        assert_eq!(codex_args.len(), 13 + 2 * CODEX_STATE_EVENTS.len());
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
@@ -625,6 +706,84 @@ mod tests {
                 .iter()
                 .any(|arg| arg.contains("SessionStart"))
         );
+    }
+
+    #[test]
+    fn every_launched_agent_reports_state_through_swarm_hook() {
+        let claude_command = state_hook_command("claude").unwrap();
+        assert!(claude_command.starts_with('\'') && claude_command.ends_with("' hook claude"));
+        for agent in ["orchestrator", "coder"] {
+            let args = argv(agent, "coder", &role("claude"), "/home").unwrap();
+            assert_eq!(args.iter().filter(|arg| *arg == "--settings").count(), 1);
+            let at = args.iter().position(|arg| arg == "--settings").unwrap();
+            let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).unwrap();
+            for event in CLAUDE_STATE_EVENTS {
+                assert_eq!(
+                    settings["hooks"][event],
+                    serde_json::json!([{"hooks": [{"type": "command", "command": claude_command, "timeout": 3}]}]),
+                    "{agent} {event}"
+                );
+            }
+            assert_eq!(
+                settings["hooks"]["SessionStart"].is_array(),
+                agent == "orchestrator"
+            );
+        }
+
+        let hook_args = |agent: &str| {
+            let args = argv(agent, "coder", &role("codex"), "/home").unwrap();
+            args.windows(2)
+                .filter(|pair| pair[0] == "-c" && pair[1].starts_with("hooks."))
+                .map(|pair| pair[1].clone())
+                .collect::<Vec<_>>()
+        };
+        let coder = hook_args("coder");
+        assert_eq!(coder, hook_args("reviewer"));
+        let codex_command = serde_json::to_string(&state_hook_command("codex").unwrap()).unwrap();
+        assert_eq!(
+            coder,
+            CODEX_STATE_EVENTS
+                .map(|event| format!(
+                    "hooks.{event}=[{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
+                ))
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn agy_hooks_keep_other_groups_and_refuse_a_broken_file() {
+        let root = std::env::temp_dir().join(format!("swarm-agy-hooks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let hooks = root.join("config/hooks.json");
+        let command = "'/bin/swarm' hook agy";
+
+        assert!(ensure_agy_hooks(&hooks, command).unwrap());
+        let created: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
+        assert_eq!(created.as_object().unwrap().len(), 1);
+        assert_eq!(
+            created["swarm"]["Stop"][0]["command"],
+            "'/bin/swarm' hook agy Stop"
+        );
+        assert_eq!(
+            created["swarm"]["PostToolUse"][0]["hooks"][0]["command"],
+            "'/bin/swarm' hook agy PostToolUse"
+        );
+        assert!(created["swarm"].get("PreToolUse").is_none());
+        assert!(!ensure_agy_hooks(&hooks, command).unwrap());
+
+        let herdr = r#"{"herdr": {"PreInvocation": [{"command": "herdr-state session", "timeout": 10, "type": "command"}]}, "swarm": {"Stop": []}}"#;
+        std::fs::write(&hooks, herdr).unwrap();
+        assert!(ensure_agy_hooks(&hooks, command).unwrap());
+        let merged: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
+        let before: serde_json::Value = serde_json::from_str(herdr).unwrap();
+        assert_eq!(merged["herdr"], before["herdr"]);
+        assert_eq!(merged["swarm"], created["swarm"]);
+
+        std::fs::write(&hooks, "{ not json").unwrap();
+        assert!(ensure_agy_hooks(&hooks, command).is_err());
+        assert_eq!(std::fs::read_to_string(&hooks).unwrap(), "{ not json");
     }
 
     #[test]

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// The one app-facing entry point for message composition.
 struct ComposerView: View {
     let sessionID: String
+    var isActive = true
     var draft: Binding<String>
     let isRunning: Bool
     let isSending: Bool
@@ -34,51 +35,66 @@ struct ComposerView: View {
     @State private var dismissedToken: ComposerToken?
     @State private var attachments: [ComposerAttachment] = []
     @State private var actionError: String?
+    @State private var sendError: String?
+    @State private var stopError: String?
     @State private var isDropTarget = false
     @State private var attachmentGeneration = 0
+    @State private var pendingAttachments = 0
+    @State private var isSubmitting = false
+    @State private var isStopping = false
+    @State private var matchGeneration = 0
+    @State private var isMatchingFiles = false
+    @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             if menuVisible { completionMenu }
             VStack(alignment: .leading, spacing: 0) {
                 if !attachments.isEmpty { attachmentRow }
                 editor
                 footer
-                if let usageLabel, let showUsage {
-                    Button(action: showUsage) {
-                        Text(usageLabel).font(.caption).foregroundStyle(.secondary)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Usage details: \(usageLabel)")
-                    .help("Context, cache, and estimated cost for this agent session")
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                }
             }
-            .background(.background)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isDropTarget ? Color.accentColor : Color.secondary.opacity(0.25))
+                if isDropTarget {
+                    RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: DesignTokens.Size.focusRing)
+                }
             }
             if let actionError {
                 Text(verbatim: actionError).font(.caption).foregroundStyle(.red)
+            }
+            if let sendError {
+                Text(verbatim: sendError).font(.caption).foregroundStyle(.red)
+            }
+            if let stopError {
+                Text(verbatim: stopError).font(.caption).foregroundStyle(.red)
+            }
+            if pendingAttachments > 0 {
+                Text("Adding attachment…").font(.caption).foregroundStyle(.secondary)
+            }
+            if isSubmitting {
+                Text("Sending…").font(.caption).foregroundStyle(.secondary)
+            }
+            if isStopping {
+                Text("Stopping…").font(.caption).foregroundStyle(.secondary)
             }
             if let sendDisabledReason {
                 Text(verbatim: sendDisabledReason).font(.caption).foregroundStyle(.secondary)
             }
         }
+        .disabled(!isActive)
         .onDrop(
             of: [UTType.fileURL.identifier, UTType.image.identifier],
             isTargeted: $isDropTarget,
             perform: receiveDrop
         )
-        .onPasteCommand(of: [.png, .jpeg, .tiff], perform: receivePaste)
         .task(id: commandSource) {
-            commands = await Task.detached {
+            let discovered = await Task.detached {
                 ComposerCommandCatalog.discover(from: commandSource)
             }.value
+            guard !Task.isCancelled else { return }
+            commands = discovered
             updateMatches()
         }
         .task(id: activeMentionSource) {
@@ -96,24 +112,49 @@ struct ComposerView: View {
             selectedIndex = 0
             updateMatches()
         }
+        .onChange(of: mentionSource) {
+            files = []
+            indexedSource = nil
+            updateMatches()
+        }
+        .onChange(of: isActive) { _, active in
+            if !active {
+                attachmentGeneration += 1
+                pendingAttachments = 0
+                matchGeneration += 1
+                fileMatchTask?.cancel()
+            } else {
+                updateMatches()
+            }
+        }
         .onAppear { updateMatches() }
-        .onDisappear { attachmentGeneration += 1 }
+        .onDisappear {
+            attachmentGeneration += 1
+            pendingAttachments = 0
+            matchGeneration += 1
+            fileMatchTask?.cancel()
+        }
     }
 
     private var activeMentionSource: ComposerMentionSource? {
-        if case .mention = resolvedMenu { return mentionSource }
+        if isActive, case .mention = resolvedMenu { return mentionSource }
         return nil
     }
 
     private var editor: some View {
         TextField("Message the chair", text: draft, axis: .vertical)
+            .onPasteCommand(of: [.png, .jpeg, .tiff], perform: receivePaste)
+            .onKeyPress("v", phases: .down) { press in
+                guard press.modifiers.contains(.command), pasteImage() else { return .ignored }
+                return .handled
+            }
             .lineLimit(1...8)
             .textFieldStyle(.plain)
-            .font(.body)
+            .font(DesignTokens.body)
             .focused(focus)
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .padding(.horizontal, DesignTokens.Spacing.m)
+            .padding(.top, DesignTokens.Spacing.m)
+            .padding(.bottom, DesignTokens.Spacing.s)
             .simultaneousGesture(TapGesture().onEnded {
                 dismissMenu()
                 focus.wrappedValue = true
@@ -131,10 +172,10 @@ struct ComposerView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignTokens.Spacing.s) {
             if let selectModel {
                 Button(action: selectModel) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
                         Text(modelLabel).lineLimit(1).truncationMode(.middle)
                         Image(systemName: "chevron.down").font(.caption2)
                     }
@@ -145,6 +186,14 @@ struct ComposerView: View {
                 .help(modelSwitchDisabledReason ?? "Choose a model for this chat")
                 .disabled(modelSwitchDisabledReason != nil)
             }
+            if let usageLabel, let showUsage {
+                Button(action: showUsage) {
+                    Text(usageLabel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Usage details: \(usageLabel)")
+                .help("Context, cache, and estimated cost for this agent session")
+            }
             if showsStop {
                 Text("⌘. stops")
                     .font(.caption2)
@@ -153,37 +202,39 @@ struct ComposerView: View {
             Spacer()
             if showsStop {
                 Button(action: stop) {
-                    Image(systemName: "stop.fill")
-                        .frame(width: 26, height: 26)
+                    Image(systemName: isStopping ? "hourglass" : "stop.fill")
+                        .frame(width: DesignTokens.Size.iconButton, height: DesignTokens.Size.iconButton)
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.circle)
                 .tint(.red)
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop the chair (⌘.)")
+                .disabled(isStopping)
             }
             if !showsStop || Composer.outgoing(draft.wrappedValue) != nil {
                 Button(action: submit) {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.background)
-                        .frame(width: 26, height: 26)
-                        .background(.primary, in: RoundedRectangle(cornerRadius: 7))
+                        .frame(width: DesignTokens.Size.iconButton, height: DesignTokens.Size.iconButton)
+                        .background(.primary, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
                 }
                 .buttonStyle(.plain)
-                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending || sendDisabledReason != nil)
+                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending
+                    || isSubmitting || pendingAttachments > 0 || sendDisabledReason != nil)
                 .help("Send (Return)")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .padding(.horizontal, DesignTokens.Spacing.m)
+        .padding(.bottom, DesignTokens.Spacing.s)
     }
 
     private var attachmentRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignTokens.Spacing.s) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: 5) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
                         Image(systemName: ComposerAttachmentStore.isImage(
                             pathExtension: (attachment.path as NSString).pathExtension
                         ) ? "photo" : "doc")
@@ -199,13 +250,13 @@ struct ComposerView: View {
                         .accessibilityLabel("Remove \(attachment.name)")
                     }
                     .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DesignTokens.Spacing.s)
+                    .padding(.vertical, DesignTokens.Spacing.xs)
                     .background(.quaternary, in: Capsule())
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 8)
+            .padding(.horizontal, DesignTokens.Spacing.m)
+            .padding(.top, DesignTokens.Spacing.s)
         }
     }
 
@@ -216,30 +267,27 @@ struct ComposerView: View {
                 Text(emptyMenuText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(10)
+                    .padding(DesignTokens.Spacing.m)
             } else {
                 ForEach(0..<completionCount, id: \.self) { index in
                     Button { pick(index) } label: {
                         completionRow(index)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .padding(.horizontal, DesignTokens.Spacing.m)
+                            .padding(.vertical, DesignTokens.Spacing.s)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(index == selectedIndex ? Color.accentColor.opacity(0.18) : .clear)
+                            .background(index == selectedIndex ? DesignTokens.currentMatchFill : .clear)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .frame(maxWidth: 480)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 10).stroke(.separator) }
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        .frame(maxWidth: DesignTokens.Size.menuWidth)
+        .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous))
     }
 
     private func completionRow(_ index: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: completionName(index)).font(.system(.body, design: .monospaced))
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+            Text(verbatim: completionName(index)).font(DesignTokens.mono)
             Text(verbatim: completionDetail(index))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -250,18 +298,41 @@ struct ComposerView: View {
 
     // TextField exposes no selection, so completion works only at the end of the draft.
     private func updateMatches() {
+        guard isActive else { return }
         let text = draft.wrappedValue
         resolvedMenu = ComposerMenu.resolve(draft: text, caret: (text as NSString).length)
+        matchGeneration += 1
+        fileMatchTask?.cancel()
+        fileMatchTask = nil
         switch resolvedMenu {
         case .none:
             slashMatches = []
             fileMatches = []
+            isMatchingFiles = false
         case .slash(let token):
             slashMatches = ComposerCommandCatalog.matches(commands, query: token.query)
             fileMatches = []
+            isMatchingFiles = false
         case .mention(let token):
             slashMatches = []
-            fileMatches = ComposerFileCatalog.matches(files, query: token.query)
+            fileMatches = []
+            isMatchingFiles = !files.isEmpty || indexedSource != mentionSource
+            guard !files.isEmpty else { return }
+            let currentGeneration = matchGeneration
+            let paths = files
+            let query = token.query
+            let task = Task.detached(priority: .userInitiated) {
+                ComposerFileCatalog.matches(paths, query: query)
+            }
+            fileMatchTask = task
+            Task {
+                let matches = await task.value
+                guard !task.isCancelled, currentGeneration == matchGeneration,
+                      isCurrentSession() else { return }
+                fileMatches = matches
+                isMatchingFiles = false
+                fileMatchTask = nil
+            }
         }
     }
     private var menuVisible: Bool {
@@ -279,7 +350,7 @@ struct ComposerView: View {
         switch resolvedMenu {
         case .none: ""
         case .slash: "No command matches"
-        case .mention: "No file matches"
+        case .mention: isMatchingFiles ? "Finding files…" : "No file matches"
         }
     }
 
@@ -315,6 +386,7 @@ struct ComposerView: View {
             dismissMenu()
         case .clear:
             attachmentGeneration += 1
+            pendingAttachments = 0
             draft.wrappedValue = ""
         case .send:
             submit()
@@ -359,35 +431,69 @@ struct ComposerView: View {
 
     private func submit() {
         let snapshot = draft.wrappedValue
-        guard !isSending, sendDisabledReason == nil, Composer.outgoing(snapshot) != nil else {
+        guard !isSending, !isSubmitting, pendingAttachments == 0, sendDisabledReason == nil,
+              Composer.outgoing(snapshot) != nil else {
             return
         }
         attachmentGeneration += 1
+        pendingAttachments = 0
+        isSubmitting = true
+        sendError = nil
         Task {
+            defer { isSubmitting = false }
             do {
                 try await send(snapshot)
-                actionError = nil
-                focus.wrappedValue = true
+                sendError = nil
+                if isCurrentSession() { focus.wrappedValue = true }
             } catch {
-                actionError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                sendError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }
 
     private func stop() {
+        guard !isStopping else { return }
+        isStopping = true
+        stopError = nil
         Task {
+            defer { isStopping = false }
             do {
                 try await interrupt()
-                actionError = nil
+                stopError = nil
             } catch {
-                actionError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                stopError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }
 
+    private func pasteImage() -> Bool {
+        let clipboard = NSPasteboard.general
+        let types: [(NSPasteboard.PasteboardType, String)] = [(.png, "png"), (.init(UTType.jpeg.identifier), "jpg"), (.tiff, "tiff")]
+        guard let (type, fileExtension) = types.first(where: { clipboard.types?.contains($0.0) == true }) else {
+            return false
+        }
+        let context = attachmentContext
+        let version = clipboard.changeCount
+        pendingAttachments += 1
+        actionError = nil
+        Task {
+            // The native text field consumes image paste before the enclosing paste command.
+            // Give feedback before asking the clipboard owner to supply its image bytes.
+            try? await Task.sleep(for: .milliseconds(30))
+            guard isCurrent(context) else { return }
+            guard clipboard.changeCount == version, let data = clipboard.data(forType: type) else {
+                pendingAttachments -= 1
+                actionError = "Cannot read pasted image."
+                return
+            }
+            await addImage(data, fileExtension: fileExtension, context: context)
+        }
+        return true
+    }
+
     private func receivePaste(_ providers: [NSItemProvider]) {
         for provider in providers {
-            if loadImage(from: provider) { return }
+            _ = loadImage(from: provider)
         }
     }
 
@@ -397,11 +503,17 @@ struct ComposerView: View {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 accepted = true
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
-                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                pendingAttachments += 1
+                actionError = nil
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
                     Task { @MainActor in
                         guard isCurrent(context) else { return }
-                        addFile(at: url.path)
+                        guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                            pendingAttachments -= 1
+                            actionError = error?.localizedDescription ?? "Cannot read dropped file."
+                            return
+                        }
+                        await addFile(at: url.path, context: context)
                     }
                 }
             } else if loadImage(from: provider) {
@@ -417,36 +529,55 @@ struct ComposerView: View {
         guard let item = types.first(where: {
             provider.hasItemConformingToTypeIdentifier($0.0.identifier)
         }) else { return false }
+        pendingAttachments += 1
+        actionError = nil
         provider.loadDataRepresentation(forTypeIdentifier: item.0.identifier) { data, error in
             Task { @MainActor in
                 guard isCurrent(context) else { return }
                 if let data {
-                    addImage(data, fileExtension: item.1)
-                } else if let error {
-                    actionError = String(describing: error)
+                    await addImage(data, fileExtension: item.1, context: context)
+                } else {
+                    pendingAttachments -= 1
+                    actionError = error?.localizedDescription ?? "Cannot read pasted image."
                 }
             }
         }
         return true
     }
 
-    private func addImage(_ data: Data, fileExtension: String) {
+    private func addImage(
+        _ data: Data, fileExtension: String, context: ComposerAttachmentContext
+    ) async {
+        let directory = scratchDirectory
         do {
-            add(try ComposerAttachmentStore.saveImage(
-                data, fileExtension: fileExtension, scratchDirectory: scratchDirectory
-            ))
+            let attachment = try await Task.detached(priority: .userInitiated) {
+                try ComposerAttachmentStore.saveImage(
+                    data, fileExtension: fileExtension, scratchDirectory: directory
+                )
+            }.value
+            guard isCurrent(context) else { return }
+            pendingAttachments -= 1
+            add(attachment)
         } catch {
-            actionError = String(describing: error)
+            guard isCurrent(context) else { return }
+            pendingAttachments -= 1
+            actionError = error.localizedDescription
         }
     }
 
-    private func addFile(at path: String) {
+    private func addFile(at path: String, context: ComposerAttachmentContext) async {
+        let directory = scratchDirectory
         do {
-            add(try ComposerAttachmentStore.importFile(
-                at: path, scratchDirectory: scratchDirectory
-            ))
+            let attachment = try await Task.detached(priority: .userInitiated) {
+                try ComposerAttachmentStore.importFile(at: path, scratchDirectory: directory)
+            }.value
+            guard isCurrent(context) else { return }
+            pendingAttachments -= 1
+            add(attachment)
         } catch {
-            actionError = String(describing: error)
+            guard isCurrent(context) else { return }
+            pendingAttachments -= 1
+            actionError = error.localizedDescription
         }
     }
 

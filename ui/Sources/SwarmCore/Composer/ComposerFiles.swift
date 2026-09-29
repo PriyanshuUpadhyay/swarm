@@ -51,6 +51,7 @@ public enum ComposerFileCatalog {
         }
         var found: [ComposerFileMatch] = []
         for path in paths {
+            if Task.isCancelled { return [] }
             guard let score = composerFuzzyScore(path, query: query) else { continue }
             let name = (path as NSString).lastPathComponent
             let nameScore = composerFuzzyScore(name, query: query) ?? 0

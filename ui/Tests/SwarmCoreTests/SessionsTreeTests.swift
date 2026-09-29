@@ -124,6 +124,89 @@ struct SessionsTreeTests {
         ).caption == "outside · no chair")
     }
 
+    @Test("A chat and its workspace show their agents' most urgent status")
+    func aggregateStatus() {
+        let chat = session("status-session", cwd: "/outside")
+        let chair = SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
+        )
+        let reviewer = SwarmAgent(
+            id: .init("reviewer"), role: "review", pane: "%2", alive: true, state: "waiting"
+        )
+        let tree = build([chat], agentsBySession: [chat.id: [chair, reviewer]])
+        #expect(tree.projects[0].chats[0].session.status == .waiting)
+        #expect(WorkspaceEntry.list(in: tree).first?.status == .waiting)
+        #expect(build([chat]).projects.first?.chats.first?.session.status == nil)
+    }
+
+    @Test("Sidebar sections keep workspace order and count agents by status")
+    func sidebarSections() {
+        let api = session("api-session", cwd: "/api")
+        let docs = session("docs-session", cwd: "/docs")
+        func agent(_ id: String, _ state: String?) -> SwarmAgent {
+            SwarmAgent(id: .init(id), role: "code", pane: "%\(id)", alive: true, state: state)
+        }
+        let tree = build([api, docs], agentsBySession: [
+            api.id: [agent("reviewer", "waiting"), agent("coder", "working"), agent("tester", "working")],
+            docs.id: [agent("writer", nil)],
+        ])
+        let workspaces = WorkspaceEntry.list(in: tree)
+        var navigation = WorkspaceNavigation()
+        navigation.pinned = ["/docs"]
+        let sections = SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "", showingArchive: false, now: 61
+        )
+        #expect(sections.map(\.title) == ["Pinned", "My workspaces"])
+        #expect(sections[0].rows.map(\.id) == ["/docs"])
+        let apiRow = sections[1].rows[0]
+        #expect(apiRow.status == .waiting)
+        #expect(apiRow.counts == [StatusCount(status: .waiting, count: 1), StatusCount(status: .working, count: 2)])
+        #expect(sections[0].rows[0].status == .done)
+
+        navigation.archived = ["/api"]
+        let archived = SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "", showingArchive: true, now: 61
+        )
+        #expect(archived.map(\.title) == ["Archived"])
+        #expect(archived[0].rows.map(\.id) == ["/api"])
+        #expect(SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "docs", showingArchive: false, now: 61
+        ).flatMap(\.rows).map(\.id) == ["/docs"])
+    }
+
+    @Test("The palette lists archived workspaces and their chats, marked Archived")
+    func paletteArchived() {
+        let api = session("api-session", cwd: "/api")
+        let docs = session("docs-session", cwd: "/docs")
+        let tree = build([api, docs], agentsBySession: [
+            api.id: [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: true)],
+            docs.id: [SwarmAgent(id: .init("writer"), role: "write", pane: "%2", alive: true)],
+        ])
+        var navigation = WorkspaceNavigation()
+        navigation.archived = ["/docs"]
+        let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
+        #expect(listed.workspaces.map(\.id) == ["/api", "/docs"])
+        #expect(listed.workspaces[1].detail.hasSuffix("Archived"))
+        #expect(listed.chats.map(\.id) == ["api-session", "docs-session"])
+    }
+
+    @Test("Chat tabs carry status, a provider badge, and whether they can close")
+    func chatTabs() {
+        let live = session("live-session", cwd: "/api", chair: "chair-1")
+        let tree = build([live], agentsBySession: [live.id: [SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
+        )]])
+        let chats = tree.workspaceChats(for: live.id)
+        let tab = ChatTab.tabs(chats, closing: [], now: 61)[0]
+        #expect(tab.id == "live-session")
+        #expect(tab.status == .working)
+        #expect(tab.badge == "X")
+        #expect(tab.canClose)
+        #expect(!ChatTab.tabs(chats, closing: [live.id], now: 61)[0].canClose)
+        #expect(ChatTab.badge("claude") == "C")
+        #expect(ChatTab.badge("agy") == "A")
+    }
+
     @Test("A missing session provider comes from the chair, then the first agent")
     func providerFallback() {
         let item = session("provider-session", cwd: "/outside")
