@@ -455,6 +455,7 @@ private struct TranscriptRowView: View {
     var revealForSearch = false
     @State private var copying = false
     @State private var detailExpanded = false
+    @State private var hovering = false
 
     var body: some View {
         Group {
@@ -471,6 +472,23 @@ private struct TranscriptRowView: View {
             } else {
                 rowBody
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            // Shown on hover only, so the transcript stays calm; VoiceOver has it as an action.
+            if isMessage, hovering || copying {
+                Button(copying ? "Copying…" : "Copy message", systemImage: "doc.on.doc", action: copy)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Copy message")
+                    .disabled(copying)
+                    .padding(DesignTokens.Spacing.s)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onHover { hovering = $0 }
+        .accessibilityActions {
+            if isMessage { Button("Copy message", action: copy) }
         }
         .id(row.eventID)
         .onChange(of: revealForSearch, initial: true) { _, reveal in
@@ -512,18 +530,6 @@ private struct TranscriptRowView: View {
                 Text(verbatim: row.text).foregroundStyle(.red)
             case .user, .assistant:
                 TranscriptMessageView(text: row.text)
-                Button(copying ? "Copying…" : "Copy message", systemImage: "doc.on.doc") {
-                    copying = true
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(30))
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(row.text, forType: .string)
-                        copying = false
-                    }
-                }
-                .disabled(copying)
-                .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
-                .padding(.top, DesignTokens.Spacing.xs)
             case .result where row.endsTurn:
                 Label(row.text == "aborted" ? "Turn interrupted" : "Turn finished",
                       systemImage: row.text == "aborted" ? "stop.circle" : "checkmark.circle")
@@ -531,6 +537,18 @@ private struct TranscriptRowView: View {
             default:
                 Text(verbatim: row.text)
             }
+        }
+    }
+
+    private var isMessage: Bool { row.tool == nil && (row.kind == .user || row.kind == .assistant) }
+
+    private func copy() {
+        copying = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(30))
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(row.text, forType: .string)
+            copying = false
         }
     }
 
