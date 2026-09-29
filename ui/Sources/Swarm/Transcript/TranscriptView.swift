@@ -50,6 +50,8 @@ struct TranscriptView<Composer: View>: View {
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
     @State private var composerHeight: CGFloat = 0
+    /// The text and the composer use 90% of the chat page, centered.
+    @State private var textWidth: CGFloat = 0
     @FocusState private var findFieldFocused: Bool
 
     private var rows: [TranscriptRow] {
@@ -94,7 +96,7 @@ struct TranscriptView<Composer: View>: View {
                                 .chromeSurface(in: Capsule())
                             }
                             composer()
-                                .frame(maxWidth: DesignTokens.Size.textColumn)
+                                .frame(width: textWidth > 0 ? textWidth : nil)
                                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
                         }
                         .padding(DesignTokens.Spacing.m)
@@ -102,6 +104,7 @@ struct TranscriptView<Composer: View>: View {
             }
             .frame(maxHeight: .infinity)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width * 0.9 } action: { textWidth = $0 }
         .background(Color(nsColor: .textBackgroundColor))
         .focusable()
         .focusEffectDisabled()
@@ -179,9 +182,9 @@ struct TranscriptView<Composer: View>: View {
             .scrollTargetLayout()
             .font(DesignTokens.body)
             .lineSpacing(DesignTokens.bodyLineSpacing)
-            .frame(maxWidth: DesignTokens.Size.textColumn, alignment: .leading)
+            .frame(width: textWidth > 0 ? textWidth : nil, alignment: .leading)
             .frame(maxWidth: .infinity)
-            .padding(DesignTokens.Spacing.l)
+            .padding(.vertical, DesignTokens.Spacing.l)
         }
         .scrollPosition(id: $topRowID, anchor: .top)
         .defaultScrollAnchor(.bottom, for: .initialOffset)

@@ -26,8 +26,6 @@ enum DesignTokens {
         static let row: CGFloat = 28
         /// A pane header.
         static let paneHeader: CGFloat = 24
-        /// The widest the transcript text runs.
-        static let textColumn: CGFloat = 760
         static let tabMinWidth: CGFloat = 120
         static let tabMaxWidth: CGFloat = 220
         /// A fixed slot for a status glyph, so titles line up with or without one.
