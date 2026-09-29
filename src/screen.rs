@@ -372,13 +372,17 @@ mod tests {
 
     #[test]
     fn a_numbered_draft_on_the_input_line_is_the_idle_prompt() {
-        let claude = fixture!("claude-idle")
-            .replace("❯ Try \"fix typecheck errors\"", "❯ 1. rerun the tests");
+        // Build the draft from the fixture's own input line, which has U+00A0 after the ❯.
+        let fixture = fixture!("claude-idle");
+        let input = fixture.lines().find(|line| line.starts_with('❯')).unwrap();
+        let claude = fixture.replace(input, "❯\u{a0}1. rerun the tests");
+        assert_ne!(claude, fixture);
         assert_eq!(screen_state("claude", &claude), Some(ScreenState::Idle));
         let asked = format!("● Do you want to add a test?\n\n{claude}");
         assert_eq!(screen_state("claude", &asked), Some(ScreenState::Idle));
         let codex =
             fixture!("codex-idle").replace("› Ask Codex to do anything", "› 1. rerun the tests");
+        assert_ne!(codex, fixture!("codex-idle"));
         assert_eq!(screen_state("codex", &codex), Some(ScreenState::Idle));
         let asked = format!("• Would you like to run the suite next?\n{codex}");
         assert_eq!(screen_state("codex", &asked), Some(ScreenState::Idle));
