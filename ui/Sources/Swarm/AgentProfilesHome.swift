@@ -21,7 +21,7 @@ struct AgentProfilesHome: View {
             HStack {
                 Text("Agent profiles").font(.largeTitle.bold())
                 Spacer()
-                if isLoading && !roles.isEmpty { ProgressView("Refreshing profiles…").controlSize(.small) }
+                if isLoading && !roles.isEmpty { DelayedProgress("Refreshing profiles…") }
                 Button("Refresh") {
                     isLoading = true
                     Task { await load() }
@@ -37,7 +37,7 @@ struct AgentProfilesHome: View {
                 Text(verbatim: error).foregroundStyle(.red)
             }
             if isLoading && roles.isEmpty {
-                ProgressView("Loading profiles")
+                DelayedProgress("Loading profiles")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if roles.isEmpty {
                 ContentUnavailableView("No agent profiles", systemImage: "person.crop.rectangle")

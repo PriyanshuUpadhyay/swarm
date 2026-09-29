@@ -87,7 +87,7 @@ struct WorkspaceDetails: View {
                     } else {
                         if loadingWorkspace || loadingDetail ||
                            (workspaceDirectory != directory && workspaceErrorDirectory != directory) {
-                            ProgressView("Reading \(tab.rawValue)…").controlSize(.small)
+                            DelayedProgress("Reading \(tab.rawValue)…")
                         }
                         if let workspaceError, workspaceErrorDirectory == directory {
                             Text(verbatim: workspaceError).foregroundStyle(.red).textSelection(.enabled)

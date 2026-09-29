@@ -51,8 +51,11 @@ struct TranscriptBoundedTextView: View {
                     }
                 }
             } else {
-                ProgressView("Preparing text…")
-                    .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
+                // The opening lines show at once, at the placeholder's fixed height.
+                Text(verbatim: String(text.prefix(600)))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.collapsedOutput,
+                           maxHeight: DesignTokens.Size.collapsedOutput, alignment: .topLeading)
             }
         }
         .font(DesignTokens.mono)

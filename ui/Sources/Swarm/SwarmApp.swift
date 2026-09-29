@@ -326,10 +326,10 @@ private struct SessionsWindow: View {
         } content: {
             VStack(spacing: 0) {
                 if let projectAction {
-                    ProgressView(projectAction).controlSize(.small).padding(DesignTokens.Spacing.s)
+                    DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
                 }
                 if !model.closing.isEmpty {
-                    ProgressView("Closing chat…").controlSize(.small).padding(DesignTokens.Spacing.s)
+                    DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
                 }
                 if let document {
                     HStack(spacing: DesignTokens.Spacing.l) {

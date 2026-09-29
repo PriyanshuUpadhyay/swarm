@@ -25,8 +25,10 @@ struct TranscriptMessageView: View {
                     return .systemAction
                 })
             } else if displayed == nil {
-                ProgressView("Preparing message…")
+                // A long message shows its opening as plain text at once, then its blocks.
+                Text(verbatim: String(text.prefix(4_096)))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Preparing message")
             }
         }
         .task(id: text) {

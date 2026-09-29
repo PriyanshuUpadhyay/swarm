@@ -170,7 +170,7 @@ struct TranscriptOutputView: View {
                 } else if let preview {
                     TranscriptBoundedTextView(text: preview.text, emptyText: "No output was recorded.")
                 } else {
-                    ProgressView("Preparing preview…")
+                    DelayedProgress("Preparing preview…")
                         .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
                 }
             }
@@ -207,7 +207,7 @@ private struct TranscriptToolInputView: View {
             if let encoded {
                 TranscriptOutputView(text: encoded, title: "Input")
             } else {
-                ProgressView("Preparing input…")
+                DelayedProgress("Preparing input…")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -285,14 +285,14 @@ struct TranscriptDiffView: View {
                                 rendered = true
                                 renderError = !success
                             }
-                            if !rendered { ProgressView("Rendering patch…") }
+                            if !rendered { DelayedProgress("Rendering patch…") }
                             if renderError { Text("The patch view could not load.").foregroundStyle(.red) }
                         }
                         .frame(height: DesignTokens.Size.outputPreview)
                         .onChange(of: split) { _, _ in rendered = false; renderError = false }
                         .onChange(of: preview.patch) { _, _ in rendered = false; renderError = false }
                     } else {
-                        ProgressView("Preparing patch…")
+                        DelayedProgress("Preparing patch…")
                             .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
                     }
                     if limited?.notice != nil, !revealForSearch {

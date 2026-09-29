@@ -44,7 +44,7 @@ struct WorkspaceDocumentView: View {
                         renderError = success ? nil : "The file view could not load. Close this preview and try again."
                     }
                     if !rendered {
-                        ProgressView("Rendering…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                        DelayedProgress("Rendering…").frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(.background)
                     }
                     if let renderError {
@@ -54,7 +54,7 @@ struct WorkspaceDocumentView: View {
                     }
                 }
             } else {
-                ProgressView("Reading file…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                DelayedProgress("Reading file…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(.background)

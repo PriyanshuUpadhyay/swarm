@@ -184,7 +184,7 @@ struct NewChatSheet: View {
             selection.disabled(model.isStarting)
             if let phase = model.phase {
                 HStack {
-                    ProgressView().controlSize(.small)
+                    DelayedProgress()
                     Text(model.isCancelling ? "Cancelling switch…" : phase.title)
                 }
                 Text(phase.canCancel
@@ -241,12 +241,12 @@ struct NewChatSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Search models")
             if model.isLoading && model.models.isEmpty {
-                HStack { ProgressView().controlSize(.small); Text("Loading models and accounts…") }
+                DelayedProgress("Loading models and accounts…")
                     .frame(height: DesignTokens.Size.pickerList)
             } else {
                 modelList
                 if model.isLoading {
-                    ProgressView("Checking models and accounts…").controlSize(.small)
+                    DelayedProgress("Checking models and accounts…")
                 }
             }
             if let caption = model.modelCaption {

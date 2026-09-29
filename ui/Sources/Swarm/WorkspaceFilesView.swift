@@ -13,7 +13,7 @@ struct WorkspaceFilesView: View {
             HStack {
                 Text("Files").font(.headline)
                 Spacer()
-                if refreshing { ProgressView().controlSize(.small).accessibilityLabel("Refreshing files") }
+                if refreshing { DelayedProgress().accessibilityLabel("Refreshing files") }
                 Button { refreshing = true; refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).accessibilityLabel("Refresh files")
                     .disabled(refreshing || !isActive)
@@ -52,7 +52,7 @@ private struct WorkspaceFolder: View {
     var body: some View {
         LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             if loading || (listingDirectory != directory && errorDirectory != directory) {
-                ProgressView("Reading files…").controlSize(.small)
+                DelayedProgress("Reading files…")
             }
             if let error, errorDirectory == directory {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)

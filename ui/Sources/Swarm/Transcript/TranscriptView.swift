@@ -135,7 +135,7 @@ struct TranscriptView<Composer: View>: View {
                 }
                 switch snapshot {
                 case .loading:
-                    ProgressView("Loading chat…")
+                    DelayedProgress("Loading chat…")
                 case .waiting:
                     Text(waitingMessage).foregroundStyle(.secondary)
                 case .notice(let message):
