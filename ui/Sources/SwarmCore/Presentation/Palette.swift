@@ -110,6 +110,35 @@ public enum PaletteSource {
     }
 }
 
+extension PaletteSource {
+    /// Workspaces and their chats in sidebar order, archived ones last with "Archived" in their
+    /// detail, so the palette finds them from any sidebar view.
+    public static func workspaces(
+        _ entries: [WorkspaceEntry], navigation: WorkspaceNavigation, now: Int
+    ) -> (workspaces: [Workspace], chats: [Chat]) {
+        let sections = SidebarRows.sections(
+            workspaces: entries, navigation: navigation, search: "", showingArchive: false, now: now
+        ) + SidebarRows.sections(
+            workspaces: entries, navigation: navigation, search: "", showingArchive: true, now: now
+        )
+        let byID = Dictionary(entries.map { ($0.id, $0) }) { first, _ in first }
+        var workspaces: [Workspace] = []
+        var chats: [Chat] = []
+        for row in sections.flatMap(\.rows) {
+            let entry = byID[row.id]
+            let detail = row.archived ? [row.detail, "Archived"].filter { !$0.isEmpty }.joined(separator: " · ") : row.detail
+            workspaces.append(Workspace(
+                id: row.id, title: row.title, detail: detail, status: row.status,
+                lastActivity: entry.map(\.lastActivity).flatMap { $0 > 0 ? $0 : nil }
+            ))
+            chats += (entry?.chats ?? []).map {
+                Chat(id: $0.id.rawValue, title: $0.title, workspace: row.title, status: $0.status, lastActivity: $0.lastActivity)
+            }
+        }
+        return (workspaces, chats)
+    }
+}
+
 public enum PaletteItems {
     /// App actions that belong in the palette. ⌘K itself, per-tab picks, focus moves, and find
     /// stepping stay keys only.

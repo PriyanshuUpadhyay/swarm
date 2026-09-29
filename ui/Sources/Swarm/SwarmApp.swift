@@ -561,25 +561,14 @@ private struct SessionsWindow: View {
     }
 
     private var paletteItems: [PaletteItem] {
-        let rows = sidebarSections(showingArchive: false).flatMap(\.rows)
-        let entries = Dictionary(model.workspaces.map { ($0.id, $0) }) { first, _ in first }
+        let listed = PaletteSource.workspaces(
+            model.workspaces, navigation: model.navigation, now: Int(Date().timeIntervalSince1970)
+        )
         let session = model.selectedSession?.session
         return PaletteItems.build(
             sidebarViews: WorkspaceSidebarMode.allCases.map(\.rawValue),
-            workspaces: rows.map {
-                PaletteSource.Workspace(
-                    id: $0.id, title: $0.title, detail: $0.detail, status: $0.status,
-                    lastActivity: entries[$0.id].map(\.lastActivity).flatMap { $0 > 0 ? $0 : nil }
-                )
-            },
-            chats: rows.flatMap { row in
-                (entries[row.id]?.chats ?? []).map {
-                    PaletteSource.Chat(
-                        id: $0.id.rawValue, title: $0.title, workspace: row.title,
-                        status: $0.status, lastActivity: $0.lastActivity
-                    )
-                }
-            },
+            workspaces: listed.workspaces,
+            chats: listed.chats,
             agents: session.map { session in
                 SwarmPanePolicy.cells(session: session, agents: model.agents).map {
                     PaletteSource.Agent(

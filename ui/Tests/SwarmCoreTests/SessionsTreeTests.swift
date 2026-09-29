@@ -174,6 +174,22 @@ struct SessionsTreeTests {
         ).flatMap(\.rows).map(\.id) == ["/docs"])
     }
 
+    @Test("The palette lists archived workspaces and their chats, marked Archived")
+    func paletteArchived() {
+        let api = session("api-session", cwd: "/api")
+        let docs = session("docs-session", cwd: "/docs")
+        let tree = build([api, docs], agentsBySession: [
+            api.id: [SwarmAgent(id: .init("coder"), role: "code", pane: "%1", alive: true)],
+            docs.id: [SwarmAgent(id: .init("writer"), role: "write", pane: "%2", alive: true)],
+        ])
+        var navigation = WorkspaceNavigation()
+        navigation.archived = ["/docs"]
+        let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
+        #expect(listed.workspaces.map(\.id) == ["/api", "/docs"])
+        #expect(listed.workspaces[1].detail.hasSuffix("Archived"))
+        #expect(listed.chats.map(\.id) == ["api-session", "docs-session"])
+    }
+
     @Test("Chat tabs carry status, a provider badge, and whether they can close")
     func chatTabs() {
         let live = session("live-session", cwd: "/api", chair: "chair-1")
