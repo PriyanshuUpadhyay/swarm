@@ -233,6 +233,140 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     assert!(trusted(&home.join(".claude.json"), &resumed));
 }
 
+/// A session with a chair and one child on a fake adapter whose screen is `$HOME/screen` and
+/// whose `key` verb appends to `$HOME/keys`. `key_then` runs after each key, to change the screen.
+fn answer_session(home: &Path, key_then: &str) -> String {
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        format!(
+            "self = printf chair\nspawn = printf pane\nring = true\nlist = printf 'pane claude\\n'\n\
+             close = true\ncapture = true\nscreen = cat \"$HOME/screen\"\n\
+             key = printf '%s\\n' \"$SWARM_KEY\" >> \"$HOME/keys\"; {key_then}\n"
+        ),
+    )
+    .unwrap();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(home, &fake, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    for args in [
+        &["agent", "add", "orchestrator", "orchestrator"][..],
+        &["spawn", "seat", "coder", "--", "true"],
+    ] {
+        let output = swarm(home, &chair, args);
+        assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+    }
+    // The screen check reads only an agent with a provider; `spawn --provider` needs an account.
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "claude").unwrap();
+    session
+}
+
+fn listed_prompt(home: &Path, session: &str) -> serde_json::Value {
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let output = swarm(home, &chair, &["agents", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    list["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|agent| agent["id"] == "seat")
+        .unwrap()["prompt"]
+        .clone()
+}
+
+const PERMISSION: &str = " Bash command\n\n   touch probe.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend\n";
+const FOLDER_TRUST: &str =
+    "  Trust this folder?\n\n› 1. Trust and continue\n  2. Back\n\n  enter continue · esc back\n";
+
+#[test]
+fn the_owner_answers_a_listed_question_with_its_choice_key() {
+    let home = scratch("answer");
+    let session = answer_session(&home, "printf 'done\\n' > \"$HOME/screen\"");
+    std::fs::write(home.join("screen"), PERMISSION).unwrap();
+    let prompt = listed_prompt(&home, &session);
+    assert_eq!(prompt["choices"], serde_json::json!(["Yes", "No"]));
+    let id = prompt["id"].as_str().unwrap().to_string();
+    let app = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let keys = || std::fs::read_to_string(home.join("keys")).unwrap_or_default();
+
+    // Inside an agent pane nobody answers for the owner.
+    let mut in_pane = app.to_vec();
+    in_pane.push(("TMUX_PANE", "%9"));
+    let output = swarm(&home, &in_pane, &["answer", "seat", &id, "1"]);
+    assert!(
+        stderr(&output).contains("only the owner answers"),
+        "{}",
+        stderr(&output)
+    );
+    // A stale id and a missing choice send nothing.
+    let output = swarm(&home, &app, &["answer", "seat", "0000000000000000", "1"]);
+    assert!(
+        stderr(&output).contains("the question changed"),
+        "{}",
+        stderr(&output)
+    );
+    let output = swarm(&home, &app, &["answer", "seat", &id, "2"]);
+    assert!(
+        stderr(&output).contains("no choice 2"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(keys(), "");
+
+    // The digit picks the choice; the screen moves on, so no Enter follows.
+    let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(keys(), "2\n");
+    assert_eq!(listed_prompt(&home, &session), serde_json::Value::Null);
+}
+
+#[test]
+fn a_digit_that_only_moves_the_cursor_is_confirmed_with_enter() {
+    let home = scratch("answer-enter");
+    let session = answer_session(&home, "true");
+    std::fs::write(home.join("screen"), FOLDER_TRUST).unwrap();
+    let id = listed_prompt(&home, &session)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let app = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let output = swarm(&home, &app, &["answer", "seat", &id, "0"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        std::fs::read_to_string(home.join("keys")).unwrap(),
+        "1\nEnter\n"
+    );
+
+    // A cursor left on another choice means the screen took some other key: no Enter.
+    std::fs::remove_file(home.join("keys")).unwrap();
+    let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(std::fs::read_to_string(home.join("keys")).unwrap(), "2\n");
+}
+
 #[test]
 fn a_child_agent_can_neither_launch_nor_spawn() {
     let home = scratch("child");

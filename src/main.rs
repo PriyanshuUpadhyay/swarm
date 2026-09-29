@@ -33,7 +33,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1543,6 +1543,57 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
+        return Ok(());
+    }
+    if let [cmd, agent_id, prompt_id, choice] = args
+        && cmd == "answer"
+    {
+        // Only the owner answers, from the app. Every agent pane has one of these set, so a model
+        // cannot answer a question by mistake; it is a guard, not a trust boundary.
+        if ["TMUX_PANE", "HERDR_PANE_ID"]
+            .iter()
+            .any(|name| env::var_os(name).is_some())
+        {
+            return Err(
+                "swarm: only the owner answers an agent's question; the Swarm app sends it".into(),
+            );
+        }
+        let choice: usize = choice
+            .parse()
+            .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?;
+        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
+            .ok_or("swarm: no pane recorded")?;
+        let adapter = swarm::adapter::load(&root, &adapter_name())?;
+        let read = || {
+            adapter
+                .screen(&[("pane", &pane)], std::time::Duration::from_secs(1))
+                .as_deref()
+                .and_then(swarm::screen::prompt)
+        };
+        let prompt = read().ok_or(format!("swarm: {agent_id} shows no question now"))?;
+        if prompt.id != *prompt_id {
+            return Err("swarm: the question changed; read it again".into());
+        }
+        let keys = prompt
+            .keys(choice)
+            .ok_or(format!("swarm: the question has no choice {choice}"))?;
+        for key in &keys {
+            adapter.run("key", &[("pane", &pane), ("key", key)])?;
+        }
+        // A digit picks the choice on most screens, but only moves the cursor on Codex's folder
+        // trust screen. Enter follows only when, a second later, the same prompt is up with its
+        // cursor on this choice, so it never lands on a later question or a text field.
+        if prompt.numbered {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            let mut same = true;
+            while same && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                same = read().is_some_and(|now| now.id == prompt.id);
+            }
+            if same && read().is_some_and(|now| now.id == prompt.id && now.cursor == choice) {
+                adapter.run("key", &[("pane", &pane), ("key", "Enter")])?;
+            }
+        }
         return Ok(());
     }
     if let [cmd, agent_id] = args
