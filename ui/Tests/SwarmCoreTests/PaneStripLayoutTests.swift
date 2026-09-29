@@ -52,10 +52,50 @@ struct PaneStripLayoutTests {
 
     @Test("Saved splits keep only shown columns and survive unreadable text")
     func savedSplits() {
-        let text = PaneStripLayout.text(splits: ["reviewer": 0.3, "gone": 0.7], keeping: ["reviewer"])
-        #expect(PaneStripLayout.splits(from: text) == ["reviewer": 0.3])
-        #expect(PaneStripLayout.splits(from: "") == [:])
-        #expect(PaneStripLayout.splits(from: "not json") == [:])
+        let text = PaneStripLayout.text(saving: ["reviewer": 0.3, "gone": 0.7], scope: "chat-a",
+                                        keeping: ["reviewer"], in: "")
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-a") == ["reviewer": 0.3])
+        #expect(PaneStripLayout.splits(from: "", scope: "chat-a") == [:])
+        #expect(PaneStripLayout.splits(from: "not json", scope: "chat-a") == [:])
+        #expect(PaneStripLayout.splits(from: #"{"reviewer":0.3}"#, scope: "chat-a") == [:])
+    }
+
+    @Test("Two chats with the same agent id keep separate splits")
+    func splitsPerChat() {
+        var text = PaneStripLayout.text(saving: ["reviewer": 0.3], scope: "chat-a", keeping: ["reviewer"], in: "")
+        text = PaneStripLayout.text(saving: ["reviewer": 0.7], scope: "chat-b", keeping: ["reviewer"], in: text)
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-a") == ["reviewer": 0.3])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-b") == ["reviewer": 0.7])
+    }
+
+    @Test("Saving one chat prunes only that chat's gone columns")
+    func pruneOneChat() {
+        var text = PaneStripLayout.text(saving: ["reviewer-a": 0.3, "closed-a": 0.6], scope: "chat-a",
+                                        keeping: ["reviewer-a", "closed-a"], in: "")
+        text = PaneStripLayout.text(saving: ["reviewer-b": 0.7], scope: "chat-b", keeping: ["reviewer-b"], in: text)
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-a") == ["reviewer-a": 0.3, "closed-a": 0.6])
+        text = PaneStripLayout.text(saving: ["reviewer-a": 0.4, "closed-a": 0.6], scope: "chat-a",
+                                    keeping: ["reviewer-a"], in: text)
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-a") == ["reviewer-a": 0.4])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-b") == ["reviewer-b": 0.7])
+    }
+
+    @Test("Past the cap, the chats saved longest ago are dropped first")
+    func splitScopeCap() {
+        let cap = PaneStripLayout.maximumSplitScopes
+        var text = ""
+        for chat in 0...cap {
+            text = PaneStripLayout.text(saving: ["reviewer": 0.3], scope: "chat-\(chat)", keeping: ["reviewer"],
+                                        in: text)
+        }
+        // Saving chat-1 again makes it the newest, so chat-2 is next to go.
+        text = PaneStripLayout.text(saving: ["reviewer": 0.4], scope: "chat-1", keeping: ["reviewer"], in: text)
+        text = PaneStripLayout.text(saving: ["reviewer": 0.3], scope: "chat-new", keeping: ["reviewer"], in: text)
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-0") == [:])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-2") == [:])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-1") == ["reviewer": 0.4])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-3") == ["reviewer": 0.3])
+        #expect(PaneStripLayout.splits(from: text, scope: "chat-new") == ["reviewer": 0.3])
     }
 
     @Test("Focus moves across columns and the chat page, and within a column")

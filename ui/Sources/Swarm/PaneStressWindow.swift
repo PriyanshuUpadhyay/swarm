@@ -18,6 +18,7 @@ struct PaneStressWindow: View {
             zoomedID: panes.zoomedKey,
             revealID: panes.revealKey,
             revealCount: panes.revealCount,
+            splitScope: "pane-stress",
             onFocus: { panes.focus(key: $0) },
             onZoom: { panes.toggleZoom(key: $0) },
             onReconnect: { panes.reconnect(key: $0, launch: SwarmPaneStress.launch) }

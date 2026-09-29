@@ -23,6 +23,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let revealID: String?
     /// Changes on every reveal, so a repeated reveal of the chat still scrolls.
     let revealCount: Int
+    /// Saved splits belong to this chat, so two chats with the same agent id keep their own.
+    let splitScope: String
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
     let onReconnect: (String) -> Void
@@ -42,7 +44,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         let hasPanes = !cells.isEmpty
         let zoomed = cells.first { $0.id == zoomedID }
         let preferredWidth = storedColumnWidth.map { CGFloat($0) }
-        let splits = PaneStripLayout.splits(from: storedSplits)
+        let splits = PaneStripLayout.splits(from: storedSplits, scope: splitScope)
         ZStack {
             // The chat stays in the scroll view with no panes, so it keeps its identity and state.
             ScrollViewReader { proxy in
@@ -150,7 +152,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     private func saveSplit(_ split: Double?, column id: String, splits: [String: Double]) {
         var splits = splits
         splits[id] = split
-        storedSplits = PaneStripLayout.text(splits: splits, keeping: Set(columns.map { $0[0].id }))
+        storedSplits = PaneStripLayout.text(saving: splits, scope: splitScope,
+                                            keeping: Set(columns.map { $0[0].id }), in: storedSplits)
     }
 
     private var columns: [[PaneCell]] {

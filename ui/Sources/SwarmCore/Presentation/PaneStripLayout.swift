@@ -56,16 +56,33 @@ public enum PaneStripLayout {
         min(max(preferred ?? 0.5, 0.25), 0.75)
     }
 
-    /// Splits are saved per column, keyed by the column's first agent id, as one JSON string.
-    /// Unreadable text reads as no splits.
-    public static func splits(from text: String) -> [String: Double] {
-        (try? JSONDecoder().decode([String: Double].self, from: Data(text.utf8))) ?? [:]
+    /// The chats whose splits are kept; saving one more drops the chat saved longest ago.
+    public static let maximumSplitScopes = 50
+
+    /// One chat's saved splits, keyed by each two-pane column's first agent id.
+    private struct SplitScope: Codable {
+        let scope: String
+        let splits: [String: Double]
     }
 
-    /// Only the splits of columns still shown are saved, so the text stays small.
-    public static func text(splits: [String: Double], keeping ids: Set<String>) -> String {
+    /// Splits are saved per chat (the scope) as one JSON array, the chat saved last at the end.
+    /// Unreadable text, and the older format without a scope, read as no splits.
+    public static func splits(from text: String, scope: String) -> [String: Double] {
+        scopes(from: text).last { $0.scope == scope }?.splits ?? [:]
+    }
+
+    /// Replaces the chat's splits with those of columns still shown and moves the chat to the end.
+    /// Other chats keep theirs, up to `maximumSplitScopes` chats, so the text stays small.
+    public static func text(saving splits: [String: Double], scope: String, keeping ids: Set<String>,
+                            in text: String) -> String {
+        var scopes = scopes(from: text).filter { $0.scope != scope }
         let kept = splits.filter { ids.contains($0.key) }
-        guard let data = try? JSONEncoder().encode(kept) else { return "" }
+        if !kept.isEmpty { scopes.append(SplitScope(scope: scope, splits: kept)) }
+        guard let data = try? JSONEncoder().encode(Array(scopes.suffix(maximumSplitScopes))) else { return "" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func scopes(from text: String) -> [SplitScope] {
+        (try? JSONDecoder().decode([SplitScope].self, from: Data(text.utf8))) ?? []
     }
 }
