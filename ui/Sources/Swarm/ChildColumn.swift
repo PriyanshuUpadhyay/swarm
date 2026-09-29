@@ -77,9 +77,12 @@ struct ChildColumnView: View {
     let session: SwarmSession
     let agent: SwarmAgent
     let model: ChildColumnModel
-    /// Set while the column has focus, and new on each request, so asking again for the column
-    /// that has focus still moves the keyboard to its composer.
-    let focusRequest: Int?
+    /// The column has focus, as by a click on it or its Find field.
+    let selected: Bool
+    /// New on each request for the column, so asking again for the column that has focus still
+    /// moves the keyboard to its composer. A click selects the column and keeps the keyboard
+    /// where it landed.
+    let focusRequest: Int
     let onFocused: () -> Void
 
     @FocusState private var composerFocused: Bool
@@ -93,7 +96,7 @@ struct ChildColumnView: View {
             waitingMessage: ChildColumnModel.waitingMessage(provider: agent.provider),
             chair: agent.provider, rawSessionJSON: "",
             // Find goes to the focused column; the scene's other key actions stay with the chair.
-            isActive: true, isVisible: focusRequest != nil,
+            isActive: true, isVisible: selected,
             loadOlder: { [model] in await model.loadOlder() },
             onTap: onFocused,
             focus: $transcriptFocused
@@ -116,8 +119,8 @@ struct ChildColumnView: View {
         .task(id: (agent.log ?? "") + (agent.provider ?? "")) {
             await model.poll(log: agent.log, provider: agent.provider)
         }
-        .onChange(of: focusRequest, initial: true) { _, request in
-            if request != nil { composerFocused = true }
+        .onChange(of: focusRequest, initial: true) {
+            if selected { composerFocused = true }
         }
     }
 

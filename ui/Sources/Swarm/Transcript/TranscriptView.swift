@@ -118,6 +118,10 @@ struct TranscriptView<Composer: View>: View {
         .onChange(of: isVisible) { _, visible in
             if !visible { findFieldFocused = false }
         }
+        // A click in the Find field selects this transcript, so Find Next steps it.
+        .onChange(of: findFieldFocused) { _, focused in
+            if focused { onTap() }
+        }
         .task(id: searchRequest) {
             await updateSearch()
         }

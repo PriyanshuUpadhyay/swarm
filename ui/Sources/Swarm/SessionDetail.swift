@@ -417,7 +417,7 @@ struct SessionDetailView: View {
                 let paneKey = key(cell.id)
                 ChildColumnView(
                     session: session, agent: agent, model: panes.column(key: paneKey),
-                    focusRequest: panes.focusedKey == paneKey ? panes.revealCount : nil,
+                    selected: panes.focusedKey == paneKey, focusRequest: panes.revealCount,
                     onFocused: { [panes] in panes.focused(key: paneKey) }
                 )
             }
