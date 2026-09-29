@@ -38,16 +38,24 @@ struct KeyRoutingTests {
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
     }
 
-    @Test("A terminal gets control keys, Esc, and unlisted command keys; ⌥⌘O goes nowhere")
+    @Test("A terminal gets every key without ⌘; other ⌘ keys go nowhere, except copy, paste, select all")
     func terminalPolicy() {
         let toTerminal = [
-            KeyChord("c", .control), KeyChord("r", .control), KeyChord(.escape),
-            KeyChord(.left, .command), KeyChord(.right, .command), KeyChord("x"),
-            KeyChord(.returnKey), KeyChord(.left, .option), KeyChord("d", [.control, .shift]),
+            KeyChord("c", .control), KeyChord("r", .control), KeyChord(.escape), KeyChord("x"),
+            KeyChord(.returnKey), KeyChord(.left, .option), KeyChord("b", .option),
+            KeyChord("d", [.control, .shift]), KeyChord(.up),
         ]
         for chord in toTerminal {
             #expect(KeyRouting.route(focus: .terminal, key: chord) == .terminal)
             #expect(KeyRouting.route(focus: .transcript, key: chord) == .ignore)
+        }
+        for chord in [KeyChord(.left, .command), KeyChord(.right, .command), KeyChord("e", .command),
+                      KeyChord("j", .command), KeyChord("c", [.command, .shift])] {
+            #expect(KeyRouting.route(focus: .terminal, key: chord) == .blocked)
+        }
+        for character in ["c", "v", "a"] as [Character] {
+            #expect(KeyRouting.route(focus: .terminal, key: KeyChord(character, .command)) == .edit)
+            #expect(KeyRouting.route(focus: .transcript, key: KeyChord(character, .command)) == .ignore)
         }
         let optionMeta = KeyChord("o", [.option, .command])
         for focus in [FocusedSurface.terminal, .transcript, .sidebar] {

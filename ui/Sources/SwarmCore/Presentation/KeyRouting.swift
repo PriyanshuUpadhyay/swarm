@@ -108,21 +108,28 @@ public enum KeyRoute: Sendable, Equatable {
     case terminal
     /// Taken by no one, such as ⌥⌘O, which would flip the terminal's Option-as-Meta.
     case blocked
+    /// Copy, paste, or select all in a terminal, left to the Edit menu and the terminal's own
+    /// copy:, paste:, and selectAll:.
+    case edit
     case ignore
 }
 
 public enum KeyRouting {
     static let blocked: Set<KeyChord> = [KeyChord("o", [.option, .command])]
+    static let edit: Set<KeyChord> = [KeyChord("c", .command), KeyChord("v", .command), KeyChord("a", .command)]
 
-    /// App keys win in every focus. In a terminal, find keys use the terminal's own find, and
-    /// every key the app does not list, such as ⌃C, Esc, or ⌘←, goes to the agent.
+    /// App keys win in every focus. In a terminal, find keys use the terminal's own find, ⌘C,
+    /// ⌘V, and ⌘A edit, any other ⌘ key goes nowhere, and every key without ⌘, such as ⌃C, Esc,
+    /// or ⌥B, goes to the agent.
     public static func route(focus: FocusedSurface, key: KeyChord) -> KeyRoute {
         if blocked.contains(key) { return .blocked }
         if let action = AppKey.action(for: key) {
             if focus == .terminal, [.find, .findNext, .findPrevious].contains(action) { return .terminal }
             return .app(action)
         }
-        return focus == .terminal ? .terminal : .ignore
+        guard focus == .terminal else { return .ignore }
+        if edit.contains(key) { return .edit }
+        return key.modifiers.contains(.command) ? .blocked : .terminal
     }
 }
 

@@ -69,13 +69,13 @@ final class SwarmTerminalView: LocalProcessTerminalView {
             return super.performKeyEquivalent(with: event)
         }
         switch KeyRouting.route(focus: .terminal, key: chord) {
-        case .terminal, .ignore, .app(.stop):
-            // ⌘. belongs to the composer's stop button, which is not a menu item.
+        case .terminal, .ignore, .edit, .app(.stop):
+            // ⌘. belongs to the composer's stop button, which is not a menu item. The Edit menu
+            // takes ⌘C, ⌘V, and ⌘A and sends copy:, paste:, and selectAll: to the terminal.
             return super.performKeyEquivalent(with: event)
-        case .blocked:
-            return true
-        case .app:
-            // An app key never reaches the agent, also when its menu item is disabled.
+        case .blocked, .app:
+            // Neither reaches the agent. The menu still gets them first, so an app key runs and a
+            // system item such as ⌘Q or ⌘W keeps working; any other ⌘ key goes nowhere.
             _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
             return true
         }
