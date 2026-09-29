@@ -1106,7 +1106,9 @@ struct SwarmApp: App {
     init() { SwarmPerformance.event("AppStarted") }
 
     var body: some Scene {
-        WindowGroup { SessionsWindow() }
+        WindowGroup {
+            if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
+        }
             .commands {
                 DebugCommands()
                 PaneFindCommands()
