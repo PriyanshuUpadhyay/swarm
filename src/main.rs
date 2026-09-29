@@ -572,6 +572,10 @@ fn spawn_agent(
     role: &str,
     options: SpawnOptions<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Before any pane, file, or bus work: the id names a pane, a bus row, and a run script.
+    if !swarm::bus::valid_agent_id(agent_id) {
+        return Err(format!("swarm: bad agent id {agent_id}").into());
+    }
     let account = if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
@@ -674,6 +678,11 @@ fn script_line(
     command: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    // Both ids become path parts; a `../` in either would write and source a file outside runs/.
+    if !swarm::bus::valid_agent_id(agent_id) {
+        return Err(format!("swarm: bad agent id {agent_id}").into());
+    }
+    valid_session_id(session_id)?;
     let dir = root.join(format!("runs/{session_id}"));
     std::fs::DirBuilder::new()
         .recursive(true)
@@ -1614,6 +1623,26 @@ mod tests {
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
+
+    #[test]
+    fn a_run_script_refuses_an_agent_id_that_leaves_runs() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-script-escape-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let session = "0199a000-0000-7000-8000-000000000001";
+        for bad in ["../../x", "../x", "a/b", "X", ""] {
+            assert!(script_line(&root, session, bad, "true").is_err(), "{bad}");
+        }
+        assert!(script_line(&root, "../session", "coder", "true").is_err());
+        assert!(!root.join("x.sh").exists() && !root.parent().unwrap().join("x.sh").exists());
+        assert!(!root.join("runs").exists());
+        let line = script_line(&root, session, "coder", "true").unwrap();
+        assert!(
+            line.ends_with(&format!("runs/{session}/coder.sh'")),
+            "{line}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
