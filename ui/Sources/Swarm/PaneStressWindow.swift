@@ -62,8 +62,10 @@ struct PaneStressWindow: View {
 }
 
 extension PaneStressWindow {
-    /// `SWARM_KEY_SCRIPT="opt+cmd+right,cmd+1"` sends each chord through `NSApp.sendEvent`, so the
-    /// real menu and responder path runs, and prints the focus, zoom, and window action after it.
+    /// `SWARM_KEY_SCRIPT="opt+cmd+right,cmd+1"` posts each chord to this process as a system key
+    /// event, so the real menu and responder path runs, and prints the focus, zoom, and window
+    /// action after it. `NSApp.sendEvent` is not enough: SwiftUI fills a menu's items only on the
+    /// system event path, so a hand-made event found every menu item disabled.
     private func runKeyScript() async {
         guard let script = ProcessInfo.processInfo.environment["SWARM_KEY_SCRIPT"] else { return }
         try? await Task.sleep(for: .seconds(3))
@@ -84,12 +86,13 @@ extension PaneStressWindow {
                 log(word)
                 continue
             }
-            guard let chord = KeyChord(script: word), let event = Self.event(chord) else {
+            guard let chord = KeyChord(script: word), let (down, up) = Self.events(chord) else {
                 log("unknown \(word)")
                 continue
             }
             lastWindowAction = "none"
-            NSApp.sendEvent(event)
+            down.postToPid(getpid())
+            up.postToPid(getpid())
             try? await Task.sleep(for: .milliseconds(500))
             log(word)
         }
@@ -104,36 +107,33 @@ extension PaneStressWindow {
         fflush(stdout)
     }
 
-    private static func event(_ chord: KeyChord) -> NSEvent? {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first else { return nil }
+    private static func events(_ chord: KeyChord) -> (CGEvent, CGEvent)? {
         let codes: [Character: UInt16] = [
             "1": 18, "2": 19, "o": 31, "l": 37, "k": 40, "b": 11, "n": 45, "x": 7, "]": 30, "[": 33,
         ]
         let code: UInt16
-        let text: String
         switch chord.key {
-        case .returnKey: (code, text) = (36, "\r")
-        case .escape: (code, text) = (53, "\u{1b}")
-        case .left: (code, text) = (123, String(UnicodeScalar(NSLeftArrowFunctionKey)!))
-        case .right: (code, text) = (124, String(UnicodeScalar(NSRightArrowFunctionKey)!))
-        case .down: (code, text) = (125, String(UnicodeScalar(NSDownArrowFunctionKey)!))
-        case .up: (code, text) = (126, String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        case .returnKey: code = 36
+        case .escape: code = 53
+        case .left: code = 123
+        case .right: code = 124
+        case .down: code = 125
+        case .up: code = 126
         case .character(let character):
             guard let known = codes[character] else { return nil }
-            (code, text) = (known, String(character))
+            code = known
         }
-        var flags: NSEvent.ModifierFlags = []
-        if chord.modifiers.contains(.command) { flags.insert(.command) }
-        if chord.modifiers.contains(.shift) { flags.insert(.shift) }
-        if chord.modifiers.contains(.option) { flags.insert(.option) }
-        if chord.modifiers.contains(.control) { flags.insert(.control) }
-        if (123...126).contains(code) { flags.formUnion([.function, .numericPad]) }
-        return NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: flags,
-            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-            context: nil, characters: text, charactersIgnoringModifiers: text,
-            isARepeat: false, keyCode: code
-        )
+        var flags: CGEventFlags = []
+        if chord.modifiers.contains(.command) { flags.insert(.maskCommand) }
+        if chord.modifiers.contains(.shift) { flags.insert(.maskShift) }
+        if chord.modifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if chord.modifiers.contains(.control) { flags.insert(.maskControl) }
+        if (123...126).contains(code) { flags.formUnion([.maskSecondaryFn, .maskNumericPad]) }
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else { return nil }
+        down.flags = flags
+        up.flags = flags
+        return (down, up)
     }
 }
 
