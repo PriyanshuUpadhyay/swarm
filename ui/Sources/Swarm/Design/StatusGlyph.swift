@@ -9,8 +9,6 @@ struct StatusGlyph: View {
     var body: some View {
         Image(systemName: Self.symbol(status))
             .foregroundStyle(DesignTokens.color(status))
-            // The dotted ring is thin; bold keeps it legible at caption size in light mode.
-            .fontWeight(status == .working ? .bold : nil)
             .symbolEffect(
                 .rotate, options: .repeat(.continuous).speed(0.3),
                 isActive: status == .working && !reduceMotion
@@ -21,7 +19,8 @@ struct StatusGlyph: View {
 
     static func symbol(_ status: AgentStatus) -> String {
         switch status {
-        case .working: "circle.dotted"
+        // A spinner shape reads as in progress even when still; a dotted ring read as empty.
+        case .working: "progress.indicator"
         case .waiting: "exclamationmark.circle.fill"
         case .done: "checkmark.circle"
         case .failed: "xmark.octagon.fill"
