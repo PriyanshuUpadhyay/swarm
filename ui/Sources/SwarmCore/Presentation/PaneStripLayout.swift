@@ -41,6 +41,31 @@ public enum PaneStripLayout {
 
     /// The chat page leaves the last 10% of the main area to the first agent column.
     public static func widths(main: CGFloat) -> (chat: CGFloat, column: CGFloat) {
-        (main * 0.9, max(main / 3, minimumColumnWidth))
+        (main * 0.9, columnWidth(main: main, preferred: nil))
+    }
+
+    /// The owner's dragged column width, kept between 440 pt and 90% of the main area (ADR 0026).
+    /// With no drag a column is a third of the main area. The minimum wins in a narrow window.
+    public static func columnWidth(main: CGFloat, preferred: CGFloat?) -> CGFloat {
+        guard let preferred else { return max(main / 3, minimumColumnWidth) }
+        return max(min(preferred, main * 0.9), minimumColumnWidth)
+    }
+
+    /// The top pane's share of a two-pane column, kept between 25% and 75%.
+    public static func split(preferred: Double?) -> Double {
+        min(max(preferred ?? 0.5, 0.25), 0.75)
+    }
+
+    /// Splits are saved per column, keyed by the column's first agent id, as one JSON string.
+    /// Unreadable text reads as no splits.
+    public static func splits(from text: String) -> [String: Double] {
+        (try? JSONDecoder().decode([String: Double].self, from: Data(text.utf8))) ?? [:]
+    }
+
+    /// Only the splits of columns still shown are saved, so the text stays small.
+    public static func text(splits: [String: Double], keeping ids: Set<String>) -> String {
+        let kept = splits.filter { ids.contains($0.key) }
+        guard let data = try? JSONEncoder().encode(kept) else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 }
