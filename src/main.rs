@@ -1196,7 +1196,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     seen,
                     detail.as_deref(),
                     now,
-                    row.state_at,
+                    (
+                        row.state.as_deref(),
+                        row.state_source.as_deref(),
+                        row.state_at,
+                    ),
                 ) {
                     Ok(true) => {
                         (row.state_at, row.state_source, row.state_detail) =

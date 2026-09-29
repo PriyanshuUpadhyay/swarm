@@ -459,9 +459,13 @@ pub fn set_state(
     Ok(())
 }
 
-/// A screen check's write, applied only while the report it read is still the latest: a hook
-/// that lands between the listing's read and this write keeps its newer report. Returns whether
-/// the row changed.
+/// The report a listing read for one agent: (state, state_source, state_at).
+pub type ReadState<'a> = (Option<&'a str>, Option<&'a str>, Option<i64>);
+
+/// A screen check's write, applied only while the row still holds the report it read: a hook
+/// that lands between the listing's read and this write keeps its newer report, also within the
+/// same second, because state and source take part in the compare. Returns whether the row
+/// changed.
 pub fn set_screen_state(
     connection: &Connection,
     session_id: &str,
@@ -469,12 +473,23 @@ pub fn set_screen_state(
     state: &str,
     detail: Option<&str>,
     now: i64,
-    read_state_at: Option<i64>,
+    read: ReadState<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let (read_state, read_source, read_at) = read;
     let changed = connection.execute(
         "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_at = ?5
-         WHERE session_id = ?1 AND id = ?2 AND state_at IS ?6",
-        (session_id, agent_id, state, detail, now, read_state_at),
+         WHERE session_id = ?1 AND id = ?2
+           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8",
+        (
+            session_id,
+            agent_id,
+            state,
+            detail,
+            now,
+            read_state,
+            read_source,
+            read_at,
+        ),
     )?;
     Ok(changed == 1)
 }
@@ -1410,8 +1425,9 @@ mod tests {
         set_state(&connection, SESSION, CODER, "working", "hook", None, 100).unwrap();
         // The listing read state_at 100; a hook reports waiting before the screen write lands.
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 105).unwrap();
+        let read = (Some("working"), Some("hook"), Some(100));
         let written =
-            set_screen_state(&connection, SESSION, CODER, "done", None, 110, Some(100)).unwrap();
+            set_screen_state(&connection, SESSION, CODER, "done", None, 110, read).unwrap();
         assert!(!written);
         let coder = agents(&connection, SESSION)
             .unwrap()
@@ -1420,12 +1436,37 @@ mod tests {
             .unwrap();
         assert_eq!(coder.state.as_deref(), Some("waiting"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
+        let latest = (Some("waiting"), Some("hook"), Some(105));
+        assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
+        let unset = (None, None, None);
         assert!(
-            set_screen_state(&connection, SESSION, CODER, "done", None, 111, Some(105)).unwrap()
+            set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, unset).unwrap()
         );
-        let orchestrator_unset =
-            set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, None).unwrap();
-        assert!(orchestrator_unset);
+    }
+
+    #[test]
+    fn a_hook_in_the_same_second_as_the_read_still_stops_the_screen_write() {
+        let connection = seed(0);
+        set_screen_state(
+            &connection,
+            SESSION,
+            CODER,
+            "working",
+            None,
+            100,
+            (None, None, None),
+        )
+        .unwrap();
+        // The listing read (working, screen, 100); a hook reports waiting in that same second.
+        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 100).unwrap();
+        let read = (Some("working"), Some("screen"), Some(100));
+        assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
+        let coder = agents(&connection, SESSION)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == CODER)
+            .unwrap();
+        assert_eq!(coder.state.as_deref(), Some("waiting"));
     }
 
     #[test]
