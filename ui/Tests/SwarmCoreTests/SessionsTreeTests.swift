@@ -124,6 +124,21 @@ struct SessionsTreeTests {
         ).caption == "outside · no chair")
     }
 
+    @Test("A chat and its workspace show their agents' most urgent status")
+    func aggregateStatus() {
+        let chat = session("status-session", cwd: "/outside")
+        let chair = SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
+        )
+        let reviewer = SwarmAgent(
+            id: .init("reviewer"), role: "review", pane: "%2", alive: true, state: "waiting"
+        )
+        let tree = build([chat], agentsBySession: [chat.id: [chair, reviewer]])
+        #expect(tree.projects[0].chats[0].session.status == .waiting)
+        #expect(WorkspaceEntry.list(in: tree).first?.status == .waiting)
+        #expect(build([chat]).projects.first?.chats.first?.session.status == nil)
+    }
+
     @Test("A missing session provider comes from the chair, then the first agent")
     func providerFallback() {
         let item = session("provider-session", cwd: "/outside")

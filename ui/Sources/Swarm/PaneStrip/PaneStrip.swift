@@ -7,7 +7,9 @@ struct PaneCell: Identifiable, Equatable {
     let title: String
     let role: String
     let model: String
-    let alive: Bool
+    let status: AgentStatus
+
+    var ended: Bool { status == .ended }
 }
 
 /// The chat page, then columns of agent panes that scroll in from the right (ADR 0022).
@@ -86,7 +88,7 @@ private struct PaneView<Content: View>: View {
         VStack(spacing: 0) {
             header
             content()
-                .opacity(cell.alive ? 1 : 0.6)
+                .opacity(cell.ended ? 0.6 : 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -100,11 +102,11 @@ private struct PaneView<Content: View>: View {
 
     private var header: some View {
         HStack(spacing: 8) {
+            StatusGlyph(status: cell.status)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
-            Text(cell.alive ? "live" : "ended").foregroundStyle(.secondary)
-            if !cell.alive {
+            if cell.ended {
                 Button("Reconnect", action: onReconnect)
             }
             Button(action: onZoom) {

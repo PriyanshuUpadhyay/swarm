@@ -8,6 +8,8 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var liveAgents: Int?
     public var totalAgents: Int
     public var provider: String?
+    /// The most urgent status of the current session's agents; nil when they are not known.
+    public var status: AgentStatus?
 
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
@@ -18,7 +20,7 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public init(
         sessions: [SwarmSession], title: String,
         isRunning: Bool? = nil, liveAgents: Int? = nil, totalAgents: Int? = nil,
-        provider: String? = nil
+        provider: String? = nil, status: AgentStatus? = nil
     ) {
         precondition(!sessions.isEmpty)
         self.sessions = sessions
@@ -27,6 +29,7 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
         self.liveAgents = liveAgents
         self.totalAgents = totalAgents ?? sessions.reduce(0) { $0 + $1.agents }
         self.provider = provider ?? sessions[0].chairProvider
+        self.status = status
     }
 }
 

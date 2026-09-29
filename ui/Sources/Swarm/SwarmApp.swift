@@ -691,6 +691,9 @@ private struct SessionsWindow: View {
                                     model.select(chat.id)
                                 } label: {
                                     HStack(spacing: 6) {
+                                        if let status = chat.session.status {
+                                            StatusGlyph(status: status).font(.caption)
+                                        }
                                         Text(chat.session.title).lineLimit(1)
                                         if let provider = chat.session.provider {
                                             Text(providerBadge(provider))
@@ -792,7 +795,7 @@ private struct SessionsWindow: View {
         let label = model.navigation.title(for: entry) + ", "
             + model.navigation.detail(for: entry, among: model.workspaces)
         let help = "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)"
-            + (entry.isRunning ? "\nAn agent process is alive" : "")
+            + (entry.status.map { "\n" + StatusGlyph.title($0) } ?? "")
         return Button {
             if model.navigation.archived.contains(entry.id) {
                 model.navigation.archived.remove(entry.id)
@@ -814,7 +817,7 @@ private struct SessionsWindow: View {
         .buttonStyle(.plain)
         .help(help)
         .accessibilityLabel(label)
-        .accessibilityValue(entry.isRunning ? "Agent process alive" : "")
+        .accessibilityValue(entry.status.map(StatusGlyph.title) ?? "")
         .accessibilityAddTraits(model.navigation.selectedWorkspace == entry.id ? .isSelected : [])
         .contextMenu {
             if model.navigation.archived.contains(entry.id) {
@@ -847,10 +850,12 @@ private struct SessionsWindow: View {
             age = nil
         }
         return HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(entry.isRunning ? Color.green : Color.clear)
-                .frame(width: 2, height: 32)
-                .accessibilityHidden(true)
+            // A fixed slot keeps titles aligned whether or not the workspace has agents.
+            Group {
+                if let status = entry.status { StatusGlyph(status: status) }
+            }
+            .frame(width: 16)
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .medium))

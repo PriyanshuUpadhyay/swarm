@@ -2,10 +2,12 @@ import SwiftUI
 import SwarmCore
 
 /// `SWARM_PANE_STRESS=N` only: the pane strip with N local streaming panes for the performance gate.
+private let stressStatuses: [AgentStatus] = [.working, .waiting, .done, .failed, .ended]
+
 struct PaneStressWindow: View {
     @State private var panes = AgentPaneStore()
     private let cells = (0..<SwarmPaneStress.count).map {
-        PaneCell(id: "stress-\($0)", title: "stress-\($0)", role: "stress", model: "sh", alive: true)
+        PaneCell(id: "stress-\($0)", title: "stress-\($0)", role: "stress", model: "sh", status: stressStatuses[$0 % stressStatuses.count])
     }
 
     var body: some View {

@@ -723,7 +723,8 @@ struct SessionDetailView: View {
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
                     model: cell.agent.provider ?? "unknown",
-                    alive: cell.agent.alive != false && !panes.ended.contains(key(cell.agent.id.rawValue))
+                    // A closed pane connection shows as ended even while the agent lives.
+                    status: panes.ended.contains(key(cell.agent.id.rawValue)) ? .ended : cell.agent.status
                 )
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,

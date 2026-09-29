@@ -7,6 +7,8 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     public var chats: [SwarmProjectSession] { workspace.sessions.filter { $0.totalAgents != 0 } }
     public var lastActivity: Int { chats.map(\.lastActivity).max() ?? 0 }
     public var isRunning: Bool { chats.contains { $0.isRunning == true } }
+    /// Sets the row's glyph only; it never changes the row order.
+    public var status: AgentStatus? { AgentStatus.aggregate(chats.compactMap(\.status)) }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
     public static func list(in tree: SessionsTree) -> [Self] {

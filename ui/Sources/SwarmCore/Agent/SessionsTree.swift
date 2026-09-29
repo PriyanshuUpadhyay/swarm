@@ -278,7 +278,8 @@ public struct SessionsTree: Sendable, Hashable {
                 sessions: $0, title: $0.reversed().lazy.compactMap { titles[$0.id] }.first ?? "Chat",
                 isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
-                totalAgents: known ? agents.count : nil, provider: provider
+                totalAgents: known ? agents.count : nil, provider: provider,
+                status: agentsBySession[$0[0].id].flatMap { AgentStatus.aggregate($0.map(\.status)) }
             )
         })
     }
