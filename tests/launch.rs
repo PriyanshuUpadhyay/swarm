@@ -289,9 +289,10 @@ fn listed_prompt(home: &Path, session: &str) -> serde_json::Value {
         .clone()
 }
 
-const PERMISSION: &str = " Bash command\n\n   touch probe.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend\n";
+// A real screen shows where the question starts: Claude's rule row, or a blank row above Codex's.
+const PERMISSION: &str = "────\n Bash command\n\n   touch probe.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend\n";
 const FOLDER_TRUST: &str =
-    "  Trust this folder?\n\n› 1. Trust and continue\n  2. Back\n\n  enter continue · esc back\n";
+    "\n  Trust this folder?\n\n› 1. Trust and continue\n  2. Back\n\n  enter continue · esc back\n";
 
 #[test]
 fn the_owner_answers_a_listed_question_with_its_choice_key() {

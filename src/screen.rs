@@ -91,7 +91,7 @@ pub struct Prompt {
     /// The digit only moves the cursor, so Enter confirms the choice (Codex folder trust).
     #[serde(skip)]
     pub confirm: bool,
-    /// The question reaches the top row, so rows above it can be off the screen.
+    /// The question's text reaches the top row, so rows above it can be off the screen.
     #[serde(skip)]
     pub cut: bool,
 }
@@ -159,14 +159,14 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
 }
 
 /// The prompt a screen shows, read again from the pane's whole history when its question reaches
-/// the top row. None when that read fails, so no prompt is shown or answered on part of its
-/// question.
+/// the top row. None when that read fails or its question still reaches the top row, so no
+/// prompt is shown or answered on part of its question.
 pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
     let found = prompt(screen)?;
     if !found.cut {
         return Some(found);
     }
-    prompt(&history()?)
+    prompt(&history()?).filter(|found| !found.cut)
 }
 
 fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
@@ -261,20 +261,23 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         return None;
     }
     // The whole question up to a rule or a history row, so no row of a long command is left
-    // out of the card or the id.
+    // out of the card or the id. Both start at column 0 on every capture; the question's own
+    // rows are indented, so a command row such as `> /tmp/out` stays in the question.
     let mut question = Vec::new();
-    let mut cut = true;
+    let mut bounded = false;
     for line in lines[..first].iter().rev() {
         let text = line.trim();
         if text.is_empty() {
             continue;
         }
-        if text.starts_with('─') || text.starts_with(HISTORY) {
-            cut = false;
+        if line.starts_with('─') || line.starts_with(HISTORY) {
+            bounded = true;
             break;
         }
         question.push(text);
     }
+    // With no rule or history row, only a blank top row shows where the question starts.
+    let cut = !bounded && !lines[0].trim().is_empty();
     question.reverse();
     let question = question.join("\n");
     // FNV-1a: stable across builds, so a listing and a later answer agree.
@@ -665,8 +668,34 @@ mod tests {
             whole.question
         );
         assert_eq!(whole_prompt(&screen, || None), None);
+        // History that lost the question's first rows is refused too.
+        assert_eq!(whole_prompt(&screen, || Some(screen.clone())), None);
+        // A blank top row shows where the question starts.
+        let spaced = format!("\n{screen}");
+        assert!(!prompt(&spaced).unwrap().cut);
         let never = || -> Option<String> { panic!("a whole question needs no history") };
         assert_eq!(whole_prompt(&command("ls"), never), prompt(&command("ls")));
+        assert_eq!(whole_prompt(&spaced, never), prompt(&spaced));
+    }
+
+    #[test]
+    fn an_indented_command_row_that_starts_like_history_stays_in_the_question() {
+        let command = |first: &str| {
+            format!(
+                "• Ran ls\n\n  Would you like to run the following command?\n\n  $ {first}\n  > /tmp/result\n  echo done\n\n› 1. Yes, proceed (y)\n  2. No (esc)\n\n  Press enter to confirm or esc to cancel\n"
+            )
+        };
+        let harmless = prompt(&command("printf safe")).unwrap();
+        let deleting = prompt(&command("rm -rf /tmp/work")).unwrap();
+        assert!(
+            deleting
+                .question
+                .contains("$ rm -rf /tmp/work\n> /tmp/result"),
+            "{}",
+            deleting.question
+        );
+        assert_ne!(deleting.id, harmless.id);
+        assert!(!deleting.cut);
     }
 
     #[test]
