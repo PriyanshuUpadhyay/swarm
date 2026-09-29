@@ -245,15 +245,7 @@ struct SessionDetailView: View {
     @FocusState private var transcriptFocused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            transcriptColumn
-                .frame(minWidth: 320, maxWidth: .infinity)
-            if isActive, SwarmPanePolicy.hasLiveChildAgents(session: row.session, agents: agents) {
-                paneColumn
-                    .frame(minWidth: 360, maxWidth: .infinity)
-                    .id(row.session.id.rawValue)
-            }
-        }
+        paneStrip
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: row.id.rawValue + (row.session.chairLog ?? "") + (chairProvider ?? "") + String(isActive)) {
             guard isActive else { return }
@@ -728,46 +720,40 @@ struct SessionDetailView: View {
         pendingScrollID = findMatches.first
     }
 
-    private var paneColumn: some View {
-        let cells = SwarmPanePolicy.cells(session: row.session, agents: agents)
-        return Group {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(cells) { cell in
-                        AgentCellView(session: row.session, cell: cell, panes: panes)
-                            .frame(height: 320)
-                    }
+    private var paneStrip: some View {
+        let session = row.session
+        let agentCells = isActive ? SwarmPanePolicy.cells(session: session, agents: agents) : []
+        let byID = Dictionary(agentCells.map { ($0.agent.id.rawValue, $0) }) { first, _ in first }
+        func key(_ id: String) -> String { AgentPaneStore.key(session: session.id, agent: id) }
+        return PaneStrip(
+            cells: agentCells.map { cell in
+                PaneCell(
+                    id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
+                    model: cell.agent.provider ?? "unknown",
+                    alive: cell.agent.alive != false && !panes.ended.contains(key(cell.agent.id.rawValue))
+                )
+            },
+            focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
+            zoomedID: agentCells.first { key($0.agent.id.rawValue) == panes.zoomedKey }?.agent.id.rawValue,
+            onFocus: { panes.focus(key: key($0)) },
+            onZoom: { panes.zoomedKey = $0.map(key) },
+            onReconnect: { id in
+                if let agent = byID[id]?.agent { panes.reconnect(session: session, agent: agent) }
+            }
+        ) {
+            transcriptColumn
+        } pane: { cell in
+            switch byID[cell.id]?.kind {
+            case .attach?:
+                AgentTerminalView(key: key(cell.id), store: panes) {
+                    if let agent = byID[cell.id]?.agent { _ = panes.terminal(session: session, agent: agent) }
                 }
-                .padding(8)
+            case .notice(let reason)?:
+                ContentUnavailableView(reason, systemImage: "terminal")
+            case nil:
+                EmptyView()
             }
         }
-    }
-}
-
-private struct AgentCellView: View {
-    let session: SwarmSession
-    let cell: SwarmAgentCell
-    let panes: AgentPaneStore
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text("\(cell.agent.id.rawValue) · \(cell.agent.role) · \(cell.agent.provider ?? "unknown") · \(cell.agent.alive == false ? "ended" : "live")")
-                .font(.caption)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Group {
-                switch cell.kind {
-                case .attach:
-                    AgentTerminalView(session: session, agent: cell.agent, store: panes)
-                case .notice(let reason):
-                    ContentUnavailableView(reason, systemImage: "terminal")
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(6)
-        .background(.background)
-        .overlay { RoundedRectangle(cornerRadius: 4).stroke(.separator) }
     }
 }
 
