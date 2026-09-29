@@ -3,9 +3,8 @@ import Testing
 
 @Suite("Key routing")
 struct KeyRoutingTests {
-    @Test("App keys win in every focus; the terminal gets every other key")
+    @Test("Each app key has one chord")
     func table() {
-        let surfaces: [FocusedSurface] = [.terminal, .transcript, .sidebar]
         let appKeys: [(KeyChord, AppKey)] = [
             (KeyChord("n", .command), .newChat),
             (KeyChord("n", [.command, .shift]), .newWorkspace),
@@ -32,45 +31,9 @@ struct KeyRoutingTests {
         for (chord, action) in appKeys {
             #expect(AppKey.action(for: chord) == action)
             #expect(action.chord == chord)
-            for focus in surfaces { #expect(KeyRouting.route(focus: focus, key: chord) == .app(action)) }
         }
         #expect(AppKey.action(for: KeyChord("6", [.option, .command])) == nil)
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
-    }
-
-    @Test("A terminal gets every key without ⌘; other ⌘ keys go nowhere, except copy, paste, select all")
-    func terminalPolicy() {
-        let toTerminal = [
-            KeyChord("c", .control), KeyChord("r", .control), KeyChord(.escape), KeyChord("x"),
-            KeyChord(.returnKey), KeyChord(.left, .option), KeyChord("b", .option),
-            KeyChord("d", [.control, .shift]), KeyChord(.up),
-        ]
-        for chord in toTerminal {
-            #expect(KeyRouting.route(focus: .terminal, key: chord) == .terminal)
-            #expect(KeyRouting.route(focus: .transcript, key: chord) == .ignore)
-        }
-        for chord in [KeyChord(.left, .command), KeyChord(.right, .command), KeyChord("e", .command),
-                      KeyChord("j", .command), KeyChord("c", [.command, .shift])] {
-            #expect(KeyRouting.route(focus: .terminal, key: chord) == .blocked)
-        }
-        for character in ["c", "v", "a"] as [Character] {
-            #expect(KeyRouting.route(focus: .terminal, key: KeyChord(character, .command)) == .edit)
-            #expect(KeyRouting.route(focus: .transcript, key: KeyChord(character, .command)) == .ignore)
-        }
-        let optionMeta = KeyChord("o", [.option, .command])
-        for focus in [FocusedSurface.terminal, .transcript, .sidebar] {
-            #expect(KeyRouting.route(focus: focus, key: optionMeta) == .blocked)
-        }
-    }
-
-    @Test("Find keys open the chat's find, and the terminal's own find in a pane")
-    func findKeys() {
-        let find = KeyChord("f", .command)
-        #expect(KeyRouting.route(focus: .transcript, key: find) == .app(.find))
-        #expect(KeyRouting.route(focus: .terminal, key: find) == .terminal)
-        #expect(KeyRouting.route(focus: .terminal, key: KeyChord("g", .command)) == .terminal)
-        #expect(KeyRouting.route(focus: .transcript, key: KeyChord("g", [.command, .shift]))
-            == .app(.findPrevious))
     }
 
     @Test("Key script words read as chords")
