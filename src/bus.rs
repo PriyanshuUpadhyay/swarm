@@ -309,8 +309,24 @@ fn codex_event_label(event: &str) -> String {
     label
 }
 
+/// A TOML line without its comment and outer blanks. A `#` inside a quoted string stays.
+fn toml_code(line: &str) -> &str {
+    let mut quote = None;
+    for (index, character) in line.char_indices() {
+        match quote {
+            None if character == '#' => return line[..index].trim(),
+            None if matches!(character, '"' | '\'') => quote = Some(character),
+            Some(open) if character == open => quote = None,
+            _ => {}
+        }
+    }
+    line.trim()
+}
+
 /// Write each trust entry into a Codex home's `config.toml`, replacing the hash of an entry
 /// that is already there and keeping every other line. Returns whether the file changed.
+/// An entry written in a form other than its own table is refused, not added again: a second
+/// table with the same name makes the whole file unreadable to Codex.
 pub fn ensure_codex_hook_trust(
     home: &std::path::Path,
     entries: &[(String, String)],
@@ -327,18 +343,24 @@ pub fn ensure_codex_hook_trust(
             "trusted_hash = {}",
             serde_json::to_string(hash).expect("string")
         );
-        match lines.iter().position(|line| line.trim() == table) {
+        match lines.iter().position(|line| toml_code(line) == table) {
             Some(start) => {
                 let end = lines[start + 1..]
                     .iter()
-                    .position(|line| line.trim_start().starts_with('['))
+                    .position(|line| toml_code(line).starts_with('['))
                     .map_or(lines.len(), |offset| start + 1 + offset);
                 match (start + 1..end)
-                    .find(|&index| lines[index].trim_start().starts_with("trusted_hash"))
+                    .find(|&index| toml_code(&lines[index]).starts_with("trusted_hash"))
                 {
                     Some(index) => lines[index] = value,
                     None => lines.insert(start + 1, value),
                 }
+            }
+            None if existing.contains(key.as_str()) => {
+                return Err(format!(
+                    "{} names hook {key} in a form swarm does not edit; set its trusted_hash by hand",
+                    path.display()
+                ));
             }
             None => {
                 if lines.last().is_some_and(|line| !line.trim().is_empty()) {
@@ -360,7 +382,7 @@ pub fn ensure_codex_hook_trust(
 /// Whether a Codex home's `config.toml` trusts every entry.
 pub fn codex_hooks_trusted(home: &std::path::Path, entries: &[(String, String)]) -> bool {
     let text = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
-    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    let lines: Vec<&str> = text.lines().map(toml_code).collect();
     entries.iter().all(|(key, hash)| {
         let table = format!(
             "[hooks.state.{}]",
@@ -950,6 +972,46 @@ mod tests {
             1 + moved.len(),
             "{text}"
         );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_commented_codex_trust_entry_is_updated_in_place_and_never_added_twice() {
+        let home = std::env::temp_dir().join(format!("swarm-codex-comment-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        ensure_codex_hook_trust(&home, &entries).unwrap();
+        let config = home.join("config.toml");
+        let plain = std::fs::read_to_string(&config).unwrap();
+
+        // The owner commented each header and hash; both still count and none is added again.
+        let commented: String = plain
+            .lines()
+            .map(
+                |line| match line.starts_with('[') || line.starts_with("trusted_hash") {
+                    true => format!("{line}  # swarm #1"),
+                    false => line.to_string(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&config, &commented).unwrap();
+        assert!(codex_hooks_trusted(&home, &entries));
+        let moved = codex_hook_trust("'/opt/swarm' hook codex");
+        assert!(ensure_codex_hook_trust(&home, &moved).unwrap());
+        assert!(codex_hooks_trusted(&home, &moved));
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert_eq!(text.matches("[hooks.state.").count(), moved.len(), "{text}");
+
+        // A `#` inside the quoted key is not a comment.
+        assert_eq!(toml_code(r#"[a."x#y"]  # note"#), r#"[a."x#y"]"#);
+
+        // An entry in another form is refused, and the file stays as it was.
+        let (key, _) = &entries[0];
+        let dotted = format!("[hooks.state]\n{key:?}.trusted_hash = \"sha256:x\"\n");
+        std::fs::write(&config, &dotted).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), dotted);
         let _ = std::fs::remove_dir_all(&home);
     }
 
