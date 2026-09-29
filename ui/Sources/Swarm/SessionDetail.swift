@@ -12,7 +12,7 @@ final class SessionDetailModel {
 
     var usage = ChatUsage()
     var currentModel: String?
-    var snapshot: ChairTranscriptSnapshot = .loading
+    var snapshot: ChairTranscriptSnapshot
     private(set) var transcriptRevision = 0
     var draft = ""
     private var sendState = ComposerSendState()
@@ -21,6 +21,12 @@ final class SessionDetailModel {
     var hasOlder = false
     var isLoadingOlder = false
     var historyError: String?
+
+    /// Starts from the chat's last known content, so reopening it shows that at once while the
+    /// transcript reloads and updates it in place.
+    init(lastKnown: ChairTranscriptSnapshot? = nil) {
+        snapshot = lastKnown ?? .loading
+    }
 
     func isSending(sessionID: String) -> Bool {
         sendState.isSending(sessionID: sessionID)
@@ -41,11 +47,6 @@ final class SessionDetailModel {
         var opened = false
         defer { if !opened { openTiming.end() } }
         activate(sessionID: row.id.rawValue)
-        if snapshot == .loading {
-            // Let the selection and loading state draw before publishing a cold history page.
-            do { try await Task.sleep(for: .milliseconds(50)) }
-            catch { return }
-        }
         while !Task.isCancelled {
             let cycleTiming = SwarmPerformance.begin("TranscriptComposition")
             if isLoadingOlder {
@@ -148,6 +149,14 @@ final class SessionDetailModel {
         }
     }
 
+    /// Drops the chat's transcript readers, which stops their `transcript --follow` processes.
+    /// The store calls this when it frees the chat, whoever else still holds the model.
+    func release() {
+        transcripts.removeAll()
+        snapshots.removeAll()
+        snapshot = .loading
+    }
+
     func setDraft(_ value: String, sessionID: String) {
         if activeSessionID != sessionID { activate(sessionID: sessionID) }
         draft = value
@@ -194,12 +203,29 @@ final class SessionDetailStore {
     }
 
     private(set) var entries: [Entry] = []
+    /// The last rows shown per chat, for the most recent chats only. The readers, processes,
+    /// and poll tasks are still freed on a switch (ADR 0024); this keeps only their output.
+    @ObservationIgnored private var lastKnown: [SwarmSessionID: ChairTranscriptSnapshot] = [:]
+    @ObservationIgnored private var lastKnownOrder: [SwarmSessionID] = []
+
+    private func remember(_ snapshot: ChairTranscriptSnapshot, for id: SwarmSessionID) {
+        guard case .rows = snapshot else { return }
+        lastKnown[id] = snapshot
+        lastKnownOrder.removeAll { $0 == id }
+        lastKnownOrder.append(id)
+        // ponytail: a fixed count of chats, not a byte budget; measure memory before raising it.
+        if lastKnownOrder.count > 16 { lastKnown[lastKnownOrder.removeFirst()] = nil }
+    }
 
     /// Keeps only the selected chat, so a switch frees the previous transcript and poll (ADR 0024).
     func activate(_ id: SwarmSessionID?) {
-        guard let id else { entries = []; return }
-        if entries.count == 1, entries[0].id == id { return }
-        entries = [entries.first { $0.id == id } ?? Entry(id: id, model: SessionDetailModel())]
+        if let id, entries.count == 1, entries[0].id == id { return }
+        let kept = entries.first { $0.id == id }
+        for entry in entries where entry.id != id {
+            remember(entry.model.snapshot, for: entry.id)
+            entry.model.release()
+        }
+        entries = id.map { [kept ?? Entry(id: $0, model: SessionDetailModel(lastKnown: lastKnown[$0]))] } ?? []
     }
 }
 
