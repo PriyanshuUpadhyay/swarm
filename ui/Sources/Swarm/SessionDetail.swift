@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import Synchronization
 import SwarmCore
 
 @MainActor @Observable
@@ -26,7 +27,13 @@ final class SessionDetailModel {
     /// transcript reloads and updates it in place.
     init(lastKnown: ChairTranscriptSnapshot? = nil) {
         snapshot = lastKnown ?? .loading
+        Self.live.withLock { $0 += 1 }
     }
+
+    deinit { Self.live.withLock { $0 -= 1 } }
+
+    /// Models alive now; the open script prints it to show freed chats really go.
+    nonisolated static let live = Mutex(0)
 
     func isSending(sessionID: String) -> Bool {
         sendState.isSending(sessionID: sessionID)
@@ -294,7 +301,39 @@ struct SessionDetailView: View {
     }
 
     private var transcriptColumn: some View {
-        TranscriptView(
+        // Built here, so the transcript holds the composer value and not a closure over this
+        // view; the menu keeps transcript find closures alive, and this view holds the model.
+        let composer = ComposerView(
+            sessionID: row.id.rawValue, isActive: isActive,
+            draft: Binding(
+                get: { [weak model] in model?.draft ?? "" },
+                set: { [weak model, id = row.id.rawValue] in model?.setDraft($0, sessionID: id) }
+            ),
+            isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
+            isSending: model.isSending(sessionID: row.id.rawValue),
+            modelLabel: modelLabel,
+            modelSwitchDisabledReason: modelSwitchDisabledReason,
+            selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
+            usageLabel: model.usage.summary,
+            showUsage: onShowUsage,
+            sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
+                ? "This chat's pane has closed. Start a new chat or switch model."
+                : nil,
+            commandSource: commandSource ?? ComposerCommandSource(
+                provider: row.provider ?? chairProvider,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+                projectDirectory: row.session.cwd
+            ),
+            mentionSource: ComposerMentionSource(root: row.session.cwd),
+            scratchDirectory: AgentScratchDirectory.current(),
+            focus: $composerFocused,
+            send: { [weak model, session = row.session] in try await model?.send($0, session: session) },
+            interrupt: { [weak model, session = row.session] in try await model?.interrupt(session: session) },
+            onFocused: { [panes] in panes.clearFocus() },
+            isCurrentSession: isCurrentSession
+        )
+        .id(row.id.rawValue)
+        return TranscriptView(
             snapshot: model.snapshot, revision: model.transcriptRevision,
             hasOlder: model.hasOlder, isLoadingOlder: model.isLoadingOlder,
             historyError: model.historyError,
@@ -302,44 +341,16 @@ struct SessionDetailView: View {
             chair: row.provider ?? chairProvider,
             rawSessionJSON: TranscriptDebugData.sessionJSON(session: row.session, agents: agents),
             isActive: isActive, isVisible: isVisible,
-            loadOlder: {
+            loadOlder: { [weak model, row, chairProvider] in
+                guard let model else { return false }
                 let before = model.snapshot
                 await model.loadOlder(row: row, chairProvider: chairProvider)
                 return model.historyError == nil && model.snapshot != before
             },
-            onTap: { panes.clearFocus() },
+            onTap: { [panes] in panes.clearFocus() },
             focus: $transcriptFocused
         ) {
-            ComposerView(
-                sessionID: row.id.rawValue, isActive: isActive,
-                draft: Binding(
-                    get: { model.draft },
-                    set: { model.setDraft($0, sessionID: row.id.rawValue) }
-                ),
-                isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
-                isSending: model.isSending(sessionID: row.id.rawValue),
-                modelLabel: modelLabel,
-                modelSwitchDisabledReason: modelSwitchDisabledReason,
-                selectModel: { onSwitchModel(model.currentModel) },
-                usageLabel: model.usage.summary,
-                showUsage: onShowUsage,
-                sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
-                    ? "This chat's pane has closed. Start a new chat or switch model."
-                    : nil,
-                commandSource: commandSource ?? ComposerCommandSource(
-                    provider: row.provider ?? chairProvider,
-                    homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
-                    projectDirectory: row.session.cwd
-                ),
-                mentionSource: ComposerMentionSource(root: row.session.cwd),
-                scratchDirectory: AgentScratchDirectory.current(),
-                focus: $composerFocused,
-                send: { try await model.send($0, session: row.session) },
-                interrupt: { try await model.interrupt(session: row.session) },
-                onFocused: { panes.clearFocus() },
-                isCurrentSession: isCurrentSession
-            )
-            .id(row.id.rawValue)
+            composer
         }
         // Scene-wide, so the menu finds the chat without it holding keyboard focus.
         .background {
@@ -357,20 +368,26 @@ struct SessionDetailView: View {
     }
 
     private var chatKeyActions: ChatKeyActions {
+        // The menu bar keeps old command closures alive, so these capture only what they use:
+        // capturing the view kept every freed chat's model (and its rows) with them.
         let keys = paneKeys
+        let composerFocus = $composerFocused
+        let transcriptFocus = $transcriptFocused
         return ChatKeyActions(
             terminalFocused: panes.focusedKey != nil,
-            focusComposer: {
+            focusComposer: { [panes] in
                 panes.revealChat()
-                composerFocused = true
+                composerFocus.wrappedValue = true
             },
-            moveFocus: { direction in
+            moveFocus: { [panes] direction in
                 guard !panes.moveFocus(direction, among: keys) else { return }
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                transcriptFocused = true
+                transcriptFocus.wrappedValue = true
             },
-            zoom: { panes.toggleZoom() },
-            stop: { Task { try? await model.interrupt(session: row.session) } }
+            zoom: { [panes] in panes.toggleZoom() },
+            stop: { [weak model, session = row.session] in
+                Task { try? await model?.interrupt(session: session) }
+            }
         )
     }
 

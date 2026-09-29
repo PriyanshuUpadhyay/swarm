@@ -660,6 +660,7 @@ private struct SessionsWindow: View {
                              name, samples.count, s.p50, s.p95, s.max))
             }
         }
+        print("open-script live detail models: \(SessionDetailModel.live.withLock { $0 })")
         print("open-script misses (over 5 s): \(misses)")
         fflush(stdout)
     }
