@@ -21,6 +21,11 @@ struct SwarmHomeTests {
         (a(64) + "zimprpqj6tk7", ".swarm-" + a(64) + "zimprpqj6tk7"),
         (a(200), ".swarm-" + a(200)),
         (a(201), ".swarm-" + a(200) + "+9a253eda0ce95884"),
+        ("Feature", ".swarm-feature+43e05bec7713cffd"),
+        ("feature", ".swarm-feature"),
+        ("UI-Polish", ".swarm-ui-polish+39b24d57f056cb17"),
+        (a(64) + "X", ".swarm-" + a(64) + "x+808822a889f90227"),
+        (a(64) + "x", ".swarm-" + a(64) + "x"),
     ]
 
     static func a(_ count: Int) -> String { String(repeating: "a", count: count) }
@@ -30,6 +35,12 @@ struct SwarmHomeTests {
         let folder = SwarmHome.folder(branch: vector.branch)
         #expect(folder == vector.folder)
         #expect((folder?.utf8.count ?? 0) <= 255)
+    }
+
+    @Test("Branch folders stay distinct on a case-insensitive disk")
+    func foldersIgnoringCaseAreDistinct() {
+        let folders = Self.vectors.compactMap { SwarmHome.folder(branch: $0.branch)?.lowercased() }
+        #expect(Set(folders).count == folders.count)
     }
 
     @Test("Main and no branch use HOME, others a folder in it")

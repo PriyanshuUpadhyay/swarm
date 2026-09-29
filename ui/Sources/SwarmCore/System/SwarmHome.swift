@@ -18,8 +18,8 @@ public enum SwarmHome {
         let bytes = Array(branch.utf8)
         func safe(_ byte: UInt8) -> Bool {
             switch byte {
-            case UInt8(ascii: "A")...UInt8(ascii: "Z"), UInt8(ascii: "a")...UInt8(ascii: "z"),
-                 UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "-"):
+            case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "0")...UInt8(ascii: "9"),
+                 UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "-"):
                 true
             default: false
             }
@@ -28,7 +28,11 @@ public enum SwarmHome {
            bytes[0] != UInt8(ascii: "-") {
             return ".swarm-\(branch)"
         }
-        let slug = String(decoding: bytes.prefix(200).map { safe($0) ? $0 : UInt8(ascii: "-") }, as: UTF8.self)
+        func lower(_ byte: UInt8) -> UInt8 {
+            (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) ? byte + 32 : byte
+        }
+        let slug = String(
+            decoding: bytes.prefix(200).map(lower).map { safe($0) ? $0 : UInt8(ascii: "-") }, as: UTF8.self)
         let hash = bytes.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0100_0000_01b3 }
         return ".swarm-\(slug)+\(String(format: "%016llx", hash))"
     }

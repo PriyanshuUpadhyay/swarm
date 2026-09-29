@@ -26,19 +26,23 @@ pub fn branch_home(home: &str, branch: &str) -> String {
 }
 
 /// The folder a branch build keeps its data in; `ui/Sources/SwarmCore/System/SwarmHome.swift`
-/// must give the same bytes. A branch of at most 200 bytes made only of `[A-Za-z0-9._-]` that does
+/// must give the same bytes. A branch of at most 200 bytes made only of `[a-z0-9._-]` that does
 /// not start with `.` or `-` is `.swarm-<branch>`, whole. Any other branch is
-/// `.swarm-<slug>+<hash>`: the slug maps each UTF-8 byte outside that set to `-` and keeps at most
-/// 200 bytes, and the hash is the 64-bit FNV-1a of the whole branch's UTF-8 bytes as 16 lowercase
-/// hex digits. A safe name never holds `+`, so the two forms cannot meet, and two plain names are
-/// two different branches, so they cannot collide. Only an unsafe or very long name relies on the
-/// hash, which keeps `feat/login` apart from `feat-login`. A folder name is at most
-/// 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
+/// `.swarm-<slug>+<hash>`: the slug lowercases ASCII `A-Z`, maps each other UTF-8 byte outside that
+/// set to `-`, and keeps at most 200 bytes, and the hash is the 64-bit FNV-1a of the whole branch's
+/// original UTF-8 bytes as 16 lowercase hex digits. A safe name never holds `+`, so the two forms
+/// cannot meet, and two plain names are two different branches, so they cannot collide. The plain
+/// form is lowercase only because the default macOS disk ignores case: `.swarm-Feature` would be
+/// the same directory as `.swarm-feature`, so `Feature` takes the hashed form. Only an unsafe,
+/// uppercase, or very long name relies on the hash, which keeps `feat/login` apart from
+/// `feat-login`. A folder name is at most 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
 pub fn branch_folder(branch: &str) -> Option<String> {
     if matches!(branch, "" | "main") {
         return None;
     }
-    let safe = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-');
+    let safe = |byte: u8| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+    };
     let bytes = branch.as_bytes();
     if bytes.len() <= 200
         && bytes.iter().all(|&byte| safe(byte))
@@ -48,7 +52,8 @@ pub fn branch_folder(branch: &str) -> Option<String> {
     }
     let slug: String = bytes[..bytes.len().min(200)]
         .iter()
-        .map(|&byte| if safe(byte) { byte as char } else { '-' })
+        .map(|&byte| byte.to_ascii_lowercase())
+        .map(|byte| if safe(byte) { byte as char } else { '-' })
         .collect();
     let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
@@ -73,7 +78,7 @@ mod tests {
     use super::{branch_folder, branch_home};
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
-    const VECTORS: [(&str, Option<&str>); 11] = [
+    const VECTORS: [(&str, Option<&str>); 14] = [
         ("main", None),
         ("", None),
         ("unknown", Some(".swarm-unknown")),
@@ -85,6 +90,9 @@ mod tests {
         ("-x", Some(".swarm--x+07d04207b4982ea0")),
         ("\"main\"", Some(".swarm--main-+f2c462bd1704f4de")),
         ("a'b", Some(".swarm-a-b+e63cb31904812ee9")),
+        ("Feature", Some(".swarm-feature+43e05bec7713cffd")),
+        ("feature", Some(".swarm-feature")),
+        ("UI-Polish", Some(".swarm-ui-polish+39b24d57f056cb17")),
     ];
 
     /// Long names, shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift` like `VECTORS`.
@@ -105,19 +113,26 @@ mod tests {
             ),
             (a(200), Some(format!(".swarm-{}", a(200)))),
             (a(201), Some(format!(".swarm-{}+9a253eda0ce95884", a(200)))),
+            (
+                format!("{}X", a(64)),
+                Some(format!(".swarm-{}x+808822a889f90227", a(64))),
+            ),
+            (format!("{}x", a(64)), Some(format!(".swarm-{}x", a(64)))),
         ]
     }
 
     #[test]
     fn branch_folders_match_the_shared_vectors() {
         let short = VECTORS.map(|(branch, folder)| (branch.to_string(), folder.map(String::from)));
+        let mut seen = std::collections::HashSet::new();
         for (branch, folder) in short.into_iter().chain(long_vectors()) {
             let actual = branch_folder(&branch);
             assert_eq!(actual, folder, "branch {branch:?}");
-            assert!(
-                actual.map_or(0, |name| name.len()) <= 255,
-                "branch {branch:?}"
-            );
+            if let Some(name) = actual {
+                assert!(name.len() <= 255, "branch {branch:?}");
+                // A case-insensitive disk sees these as one name.
+                assert!(seen.insert(name.to_lowercase()), "branch {branch:?}");
+            }
         }
     }
 
