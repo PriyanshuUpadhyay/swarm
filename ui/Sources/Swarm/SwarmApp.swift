@@ -386,6 +386,7 @@ private struct SessionsWindow: View {
             if id != nil { selectedProjectID = nil }
         }
         .background(WindowFrameRestorer())
+        .task { if SwarmOpenScript.isActive { await runOpenScript() } }
         .task {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
@@ -607,6 +608,46 @@ private struct SessionsWindow: View {
         default:
             break
         }
+    }
+
+    /// `SWARM_OPEN_SCRIPT=N`: selects each workspace, then each of its chats, through the model,
+    /// N rounds, and prints the milliseconds until each shows content. No chat text is printed.
+    private func runOpenScript() async {
+        func waitForContent(_ id: SwarmSessionID?) async -> Double? {
+            let start = ContinuousClock.now
+            while ContinuousClock.now - start < .seconds(5) {
+                if let entry = model.detailModels.entries.first, entry.id == id, entry.model.snapshot != .loading {
+                    let elapsed = ContinuousClock.now - start
+                    return Double(elapsed.components.attoseconds) / 1e15 + Double(elapsed.components.seconds) * 1000
+                }
+                try? await Task.sleep(for: .milliseconds(2))
+            }
+            return nil
+        }
+        while model.workspaces.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+        var workspaceTimes: [Double] = []
+        var chatTimes: [Double] = []
+        var misses = 0
+        for round in 1...SwarmOpenScript.rounds {
+            let entries = model.workspaces.filter { !model.navigation.archived.contains($0.id) && !$0.chats.isEmpty }
+            for entry in entries {
+                model.selectWorkspace(entry)
+                if let ms = await waitForContent(model.selectedSessionID) { workspaceTimes.append(ms) } else { misses += 1 }
+                for chat in entry.chats {
+                    model.select(chat.id)
+                    if let ms = await waitForContent(chat.id) { chatTimes.append(ms) } else { misses += 1 }
+                }
+            }
+            print("open-script round \(round): \(entries.count) workspaces, \(chatTimes.count) chat opens so far")
+        }
+        for (name, samples) in [("workspace", workspaceTimes), ("chat", chatTimes)] {
+            if let s = SwarmOpenScript.summary(samples) {
+                print(String(format: "open-script %@ n=%d p50=%.1f ms p95=%.1f ms max=%.1f ms",
+                             name, samples.count, s.p50, s.p95, s.max))
+            }
+        }
+        print("open-script misses (over 5 s): \(misses)")
+        fflush(stdout)
     }
 
     private var keyActions: WindowKeyActions {

@@ -382,7 +382,8 @@ struct SessionDetailView: View {
             switch byID[cell.id]?.kind {
             case .attach?:
                 AgentTerminalView(key: key(cell.id), store: panes) {
-                    if let agent = byID[cell.id]?.agent { _ = panes.terminal(session: session, agent: agent) }
+                    guard !SwarmOpenScript.isActive, let agent = byID[cell.id]?.agent else { return }
+                    _ = panes.terminal(session: session, agent: agent)
                 }
             case .notice(let reason)?:
                 ContentUnavailableView(reason, systemImage: "terminal")

@@ -54,3 +54,16 @@ struct PaletteTests {
         #expect(PaletteSearch.rank(items: withRecent, query: "").first?.id == "action:zoom")
     }
 }
+
+@Suite("Open timing summary")
+struct OpenTimingTests {
+    @Test("p50 and p95 use the nearest rank")
+    func summary() {
+        let samples = (1...20).map(Double.init)
+        let result = SwarmOpenScript.summary(samples)
+        #expect(result?.p50 == 10)
+        #expect(result?.p95 == 19)
+        #expect(result?.max == 20)
+        #expect(SwarmOpenScript.summary([]) == nil)
+    }
+}
