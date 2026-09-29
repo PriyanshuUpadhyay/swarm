@@ -187,8 +187,27 @@ fn resolve_role(
 ) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
     let fail = |error: String| format!("swarm: cannot resolve role {role}: {error}");
     let (_, config) = swarm::routing::load().map_err(fail)?;
-    let value = swarm::routing::resolve(&config, role, provider).map_err(fail)?;
+    let value = swarm::routing::resolve(&config, role, provider, &installed).map_err(fail)?;
+    warn_substitute(&value);
     serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
+}
+
+/// A provider counts as installed when its CLI is on PATH, because that binary is what a pane runs.
+fn installed(provider: &str) -> bool {
+    env::var_os("PATH")
+        .is_some_and(|path| env::split_paths(&path).any(|dir| dir.join(provider).is_file()))
+}
+
+/// A substitute seat can put two seats of one route on the same model family, so say so where the
+/// orchestrator reads it.
+fn warn_substitute(resolved: &serde_json::Value) {
+    if let Some(original) = resolved["substitutedFor"].as_str() {
+        eprintln!(
+            "swarm: role {} runs substitute {} because {original} is not installed",
+            resolved["role"].as_str().unwrap_or_default(),
+            resolved["runnerId"].as_str().unwrap_or_default()
+        );
+    }
 }
 
 fn load_accounts(
@@ -939,8 +958,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err(USAGE.into()),
         };
         let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-        let resolved = swarm::routing::resolve(&config, role, provider)
+        let resolved = swarm::routing::resolve(&config, role, provider, &installed)
             .map_err(|error| format!("swarm: {error}"))?;
+        warn_substitute(&resolved);
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
