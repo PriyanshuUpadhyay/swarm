@@ -88,6 +88,12 @@ pub struct Prompt {
     pub cursor: usize,
     /// A hash of the question and choices, so an answer can prove it saw this prompt.
     pub id: String,
+    /// The digit only moves the cursor, so Enter confirms the choice (Codex folder trust).
+    #[serde(skip)]
+    pub confirm: bool,
+    /// The question reaches the top row, so rows above it can be off the screen.
+    #[serde(skip)]
+    pub cut: bool,
 }
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
@@ -105,12 +111,18 @@ const CURSORS: &[char] = &['❯', '›', '>'];
 /// Rows the question does not reach past: a history entry's marker.
 const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
 
-/// A numbered choice's number and label, as in `❯ 1. Yes` or `  2. No`.
-fn numbered_choice(line: &str) -> Option<(usize, &str)> {
+/// A numbered choice's number, label, and label column, as in `❯ 1. Yes` or `  2. No`.
+fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
     let rest = line.trim_start().trim_start_matches(CURSORS).trim_start();
     let digits = rest.chars().take_while(char::is_ascii_digit).count();
-    let label = rest[digits..].strip_prefix(". ")?.trim();
-    (!label.is_empty()).then_some((rest[..digits].parse().ok()?, label))
+    let after = rest[digits..].strip_prefix(". ")?.trim_start();
+    let label = after.trim_end();
+    let column = line.chars().count() - after.chars().count();
+    (!label.is_empty()).then_some((rest[..digits].parse().ok()?, label, column))
+}
+
+fn indent(line: &str) -> usize {
+    line.chars().count() - line.trim_start().chars().count()
 }
 
 /// How many status rows a live prompt's footer can have below it, such as AGY's mode line.
@@ -128,96 +140,137 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
     };
     let mut below = 0;
     // AGY's status row also says "esc to cancel", so each footer candidate near the bottom is tried.
-    (0..lines.len()).rev().find_map(|index| {
-        if below > ROWS_BELOW_FOOTER {
+    for index in (0..lines.len()).rev() {
+        // An input line below a list makes the list history: the agent waits on text, not a
+        // choice, and a digit sent to it would be typed into the input line.
+        if below > ROWS_BELOW_FOOTER || lines[index].trim_start().starts_with(CURSORS) {
             return None;
         }
-        let found = is_footer(lines[index])
-            .then(|| prompt_above(&lines, index))
-            .flatten();
+        if is_footer(lines[index])
+            && let Some(found) = prompt_above(&lines, index)
+        {
+            return Some(found);
+        }
         if !lines[index].trim().is_empty() {
             below += 1;
         }
-        found
-    })
+    }
+    None
+}
+
+/// The prompt a screen shows, read again from the pane's whole history when its question reaches
+/// the top row. None when that read fails, so no prompt is shown or answered on part of its
+/// question.
+pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
+    let found = prompt(screen)?;
+    if !found.cut {
+        return Some(found);
+    }
+    prompt(&history()?)
 }
 
 fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
     let last = (0..footer)
         .rev()
         .find(|&index| !lines[index].trim().is_empty())?;
-    let (first, choices, numbered, cursor) =
-        if let Some((mut number, _)) = numbered_choice(lines[last]) {
-            let mut rows = vec![last];
-            let mut index = last;
-            while number > 1 {
-                let found = (index.saturating_sub(3)..index).rev().find(|&row| {
-                    numbered_choice(lines[row]).is_some_and(|(n, _)| n == number - 1)
-                })?;
-                rows.push(found);
-                index = found;
-                number -= 1;
-            }
-            rows.reverse();
-            let labels: Vec<String> = rows
-                .iter()
-                .map(|&row| numbered_choice(lines[row]).map(|(_, label)| label.to_string()))
-                .collect::<Option<_>>()?;
-            let cursor = rows
-                .iter()
-                .position(|&row| lines[row].trim_start().starts_with(CURSORS))
-                .unwrap_or(0);
-            (rows[0], labels, true, cursor)
-        } else {
-            // The column a row's label starts in, past a cursor marker and its space.
-            let label_column = |line: &str| {
-                let text = line.trim_start();
-                let indent = line.chars().count() - text.chars().count();
-                match text.strip_prefix(CURSORS) {
-                    Some(rest) => {
-                        indent + 1 + (text.chars().count() - 1 - rest.trim_start().chars().count())
+    // The last choice can wrap onto rows below it.
+    let last_choice = (last.saturating_sub(3)..=last)
+        .rev()
+        .find(|&row| numbered_choice(lines[row]).is_some());
+    let (first, choices, numbered, cursor) = if let Some(mut index) = last_choice {
+        let mut number = numbered_choice(lines[index])?.0;
+        let mut rows = vec![index];
+        while number > 1 {
+            let found = (index.saturating_sub(6)..index)
+                .rev()
+                .find(|&row| numbered_choice(lines[row]).is_some_and(|(n, ..)| n == number - 1))?;
+            rows.push(found);
+            index = found;
+            number -= 1;
+        }
+        rows.reverse();
+        // A label takes every row up to the next choice, so a wrapped path or a description
+        // is shown and hashed with it. A row left of the label column is not the label's, so
+        // the list is not a prompt.
+        let ends = rows[1..].iter().copied().chain([footer]);
+        let labels: Vec<String> = rows
+            .iter()
+            .zip(ends)
+            .map(|(&row, end)| {
+                let (_, label, column) = numbered_choice(lines[row])?;
+                let mut parts = vec![label];
+                for line in &lines[row + 1..end] {
+                    let text = line.trim();
+                    if text.is_empty() || text.starts_with('─') {
+                        continue;
                     }
-                    None => indent,
+                    if indent(line) < column {
+                        return None;
+                    }
+                    parts.push(text);
                 }
-            };
-            let column = label_column(lines[last]);
-            let mut first = last;
-            while first > 0
-                && !lines[first - 1].trim().is_empty()
-                && label_column(lines[first - 1]) == column
-            {
-                first -= 1;
+                Some(parts.join("\n"))
+            })
+            .collect::<Option<_>>()?;
+        let cursor = rows
+            .iter()
+            .position(|&row| lines[row].trim_start().starts_with(CURSORS))
+            .unwrap_or(0);
+        (rows[0], labels, true, cursor)
+    } else {
+        // The column a row's label starts in, past a cursor marker and its space.
+        let label_column = |line: &str| {
+            let text = line.trim_start();
+            let indent = line.chars().count() - text.chars().count();
+            match text.strip_prefix(CURSORS) {
+                Some(rest) => {
+                    indent + 1 + (text.chars().count() - 1 - rest.trim_start().chars().count())
+                }
+                None => indent,
             }
-            let rows = first..=last;
-            let cursors: Vec<usize> = rows
-                .clone()
-                .filter(|&row| lines[row].trim_start().starts_with(CURSORS))
-                .map(|row| row - first)
-                .collect();
-            let [cursor] = cursors[..] else {
-                return None;
-            };
-            let labels: Vec<String> = rows
-                .map(|row| {
-                    lines[row]
-                        .trim()
-                        .trim_start_matches(CURSORS)
-                        .trim()
-                        .to_string()
-                })
-                .collect();
-            (first, labels, false, cursor)
         };
+        let column = label_column(lines[last]);
+        let mut first = last;
+        while first > 0
+            && !lines[first - 1].trim().is_empty()
+            && label_column(lines[first - 1]) == column
+        {
+            first -= 1;
+        }
+        let rows = first..=last;
+        let cursors: Vec<usize> = rows
+            .clone()
+            .filter(|&row| lines[row].trim_start().starts_with(CURSORS))
+            .map(|row| row - first)
+            .collect();
+        let [cursor] = cursors[..] else {
+            return None;
+        };
+        let labels: Vec<String> = rows
+            .map(|row| {
+                lines[row]
+                    .trim()
+                    .trim_start_matches(CURSORS)
+                    .trim()
+                    .to_string()
+            })
+            .collect();
+        (first, labels, false, cursor)
+    };
     if choices.len() < 2 || choices.iter().any(String::is_empty) {
         return None;
     }
+    // The whole question up to a rule or a history row, so no row of a long command is left
+    // out of the card or the id.
     let mut question = Vec::new();
+    let mut cut = true;
     for line in lines[..first].iter().rev() {
         let text = line.trim();
         if text.is_empty() {
             continue;
         }
-        if text.starts_with('─') || text.starts_with(HISTORY) || question.len() == 6 {
+        if text.starts_with('─') || text.starts_with(HISTORY) {
+            cut = false;
             break;
         }
         question.push(text);
@@ -237,6 +290,9 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         numbered,
         cursor,
         id: format!("{id:016x}"),
+        // Codex's folder trust footer; there a digit moves the cursor and Enter picks.
+        confirm: numbered && lines[footer].to_lowercase().contains("enter continue"),
+        cut,
     })
 }
 
@@ -488,13 +544,22 @@ mod tests {
             (
                 fixture!("claude-waiting"),
                 "Bash command\n│ touch /tmp/work/probe.txt\nCreate empty probe file\nDo you want to proceed?",
-                &["Yes", "Yes, and always allow access to", "No"][..],
+                &[
+                    "Yes",
+                    "Yes, and always allow access to\n/tmp/work from this project",
+                    "No",
+                ][..],
                 true,
             ),
             (
                 fixture!("claude-question"),
                 "☐ Color\nWhich color do you prefer?",
-                &["Red", "Blue", "Type something.", "Chat about this"],
+                &[
+                    "Red\nThe color red",
+                    "Blue\nThe color blue",
+                    "Type something.",
+                    "Chat about this",
+                ],
                 true,
             ),
             (
@@ -569,6 +634,82 @@ mod tests {
         assert_eq!(moved.id, agy.id);
         let other = prompt(&fixture!("claude-waiting").replace("probe.txt", "other.txt")).unwrap();
         assert_ne!(other.id, claude.id);
+    }
+
+    #[test]
+    fn every_row_of_a_long_command_is_in_the_question_and_its_id() {
+        let command = |first: &str| {
+            let rows: String = (1..=6).map(|n| format!("   echo step {n}\n")).collect();
+            format!(
+                "────\n Bash command\n\n   {first}\n{rows}\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel\n"
+            )
+        };
+        let harmless = prompt(&command("ls /tmp/work")).unwrap();
+        let deleting = prompt(&command("rm -rf /tmp/work")).unwrap();
+        assert!(
+            deleting.question.contains("rm -rf /tmp/work"),
+            "{}",
+            deleting.question
+        );
+        assert_ne!(deleting.id, harmless.id);
+        assert!(!deleting.cut);
+
+        // A question that reaches the top row is read again from the pane's history.
+        let screen = command("rm -rf /tmp/work").replace("────\n Bash command\n\n", "");
+        assert!(prompt(&screen).unwrap().cut);
+        let history = format!("● I will clean up.\n Bash command\n{screen}");
+        let whole = whole_prompt(&screen, || Some(history.clone())).unwrap();
+        assert!(
+            whole.question.starts_with("Bash command\nrm -rf"),
+            "{}",
+            whole.question
+        );
+        assert_eq!(whole_prompt(&screen, || None), None);
+        let never = || -> Option<String> { panic!("a whole question needs no history") };
+        assert_eq!(whole_prompt(&command("ls"), never), prompt(&command("ls")));
+    }
+
+    #[test]
+    fn a_wrapped_choice_row_is_part_of_its_label_and_id() {
+        let rows = fixture!("claude-waiting");
+        let other = rows.replace("      /tmp/work from", "      /etc from");
+        assert_ne!(other, rows);
+        assert_ne!(prompt(&other).unwrap().id, prompt(rows).unwrap().id);
+        // The last choice wraps too.
+        let last = rows.replace(
+            "   3. No\n",
+            "   3. No, and tell Claude what\n      to do instead\n",
+        );
+        assert_eq!(
+            prompt(&last).unwrap().choices[2],
+            "No, and tell Claude what\nto do instead"
+        );
+        // A row left of the labels is not a choice's, so the list is not a prompt.
+        let stray = rows.replace("      /tmp/work from", " /tmp/work from");
+        assert_eq!(prompt(&stray), None);
+    }
+
+    #[test]
+    fn an_old_codex_list_above_the_idle_composer_is_no_prompt() {
+        let rows = format!(
+            "{}\n› Ask Codex to do anything\n\n  ? for shortcuts                                100% context left\n",
+            fixture!("codex-waiting")
+        );
+        assert_eq!(prompt(&rows), None);
+        assert_eq!(screen_state("codex", &rows), Some(ScreenState::Idle));
+    }
+
+    #[test]
+    fn only_codex_folder_trust_confirms_its_digit_with_enter() {
+        assert!(prompt(fixture!("codex-trust")).unwrap().confirm);
+        for rows in [
+            fixture!("claude-waiting"),
+            fixture!("codex-waiting"),
+            fixture!("agy-question"),
+            fixture!("agy-trust"),
+        ] {
+            assert!(!prompt(rows).unwrap().confirm, "{rows}");
+        }
     }
 
     #[test]

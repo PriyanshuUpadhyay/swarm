@@ -234,14 +234,14 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
 }
 
 /// A session with a chair and one child on a fake adapter whose screen is `$HOME/screen` and
-/// whose `key` verb appends to `$HOME/keys`. `key_then` runs after each key, to change the screen.
+/// whose `key` verb appends to `$HOME/keys`. Its history is the same screen. `key_then` runs after each key, to change the screen.
 fn answer_session(home: &Path, key_then: &str) -> String {
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
         format!(
             "self = printf chair\nspawn = printf pane\nring = true\nlist = printf 'pane claude\\n'\n\
-             close = true\ncapture = true\nscreen = cat \"$HOME/screen\"\n\
+             close = true\ncapture = cat \"$HOME/screen\"\nscreen = cat \"$HOME/screen\"\n\
              key = printf '%s\\n' \"$SWARM_KEY\" >> \"$HOME/keys\"; {key_then}\n"
         ),
     )
@@ -363,8 +363,42 @@ fn a_digit_that_only_moves_the_cursor_is_confirmed_with_enter() {
     // A cursor left on another choice means the screen took some other key: no Enter.
     std::fs::remove_file(home.join("keys")).unwrap();
     let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
-    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("changed while the answer was sent"),
+        "{}",
+        stderr(&output)
+    );
     assert_eq!(std::fs::read_to_string(home.join("keys")).unwrap(), "2\n");
+}
+
+#[test]
+fn a_second_answer_to_the_same_pane_is_refused_and_sends_nothing() {
+    let home = scratch("answer-lock");
+    let session = answer_session(&home, "true");
+    std::fs::write(home.join("screen"), PERMISSION).unwrap();
+    let id = listed_prompt(&home, &session)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let app = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    // Another answer to this pane holds its lock.
+    let held = std::fs::File::create(home.join(".swarm/answer-pane.lock")).unwrap();
+    held.lock().unwrap();
+    let output = swarm(&home, &app, &["answer", "seat", &id, "0"]);
+    assert!(
+        stderr(&output).contains("still being sent"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!home.join("keys").exists());
+    drop(held);
+    let output = swarm(&home, &app, &["answer", "seat", &id, "0"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(std::fs::read_to_string(home.join("keys")).unwrap(), "1\n");
 }
 
 #[test]
