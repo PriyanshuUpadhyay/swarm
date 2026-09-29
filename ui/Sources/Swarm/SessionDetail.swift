@@ -349,7 +349,8 @@ struct SessionDetailView: View {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 transcriptFocused = true
             },
-            zoom: { panes.toggleZoom() }
+            zoom: { panes.toggleZoom() },
+            stop: { Task { try? await model.interrupt(session: row.session) } }
         )
     }
 

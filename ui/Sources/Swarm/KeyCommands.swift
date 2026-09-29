@@ -57,6 +57,7 @@ struct WindowKeyActions {
     var moveSidebar: () -> Void
     var sidebarView: (Int) -> Void
     var showChanges: () -> Void
+    /// Opens the command palette.
     var search: () -> Void
 }
 
@@ -66,6 +67,61 @@ struct ChatKeyActions {
     var focusComposer: () -> Void
     var moveFocus: (FocusDirection) -> Void
     var zoom: () -> Void
+    var stop: () -> Void
+}
+
+/// The one place an app key becomes an action, for the menu and the command palette alike.
+struct AppKeyTarget {
+    var window: WindowKeyActions?
+    var chat: ChatKeyActions?
+    var transcript: TranscriptFindActions?
+
+    func canPerform(_ key: AppKey) -> Bool {
+        switch key {
+        case .find, .findNext, .findPrevious, .moveFocus, .zoom, .focusComposer, .stop: chat != nil
+        default: window != nil
+        }
+    }
+
+    func perform(_ key: AppKey) {
+        switch key {
+        case .newChat: window?.newChat?()
+        case .newWorkspace: window?.newWorkspace()
+        case .nextWorkspace: window?.stepWorkspace(1)
+        case .previousWorkspace: window?.stepWorkspace(-1)
+        case .selectTab(let number): window?.selectTab(number)
+        case .nextTab: window?.stepTab(1)
+        case .previousTab: window?.stepTab(-1)
+        case .moveFocus(let direction): chat?.moveFocus(direction)
+        case .zoom: chat?.zoom()
+        case .focusComposer: chat?.focusComposer()
+        case .toggleSidebar: window?.toggleSidebar()
+        case .moveSidebar: window?.moveSidebar()
+        case .sidebarView(let number): window?.sidebarView(number)
+        case .showChanges: window?.showChanges()
+        case .search: window?.search()
+        case .find: find(key, action: .showFindPanel)
+        case .findNext: find(key, action: .next)
+        case .findPrevious: find(key, action: .previous)
+        case .stop: chat?.stop()
+        }
+    }
+
+    private func find(_ key: AppKey, action: NSFindPanelAction) {
+        let focus: FocusedSurface = chat?.terminalFocused == false ? .transcript : .terminal
+        switch KeyRouting.route(focus: focus, key: key.chord) {
+        case .app(.find): transcript?.open()
+        case .app(.findNext): transcript?.next()
+        case .app(.findPrevious): transcript?.previous()
+        case .terminal:
+            let item = NSMenuItem()
+            item.tag = Int(action.rawValue)
+            NSApp.sendAction(
+                #selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item
+            )
+        default: break
+        }
+    }
 }
 
 extension FocusedValues {
@@ -84,71 +140,51 @@ struct AppKeyCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            item("New Chat", .newChat, enabled: window != nil) { window?.newChat?() }
-            item("New Workspace", .newWorkspace, enabled: window != nil) { window?.newWorkspace() }
+            item("New Chat", .newChat)
+            item("New Workspace", .newWorkspace)
         }
         CommandGroup(after: .textEditing) {
             Divider()
-            item("Find…", .find, enabled: chat != nil) { route(.find, action: .showFindPanel) }
-            item("Find Next", .findNext, enabled: chat != nil) { route(.findNext, action: .next) }
-            item("Find Previous", .findPrevious, enabled: chat != nil) {
-                route(.findPrevious, action: .previous)
-            }
+            item("Find…", .find)
+            item("Find Next", .findNext)
+            item("Find Previous", .findPrevious)
         }
         CommandGroup(before: .sidebar) {
-            item("Toggle Sidebar", .toggleSidebar, enabled: window != nil) { window?.toggleSidebar() }
-            item("Move Sidebar to Other Side", .moveSidebar, enabled: window != nil) { window?.moveSidebar() }
+            item("Toggle Sidebar", .toggleSidebar)
+            item("Move Sidebar to Other Side", .moveSidebar)
             ForEach(Array(WorkspaceSidebarMode.allCases.enumerated()), id: \.offset) { index, mode in
-                item("Show \(mode.rawValue)", .sidebarView(index + 1), enabled: window != nil) {
-                    window?.sidebarView(index + 1)
-                }
+                item("Show \(mode.rawValue)", .sidebarView(index + 1))
             }
-            item("Show Changes", .showChanges, enabled: window != nil) { window?.showChanges() }
+            item("Show Changes", .showChanges)
             Divider()
-            item("Zoom Pane", .zoom, enabled: chat != nil) { chat?.zoom() }
+            item("Zoom Pane", .zoom)
             Divider()
         }
         CommandMenu("Navigate") {
-            item("Search Workspaces", .search, enabled: window != nil) { window?.search() }
+            item("Command Palette…", .search)
             Divider()
-            item("Next Workspace", .nextWorkspace, enabled: window != nil) { window?.stepWorkspace(1) }
-            item("Previous Workspace", .previousWorkspace, enabled: window != nil) { window?.stepWorkspace(-1) }
+            item("Next Workspace", .nextWorkspace)
+            item("Previous Workspace", .previousWorkspace)
             Divider()
-            item("Next Chat", .nextTab, enabled: window != nil) { window?.stepTab(1) }
-            item("Previous Chat", .previousTab, enabled: window != nil) { window?.stepTab(-1) }
+            item("Next Chat", .nextTab)
+            item("Previous Chat", .previousTab)
             ForEach(1...9, id: \.self) { index in
-                item("Chat \(index)", .selectTab(index), enabled: window != nil) { window?.selectTab(index) }
+                item("Chat \(index)", .selectTab(index))
             }
             Divider()
-            item("Focus Composer", .focusComposer, enabled: chat != nil) { chat?.focusComposer() }
-            item("Focus Left", .moveFocus(.left), enabled: chat != nil) { chat?.moveFocus(.left) }
-            item("Focus Right", .moveFocus(.right), enabled: chat != nil) { chat?.moveFocus(.right) }
-            item("Focus Up", .moveFocus(.up), enabled: chat != nil) { chat?.moveFocus(.up) }
-            item("Focus Down", .moveFocus(.down), enabled: chat != nil) { chat?.moveFocus(.down) }
+            item("Focus Composer", .focusComposer)
+            item("Focus Left", .moveFocus(.left))
+            item("Focus Right", .moveFocus(.right))
+            item("Focus Up", .moveFocus(.up))
+            item("Focus Down", .moveFocus(.down))
         }
     }
 
-    private func item(
-        _ title: String, _ key: AppKey, enabled: Bool, action: @escaping () -> Void
-    ) -> some View {
-        Button(title, action: action)
+    private var target: AppKeyTarget { AppKeyTarget(window: window, chat: chat, transcript: transcript) }
+
+    private func item(_ title: String, _ key: AppKey) -> some View {
+        Button(title) { target.perform(key) }
             .keyboardShortcut(key.chord.shortcut)
-            .disabled(!enabled)
-    }
-
-    private func route(_ key: AppKey, action: NSFindPanelAction) {
-        let focus: FocusedSurface = chat?.terminalFocused == false ? .transcript : .terminal
-        switch KeyRouting.route(focus: focus, key: key.chord) {
-        case .app(.find): transcript?.open()
-        case .app(.findNext): transcript?.next()
-        case .app(.findPrevious): transcript?.previous()
-        case .terminal:
-            let item = NSMenuItem()
-            item.tag = Int(action.rawValue)
-            NSApp.sendAction(
-                #selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item
-            )
-        default: break
-        }
+            .disabled(!target.canPerform(key))
     }
 }

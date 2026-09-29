@@ -51,6 +51,8 @@ enum DesignTokens {
         /// The command palette and its result list.
         static let palette: CGFloat = 640
         static let paletteResults: CGFloat = 420
+        /// How far below the window top the palette opens.
+        static let paletteTop: CGFloat = 72
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
     }

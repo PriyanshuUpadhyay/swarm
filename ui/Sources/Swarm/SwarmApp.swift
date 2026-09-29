@@ -266,8 +266,11 @@ private struct SessionsWindow: View {
     @State private var selectedProjectID: SwarmPathIdentity?
     @State private var actionError: String?
     @State private var projectAction: String?
-    @State private var search = ""
-    @State private var searching = false
+    @State private var showingPalette = false
+    /// When each palette action last ran, in this window only.
+    @State private var recentActions: [AppKey: Int] = [:]
+    @FocusedValue(\.chatKeyActions) private var chatKeyActions
+    @FocusedValue(\.transcriptFindActions) private var transcriptFindActions
     @State private var showingArchive = false
     @State private var showingCreate = false
     @State private var createAction: (() -> Void)?
@@ -287,7 +290,7 @@ private struct SessionsWindow: View {
                 mode: sidebarMode,
                 sections: sidebarSections(showingArchive: showingArchive),
                 selectedID: model.navigation.selectedWorkspace,
-                showingArchive: showingArchive, searching: searching, search: search,
+                showingArchive: showingArchive,
                 actions: sidebarActions
             ) {
                 if let directory = workspaceDirectory {
@@ -364,6 +367,16 @@ private struct SessionsWindow: View {
             }
         }
         .focusedSceneValue(\.windowKeyActions, keyActions)
+        .overlay(alignment: .top) {
+            if showingPalette {
+                ZStack(alignment: .top) {
+                    // A click outside closes the palette.
+                    Color.clear.contentShape(Rectangle()).onTapGesture { showingPalette = false }
+                    CommandPalette(items: paletteItems, run: runPaletteItem, close: { showingPalette = false })
+                        .padding(.top, DesignTokens.Size.paletteTop)
+                }
+            }
+        }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
@@ -495,7 +508,7 @@ private struct SessionsWindow: View {
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
         SidebarRows.sections(
-            workspaces: model.workspaces, navigation: model.navigation, search: search,
+            workspaces: model.workspaces, navigation: model.navigation, search: "",
             showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970)
         )
     }
@@ -522,8 +535,7 @@ private struct SessionsWindow: View {
                 model.showHome()
             },
             create: { showingCreate = true },
-            toggleSearch: toggleSearch,
-            search: { search = $0 },
+            openPalette: { showingPalette = true },
             toggleArchive: { showingArchive.toggle() },
             openProject: openExistingProject,
             createProject: createProject,
@@ -542,9 +554,59 @@ private struct SessionsWindow: View {
         )
     }
 
-    private func toggleSearch() {
-        searching.toggle()
-        if !searching { search = "" }
+    private var paletteItems: [PaletteItem] {
+        let rows = sidebarSections(showingArchive: false).flatMap(\.rows)
+        let entries = Dictionary(model.workspaces.map { ($0.id, $0) }) { first, _ in first }
+        let session = model.selectedSession?.session
+        return PaletteItems.build(
+            sidebarViews: WorkspaceSidebarMode.allCases.map(\.rawValue),
+            workspaces: rows.map {
+                PaletteSource.Workspace(
+                    id: $0.id, title: $0.title, detail: $0.detail, status: $0.status,
+                    lastActivity: entries[$0.id].map(\.lastActivity).flatMap { $0 > 0 ? $0 : nil }
+                )
+            },
+            chats: rows.flatMap { row in
+                (entries[row.id]?.chats ?? []).map {
+                    PaletteSource.Chat(
+                        id: $0.id.rawValue, title: $0.title, workspace: row.title,
+                        status: $0.status, lastActivity: $0.lastActivity
+                    )
+                }
+            },
+            agents: session.map { session in
+                SwarmPanePolicy.cells(session: session, agents: model.agents).map {
+                    PaletteSource.Agent(
+                        id: $0.agent.id.rawValue, name: $0.agent.id.rawValue, role: $0.agent.role,
+                        status: $0.agent.status
+                    )
+                }
+            } ?? [],
+            recentActions: recentActions
+        )
+    }
+
+    /// Runs a palette item the way its menu command or sidebar row would.
+    private func runPaletteItem(_ item: PaletteItem) {
+        showingPalette = false
+        guard let colon = item.id.firstIndex(of: ":") else { return }
+        let id = String(item.id[item.id.index(after: colon)...])
+        switch item.id[..<colon] {
+        case "action":
+            guard let key = PaletteItems.actions.first(where: { "\($0)" == id }) else { return }
+            recentActions[key] = Int(Date().timeIntervalSince1970)
+            AppKeyTarget(window: keyActions, chat: chatKeyActions, transcript: transcriptFindActions).perform(key)
+        case "workspace":
+            sidebarActions.select(id)
+        case "chat":
+            model.select(SwarmSessionID(id))
+        case "agent":
+            if let session = model.selectedSession?.session {
+                panes.focus(key: AgentPaneStore.key(session: session.id, agent: id))
+            }
+        default:
+            break
+        }
     }
 
     private var keyActions: WindowKeyActions {
@@ -584,11 +646,7 @@ private struct SessionsWindow: View {
                 storedSidebarMode = WorkspaceSidebarMode.changes.rawValue
                 sidebarVisible = true
             },
-            search: {
-                storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
-                sidebarVisible = true
-                toggleSearch()
-            }
+            search: { showingPalette = true }
         )
     }
 

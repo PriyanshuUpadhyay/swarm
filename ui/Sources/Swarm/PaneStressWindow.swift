@@ -37,7 +37,8 @@ struct PaneStressWindow: View {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
             },
-            zoom: { panes.toggleZoom() }
+            zoom: { panes.toggleZoom() },
+            stop: {}
         ))
         // The stress window has no chats or sidebar; these record that the menu reached them.
         .focusedSceneValue(\.windowKeyActions, WindowKeyActions(

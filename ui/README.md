@@ -66,7 +66,7 @@ Every app key is a menu command, so it works while an agent pane has focus. ⌘N
 in the workspace and ⇧⌘N a new workspace. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
 a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat
 and the panes, and the strip scrolls to the focused pane. ⌘↩ zooms the focused pane and returns
-it. ⌘L focuses the composer, and ⌘K searches workspaces. ⌘F, ⌘G, and ⇧⌘G find in the chat or
+it. ⌘L focuses the composer. ⌘K opens the command palette, which finds actions, workspaces, chats, and agents; every query word must match. ⌘F, ⌘G, and ⇧⌘G find in the chat or
 in the focused pane. A pane gets every other key, including all ⌃ keys, Esc, and ⌘← and ⌘→.
 ⌥⌘O goes nowhere, so the pane keeps Option as Meta.
 

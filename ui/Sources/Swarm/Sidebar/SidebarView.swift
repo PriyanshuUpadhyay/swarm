@@ -22,8 +22,8 @@ struct SidebarActions {
     var select: (String) -> Void
     var home: () -> Void
     var create: () -> Void
-    var toggleSearch: () -> Void
-    var search: (String) -> Void
+    /// Opens the command palette, which is also the workspace search.
+    var openPalette: () -> Void
     var toggleArchive: () -> Void
     var openProject: () -> Void
     var createProject: () -> Void
@@ -41,11 +41,8 @@ struct SidebarView<Details: View>: View {
     let sections: [SidebarSection]
     let selectedID: String?
     let showingArchive: Bool
-    let searching: Bool
-    let search: String
     let actions: SidebarActions
     @ViewBuilder let details: () -> Details
-    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,7 +71,7 @@ struct SidebarView<Details: View>: View {
             HStack(spacing: DesignTokens.Spacing.m) {
                 Button("Home", systemImage: "house", action: actions.home)
                 Button("Create workspace", systemImage: "plus", action: actions.create)
-                Button("Search workspaces", systemImage: "magnifyingglass", action: actions.toggleSearch)
+                Button("Command palette", systemImage: "magnifyingglass", action: actions.openPalette)
                 Spacer()
             }
             .labelStyle(.iconOnly)
@@ -82,18 +79,11 @@ struct SidebarView<Details: View>: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, DesignTokens.Spacing.m)
             .padding(.vertical, DesignTokens.Spacing.xs)
-            if searching {
-                TextField("Search workspaces", text: Binding(get: { search }, set: actions.search))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($searchFocused)
-                    .padding(.horizontal, DesignTokens.Spacing.s)
-                    .onAppear { searchFocused = true }
-            }
             List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
                 ForEach(sections) { section in
                     Section(section.title) {
                         if section.rows.isEmpty {
-                            Text(search.isEmpty ? "No workspaces" : "No matches")
+                            Text("No workspaces")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
