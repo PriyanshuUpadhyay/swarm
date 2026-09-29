@@ -334,6 +334,13 @@ pub fn ensure_codex_hook_trust(
     let path = home.join("config.toml");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
+    // A key with an escape can name the same table in a spelling this line match cannot see.
+    let other_form = |key: &str| {
+        existing.lines().map(toml_code).any(|code| {
+            code.contains(key)
+                || (code.contains('\\') && (code.starts_with('[') || code.starts_with("hooks")))
+        })
+    };
     for (key, hash) in entries {
         let table = format!(
             "[hooks.state.{}]",
@@ -356,7 +363,7 @@ pub fn ensure_codex_hook_trust(
                     None => lines.insert(start + 1, value),
                 }
             }
-            None if existing.contains(key.as_str()) => {
+            None if other_form(key) => {
                 return Err(format!(
                     "{} names hook {key} in a form swarm does not edit; set its trusted_hash by hand",
                     path.display()
@@ -1012,6 +1019,18 @@ mod tests {
         std::fs::write(&config, &dotted).unwrap();
         assert!(ensure_codex_hook_trust(&home, &entries).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), dotted);
+        // So is a key spelled with an escape, which names the same table.
+        let escaped = format!("[hooks.state.{:?}]\ntrusted_hash = \"sha256:x\"\n", key)
+            .replacen('/', "\\u002f", 1);
+        std::fs::write(&config, &escaped).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), escaped);
+
+        // A commented-out old entry is not an entry, so the missing ones are added.
+        let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
+        std::fs::write(&config, &old).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
         let _ = std::fs::remove_dir_all(&home);
     }
 
