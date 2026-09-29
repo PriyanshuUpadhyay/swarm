@@ -39,9 +39,31 @@ fn is_option(line: &str, marker: char) -> bool {
     digits > 0 && rest[digits..].starts_with('.')
 }
 
-/// An approval prompt: a question row, then a choice row or a footer row below it, and no idle input
-/// prompt after the question. A question that is only text in a finished answer has the idle
-/// prompt below it, so it does not count.
+/// An approval prompt below its last question row: a footer row, or a list of at least two
+/// numbered choice rows, as a real prompt shows. Returns the question row's index. One numbered
+/// row alone is a draft on the input line, not a choice list.
+fn approval_block(
+    lines: &[&str],
+    questions: &[&str],
+    footers: &[&str],
+    marker: char,
+) -> Option<usize> {
+    let question = lines.iter().rposition(|line| {
+        let line = line.to_lowercase();
+        questions.iter().any(|question| line.contains(question))
+    })?;
+    let below = &lines[question..];
+    let footer = below.iter().any(|line| {
+        let line = line.to_lowercase();
+        footers.iter().any(|footer| line.contains(footer))
+    });
+    let choices = below.iter().filter(|line| is_option(line, marker)).count();
+    (footer || choices >= 2).then_some(question)
+}
+
+/// Waiting when an approval block shows and no idle input prompt follows its question row, so a
+/// question that is only text in a finished answer, with the idle prompt below it, does not
+/// count.
 fn approval(
     lines: &[&str],
     questions: &[&str],
@@ -49,18 +71,8 @@ fn approval(
     marker: char,
     idle: impl Fn(usize) -> bool,
 ) -> bool {
-    let Some(question) = lines.iter().rposition(|line| {
-        let line = line.to_lowercase();
-        questions.iter().any(|question| line.contains(question))
-    }) else {
-        return false;
-    };
-    let below = &lines[question..];
-    let asks = below.iter().any(|line| {
-        let line_lower = line.to_lowercase();
-        is_option(line, marker) || footers.iter().any(|footer| line_lower.contains(footer))
-    });
-    asks && !(question + 1..lines.len()).any(idle)
+    approval_block(lines, questions, footers, marker)
+        .is_some_and(|question| !(question + 1..lines.len()).any(idle))
 }
 
 /// The state the bottom rows of a pane show, or None when they show no prompt that needs the
@@ -78,7 +90,6 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                 index > 0
                     && lines[index - 1].trim_start().starts_with('─')
                     && lines[index].trim_start().starts_with('❯')
-                    && !is_option(lines[index], '❯')
             };
             let questions = ["do you want to", "waiting for permission"];
             if approval(lines, &questions, &["esc to cancel"], '❯', idle_at) {
@@ -94,12 +105,17 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             (0..lines.len()).any(idle_at).then_some(ScreenState::Idle)
         }
         "codex" => {
-            let idle_at = |index: usize| {
-                lines[index].trim_start().starts_with('›') && !is_option(lines[index], '›')
-            };
             let questions = ["would you like to", "to submit answer"];
             // A request for input has its footer on the question row itself.
             let footers = ["press enter to confirm", "to submit answer"];
+            let block = approval_block(lines, &questions, &footers, '›');
+            // A numbered row is a choice only inside a real approval block; otherwise it is a
+            // draft on the composer line.
+            let idle_at = |index: usize| {
+                lines[index].trim_start().starts_with('›')
+                    && !(block.is_some_and(|question| index > question)
+                        && is_option(lines[index], '›'))
+            };
             if approval(lines, &questions, &footers, '›', idle_at) {
                 return Some(ScreenState::Waiting);
             }
@@ -335,6 +351,29 @@ mod tests {
         assert_eq!(
             read_pane("codex", fixture!("codex-failed"), || None).map(|(state, _)| state),
             Some(ScreenState::Failed)
+        );
+    }
+
+    #[test]
+    fn a_numbered_draft_on_the_input_line_is_the_idle_prompt() {
+        let claude = fixture!("claude-idle")
+            .replace("❯ Try \"fix typecheck errors\"", "❯ 1. rerun the tests");
+        assert_eq!(screen_state("claude", &claude), Some(ScreenState::Idle));
+        let asked = format!("● Do you want to add a test?\n\n{claude}");
+        assert_eq!(screen_state("claude", &asked), Some(ScreenState::Idle));
+        let codex =
+            fixture!("codex-idle").replace("› Ask Codex to do anything", "› 1. rerun the tests");
+        assert_eq!(screen_state("codex", &codex), Some(ScreenState::Idle));
+        let asked = format!("• Would you like to run the suite next?\n{codex}");
+        assert_eq!(screen_state("codex", &asked), Some(ScreenState::Idle));
+        // Real approvals still wait.
+        assert_eq!(
+            screen_state("claude", fixture!("claude-waiting")),
+            Some(ScreenState::Waiting)
+        );
+        assert_eq!(
+            screen_state("codex", fixture!("codex-waiting")),
+            Some(ScreenState::Waiting)
         );
     }
 
