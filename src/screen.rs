@@ -39,14 +39,14 @@ fn is_option(line: &str, marker: char) -> bool {
     digits > 0 && rest[digits..].starts_with('.')
 }
 
-/// An approval prompt below its last question row: a footer row, or a list of at least two
-/// numbered choice rows, as a real prompt shows. Returns the question row's index. One numbered
+/// An approval prompt below its last question row: a footer row, or, where the provider's prompt
+/// can lack one (`choices`), a list of at least two numbered choice rows. Returns the question row's index. One numbered
 /// row alone is a draft on the input line, not a choice list.
 fn approval_block(
     lines: &[&str],
     questions: &[&str],
     footers: &[&str],
-    marker: char,
+    choices: Option<char>,
 ) -> Option<usize> {
     let question = lines.iter().rposition(|line| {
         let line = line.to_lowercase();
@@ -57,8 +57,9 @@ fn approval_block(
         let line = line.to_lowercase();
         footers.iter().any(|footer| line.contains(footer))
     });
-    let choices = below.iter().filter(|line| is_option(line, marker)).count();
-    (footer || choices >= 2).then_some(question)
+    let list = choices
+        .is_some_and(|marker| below.iter().filter(|line| is_option(line, marker)).count() >= 2);
+    (footer || list).then_some(question)
 }
 
 /// Waiting when an approval block shows and no idle input prompt follows its question row, so a
@@ -68,10 +69,10 @@ fn approval(
     lines: &[&str],
     questions: &[&str],
     footers: &[&str],
-    marker: char,
+    choices: Option<char>,
     idle: impl Fn(usize) -> bool,
 ) -> bool {
-    approval_block(lines, questions, footers, marker)
+    approval_block(lines, questions, footers, choices)
         .is_some_and(|question| !(question + 1..lines.len()).any(idle))
 }
 
@@ -92,7 +93,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     && lines[index].trim_start().starts_with('❯')
             };
             let questions = ["do you want to", "waiting for permission"];
-            if approval(lines, &questions, &["esc to cancel"], '❯', idle_at) {
+            if approval(lines, &questions, &["esc to cancel"], Some('❯'), idle_at) {
                 return Some(ScreenState::Waiting);
             }
             let spinner = lines.iter().any(|line| {
@@ -108,7 +109,9 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             let questions = ["would you like to", "to submit answer"];
             // A request for input has its footer on the question row itself.
             let footers = ["press enter to confirm", "to submit answer"];
-            let block = approval_block(lines, &questions, &footers, '›');
+            // Every Codex approval ends with its footer (codex-rs `approval_modal_exec` snapshot:
+            // "Press enter to confirm or esc to cancel"), so a numbered list alone is only text.
+            let block = approval_block(lines, &questions, &footers, None);
             // A numbered row is a choice only inside a real approval block; otherwise it is a
             // draft on the composer line.
             let idle_at = |index: usize| {
@@ -116,7 +119,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     && !(block.is_some_and(|question| index > question)
                         && is_option(lines[index], '›'))
             };
-            if approval(lines, &questions, &footers, '›', idle_at) {
+            if approval(lines, &questions, &footers, None, idle_at) {
                 return Some(ScreenState::Waiting);
             }
             if has(&["esc to interr", "• working ("]) {
@@ -388,6 +391,12 @@ mod tests {
             screen_state("codex", fixture!("codex-waiting")),
             Some(ScreenState::Waiting)
         );
+    }
+
+    #[test]
+    fn a_codex_answer_with_a_numbered_list_and_a_numbered_draft_is_idle() {
+        let rows = "• Would you like to:\n  1. Fix the flaky test\n  2. Rerun the suite\n\n› 1. Fix the flaky test\n\n  ? for shortcuts                                100% context left\n";
+        assert_eq!(screen_state("codex", rows), Some(ScreenState::Idle));
     }
 
     #[test]
