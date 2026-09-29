@@ -1,21 +1,5 @@
 import SwiftUI
 
-enum WorkspaceSidebarMode: String, CaseIterable {
-    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage"
-
-    var isDetails: Bool { self == .changes || self == .pullRequest || self == .usage }
-
-    var symbol: String {
-        switch self {
-        case .workspaces: "square.stack.3d.up"
-        case .files: "folder"
-        case .changes: "arrow.triangle.branch"
-        case .pullRequest: "arrow.triangle.pull"
-        case .usage: "chart.pie"
-        }
-    }
-}
-
 struct MovableSidebar<Sidebar: View, Content: View>: View {
     let visible: Bool
     let onRight: Bool

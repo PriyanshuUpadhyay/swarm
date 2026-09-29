@@ -139,6 +139,41 @@ struct SessionsTreeTests {
         #expect(build([chat]).projects.first?.chats.first?.session.status == nil)
     }
 
+    @Test("Sidebar sections keep workspace order and count agents by status")
+    func sidebarSections() {
+        let api = session("api-session", cwd: "/api")
+        let docs = session("docs-session", cwd: "/docs")
+        func agent(_ id: String, _ state: String?) -> SwarmAgent {
+            SwarmAgent(id: .init(id), role: "code", pane: nil, alive: true, state: state)
+        }
+        let tree = build([api, docs], agentsBySession: [
+            api.id: [agent("reviewer", "waiting"), agent("coder", "working"), agent("tester", "working")],
+            docs.id: [agent("writer", nil)],
+        ])
+        let workspaces = WorkspaceEntry.list(in: tree)
+        var navigation = WorkspaceNavigation()
+        navigation.pinned = ["/docs"]
+        let sections = SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "", showingArchive: false, now: 61
+        )
+        #expect(sections.map(\.title) == ["Pinned", "My workspaces"])
+        #expect(sections[0].rows.map(\.id) == ["/docs"])
+        let apiRow = sections[1].rows[0]
+        #expect(apiRow.status == .waiting)
+        #expect(apiRow.counts == [StatusCount(status: .waiting, count: 1), StatusCount(status: .working, count: 2)])
+        #expect(sections[0].rows[0].status == .done)
+
+        navigation.archived = ["/api"]
+        let archived = SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "", showingArchive: true, now: 61
+        )
+        #expect(archived.map(\.title) == ["Archived"])
+        #expect(archived[0].rows.map(\.id) == ["/api"])
+        #expect(SidebarRows.sections(
+            workspaces: workspaces, navigation: navigation, search: "docs", showingArchive: false, now: 61
+        ).flatMap(\.rows).map(\.id) == ["/docs"])
+    }
+
     @Test("A missing session provider comes from the chair, then the first agent")
     func providerFallback() {
         let item = session("provider-session", cwd: "/outside")

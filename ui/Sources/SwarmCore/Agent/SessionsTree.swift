@@ -279,7 +279,8 @@ public struct SessionsTree: Sendable, Hashable {
                 isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider,
-                status: agentsBySession[$0[0].id].flatMap { AgentStatus.aggregate($0.map(\.status)) }
+                status: agentsBySession[$0[0].id].flatMap { AgentStatus.aggregate($0.map(\.status)) },
+                statusCounts: agentsBySession[$0[0].id].map { Dictionary($0.map { ($0.status, 1) }, uniquingKeysWith: +) } ?? [:]
             )
         })
     }

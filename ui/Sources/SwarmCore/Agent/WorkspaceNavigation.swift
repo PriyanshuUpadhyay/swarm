@@ -9,6 +9,9 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     public var isRunning: Bool { chats.contains { $0.isRunning == true } }
     /// Sets the row's glyph only; it never changes the row order.
     public var status: AgentStatus? { AgentStatus.aggregate(chats.compactMap(\.status)) }
+    public var statusCounts: [AgentStatus: Int] {
+        chats.reduce(into: [:]) { total, chat in total.merge(chat.statusCounts, uniquingKeysWith: +) }
+    }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
     public static func list(in tree: SessionsTree) -> [Self] {
