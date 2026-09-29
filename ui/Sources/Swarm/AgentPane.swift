@@ -131,8 +131,10 @@ final class AgentPaneStore {
     private(set) var focusedKey: String?
     /// The pane that fills the main area. Keys set it; the strip only shows it.
     var zoomedKey: String?
-    /// The pane a key last moved focus to; the strip scrolls it into view.
+    /// The pane a key last moved focus to, or nil for the chat page; the strip scrolls to it.
     private(set) var revealKey: String?
+    /// Bumped on every reveal, so revealing the chat again scrolls even when revealKey was nil.
+    private(set) var revealCount = 0
     /// Focus waits here for a terminal that is not in a window yet, or that is moving hosts.
     @ObservationIgnored private var pendingFocusKey: String?
 
@@ -192,6 +194,7 @@ final class AgentPaneStore {
     /// Focuses the terminal now, or when it next enters a window.
     func focus(key: String) {
         revealKey = key
+        revealCount += 1
         if let terminal = terminals[key], let window = terminal.window {
             window.makeFirstResponder(terminal)
         } else {
@@ -205,7 +208,7 @@ final class AgentPaneStore {
         let current = keys.firstIndex { $0 == focusedKey }.map(PaneStripLayout.Focus.pane) ?? .chat
         switch PaneStripLayout.move(from: current, count: keys.count, direction: direction) {
         case .chat:
-            revealKey = nil
+            revealChat()
             return false
         case .pane(let index):
             focus(key: keys[index])
@@ -213,16 +216,21 @@ final class AgentPaneStore {
         }
     }
 
-    /// Zooms the focused pane, or returns the zoomed one to the strip. The terminal moves to a
-    /// new host either way, so it takes focus again when it arrives.
-    func toggleZoom() {
-        guard let key = zoomedKey ?? focusedKey else { return }
-        zoomedKey = zoomedKey == nil ? key : nil
+    /// Zooms `key` (by default the focused pane), or returns the zoomed pane to the strip. Keys
+    /// and the header button both come here. The terminal moves to a new host either way, so it
+    /// takes focus again when it arrives.
+    func toggleZoom(key requested: String? = nil) {
+        guard let key = requested ?? zoomedKey ?? focusedKey else { return }
+        zoomedKey = zoomedKey == key ? nil : key
         pendingFocusKey = key
     }
 
-    /// The strip shows the chat page again, as when focus moves to it.
-    func revealChat() { revealKey = nil }
+    /// The strip shows the chat page again, unzoomed, as when focus moves to it.
+    func revealChat() {
+        zoomedKey = nil
+        revealKey = nil
+        revealCount += 1
+    }
 
     func optionAsMeta(key: String) -> Bool? { terminals[key]?.optionAsMetaKey }
 

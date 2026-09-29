@@ -408,8 +408,10 @@ struct SessionDetailView: View {
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
             zoomedID: agentCells.first { key($0.agent.id.rawValue) == panes.zoomedKey }?.agent.id.rawValue,
             revealID: agentCells.first { key($0.agent.id.rawValue) == panes.revealKey }?.agent.id.rawValue,
+            revealCount: panes.revealCount,
             onFocus: { panes.focus(key: key($0)) },
-            onZoom: { panes.zoomedKey = $0.map(key) },
+            // The same path as ⌘↩: the moved terminal takes focus again.
+            onZoom: { panes.toggleZoom(key: $0.map(key)) },
             onReconnect: { id in
                 if let agent = byID[id]?.agent { panes.reconnect(session: session, agent: agent) }
             }

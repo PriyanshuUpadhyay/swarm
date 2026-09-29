@@ -20,6 +20,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let zoomedID: String?
     /// The pane a key moved focus to; nil shows the chat page. The strip scrolls to it.
     let revealID: String?
+    /// Changes on every reveal, so a repeated reveal of the chat still scrolls.
+    let revealCount: Int
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
     let onReconnect: (String) -> Void
@@ -55,9 +57,9 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                 .scrollTargetBehavior(.viewAligned)
                 .scrollDisabled(!hasPanes)
                 .scrollIndicators(hasPanes ? .automatic : .hidden)
-                .onChange(of: revealID) { _, id in
+                .onChange(of: revealCount) {
                     // No animation: a key moved focus here.
-                    let column = columns.first { $0.contains { $0.id == id } }?.first?.id
+                    let column = columns.first { $0.contains { $0.id == revealID } }?.first?.id
                     proxy.scrollTo(column ?? Self.chatID)
                 }
             }

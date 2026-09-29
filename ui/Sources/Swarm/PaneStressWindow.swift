@@ -17,8 +17,9 @@ struct PaneStressWindow: View {
             focusedID: cells.first { $0.id == panes.focusedKey }?.id,
             zoomedID: panes.zoomedKey,
             revealID: panes.revealKey,
+            revealCount: panes.revealCount,
             onFocus: { panes.focus(key: $0) },
-            onZoom: { panes.zoomedKey = $0 },
+            onZoom: { panes.toggleZoom(key: $0) },
             onReconnect: { panes.reconnect(key: $0, launch: SwarmPaneStress.launch) }
         ) {
             Text("Pane stress: \(cells.count) panes")
