@@ -14,13 +14,14 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapter
 
 ## Environment
 
-Set `SWARM_HOME` by hand for each process that needs a separate data set. For example, a development
-process can use `SWARM_HOME=~/.swarm-<branch>`. Nothing sets it from the branch or build. When it is
-not set, the binary uses `HOME`. The data directory is always `$SWARM_HOME/.swarm`.
+When `SWARM_HOME` is not set, a build from `main` (or from no branch) uses `HOME`, and a build from
+any other branch uses `~/.swarm-<branch>`, so a branch build never touches the real data (ADR 0027).
+`swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins. The data
+directory is always `$SWARM_HOME/.swarm`.
 
 | Variable | Meaning |
 |---|---|
-| `SWARM_HOME` | Parent of the `.swarm/` data directory. Set it for each process. Defaults to `$HOME`. |
+| `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
 | `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
 | `AGENT_ROUTING_CONFIG` | Routing config file. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |

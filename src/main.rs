@@ -884,9 +884,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && (flag == "--version" || flag == "-V")
     {
         println!(
-            "swarm {} {}",
+            "swarm {} {} {}",
             env!("CARGO_PKG_VERSION"),
-            env!("SWARM_BUILD_COMMIT")
+            env!("SWARM_BUILD_COMMIT"),
+            env!("SWARM_BUILD_BRANCH")
         );
         return Ok(());
     }

@@ -9,12 +9,14 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::canonicalize(dir).unwrap()
 }
 
-/// Runs the built binary with only HOME, PATH, and the given variables set.
+/// Runs the built binary with only HOME, PATH, and the given variables set. SWARM_HOME pins the
+/// data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
 fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str], stdin: &str) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
     command
         .env_clear()
         .env("HOME", home)
+        .env("SWARM_HOME", home)
         .env("PATH", "/usr/bin:/bin")
         .env("SWARM_ADAPTER", "tmux")
         .current_dir(home)

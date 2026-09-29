@@ -16,10 +16,15 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// Runs the built binary with only HOME set, so no user config or routing env leaks in.
+/// Runs the built binary with only HOME set, so no user config or routing env leaks in. SWARM_HOME
+/// pins the data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
 fn swarm(home: &Path, env: &[(&str, &Path)], args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
-    command.env_clear().env("HOME", home).args(args);
+    command
+        .env_clear()
+        .env("HOME", home)
+        .env("SWARM_HOME", home)
+        .args(args);
     for (name, value) in env {
         command.env(name, value);
     }
