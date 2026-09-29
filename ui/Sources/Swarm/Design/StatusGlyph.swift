@@ -9,6 +9,8 @@ struct StatusGlyph: View {
     var body: some View {
         Image(systemName: Self.symbol(status))
             .foregroundStyle(DesignTokens.color(status))
+            // The dotted ring is thin; bold keeps it legible at caption size in light mode.
+            .fontWeight(status == .working ? .bold : nil)
             .symbolEffect(
                 .rotate, options: .repeat(.continuous).speed(0.3),
                 isActive: status == .working && !reduceMotion

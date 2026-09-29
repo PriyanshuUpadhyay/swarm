@@ -126,6 +126,8 @@ private struct PaneView<Content: View>: View {
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
             .help(zoomed ? "Return to the strip" : "Zoom pane")
+            // ⌘↩ zooms from the keyboard; this button must not be the window's first key view.
+            .focusable(false)
             .accessibilityLabel(zoomed ? "Unzoom \(cell.title)" : "Zoom \(cell.title)")
         }
         .buttonStyle(.borderless)
