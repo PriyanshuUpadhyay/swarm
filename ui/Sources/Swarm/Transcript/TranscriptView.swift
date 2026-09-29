@@ -27,8 +27,8 @@ struct TranscriptView<Composer: View>: View {
     let rawSessionJSON: String
     let isActive: Bool
     let isVisible: Bool
-    /// Loads one older page; returns false when nothing new arrived.
-    let loadOlder: () async -> Bool
+    /// Loads one older page.
+    let loadOlder: () async -> Void
     let onTap: () -> Void
     var focus: FocusState<Bool>.Binding
     @ViewBuilder let composer: () -> Composer
@@ -37,7 +37,8 @@ struct TranscriptView<Composer: View>: View {
     @State private var userScrolling = false
     @State private var nearTop = false
     @State private var loadingHistory = false
-    @State private var historyAnchor: String?
+    /// The row at the top edge. SwiftUI keeps it in place when older rows load above it.
+    @State private var topRowID: String?
     @State private var loadedHistoryThisGesture = false
     @State private var showHiddenRows = false
     @AppStorage("showRawData") private var showRawData = false
@@ -175,12 +176,14 @@ struct TranscriptView<Composer: View>: View {
                     }
                 }
             }
+            .scrollTargetLayout()
             .font(DesignTokens.body)
             .lineSpacing(DesignTokens.bodyLineSpacing)
             .frame(maxWidth: DesignTokens.Size.textColumn, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(DesignTokens.Spacing.l)
         }
+        .scrollPosition(id: $topRowID, anchor: .top)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .contentMargins(.top, DesignTokens.Spacing.s, for: .scrollContent)
         // The composer floats over the last rows; this keeps them readable above it.
@@ -220,12 +223,10 @@ struct TranscriptView<Composer: View>: View {
         }
         .onChange(of: rows) {
             guard !showRawData else { return }
-            if restoreHistoryPosition(using: proxy) { return }
             Task { @MainActor in followLatest(using: proxy) }
         }
         .onChange(of: rawEntries) {
             guard showRawData else { return }
-            if restoreHistoryPosition(using: proxy) { return }
             Task { @MainActor in followLatest(using: proxy) }
         }
         .onChange(of: pendingScrollID) { _, id in
@@ -240,19 +241,10 @@ struct TranscriptView<Composer: View>: View {
         loadedHistoryThisGesture = true
         loadingHistory = true
         followsTail = false
-        historyAnchor = showRawData ? rawEntries.first?.id : visibleRows.first?.eventID
         Task { @MainActor in
-            // The row-change handler restores position after SwiftUI has received the new rows.
-            if await !loadOlder() { historyAnchor = nil }
+            await loadOlder()
             loadingHistory = false
         }
-    }
-
-    private func restoreHistoryPosition(using proxy: ScrollViewProxy) -> Bool {
-        guard let anchor = historyAnchor else { return false }
-        historyAnchor = nil
-        Task { @MainActor in proxy.scrollTo(anchor, anchor: .top) }
-        return true
     }
 
     private func followLatest(using proxy: ScrollViewProxy) {

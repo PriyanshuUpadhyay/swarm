@@ -342,10 +342,7 @@ struct SessionDetailView: View {
             rawSessionJSON: TranscriptDebugData.sessionJSON(session: row.session, agents: agents),
             isActive: isActive, isVisible: isVisible,
             loadOlder: { [weak model, row, chairProvider] in
-                guard let model else { return false }
-                let before = model.snapshot
-                await model.loadOlder(row: row, chairProvider: chairProvider)
-                return model.historyError == nil && model.snapshot != before
+                await model?.loadOlder(row: row, chairProvider: chairProvider)
             },
             onTap: { [panes] in panes.clearFocus() },
             focus: $transcriptFocused
