@@ -194,19 +194,12 @@ final class SessionDetailStore {
     }
 
     private(set) var entries: [Entry] = []
-    @ObservationIgnored private var recentIDs: [SwarmSessionID] = []
 
-    func activate(_ id: SwarmSessionID) {
-        recentIDs.removeAll { $0 == id }
-        recentIDs.insert(id, at: 0)
-        if !entries.contains(where: { $0.id == id }) {
-            entries.append(Entry(id: id, model: SessionDetailModel()))
-        }
-        // Keep mounted view order stable when selecting another cached chat.
-        if recentIDs.count > 3 {
-            let expired = recentIDs.removeLast()
-            entries.removeAll { $0.id == expired }
-        }
+    /// Keeps only the selected chat, so a switch frees the previous transcript and poll (ADR 0024).
+    func activate(_ id: SwarmSessionID?) {
+        guard let id else { entries = []; return }
+        if entries.count == 1, entries[0].id == id { return }
+        entries = [entries.first { $0.id == id } ?? Entry(id: id, model: SessionDetailModel())]
     }
 }
 

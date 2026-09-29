@@ -63,9 +63,7 @@ final class SessionsTreeModel {
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
-            if let selectedSessionID, selectedSessionID != oldValue {
-                detailModels.activate(selectedSessionID)
-            }
+            if selectedSessionID != oldValue { detailModels.activate(selectedSessionID) }
         }
     }
     private var pendingID: SwarmSessionID?
@@ -390,7 +388,7 @@ private struct SessionsWindow: View {
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
             NSApp.keyWindow?.makeFirstResponder(nil)
-            panes.clearFocus()
+            panes.stop(keepingSession: id)
             documentVisible = false
             if id != nil { selectedProjectID = nil }
         }
