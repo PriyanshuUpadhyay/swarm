@@ -272,8 +272,6 @@ private struct SessionsWindow: View {
     @State private var showingPalette = false
     /// When each palette action last ran, in this window only.
     @State private var recentActions: [AppKey: Int] = [:]
-    @FocusedValue(\.chatKeyActions) private var chatKeyActions
-    @FocusedValue(\.transcriptFindActions) private var transcriptFindActions
     @State private var showingArchive = false
     @State private var showingCreate = false
     @State private var createAction: (() -> Void)?
@@ -602,7 +600,7 @@ private struct SessionsWindow: View {
         case "action":
             guard let key = PaletteItems.actions.first(where: { "\($0)" == id }) else { return }
             recentActions[key] = Int(Date().timeIntervalSince1970)
-            AppKeyTarget(window: keyActions, chat: chatKeyActions, transcript: transcriptFindActions).perform(key)
+            AppKeyTarget.current.perform(key)
         case "workspace":
             sidebarActions.select(id)
         case "chat":
@@ -766,7 +764,10 @@ private struct SessionsWindow: View {
             isCurrentSession: { model.selectedSession?.id == row.id },
             isActive: active, isVisible: active && !documentVisible,
             onUsageChanged: { usage in
-                if model.selectedSession?.id == row.id { reportedUsage = (row.id, usage) }
+                // Only a real change: each write re-renders the whole window.
+                guard model.selectedSession?.id == row.id,
+                      reportedUsage?.sessionID != row.id || reportedUsage?.usage != usage else { return }
+                reportedUsage = (row.id, usage)
             },
             onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
         )

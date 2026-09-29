@@ -71,7 +71,13 @@ struct ChatKeyActions {
 }
 
 /// The one place an app key becomes an action, for the menu and the command palette alike.
+@MainActor
 struct AppKeyTarget {
+    /// The target the menu last built. The palette runs actions through it. A window must not
+    /// observe the focused chat values itself: they change on every chat render, and observing
+    /// them re-rendered the whole window in a loop.
+    static var current = AppKeyTarget()
+
     var window: WindowKeyActions?
     var chat: ChatKeyActions?
     var transcript: TranscriptFindActions?
@@ -180,7 +186,11 @@ struct AppKeyCommands: Commands {
         }
     }
 
-    private var target: AppKeyTarget { AppKeyTarget(window: window, chat: chat, transcript: transcript) }
+    private var target: AppKeyTarget {
+        let target = AppKeyTarget(window: window, chat: chat, transcript: transcript)
+        AppKeyTarget.current = target
+        return target
+    }
 
     private func item(_ title: String, _ key: AppKey) -> some View {
         Button(title) { target.perform(key) }
