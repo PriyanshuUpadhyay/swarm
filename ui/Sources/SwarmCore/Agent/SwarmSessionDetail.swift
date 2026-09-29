@@ -65,6 +65,23 @@ public actor SwarmChairTranscript {
             return entry.homes
         }
     }
+
+    private func homes(provider: String) async -> [URL] {
+        if let cached = Self.sharedHomes(provider: provider, home: home) { return cached }
+        let accounts = try? await profiles.accounts(provider: provider)
+        let homes = ChairLogDiscovery.homes(
+            provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+        )
+        Self.homesCache.withLock { $0[provider + "|" + home.path] = (homes, .now) }
+        return homes
+    }
+
+    /// Fills the shared account homes before any chat opens, so a first open skips the profile
+    /// lookup. Cheap while the cache is fresh; the app calls it on each refresh.
+    public func prefetchHomes() async {
+        for provider in ["claude", "codex"] { _ = await homes(provider: provider) }
+    }
+
     private var log: URL?
     private var reader: ToolTranscriptReader?
     public private(set) var currentModel: String?
@@ -161,17 +178,7 @@ public actor SwarmChairTranscript {
               let provider,
               provider == "claude" || provider == "codex" else { return nil }
         if homesByProvider[provider] == nil {
-            if let cached = Self.sharedHomes(provider: provider, home: home) {
-                homesByProvider[provider] = cached
-            } else {
-                let accounts = try? await profiles.accounts(provider: provider)
-                let homes = ChairLogDiscovery.homes(
-                    provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [],
-                    userHome: home
-                )
-                homesByProvider[provider] = homes
-                Self.homesCache.withLock { $0[provider + "|" + home.path] = (homes, .now) }
-            }
+            homesByProvider[provider] = await homes(provider: provider)
         }
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID

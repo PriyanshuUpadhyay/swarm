@@ -251,6 +251,7 @@ final class SessionsTreeModel {
             do { try await refresh() }
             catch { self.error = String(describing: error) }
             timing.end()
+            await SwarmChairTranscript().prefetchHomes()
             first = false
             try? await Task.sleep(for: .seconds(2))
         }
