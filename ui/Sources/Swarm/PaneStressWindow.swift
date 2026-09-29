@@ -29,7 +29,6 @@ struct PaneStressWindow: View {
         }
         .frame(minWidth: 1600, minHeight: 1000)
         .focusedSceneValue(\.chatKeyActions, ChatKeyActions(
-            paneFocused: panes.focusedKey != nil,
             focusComposer: { panes.revealChat() },
             moveFocus: { direction in
                 if !panes.moveFocus(direction, among: cells.map(\.id)) {

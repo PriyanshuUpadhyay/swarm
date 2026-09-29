@@ -405,7 +405,9 @@ private struct SessionsWindow: View {
             await model.run()
         }
         .task {
-            // Asked once, on the owner's first run with swarm's hooks not set up.
+            // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
+            // finds `swarm` only on the login shell's PATH.
+            await LoginShellPath.ready()
             guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
                   let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
             showingHooksSetup = true

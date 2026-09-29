@@ -340,7 +340,8 @@ struct SessionDetailView: View {
             waitingMessage: ChairTranscriptSnapshot.waitingMessage(isRunning: row.isRunning),
             chair: row.provider ?? chairProvider,
             rawSessionJSON: TranscriptDebugData.sessionJSON(session: row.session, agents: agents),
-            isActive: isActive, isVisible: isVisible,
+            // A focused child column takes find.
+            isActive: isActive, isVisible: isVisible && panes.focusedKey == nil,
             loadOlder: { [weak model, row, chairProvider] in
                 await model?.loadOlder(row: row, chairProvider: chairProvider)
             },
@@ -371,7 +372,6 @@ struct SessionDetailView: View {
         let composerFocus = $composerFocused
         let transcriptFocus = $transcriptFocused
         return ChatKeyActions(
-            paneFocused: panes.focusedKey != nil,
             focusComposer: { [panes] in
                 panes.revealChat()
                 composerFocus.wrappedValue = true
@@ -417,7 +417,7 @@ struct SessionDetailView: View {
                 let paneKey = key(cell.id)
                 ChildColumnView(
                     session: session, agent: agent, model: panes.column(key: paneKey),
-                    focused: panes.focusedKey == paneKey,
+                    focusRequest: panes.focusedKey == paneKey ? panes.revealCount : nil,
                     onFocused: { [panes] in panes.focused(key: paneKey) }
                 )
             }

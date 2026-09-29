@@ -12,6 +12,7 @@ final class ChildColumnModel {
     private(set) var revision = 0
     private(set) var hasOlder = false
     private(set) var isLoadingOlder = false
+    private(set) var historyError: String?
     private(set) var isSending = false
     var draft = ""
 
@@ -32,10 +33,13 @@ final class ChildColumnModel {
     func loadOlder() async {
         guard hasOlder, !isLoadingOlder else { return }
         isLoadingOlder = true
+        historyError = nil
         defer { isLoadingOlder = false }
-        if let next = try? await transcript.loadOlder() {
-            snapshot = next
+        do {
+            snapshot = try await transcript.loadOlder()
             revision += 1
+        } catch {
+            historyError = String(describing: error)
         }
         hasOlder = await transcript.hasOlder
     }
@@ -73,7 +77,9 @@ struct ChildColumnView: View {
     let session: SwarmSession
     let agent: SwarmAgent
     let model: ChildColumnModel
-    let focused: Bool
+    /// Set while the column has focus, and new on each request, so asking again for the column
+    /// that has focus still moves the keyboard to its composer.
+    let focusRequest: Int?
     let onFocused: () -> Void
 
     @FocusState private var composerFocused: Bool
@@ -83,11 +89,11 @@ struct ChildColumnView: View {
         TranscriptView(
             snapshot: model.snapshot, revision: model.revision,
             hasOlder: model.hasOlder, isLoadingOlder: model.isLoadingOlder,
-            historyError: nil,
+            historyError: model.historyError,
             waitingMessage: ChildColumnModel.waitingMessage(provider: agent.provider),
             chair: agent.provider, rawSessionJSON: "",
-            // Find and the scene's key actions stay with the chair's transcript.
-            isActive: true, isVisible: false,
+            // Find goes to the focused column; the scene's other key actions stay with the chair.
+            isActive: true, isVisible: focusRequest != nil,
             loadOlder: { [model] in await model.loadOlder() },
             onTap: onFocused,
             focus: $transcriptFocused
@@ -110,8 +116,8 @@ struct ChildColumnView: View {
         .task(id: (agent.log ?? "") + (agent.provider ?? "")) {
             await model.poll(log: agent.log, provider: agent.provider)
         }
-        .onChange(of: focused, initial: true) { _, focused in
-            if focused { composerFocused = true }
+        .onChange(of: focusRequest, initial: true) { _, request in
+            if request != nil { composerFocused = true }
         }
     }
 
