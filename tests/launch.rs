@@ -232,3 +232,42 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(trusted(&home.join(".claude.json"), &resumed));
 }
+
+#[test]
+fn a_child_agent_can_neither_launch_nor_spawn() {
+    let home = scratch("child");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = touch \"$HOME/spawned\"; printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let child = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "cl-seat-1"),
+    ];
+    for args in [
+        &["launch", "grandchild", "review.deep"][..],
+        &["spawn", "grandchild", "coder", "--", "true"],
+    ] {
+        let output = swarm(&home, &child, args);
+        assert!(!output.status.success(), "{args:?} passed");
+        assert!(
+            stderr(&output).contains("a child agent cannot launch agents"),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+    assert!(!home.join("spawned").exists());
+}

@@ -1452,6 +1452,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, agent_id, role, rest @ ..] = args
         && cmd == "spawn"
     {
+        if let Some(reason) = swarm::bus::launch_refusal(
+            env::var("SWARM_AGENT_ID").ok().as_deref(),
+            env::var("HERDR_AGENT_PANE").ok().as_deref(),
+        ) {
+            return Err(reason.into());
+        }
         let options = parse_spawn_options(rest)?;
         return spawn_agent(&connection, &root, agent_id, role, options);
     }
