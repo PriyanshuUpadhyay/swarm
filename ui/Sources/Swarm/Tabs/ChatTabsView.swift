@@ -83,7 +83,8 @@ private struct ChatTabView: View {
             .help("Archive chat")
             .accessibilityLabel("Archive \(tab.title)")
         }
-        .frame(minWidth: DesignTokens.Size.tabMinWidth, maxWidth: DesignTokens.Size.tabMaxWidth, alignment: .leading)
+        .frame(minWidth: DesignTokens.Size.tabMinWidth, alignment: .leading)
+        .modifier(CappedWidth(max: DesignTokens.Size.tabMaxWidth))
         .buttonStyle(.plain)
         .background(selected ? DesignTokens.selectionFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         .contextMenu {
@@ -91,5 +92,31 @@ private struct ChatTabView: View {
             Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
             Button("Archive chat") { actions.archive(tab.id) }
         }
+    }
+}
+
+/// A horizontal scroll view offers its content unlimited width, so a max-width frame alone lets a
+/// long title overflow and clip. This offers the tab at most `max`, so its title truncates.
+private struct CappedWidth: ViewModifier {
+    let max: CGFloat
+
+    func body(content: Content) -> some View {
+        CappedWidthLayout(max: max) { content }
+    }
+}
+
+private struct CappedWidthLayout: Layout {
+    let max: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: min(proposal.width ?? max, max), height: proposal.height)
     }
 }
