@@ -203,21 +203,15 @@ final class SessionDetailStore {
     }
 
     private(set) var entries: [Entry] = []
-    /// The last rows shown per chat, for the most recent chats only. The readers, processes,
-    /// and poll tasks are still freed on a switch (ADR 0024); this keeps only their output.
-    @ObservationIgnored private var lastKnown: [SwarmSessionID: ChairTranscriptSnapshot] = [:]
-    @ObservationIgnored private var lastKnownOrder: [SwarmSessionID] = []
+    /// The last rows of the four most recent chats (ADR 0025). Readers, processes, and poll tasks
+    /// are still freed on a switch; this keeps only their output.
+    @ObservationIgnored private var lastKnown = RecentValues<SwarmSessionID, ChairTranscriptSnapshot>(capacity: 4)
 
     private func remember(_ snapshot: ChairTranscriptSnapshot, for id: SwarmSessionID) {
-        guard case .rows = snapshot else { return }
-        lastKnown[id] = snapshot
-        lastKnownOrder.removeAll { $0 == id }
-        lastKnownOrder.append(id)
-        // ponytail: a fixed count of chats, not a byte budget; measure memory before raising it.
-        if lastKnownOrder.count > 16 { lastKnown[lastKnownOrder.removeFirst()] = nil }
+        if case .rows = snapshot { lastKnown.set(snapshot, for: id) }
     }
 
-    /// Keeps only the selected chat, so a switch frees the previous transcript and poll (ADR 0024).
+    /// Keeps only the selected chat, so a switch frees the previous transcript and poll (ADR 0025).
     func activate(_ id: SwarmSessionID?) {
         if let id, entries.count == 1, entries[0].id == id { return }
         let kept = entries.first { $0.id == id }
