@@ -660,76 +660,22 @@ private struct SessionsWindow: View {
 
     private func workspaceTabs(for selected: SwarmProjectSession) -> some View {
         let chats = model.tree.workspaceChats(for: selected.id)
-        return HStack(spacing: 8) {
-            if let workspace = model.selectedWorkspace {
-                Text(model.navigation.title(for: workspace))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: 220, alignment: .leading)
-                    .padding(.leading, 12)
-            }
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 4) {
-                        ForEach(chats) { chat in
-                            HStack(spacing: 0) {
-                                Button {
-                                    model.select(chat.id)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        if let status = chat.session.status {
-                                            StatusGlyph(status: status).font(.caption)
-                                        }
-                                        Text(chat.session.title).lineLimit(1)
-                                        if let provider = chat.session.provider {
-                                            Text(providerBadge(provider))
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(width: 156, alignment: .leading)
-                                    .padding(.leading, 10)
-                                    .padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                                .accessibilityAddTraits(chat.id == selected.id ? .isSelected : [])
-                                Button { archiveChat(chat.id) } label: {
-                                    Image(systemName: "archivebox")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 34, height: 34)
-                                        .contentShape(Rectangle())
-                                }
-                                .help("Archive chat")
-                                .accessibilityLabel("Archive \(chat.session.title)")
-                            }
-                            .buttonStyle(.plain)
-                            .overlay(alignment: .bottom) {
-                                Rectangle()
-                                    .fill(chat.id == selected.id ? Color.primary.opacity(0.75) : Color.clear)
-                                    .frame(height: 2)
-                            }
-                            .id(chat.id)
-                            .contextMenu { chatMenu(chat) }
-                        }
+        return ChatTabsView(
+            workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
+            tabs: ChatTab.tabs(chats, closing: model.closing, now: Int(Date().timeIntervalSince1970)),
+            selectedID: selected.id.rawValue,
+            actions: ChatTabActions(
+                select: { model.select(SwarmSessionID($0)) },
+                newChat: { if let path = chats.first?.workspacePath { newChatDirectory = path } },
+                close: { id in
+                    Task {
+                        do { try await model.close(SwarmSessionID(id)) }
+                        catch { actionError = String(describing: error) }
                     }
-                }
-                .scrollIndicators(.hidden)
-                .onAppear { proxy.scrollTo(selected.id) }
-                .onChange(of: selected.id) { _, id in proxy.scrollTo(id) }
-            }
-            Button {
-                if let path = chats.first?.workspacePath { newChatDirectory = path }
-            } label: {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(.plain)
-            .help("New chat in this workspace")
-            .accessibilityLabel("New chat in this workspace")
-            .padding(.trailing, 12)
-        }
-        .padding(.vertical, 5)
+                },
+                archive: { archiveChat(SwarmSessionID($0)) }
+            )
+        )
     }
 
     private var renameWorkspaceSheet: some View {
@@ -757,34 +703,10 @@ private struct SessionsWindow: View {
         .frame(width: 380)
     }
 
-    @ViewBuilder
-    private func chatMenu(_ row: ChatRow) -> some View {
-        let presentation = SessionRowPresentation.make(
-            row, now: Int(Date().timeIntervalSince1970)
-        )
-        Button("New chat here") { newChatDirectory = row.workspacePath }
-        Button("Close chat") {
-            Task {
-                do { try await model.close(row.id) }
-                catch { actionError = String(describing: error) }
-            }
-        }
-        .disabled(presentation.state != .live || model.closing.contains(row.id))
-        Button("Archive chat") { archiveChat(row.id) }
-    }
-
     private func archiveChat(_ id: SwarmSessionID) {
         Task {
             do { try await model.archive(id) }
             catch { actionError = String(describing: error) }
-        }
-    }
-
-    private func providerBadge(_ provider: String) -> String {
-        switch provider.lowercased() {
-        case "codex": "X"
-        case "agy": "A"
-        default: provider.prefix(1).uppercased()
         }
     }
 

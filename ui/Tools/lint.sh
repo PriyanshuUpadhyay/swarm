@@ -14,7 +14,7 @@ fi
 if rg -n --glob '*.swift' \
     'SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail' \
     "$root/Sources/Swarm/Composer" "$root/Sources/Swarm/PaneStrip" "$root/Sources/Swarm/Design" \
-    "$root/Sources/Swarm/Sidebar"; then
+    "$root/Sources/Swarm/Sidebar" "$root/Sources/Swarm/Tabs"; then
   failed=1
 fi
 exit "$failed"

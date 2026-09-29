@@ -174,6 +174,23 @@ struct SessionsTreeTests {
         ).flatMap(\.rows).map(\.id) == ["/docs"])
     }
 
+    @Test("Chat tabs carry status, a provider badge, and whether they can close")
+    func chatTabs() {
+        let live = session("live-session", cwd: "/api", chair: "chair-1")
+        let tree = build([live], agentsBySession: [live.id: [SwarmAgent(
+            id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
+        )]])
+        let chats = tree.workspaceChats(for: live.id)
+        let tab = ChatTab.tabs(chats, closing: [], now: 61)[0]
+        #expect(tab.id == "live-session")
+        #expect(tab.status == .working)
+        #expect(tab.badge == "X")
+        #expect(tab.canClose)
+        #expect(!ChatTab.tabs(chats, closing: [live.id], now: 61)[0].canClose)
+        #expect(ChatTab.badge("claude") == "C")
+        #expect(ChatTab.badge("agy") == "A")
+    }
+
     @Test("A missing session provider comes from the chair, then the first agent")
     func providerFallback() {
         let item = session("provider-session", cwd: "/outside")
