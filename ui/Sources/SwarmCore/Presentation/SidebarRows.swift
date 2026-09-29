@@ -34,8 +34,10 @@ public enum SidebarRows {
         search: String, showingArchive: Bool, now: Int
     ) -> [SidebarSection] {
         let visible = workspaces.filter { navigation.matches(search, entry: $0) }
+        // Titles once for the whole list; a per-row scan made this quadratic in workspaces.
+        let idsByTitle = navigation.idsByTitle(workspaces)
         func rows(_ keep: (WorkspaceEntry) -> Bool) -> [SidebarRow] {
-            visible.filter(keep).map { row($0, among: workspaces, navigation: navigation, now: now) }
+            visible.filter(keep).map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now) }
         }
         if showingArchive {
             return [SidebarSection(title: "Archived", rows: rows { navigation.archived.contains($0.id) })]
@@ -51,7 +53,7 @@ public enum SidebarRows {
     }
 
     static func row(
-        _ entry: WorkspaceEntry, among workspaces: [WorkspaceEntry],
+        _ entry: WorkspaceEntry, idsByTitle: [String: [String]],
         navigation: WorkspaceNavigation, now: Int
     ) -> SidebarRow {
         let age = entry.chats.max { $0.lastActivity < $1.lastActivity }.map {
@@ -64,7 +66,7 @@ public enum SidebarRows {
             .sorted { $0.status.urgency > $1.status.urgency }
         return SidebarRow(
             id: entry.id, title: navigation.title(for: entry),
-            detail: navigation.detail(for: entry, among: workspaces),
+            detail: navigation.detail(for: entry, idsByTitle: idsByTitle),
             status: entry.status, counts: counts, age: age,
             help: "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),

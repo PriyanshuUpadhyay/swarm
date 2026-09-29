@@ -16,7 +16,8 @@ final class SessionsTreeModel {
 
     init() { navigation = navigationStore.load() }
 
-    var workspaces: [WorkspaceEntry] { WorkspaceEntry.list(in: tree) }
+    /// Rebuilt when the tree changes, not on every read.
+    private(set) var workspaces: [WorkspaceEntry] = []
     var selectedWorkspace: WorkspaceEntry? {
         workspaces.first { $0.id == navigation.selectedWorkspace }
     }
@@ -41,7 +42,9 @@ final class SessionsTreeModel {
     private var archives = ChatArchives()
     private var refreshRevision = 0
     private(set) var selectionRevision = 0
-    var tree = SessionsTree(projects: [])
+    var tree = SessionsTree(projects: []) {
+        didSet { workspaces = WorkspaceEntry.list(in: tree) }
+    }
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
@@ -625,6 +628,8 @@ private struct SessionsWindow: View {
             return nil
         }
         while model.workspaces.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+        print("open-script start: \(model.workspaces.count) workspaces")
+        fflush(stdout)
         var workspaceTimes: [Double] = []
         var chatTimes: [Double] = []
         var misses = 0
@@ -632,13 +637,19 @@ private struct SessionsWindow: View {
             let entries = model.workspaces.filter { !model.navigation.archived.contains($0.id) && !$0.chats.isEmpty }
             for entry in entries {
                 model.selectWorkspace(entry)
-                if let ms = await waitForContent(model.selectedSessionID) { workspaceTimes.append(ms) } else { misses += 1 }
+                let workspaceMs = await waitForContent(model.selectedSessionID)
+                if let workspaceMs { workspaceTimes.append(workspaceMs) } else { misses += 1 }
+                print("open-script workspace \(workspaceMs.map { String(format: "%.1f ms", $0) } ?? "miss")")
                 for chat in entry.chats {
                     model.select(chat.id)
-                    if let ms = await waitForContent(chat.id) { chatTimes.append(ms) } else { misses += 1 }
+                    let chatMs = await waitForContent(chat.id)
+                    if let chatMs { chatTimes.append(chatMs) } else { misses += 1 }
+                    print("open-script chat \(chatMs.map { String(format: "%.1f ms", $0) } ?? "miss")")
+                    fflush(stdout)
                 }
             }
             print("open-script round \(round): \(entries.count) workspaces, \(chatTimes.count) chat opens so far")
+            fflush(stdout)
         }
         for (name, samples) in [("workspace", workspaceTimes), ("chat", chatTimes)] {
             if let s = SwarmOpenScript.summary(samples) {

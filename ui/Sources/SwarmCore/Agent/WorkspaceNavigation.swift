@@ -42,12 +42,20 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func detail(for entry: WorkspaceEntry, among entries: [WorkspaceEntry]) -> String {
+        detail(for: entry, idsByTitle: idsByTitle(entries))
+    }
+
+    /// Workspace ids under each case-folded title, computed once for a whole list.
+    public func idsByTitle(_ entries: [WorkspaceEntry]) -> [String: [String]] {
+        Dictionary(grouping: entries.map { (title(for: $0).lowercased(), $0.id) }, by: \.0)
+            .mapValues { $0.map(\.1) }
+    }
+
+    public func detail(for entry: WorkspaceEntry, idsByTitle: [String: [String]]) -> String {
         var parts: [String] = []
-        let duplicates = entries.filter {
-            $0.id != entry.id && title(for: $0).localizedCaseInsensitiveCompare(title(for: entry)) == .orderedSame
-        }
+        let duplicates = (idsByTitle[title(for: entry).lowercased()] ?? []).filter { $0 != entry.id }
         if !duplicates.isEmpty {
-            parts.append(pathQualifier(for: entry.id, others: duplicates.map(\.id)))
+            parts.append(pathQualifier(for: entry.id, others: duplicates))
         }
         if customName(for: entry) != nil, !parts.contains(entry.project.name) {
             parts.append(entry.project.name)
