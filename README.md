@@ -16,9 +16,10 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapter
 
 When `SWARM_HOME` is not set, a build from `main` (or from a detached HEAD) uses `HOME`, and a
 build from any other branch uses `~/.swarm-<branch>`, so a branch build never touches the real data
-(ADR 0027). A branch name with a character outside `[A-Za-z0-9._-]`, or one that starts with `.` or
-`-`, gets those bytes made `-` and a hash of the name added, so `feat/login` uses
-`~/.swarm-feat-login+a15997df` and never meets `feat-login`. `branch_folder` in `src/paths.rs`
+(ADR 0027). A branch name with a character outside `[A-Za-z0-9._-]`, one that starts with `.` or
+`-`, or one over 200 bytes gets those bytes made `-`, is cut to 200 bytes, and gets a hash of the
+whole name added, so `feat/login` uses `~/.swarm-feat-login+407712bf7898fb7f` and never meets
+`feat-login`. `branch_folder` in `src/paths.rs`
 states the exact rule.
 `swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins. The data
 directory is always `$SWARM_HOME/.swarm`.

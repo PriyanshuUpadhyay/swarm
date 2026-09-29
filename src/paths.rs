@@ -26,31 +26,34 @@ pub fn branch_home(home: &str, branch: &str) -> String {
 }
 
 /// The folder a branch build keeps its data in; `ui/Sources/SwarmCore/System/SwarmHome.swift`
-/// must give the same bytes. A branch made only of `[A-Za-z0-9._-]` that does not start with `.`
-/// or `-` is `.swarm-<branch>`. Any other branch is `.swarm-<slug>+<hash>`: the slug maps each
-/// UTF-8 byte outside that set to `-`, and the hash is the 32-bit FNV-1a of the branch's UTF-8
-/// bytes as 8 lowercase hex digits. A safe name never holds `+`, so the two forms cannot meet, and
-/// the hash keeps `feat/login` apart from `feat-login`. The readable part keeps at most 64 bytes, so
-/// a folder name stays at most 80 bytes, under NAME_MAX 255: a safe name over 64 bytes takes the
-/// hashed form, whose slug is cut to 64 bytes while the hash still covers the whole branch.
+/// must give the same bytes. A branch of at most 200 bytes made only of `[A-Za-z0-9._-]` that does
+/// not start with `.` or `-` is `.swarm-<branch>`, whole. Any other branch is
+/// `.swarm-<slug>+<hash>`: the slug maps each UTF-8 byte outside that set to `-` and keeps at most
+/// 200 bytes, and the hash is the 64-bit FNV-1a of the whole branch's UTF-8 bytes as 16 lowercase
+/// hex digits. A safe name never holds `+`, so the two forms cannot meet, and two plain names are
+/// two different branches, so they cannot collide. Only an unsafe or very long name relies on the
+/// hash, which keeps `feat/login` apart from `feat-login`. A folder name is at most
+/// 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
 pub fn branch_folder(branch: &str) -> Option<String> {
     if matches!(branch, "" | "main") {
         return None;
     }
     let safe = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-');
     let bytes = branch.as_bytes();
-    if bytes.len() <= 64 && bytes.iter().all(|&byte| safe(byte)) && !matches!(bytes[0], b'.' | b'-')
+    if bytes.len() <= 200
+        && bytes.iter().all(|&byte| safe(byte))
+        && !matches!(bytes[0], b'.' | b'-')
     {
         return Some(format!(".swarm-{branch}"));
     }
-    let slug: String = bytes[..bytes.len().min(64)]
+    let slug: String = bytes[..bytes.len().min(200)]
         .iter()
         .map(|&byte| if safe(byte) { byte as char } else { '-' })
         .collect();
-    let hash = bytes.iter().fold(0x811c_9dc5_u32, |hash, &byte| {
-        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
     });
-    Some(format!(".swarm-{slug}+{hash:08x}"))
+    Some(format!(".swarm-{slug}+{hash:016x}"))
 }
 
 pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
@@ -75,13 +78,13 @@ mod tests {
         ("", None),
         ("unknown", Some(".swarm-unknown")),
         ("ui-polish", Some(".swarm-ui-polish")),
-        ("feat/login", Some(".swarm-feat-login+a15997df")),
+        ("feat/login", Some(".swarm-feat-login+407712bf7898fb7f")),
         ("feat-login", Some(".swarm-feat-login")),
-        ("feat/👩‍💻", Some(".swarm-feat------------+2df12934")),
-        ("..", Some(".swarm-..+a3d4a70d")),
-        ("-x", Some(".swarm--x+4bcd60c0")),
-        ("\"main\"", Some(".swarm--main-+0c126bfe")),
-        ("a'b", Some(".swarm-a-b+2aa1e449")),
+        ("feat/👩‍💻", Some(".swarm-feat------------+351989ced13b5f34")),
+        ("..", Some(".swarm-..+07da1a07b4a03f2d")),
+        ("-x", Some(".swarm--x+07d04207b4982ea0")),
+        ("\"main\"", Some(".swarm--main-+f2c462bd1704f4de")),
+        ("a'b", Some(".swarm-a-b+e63cb31904812ee9")),
     ];
 
     /// Long names, shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift` like `VECTORS`.
@@ -90,18 +93,18 @@ mod tests {
         vec![
             (
                 format!("feat/{}", a(235)),
-                Some(format!(".swarm-feat-{}+412b964b", a(59))),
-            ),
-            (a(64), Some(format!(".swarm-{}", a(64)))),
-            (a(65), Some(format!(".swarm-{}+2dd603ec", a(64)))),
-            (
-                format!("{}{}", a(64), "b".repeat(36)),
-                Some(format!(".swarm-{}+9c728705", a(64))),
+                Some(format!(".swarm-feat-{}+92be3c58bd6b9ccb", a(195))),
             ),
             (
-                format!("{}{}", a(64), "c".repeat(36)),
-                Some(format!(".swarm-{}+2410b2b9", a(64))),
+                format!("{}e6uomhlyrr3q", a(64)),
+                Some(format!(".swarm-{}e6uomhlyrr3q", a(64))),
             ),
+            (
+                format!("{}zimprpqj6tk7", a(64)),
+                Some(format!(".swarm-{}zimprpqj6tk7", a(64))),
+            ),
+            (a(200), Some(format!(".swarm-{}", a(200)))),
+            (a(201), Some(format!(".swarm-{}+9a253eda0ce95884", a(200)))),
         ]
     }
 

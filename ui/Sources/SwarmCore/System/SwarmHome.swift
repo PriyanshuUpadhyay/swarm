@@ -24,13 +24,13 @@ public enum SwarmHome {
             default: false
             }
         }
-        if bytes.count <= 64, bytes.allSatisfy(safe), bytes[0] != UInt8(ascii: "."),
+        if bytes.count <= 200, bytes.allSatisfy(safe), bytes[0] != UInt8(ascii: "."),
            bytes[0] != UInt8(ascii: "-") {
             return ".swarm-\(branch)"
         }
-        let slug = String(decoding: bytes.prefix(64).map { safe($0) ? $0 : UInt8(ascii: "-") }, as: UTF8.self)
-        let hash = bytes.reduce(UInt32(0x811c_9dc5)) { ($0 ^ UInt32($1)) &* 0x0100_0193 }
-        return ".swarm-\(slug)+\(String(format: "%08x", hash))"
+        let slug = String(decoding: bytes.prefix(200).map { safe($0) ? $0 : UInt8(ascii: "-") }, as: UTF8.self)
+        let hash = bytes.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0100_0000_01b3 }
+        return ".swarm-\(slug)+\(String(format: "%016llx", hash))"
     }
 
     /// This app's home, from its environment and the branch `Tools/build.sh` wrote into Info.plist.
