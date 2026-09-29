@@ -573,10 +573,12 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 /// Returns whether the file changed.
 pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, String> {
     let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
-    // PreToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
+    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
+    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
+    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
     let group = serde_json::json!({
         "PreInvocation": [handler("PreInvocation")],
-        "PreToolUse": [{"matcher": "*", "hooks": [handler("PreToolUse")]}],
+        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
         "Stop": [handler("Stop")],
     });
     let mut value = read_json_object(path)?;
@@ -764,9 +766,10 @@ mod tests {
             "'/bin/swarm' hook agy Stop"
         );
         assert_eq!(
-            created["swarm"]["PreToolUse"][0]["hooks"][0]["command"],
-            "'/bin/swarm' hook agy PreToolUse"
+            created["swarm"]["PostToolUse"][0]["hooks"][0]["command"],
+            "'/bin/swarm' hook agy PostToolUse"
         );
+        assert!(created["swarm"].get("PreToolUse").is_none());
         assert!(!ensure_agy_hooks(&hooks, command).unwrap());
 
         let herdr = r#"{"herdr": {"PreInvocation": [{"command": "herdr-state session", "timeout": 10, "type": "command"}]}, "swarm": {"Stop": []}}"#;

@@ -108,7 +108,7 @@ pub fn hook_state(
             "idle_prompt" => "done",
             _ => return None,
         },
-        ("agy", "PreInvocation" | "PreToolUse") => "working",
+        ("agy", "PreInvocation" | "PostToolUse") => "working",
         ("agy", "Stop") => match error {
             Some(error) => return Some(("failed", Some(error.to_string()))),
             None => "done",
@@ -297,7 +297,7 @@ mod tests {
                 empty.clone(),
                 Some(("working", None)),
             ),
-            ("agy", "PreToolUse", empty.clone(), Some(("working", None))),
+            ("agy", "PostToolUse", empty.clone(), Some(("working", None))),
             ("agy", "Stop", empty.clone(), Some(("done", None))),
             ("agy", "Stop", json!({"error": ""}), Some(("done", None))),
             (
@@ -306,7 +306,7 @@ mod tests {
                 json!({"error": "quota"}),
                 Some(("failed", Some("quota"))),
             ),
-            ("agy", "PostToolUse", empty.clone(), None),
+            ("agy", "PreToolUse", empty.clone(), None),
             ("gemini", "Stop", empty.clone(), None),
         ];
         for (provider, event, payload, expected) in cases {
