@@ -12,15 +12,23 @@ struct CommandPalette: View {
     @State private var selectedID: String?
     @FocusState private var fieldFocused: Bool
 
-    private var results: [PaletteItem] {
-        // Grouped in Actions, Workspaces, Chats, Agents order; the rank order holds in a group.
-        PaletteSearch.rank(items: items, query: query).enumerated()
-            .sorted { ($0.element.group, $0.offset) < ($1.element.group, $1.offset) }
-            .map(\.element)
+    /// With a query, results group as Actions, Workspaces, Chats, Agents; with none, recent items
+    /// come first under Recent, then the actions. The rank order holds within a section.
+    private var sections: [(title: String, items: [PaletteItem])] {
+        let ranked = PaletteSearch.rank(items: items, query: query)
+        if query.trimmingCharacters(in: .whitespaces).isEmpty {
+            return [
+                ("Recent", ranked.filter { $0.recency != nil }),
+                (PaletteItem.Group.action.title, ranked.filter { $0.recency == nil }),
+            ].filter { !$0.items.isEmpty }
+        }
+        return PaletteItem.Group.allCases.map { group in (group.title, ranked.filter { $0.group == group }) }
+            .filter { !$0.items.isEmpty }
     }
 
     var body: some View {
-        let results = results
+        let sections = sections
+        let results = sections.flatMap(\.items)
         VStack(spacing: 0) {
             TextField("Search actions, workspaces, chats, and agents", text: $query)
                 .textFieldStyle(.plain)
@@ -39,10 +47,10 @@ struct CommandPalette: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(PaletteItem.Group.allCases, id: \.self) { group in
-                                let rows = results.filter { $0.group == group }
+                            ForEach(sections, id: \.title) { section in
+                                let rows = section.items
                                 if !rows.isEmpty {
-                                    Text(group.title)
+                                    Text(section.title)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                         .padding(.horizontal, DesignTokens.Spacing.l)
