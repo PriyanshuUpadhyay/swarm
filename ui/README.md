@@ -111,4 +111,5 @@ Run `make app` to build `.build/release/Swarm.app`.
 Run `make install` to put it in `~/Applications`, keep the old app, and install the `swarm` CLI
 from this checkout. `make app` never changes the installed CLI or `~/.swarm`.
 Run `make run` to build and launch the app.
-For a development build, set `SWARM_HOME=~/.swarm-<branch>` to keep its data apart.
+A build from a branch other than `main` keeps its data in `~/.swarm-<branch>` and passes that
+`SWARM_HOME` to every `swarm` it starts. An explicit `SWARM_HOME` in the app's environment wins.

@@ -45,6 +45,9 @@ cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/trans
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
+# The app picks its swarm home from this branch; see SwarmHome and ADR 0027.
+/usr/libexec/PlistBuddy -c "Add :SwarmBuildBranch string $(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" \
+  "$app/Contents/Info.plist"
 codesign --force --deep -s - "$app"
 print "==> $app"
 
