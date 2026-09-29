@@ -1,7 +1,7 @@
 import SwiftUI
 import SwarmCore
 
-/// `SWARM_PANE_STRESS=N` only: the pane strip with N local streaming panes for the performance gate.
+/// `SWARM_PANE_STRESS=N` only: the pane strip with N child chat columns for the performance gate.
 private let stressStatuses: [AgentStatus] = [.working, .waiting, .done, .failed, .ended]
 
 struct PaneStressWindow: View {
@@ -20,19 +20,16 @@ struct PaneStressWindow: View {
             revealCount: panes.revealCount,
             splitScope: "pane-stress",
             onFocus: { panes.focus(key: $0) },
-            onZoom: { panes.toggleZoom(key: $0) },
-            onReconnect: { panes.reconnect(key: $0, launch: SwarmPaneStress.launch) }
+            onZoom: { panes.toggleZoom(key: $0) }
         ) {
             Text("Pane stress: \(cells.count) panes")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } pane: { cell in
-            AgentTerminalView(key: cell.id, store: panes) {
-                _ = panes.open(key: cell.id, launch: SwarmPaneStress.launch)
-            }
+            StressColumn(model: panes.column(key: cell.id), withPrompt: cell.id == cells.first?.id)
         }
         .frame(minWidth: 1600, minHeight: 1000)
         .focusedSceneValue(\.chatKeyActions, ChatKeyActions(
-            terminalFocused: panes.focusedKey != nil,
+            paneFocused: panes.focusedKey != nil,
             focusComposer: { panes.revealChat() },
             moveFocus: { direction in
                 if !panes.moveFocus(direction, among: cells.map(\.id)) {
@@ -83,7 +80,7 @@ extension PaneStressWindow {
         log("start")
         for word in script.split(separator: ",").map(String.init) {
             if word == "click" {
-                // Stands in for a click on the first pane, which focuses its terminal.
+                // Stands in for a click on the first pane, which focuses its composer.
                 panes.focus(key: cells[0].id)
                 try? await Task.sleep(for: .milliseconds(500))
                 log(word)
@@ -103,10 +100,9 @@ extension PaneStressWindow {
 
     private func log(_ step: String) {
         let responder = NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
-        let meta = cells.map { "\(panes.optionAsMeta(key: $0.id).map(String.init) ?? "-")" }.joined(separator: "/")
         print("key-script \(step): focused=\(panes.focusedKey ?? "chat") zoomed=\(panes.zoomedKey ?? "none")"
             + " reveal=\(panes.revealKey ?? "chat") action=\(lastWindowAction) responder=\(responder)"
-            + " optionAsMeta=\(meta) active=\(NSApp.isActive)")
+            + " active=\(NSApp.isActive)")
         fflush(stdout)
     }
 
@@ -137,6 +133,35 @@ extension PaneStressWindow {
         down.flags = flags
         up.flags = flags
         return (down, up)
+    }
+}
+
+/// A child column's transcript, from `SWARM_PANE_STRESS_LOG` (a Claude log), with a question
+/// card in the first column, as a real council shows them.
+private struct StressColumn: View {
+    let model: ChildColumnModel
+    let withPrompt: Bool
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TranscriptView(
+            snapshot: model.snapshot, revision: model.revision, hasOlder: false,
+            isLoadingOlder: false, historyError: nil, waitingMessage: "Set SWARM_PANE_STRESS_LOG",
+            chair: "claude", rawSessionJSON: "", isActive: true, isVisible: false,
+            loadOlder: {}, onTap: {}, focus: $focused
+        ) {
+            if withPrompt {
+                PromptCard(
+                    agent: "stress-0",
+                    prompt: SwarmPrompt(
+                        id: "stress", question: "Bash command\ntouch probe.txt\nDo you want to proceed?",
+                        choices: ["Yes", "Yes, and always allow access to /tmp/work", "No"]
+                    ),
+                    answer: { _ in }
+                )
+            }
+        }
+        .task { await model.poll(log: SwarmPaneStress.log, provider: "claude") }
     }
 }
 

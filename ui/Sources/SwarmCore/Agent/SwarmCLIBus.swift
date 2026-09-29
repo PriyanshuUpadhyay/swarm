@@ -137,19 +137,21 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
+    public func answer(
+        _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
+        in session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(
+            ["answer", agent.rawValue, prompt.id, String(choice)], in: session, adapter: adapter
+        )
+    }
+
     public func close(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws {
         _ = try await call(["close", agent.rawValue], in: session, adapter: adapter)
     }
 
-    public func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand {
-        SwarmAttachCommand(
-            executable: resolveExecutable(executable) ?? executable,
-            arguments: ["attach", agent.rawValue],
-            environment: environment(for: session)
-        )
-    }
 
     private func read<Value: Decodable>(
         _ arguments: [String], in session: SwarmSessionID? = nil,

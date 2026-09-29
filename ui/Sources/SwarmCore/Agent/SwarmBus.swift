@@ -25,6 +25,10 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     /// hook or screen.
     public var stateSource: String?
     public var stateDetail: String?
+    /// The chat log the agent's provider hooks reported, or nil before the first report.
+    public var log: String?
+    /// The question the agent's screen shows now; `swarm answer` picks one of its choices.
+    public var prompt: SwarmPrompt?
 
     public init(
         id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
@@ -37,6 +41,21 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
         self.alive = alive
         self.createdAt = createdAt
         self.state = state
+    }
+}
+
+/// A question on an agent's screen, as `swarm agents --json` reads it (ADR 0029).
+public struct SwarmPrompt: Sendable, Hashable, Codable, Identifiable {
+    /// A hash of the question and choices; `swarm answer` refuses a stale one.
+    public var id: String
+    public var question: String
+    /// The CLI's own labels, in screen order.
+    public var choices: [String]
+
+    public init(id: String, question: String, choices: [String]) {
+        self.id = id
+        self.question = question
+        self.choices = choices
     }
 }
 
@@ -203,18 +222,6 @@ public struct SwarmLaunch: Sendable, Hashable {
 
 /// The process that shows one agent's live pane: `swarm attach <agent>` with the session's
 /// environment. A value, so the terminal view starts it and nothing here runs it.
-public struct SwarmAttachCommand: Sendable, Hashable {
-    public var executable: String
-    public var arguments: [String]
-    public var environment: [String: String]
-
-    public init(executable: String, arguments: [String], environment: [String: String]) {
-        self.executable = executable
-        self.arguments = arguments
-        self.environment = environment
-    }
-}
-
 /// Where Swarm starts, reads and talks to swarm agents. The live bus runs the `swarm` CLI; tests
 /// and previews hand in their own. Failures are `SwarmProfileError`, the same two kinds the
 /// profile source throws.
@@ -252,10 +259,14 @@ public protocol SwarmBus: Sendable {
     func interrupt(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws
+    /// `swarm answer <agent> <prompt> <choice>`: picks a choice of the question the agent shows.
+    func answer(
+        _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
+        in session: SwarmSessionID, adapter: String
+    ) async throws
     func close(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws
-    func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand
 }
 
 public extension SwarmBus {
@@ -277,6 +288,13 @@ public extension SwarmBus {
 
     func archive(_ sessions: [SwarmSessionID]) async throws {
         throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
+    func answer(
+        _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
+        in session: SwarmSessionID, adapter: String
+    ) async throws {
+        throw SwarmProfileError.unavailable("swarm answers are not available")
     }
 
     func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
@@ -317,6 +335,15 @@ public extension SwarmBus {
     func interrupt(_ agent: SwarmAgentID, in session: SwarmSession) async throws {
         try await interrupt(
             agent, in: session.id, adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
+
+    func answer(
+        _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID, in session: SwarmSession
+    ) async throws {
+        try await answer(
+            prompt, choice: choice, to: agent, in: session.id,
+            adapter: try SwarmSessionInteraction.adapter(for: session)
         )
     }
 
@@ -369,7 +396,4 @@ public struct UnavailableSwarmBus: SwarmBus {
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws { throw notConnected }
 
-    public func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand {
-        SwarmAttachCommand(executable: "swarm", arguments: ["attach", agent.rawValue], environment: [:])
-    }
 }

@@ -63,7 +63,8 @@ struct WindowKeyActions {
 
 /// Actions of the visible chat page and its panes.
 struct ChatKeyActions {
-    var terminalFocused: Bool
+    /// A child column has focus, so find goes to its text and not to the chair transcript.
+    var paneFocused: Bool
     var focusComposer: () -> Void
     var moveFocus: (FocusDirection) -> Void
     var zoom: () -> Void
@@ -114,7 +115,7 @@ struct AppKeyTarget {
     }
 
     private func find(_ key: AppKey, action: NSFindPanelAction) {
-        let focus: FocusedSurface = chat?.terminalFocused == false ? .transcript : .terminal
+        let focus: FocusedSurface = chat?.paneFocused == false ? .transcript : .terminal
         switch KeyRouting.route(focus: focus, key: key.chord) {
         case .app(.find): transcript?.open()
         case .app(.findNext): transcript?.next()

@@ -8,6 +8,8 @@ public enum ChildProcessEnvironment {
         "SWARM_AGENT_ID",
         "SWARM_ADAPTER",
         "SWARM_PANE",
+        // `swarm answer` refuses a caller inside an agent pane; the app is never in one.
+        "TMUX_PANE",
     ]
 
     public static func removingInheritedAgentIdentity(

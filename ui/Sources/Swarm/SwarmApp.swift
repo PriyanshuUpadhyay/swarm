@@ -1075,8 +1075,8 @@ enum SwarmExecutable {
         } else if arguments.count == 3, arguments[0] == "--print-transcript",
                   arguments[2] == "--raw" {
             await printTranscript(prefix: arguments[1], raw: true)
-        } else if arguments.count == 3, arguments[0] == "--attach-check" {
-            await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
+        } else if arguments.count == 3, arguments[0] == "--print-child" {
+            await printChild(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
         } else if arguments.count == 4, arguments[0] == "--launch-check" {
             await launchCheck(directory: arguments[1], provider: arguments[2], model: arguments[3])
         } else {
@@ -1125,25 +1125,20 @@ enum SwarmExecutable {
         }
     }
 
-    private static func attachCheck(prefix: String, agentID: SwarmAgentID) async {
+    /// A child column's content, headless: its transcript rows, then the question it shows.
+    private static func printChild(prefix: String, agentID: SwarmAgentID) async {
         do {
             let session = try await matchingSession(prefix: prefix)
-            let bus = SwarmCLIBus()
-            guard let agent = try await bus.agents(in: session).first(where: { $0.id == agentID }) else {
+            guard let agent = try await SwarmCLIBus().agents(in: session).first(where: { $0.id == agentID }) else {
                 throw SwarmProfileError.failed("agent not found")
             }
-            if let reason = SwarmPanePolicy.unavailableReason(session: session, agent: agent) {
-                throw SwarmProfileError.failed(reason)
+            let snapshot = await SwarmChairTranscript().poll(childLog: agent.log, provider: agent.provider)
+            print(snapshot.printText)
+            if let prompt = agent.prompt {
+                print("prompt \(prompt.id): \(prompt.question.replacingOccurrences(of: "\n", with: " / "))")
+                for (index, choice) in prompt.choices.enumerated() { print("choice \(index): \(choice)") }
             }
-            await LoginShellPath.ready()
-            let store = AgentPaneStore()
-            let terminal = store.terminal(session: session, agent: agent)
-            try await Task.sleep(for: .seconds(2))
-            let alive = terminal.process.running
-            print("child alive: \(alive)")
-            print("first screen line: \(terminal.firstScreenLine)")
-            store.stopAll()
-            if !alive { exit(1) }
+            if case .unavailable = snapshot { exit(1) }
         } catch {
             fputs("\(error)\n", stderr)
             exit(1)

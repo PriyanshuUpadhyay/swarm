@@ -131,33 +131,51 @@ public actor SwarmChairTranscript {
         case .unsupported:
             return .notice("No transcript reader for this provider yet")
         case .ready(let path, let format):
-            guard let binary = binary ?? TranscriptToolProcess.bundled else {
-                return .unavailable("The transcript tool is not available")
-            }
-            if path != log {
-                log = path
-                currentModel = nil
-                usage = ChatUsage()
-                reader = ToolTranscriptReader(binary: binary, format: format, log: path)
-            }
+            return await read(log: path, format: format)
+        }
+    }
+
+    /// A child agent's chat, from the log its provider's hooks reported (ADR 0029). Before the
+    /// first report there is no log, and the chat waits.
+    public func poll(childLog: String?, provider: String?) async -> ChairTranscriptSnapshot {
+        guard let provider, ["claude", "codex", "agy"].contains(provider) else {
+            return .notice("No transcript reader for this provider yet")
+        }
+        guard let childLog, !childLog.isEmpty, FileManager.default.fileExists(atPath: childLog) else {
+            reader = nil
+            log = nil
+            return rows.isEmpty ? .waiting : .rows(rows, raw: rawEntries)
+        }
+        return await read(log: URL(fileURLWithPath: childLog), format: provider)
+    }
+
+    private func read(log path: URL, format: String) async -> ChairTranscriptSnapshot {
+        guard let binary = binary ?? TranscriptToolProcess.bundled else {
+            return .unavailable("The transcript tool is not available")
+        }
+        if path != log {
+            log = path
+            currentModel = nil
+            usage = ChatUsage()
+            reader = ToolTranscriptReader(binary: binary, format: format, log: path)
+        }
+        do {
+            let records: [TranscriptRecord]?
             do {
-                let records: [TranscriptRecord]?
-                do {
-                    let readTiming = SwarmPerformance.begin("TranscriptRead")
-                    defer { readTiming.end() }
-                    records = try await reader?.readIfChanged()
-                }
-                if records != nil, let reader {
-                    await rebuild(from: reader)
-                }
-                return .rows(rows, raw: rawEntries)
-            } catch {
-                reader = nil
-                log = nil
-                return rows.isEmpty
-                    ? .unavailable(String(describing: error))
-                    : .rows(rows, raw: rawEntries)
+                let readTiming = SwarmPerformance.begin("TranscriptRead")
+                defer { readTiming.end() }
+                records = try await reader?.readIfChanged()
             }
+            if records != nil, let reader {
+                await rebuild(from: reader)
+            }
+            return .rows(rows, raw: rawEntries)
+        } catch {
+            reader = nil
+            log = nil
+            return rows.isEmpty
+                ? .unavailable(String(describing: error))
+                : .rows(rows, raw: rawEntries)
         }
     }
 
@@ -203,14 +221,8 @@ public actor SwarmChairTranscript {
     }
 }
 
-public enum SwarmAgentCellKind: Sendable, Equatable {
-    case attach
-    case notice(String)
-}
-
 public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
     public let agent: SwarmAgent
-    public let kind: SwarmAgentCellKind
     public var id: SwarmAgentID { agent.id }
 }
 
@@ -230,32 +242,7 @@ public enum SwarmPanePolicy {
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }
                 return $0.id.rawValue < $1.id.rawValue
             }
-            .map { agent in
-                let kind: SwarmAgentCellKind
-                if let reason = unavailableReason(session: session, agent: agent) {
-                    kind = .notice(reason)
-                } else {
-                    kind = .attach
-                }
-                return SwarmAgentCell(agent: agent, kind: kind)
-            }
-    }
-
-    public static func unavailableReason(session: SwarmSession, agent: SwarmAgent) -> String? {
-        switch session.adapter {
-        case "tmux-solo", "herdr":
-            return agent.pane == nil ? "This agent has no pane" : nil
-        case "tmux": return "This session's host has no attach"
-        default: return "This session's host has no attach"
-        }
-    }
-
-    public static func attachCommand(
-        bus: any SwarmBus, session: SwarmSession, agent: SwarmAgentID
-    ) -> SwarmAttachCommand {
-        var command = bus.attachCommand(for: agent, in: session.id)
-        command.environment["SWARM_ADAPTER"] = session.adapter ?? ""
-        return command
+            .map(SwarmAgentCell.init(agent:))
     }
 }
 
@@ -269,22 +256,5 @@ public enum SwarmSessionCloser {
             try await bus.close(agent.id, in: session)
         }
         try await bus.archive([session.id])
-    }
-}
-
-public struct SwarmAttachLaunch: Sendable, Hashable {
-    public let executable: String
-    public let arguments: [String]
-    public let environment: [String: String]
-    public let directory: String
-
-    public init(command: SwarmAttachCommand, directory: String) {
-        let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(from: Shell.environment())
-        environment = Shell.terminalEnvironment(
-            inheriting: inherited, extra: command.environment
-        )
-        executable = Shell.which(command.executable) ?? command.executable
-        arguments = command.arguments
-        self.directory = directory
     }
 }

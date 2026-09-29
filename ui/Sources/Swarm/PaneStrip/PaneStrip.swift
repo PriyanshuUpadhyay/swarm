@@ -27,7 +27,6 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let splitScope: String
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
-    let onReconnect: (String) -> Void
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let pane: (PaneCell) -> Pane
 
@@ -164,10 +163,9 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         PaneView(
             cell: cell, focused: cell.id == focusedID, zoomed: cell.id == zoomedID,
             onFocus: { onFocus(cell.id) },
-            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) },
-            onReconnect: { onReconnect(cell.id) }
+            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) }
         ) {
-            // A terminal shows in one place only; the zoomed copy owns it.
+            // A column shows in one place only; the zoomed copy owns it.
             if showsContent { pane(cell) } else { Color.clear }
         }
     }
@@ -178,7 +176,7 @@ private final class ScrollOffset {
     var x: CGFloat = 0
 }
 
-/// A clear grip on a pane edge. It takes no focus, so keys stay with the terminals.
+/// A clear grip on a pane edge. It takes no focus, so keys stay with the columns.
 private struct ResizeHandle: View {
     let axis: Axis
     let label: String
@@ -213,7 +211,6 @@ private struct PaneView<Content: View>: View {
     let zoomed: Bool
     let onFocus: () -> Void
     let onZoom: () -> Void
-    let onReconnect: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -238,9 +235,6 @@ private struct PaneView<Content: View>: View {
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
-            if cell.ended {
-                Button("Reconnect", action: onReconnect)
-            }
             Button(action: onZoom) {
                 Image(systemName: zoomed
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
