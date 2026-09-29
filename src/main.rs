@@ -696,6 +696,7 @@ fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error
 fn report_dead(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
+    adapter_name: &str,
     session_id: &str,
     child: &str,
     note: &str,
@@ -706,7 +707,7 @@ fn report_dead(
         deliver(
             connection,
             root,
-            &adapter_name(),
+            adapter_name,
             session_id,
             child,
             &orchestrator,
@@ -764,7 +765,7 @@ fn sweep_once(
             continue;
         }
         let note = format!("agent {child} died without a summary");
-        report_dead(connection, root, session_id, &child, &note)?;
+        report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
         println!("dead {child}");
     }
     Ok(())
@@ -1499,7 +1500,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(&run_dir)?;
             swarm::store::write_atomic(&run_dir.join(format!("{agent_id}.log")), &text)?;
             let note = format!("agent {agent_id} exited without a summary");
-            report_dead(&mut connection, &root, &session_id, &agent_id, &note)
+            report_dead(
+                &mut connection,
+                &root,
+                &adapter_name(),
+                &session_id,
+                &agent_id,
+                &note,
+            )
         }
         [cmd, rest @ ..] if cmd == "sweep" => {
             let every = match rest {
@@ -1706,6 +1714,18 @@ mod tests {
     #[test]
     fn sweep_reports_a_dead_child_as_before() {
         let root = std::env::temp_dir().join(format!("swarm-dead-test-{}", std::process::id()));
+        let ring_log = root.join("rings");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        // The dead-child report must ring through the sweep's adapter, never the real host's.
+        std::fs::write(
+            root.join("adapters/fake.conf"),
+            format!(
+                "self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE\" >> '{}'\nlist = true\nclose = true\ncapture = true\n",
+                ring_log.display()
+            ),
+        )
+        .unwrap();
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(
             &connection,
@@ -1732,6 +1752,7 @@ mod tests {
             None
         );
         assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
 
     #[test]
@@ -2086,7 +2107,7 @@ mod tests {
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
         swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
 
-        assert!(report_dead(&mut connection, &root, &session, CODER, "dead").is_err());
+        assert!(report_dead(&mut connection, &root, "fake", &session, CODER, "dead").is_err());
         assert_eq!(
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
             None
