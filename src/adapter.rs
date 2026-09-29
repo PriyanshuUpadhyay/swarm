@@ -9,6 +9,8 @@ pub struct Adapter {
     pub capture: String,
     pub attach: Option<String>,
     pub interrupt: Option<String>,
+    /// Prints a pane's visible rows, or Herdr's JSON for the agent in it (ADR 0021).
+    pub screen: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -82,6 +84,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         capture: take("capture")?,
         attach: verbs.remove("attach"),
         interrupt: verbs.remove("interrupt"),
+        screen: verbs.remove("screen"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -148,6 +151,36 @@ impl Adapter {
             .into());
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// The `screen` verb's output, or None when the adapter has none, it fails, or it takes
+    /// longer than `timeout`. The listing calls it once per live agent, so a slow pane must not
+    /// hold the listing up.
+    pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
+        let mut child = self
+            .command(self.screen.as_ref()?, vars)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => break,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                _ => return None,
+            }
+        }
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut child.stdout.take()?, &mut text).ok()?;
+        Some(text)
     }
 
     pub fn attach(
@@ -271,6 +304,21 @@ mod tests {
             adapter.run("capture", &[("pane", "%3")]).unwrap(),
             "text of %3"
         );
+    }
+
+    #[test]
+    fn screen_gives_up_on_a_slow_or_failing_verb() {
+        let with = |line: &str| parse("probe", &format!("{FULL}screen = {line}\n")).unwrap();
+        let timeout = std::time::Duration::from_millis(300);
+        assert_eq!(
+            with(r#"printf '%s' "rows of $SWARM_PANE""#).screen(&[("pane", "%3")], timeout),
+            Some("rows of %3".into())
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(with("exec sleep 5").screen(&[], timeout), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(with("exit 1").screen(&[], timeout), None);
+        assert_eq!(parse("probe", FULL).unwrap().screen(&[], timeout), None);
     }
 
     #[test]

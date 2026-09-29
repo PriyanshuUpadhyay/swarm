@@ -1103,28 +1103,84 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 None
             }
         };
-        let agents = rows
-            .into_iter()
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as i64;
+        let alive: Vec<Option<bool>> = rows
+            .iter()
             .map(|row| {
-                let alive = row.pane.as_deref().and_then(|pane| {
+                row.pane.as_deref().and_then(|pane| {
                     listing
                         .as_deref()
                         .map(|list| swarm::adapter::listing_has_pane(list, pane))
-                });
-                swarm::bus::Agent {
-                    id: row.id,
-                    role: row.role,
-                    pane: row.pane,
-                    provider: row.provider,
-                    created_at: row.created_at,
-                    alive,
-                    state: row.state,
-                    state_at_s: row.state_at,
-                    state_source: row.state_source,
-                    state_detail: row.state_detail,
-                }
+                })
             })
             .collect();
+        // The screen check (ADR 0021) reads each live pane once per listing, all at the same
+        // time, so six agents cost about one capture.
+        let screens: Vec<Option<swarm::screen::ScreenState>> = std::thread::scope(|scope| {
+            let adapter = &adapter;
+            let reads: Vec<_> = rows
+                .iter()
+                .zip(&alive)
+                .map(|(row, alive)| {
+                    let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
+                        (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                        _ => None,
+                    };
+                    scope.spawn(move || {
+                        let (pane, provider) = target?;
+                        let output = adapter
+                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                        swarm::screen::herdr_state(&output)
+                            .or_else(|| swarm::screen::screen_state(provider, &output))
+                    })
+                })
+                .collect();
+            reads
+                .into_iter()
+                .map(|read| read.join().ok().flatten())
+                .collect()
+        });
+        let mut agents = Vec::new();
+        for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+            let (state, write) = swarm::screen::resolve(
+                row.state.as_deref(),
+                row.state_at,
+                row.state_source.as_deref(),
+                screen,
+                now,
+            );
+            if let Some(seen) = write {
+                match swarm::store::set_state(
+                    &connection,
+                    &session_id,
+                    &row.id,
+                    seen,
+                    "screen",
+                    None,
+                    now,
+                ) {
+                    Ok(()) => {
+                        (row.state_at, row.state_source, row.state_detail) =
+                            (Some(now), Some("screen".into()), None);
+                    }
+                    Err(error) => eprintln!("swarm: {error}"),
+                }
+            }
+            agents.push(swarm::bus::Agent {
+                id: row.id,
+                role: row.role,
+                pane: row.pane,
+                provider: row.provider,
+                created_at: row.created_at,
+                alive,
+                state,
+                state_at_s: row.state_at,
+                state_source: row.state_source,
+                state_detail: row.state_detail,
+            });
+        }
         #[derive(serde::Serialize)]
         struct AgentListOutput {
             agents: Vec<swarm::bus::Agent>,

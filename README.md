@@ -58,7 +58,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `usage --json` | any | List account use meters as JSON. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
-| `agents --json` | session | List agents, pane state, and adapter attach support as JSON. |
+| `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `waiting` or `done` when the screen shows it and no hook reported in the last 10 s. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
 | `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve a routed role, or use `chat --provider <provider> --model <name>` for a direct model choice. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
