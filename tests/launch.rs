@@ -91,13 +91,11 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
             serde_json::json!({"name": name, "dir": dir, "signed_in": true, "remaining": 50})
         })
         .collect();
+    let list = serde_json::Value::from(rows);
     tool(
         &home,
         "yelo",
-        &format!(
-            "case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{}' ;; esac",
-            serde_json::Value::from(rows)
-        ),
+        &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
     );
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
@@ -154,6 +152,38 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
     assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
     assert!(!trusted(&home.join(".claude.json"), &only_b));
+
+    // --account auto: yelo picks a, then b on every later call, as when usage moves in between.
+    // The pane must get the account whose config got the entry.
+    tool(
+        &home,
+        "yelo",
+        &format!(
+            "case \"$*\" in *pick*) if [ -e \"$HOME/picked\" ]; then echo '{{\"name\":\"b\"}}'; \
+             else touch \"$HOME/picked\"; echo '{{\"name\":\"a\"}}'; fi ;; *) echo '{list}' ;; esac"
+        ),
+    );
+    let cwd = home.join("auto");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let output = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "seat-auto",
+            "review.deep",
+            "--cwd",
+            &cwd.to_string_lossy(),
+            "--account",
+            "auto",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account a"), "{}", stderr(&output));
+    assert!(trusted(
+        &profiles[0].join(".claude.json"),
+        &cwd.join(".herdr/workers")
+    ));
 
     // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and trusting where
     // it points could trust any folder, such as `/`.

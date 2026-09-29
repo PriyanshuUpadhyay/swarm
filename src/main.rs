@@ -1105,6 +1105,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let provider = resolved.provider.clone();
         let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
         let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
+        // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
+        // both use this one answer.
+        let picked = match (account, provider.as_deref()) {
+            (Some(requested), Some(provider)) => {
+                let accounts = load_accounts(provider, true)?;
+                Some(
+                    swarm::profiles::resolve_account(&accounts, requested)
+                        .map_err(|error| format!("swarm: {error}"))?
+                        .clone(),
+                )
+            }
+            _ => None,
+        };
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
@@ -1113,10 +1126,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(target) if provider == "codex" => {
                     // Without --account, yelo's `codex` in the pane picks the profile, so every
                     // profile it might pick needs the entry.
-                    let homes = if let Some(account_name) = account {
-                        let accounts = load_accounts("codex", true)?;
-                        let account = swarm::profiles::resolve_account(&accounts, account_name)
-                            .map_err(|error| format!("swarm: {error}"))?;
+                    let homes = if let Some(account) = &picked {
                         vec![std::path::PathBuf::from(&account.home)]
                     } else {
                         let mut homes = vec![default_codex_home()?];
@@ -1180,10 +1190,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
                 // yelo's `claude` in the pane points that at the profile it picks, and a pane with
                 // no yelo reads ~/.claude.json, so each of them needs the entry.
-                let configs = if let Some(account_name) = account {
-                    let accounts = load_accounts("claude", true)?;
-                    let account = swarm::profiles::resolve_account(&accounts, account_name)
-                        .map_err(|error| format!("swarm: {error}"))?;
+                let configs = if let Some(account) = &picked {
                     vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
                 } else {
                     let mut configs = vec![user_home.join(".claude.json")];
@@ -1220,7 +1227,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             role,
             SpawnOptions {
                 provider: provider.as_deref(),
-                account,
+                account: picked
+                    .as_ref()
+                    .map_or(account, |picked| Some(picked.name.as_str())),
                 command: &command,
             },
         );
