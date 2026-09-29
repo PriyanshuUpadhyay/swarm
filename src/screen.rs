@@ -11,7 +11,7 @@ pub const ROWS: usize = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenState {
-    /// Only Herdr's own detection gives this; the pane classifier cannot tell a turn from output.
+    /// A spinner or an interrupt hint shows a turn in progress.
     Working,
     Waiting,
     Idle,
@@ -29,8 +29,8 @@ impl ScreenState {
 
 const CLAUDE_SPINNERS: &[char] = &['*', '·', '✢', '✳', '✶', '✻', '✽'];
 
-/// The state the bottom rows of a pane show, or None when they show neither a prompt that needs
-/// the user nor an idle input prompt (for example, mid-reply).
+/// The state the bottom rows of a pane show, or None when they show no prompt that needs the
+/// user, no turn in progress, and no idle input prompt.
 pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
     let lines: Vec<&str> = rows.trim_end().lines().collect();
     let lines = &lines[lines.len().saturating_sub(ROWS)..];
@@ -47,7 +47,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     && line.contains('…')
             });
             if spinner || has(&["esc to interrupt"]) {
-                return None;
+                return Some(ScreenState::Working);
             }
             // The input line sits right under the prompt box's top rule.
             let prompt = lines.windows(2).any(|pair| {
@@ -64,7 +64,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                 return Some(ScreenState::Waiting);
             }
             if has(&["esc to interr", "• working ("]) {
-                return None;
+                return Some(ScreenState::Working);
             }
             let composer = lines.iter().any(|line| line.trim_start().starts_with('›'));
             composer.then_some(ScreenState::Idle)
@@ -82,9 +82,12 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     .is_some_and(|c| ('\u{2800}'..='\u{28FF}').contains(&c))
                     && chars.next() == Some(' ')
             });
+            if spinner {
+                return Some(ScreenState::Working);
+            }
             // ponytail: AGY's idle prompt was never captured, so any screen without a spinner or
             // an approval counts as idle, as Herdr decides; add a prompt pattern from a real capture.
-            (!spinner && !lower.trim().is_empty()).then_some(ScreenState::Idle)
+            (!lower.trim().is_empty()).then_some(ScreenState::Idle)
         }
         _ => None,
     }
@@ -142,19 +145,19 @@ mod tests {
 
     #[test]
     fn classifies_every_fixture() {
-        use ScreenState::{Idle, Waiting};
+        use ScreenState::{Idle, Waiting, Working};
         let cases = [
             ("claude", fixture!("claude-idle"), Some(Idle)),
             ("claude", fixture!("claude-done"), Some(Idle)),
             ("claude", fixture!("claude-after-esc"), Some(Idle)),
             ("claude", fixture!("claude-waiting"), Some(Waiting)),
-            ("claude", fixture!("claude-working"), None),
+            ("claude", fixture!("claude-working"), Some(Working)),
             ("codex", fixture!("codex-idle"), Some(Idle)),
             ("codex", fixture!("codex-waiting"), Some(Waiting)),
-            ("codex", fixture!("codex-working"), None),
+            ("codex", fixture!("codex-working"), Some(Working)),
             ("agy", fixture!("agy-idle"), Some(Idle)),
             ("agy", fixture!("agy-waiting"), Some(Waiting)),
-            ("agy", fixture!("agy-working"), None),
+            ("agy", fixture!("agy-working"), Some(Working)),
             ("claude", "", None),
             ("claude", "$ ls\nsrc\n", None),
             ("gemini", fixture!("claude-idle"), None),
@@ -221,6 +224,27 @@ mod tests {
         assert_eq!(
             resolve(Some("waiting"), Some(now - 1), Some("screen"), idle, now),
             (Some("done".into()), Some("done"))
+        );
+    }
+
+    #[test]
+    fn a_working_screen_keeps_a_long_turn_and_corrects_a_stale_report() {
+        let now = 1_000;
+        let working = Some(ScreenState::Working);
+        assert_eq!(
+            resolve(Some("working"), Some(now - 60), Some("hook"), working, now),
+            (Some("working".into()), None)
+        );
+        for stale in ["waiting", "done"] {
+            assert_eq!(
+                resolve(Some(stale), Some(now - 11), Some("hook"), working, now),
+                (Some("working".into()), Some("working")),
+                "{stale}"
+            );
+        }
+        assert_eq!(
+            resolve(Some("done"), Some(now - 5), Some("hook"), working, now),
+            (Some("done".into()), None)
         );
     }
 
