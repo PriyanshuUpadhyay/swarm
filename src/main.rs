@@ -52,11 +52,35 @@ fn valid_session_id(id: &str) -> Result<String, String> {
 }
 
 /// (session, agent, state, detail)
-type HookReport = (String, String, &'static str, Option<String>);
+/// What one hook call reports: the session and agent, the state with its detail, and the chat log
+/// path from the payload.
+#[derive(Debug, PartialEq)]
+struct HookReport {
+    session: String,
+    agent: String,
+    state: Option<(&'static str, Option<String>)>,
+    log: Option<std::path::PathBuf>,
+}
+
+/// The chat log a hook payload names, only when it is an absolute path to an existing `.jsonl`
+/// file. Claude and Codex send `transcript_path`, which Codex may leave null; AGY sends
+/// `transcriptPath`.
+fn hook_log(payload: &serde_json::Value) -> Option<std::path::PathBuf> {
+    let path = ["transcript_path", "transcriptPath"]
+        .iter()
+        .find_map(|name| payload.get(*name)?.as_str())
+        .map(std::path::PathBuf::from)?;
+    (path.is_absolute()
+        && path
+            .extension()
+            .is_some_and(|extension| extension == "jsonl")
+        && path.is_file())
+    .then_some(path)
+}
 
 /// What one hook call reports, or None when the caller is no swarm agent or the event says
-/// nothing about state. `args` is `<provider> [event]`; AGY sends no event name in its payload,
-/// so its hook command names the event.
+/// nothing about state and names no chat log. `args` is `<provider> [event]`; AGY sends no event
+/// name in its payload, so its hook command names the event.
 fn hook_report(
     args: &[String],
     payload: &str,
@@ -80,10 +104,17 @@ fn hook_report(
     let event = event
         .or_else(|| payload.get("hook_event_name")?.as_str())
         .unwrap_or_default();
-    let Some((state, detail)) = swarm::host::hook_state(provider, event, &payload) else {
+    let state = swarm::host::hook_state(provider, event, &payload);
+    let log = hook_log(&payload);
+    if state.is_none() && log.is_none() {
         return Ok(None);
-    };
-    Ok(Some((valid_session_id(&session)?, agent, state, detail)))
+    }
+    Ok(Some(HookReport {
+        session: valid_session_id(&session)?,
+        agent,
+        state,
+        log,
+    }))
 }
 
 /// All of `reader` if it closes within `limit`, else None. The read runs on its own thread, so
@@ -110,21 +141,25 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2))
         .ok_or("swarm hook: stdin did not close within 2 s")?;
-    let Some((session, agent, state, detail)) =
-        hook_report(args, &payload, |name| env::var(name).ok())?
-    else {
+    let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
+    if let Some(log) = &report.log {
+        swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
+    }
+    let Some((state, detail)) = report.state else {
+        return Ok(());
+    };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
     swarm::store::set_state(
         &connection,
-        &session,
-        &agent,
+        &report.session,
+        &report.agent,
         state,
         "hook",
         detail.as_deref(),
@@ -1224,6 +1259,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 state_at_s: row.state_at,
                 state_source: row.state_source,
                 state_detail: row.state_detail,
+                log: row.log,
             });
         }
         #[derive(serde::Serialize)]
@@ -1698,9 +1734,17 @@ mod tests {
             "SWARM_AGENT_ID" => Some(CODER.to_string()),
             _ => None,
         };
+        let report = |state, log| {
+            Some(HookReport {
+                session: session.to_string(),
+                agent: CODER.to_string(),
+                state,
+                log,
+            })
+        };
         assert_eq!(
             hook_report(&claude, waiting, coder).unwrap(),
-            Some((session.to_string(), CODER.to_string(), "waiting", None))
+            report(Some(("waiting", None)), None)
         );
         assert!(
             hook_report(&claude, r#"{"hook_event_name":"SessionStart"}"#, coder)
@@ -1711,14 +1755,67 @@ mod tests {
         let agy_stop = ["agy".to_string(), "Stop".to_string()];
         assert_eq!(
             hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
-            Some((
-                session.to_string(),
-                CODER.to_string(),
-                "failed",
-                Some("quota".to_string())
-            ))
+            report(Some(("failed", Some("quota".to_string()))), None)
         );
         assert!(hook_report(&["gemini".to_string()], waiting, coder).is_err());
+    }
+
+    #[test]
+    fn a_hook_reports_the_chat_log_its_payload_names() {
+        let dir = std::env::temp_dir().join(format!("swarm-hook-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("chat.jsonl");
+        std::fs::write(&log, "").unwrap();
+        std::fs::write(dir.join("notes.txt"), "").unwrap();
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let coder = |name: &str| match name {
+            "SWARM_SESSION_ID" => Some(session.to_string()),
+            "SWARM_AGENT_ID" => Some(CODER.to_string()),
+            _ => None,
+        };
+        let path = |value: &std::path::Path| serde_json::to_string(value).unwrap();
+        let reported = |args: &[&str], payload: String| {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            hook_report(&args, &payload, coder).unwrap()
+        };
+
+        // A start event says nothing about state, yet its log path is kept.
+        let start = format!(
+            r#"{{"hook_event_name":"SessionStart","transcript_path":{}}}"#,
+            path(&log)
+        );
+        let claude = reported(&["claude"], start).unwrap();
+        assert_eq!((claude.state, claude.log), (None, Some(log.clone())));
+        let codex = format!(
+            r#"{{"hook_event_name":"PermissionRequest","transcript_path":{}}}"#,
+            path(&log)
+        );
+        let codex = reported(&["codex"], codex).unwrap();
+        assert_eq!(
+            (codex.state, codex.log),
+            (Some(("waiting", None)), Some(log.clone()))
+        );
+        let agy = reported(
+            &["agy", "PreInvocation"],
+            format!(r#"{{"transcriptPath":{}}}"#, path(&log)),
+        )
+        .unwrap();
+        assert_eq!(agy.log, Some(log.clone()));
+
+        // Codex may send null; a relative, missing, or non-jsonl path is not a chat log.
+        for bad in [
+            "null".to_string(),
+            r#""chat.jsonl""#.to_string(),
+            path(&dir.join("missing.jsonl")),
+            path(&dir.join("notes.txt")),
+            path(&dir),
+        ] {
+            let payload =
+                format!(r#"{{"hook_event_name":"SessionStart","transcript_path":{bad}}}"#);
+            assert!(reported(&["claude"], payload).is_none(), "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

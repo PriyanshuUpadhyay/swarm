@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001.sql"),
     include_str!("../migrations/0002.sql"),
     include_str!("../migrations/0003.sql"),
+    include_str!("../migrations/0004.sql"),
 ];
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +26,7 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
         tx.execute_batch(MIGRATIONS[0])?;
-    } else if !(1..=3).contains(&version) {
+    } else if !(1..=4).contains(&version) {
         return Err(
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
@@ -35,7 +36,10 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     }
     if version < 3 {
         tx.execute_batch(MIGRATIONS[2])?;
-        tx.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        tx.execute_batch(MIGRATIONS[3])?;
+        tx.pragma_update(None, "user_version", 4)?;
     }
 
     tx.commit()?;
@@ -438,6 +442,22 @@ pub struct AgentRow {
     pub state_at: Option<i64>,
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
+    /// The chat log its provider's hooks reported; kept after the agent ends.
+    pub log: Option<String>,
+}
+
+/// Record the chat log a provider hook reported for an agent.
+pub fn set_log(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    log: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE agent SET log = ?3 WHERE session_id = ?1 AND id = ?2",
+        (session_id, agent_id, log.to_string_lossy()),
+    )?;
+    Ok(())
 }
 
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
@@ -499,7 +519,8 @@ pub fn agents(
     session_id: &str,
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail
+        "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail,
+                log
          FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
@@ -513,6 +534,7 @@ pub fn agents(
             state_at: row.get(6)?,
             state_source: row.get(7)?,
             state_detail: row.get(8)?,
+            log: row.get(9)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -1359,7 +1381,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -1386,7 +1408,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -1502,6 +1524,30 @@ mod tests {
     }
 
     #[test]
+    fn a_version_three_database_gains_a_chat_log_that_outlives_the_pane() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..3] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 3).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role) VALUES ('{CODER}', '{SESSION}', 'coder');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].log, None);
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        set_log(&connection, SESSION, CODER, Path::new("/logs/coder.jsonl")).unwrap();
+        clear_pane(&connection, SESSION, CODER).unwrap();
+        assert_eq!(
+            agents(&connection, SESSION).unwrap()[0].log.as_deref(),
+            Some("/logs/coder.jsonl")
+        );
+    }
+
+    #[test]
     fn rejects_database_from_another_build() {
         let root = temp_root("foreign-version");
         std::fs::create_dir_all(&root).unwrap();
@@ -1518,7 +1564,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 4")
+            .execute_batch("PRAGMA user_version = 5")
             .unwrap();
         assert!(open(&db).is_err());
     }
