@@ -14,7 +14,9 @@ public enum SwarmPaneStress {
     }
 
     public static var launch: SwarmAttachLaunch {
-        let script = "while :; do date; ls -la /usr/bin | head -40; sleep 0.05; done"
+        // Repaint in place from the top, as tmux and agent TUIs do; a scrolling flood of raw lines
+        // looks like flicker and is not what a real pane shows.
+        let script = #"printf '\033[2J'; while :; do printf '\033[H'; date; ls -la /usr/bin | head -20 | sed 's/$/\x1b[K/'; printf '\033[J'; sleep 0.05; done"#
         return SwarmAttachLaunch(
             command: SwarmAttachCommand(executable: "/bin/sh", arguments: ["-c", script], environment: [:]),
             directory: NSHomeDirectory()
