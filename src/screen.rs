@@ -189,12 +189,14 @@ pub fn herdr_state(output: &str) -> Option<ScreenState> {
 /// A hook report younger than `HOOK_AUTHORITY_S` wins. After that, a screen result that differs
 /// is written with source `screen`. An idle screen agrees with `failed`, because a failed turn
 /// also ends at the idle prompt. A `working` or `waiting` report older than `STALE_S` that the
-/// screen does not confirm is shown as no report, and nothing is written for it.
+/// screen does not confirm is shown as no report, and nothing is written for it. When the
+/// adapter cannot read screens (`screens` false), nothing can confirm a report, so it stands.
 pub fn resolve(
     state: Option<&str>,
     state_at: Option<i64>,
     source: Option<&str>,
     screen: Option<ScreenState>,
+    screens: bool,
     now: i64,
 ) -> (Option<String>, Option<&'static str>) {
     let age = state_at.map(|at| now - at);
@@ -209,7 +211,9 @@ pub fn resolve(
         }
         return (state.map(str::to_string), None);
     }
-    let stale = matches!(state, Some("working" | "waiting")) && age.is_none_or(|age| age > STALE_S);
+    let stale = screens
+        && matches!(state, Some("working" | "waiting"))
+        && age.is_none_or(|age| age > STALE_S);
     (state.filter(|_| !stale).map(str::to_string), None)
 }
 
@@ -273,6 +277,7 @@ mod tests {
                 Some(970),
                 Some("hook"),
                 Some(ScreenState::Failed),
+                true,
                 1_000
             ),
             (Some("failed".into()), Some("failed"))
@@ -321,31 +326,66 @@ mod tests {
         let idle = Some(ScreenState::Idle);
         // A hook report 9 s old is the authority, whatever the screen shows.
         assert_eq!(
-            resolve(Some("working"), Some(now - 9), Some("hook"), waiting, now),
+            resolve(
+                Some("working"),
+                Some(now - 9),
+                Some("hook"),
+                waiting,
+                true,
+                now
+            ),
             (Some("working".into()), None)
         );
         // At 10 s the screen wins: Esc after a permission prompt sends no hook.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 10), Some("hook"), idle, now),
+            resolve(
+                Some("waiting"),
+                Some(now - 10),
+                Some("hook"),
+                idle,
+                true,
+                now
+            ),
             (Some("done".into()), Some("done"))
         );
         // A screen that agrees writes nothing.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 30), Some("hook"), waiting, now),
+            resolve(
+                Some("waiting"),
+                Some(now - 30),
+                Some("hook"),
+                waiting,
+                true,
+                now
+            ),
             (Some("waiting".into()), None)
         );
         assert_eq!(
-            resolve(Some("failed"), Some(now - 30), Some("hook"), idle, now),
+            resolve(
+                Some("failed"),
+                Some(now - 30),
+                Some("hook"),
+                idle,
+                true,
+                now
+            ),
             (Some("failed".into()), None)
         );
         // An agent with no report yet that sits at its prompt is done.
         assert_eq!(
-            resolve(None, None, None, idle, now),
+            resolve(None, None, None, idle, true, now),
             (Some("done".into()), Some("done"))
         );
         // A screen source has no authority window.
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 1), Some("screen"), idle, now),
+            resolve(
+                Some("waiting"),
+                Some(now - 1),
+                Some("screen"),
+                idle,
+                true,
+                now
+            ),
             (Some("done".into()), Some("done"))
         );
     }
@@ -355,19 +395,67 @@ mod tests {
         let now = 1_000;
         let working = Some(ScreenState::Working);
         assert_eq!(
-            resolve(Some("working"), Some(now - 60), Some("hook"), working, now),
+            resolve(
+                Some("working"),
+                Some(now - 60),
+                Some("hook"),
+                working,
+                true,
+                now
+            ),
             (Some("working".into()), None)
         );
         for stale in ["waiting", "done"] {
             assert_eq!(
-                resolve(Some(stale), Some(now - 11), Some("hook"), working, now),
+                resolve(
+                    Some(stale),
+                    Some(now - 11),
+                    Some("hook"),
+                    working,
+                    true,
+                    now
+                ),
                 (Some("working".into()), Some("working")),
                 "{stale}"
             );
         }
         assert_eq!(
-            resolve(Some("done"), Some(now - 5), Some("hook"), working, now),
+            resolve(
+                Some("done"),
+                Some(now - 5),
+                Some("hook"),
+                working,
+                true,
+                now
+            ),
             (Some("done".into()), None)
+        );
+    }
+
+    #[test]
+    fn an_adapter_without_screens_keeps_an_old_waiting_report() {
+        let now = 1_000;
+        assert_eq!(
+            resolve(
+                Some("waiting"),
+                Some(now - 300),
+                Some("hook"),
+                None,
+                false,
+                now
+            ),
+            (Some("waiting".into()), None)
+        );
+        assert_eq!(
+            resolve(
+                Some("waiting"),
+                Some(now - 300),
+                Some("hook"),
+                None,
+                true,
+                now
+            ),
+            (None, None)
         );
     }
 
@@ -375,15 +463,36 @@ mod tests {
     fn an_old_unconfirmed_turn_is_shown_as_no_report() {
         let now = 1_000;
         assert_eq!(
-            resolve(Some("working"), Some(now - 45), Some("hook"), None, now),
+            resolve(
+                Some("working"),
+                Some(now - 45),
+                Some("hook"),
+                None,
+                true,
+                now
+            ),
             (Some("working".into()), None)
         );
         assert_eq!(
-            resolve(Some("working"), Some(now - 46), Some("hook"), None, now),
+            resolve(
+                Some("working"),
+                Some(now - 46),
+                Some("hook"),
+                None,
+                true,
+                now
+            ),
             (None, None)
         );
         assert_eq!(
-            resolve(Some("waiting"), Some(now - 46), Some("screen"), None, now),
+            resolve(
+                Some("waiting"),
+                Some(now - 46),
+                Some("screen"),
+                None,
+                true,
+                now
+            ),
             (None, None)
         );
         assert_eq!(
@@ -392,12 +501,13 @@ mod tests {
                 Some(now - 300),
                 Some("hook"),
                 Some(ScreenState::Waiting),
+                true,
                 now
             ),
             (Some("waiting".into()), None)
         );
         assert_eq!(
-            resolve(Some("done"), Some(now - 300), Some("hook"), None, now),
+            resolve(Some("done"), Some(now - 300), Some("hook"), None, true, now),
             (Some("done".into()), None)
         );
         assert_eq!(
@@ -406,6 +516,7 @@ mod tests {
                 Some(now - 300),
                 Some("hook"),
                 Some(ScreenState::Working),
+                true,
                 now
             ),
             (Some("working".into()), None)
