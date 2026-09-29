@@ -16,11 +16,20 @@ struct SwarmHomeTests {
         ("-x", ".swarm--x+4bcd60c0"),
         ("\"main\"", ".swarm--main-+0c126bfe"),
         ("a'b", ".swarm-a-b+2aa1e449"),
+        ("feat/" + a(235), ".swarm-feat-" + a(59) + "+412b964b"),
+        (a(64), ".swarm-" + a(64)),
+        (a(65), ".swarm-" + a(64) + "+2dd603ec"),
+        (a(64) + String(repeating: "b", count: 36), ".swarm-" + a(64) + "+9c728705"),
+        (a(64) + String(repeating: "c", count: 36), ".swarm-" + a(64) + "+2410b2b9"),
     ]
+
+    static func a(_ count: Int) -> String { String(repeating: "a", count: count) }
 
     @Test("Branch folders match the shared vectors", arguments: vectors)
     func folderMatchesVector(vector: (branch: String, folder: String?)) {
-        #expect(SwarmHome.folder(branch: vector.branch) == vector.folder)
+        let folder = SwarmHome.folder(branch: vector.branch)
+        #expect(folder == vector.folder)
+        #expect((folder?.utf8.count ?? 0) <= 255)
     }
 
     @Test("Main and no branch use HOME, others a folder in it")
