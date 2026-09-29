@@ -48,6 +48,9 @@ enum DesignTokens {
         static let quoteBar: CGFloat = 3
         /// The sidebar's resize grip.
         static let dragHandle: CGFloat = 7
+        /// The command palette and its result list.
+        static let palette: CGFloat = 640
+        static let paletteResults: CGFloat = 420
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
     }
