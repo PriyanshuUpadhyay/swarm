@@ -86,11 +86,30 @@ fn hook_report(
     Ok(Some((valid_session_id(&session)?, agent, state, detail)))
 }
 
+/// All of `reader` if it closes within `limit`, else None. The read runs on its own thread, so
+/// a writer that keeps the pipe open cannot hold the caller past the limit.
+fn read_within<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+    limit: std::time::Duration,
+) -> Option<String> {
+    let (sender, text) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut payload = String::new();
+        let _ = sender.send(reader.read_to_string(&mut payload).map(|_| payload));
+    });
+    text.recv_timeout(limit).ok()?.ok()
+}
+
 /// `swarm hook`: a hook must never block or fail an agent's turn, so every error goes to stderr
-/// and the caller always gets `{}` and exit 0.
+/// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
+/// the bus 1 s.
 fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let mut payload = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
+    // A caller that is no swarm agent is done before its stdin is read.
+    if env::var_os("SWARM_SESSION_ID").is_none() || env::var_os("SWARM_AGENT_ID").is_none() {
+        return Ok(());
+    }
+    let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2))
+        .ok_or("swarm hook: stdin did not close within 2 s")?;
     let Some((session, agent, state, detail)) =
         hook_report(args, &payload, |name| env::var(name).ok())?
     else {
@@ -1587,6 +1606,26 @@ mod tests {
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
+
+    #[test]
+    fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        std::io::Write::write_all(&mut writer, b"{}").unwrap();
+        let started = std::time::Instant::now();
+        assert_eq!(
+            read_within(reader, std::time::Duration::from_millis(200)),
+            None
+        );
+        assert!(started.elapsed() < std::time::Duration::from_millis(600));
+        drop(writer);
+        let (reader, mut writer) = std::io::pipe().unwrap();
+        std::io::Write::write_all(&mut writer, b"{}").unwrap();
+        drop(writer);
+        assert_eq!(
+            read_within(reader, std::time::Duration::from_millis(200)).as_deref(),
+            Some("{}")
+        );
+    }
 
     #[test]
     fn a_hook_outside_a_swarm_agent_reports_nothing() {
