@@ -9,9 +9,13 @@ public enum SwarmPaneStress {
     }
 
     /// `SWARM_PANE_STRESS_SCROLL=1` sweeps the strip left and right, for traces without input.
-    public static var scrolls: Bool {
-        ProcessInfo.processInfo.environment["SWARM_PANE_STRESS_SCROLL"] == "1"
-    }
+    public static var scrolls: Bool { ["1", "end"].contains(scrollMode) }
+
+    /// `end` parks the strip at its right end instead, for screenshots of a background window,
+    /// where App Nap slows the sweep's timer.
+    public static var parksAtEnd: Bool { scrollMode == "end" }
+
+    private static var scrollMode: String? { ProcessInfo.processInfo.environment["SWARM_PANE_STRESS_SCROLL"] }
 
     public static var launch: SwarmAttachLaunch {
         // Repaint in place from the top, as tmux and agent TUIs do; a scrolling flood of raw lines

@@ -164,6 +164,11 @@ private struct StripSweeper: NSViewRepresentable {
                   let document = strip.documentView else { return }
             let clip = strip.contentView
             let maxX = document.frame.width - clip.bounds.width
+            if SwarmPaneStress.parksAtEnd {
+                clip.scroll(to: CGPoint(x: maxX, y: clip.bounds.origin.y))
+                strip.reflectScrolledClipView(clip)
+                return
+            }
             var x = clip.bounds.origin.x + direction * 1500 / 120
             if x >= maxX || x <= 0 { direction = -direction; x = min(max(x, 0), maxX) }
             clip.scroll(to: CGPoint(x: x, y: clip.bounds.origin.y))
