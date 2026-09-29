@@ -148,7 +148,7 @@ struct TranscriptOutputView: View {
     @State private var copying = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             HStack {
                 Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 Spacer()
@@ -171,10 +171,10 @@ struct TranscriptOutputView: View {
                     TranscriptBoundedTextView(text: preview.text, emptyText: "No output was recorded.")
                 } else {
                     ProgressView("Preparing preview…")
-                        .frame(height: 44, alignment: .leading)
+                        .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
                 }
             }
-            .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
             if preview?.isTruncated == true {
                 HStack {
                     Text(showAll || revealAll ? "Full output shown." : "Preview only. Some output is hidden.")
@@ -246,13 +246,13 @@ struct TranscriptDiffView: View {
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             if expanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
                     Text(verbatim: diff.path).font(.caption).textSelection(.enabled)
                     HStack {
                         Picker("Diff layout", selection: $split) {
                             Text("Unified").tag(false)
                             Text("Split").tag(true)
-                        }.pickerStyle(.segmented).frame(width: 145)
+                        }.pickerStyle(.segmented).frame(width: DesignTokens.Size.segmentedPicker)
                         Spacer()
                         Button(copying ? "Preparing patch…" : "Copy patch", systemImage: "doc.on.doc") {
                             copying = true
@@ -288,19 +288,19 @@ struct TranscriptDiffView: View {
                             if !rendered { ProgressView("Rendering patch…") }
                             if renderError { Text("The patch view could not load.").foregroundStyle(.red) }
                         }
-                        .frame(height: 300)
+                        .frame(height: DesignTokens.Size.outputPreview)
                         .onChange(of: split) { _, _ in rendered = false; renderError = false }
                         .onChange(of: preview.patch) { _, _ in rendered = false; renderError = false }
                     } else {
                         ProgressView("Preparing patch…")
-                            .frame(height: 44, alignment: .leading)
+                            .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
                     }
                     if limited?.notice != nil, !revealForSearch {
                         Button(showFull ? "Show preview" : "Show full patch") { showFull.toggle() }
                             .font(.caption).buttonStyle(.borderless)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, DesignTokens.Spacing.s)
             }
         } label: {
             Label("\((diff.path as NSString).lastPathComponent) · +\(counts?.added.description ?? "…") −\(counts?.removed.description ?? "…")", systemImage: "doc.text")

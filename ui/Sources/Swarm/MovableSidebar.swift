@@ -24,8 +24,8 @@ struct MovableSidebar<Sidebar: View, Content: View>: View {
                     .retainedVisibility(visible)
                     .overlay(alignment: onRight ? .leading : .trailing) {
                         if visible {
-                            Rectangle().fill(.separator).frame(width: 1)
-                                .frame(width: 7).contentShape(Rectangle())
+                            Rectangle().fill(.separator).frame(width: DesignTokens.Size.hairline)
+                                .frame(width: DesignTokens.Size.dragHandle).contentShape(Rectangle())
                                 .gesture(DragGesture().onChanged { value in
                                     if dragStart == nil { dragStart = actualWidth }
                                     width = min(440, max(230, (dragStart ?? actualWidth) + value.translation.width * (onRight ? -1 : 1)))

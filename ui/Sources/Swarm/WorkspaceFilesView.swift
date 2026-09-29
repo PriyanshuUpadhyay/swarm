@@ -17,13 +17,13 @@ struct WorkspaceFilesView: View {
                 Button { refreshing = true; refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).accessibilityLabel("Refresh files")
                     .disabled(refreshing || !isActive)
-            }.padding(12)
+            }.padding(DesignTokens.Spacing.m)
             Divider()
             ScrollView {
                 WorkspaceFolder(directory: directory, path: "", refreshID: refreshID, isActive: isActive, open: open) {
                     refreshing = false
                 }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(DesignTokens.Spacing.m)
             }
         }
     }
@@ -50,7 +50,7 @@ private struct WorkspaceFolder: View {
     }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 5) {
+        LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             if loading || (listingDirectory != directory && errorDirectory != directory) {
                 ProgressView("Reading files…").controlSize(.small)
             }
@@ -121,7 +121,7 @@ private struct WorkspaceFileRow: View {
                     .lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).padding(.vertical, 3).help(entry.path)
+            .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs).help(entry.path)
             .accessibilityLabel("Preview \(entry.path)")
         }
     }

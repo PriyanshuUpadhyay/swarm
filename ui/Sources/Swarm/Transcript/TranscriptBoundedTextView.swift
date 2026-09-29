@@ -25,7 +25,7 @@ struct TranscriptBoundedTextView: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     Text(verbatim: text.isEmpty ? emptyText : text)
                         .fixedSize(horizontal: true, vertical: true)
-                        .padding(10)
+                        .padding(DesignTokens.Spacing.s)
                 }
             } else if let chunks {
                 ScrollViewReader { proxy in
@@ -37,9 +37,9 @@ struct TranscriptBoundedTextView: View {
                                     .id(index)
                             }
                         }
-                        .padding(10)
+                        .padding(DesignTokens.Spacing.s)
                     }
-                    .frame(height: 300)
+                    .frame(height: DesignTokens.Size.outputPreview)
                     .task(id: searchQuery) {
                         guard !searchQuery.isEmpty else { return }
                         let query = searchQuery
@@ -52,10 +52,10 @@ struct TranscriptBoundedTextView: View {
                 }
             } else {
                 ProgressView("Preparing text…")
-                    .frame(height: 44, alignment: .leading)
+                    .frame(height: DesignTokens.Size.collapsedOutput, alignment: .leading)
             }
         }
-        .font(.system(.callout, design: .monospaced))
+        .font(DesignTokens.mono)
         .textSelection(.enabled)
         .task(id: text) {
             chunks = nil

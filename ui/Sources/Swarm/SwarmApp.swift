@@ -323,13 +323,13 @@ private struct SessionsWindow: View {
         } content: {
             VStack(spacing: 0) {
                 if let projectAction {
-                    ProgressView(projectAction).controlSize(.small).padding(8)
+                    ProgressView(projectAction).controlSize(.small).padding(DesignTokens.Spacing.s)
                 }
                 if !model.closing.isEmpty {
-                    ProgressView("Closing chat…").controlSize(.small).padding(8)
+                    ProgressView("Closing chat…").controlSize(.small).padding(DesignTokens.Spacing.s)
                 }
                 if let document {
-                    HStack(spacing: 16) {
+                    HStack(spacing: DesignTokens.Spacing.l) {
                         Button("Chat") { documentVisible = false }
                             .foregroundStyle(documentVisible ? Color.secondary : Color.primary)
                         Button(document.title) { documentVisible = true }
@@ -338,7 +338,7 @@ private struct SessionsWindow: View {
                         Button { closeDocument() } label: { Image(systemName: "xmark") }
                             .accessibilityLabel("Close file preview")
                         Spacer()
-                    }.buttonStyle(.plain).padding(12)
+                    }.buttonStyle(.plain).padding(DesignTokens.Spacing.m)
                     Divider()
                 }
                 ZStack {
@@ -459,7 +459,7 @@ private struct SessionsWindow: View {
 
     @ViewBuilder private var workspaceLanding: some View {
         if let workspace = model.selectedWorkspace {
-            VStack(spacing: 18) {
+            VStack(spacing: DesignTokens.Spacing.l) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
                 Button("New chat") { newChatDirectory = workspace.id }
@@ -605,11 +605,11 @@ private struct SessionsWindow: View {
     }
 
     private var createWorkspacePicker: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text("Create workspace").font(.title2)
             Text("Choose a project").foregroundStyle(.secondary)
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                     ForEach(model.tree.projects) { project in
                         Button(project.name) {
                             createAction = {
@@ -635,8 +635,8 @@ private struct SessionsWindow: View {
                 Button("Cancel") { showingCreate = false }
             }
         }
-        .padding(24)
-        .frame(width: 480, height: 340)
+        .padding(DesignTokens.Spacing.xl)
+        .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
     }
 
     private func chatDetail(
@@ -679,7 +679,7 @@ private struct SessionsWindow: View {
     }
 
     private var renameWorkspaceSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text("Rename workspace").font(.title2)
             TextField("Name", text: $workspaceName)
                 .textFieldStyle(.roundedBorder)
@@ -699,8 +699,8 @@ private struct SessionsWindow: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
-        .frame(width: 380)
+        .padding(DesignTokens.Spacing.xl)
+        .frame(width: DesignTokens.Size.narrowSheet)
     }
 
     private func archiveChat(_ id: SwarmSessionID) {
@@ -789,7 +789,7 @@ private struct ProjectHome: View {
     let onNewTask: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text(project.name).font(.largeTitle.bold())
             Text(project.launchDirectory).foregroundStyle(.secondary).textSelection(.enabled)
             HStack {
@@ -801,7 +801,7 @@ private struct ProjectHome: View {
             if case .repository = project.id {
                 Text("Worktrees").font(.headline)
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: DesignTokens.Spacing.m) {
                         ForEach(project.workspaces) { workspace in
                             HStack {
                                 VStack(alignment: .leading) {
@@ -816,7 +816,7 @@ private struct ProjectHome: View {
                 }
             }
         }
-        .padding(24)
+        .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -832,7 +832,7 @@ private struct NewTaskSheet: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text("Create workspace").font(.title2)
             Text(project.path).foregroundStyle(.secondary)
             TextField("Workspace name", text: $name)
@@ -861,8 +861,8 @@ private struct NewTaskSheet: View {
                 .disabled(isCreating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(24)
-        .frame(width: 480)
+        .padding(DesignTokens.Spacing.xl)
+        .frame(width: DesignTokens.Size.sheet)
         .interactiveDismissDisabled(isCreating)
     }
 }

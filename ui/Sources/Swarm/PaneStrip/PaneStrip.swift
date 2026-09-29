@@ -100,20 +100,20 @@ private struct PaneView<Content: View>: View {
         VStack(spacing: 0) {
             header
             content()
-                .opacity(cell.ended ? 0.6 : 1)
+                .opacity(cell.ended ? DesignTokens.endedPaneOpacity : 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             Rectangle()
                 .strokeBorder(focused ? Color.accentColor : Color(nsColor: .separatorColor),
-                              lineWidth: focused ? 2 : 1)
+                              lineWidth: focused ? DesignTokens.Size.focusRing : DesignTokens.Size.hairline)
                 .allowsHitTesting(false)
         }
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignTokens.Spacing.s) {
             StatusGlyph(status: cell.status)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
@@ -131,8 +131,8 @@ private struct PaneView<Content: View>: View {
         .buttonStyle(.borderless)
         .font(.caption)
         .lineLimit(1)
-        .padding(.horizontal, 8)
-        .frame(height: 24)
+        .padding(.horizontal, DesignTokens.Spacing.s)
+        .frame(height: DesignTokens.Size.paneHeader)
         .foregroundStyle(focused ? .primary : .secondary)
         .background(Color(nsColor: .windowBackgroundColor))
         .contentShape(Rectangle())

@@ -70,7 +70,7 @@ struct TranscriptView<Composer: View>: View {
                         .font(.caption2.bold())
                         .padding(.horizontal, DesignTokens.Spacing.s)
                         .padding(.vertical, DesignTokens.Spacing.xxs)
-                        .background(Capsule().fill(Color.orange.opacity(0.2)))
+                        .background(Capsule().fill(DesignTokens.rawBadgeFill))
                         .foregroundStyle(.orange)
                 }
                 .padding(.horizontal, DesignTokens.Spacing.m)

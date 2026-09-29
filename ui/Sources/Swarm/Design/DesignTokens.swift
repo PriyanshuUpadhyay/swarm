@@ -36,6 +36,18 @@ enum DesignTokens {
         static let iconButton: CGFloat = 26
         /// The composer's slash and mention menu.
         static let menuWidth: CGFloat = 480
+        static let sheet: CGFloat = 480
+        static let sheetHeight: CGFloat = 340
+        static let narrowSheet: CGFloat = 420
+        /// A model or account list inside a sheet.
+        static let pickerList: CGFloat = 190
+        /// Tool output and long text before Show full output.
+        static let outputPreview: CGFloat = 300
+        static let collapsedOutput: CGFloat = 44
+        static let segmentedPicker: CGFloat = 150
+        static let quoteBar: CGFloat = 3
+        /// The sidebar's resize grip.
+        static let dragHandle: CGFloat = 7
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
     }
@@ -51,6 +63,11 @@ enum DesignTokens {
     static let matchFill = Color.yellow.opacity(0.14)
     static let currentMatchFill = Color.accentColor.opacity(0.28)
     static let endedPaneOpacity = 0.6
+    static let selectionAccentFill = Color.accentColor.opacity(0.15)
+    static let rawBadgeFill = Color.orange.opacity(0.2)
+    static let quoteBar = Color.secondary.opacity(0.5)
+    static let codeHeaderFill = Color.primary.opacity(0.05)
+    static let codeBlockFill = Color.primary.opacity(0.03)
 
     /// For pointer-driven and state-driven changes. Keyboard-driven changes get no animation.
     static let spring = Animation.spring(response: 0.3, dampingFraction: 1)

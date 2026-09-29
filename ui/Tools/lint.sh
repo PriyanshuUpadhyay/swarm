@@ -17,4 +17,11 @@ if rg -n --glob '*.swift' \
     "$root/Sources/Swarm/Sidebar" "$root/Sources/Swarm/Tabs" "$root/Sources/Swarm/Transcript"; then
   failed=1
 fi
+# Views take spacing, radii, colors, and font sizes from Design/DesignTokens.swift; 0 is allowed.
+if rg -n --glob '*.swift' --glob '!**/Design/**' \
+    -e '\.padding\((\.[a-zA-Z]+, )?[1-9]' -e 'spacing: [1-9]' -e 'cornerRadius: [1-9]' \
+    -e 'lineWidth: [1-9]' -e 'Color\(red:' -e '\.system\(size:' -e 'opacity\(0\.' \
+    "$root/Sources/Swarm"; then
+  failed=1
+fi
 exit "$failed"

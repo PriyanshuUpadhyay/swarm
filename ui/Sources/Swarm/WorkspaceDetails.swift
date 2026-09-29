@@ -68,7 +68,7 @@ struct WorkspaceDetails: View {
                 }
             }
             .buttonStyle(.plain)
-            .padding(12)
+            .padding(DesignTokens.Spacing.m)
             if mode == .changes {
                 Picker("Changes view", selection: $branchSelected) {
                     Text("Local").tag(false)
@@ -76,12 +76,12 @@ struct WorkspaceDetails: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+                .padding(.horizontal, DesignTokens.Spacing.m)
+                .padding(.bottom, DesignTokens.Spacing.s)
             }
             Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                     if tab == .usage {
                         UsageDetails(usage: usage, hasChat: hasChat)
                     } else {
@@ -117,7 +117,7 @@ struct WorkspaceDetails: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
+                .padding(DesignTokens.Spacing.m)
             }
         }
         .background(.background)
@@ -284,7 +284,7 @@ struct WorkspaceDetails: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .padding(.vertical, 3)
+            .padding(.vertical, DesignTokens.Spacing.xxs)
         }
         .buttonStyle(.plain)
         .help(file.path)

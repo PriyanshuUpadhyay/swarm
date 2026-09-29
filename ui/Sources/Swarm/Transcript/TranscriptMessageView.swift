@@ -12,7 +12,7 @@ struct TranscriptMessageView: View {
         let displayed = small ? TranscriptMessageBlocks.parse(text) : blocks
         return Group {
             if let blocks = displayed, !blocks.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
                     ForEach(blocks) { block in
                         TranscriptBlockView(block: block)
                     }
@@ -68,10 +68,10 @@ private struct TranscriptBlockView: View {
             CodeBlockView(language: language, code: code)
 
         case let .blockquote(_, text):
-            HStack(alignment: .top, spacing: 10) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(.secondary.opacity(0.5))
-                    .frame(width: 3)
+            HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
+                    .fill(DesignTokens.quoteBar)
+                    .frame(width: DesignTokens.Size.quoteBar)
                 if text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) != nil {
                     TranscriptBoundedTextView(text: text)
                         .foregroundStyle(.secondary)
@@ -83,12 +83,12 @@ private struct TranscriptBlockView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, DesignTokens.Spacing.xxs)
 
         case let .unorderedList(_, items):
-            LazyVStack(alignment: .leading, spacing: 5) {
+            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 ForEach(items.indices, id: \.self) { index in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
                         Text("•")
                             .font(.body.weight(.bold))
                             .foregroundStyle(.secondary)
@@ -98,10 +98,10 @@ private struct TranscriptBlockView: View {
             }
 
         case let .orderedList(_, startIndex, items):
-            LazyVStack(alignment: .leading, spacing: 5) {
+            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 ForEach(items.indices, id: \.self) { index in
                     let itemNumber = startIndex + index
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
                         Text("\(itemNumber).")
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -118,7 +118,7 @@ private struct TranscriptBlockView: View {
 
         case .divider:
             Divider()
-                .padding(.vertical, 4)
+                .padding(.vertical, DesignTokens.Spacing.xs)
         }
     }
 
@@ -181,16 +181,16 @@ private struct CodeBlockView: View {
                 .accessibilityLabel(accessibilityLabelText)
                 .help("Copy code")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.3))
+            .padding(.horizontal, DesignTokens.Spacing.s)
+            .padding(.vertical, DesignTokens.Spacing.s)
+            .background(DesignTokens.codeHeaderFill)
 
             TranscriptBoundedTextView(text: code)
         }
-        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(.quaternary, lineWidth: 1)
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
+                .strokeBorder(.quaternary, lineWidth: DesignTokens.Size.hairline)
         )
     }
 
@@ -237,9 +237,9 @@ private struct TableBlockView: View {
                 .accessibilityLabel("Copy table")
                 .help("Copy table")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.3))
+            .padding(.horizontal, DesignTokens.Spacing.s)
+            .padding(.vertical, DesignTokens.Spacing.s)
+            .background(DesignTokens.codeHeaderFill)
 
             if rows.count > 30 || headers.count > 20 || rows.contains(where: { $0.count > 20 }) {
                 TranscriptBoundedTextView(text: rawText)
@@ -262,14 +262,14 @@ private struct TableBlockView: View {
                             }
                         }
                     }
-                    .padding(10)
+                    .padding(DesignTokens.Spacing.s)
                 }
             }
         }
-        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(.quaternary, lineWidth: 1)
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
+                .strokeBorder(.quaternary, lineWidth: DesignTokens.Size.hairline)
         )
     }
 }
@@ -293,10 +293,10 @@ private struct RawMonospaceBlockView: View {
 
     var body: some View {
         TranscriptBoundedTextView(text: text)
-        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(.quaternary, lineWidth: 1)
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
+                .strokeBorder(.quaternary, lineWidth: DesignTokens.Size.hairline)
         )
     }
 }

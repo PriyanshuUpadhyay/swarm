@@ -20,7 +20,7 @@ struct WorkspaceDocumentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                     Text(verbatim: document.title).font(.headline).lineLimit(1).truncationMode(.middle)
                     Text(verbatim: document.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
@@ -29,10 +29,10 @@ struct WorkspaceDocumentView: View {
                     Picker("Diff layout", selection: $split) {
                         Text("Unified").tag(false)
                         Text("Split").tag(true)
-                    }.pickerStyle(.segmented).labelsHidden().frame(width: 150)
+                    }.pickerStyle(.segmented).labelsHidden().frame(width: DesignTokens.Size.segmentedPicker)
                         .onChange(of: split) { _, _ in rendered = false; renderError = nil }
                 }
-            }.padding(12)
+            }.padding(DesignTokens.Spacing.m)
             Divider()
             if let error {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled).padding()

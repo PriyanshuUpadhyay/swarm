@@ -170,7 +170,7 @@ struct NewChatSheet: View {
     @State private var showAccount = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             Text(isSwitch ? "Choose model" : "New chat").font(.title2.bold())
             if isSwitch {
                 Text("Current: \(initialModel ?? "Model not reported")")
@@ -217,8 +217,8 @@ struct NewChatSheet: View {
                     && model.selectedModel == initialModel))
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .padding(DesignTokens.Spacing.xl)
+        .frame(width: DesignTokens.Size.sheet)
         .interactiveDismissDisabled(model.isStarting)
         .task {
             model.isSwitch = isSwitch
@@ -228,7 +228,7 @@ struct NewChatSheet: View {
     }
 
     private var selection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             Picker("Provider", selection: Binding(
                 get: { model.provider }, set: { model.selectProvider($0) }
             )) {
@@ -242,7 +242,7 @@ struct NewChatSheet: View {
                 .accessibilityLabel("Search models")
             if model.isLoading && model.models.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text("Loading models and accounts…") }
-                    .frame(height: 190)
+                    .frame(height: DesignTokens.Size.pickerList)
             } else {
                 modelList
                 if model.isLoading {
@@ -293,9 +293,9 @@ struct NewChatSheet: View {
 
     private var modelList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
                 if model.visibleModels.isEmpty {
-                    Text("No matching models").foregroundStyle(.secondary).padding(10)
+                    Text("No matching models").foregroundStyle(.secondary).padding(DesignTokens.Spacing.s)
                 }
                 ForEach(model.visibleModels) { choice in
                     Button {
@@ -306,10 +306,10 @@ struct NewChatSheet: View {
                             Spacer()
                             if choice.id == model.selectedModel { Image(systemName: "checkmark") }
                         }
-                        .padding(9)
+                        .padding(DesignTokens.Spacing.s)
                         .contentShape(Rectangle())
-                        .background(choice.id == model.selectedModel ? Color.accentColor.opacity(0.15) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 6))
+                        .background(choice.id == model.selectedModel ? DesignTokens.selectionAccentFill : .clear,
+                                    in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
                     }
                     .buttonStyle(.plain)
                     .help(choice.id)
@@ -317,6 +317,6 @@ struct NewChatSheet: View {
                 }
             }
         }
-        .frame(height: 190)
+        .frame(height: DesignTokens.Size.pickerList)
     }
 }
