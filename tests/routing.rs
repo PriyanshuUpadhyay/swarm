@@ -54,6 +54,44 @@ fn roles_get_reads_the_xdg_config() {
 }
 
 #[test]
+fn roles_get_substitutes_a_runner_whose_cli_is_not_on_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("substitute");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"review.gate": ["claude-opus-xhigh-agent"]},
+            "runners": {
+              "claude-opus-xhigh-agent": {"provider": "claude", "model": "opus"},
+              "codex-sol-xhigh-agent": {"provider": "codex", "model": "gpt-sol"}
+            },
+            "substitutes": {"claude-opus-xhigh-agent": ["codex-sol-xhigh-agent"]}}"#,
+    )
+    .unwrap();
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("codex"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(bin.join("codex"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A claude file that cannot run is not an installed CLI.
+    std::fs::write(bin.join("claude"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let output = swarm(&home, &[("PATH", &bin)], &["roles", "get", "review.gate"]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["runnerId"], "codex-sol-xhigh-agent");
+    assert_eq!(resolved["substitutedFor"], "claude-opus-xhigh-agent");
+    assert!(String::from_utf8_lossy(&output.stderr).contains(
+        "role review.gate runs substitute codex-sol-xhigh-agent in place of claude-opus-xhigh-agent"
+    ));
+}
+
+#[test]
 fn a_missing_explicit_config_is_an_error() {
     let home = scratch("missing");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
