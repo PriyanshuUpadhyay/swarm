@@ -29,6 +29,37 @@ impl ScreenState {
 
 const CLAUDE_SPINNERS: &[char] = &['*', '·', '✢', '✳', '✶', '✻', '✽'];
 
+/// True for a numbered choice row such as `❯ 1. Yes` or `  2. No`, after an optional marker.
+fn is_option(line: &str, marker: char) -> bool {
+    let rest = line.trim_start().trim_start_matches(marker).trim_start();
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && rest[digits..].starts_with('.')
+}
+
+/// An approval prompt: a question row, then a choice row or a footer row below it, and no idle input
+/// prompt after the question. A question that is only text in a finished answer has the idle
+/// prompt below it, so it does not count.
+fn approval(
+    lines: &[&str],
+    questions: &[&str],
+    footers: &[&str],
+    marker: char,
+    idle: impl Fn(usize) -> bool,
+) -> bool {
+    let Some(question) = lines.iter().rposition(|line| {
+        let line = line.to_lowercase();
+        questions.iter().any(|question| line.contains(question))
+    }) else {
+        return false;
+    };
+    let below = &lines[question..];
+    let asks = below.iter().any(|line| {
+        let line_lower = line.to_lowercase();
+        is_option(line, marker) || footers.iter().any(|footer| line_lower.contains(footer))
+    });
+    asks && !(question + 1..lines.len()).any(idle)
+}
+
 /// The state the bottom rows of a pane show, or None when they show no prompt that needs the
 /// user, no turn in progress, and no idle input prompt.
 pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
@@ -39,7 +70,15 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
     let first = |line: &&str| line.trim_start().chars().next();
     match provider {
         "claude" => {
-            if has(&["do you want to", "esc to cancel", "waiting for permission"]) {
+            // The input line sits right under the prompt box's top rule.
+            let idle_at = |index: usize| {
+                index > 0
+                    && lines[index - 1].trim_start().starts_with('─')
+                    && lines[index].trim_start().starts_with('❯')
+                    && !is_option(lines[index], '❯')
+            };
+            let questions = ["do you want to", "waiting for permission"];
+            if approval(lines, &questions, &["esc to cancel"], '❯', idle_at) {
                 return Some(ScreenState::Waiting);
             }
             let spinner = lines.iter().any(|line| {
@@ -49,25 +88,22 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             if spinner || has(&["esc to interrupt"]) {
                 return Some(ScreenState::Working);
             }
-            // The input line sits right under the prompt box's top rule.
-            let prompt = lines.windows(2).any(|pair| {
-                pair[0].trim_start().starts_with('─') && pair[1].trim_start().starts_with('❯')
-            });
-            prompt.then_some(ScreenState::Idle)
+            (0..lines.len()).any(idle_at).then_some(ScreenState::Idle)
         }
         "codex" => {
-            if has(&[
-                "would you like to",
-                "press enter to confirm",
-                "to submit answer",
-            ]) {
+            let idle_at = |index: usize| {
+                lines[index].trim_start().starts_with('›') && !is_option(lines[index], '›')
+            };
+            let questions = ["would you like to", "to submit answer"];
+            // A request for input has its footer on the question row itself.
+            let footers = ["press enter to confirm", "to submit answer"];
+            if approval(lines, &questions, &footers, '›', idle_at) {
                 return Some(ScreenState::Waiting);
             }
             if has(&["esc to interr", "• working ("]) {
                 return Some(ScreenState::Working);
             }
-            let composer = lines.iter().any(|line| line.trim_start().starts_with('›'));
-            composer.then_some(ScreenState::Idle)
+            (0..lines.len()).any(idle_at).then_some(ScreenState::Idle)
         }
         "agy" => {
             if has(&["requesting permission for:"])
@@ -169,6 +205,21 @@ mod tests {
                 "{provider}:\n{rows}"
             );
         }
+    }
+
+    #[test]
+    fn a_question_in_an_answer_above_the_idle_prompt_is_not_an_approval() {
+        let answer = "● Done. Do you want to add a test for it?\n\n";
+        let rows = format!("{answer}{}", fixture!("claude-idle"));
+        assert_eq!(screen_state("claude", &rows), Some(ScreenState::Idle));
+        let codex = format!(
+            "• Would you like to run the suite next?\n{}",
+            fixture!("codex-idle")
+        );
+        assert_eq!(screen_state("codex", &codex), Some(ScreenState::Idle));
+        // Codex's request for input keeps its footer on one row, with no choice rows.
+        let asking = "  Which branch should I use?\n\n  enter to submit answer · esc to cancel\n";
+        assert_eq!(screen_state("codex", asking), Some(ScreenState::Waiting));
     }
 
     #[test]
