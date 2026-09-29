@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TranscriptTool
 
 public enum ChairTranscriptSource: Sendable, Equatable {
@@ -51,6 +52,19 @@ public actor SwarmChairTranscript {
     private var discoveredChairID: SwarmChairID?
     private var discoveredLog: URL?
     private var homesByProvider: [String: [URL]] = [:]
+    /// Account homes per provider, shared by every chat for a minute. Each chat open made a new
+    /// reader that ran `swarm profiles` again, about 130 ms of a cold open.
+    // ponytail: a 60 s TTL, not an invalidation; an account added within a minute waits for it.
+    private static let homesCache = Mutex<[String: (homes: [URL], at: Date)]>([:])
+
+    private static func sharedHomes(provider: String, home: URL) -> [URL]? {
+        homesCache.withLock { cache in
+            guard let entry = cache[provider + "|" + home.path], Date.now.timeIntervalSince(entry.at) < 60 else {
+                return nil
+            }
+            return entry.homes
+        }
+    }
     private var log: URL?
     private var reader: ToolTranscriptReader?
     public private(set) var currentModel: String?
@@ -147,11 +161,17 @@ public actor SwarmChairTranscript {
               let provider,
               provider == "claude" || provider == "codex" else { return nil }
         if homesByProvider[provider] == nil {
-            let accounts = try? await profiles.accounts(provider: provider)
-            homesByProvider[provider] = ChairLogDiscovery.homes(
-                provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [],
-                userHome: home
-            )
+            if let cached = Self.sharedHomes(provider: provider, home: home) {
+                homesByProvider[provider] = cached
+            } else {
+                let accounts = try? await profiles.accounts(provider: provider)
+                let homes = ChairLogDiscovery.homes(
+                    provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [],
+                    userHome: home
+                )
+                homesByProvider[provider] = homes
+                Self.homesCache.withLock { $0[provider + "|" + home.path] = (homes, .now) }
+            }
         }
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID
