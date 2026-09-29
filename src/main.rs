@@ -203,7 +203,7 @@ fn installed(provider: &str) -> bool {
 fn warn_substitute(resolved: &serde_json::Value) {
     if let Some(original) = resolved["substitutedFor"].as_str() {
         eprintln!(
-            "swarm: role {} runs substitute {} because {original} is not installed",
+            "swarm: role {} runs substitute {} in place of {original}, whose CLI is not on PATH",
             resolved["role"].as_str().unwrap_or_default(),
             resolved["runnerId"].as_str().unwrap_or_default()
         );
