@@ -1182,7 +1182,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 row.state_at,
                 row.state_source.as_deref(),
                 screen,
-                adapter.screen.is_some(),
                 now,
             );
             if let Some(seen) = write {
