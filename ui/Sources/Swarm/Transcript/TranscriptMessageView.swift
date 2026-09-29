@@ -7,9 +7,23 @@ struct TranscriptMessageView: View {
     let text: String
     @State private var blocks: [TranscriptMessageBlock]?
 
+    /// Blocks of long messages already parsed. A lazy stack row must keep its height once it
+    /// appears, so a message that scrolls back into view starts with its blocks, not the preview.
+    @MainActor private static let parsed: NSCache<NSString, Parsed> = {
+        let cache = NSCache<NSString, Parsed>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    private final class Parsed {
+        let blocks: [TranscriptMessageBlock]
+        init(_ blocks: [TranscriptMessageBlock]) { self.blocks = blocks }
+    }
+
     var body: some View {
         let small = text.index(text.startIndex, offsetBy: 4_096, limitedBy: text.endIndex) == nil
-        let displayed = small ? TranscriptMessageBlocks.parse(text) : blocks
+        let displayed = small ? TranscriptMessageBlocks.parse(text)
+            : blocks ?? Self.parsed.object(forKey: text as NSString)?.blocks
         return Group {
             if let blocks = displayed, !blocks.isEmpty {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
@@ -32,12 +46,13 @@ struct TranscriptMessageView: View {
             }
         }
         .task(id: text) {
-            guard !small else { return }
+            guard !small, Self.parsed.object(forKey: text as NSString) == nil else { return }
             let source = text
             let prepared = await Task.detached(priority: .userInitiated) {
                 TranscriptMessageBlocks.parse(source)
             }.value
             guard !Task.isCancelled else { return }
+            Self.parsed.setObject(Parsed(prepared), forKey: source as NSString)
             blocks = prepared
         }
     }

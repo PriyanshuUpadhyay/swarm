@@ -33,17 +33,10 @@ struct TranscriptView<Composer: View>: View {
     var focus: FocusState<Bool>.Binding
     @ViewBuilder let composer: () -> Composer
 
-    @State private var followsTail = true
+    @State private var atLatest = true
     @State private var userScrolling = false
-    @State private var nearTop = false
+    @State private var nearOldest = false
     @State private var loadingHistory = false
-    /// The row at the top edge. SwiftUI keeps it in place when older rows load above it.
-    @State private var topRowID: String?
-    /// The rows shown when a scroll started. SwiftUI keeps the top row in place only while the
-    /// scroll is still, so rows that arrive during a scroll are shown when it stops.
-    @State private var heldSnapshot: ChairTranscriptSnapshot?
-
-    private var shownSnapshot: ChairTranscriptSnapshot { heldSnapshot ?? snapshot }
     @State private var loadedHistoryThisGesture = false
     @State private var showHiddenRows = false
     @AppStorage("showRawData") private var showRawData = false
@@ -60,12 +53,12 @@ struct TranscriptView<Composer: View>: View {
     @FocusState private var findFieldFocused: Bool
 
     private var rows: [TranscriptRow] {
-        if case .rows(let rows, _) = shownSnapshot { return rows }
+        if case .rows(let rows, _) = snapshot { return rows }
         return []
     }
 
     private var rawEntries: [RawTranscriptEntry] {
-        if case .rows(_, let raw) = shownSnapshot { return raw }
+        if case .rows(_, let raw) = snapshot { return raw }
         return []
     }
 
@@ -89,10 +82,10 @@ struct TranscriptView<Composer: View>: View {
                 scroll(proxy)
                     .overlay(alignment: .bottom) {
                         VStack(spacing: DesignTokens.Spacing.s) {
-                            if !followsTail {
+                            if !atLatest {
                                 Button("Jump to latest", systemImage: "arrow.down") {
-                                    followsTail = true
-                                    if let id = lastVisibleID { proxy.scrollTo(id, anchor: .bottom) }
+                                    // The list is upside down, so its logical top is the bottom edge.
+                                    if let id = lastVisibleID { proxy.scrollTo(id, anchor: .top) }
                                 }
                                 .buttonStyle(.plain)
                                 .font(.callout)
@@ -130,45 +123,28 @@ struct TranscriptView<Composer: View>: View {
         }
     }
 
+    /// The list is upside down (ADR 0028). Its first row is the newest, at the bottom edge, so
+    /// older rows load at its end and new rows land at offset 0: neither moves the rows on screen.
     private func scroll(_ proxy: ScrollViewProxy) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                if hasOlder {
-                    Button(isLoadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
-                        startLoadingOlder()
-                    }
-                    .disabled(isLoadingOlder)
-                }
-                if let historyError {
-                    Text(verbatim: historyError).font(.caption).foregroundStyle(.red)
-                }
-                switch shownSnapshot {
+                switch snapshot {
                 case .loading:
-                    DelayedProgress("Loading chat…")
+                    DelayedProgress("Loading chat…").upsideDown()
                 case .waiting:
-                    Text(waitingMessage).foregroundStyle(.secondary)
+                    Text(waitingMessage).foregroundStyle(.secondary).upsideDown()
                 case .notice(let message):
-                    Text(verbatim: message).foregroundStyle(.secondary)
+                    Text(verbatim: message).foregroundStyle(.secondary).upsideDown()
                 case .unavailable(let message):
-                    Text(verbatim: message).foregroundStyle(.red)
-                case .rows(let rows, let raw):
+                    Text(verbatim: message).foregroundStyle(.red).upsideDown()
+                case .rows(_, let raw):
                     if showRawData {
-                        rawSessionBlock
-                        ForEach(raw) { entry in
-                            rawEntry(entry)
-                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { old, height in
-                                    guard entry.id == lastVisibleID, height > old else { return }
-                                    followLatest(using: proxy)
-                                }
+                        ForEach(raw.reversed()) { entry in
+                            rawEntry(entry).upsideDown()
                         }
+                        rawSessionBlock.upsideDown()
                     } else {
-                        let hidden = rows.filter(\.isHiddenByDefault).count
-                        if hidden > 0 {
-                            Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
-                                showHiddenRows.toggle()
-                            }
-                        }
-                        ForEach(visibleRows) { transcriptRow in
+                        ForEach(visibleRows.reversed()) { transcriptRow in
                             TranscriptRowView(
                                 row: transcriptRow, chair: chair,
                                 revealForSearch: currentMatchID == transcriptRow.eventID
@@ -176,70 +152,56 @@ struct TranscriptView<Composer: View>: View {
                             .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
                             .padding(DesignTokens.Spacing.xxs)
                             .background(matchBackground(transcriptRow.eventID))
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { old, height in
-                                guard transcriptRow.eventID == lastVisibleID, height > old else { return }
-                                followLatest(using: proxy)
+                            .upsideDown()
+                        }
+                        let hidden = rows.filter(\.isHiddenByDefault).count
+                        if hidden > 0 {
+                            Button(showHiddenRows ? "Hide \(hidden) hidden rows" : "Show \(hidden) hidden rows") {
+                                showHiddenRows.toggle()
                             }
+                            .upsideDown()
                         }
                     }
                 }
+                if let historyError {
+                    Text(verbatim: historyError).font(.caption).foregroundStyle(.red).upsideDown()
+                }
+                if hasOlder {
+                    Button(isLoadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
+                        startLoadingOlder()
+                    }
+                    .disabled(isLoadingOlder)
+                    .upsideDown()
+                }
             }
-            .scrollTargetLayout()
             .font(DesignTokens.body)
             .lineSpacing(DesignTokens.bodyLineSpacing)
             .frame(width: textWidth > 0 ? textWidth : nil, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(.vertical, DesignTokens.Spacing.l)
         }
-        .scrollPosition(id: $topRowID, anchor: .top)
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .contentMargins(.top, DesignTokens.Spacing.s, for: .scrollContent)
-        // The composer floats over the last rows; this keeps them readable above it.
-        .contentMargins(.bottom, composerHeight + DesignTokens.Spacing.l, for: .scrollContent)
+        .upsideDown()
+        // Upside down, the logical top is the bottom edge, where the composer floats over the rows.
+        .contentMargins(.top, composerHeight + DesignTokens.Spacing.l, for: .scrollContent)
+        .contentMargins(.bottom, DesignTokens.Spacing.s, for: .scrollContent)
         .frame(maxHeight: .infinity)
         .simultaneousGesture(TapGesture().onEnded {
             focus.wrappedValue = true
             onTap()
         })
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.containerSize.height
-                >= geometry.contentSize.height + geometry.contentInsets.bottom - 32
-        } action: { _, atBottom in
-            followsTail = TranscriptTail.follows(
-                current: followsTail, atBottom: atBottom, userScrolled: userScrolling
-            )
+        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 32 } action: { _, atLatest in
+            self.atLatest = atLatest
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y < 120
-        } action: { _, nearTop in
-            self.nearTop = nearTop
-            if nearTop, userScrolling { startLoadingOlder(automatic: true) }
+            geometry.contentOffset.y + geometry.containerSize.height > geometry.contentSize.height - 120
+        } action: { _, nearOldest in
+            self.nearOldest = nearOldest
+            if nearOldest, userScrolling { startLoadingOlder(automatic: true) }
         }
-        .onScrollPhaseChange { _, phase, context in
-            let wasScrolling = userScrolling
+        .onScrollPhaseChange { _, phase in
             userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if userScrolling {
-                // Cancel tail following before layout or queued updates can move the viewport.
-                followsTail = false
-                if !wasScrolling { heldSnapshot = snapshot }
-            } else if wasScrolling, phase == .idle {
-                let geometry = context.geometry
-                followsTail = geometry.contentOffset.y + geometry.containerSize.height
-                    >= geometry.contentSize.height + geometry.contentInsets.bottom - 32
-            }
-            if phase == .idle {
-                loadedHistoryThisGesture = false
-                heldSnapshot = nil
-            }
-            if phase == .interacting, nearTop { startLoadingOlder(automatic: true) }
-        }
-        .onChange(of: rows) {
-            guard !showRawData else { return }
-            Task { @MainActor in followLatest(using: proxy) }
-        }
-        .onChange(of: rawEntries) {
-            guard showRawData else { return }
-            Task { @MainActor in followLatest(using: proxy) }
+            if phase == .idle { loadedHistoryThisGesture = false }
+            if phase == .interacting, nearOldest { startLoadingOlder(automatic: true) }
         }
         .onChange(of: pendingScrollID) { _, id in
             guard let id else { return }
@@ -252,17 +214,10 @@ struct TranscriptView<Composer: View>: View {
         guard hasOlder, !loadingHistory, !automatic || !loadedHistoryThisGesture else { return }
         loadedHistoryThisGesture = true
         loadingHistory = true
-        followsTail = false
         Task { @MainActor in
             await loadOlder()
             loadingHistory = false
         }
-    }
-
-    private func followLatest(using proxy: ScrollViewProxy) {
-        guard followsTail, !userScrolling, !loadingHistory, !findPresented, isVisible,
-              let id = lastVisibleID else { return }
-        proxy.scrollTo(id, anchor: .bottom)
     }
 
     private var findBar: some View {
@@ -563,5 +518,12 @@ private struct TranscriptRowView: View {
         default:
             .caption
         }
+    }
+}
+
+private extension View {
+    /// Flips vertically; applied to the list and again to each row, so rows read the right way up.
+    func upsideDown() -> some View {
+        scaleEffect(x: 1, y: -1, anchor: .center)
     }
 }
