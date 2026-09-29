@@ -58,10 +58,13 @@ private struct ChatTabView: View {
         HStack(spacing: 0) {
             Button { actions.select(tab.id) } label: {
                 HStack(spacing: DesignTokens.Spacing.xs) {
-                    if let status = tab.status { StatusGlyph(status: status).font(.caption) }
-                    Text(tab.title).lineLimit(1)
+                    if let status = tab.status { StatusGlyph(status: status).font(.caption).fixedSize() }
+                    // The title gives way first, so the badge always shows whole.
+                    Text(tab.title).lineLimit(1).truncationMode(.tail)
                     if let badge = tab.badge {
                         Text(badge).font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize()
+                            .layoutPriority(1)
                     }
                 }
                 .padding(.leading, DesignTokens.Spacing.s)
@@ -75,6 +78,7 @@ private struct ChatTabView: View {
                     .foregroundStyle(.secondary)
                     .padding(DesignTokens.Spacing.s)
                     .contentShape(Rectangle())
+                    .fixedSize()
             }
             .help("Archive chat")
             .accessibilityLabel("Archive \(tab.title)")
