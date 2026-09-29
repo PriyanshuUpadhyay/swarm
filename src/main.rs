@@ -1176,19 +1176,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 now,
             );
             if let Some(seen) = write {
-                match swarm::store::set_state(
+                let detail = detail.filter(|_| seen == "failed");
+                match swarm::store::set_screen_state(
                     &connection,
                     &session_id,
                     &row.id,
                     seen,
-                    "screen",
                     detail.as_deref(),
                     now,
+                    row.state_at,
                 ) {
-                    Ok(()) => {
+                    Ok(true) => {
                         (row.state_at, row.state_source, row.state_detail) =
                             (Some(now), Some("screen".into()), detail);
                     }
+                    // A newer hook report landed after this listing read the row; it stands,
+                    // and the next listing shows it.
+                    Ok(false) => {}
                     Err(error) => eprintln!("swarm: {error}"),
                 }
             }

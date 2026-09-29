@@ -459,6 +459,26 @@ pub fn set_state(
     Ok(())
 }
 
+/// A screen check's write, applied only while the report it read is still the latest: a hook
+/// that lands between the listing's read and this write keeps its newer report. Returns whether
+/// the row changed.
+pub fn set_screen_state(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    state: &str,
+    detail: Option<&str>,
+    now: i64,
+    read_state_at: Option<i64>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let changed = connection.execute(
+        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_at = ?5
+         WHERE session_id = ?1 AND id = ?2 AND state_at IS ?6",
+        (session_id, agent_id, state, detail, now, read_state_at),
+    )?;
+    Ok(changed == 1)
+}
+
 pub fn agents(
     connection: &Connection,
     session_id: &str,
@@ -1380,6 +1400,30 @@ mod tests {
         assert_eq!(orchestrator.state, None);
         assert!(set_state(&connection, SESSION, CODER, "asleep", "hook", None, 42).is_err());
         assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, 42).is_err());
+    }
+
+    #[test]
+    fn a_screen_write_does_not_overwrite_a_newer_hook_report() {
+        let connection = seed(0);
+        set_state(&connection, SESSION, CODER, "working", "hook", None, 100).unwrap();
+        // The listing read state_at 100; a hook reports waiting before the screen write lands.
+        set_state(&connection, SESSION, CODER, "waiting", "hook", None, 105).unwrap();
+        let written =
+            set_screen_state(&connection, SESSION, CODER, "done", None, 110, Some(100)).unwrap();
+        assert!(!written);
+        let coder = agents(&connection, SESSION)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == CODER)
+            .unwrap();
+        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state_source.as_deref(), Some("hook"));
+        assert!(
+            set_screen_state(&connection, SESSION, CODER, "done", None, 111, Some(105)).unwrap()
+        );
+        let orchestrator_unset =
+            set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, None).unwrap();
+        assert!(orchestrator_unset);
     }
 
     #[test]
