@@ -176,6 +176,21 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
+    @Test("Hook status decodes the CLI's answer, and setup runs only its own command")
+    func hooksStatusAndSetup() async throws {
+        let calls = CloseCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            _ = await calls.reply(arguments: arguments, environment: environment)
+            return ShellResult(status: 0, stdout: #"{"codex":true,"agy":false}"#, stderr: "")
+        }
+        let status = try await bus.hooksStatus()
+        #expect(status == SwarmHooksStatus(codex: true, agy: false))
+        #expect(!status.isSetUp)
+        try await bus.setUpHooks()
+        #expect(await calls.arguments == [["hooks", "status", "--json"], ["hooks", "setup"]])
+    }
+
     @Test("A child's chat reads the log its hooks reported and waits before one exists")
     func childTranscript() async throws {
         let transcript = SwarmChairTranscript()

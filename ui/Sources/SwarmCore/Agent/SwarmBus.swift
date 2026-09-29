@@ -59,6 +59,19 @@ public struct SwarmPrompt: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
+/// Whether swarm's own hooks are set up for the providers that need a step (ADR 0029).
+public struct SwarmHooksStatus: Sendable, Hashable, Codable {
+    public var codex: Bool
+    public var agy: Bool
+
+    public init(codex: Bool, agy: Bool) {
+        self.codex = codex
+        self.agy = agy
+    }
+
+    public var isSetUp: Bool { codex && agy }
+}
+
 public struct SwarmAgentList: Sendable, Hashable, Codable {
     public var agents: [SwarmAgent]
     public var attachable: Bool?

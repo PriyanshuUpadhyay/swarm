@@ -279,6 +279,9 @@ private struct SessionsWindow: View {
     @State private var recentActions: [AppKey: Int] = [:]
     @State private var showingArchive = false
     @State private var showingCreate = false
+    @State private var showingHooksSetup = false
+    /// "Not now" on the hooks question; the app menu can still open it (ADR 0029).
+    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -400,6 +403,25 @@ private struct SessionsWindow: View {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
             await model.run()
+        }
+        .task {
+            // Asked once, on the owner's first run with swarm's hooks not set up.
+            guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
+                  let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
+            showingHooksSetup = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
+            showingHooksSetup = true
+        }
+        .sheet(isPresented: $showingHooksSetup) {
+            HooksSetupSheet(
+                setUp: { try await SwarmCLIBus().setUpHooks() },
+                notNow: {
+                    hooksSetupDeclined = true
+                    showingHooksSetup = false
+                },
+                done: { showingHooksSetup = false }
+            )
         }
         .onDisappear { panes.stopAll() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -1036,6 +1058,11 @@ struct SwarmApp: App {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .commands {
+                CommandGroup(after: .appSettings) {
+                    Button("Set Up Agent Hooks…") {
+                        NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+                    }
+                }
                 DebugCommands()
                 AppKeyCommands()
             }
