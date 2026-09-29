@@ -72,6 +72,9 @@ fn roles_get_substitutes_a_runner_whose_cli_is_not_on_path() {
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::write(bin.join("codex"), "#!/bin/sh\n").unwrap();
     std::fs::set_permissions(bin.join("codex"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A claude file that cannot run is not an installed CLI.
+    std::fs::write(bin.join("claude"), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o644)).unwrap();
 
     let output = swarm(&home, &[("PATH", &bin)], &["roles", "get", "review.gate"]);
 

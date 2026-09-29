@@ -192,10 +192,16 @@ fn resolve_role(
     serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
 }
 
-/// A provider counts as installed when its CLI is on PATH, because that binary is what a pane runs.
+/// A provider counts as installed when an executable file of its name is on PATH, because that
+/// binary is what a pane runs.
 fn installed(provider: &str) -> bool {
-    env::var_os("PATH")
-        .is_some_and(|path| env::split_paths(&path).any(|dir| dir.join(provider).is_file()))
+    use std::os::unix::fs::PermissionsExt;
+    env::var_os("PATH").is_some_and(|path| {
+        env::split_paths(&path).any(|dir| {
+            std::fs::metadata(dir.join(provider))
+                .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        })
+    })
 }
 
 /// A substitute seat can put two seats of one route on the same model family, so say so where the
