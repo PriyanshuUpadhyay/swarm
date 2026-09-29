@@ -45,15 +45,21 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         detail(for: entry, idsByTitle: idsByTitle(entries))
     }
 
+    /// Titles that compare equal ignoring case in the user's locale share a key, as
+    /// `localizedCaseInsensitiveCompare` would decide ("Straße" and "STRASSE").
+    static func titleKey(_ title: String) -> String {
+        title.folding(options: [.caseInsensitive], locale: .current)
+    }
+
     /// Workspace ids under each case-folded title, computed once for a whole list.
     public func idsByTitle(_ entries: [WorkspaceEntry]) -> [String: [String]] {
-        Dictionary(grouping: entries.map { (title(for: $0).lowercased(), $0.id) }, by: \.0)
+        Dictionary(grouping: entries.map { (Self.titleKey(title(for: $0)), $0.id) }, by: \.0)
             .mapValues { $0.map(\.1) }
     }
 
     public func detail(for entry: WorkspaceEntry, idsByTitle: [String: [String]]) -> String {
         var parts: [String] = []
-        let duplicates = (idsByTitle[title(for: entry).lowercased()] ?? []).filter { $0 != entry.id }
+        let duplicates = (idsByTitle[Self.titleKey(title(for: entry))] ?? []).filter { $0 != entry.id }
         if !duplicates.isEmpty {
             parts.append(pathQualifier(for: entry.id, others: duplicates))
         }

@@ -171,4 +171,12 @@ struct WorkspaceNavigationTests {
     private func session(_ id: String, path: String) -> SwarmSession {
         SwarmSession(id: .init(id), talkMode: "lane", adapter: "tmux-solo", cwd: path, createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
     }
+
+    @Test("Titles equal in the user's locale ignoring case count as duplicates")
+    func localeCaseFolding() {
+        #expect("Straße".localizedCaseInsensitiveCompare("STRASSE") == .orderedSame)
+        #expect(WorkspaceNavigation.titleKey("Straße") == WorkspaceNavigation.titleKey("STRASSE"))
+        #expect(WorkspaceNavigation.titleKey("Docs") == WorkspaceNavigation.titleKey("docs"))
+        #expect(WorkspaceNavigation.titleKey("docs") != WorkspaceNavigation.titleKey("dogs"))
+    }
 }
