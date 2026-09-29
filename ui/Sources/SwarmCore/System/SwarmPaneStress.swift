@@ -8,6 +8,11 @@ public enum SwarmPaneStress {
         return min(max(value, 0), 24)
     }
 
+    /// `SWARM_PANE_STRESS_SCROLL=1` sweeps the strip left and right, for traces without input.
+    public static var scrolls: Bool {
+        ProcessInfo.processInfo.environment["SWARM_PANE_STRESS_SCROLL"] == "1"
+    }
+
     public static var launch: SwarmAttachLaunch {
         let script = "while :; do date; ls -la /usr/bin | head -40; sleep 0.05; done"
         return SwarmAttachLaunch(
