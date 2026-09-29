@@ -28,11 +28,11 @@ public enum SwarmHome {
            bytes[0] != UInt8(ascii: "-") {
             return ".swarm-\(branch)"
         }
-        func lower(_ byte: UInt8) -> UInt8 {
-            (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) ? byte + 32 : byte
-        }
         let slug = String(
-            decoding: bytes.prefix(200).map(lower).map { safe($0) ? $0 : UInt8(ascii: "-") }, as: UTF8.self)
+            decoding: bytes.prefix(200).map { byte -> UInt8 in
+                let lowered = (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) ? byte + 32 : byte
+                return safe(lowered) ? lowered : UInt8(ascii: "-")
+            }, as: UTF8.self)
         let hash = bytes.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x0100_0000_01b3 }
         return ".swarm-\(slug)+\(String(format: "%016llx", hash))"
     }
