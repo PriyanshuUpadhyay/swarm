@@ -1,8 +1,13 @@
 import Foundation
+import Synchronization
 
 /// Finds a provider log by its chair id or session start time.
 public enum ChairLogDiscovery {
     private static let firstRecordCache = FirstRecordCache()
+    /// Logs found by chair id, shared by the title pass and every chat reader. A chair id names one
+    /// log, so a hit stays right while the file exists; without it each cold open of a chat with no
+    /// bus log listed every rollout again (about 2,000 files, 30 ms). A miss is not kept.
+    private static let chairIDLogs = Mutex<[String: URL]>([:])
 
     public static func path(
         provider: String, chairID: String?, cwd: String, createdAt: Int,
@@ -16,6 +21,10 @@ public enum ChairLogDiscovery {
         let roots = homes.map(\.standardizedFileURL).filter { seen.insert($0.path).inserted }
 
         if let chairID {
+            let key = ([provider, chairID] + roots.map(\.path)).joined(separator: "\n")
+            if let known = chairIDLogs.withLock({ $0[key] }), manager.fileExists(atPath: known.path) {
+                return known
+            }
             for home in roots {
                 if let match = candidates(provider: provider, home: home, manager: manager)
                     .sorted(by: { $0.path < $1.path })
@@ -27,6 +36,7 @@ public enum ChairLogDiscovery {
                         default: false
                         }
                     }) {
+                    chairIDLogs.withLock { $0[key] = match }
                     return match
                 }
             }

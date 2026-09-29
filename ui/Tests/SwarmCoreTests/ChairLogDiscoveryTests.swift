@@ -286,6 +286,29 @@ struct ChairLogDiscoveryTests {
         )?.standardizedFileURL == log.standardizedFileURL)
     }
 
+    @Test("A log found by chair id is reused until its file is gone")
+    func chairIDLogReused() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let chairID = UUID().uuidString
+        func lookup() -> String? {
+            ChairLogDiscovery.path(
+                provider: "codex", chairID: chairID, cwd: "/work", createdAt: 1_790_079_961,
+                homes: [home]
+            )?.lastPathComponent
+        }
+        let found = try fixture.codexLog(home: home, name: "b-\(chairID)", cwd: "/work", at: "2026-09-22T12:26:02Z")
+        #expect(lookup() == found.lastPathComponent)
+
+        // A fresh search would pick this one, because it sorts first.
+        let later = try fixture.codexLog(home: home, name: "a-\(chairID)", cwd: "/work", at: "2026-09-22T12:26:02Z")
+        #expect(lookup() == found.lastPathComponent)
+
+        try FileManager.default.removeItem(at: found)
+        #expect(lookup() == later.lastPathComponent)
+    }
+
     @Test("Uses the time window when no chair id is available")
     func noChairIDUsesWindow() throws {
         let fixture = try Fixture()
