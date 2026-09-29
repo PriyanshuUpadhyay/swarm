@@ -245,6 +245,10 @@ final class SessionsTreeModel {
     }
 
     func run() async {
+        // Account homes load beside the first refresh, not after it: the first chat can open as
+        // soon as the tree arrives, and a lookup still running then cost that open about 120 ms.
+        let homes = Task.detached { await SwarmChairTranscript().prefetchHomes() }
+        defer { homes.cancel() }
         var first = true
         while !Task.isCancelled {
             let timing = SwarmPerformance.begin(first ? "InitialRefresh" : "RefreshTick")

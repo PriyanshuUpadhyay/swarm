@@ -70,7 +70,9 @@ public actor SwarmChairTranscript {
             homesByProvider[provider] = shared
             return shared.homes
         }
+        let timing = SwarmPerformance.begin("AccountHomes")
         let accounts = try? await profiles.accounts(provider: provider)
+        timing.end(count: accounts?.accounts.count)
         let homes = ChairLogDiscovery.homes(
             provider: provider, accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
         )
