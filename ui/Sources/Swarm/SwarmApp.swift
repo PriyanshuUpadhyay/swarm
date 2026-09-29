@@ -609,7 +609,7 @@ private struct SessionsWindow: View {
     private func runOpenScript() async {
         func waitForContent(_ id: SwarmSessionID?) async -> Double? {
             let start = ContinuousClock.now
-            while ContinuousClock.now - start < .seconds(5) {
+            while ContinuousClock.now - start < .seconds(5), !Task.isCancelled {
                 if let entry = model.detailModels.entries.first, entry.id == id, entry.model.snapshot != .loading {
                     let elapsed = ContinuousClock.now - start
                     return Double(elapsed.components.attoseconds) / 1e15 + Double(elapsed.components.seconds) * 1000
@@ -618,20 +618,23 @@ private struct SessionsWindow: View {
             }
             return nil
         }
-        while model.workspaces.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+        while model.workspaces.isEmpty {
+            // The window closing cancels this task; stop rather than spin.
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+        }
         print("open-script start: \(model.workspaces.count) workspaces")
         fflush(stdout)
         var workspaceTimes: [Double] = []
         var chatTimes: [Double] = []
         var misses = 0
-        for round in 1...SwarmOpenScript.rounds {
+        for round in 1...SwarmOpenScript.rounds where !Task.isCancelled {
             let entries = model.workspaces.filter { !model.navigation.archived.contains($0.id) && !$0.chats.isEmpty }
-            for entry in entries {
+            for entry in entries where !Task.isCancelled {
                 model.selectWorkspace(entry)
                 let workspaceMs = await waitForContent(model.selectedSessionID)
                 if let workspaceMs { workspaceTimes.append(workspaceMs) } else { misses += 1 }
                 print("open-script workspace \(workspaceMs.map { String(format: "%.1f ms", $0) } ?? "miss")")
-                for chat in entry.chats {
+                for chat in entry.chats where !Task.isCancelled {
                     model.select(chat.id)
                     let chatMs = await waitForContent(chat.id)
                     if let chatMs { chatTimes.append(chatMs) } else { misses += 1 }
