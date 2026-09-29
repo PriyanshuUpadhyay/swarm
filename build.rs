@@ -22,6 +22,7 @@ fn main() {
     }
     let commit = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=SWARM_BUILD_COMMIT={commit}");
-    let branch = git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
+    // Empty on a detached HEAD or when git fails: "no branch" is only ever "".
+    let branch = git(&["symbolic-ref", "--short", "-q", "HEAD"]).unwrap_or_default();
     println!("cargo:rustc-env=SWARM_BUILD_BRANCH={branch}");
 }
