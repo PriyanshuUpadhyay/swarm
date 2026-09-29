@@ -631,9 +631,10 @@ fn spawn_agent(
         } else {
             swarm::adapter::shell_line(options.command)
         };
+        let line = script_line(root, &session_id, agent_id, &child)?;
         adapter.run(
             "ring",
-            &[("pane", &pane), ("text", &format!("{child}; {hook}"))],
+            &[("pane", &pane), ("text", &format!("{line}; {hook}"))],
         )?;
     }
     println!("{pane}");
@@ -641,6 +642,45 @@ fn spawn_agent(
         eprintln!("account {}", account.name);
     }
     Ok(())
+}
+
+/// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
+/// A ring types into a new pane before its shell is ready, and the terminal then keeps only the
+/// first 1024 bytes of the line, so a long argv never reaches the shell whole. The pane's own
+/// shell sources the file, so its functions (such as yelo's `codex`) still pick the account.
+fn script_line(
+    root: &std::path::Path,
+    session_id: &str,
+    agent_id: &str,
+    command: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let dir = root.join(format!("runs/{session_id}"));
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    // The line can carry an account's env, so only the owner reads it.
+    let path = dir.join(format!("{agent_id}.sh"));
+    let tmp = dir.join(format!(".{agent_id}.sh.{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, format!("{command}\n").as_bytes())
+        })
+        .and_then(|()| std::fs::rename(&tmp, &path));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("swarm: cannot write {}: {error}", path.display()).into());
+    }
+    Ok(format!(
+        ". {}",
+        swarm::adapter::shell_line(&[path.to_string_lossy().into_owned()])
+    ))
 }
 
 fn attach(agent_id: &str) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
@@ -1903,6 +1943,35 @@ mod tests {
         .unwrap();
         let stored = swarm::store::sessions(&connection).unwrap();
         assert_eq!(stored[0].chair_id.as_deref(), Some("right"));
+    }
+
+    #[test]
+    fn a_long_command_is_rung_as_a_short_line_that_sources_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("swarm-script-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let command = format!("'claude' '--settings' '{}'", "x".repeat(2000));
+
+        let line = script_line(&root, session, CODER, &command).unwrap();
+        let script = root.join(format!("runs/{session}/{CODER}.sh"));
+        assert_eq!(line, format!(". '{}'", script.display()));
+        assert!(line.len() < 256);
+        assert_eq!(
+            std::fs::read_to_string(&script).unwrap(),
+            format!("{command}\n")
+        );
+        let mode =
+            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&script), 0o600);
+        assert_eq!(mode(script.parent().unwrap()), 0o700);
+
+        std::fs::write(&script, "echo ran\n").unwrap();
+        let shell = std::process::Command::new("sh")
+            .args(["-c", &format!("{line}; echo after")])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&shell.stdout), "ran\nafter\n");
     }
 
     #[test]
