@@ -91,7 +91,7 @@ pub struct Prompt {
     /// The digit only moves the cursor, so Enter confirms the choice (Codex folder trust).
     #[serde(skip)]
     pub confirm: bool,
-    /// The question's text reaches the top row, so rows above it can be off the screen.
+    /// No rule or history row closes the question above, so rows of it can be off the screen.
     #[serde(skip)]
     pub cut: bool,
 }
@@ -158,15 +158,24 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
     None
 }
 
-/// The prompt a screen shows, read again from the pane's whole history when its question reaches
-/// the top row. None when that read fails or its question still reaches the top row, so no
-/// prompt is shown or answered on part of its question.
+/// The prompt a screen shows, read again from the pane's history when nothing closes its question
+/// above. None when that read fails, or when its question is still open and the history holds
+/// rows above the screen, so no prompt is shown or answered on part of its question.
 pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
     let found = prompt(screen)?;
     if !found.cut {
         return Some(found);
     }
-    prompt(&history()?).filter(|found| !found.cut)
+    let history = history()?;
+    let whole = prompt(&history)?;
+    // A history with no row above the screen (an alternate screen, or a new pane) holds the
+    // whole pane, so its open question starts at its top row. `capture -J` keeps trailing
+    // blanks, and a wrapped row it joins makes the two differ, so such a pane is refused.
+    let rows = |text: &str| {
+        let rows: Vec<&str> = text.lines().map(str::trim_end).collect();
+        rows.join("\n").trim_matches('\n').to_string()
+    };
+    (!whole.cut || rows(&history) == rows(screen)).then_some(whole)
 }
 
 fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
@@ -276,8 +285,6 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         }
         question.push(text);
     }
-    // With no rule or history row, only a blank top row shows where the question starts.
-    let cut = !bounded && !lines[0].trim().is_empty();
     question.reverse();
     let question = question.join("\n");
     // FNV-1a: stable across builds, so a listing and a later answer agree.
@@ -295,7 +302,7 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         id: format!("{id:016x}"),
         // Codex's folder trust footer; there a digit moves the cursor and Enter picks.
         confirm: numbered && lines[footer].to_lowercase().contains("enter continue"),
-        cut,
+        cut: !bounded,
     })
 }
 
@@ -669,13 +676,52 @@ mod tests {
         );
         assert_eq!(whole_prompt(&screen, || None), None);
         // History that lost the question's first rows is refused too.
-        assert_eq!(whole_prompt(&screen, || Some(screen.clone())), None);
-        // A blank top row shows where the question starts.
-        let spaced = format!("\n{screen}");
-        assert!(!prompt(&spaced).unwrap().cut);
+        let lost = format!("   echo step 0\n{screen}");
+        assert_eq!(whole_prompt(&screen, || Some(lost)), None);
         let never = || -> Option<String> { panic!("a whole question needs no history") };
         assert_eq!(whole_prompt(&command("ls"), never), prompt(&command("ls")));
-        assert_eq!(whole_prompt(&spaced, never), prompt(&spaced));
+    }
+
+    #[test]
+    fn a_blank_row_inside_a_command_at_the_top_row_does_not_end_the_question() {
+        let command = |first: &str| {
+            format!(
+                "────\n Bash command\n\n   {first}\n\n   echo done\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel\n"
+            )
+        };
+        // The pane shows the rows from the blank row below the first command row.
+        let screen = |first: &str| {
+            let history = command(first);
+            let start = history.find("\n\n   echo done").unwrap() + 1;
+            history[start..].to_string()
+        };
+        assert!(prompt(&screen("rm -rf /tmp/work")).unwrap().cut);
+        let whole = |first: &str| whole_prompt(&screen(first), || Some(command(first))).unwrap();
+        assert!(
+            whole("rm -rf /tmp/work")
+                .question
+                .contains("rm -rf /tmp/work"),
+            "{}",
+            whole("rm -rf /tmp/work").question
+        );
+        assert_ne!(whole("rm -rf /tmp/work").id, whole("ls /tmp/work").id);
+    }
+
+    #[test]
+    fn an_open_question_counts_only_when_the_history_holds_no_row_above_the_screen() {
+        // A Codex folder trust pane is on the alternate screen, so its history is the screen.
+        let screen = fixture!("codex-trust");
+        let found = prompt(screen).unwrap();
+        assert!(found.cut);
+        let padded: String = screen.lines().map(|line| format!("{line}   \n")).collect();
+        assert_eq!(
+            whole_prompt(screen, || Some(format!("{padded}\n\n"))),
+            Some(found)
+        );
+        assert_eq!(
+            whole_prompt(screen, || Some(format!("$ codex\n{screen}"))),
+            None
+        );
     }
 
     #[test]
