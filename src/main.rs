@@ -1138,32 +1138,36 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         // The screen check (ADR 0021) reads each live pane once per listing, all at the same
         // time, so six agents cost about one capture.
-        let screens: Vec<Option<swarm::screen::ScreenState>> = std::thread::scope(|scope| {
-            let adapter = &adapter;
-            let reads: Vec<_> = rows
-                .iter()
-                .zip(&alive)
-                .map(|(row, alive)| {
-                    let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
-                        (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
-                        _ => None,
-                    };
-                    scope.spawn(move || {
-                        let (pane, provider) = target?;
-                        let output = adapter
-                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                        swarm::screen::herdr_state(&output)
-                            .or_else(|| swarm::screen::screen_state(provider, &output))
+        let screens: Vec<Option<(swarm::screen::ScreenState, Option<String>)>> =
+            std::thread::scope(|scope| {
+                let adapter = &adapter;
+                let reads: Vec<_> = rows
+                    .iter()
+                    .zip(&alive)
+                    .map(|(row, alive)| {
+                        let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
+                            (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                            _ => None,
+                        };
+                        scope.spawn(move || {
+                            let (pane, provider) = target?;
+                            let output = adapter
+                                .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                            let state = swarm::screen::herdr_state(&output)
+                                .or_else(|| swarm::screen::screen_state(provider, &output))?;
+                            Some((state, swarm::screen::failure_detail(provider, &output)))
+                        })
                     })
-                })
-                .collect();
-            reads
-                .into_iter()
-                .map(|read| read.join().ok().flatten())
-                .collect()
-        });
+                    .collect();
+                reads
+                    .into_iter()
+                    .map(|read| read.join().ok().flatten())
+                    .collect()
+            });
         let mut agents = Vec::new();
         for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+            let (screen, detail) = screen.unzip();
+            let detail = detail.flatten();
             let (state, write) = swarm::screen::resolve(
                 row.state.as_deref(),
                 row.state_at,
@@ -1178,12 +1182,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     &row.id,
                     seen,
                     "screen",
-                    None,
+                    detail.as_deref(),
                     now,
                 ) {
                     Ok(()) => {
                         (row.state_at, row.state_source, row.state_detail) =
-                            (Some(now), Some("screen".into()), None);
+                            (Some(now), Some("screen".into()), detail);
                     }
                     Err(error) => eprintln!("swarm: {error}"),
                 }

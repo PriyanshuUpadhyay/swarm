@@ -15,6 +15,8 @@ pub enum ScreenState {
     Working,
     Waiting,
     Idle,
+    /// The turn ended on an error row, such as Codex's red `■ message`.
+    Failed,
 }
 
 impl ScreenState {
@@ -23,6 +25,7 @@ impl ScreenState {
             ScreenState::Working => "working",
             ScreenState::Waiting => "waiting",
             ScreenState::Idle => "done",
+            ScreenState::Failed => "failed",
         }
     }
 }
@@ -103,7 +106,14 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             if has(&["esc to interr", "• working ("]) {
                 return Some(ScreenState::Working);
             }
-            (0..lines.len()).any(idle_at).then_some(ScreenState::Idle)
+            if !(0..lines.len()).any(idle_at) {
+                return None;
+            }
+            Some(if codex_failure(lines).is_some() {
+                ScreenState::Failed
+            } else {
+                ScreenState::Idle
+            })
         }
         "agy" => {
             if has(&["requesting permission for:"])
@@ -127,6 +137,40 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
         }
         _ => None,
     }
+}
+
+/// The message of a failed turn that the bottom rows show, for the state's detail.
+pub fn failure_detail(provider: &str, rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let lines = &lines[lines.len().saturating_sub(ROWS)..];
+    match provider {
+        "codex" => codex_failure(lines),
+        _ => None,
+    }
+}
+
+/// Codex ends a failed turn with a red `■ message` row (codex-rs `new_error_event`). It counts
+/// only when no agent (`•`) or user (`›`) row follows it before the idle composer.
+fn codex_failure(lines: &[&str]) -> Option<String> {
+    let error = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with("■ "))?;
+    let composer = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('›'))?;
+    if error > composer {
+        return None;
+    }
+    let later = lines[error + 1..composer]
+        .iter()
+        .any(|line| line.trim_start().starts_with(['•', '›']));
+    (!later).then(|| {
+        lines[error]
+            .trim_start()
+            .trim_start_matches("■ ")
+            .trim()
+            .to_string()
+    })
 }
 
 /// The state of a pane that `herdr agent get` reports, or None for any other output.
@@ -205,6 +249,34 @@ mod tests {
                 "{provider}:\n{rows}"
             );
         }
+    }
+
+    #[test]
+    fn a_codex_error_row_above_the_idle_composer_is_a_failure_with_its_message() {
+        let rows = fixture!("codex-failed");
+        assert_eq!(screen_state("codex", rows), Some(ScreenState::Failed));
+        assert_eq!(
+            failure_detail("codex", rows).as_deref(),
+            Some("stream disconnected before completion: rate limit reached for gpt-5.5-codex")
+        );
+        // Output after the error means a later turn went on.
+        let recovered = rows.replace("\n\n› Ask", "\n\n• Retried and passed.\n\n› Ask");
+        assert_eq!(screen_state("codex", &recovered), Some(ScreenState::Idle));
+        assert_eq!(failure_detail("codex", fixture!("codex-idle")), None);
+        assert_eq!(
+            failure_detail("codex", "› prompt\n■ error after the composer\n"),
+            None
+        );
+        assert_eq!(
+            resolve(
+                Some("done"),
+                Some(970),
+                Some("hook"),
+                Some(ScreenState::Failed),
+                1_000
+            ),
+            (Some("failed".into()), Some("failed"))
+        );
     }
 
     #[test]
