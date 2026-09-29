@@ -5,4 +5,5 @@ pub mod host;
 pub mod paths;
 pub mod profiles;
 pub mod routing;
+pub mod screen;
 pub mod store;

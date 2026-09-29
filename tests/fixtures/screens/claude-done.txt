@@ -1,0 +1,15 @@
+  though trucks and planes carry more goods than river boats do.
+
+  Rivers deserve our respect and protection. They sustain life, shape the land,
+  and connect communities. We must manage them carefully to balance human
+  needs with the needs of the plants and animals that depend on them. Rivers
+  will continue to flow long after we are gone, but only if we choose to
+  preserve them.
+
+✻ Brewed for 12s · done 12:21 PM
+
+─────────────────────────────────────────────────────────────────────── coder ─
+❯ 
+───────────────────────────────────────────────────────────────────────────────
+  ➜  workers Haiku 4.5 acct someone ctx 25% cache 59% id 00000000…
+  ⏸ manual mode on · ← 1 agent

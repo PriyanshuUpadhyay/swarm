@@ -1,0 +1,15 @@
+
+
+
+
+
+
+
+
+
+  tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmu…
+─────────────────────────────────────────────────────────────────────── coder ─
+❯ Try "fix typecheck errors"
+───────────────────────────────────────────────────────────────────────────────
+  ➜  workers Haiku 4.5 acct someone ctx 0% cache 0% id 00000000…
+  ⏸ manual mode on · ← 1 agent
