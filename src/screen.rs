@@ -209,8 +209,8 @@ pub fn herdr_state(output: &str) -> Option<ScreenState> {
 /// What the listing shows for one agent, and the state to write, if any.
 ///
 /// A hook report younger than `HOOK_AUTHORITY_S` wins. After that, a screen result that differs
-/// is written with source `screen`. An idle screen agrees with `failed`, because a failed turn
-/// also ends at the idle prompt. A `working` or `waiting` report older than `STALE_S` that the
+/// is written with source `screen`. An idle screen agrees with a hook's `failed`, because a failed
+/// turn also ends at the idle prompt, but not with a `failed` the screen wrote. A `working` or `waiting` report older than `STALE_S` that the
 /// screen does not confirm is shown as no report, and nothing is written for it.
 pub fn resolve(
     state: Option<&str>,
@@ -225,7 +225,10 @@ pub fn resolve(
     }
     if let Some(screen) = screen {
         let seen = screen.as_state();
-        let agrees = state == Some(seen) || (seen == "done" && state == Some("failed"));
+        // A failed turn also ends at the idle prompt, so an idle screen agrees with a failure a
+        // hook reported. A failure the screen itself saw lasts only while its error row shows.
+        let agrees = state == Some(seen)
+            || (seen == "done" && state == Some("failed") && source != Some("screen"));
         if !agrees {
             return (Some(seen.to_string()), Some(seen));
         }
@@ -403,6 +406,33 @@ mod tests {
         assert_eq!(
             resolve(Some("waiting"), Some(now - 1), Some("screen"), idle, now),
             (Some("done".into()), Some("done"))
+        );
+    }
+
+    #[test]
+    fn a_screen_failure_clears_on_an_idle_screen_but_a_hook_failure_stays() {
+        let now = 1_000;
+        let idle = Some(ScreenState::Idle);
+        // The screen saw the error row; the retry finished with no hook, the row scrolled away.
+        assert_eq!(
+            resolve(Some("failed"), Some(now - 30), Some("screen"), idle, now),
+            (Some("done".into()), Some("done"))
+        );
+        // A failure the provider reported by hook ends at the same idle prompt; it stays.
+        assert_eq!(
+            resolve(Some("failed"), Some(now - 30), Some("hook"), idle, now),
+            (Some("failed".into()), None)
+        );
+        // The error row still showing keeps the screen's failure.
+        assert_eq!(
+            resolve(
+                Some("failed"),
+                Some(now - 30),
+                Some("screen"),
+                Some(ScreenState::Failed),
+                now
+            ),
+            (Some("failed".into()), None)
         );
     }
 
