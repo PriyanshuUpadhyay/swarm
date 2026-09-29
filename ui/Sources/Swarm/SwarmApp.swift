@@ -1108,7 +1108,15 @@ private struct LaunchTarget: Identifiable {
 }
 
 struct SwarmApp: App {
-    init() { SwarmPerformance.event("AppStarted") }
+    init() {
+        SwarmPerformance.event("AppStarted")
+        // Screenshot aid: SWARM_APPEARANCE=dark or light fixes this app's appearance only.
+        switch ProcessInfo.processInfo.environment["SWARM_APPEARANCE"] {
+        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        default: break
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
