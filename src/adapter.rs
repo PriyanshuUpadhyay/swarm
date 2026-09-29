@@ -157,10 +157,28 @@ impl Adapter {
     /// longer than `timeout`. The listing calls it once per live agent, so a slow pane must not
     /// hold the listing up.
     pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
+        self.read_bounded(self.screen.as_ref()?, vars, timeout)
+    }
+
+    /// The `capture` verb's output under the same limit as `screen`.
+    pub fn capture_within(
+        &self,
+        vars: &[(&str, &str)],
+        timeout: std::time::Duration,
+    ) -> Option<String> {
+        self.read_bounded(&self.capture, vars, timeout)
+    }
+
+    fn read_bounded(
+        &self,
+        line: &str,
+        vars: &[(&str, &str)],
+        timeout: std::time::Duration,
+    ) -> Option<String> {
         use std::os::unix::process::CommandExt;
         // Its own process group, so the deadline can also stop a grandchild that holds stdout.
         let mut child = self
-            .command(self.screen.as_ref()?, vars)
+            .command(line, vars)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .process_group(0)

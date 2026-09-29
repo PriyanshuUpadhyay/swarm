@@ -173,6 +173,28 @@ fn codex_failure(lines: &[&str]) -> Option<String> {
     })
 }
 
+/// What one screen read shows, with a failure's message. `screen` is the adapter's screen verb
+/// output: Herdr's status JSON or the pane's bottom rows. Herdr's status has no failure, so an
+/// idle Herdr pane also has its text read through `capture` for the provider's error row.
+pub fn read_pane(
+    provider: &str,
+    screen: &str,
+    capture: impl FnOnce() -> Option<String>,
+) -> Option<(ScreenState, Option<String>)> {
+    if let Some(state) = herdr_state(screen) {
+        if state != ScreenState::Idle {
+            return Some((state, None));
+        }
+        let detail = capture().and_then(|text| failure_detail(provider, &text));
+        return Some(match detail {
+            Some(detail) => (ScreenState::Failed, Some(detail)),
+            None => (state, None),
+        });
+    }
+    let state = screen_state(provider, screen)?;
+    Some((state, failure_detail(provider, screen)))
+}
+
 /// The state of a pane that `herdr agent get` reports, or None for any other output.
 pub fn herdr_state(output: &str) -> Option<ScreenState> {
     let value: serde_json::Value = serde_json::from_str(output).ok()?;
@@ -276,6 +298,40 @@ mod tests {
                 1_000
             ),
             (Some("failed".into()), Some("failed"))
+        );
+    }
+
+    #[test]
+    fn an_idle_herdr_status_still_reads_the_pane_for_a_codex_error_row() {
+        let idle = r#"{"result":{"agent":{"agent_status":"idle"}}}"#;
+        let working = r#"{"result":{"agent":{"agent_status":"working"}}}"#;
+        assert_eq!(
+            read_pane("codex", idle, || Some(fixture!("codex-failed").to_string())),
+            Some((
+                ScreenState::Failed,
+                Some(
+                    "stream disconnected before completion: rate limit reached for gpt-5.5-codex"
+                        .into()
+                )
+            ))
+        );
+        assert_eq!(
+            read_pane("codex", idle, || Some(fixture!("codex-idle").to_string())),
+            Some((ScreenState::Idle, None))
+        );
+        assert_eq!(
+            read_pane("codex", idle, || None),
+            Some((ScreenState::Idle, None))
+        );
+        let never = || -> Option<String> { panic!("a working pane needs no text read") };
+        assert_eq!(
+            read_pane("codex", working, never),
+            Some((ScreenState::Working, None))
+        );
+        // A text screen verb is classified as before.
+        assert_eq!(
+            read_pane("codex", fixture!("codex-failed"), || None).map(|(state, _)| state),
+            Some(ScreenState::Failed)
         );
     }
 

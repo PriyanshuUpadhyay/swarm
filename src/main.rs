@@ -1162,9 +1162,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                             let (pane, provider) = target?;
                             let output = adapter
                                 .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                            let state = swarm::screen::herdr_state(&output)
-                                .or_else(|| swarm::screen::screen_state(provider, &output))?;
-                            Some((state, swarm::screen::failure_detail(provider, &output)))
+                            swarm::screen::read_pane(provider, &output, || {
+                                adapter.capture_within(
+                                    &[("pane", pane)],
+                                    std::time::Duration::from_millis(300),
+                                )
+                            })
                         })
                     })
                     .collect();
