@@ -1190,6 +1190,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
+        if provider.as_deref() == Some("agy") {
+            let hooks = user_home.join(".gemini/config/hooks.json");
+            let command = swarm::bus::state_hook_command("agy")?;
+            swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_hooks(&hooks, &command))?;
+        }
         match provider.as_deref() {
             Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
                 Ok(target) if provider == "codex" => {
