@@ -1183,39 +1183,47 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         // The screen check (ADR 0021) reads each live pane once per listing, all at the same
         // time, so six agents cost about one capture.
-        let screens: Vec<Option<(swarm::screen::ScreenState, Option<String>)>> =
-            std::thread::scope(|scope| {
-                let adapter = &adapter;
-                let reads: Vec<_> = rows
-                    .iter()
-                    .zip(&alive)
-                    .map(|(row, alive)| {
-                        let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
-                            (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
-                            _ => None,
-                        };
-                        scope.spawn(move || {
-                            let (pane, provider) = target?;
-                            let output = adapter
-                                .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                            swarm::screen::read_pane(provider, &output, || {
-                                adapter.capture_within(
-                                    &[("pane", pane)],
-                                    std::time::Duration::from_millis(300),
-                                )
-                            })
-                        })
+        type ScreenRead = (
+            swarm::screen::ScreenState,
+            Option<String>,
+            Option<swarm::screen::Prompt>,
+        );
+        let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
+            let adapter = &adapter;
+            let reads: Vec<_> = rows
+                .iter()
+                .zip(&alive)
+                .map(|(row, alive)| {
+                    let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
+                        (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                        _ => None,
+                    };
+                    scope.spawn(move || {
+                        let (pane, provider) = target?;
+                        let output = adapter
+                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                        let prompt = swarm::screen::prompt(&output);
+                        let (state, detail) = swarm::screen::read_pane(provider, &output, || {
+                            adapter.capture_within(
+                                &[("pane", pane)],
+                                std::time::Duration::from_millis(300),
+                            )
+                        })?;
+                        Some((state, detail, prompt))
                     })
-                    .collect();
-                reads
-                    .into_iter()
-                    .map(|read| read.join().ok().flatten())
-                    .collect()
-            });
+                })
+                .collect();
+            reads
+                .into_iter()
+                .map(|read| read.join().ok().flatten())
+                .collect()
+        });
         let mut agents = Vec::new();
         for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
-            let (screen, detail) = screen.unzip();
-            let detail = detail.flatten();
+            let (screen, detail, prompt) = match screen {
+                Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
+                None => (None, None, None),
+            };
             let (state, write) = swarm::screen::resolve(
                 row.state.as_deref(),
                 row.state_at,
@@ -1260,6 +1268,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 state_source: row.state_source,
                 state_detail: row.state_detail,
                 log: row.log,
+                prompt,
             });
         }
         #[derive(serde::Serialize)]

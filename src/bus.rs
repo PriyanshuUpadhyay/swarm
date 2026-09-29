@@ -52,6 +52,8 @@ pub struct Agent {
     pub state_detail: Option<String>,
     /// The chat log the agent's provider hooks reported; null until the first report.
     pub log: Option<String>,
+    /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.
+    pub prompt: Option<crate::screen::Prompt>,
 }
 
 #[derive(Debug, Serialize)]

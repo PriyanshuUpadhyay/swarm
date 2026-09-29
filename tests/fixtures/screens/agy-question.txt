@@ -1,0 +1,15 @@
+  Analyzing the request, the goal is to elicit a single color choice from the user using a predefined ques...
+
+? Which color do you choose?
+
+Question
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Question 1/1: Which color do you choose?
+
+> 1. Red
+  2. Blue
+  3. Write-in...
+
+  ↑/↓ Navigate · enter Select · esc Skip
+esc to cancel                                                                          Gemini 3.7 Flash · high
