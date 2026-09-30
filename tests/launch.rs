@@ -482,6 +482,77 @@ fn a_child_agent_can_neither_launch_nor_spawn() {
 }
 
 #[test]
+fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
+    let home = scratch("rering");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = printf 'ring\\n' >> \"$HOME/rings\"\n\
+         list = printf 'pane chair\\n'\nclose = true\ncapture = cat \"$HOME/screen\"\n\
+         screen = cat \"$HOME/screen\"\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    for args in [
+        &["agent", "add", "orchestrator", "orchestrator"][..],
+        &["spawn", "seat", "coder"],
+    ] {
+        let output = swarm(&home, &chair, args);
+        assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+    }
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "agy").unwrap();
+    let mut send = Command::new(env!("CARGO_BIN_EXE_swarm"));
+    send.env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .envs(chair)
+        .args(["send", "seat", "task"])
+        .stdin(std::process::Stdio::piped());
+    let mut child = send.spawn().unwrap();
+    drop(child.stdin.take());
+    assert!(child.wait().unwrap().success());
+    let rings = || std::fs::read_to_string(home.join("rings")).unwrap_or_default();
+    assert_eq!(rings(), "ring\n");
+    // The first ring was typed a minute ago, while the CLI still started, and nothing read it.
+    connection
+        .execute(
+            "UPDATE message SET created_at = created_at - 120, rung_at = rung_at - 120",
+            [],
+        )
+        .unwrap();
+    let list = |screen: &str| {
+        std::fs::write(home.join("screen"), screen).unwrap();
+        let output = swarm(&home, &chair, &["agents", "--json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+    };
+
+    // A pane in a turn gets no ring typed into it.
+    list(include_str!("fixtures/screens/agy-working.txt"));
+    assert_eq!(rings(), "ring\n");
+    list(include_str!("fixtures/screens/agy-idle.txt"));
+    assert_eq!(rings(), "ring\nring\n");
+    // One ring again, not one per listing.
+    list(include_str!("fixtures/screens/agy-idle.txt"));
+    assert_eq!(rings(), "ring\nring\n");
+}
+
+#[test]
 fn a_spawned_agent_runs_the_swarm_that_launched_it() {
     let home = scratch("own-swarm");
     // An older `swarm` installed first on the pane's PATH.

@@ -1327,6 +1327,15 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
                 None => (None, None, None),
             };
+            // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
+            // so the listing it polls rings a due message again once the pane shows it idle.
+            if screen == Some(swarm::screen::ScreenState::Idle)
+                && let Some(pane) = row.pane.as_deref()
+                && let Err(error) =
+                    rering_if_due(&mut connection, &root, &adapter, &session_id, &row.id, pane)
+            {
+                eprintln!("swarm: {error}");
+            }
             let (state, write) = swarm::screen::resolve(
                 row.state.as_deref(),
                 row.state_at,
