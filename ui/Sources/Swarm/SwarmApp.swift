@@ -408,6 +408,8 @@ private struct SessionsWindow: View {
             // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
             // finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
+            // New Chat and the profiles page then open on these reads instead of waiting.
+            await SwarmProfileCatalog.shared.prefetch()
             guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
                   let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
             showingHooksSetup = true

@@ -6,6 +6,8 @@ import SwarmCore
 /// one call; Cancel drops every edit.
 struct ProfileEditorSheet: View {
     let providers: [SwarmProvider]
+    /// Why the provider list is empty, when its read failed.
+    let providersError: String?
     /// The last launch check of the saved profile, for each card's status.
     let check: SwarmProfileCheck?
     /// The runner to scroll to when a chip opened the sheet.
@@ -19,12 +21,15 @@ struct ProfileEditorSheet: View {
     @State private var catalogErrors: [String: String] = [:]
     @State private var isSaving = false
     @State private var error: String?
+    /// Each card's measured height, so the list fits its cards up to runnerListMax.
+    @State private var cardHeights: [UUID: CGFloat] = [:]
 
     init(
-        profile: SwarmProfile, providers: [SwarmProvider], check: SwarmProfileCheck?, focus: Int?,
-        save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
+        profile: SwarmProfile, providers: [SwarmProvider], providersError: String? = nil,
+        check: SwarmProfileCheck?, focus: Int?, save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
     ) {
         self.providers = providers
+        self.providersError = providersError
         self.check = check
         self.focus = focus
         self.save = save
@@ -63,17 +68,20 @@ struct ProfileEditorSheet: View {
                             onMove: { offset in move(index, by: offset) },
                             onRetry: { Task { await loadModels(runner.provider, retry: true) } }
                         )
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                            cardHeights[runner.id] = $0
+                        }
                         .id(runner.id)
+                        .listRowInsets(EdgeInsets(
+                            top: DesignTokens.Spacing.xs, leading: 0, bottom: DesignTokens.Spacing.xs, trailing: 0
+                        ))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
                     .onMove { draft.move(fromOffsets: $0, toOffset: $1) }
                 }
                 .scrollContentBackground(.hidden)
-                .frame(height: min(
-                    CGFloat(draft.runners.count) * DesignTokens.Size.runnerCard,
-                    DesignTokens.Size.runnerListMax
-                ))
+                .frame(height: listHeight)
                 .onAppear {
                     if let focus, draft.runners.indices.contains(focus) {
                         proxy.scrollTo(draft.runners[focus].id, anchor: .center)
@@ -93,6 +101,12 @@ struct ProfileEditorSheet: View {
             }
             .buttonStyle(.borderless)
             .disabled(providers.isEmpty)
+            if providers.isEmpty {
+                Text(verbatim: "Add runner is off because the provider list could not be read. "
+                    + (providersError ?? "Close the editor and try again."))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let error {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
             }
@@ -112,6 +126,15 @@ struct ProfileEditorSheet: View {
         .task {
             for provider in Set(draft.runners.map(\.provider)) { await loadModels(provider) }
         }
+    }
+
+    /// The cards' height, at least one card and at most runnerListMax, where the list scrolls. A
+    /// card not measured yet counts as runnerCard.
+    private var listHeight: CGFloat {
+        let cards = draft.runners.reduce(CGFloat.zero) { total, runner in
+            total + (cardHeights[runner.id] ?? DesignTokens.Size.runnerCard) + 2 * DesignTokens.Spacing.xs
+        }
+        return min(max(cards, DesignTokens.Size.runnerCard), DesignTokens.Size.runnerListMax)
     }
 
     private func provider(_ id: String) -> SwarmProvider? {

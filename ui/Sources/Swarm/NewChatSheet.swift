@@ -15,6 +15,8 @@ final class NewChatModel {
     var chatCheck: SwarmProfileCheck?
     var profileList: SwarmProfileList?
     var providers: [SwarmProvider] = []
+    /// Why the chat profile or the provider list could not be read, shown before Start chat.
+    var profileError: String?
 
     var provider = "codex"
     var isSwitch = false
@@ -48,12 +50,25 @@ final class NewChatModel {
             || $0.id.localizedCaseInsensitiveContains(search) }
     }
 
+    /// The providers the picker offers. A switch hands the conversation over through Claude's and
+    /// Codex's hooks, so it offers only those two.
+    var pickerProviders: [SwarmProvider] {
+        isSwitch ? providers.filter { ["claude", "codex"].contains($0.id) } : providers
+    }
+
     func load(initialProvider: String?, initialModel: String?) async {
-        let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
-        if let preferred = initialProvider, allowed.contains(preferred) {
+        let catalog = SwarmProfileCatalog.shared
+        do {
+            providers = try await catalog.providers()
+        } catch {
+            profileError = "Could not read the providers. \(message(error))"
+        }
+        if let preferred = initialProvider, pickerProviders.contains(where: { $0.id == preferred }) {
             provider = preferred
         }
         selectedModel = ChatModelChoice.initial(current: initialModel, models: [])
+        // The list read at app launch shows at once; the fresh read below replaces it.
+        if let cached = await catalog.cachedProfiles { showChatProfile(cached, check: nil) }
         await loadChatProfile(check: nil)
         models = await SwarmModelCatalog.shared.cached(provider) ?? []
         await loadOptions()
@@ -63,15 +78,22 @@ final class NewChatModel {
     /// Reads the chat profile and selects the runner it would start. The launch check is slower,
     /// so the first pass uses the profile's first runner.
     func loadChatProfile(check: SwarmProfileCheck?) async {
-        guard let list = try? await profiles.profiles() else { return }
+        do {
+            showChatProfile(try await SwarmProfileCatalog.shared.profiles(), check: check)
+            if !providers.isEmpty { profileError = nil }
+        } catch {
+            profileError = "Could not read the chat profile. \(message(error))"
+        }
+    }
+
+    private func showChatProfile(_ list: SwarmProfileList, check: SwarmProfileCheck?) {
         profileList = list
-        if providers.isEmpty { providers = (try? await profiles.providers()) ?? [] }
         let before = chatChoice
         chatCheck = check
         chatChoice = ChatProfileChoice(profile: list.profiles.first { $0.name == "chat" }, check: check)
         guard !isSwitch, let runner = chatChoice?.runner,
               before == nil || before?.isProfilePick(provider: provider, model: selectedModel) == true,
-              SwarmChatProvider.all.contains(runner.provider) else { return }
+              providers.contains(where: { $0.id == runner.provider }) else { return }
         if runner.provider != provider {
             selectProvider(runner.provider)
         }
@@ -226,6 +248,14 @@ struct NewChatSheet: View {
                 Text(verbatim: directory).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     .truncationMode(.middle).help(directory)
             }
+            if let error = model.profileError {
+                HStack {
+                    Text(verbatim: error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                    Button("Retry") {
+                        Task { await model.load(initialProvider: initialProvider, initialModel: initialModel) }
+                    }
+                }
+            }
             selection.disabled(model.isStarting)
             if let phase = model.phase {
                 HStack {
@@ -274,6 +304,7 @@ struct NewChatSheet: View {
             ProfileEditorSheet(
                 profile: chat,
                 providers: model.providers,
+                providersError: model.providers.isEmpty ? model.profileError : nil,
                 check: model.chatCheck,
                 focus: nil,
                 save: { edited in
@@ -304,8 +335,8 @@ struct NewChatSheet: View {
             Picker("Provider", selection: Binding(
                 get: { model.provider }, set: { model.selectProvider($0) }
             )) {
-                ForEach(isSwitch ? ["claude", "codex"] : SwarmChatProvider.all, id: \.self) { provider in
-                    Text(provider == "agy" ? "Gemini" : provider.capitalized).tag(provider)
+                ForEach(model.pickerProviders) { provider in
+                    Text(provider.label).tag(provider.id)
                 }
             }
             .pickerStyle(.segmented)

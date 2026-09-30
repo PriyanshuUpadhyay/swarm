@@ -45,7 +45,7 @@ enum DesignTokens {
         static let healthPill: CGFloat = 110
         /// The round letter mark of a provider in a runner chip.
         static let providerMark: CGFloat = 15
-        /// One runner card's height, for sizing the editor's card list.
+        /// One runner card's height before it is measured, and the card list's least height.
         static let runnerCard: CGFloat = 104
         /// The model control in a runner card, so the effort picker lines up across cards.
         static let modelField: CGFloat = 300

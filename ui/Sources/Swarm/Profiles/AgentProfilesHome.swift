@@ -12,6 +12,7 @@ struct AgentProfilesHome: View {
     @State private var checks: [String: SwarmProfileCheck] = [:]
     @State private var checkedAt: Date?
     @State private var providers: [SwarmProvider] = []
+    @State private var providersError: String?
     @State private var isLoading = true
     @State private var error: String?
     @State private var editing: EditTarget?
@@ -23,7 +24,7 @@ struct AgentProfilesHome: View {
     @AppStorage("profiles.collapsedGroups") private var collapsedGroups = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let source = SwarmCLIProfileSource()
-    private static var cachedList: SwarmProfileList?
+    private let catalog = SwarmProfileCatalog.shared
 
     private struct EditTarget: Identifiable {
         let profile: SwarmProfile
@@ -72,13 +73,14 @@ struct AgentProfilesHome: View {
         .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
-            if list == nil { list = Self.cachedList }
+            if list == nil { list = await catalog.cachedProfiles }
             await load()
         }
         .sheet(item: $editing) { target in
             ProfileEditorSheet(
                 profile: target.profile,
                 providers: providers,
+                providersError: providersError,
                 check: checks[target.profile.name],
                 focus: target.focus,
                 save: { edited in
@@ -221,7 +223,7 @@ struct AgentProfilesHome: View {
         defer { if generation == loads { isLoading = false } }
         do {
             await LoginShellPath.ready()
-            let loaded = try await source.profiles()
+            let loaded = try await catalog.profiles()
             try Task.checkCancellation()
             guard generation == loads else { return }
             // A check marks runners by index, so an old check on a changed file marks wrong chips.
@@ -230,15 +232,22 @@ struct AgentProfilesHome: View {
                 checkedAt = nil
             }
             list = loaded
-            Self.cachedList = loaded
             error = nil
         } catch is CancellationError {
             return
         } catch {
+            guard generation == loads else { return }
             self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
             return
         }
-        if providers.isEmpty { providers = (try? await source.providers()) ?? [] }
+        if providers.isEmpty {
+            do {
+                providers = try await catalog.providers()
+                providersError = nil
+            } catch {
+                providersError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            }
+        }
         // A failed or slow check leaves the health unknown rather than showing a wrong one.
         let checked = try? await source.check()
         guard generation == loads else { return }
@@ -269,9 +278,10 @@ private struct ProfileRow: View {
                 .frame(width: DesignTokens.Size.profileName, alignment: .leading)
             RunnerChain(runners: profile.runners, check: check, providers: providers, onSelect: onEdit)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            // Always shown, so a keyboard user can Tab to it; hover only darkens it.
             Button { onEdit(nil) } label: { Image(systemName: "pencil") }
                 .buttonStyle(.borderless)
-                .opacity(isHovered ? 1 : 0)
+                .foregroundStyle(isHovered ? .primary : .secondary)
                 .help("Edit \(profile.name)")
                 .accessibilityLabel("Edit \(profile.name)")
             ProfileHealthPill(status: status)
