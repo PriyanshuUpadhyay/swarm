@@ -23,6 +23,8 @@ struct ProfileEditorSheet: View {
     @State private var error: String?
     /// The card list's content height as the list lays it out, so the list fits its cards.
     @State private var contentHeight: CGFloat?
+    /// The whole sheet's height as laid out, which the sheet window takes.
+    @State private var sheetHeight: CGFloat = 0
 
     init(
         profile: SwarmProfile, providers: [SwarmProvider], providersError: String?,
@@ -78,9 +80,7 @@ struct ProfileEditorSheet: View {
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in
                     if height > 0 { contentHeight = height }
                 }
-                // The sheet keeps the size it opened at, so when cards are added the list gives up
-                // height and scrolls rather than push the title and buttons out.
-                .frame(minHeight: DesignTokens.Size.runnerCard, idealHeight: listHeight, maxHeight: listHeight)
+                .frame(height: listHeight)
                 .onChange(of: draft.runners.count) { old, new in
                     if new > old, let added = draft.runners.last { proxy.scrollTo(added.id, anchor: .bottom) }
                 }
@@ -124,8 +124,11 @@ struct ProfileEditorSheet: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.profileSheet)
-        // The sheet opens at the height its cards need.
-        .presentationSizing(.fitted)
+        // A sheet window keeps the size it opened at, so it is set to the content's height each
+        // time the cards lay out, are added, or are removed.
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sheetHeight = $0 }
+        .background(SheetWindowHeight(height: sheetHeight))
         .interactiveDismissDisabled(isSaving)
         .task {
             for provider in Set(draft.runners.map(\.provider)) { await loadModels(provider) }
@@ -403,5 +406,24 @@ private struct FlagPickers: View {
             return field.values
         }
         return field.values + [current]
+    }
+}
+
+/// Sets the height of the window this view is in. A macOS sheet takes its size once, when it
+/// opens, so without this a sheet whose content grows cuts it off.
+private struct SheetWindowHeight: NSViewRepresentable {
+    let height: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard height > 0 else { return }
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            var size = window.contentRect(forFrameRect: window.frame).size
+            guard abs(size.height - height) > 0.5 else { return }
+            size.height = height
+            window.setContentSize(size)
+        }
     }
 }
