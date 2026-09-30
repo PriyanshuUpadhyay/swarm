@@ -92,3 +92,132 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     assert_eq!(stdout(&broken), "{}\n");
     assert!(!broken.stderr.is_empty());
 }
+
+/// `name` run as a copy of the built binary at its own path, as the brew CLI and the app's helper
+/// are two paths on one Mac.
+fn build_at(home: &Path, name: &str) -> PathBuf {
+    let dir = home.join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join("swarm");
+    std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &exe).unwrap();
+    exe
+}
+
+fn hooks(exe: &Path, home: &Path, args: &[&str]) -> Output {
+    Command::new(exe)
+        .env_clear()
+        .env("HOME", home)
+        .env("SWARM_HOME", home)
+        .env("PATH", "/usr/bin:/bin")
+        .args(["hooks"])
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn two_swarm_builds_share_one_hook_setup_and_keep_the_owners_hooks() {
+    let home = scratch("two-builds");
+    let brew = build_at(&home, "brew");
+    let app = build_at(&home, "app");
+    let codex_config = home.join(".codex/config.toml");
+    let agy_hooks = home.join(".gemini/config/hooks.json");
+    let owners_codex = "model = \"o3\"\n\n[hooks.state.\"/owner/config.toml:stop:0:0\"]\ntrusted_hash = \"sha256:owner\"\n";
+    let owners_agy =
+        r#"{"herdr": {"Stop": [{"type": "command", "command": "herdr-state", "timeout": 10}]}}"#;
+    std::fs::create_dir_all(codex_config.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(agy_hooks.parent().unwrap()).unwrap();
+    std::fs::write(&codex_config, owners_codex).unwrap();
+    std::fs::write(&agy_hooks, owners_agy).unwrap();
+    let all_set = serde_json::json!({"codex": true, "agy": true});
+
+    let setup = hooks(&brew, &home, &["setup"]);
+    assert!(setup.status.success(), "{setup:?}");
+    for build in [&brew, &app] {
+        let status = hooks(build, &home, &["status", "--json"]);
+        let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+        assert_eq!(status, all_set, "{}", build.display());
+    }
+    let (codex_after, agy_after) = (
+        std::fs::read_to_string(&codex_config).unwrap(),
+        std::fs::read_to_string(&agy_hooks).unwrap(),
+    );
+    let again = hooks(&app, &home, &["setup"]);
+    assert!(
+        again.status.success() && again.stdout.is_empty(),
+        "{again:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&codex_config).unwrap(), codex_after);
+    assert_eq!(std::fs::read_to_string(&agy_hooks).unwrap(), agy_after);
+
+    assert!(codex_after.starts_with(owners_codex), "{codex_after}");
+    let agy: serde_json::Value = serde_json::from_str(&agy_after).unwrap();
+    let owner: serde_json::Value = serde_json::from_str(owners_agy).unwrap();
+    assert_eq!(agy["herdr"], owner["herdr"]);
+    for build in [&brew, &app] {
+        assert!(!codex_after.contains(&*build.to_string_lossy()));
+        assert!(!agy_after.contains(&*build.to_string_lossy()));
+    }
+}
+
+/// Runs a hook command from AGY's `hooks.json` as AGY does, through a shell, with no `swarm` on
+/// PATH.
+fn run_hook(command: &str, env: &[(&str, &str)], stdin: &str) -> Output {
+    let mut shell = Command::new("/bin/sh");
+    shell
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .envs(env.iter().copied())
+        .args(["-c", command])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = shell.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn the_shared_hook_runs_the_panes_own_swarm_and_is_quiet_outside_an_agent() {
+    let home = scratch("pane-link");
+    let setup = hooks(Path::new(env!("CARGO_BIN_EXE_swarm")), &home, &["setup"]);
+    assert!(setup.status.success(), "{setup:?}");
+    let agy: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join(".gemini/config/hooks.json")).unwrap())
+            .unwrap();
+    let stop = agy["swarm"]["Stop"][0]["command"].as_str().unwrap();
+
+    let outside = run_hook(stop, &[], "{}");
+    assert!(outside.status.success(), "{outside:?}");
+    assert_eq!(stdout(&outside), "{}");
+    assert!(outside.stderr.is_empty(), "{outside:?}");
+
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let in_session = [("SWARM_SESSION_ID", session.as_str())];
+    assert!(
+        swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "")
+            .status
+            .success()
+    );
+    // `swarm launch` makes this link for each pane; see `swarm_bin` in main.rs.
+    let bin = home.join(format!(".swarm/runs/{session}/bin"));
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(build_at(&home, "launcher"), bin.join("swarm")).unwrap();
+    let home_text = home.to_string_lossy();
+    let as_coder = [
+        ("SWARM_HOME", home_text.as_ref()),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "coder"),
+    ];
+    let reported = run_hook(stop, &as_coder, "{}");
+    assert!(reported.status.success(), "{reported:?}");
+    assert_eq!(stdout(&reported), "{}\n");
+    assert_eq!(coder_state(&home, &session)["state"], "done");
+}
