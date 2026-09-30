@@ -1475,33 +1475,37 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     "swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"
                 ),
             },
-            // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
-            Some("claude") if agent_id != "orchestrator" => {
-                let (dir, args) =
-                    swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
-                // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
-                // trusting where it points could trust any folder, such as `/`. The check stops
-                // create_dir_all from making dirs through a committed link. A resuming child runs
-                // in cwd itself, so nothing below cwd is checked for it.
-                for path in dir.ancestors().take_while(|path| *path != cwd) {
-                    if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+            Some("claude") => {
+                // The app hides the chair's pane, so a trust dialog there waits for nobody. The
+                // chair runs in cwd itself, as a resuming child does (ADR 0008).
+                if agent_id != "orchestrator" {
+                    let (dir, args) =
+                        swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                    // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
+                    // trusting where it points could trust any folder, such as `/`. The check
+                    // stops create_dir_all from making dirs through a committed link. A resuming
+                    // child runs in cwd itself, so nothing below cwd is checked for it.
+                    for path in dir.ancestors().take_while(|path| *path != cwd) {
+                        if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+                            return Err(format!(
+                                "swarm: {} is a symlink; refusing to trust where it points",
+                                path.display()
+                            )
+                            .into());
+                        }
+                    }
+                    std::fs::create_dir_all(&dir)?;
+                    pane_dir = std::fs::canonicalize(&dir)?;
+                    // cwd is canonical, so a link made after the check still shows here.
+                    if pane_dir != dir {
                         return Err(format!(
-                            "swarm: {} is a symlink; refusing to trust where it points",
-                            path.display()
+                            "swarm: {} resolves to {}; refusing to trust it",
+                            dir.display(),
+                            pane_dir.display()
                         )
                         .into());
                     }
-                }
-                std::fs::create_dir_all(&dir)?;
-                pane_dir = std::fs::canonicalize(&dir)?;
-                // cwd is canonical, so a link made after the check still shows here.
-                if pane_dir != dir {
-                    return Err(format!(
-                        "swarm: {} resolves to {}; refusing to trust it",
-                        dir.display(),
-                        pane_dir.display()
-                    )
-                    .into());
+                    extra = args;
                 }
                 // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
                 // yelo's `claude` in the pane points that at the profile it picks, and a pane with
@@ -1529,7 +1533,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
                     })
                 })?;
-                extra = args;
             }
             _ => {}
         }

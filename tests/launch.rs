@@ -231,6 +231,15 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     );
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(trusted(&home.join(".claude.json"), &resumed));
+
+    // The app hides the chair's pane, so nobody answers a trust dialog there; it runs in cwd.
+    let chair = launch("orchestrator", "chair", None);
+    assert!(trusted(&home.join(".claude.json"), &home.join("chair")));
+    assert!(trusted(
+        &profiles[0].join(".claude.json"),
+        &home.join("chair")
+    ));
+    assert!(!chair.exists());
 }
 
 /// A session with a chair and one child on a fake adapter whose screen is `$HOME/screen` and

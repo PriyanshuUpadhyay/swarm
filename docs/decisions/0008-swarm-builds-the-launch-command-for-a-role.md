@@ -14,3 +14,6 @@ resolves the role and builds the Claude, Codex or AGY command line with its mode
 and approval flags, and neglected Bloom calling the Python launcher, so the repository works
 without those private scripts and swarm keeps owning roles (ADR 0005), accepting more Rust to keep
 in step with the router's fields and that trust prompts are answered by the user in the live pane.
+
+Note (2026-09-30): the Swarm app hides the chair's pane, so `swarm launch` now pre-trusts a Claude
+chair's cwd in the same configs a Claude child gets; nobody would see its trust dialog.
