@@ -204,7 +204,16 @@ pub fn argv(
             {
                 args.extend(["--model".into(), model.into()]);
             }
-            args.extend(["--effort".into(), effort()?.into()]);
+            let effort = effort()?;
+            // An AGY model id such as `gemini-3.8-flash-high` fixes its own effort, and AGY
+            // refuses `--effort` for it.
+            if !resolved.model.as_deref().is_some_and(|model| {
+                ["-low", "-medium", "-high"]
+                    .iter()
+                    .any(|level| model.ends_with(level))
+            }) {
+                args.extend(["--effort".into(), effort.into()]);
+            }
             if let Some(permission) = &resolved.permission {
                 if permission == "skip" {
                     args.push("--dangerously-skip-permissions".into());
@@ -845,6 +854,14 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
+        agy.model = Some("gemini-3.8-flash-high".into());
+        assert_eq!(
+            argv("coder", "coder", &agy, "/home"),
+            Ok(vec!["agy", "--model", "gemini-3.8-flash-high"]
+                .into_iter()
+                .map(String::from)
+                .collect())
+        );
 
         let child_claude_args = argv("coder", "coder", &claude, "/home").unwrap();
         assert!(
