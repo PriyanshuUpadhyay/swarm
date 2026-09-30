@@ -283,6 +283,14 @@ pub struct Selection {
     pub skipped: Vec<Skip>,
 }
 
+/// Which runner each profile would start now, as `roles check --json` prints it.
+#[derive(Debug, Serialize)]
+pub struct ProfileCheck {
+    pub name: String,
+    #[serde(flatten)]
+    pub selection: Selection,
+}
+
 /// The first runner `probe` does not skip. With `only`, that provider's runners are tried first
 /// and the rest after, so a seat for one provider still starts when that provider cannot run.
 pub fn select(
@@ -310,6 +318,46 @@ pub fn select(
         pick: None,
         skipped,
     }
+}
+
+/// One account as the usage check sees it.
+#[derive(Clone, Copy, Debug)]
+pub struct AccountState {
+    pub signed_in: bool,
+    pub remaining_pct: Option<i64>,
+}
+
+/// Why a provider's accounts cannot start a runner, or None. `accounts` is None when the read
+/// failed or timed out, and an empty list means no account source; both count as "can run", so a
+/// Mac without yelo still launches (ADR 0031). An account with no usage number counts as can run.
+pub fn account_skip(
+    provider: Provider,
+    accounts: Option<&[AccountState]>,
+    min_usage_left_pct: u8,
+) -> Option<(SkipCode, String)> {
+    let accounts = accounts.filter(|accounts| !accounts.is_empty())?;
+    let signed_in: Vec<&AccountState> = accounts
+        .iter()
+        .filter(|account| account.signed_in)
+        .collect();
+    if signed_in.is_empty() {
+        return Some((
+            SkipCode::SignedOut,
+            format!("no {} account is signed in", provider.id()),
+        ));
+    }
+    let mut best = i64::MIN;
+    for account in signed_in {
+        match account.remaining_pct {
+            None => return None,
+            Some(left) if left >= i64::from(min_usage_left_pct) => return None,
+            Some(left) => best = best.max(left),
+        }
+    }
+    Some((
+        SkipCode::LowUsage,
+        format!("usage {best}% left (threshold {min_usage_left_pct}%)"),
+    ))
 }
 
 /// The first 12 hex digits of the SHA-256 of the bytes a listing was made from.
@@ -524,6 +572,91 @@ mod tests {
         assert_eq!(
             validate(&config(vec![repeated])),
             ["Profile 'chat' runner 2 repeats an earlier runner."]
+        );
+    }
+
+    fn account(signed_in: bool, remaining_pct: Option<i64>) -> AccountState {
+        AccountState {
+            signed_in,
+            remaining_pct,
+        }
+    }
+
+    #[test]
+    fn accounts_skip_a_runner_only_when_signed_out_or_low_on_every_account() {
+        let claude = Provider::Claude;
+        assert_eq!(account_skip(claude, None, 5), None);
+        assert_eq!(account_skip(claude, Some(&[]), 5), None);
+        assert_eq!(
+            account_skip(claude, Some(&[account(false, Some(90))]), 5),
+            Some((SkipCode::SignedOut, "no claude account is signed in".into()))
+        );
+        let spent = [
+            account(true, Some(2)),
+            account(true, Some(4)),
+            account(false, Some(80)),
+        ];
+        assert_eq!(
+            account_skip(claude, Some(&spent), 5),
+            Some((SkipCode::LowUsage, "usage 4% left (threshold 5%)".into()))
+        );
+        assert_eq!(
+            account_skip(
+                claude,
+                Some(&[account(true, Some(2)), account(true, Some(5))]),
+                5
+            ),
+            None
+        );
+        assert_eq!(
+            account_skip(
+                claude,
+                Some(&[account(true, Some(2)), account(true, None)]),
+                5
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn select_takes_the_first_runner_the_probe_passes_and_lists_each_skip() {
+        let profile = Profile {
+            name: "code.complex".into(),
+            runners: vec![
+                runner(Provider::Claude, "opus"),
+                runner(Provider::Codex, "gpt-6.1-sol"),
+                runner(Provider::Agy, "flash"),
+            ],
+        };
+        let no_claude = |runner: &Runner| {
+            (runner.provider == Provider::Claude)
+                .then(|| (SkipCode::LowUsage, "usage 2% left".into()))
+        };
+        let selection = select(&profile, None, no_claude);
+        assert_eq!(selection.pick, Some(1));
+        assert_eq!(
+            selection.skipped,
+            [Skip {
+                index: 0,
+                code: SkipCode::LowUsage,
+                text: "usage 2% left".into()
+            }]
+        );
+        assert_eq!(
+            select(&profile, Some(Provider::Agy), no_claude).pick,
+            Some(2)
+        );
+        let nothing = select(&profile, None, |_| {
+            Some((SkipCode::CliMissing, "gone".into()))
+        });
+        assert_eq!(nothing.pick, None);
+        assert_eq!(
+            nothing
+                .skipped
+                .iter()
+                .map(|skip| skip.index)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
         );
     }
 }
