@@ -666,19 +666,35 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "orchestrator"),
     ];
-    let output = swarm(
-        &home,
-        &chair,
-        &[
+    // This swarm is installed next to other tools, as in ~/.cargo/bin, and the owner's PATH
+    // picks another install of one of them.
+    let install = home.join("install");
+    std::fs::create_dir_all(&install).unwrap();
+    let launcher = install.join("swarm");
+    std::fs::copy(env!("CARGO_BIN_EXE_swarm"), &launcher).unwrap();
+    tool(&home, "cargo", "true");
+    std::fs::copy(home.join("bin/cargo"), install.join("cargo")).unwrap();
+    let output = Command::new(&launcher)
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .envs(chair)
+        .current_dir(&home)
+        .args([
             "spawn",
             "seat",
             "coder",
             "--",
             "sh",
             "-c",
-            "command -v swarm > \"$HOME/which\"",
-        ],
-    );
+            "command -v swarm cargo > \"$HOME/which\"",
+        ])
+        .output()
+        .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     // The pane's shell sources the run script with its own PATH.
     let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
@@ -692,8 +708,10 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
         .status()
         .unwrap();
     assert!(pane.success());
-    assert_eq!(
-        std::fs::read_to_string(home.join("which")).unwrap().trim(),
-        env!("CARGO_BIN_EXE_swarm")
-    );
+    let which = std::fs::read_to_string(home.join("which")).unwrap();
+    let [swarm, cargo] = which.lines().collect::<Vec<_>>()[..] else {
+        panic!("{which}");
+    };
+    assert_eq!(std::fs::canonicalize(swarm).unwrap(), launcher);
+    assert_eq!(Path::new(cargo), home.join("bin/cargo"));
 }

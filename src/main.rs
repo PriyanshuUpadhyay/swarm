@@ -762,13 +762,14 @@ fn spawn_agent(
     if !options.command.is_empty() {
         let exe = env::current_exe()?;
         // The agent's own `swarm inbox` and `swarm finish` must run this binary, not an older
-        // `swarm` on the pane's PATH, which refuses a database another build made.
-        let path = exe.parent().map_or(String::new(), |dir| {
-            format!(
-                "export PATH={}:\"$PATH\"; ",
-                swarm::adapter::shell_line(&[dir.to_string_lossy().into_owned()])
-            )
-        });
+        // `swarm` on the pane's PATH, which refuses a database another build made. The pane gets
+        // a dir with only a link to it, since this binary's own dir (such as ~/.cargo/bin) holds
+        // other tools that would shadow the owner's.
+        let bin = swarm_bin(root, &session_id, &exe)?;
+        let path = format!(
+            "export PATH={}:\"$PATH\"; ",
+            swarm::adapter::shell_line(&[bin.to_string_lossy().into_owned()])
+        );
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
@@ -795,6 +796,27 @@ fn spawn_agent(
         eprintln!("account {}", account.name);
     }
     Ok(())
+}
+
+/// Point `runs/<session>/bin/swarm` at `exe` and return that dir.
+fn swarm_bin(
+    root: &std::path::Path,
+    session_id: &str,
+    exe: &std::path::Path,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::DirBuilderExt;
+    valid_session_id(session_id)?;
+    let dir = root.join(format!("runs/{session_id}/bin"));
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    // A new link renamed over the old one, so a pane starting now never finds no `swarm`.
+    let tmp = dir.join(format!(".swarm.{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(exe, &tmp)?;
+    std::fs::rename(&tmp, dir.join("swarm"))?;
+    Ok(dir)
 }
 
 /// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
