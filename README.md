@@ -14,7 +14,8 @@ swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapter
 
 ### Swarm app
 
-Download `Swarm-<version>.dmg` from the
+Run `brew install --cask priyanshuupadhyay/tap/swarm-app`, which also installs the CLI and tmux. Or
+download `Swarm-<version>.dmg` from the
 [latest release](https://github.com/PriyanshuUpadhyay/swarm/releases/latest), open it, and drag
 Swarm onto Applications. The app carries its own `swarm` CLI. It still needs tmux
 (`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
