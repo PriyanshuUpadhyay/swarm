@@ -163,7 +163,10 @@ pub fn argv(
             if let Some(sandbox) = &resolved.sandbox {
                 args.extend(["--sandbox".into(), sandbox.clone()]);
                 if sandbox == "workspace-write" {
+                    // Codex refuses every command when a writable root has a symlink in its path.
                     let root = format!("{swarm_home}/.swarm");
+                    let root = std::fs::canonicalize(&root)
+                        .map_or(root, |path| path.to_string_lossy().into_owned());
                     args.extend([
                         "-c".into(),
                         format!(
@@ -849,6 +852,32 @@ mod tests {
                 .iter()
                 .any(|arg| arg.contains("SessionStart"))
         );
+    }
+
+    #[test]
+    fn a_codex_writable_root_has_no_symlink_in_its_path() {
+        let dir = std::env::temp_dir().join(format!("swarm-writable-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("real/.swarm")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let mut codex = role("codex");
+        codex.sandbox = Some("workspace-write".into());
+        let args = argv(
+            "coder",
+            "coder",
+            &codex,
+            &dir.join("link").to_string_lossy(),
+        )
+        .unwrap();
+        let real = std::fs::canonicalize(dir.join("real/.swarm")).unwrap();
+        assert!(
+            args.contains(&format!(
+                "sandbox_workspace_write.writable_roots=[{}]",
+                serde_json::to_string(&real.to_string_lossy()).unwrap()
+            )),
+            "{args:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
