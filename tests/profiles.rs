@@ -1,6 +1,5 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 const OLD_CONFIG: &str = r#"{
   "routes": {"code": ["codex-sol-high-agent", "claude-opus-high-agent"]},
@@ -38,31 +37,17 @@ fn clis(home: &Path, names: &[&str]) -> PathBuf {
 
 /// Runs the built binary with only HOME set, so no user config or routing env leaks in. SWARM_HOME
 /// pins the data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
-fn swarm_with_input(home: &Path, env: &[(&str, &Path)], args: &[&str], input: &str) -> Output {
+fn swarm(home: &Path, env: &[(&str, &Path)], args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
     command
         .env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .args(args);
     for (name, value) in env {
         command.env(name, value);
     }
-    let mut child = command.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
-}
-
-fn swarm(home: &Path, env: &[(&str, &Path)], args: &[&str]) -> Output {
-    swarm_with_input(home, env, args, "")
+    command.output().unwrap()
 }
 
 fn json(output: &Output) -> serde_json::Value {
@@ -202,11 +187,10 @@ fn save_writes_through_a_link_keeps_a_backup_and_refuses_a_stale_revision() {
         {"provider": "claude", "model": "opus", "effort": "high", "permission": "auto"},
         {"provider": "codex", "model": "gpt-sol", "effort": "high"}]}"#;
 
-    let saved = json(&swarm_with_input(
+    let saved = json(&swarm(
         &home,
         &[],
-        &["roles", "save", "--revision", revision],
-        edited,
+        &["roles", "save", "--revision", revision, edited],
     ));
 
     assert_ne!(saved["revision"], revision);
@@ -232,11 +216,10 @@ fn save_writes_through_a_link_keeps_a_backup_and_refuses_a_stale_revision() {
         .count();
     assert_eq!(backups, 1);
 
-    let stale = swarm_with_input(
+    let stale = swarm(
         &home,
         &[],
-        &["roles", "save", "--revision", revision],
-        edited,
+        &["roles", "save", "--revision", revision, edited],
     );
     assert!(!stale.status.success());
     assert!(
@@ -246,7 +229,7 @@ fn save_writes_through_a_link_keeps_a_backup_and_refuses_a_stale_revision() {
 
     let current = saved["revision"].as_str().unwrap();
     let bad = r#"{"name": "code", "runners": [{"provider": "claude", "model": "--x", "effort": "high"}]}"#;
-    let refused = swarm_with_input(&home, &[], &["roles", "save", "--revision", current], bad);
+    let refused = swarm(&home, &[], &["roles", "save", "--revision", current, bad]);
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("invalid model '--x'"));
 }
@@ -264,11 +247,10 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
     // The first save writes the defaults plus the change.
     let revision = listing["revision"].as_str().unwrap();
     let chat = r#"{"name": "chat", "runners": [{"provider": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}]}"#;
-    json(&swarm_with_input(
+    json(&swarm(
         &home,
         &[],
-        &["roles", "save", "--revision", revision],
-        chat,
+        &["roles", "save", "--revision", revision, chat],
     ));
     let on_disk: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(profiles_file(&home)).unwrap()).unwrap();

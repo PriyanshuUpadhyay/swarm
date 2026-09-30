@@ -805,4 +805,27 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         command.contains("'--sandbox' 'workspace-write'"),
         "{command}"
     );
+
+    // The app always sends `--account auto` for the chat profile; a provider with no accounts
+    // launches on its own login instead of failing.
+    tool(&home, "agy", "true");
+    let agy = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-c",
+            "chat",
+            "--provider",
+            "agy",
+            "--model",
+            "flash",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(agy.status.success(), "{}", stderr(&agy));
+    assert!(script("chat-c").contains("'agy' '--model' 'flash'"));
 }

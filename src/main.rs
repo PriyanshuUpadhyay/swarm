@@ -38,7 +38,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> (profile JSON on stdin) | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1220,14 +1220,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         return print_json(&serde_json::json!({ "profiles": profiles }));
     }
-    if let [cmd, sub, flag, revision] = args
+    if let [cmd, sub, flag, revision, text] = args
         && cmd == "roles"
         && sub == "save"
         && flag == "--revision"
     {
-        let text = std::io::read_to_string(std::io::stdin())?;
         let profile: swarm::config::Profile =
-            serde_json::from_str(&text).map_err(|error| format!("swarm: profile JSON: {error}"))?;
+            serde_json::from_str(text).map_err(|error| format!("swarm: profile JSON: {error}"))?;
         let revision =
             swarm::config::save(profile, revision).map_err(|error| format!("swarm: {error}"))?;
         return print_json(&serde_json::json!({ "revision": revision }));
@@ -1639,9 +1638,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut extra = swarm::bus::extra_args(kind, extra)?;
         // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
         // both use this one answer.
-        let picked = match (account, provider.as_deref()) {
-            (Some(requested), Some(provider)) => {
-                let accounts = load_accounts(provider, true)?;
+        // A provider with no account source launches on its CLI's own login, so `auto` means
+        // nothing there; the chat profile passes it whichever runner starts.
+        let picked = match (account, kind.has_accounts()) {
+            (Some(requested), true) => {
+                let accounts = load_accounts(kind.id(), true)?;
                 Some(
                     swarm::profiles::resolve_account(&accounts, requested)
                         .map_err(|error| format!("swarm: {error}"))?
@@ -1765,9 +1766,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             role,
             SpawnOptions {
                 provider: provider.as_deref(),
-                account: picked
-                    .as_ref()
-                    .map_or(account, |picked| Some(picked.name.as_str())),
+                account: picked.as_ref().map(|picked| picked.name.as_str()),
                 command: &command,
             },
         );
