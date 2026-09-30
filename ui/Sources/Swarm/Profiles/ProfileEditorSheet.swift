@@ -92,9 +92,10 @@ struct ProfileEditorSheet: View {
                     if new > old, let added = draft.runners.last { proxy.scrollTo(added.id, anchor: .bottom) }
                 }
                 // The content size never drops below the list's frame, so when a card goes away or
-                // loses a line, the list drops its old height and measures again.
+                // loses a line, the list drops to its least height and measures again. The estimate
+                // is no floor: a card with no flags line is shorter than it.
                 .onChange(of: cardLines) { old, new in
-                    if new < old { contentHeight = nil }
+                    if new < old { contentHeight = DesignTokens.Size.runnerCard }
                 }
             }
             Button {
@@ -439,7 +440,7 @@ private struct SheetWindowHeight: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             var size = window.contentRect(forFrameRect: window.frame).size
-            // A change under a point is layout rounding; a resize for it would lay out again.
+            // A change of half a point or less is layout rounding; a resize for it would lay out again.
             guard abs(size.height - height) > 0.5 else { return }
             size.height = height
             window.setContentSize(size)

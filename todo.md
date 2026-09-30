@@ -58,3 +58,6 @@ pressing Enter again.
   launch.
 - In dotfiles, `tests/orchestration-extraction/test_orchestration_contract.py:68` still reads
   roles.json, and ADRs 0009 and 0015 still name roles.json as the launch policy source.
+- The editor measures its card list again only when the number of card lines drops. A card that
+  swaps a taller line for a shorter one (a catalog error for a warning) keeps up to 7 pt of
+  empty space until the next change.
