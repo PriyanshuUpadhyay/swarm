@@ -57,6 +57,8 @@ final class NewChatModel {
     }
 
     func load(initialProvider: String?, initialModel: String?) async {
+        // A Retry starts over as on first open, so the chat profile's runner becomes the pick.
+        chatChoice = nil
         let catalog = SwarmProfileCatalog.shared
         do {
             providers = try await catalog.providers()
@@ -254,8 +256,6 @@ struct NewChatSheet: View {
                 HStack {
                     Text(verbatim: error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
                     Button("Retry") {
-                        // As on first open, the chat profile's runner becomes the pick.
-                        model.chatChoice = nil
                         Task { await model.load(initialProvider: initialProvider, initialModel: initialModel) }
                     }
                 }
