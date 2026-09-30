@@ -691,7 +691,8 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
             "--",
             "sh",
             "-c",
-            "command -v swarm cargo > \"$HOME/which\"",
+            // One name per call: dash's `command -v` prints only its first name.
+            "command -v swarm > \"$HOME/which\"; command -v cargo >> \"$HOME/which\"",
         ])
         .output()
         .unwrap();
