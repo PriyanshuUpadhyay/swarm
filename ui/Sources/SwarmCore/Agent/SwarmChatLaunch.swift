@@ -4,11 +4,13 @@ public enum SwarmChatProvider {
     public static let all = ["claude", "codex", "agy"]
 }
 
+/// What New Chat starts. With no provider and model, swarm starts the chat profile's first runner
+/// that can run; with both, it starts exactly that runner, once, with no fallback (ADR 0032).
 public struct SwarmChatLaunchPlan: Sendable, Equatable {
     public let directory: String
-    public let provider: String
+    public let provider: String?
     public let role: String
-    public let model: String
+    public let model: String?
     public let account: String?
 
     public static func validModel(_ name: String) -> Bool {
@@ -17,6 +19,7 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
         }
     }
 
+    /// A one-off pick of one provider and model.
     public init?(
         directory: String, provider: String, model: String, account: SwarmAccountSelection?
     ) {
@@ -34,6 +37,17 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
         case .named(let name) where provider != "agy": name
         default: nil
         }
+    }
+
+    /// The chat profile. A named account belongs to one provider, so it needs a one-off pick; the
+    /// profile takes only Auto, which swarm ignores for a provider with no accounts.
+    public init?(profileIn directory: String) {
+        guard directory.hasPrefix("/") else { return nil }
+        self.directory = directory
+        provider = nil
+        role = "chat"
+        model = nil
+        account = "auto"
     }
 }
 

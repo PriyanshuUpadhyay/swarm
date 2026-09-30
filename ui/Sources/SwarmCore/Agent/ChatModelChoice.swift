@@ -1,29 +1,9 @@
 import Foundation
 import TranscriptTool
 
-/// Preferences are choices, not evidence of which model answered a turn.
-@MainActor
-public final class ChatModelPreferences {
-    private let defaults: UserDefaults
-    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
-
-    public var provider: String? { defaults.string(forKey: "chat.provider") }
-
-    public func model(for provider: String) -> String? {
-        defaults.string(forKey: "chat.model.\(provider)")
-    }
-
-    public func remember(provider: String, model: String) {
-        guard SwarmChatProvider.all.contains(provider), SwarmChatLaunchPlan.validModel(model) else { return }
-        defaults.set(provider, forKey: "chat.provider")
-        defaults.set(model, forKey: "chat.model.\(provider)")
-    }
-}
-
 public enum ChatModelChoice {
-    public static func initial(current: String?, saved: String?, models: [SwarmModel]) -> String {
-        [current, saved].compactMap { $0 }.first(where: SwarmChatLaunchPlan.validModel)
-            ?? models.first?.id ?? ""
+    public static func initial(current: String?, models: [SwarmModel]) -> String {
+        current.flatMap { SwarmChatLaunchPlan.validModel($0) ? $0 : nil } ?? models.first?.id ?? ""
     }
 
     public static func latest(in records: [TranscriptRecord]) -> String? {

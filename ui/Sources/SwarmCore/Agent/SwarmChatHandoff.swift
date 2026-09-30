@@ -14,7 +14,7 @@ public enum SwarmChatHandoff {
     ) async throws -> SwarmSessionID {
         let timing = SwarmPerformance.begin("ModelHandoff")
         defer { timing.end() }
-        guard plan.provider == "claude" || plan.provider == "codex" else {
+        guard let provider = plan.provider, provider == "claude" || provider == "codex" else {
             throw SwarmProfileError.failed("Model switching supports Claude and Codex chats")
         }
         try Task.checkCancellation()
@@ -61,7 +61,7 @@ public enum SwarmChatHandoff {
         for _ in 0..<30 {
             try await Task.sleep(for: .seconds(1))
             if let session = try await bus.sessions().first(where: { $0.id == id }),
-               isReady(session, provider: plan.provider) {
+               isReady(session, provider: provider) {
                 await onProgress(.delivering)
                 try await bus.type(
                     firstMessage(context: context, isSummary: isSummary),

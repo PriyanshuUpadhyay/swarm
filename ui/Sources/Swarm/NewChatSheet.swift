@@ -5,11 +5,14 @@ import SwarmCore
 @MainActor @Observable
 final class NewChatModel {
     private let profiles = SwarmCLIProfileSource()
-    private let preferences = ChatModelPreferences()
     private var choices: [String: String] = [:]
     private var generation = 0
-    private static var catalogs: [String: [SwarmModel]] = [:]
     private var optionsTask: Task<Void, Never>?
+    /// The chat profile and the runner it would start now (ADR 0032). Nil until read, and for a
+    /// model switch, which starts from the current chat instead.
+    var chatChoice: ChatProfileChoice?
+    var profileList: SwarmProfileList?
+    var providers: [SwarmProvider] = []
 
     var provider = "codex"
     var isSwitch = false
@@ -45,22 +48,61 @@ final class NewChatModel {
 
     func load(initialProvider: String?, initialModel: String?) async {
         let allowed = isSwitch ? ["claude", "codex"] : SwarmChatProvider.all
-        if let preferred = initialProvider ?? preferences.provider, allowed.contains(preferred) {
+        if let preferred = initialProvider, allowed.contains(preferred) {
             provider = preferred
         }
-        selectedModel = ChatModelChoice.initial(
-            current: initialModel, saved: preferences.model(for: provider), models: []
-        )
-        models = Self.catalogs[provider] ?? []
+        selectedModel = ChatModelChoice.initial(current: initialModel, models: [])
+        await loadChatProfile(check: nil)
+        models = await SwarmModelCatalog.shared.cached(provider) ?? []
         await loadOptions()
+        if !isSwitch { await loadChatProfileCheck() }
+    }
+
+    /// Reads the chat profile and selects the runner it would start. The launch check is slower,
+    /// so the first pass uses the profile's first runner.
+    func loadChatProfile(check: SwarmProfileCheck?) async {
+        guard let list = try? await profiles.profiles() else { return }
+        profileList = list
+        if providers.isEmpty { providers = (try? await profiles.providers()) ?? [] }
+        let before = chatChoice
+        chatChoice = ChatProfileChoice(profile: list.profiles.first { $0.name == "chat" }, check: check)
+        guard !isSwitch, let runner = chatChoice?.runner,
+              before == nil || before?.isProfilePick(provider: provider, model: selectedModel) == true,
+              SwarmChatProvider.all.contains(runner.provider) else { return }
+        if runner.provider != provider {
+            selectProvider(runner.provider)
+        }
+        selectModel(runner.model)
+    }
+
+    /// Moves the pick to the runner the launch check chose, unless the owner already picked
+    /// something else.
+    private func loadChatProfileCheck() async {
+        guard let check = try? await profiles.check().first(where: { $0.name == "chat" }) else { return }
+        await loadChatProfile(check: check)
+    }
+
+    var usesChatProfile: Bool {
+        !isSwitch && accountSelection == .auto
+            && chatChoice?.isProfilePick(provider: provider, model: selectedModel) == true
+    }
+
+    var effortCaption: String {
+        guard let chatChoice else { return "Reasoning effort: the provider's default" }
+        let fallback = providers.first { $0.id == provider }?.defaultEffort
+        // A switch or a named account is always a one-off; an empty model never matches the
+        // profile's pick, so the caption says so.
+        let model = usesChatProfile ? selectedModel : ""
+        return chatChoice.caption(provider: provider, model: model, defaultEffort: fallback)
     }
 
     func selectProvider(_ provider: String) {
         guard provider != self.provider else { return }
         choices[self.provider] = selectedModel
         self.provider = provider
-        selectedModel = choices[provider] ?? preferences.model(for: provider) ?? ""
-        models = Self.catalogs[provider] ?? []
+        selectedModel = choices[provider]
+            ?? chatChoice?.profile.runners.first { $0.provider == provider }?.model ?? ""
+        models = []
         query = ""
         modelCaption = nil
         errorMessage = nil
@@ -76,7 +118,6 @@ final class NewChatModel {
     func selectModel(_ id: String) {
         selectedModel = id
         choices[provider] = id
-        preferences.remember(provider: provider, model: id)
         errorMessage = nil
     }
 
@@ -89,12 +130,9 @@ final class NewChatModel {
         async let accountResult = loadAccounts(provider: requested)
         let (catalog, accounts) = await (modelResult, accountResult)
         guard !Task.isCancelled, generation == requestedGeneration, provider == requested else { return }
-        if catalog.caption == nil {
-            Self.catalogs[requested] = catalog.models
-            models = catalog.models
-        }
+        if catalog.caption == nil { models = catalog.models }
         modelCaption = catalog.caption
-        selectedModel = ChatModelChoice.initial(current: selectedModel, saved: nil, models: models)
+        selectedModel = ChatModelChoice.initial(current: selectedModel, models: models)
         accountOptions = accounts.options
         accountSelection = accounts.selection
         accountCaption = accounts.fallbackCaption
@@ -103,7 +141,7 @@ final class NewChatModel {
 
     private func loadModels(provider: String) async -> (models: [SwarmModel], caption: String?) {
         do {
-            return (try await profiles.models(provider: provider), nil)
+            return (try await SwarmModelCatalog.shared.models(for: provider), nil)
         } catch {
             return ([], "Could not load models. Retry or enter a model name. \(message(error))")
         }
@@ -123,9 +161,12 @@ final class NewChatModel {
         directory: String,
         launch: (SwarmChatLaunchPlan, @escaping @Sendable (ChatSwitchPhase) async -> Void) async throws -> SwarmSessionID
     ) async -> SwarmSessionID? {
-        guard canStart, let plan = SwarmChatLaunchPlan(
-            directory: directory, provider: provider, model: selectedModel, account: accountSelection
-        ) else { return nil }
+        let plan = usesChatProfile
+            ? SwarmChatLaunchPlan(profileIn: directory)
+            : SwarmChatLaunchPlan(
+                directory: directory, provider: provider, model: selectedModel, account: accountSelection
+            )
+        guard canStart, let plan else { return nil }
         isStarting = true
         phase = isSwitch ? .preparing : .starting
         errorMessage = nil
@@ -134,7 +175,6 @@ final class NewChatModel {
             let id = try await launch(plan) { phase in
                 await MainActor.run { self.phase = phase }
             }
-            preferences.remember(provider: plan.provider, model: plan.model)
             return id
         } catch is CancellationError {
             errorMessage = "Switch cancelled. The current chat stays selected."
@@ -168,6 +208,7 @@ struct NewChatSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model = NewChatModel()
     @State private var showAccount = false
+    @State private var editingProfile: SwarmProfile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
@@ -225,6 +266,23 @@ struct NewChatSheet: View {
             await model.load(initialProvider: initialProvider, initialModel: initialModel)
         }
         .onDisappear { model.cancel() }
+        .sheet(item: $editingProfile) { chat in
+            ProfileEditorSheet(
+                profile: chat,
+                providers: model.providers,
+                save: { edited in
+                    guard let revision = model.profileList?.revision else {
+                        throw SwarmProfileError.failed("Profiles are not loaded yet")
+                    }
+                    _ = try await SwarmCLIProfileSource().save(edited, revision: revision)
+                },
+                onSaved: {
+                    // The saved profile's first runner becomes the pick, as when the sheet opened.
+                    model.chatChoice = nil
+                    Task { await model.loadChatProfile(check: nil) }
+                }
+            )
+        }
     }
 
     private var selection: some View {
@@ -266,8 +324,14 @@ struct NewChatSheet: View {
                     ))
                 }
             }
-            Text("Reasoning effort: Medium (fixed for new agents)")
-                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text(model.effortCaption).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !isSwitch, let chat = model.profileList?.profiles.first(where: { $0.name == "chat" }) {
+                    Button("Edit profile…") { editingProfile = chat }
+                        .controlSize(.small)
+                }
+            }
             DisclosureGroup(accountLabel, isExpanded: $showAccount) {
                 if !model.accountOptions.isEmpty {
                     Picker("Account", selection: $model.accountSelection) {

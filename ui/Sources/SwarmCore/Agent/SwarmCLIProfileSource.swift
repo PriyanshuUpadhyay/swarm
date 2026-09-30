@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads the roles, accounts and usage that the `swarm` CLI owns.
+/// Reads the profiles, providers, accounts and usage that the `swarm` CLI owns.
 public struct SwarmCLIProfileSource: SwarmProfileSource {
     typealias Runner = @Sendable (String, [String], String) async throws -> ShellResult
 
@@ -26,23 +26,33 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         self.run = run
     }
 
-    public func roles() async throws -> [SwarmRole] {
-        try await read(["roles", "--json"], as: SwarmRoleList.self).roles
+    public func profiles() async throws -> SwarmProfileList {
+        try await read(["roles", "--json"], as: SwarmProfileList.self)
+    }
+
+    /// Which runner each profile would start now. It reads every provider's accounts, so it is
+    /// slower than `profiles()`.
+    public func check() async throws -> [SwarmProfileCheck] {
+        try await read(["roles", "check", "--json"], as: SwarmProfileCheckList.self).profiles
+    }
+
+    public func providers() async throws -> [SwarmProvider] {
+        try await read(["providers", "--json"], as: SwarmProviderList.self).providers
+    }
+
+    /// Saves one whole profile and returns the file's new revision. It fails when the file
+    /// changed after `revision` was read.
+    public func save(_ profile: SwarmProfile, revision: String) async throws -> String {
+        let json = String(decoding: try JSONEncoder().encode(profile), as: UTF8.self)
+        return try await read(
+            ["roles", "save", "--revision", revision, json], as: SavedRevision.self
+        ).revision
     }
 
     public func models(provider: String) async throws -> [SwarmModel] {
         try await read(
             ["models", "--provider", provider, "--json"], as: SwarmModelList.self
         ).models
-    }
-
-    /// Saves to the shared router config, so every role using this runner changes.
-    public func setModel(_ model: String, for runner: String) async throws {
-        let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            throw SwarmProfileError.failed("Enter a model name")
-        }
-        _ = try await call(["roles", "set-model", runner, name])
     }
 
     public func accounts(provider: String) async throws -> SwarmAccountList {
@@ -54,7 +64,10 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
     }
 
     private func read<Value: Decodable>(_ arguments: [String], as type: Value.Type) async throws -> Value {
-        let result = try await call(arguments)
+        try decode(try await call(arguments), as: type)
+    }
+
+    private func decode<Value: Decodable>(_ result: ShellResult, as type: Value.Type) throws -> Value {
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -90,4 +103,8 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
 
         return result
     }
+}
+
+private struct SavedRevision: Decodable {
+    var revision: String
 }

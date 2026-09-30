@@ -25,6 +25,19 @@ struct SwarmChatLaunchTests {
         #expect(await calls.adapters == ["tmux-solo", "tmux-solo", "tmux-solo"])
     }
 
+    @Test("The chat profile launches with no provider or model, so swarm picks its runner")
+    func profileArguments() async throws {
+        let calls = LaunchCalls([
+            ShellResult(status: 0, stdout: "", stderr: ""),
+            ShellResult(status: 0, stdout: "session-id\n", stderr: ""),
+            ShellResult(status: 0, stdout: "%1\n", stderr: ""),
+        ])
+        let plan = try #require(SwarmChatLaunchPlan(profileIn: "/work"))
+        _ = try await SwarmChatLauncher.start(plan, bus: bus(calls))
+        #expect(await calls.arguments.last == ["launch", "orchestrator", "chat", "--account", "auto"])
+        #expect(SwarmChatLaunchPlan(profileIn: "relative") == nil)
+    }
+
     @Test("Start returns the CLI stderr when launch fails")
     func failure() async throws {
         let calls = LaunchCalls([

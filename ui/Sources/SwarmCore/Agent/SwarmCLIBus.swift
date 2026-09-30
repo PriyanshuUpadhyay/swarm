@@ -62,10 +62,12 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     public func launch(
-        _ agent: SwarmAgentID, role: String, provider: String, model: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String?, model: String?, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch {
-        var arguments = ["launch", agent.rawValue, role, "--provider", provider, "--model", model]
+        var arguments = ["launch", agent.rawValue, role]
+        if let provider { arguments += ["--provider", provider] }
+        if let model { arguments += ["--model", model] }
         if let account { arguments += ["--account", account] }
         let result = try await call(
             arguments, in: session, directory: directory, timeout: .seconds(60)

@@ -37,6 +37,10 @@ enum DesignTokens {
         static let sheet: CGFloat = 480
         static let sheetHeight: CGFloat = 340
         static let narrowSheet: CGFloat = 420
+        /// The profile editor: one runner row holds provider, model, effort, and a remove button.
+        static let profileSheet: CGFloat = 680
+        /// The "1  Primary" label before a runner row's pickers; the flags row starts under the pickers.
+        static let runnerLabel: CGFloat = 104
         /// A model or account list inside a sheet.
         static let pickerList: CGFloat = 190
         /// Tool output and long text before Show full output.
