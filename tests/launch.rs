@@ -481,9 +481,9 @@ fn a_child_agent_can_neither_launch_nor_spawn() {
     assert!(!home.join("spawned").exists());
 }
 
-#[test]
-fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
-    let home = scratch("rering");
+/// A chair and an AGY seat whose screen is `$HOME/screen`, with one unseen message to the seat
+/// whose first ring, appended to `$HOME/rings`, went out two minutes ago.
+fn lost_ring_session(home: &Path) -> (String, rusqlite::Connection) {
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -493,7 +493,7 @@ fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
     )
     .unwrap();
     let session = swarm(
-        &home,
+        home,
         &[("SWARM_ADAPTER", "fake")],
         &["session", "new", "lane"],
     );
@@ -511,15 +511,15 @@ fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
         &["agent", "add", "orchestrator", "orchestrator"][..],
         &["spawn", "seat", "coder"],
     ] {
-        let output = swarm(&home, &chair, args);
+        let output = swarm(home, &chair, args);
         assert!(output.status.success(), "{args:?}: {}", stderr(&output));
     }
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
     swarm::store::set_provider(&connection, &session, "seat", "agy").unwrap();
     let mut send = Command::new(env!("CARGO_BIN_EXE_swarm"));
     send.env_clear()
-        .env("HOME", &home)
-        .env("SWARM_HOME", &home)
+        .env("HOME", home)
+        .env("SWARM_HOME", home)
         .env("PATH", "/usr/bin:/bin")
         .envs(chair)
         .args(["send", "seat", "task"])
@@ -536,11 +536,30 @@ fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
             [],
         )
         .unwrap();
-    let list = |screen: &str| {
-        std::fs::write(home.join("screen"), screen).unwrap();
-        let output = swarm(&home, &chair, &["agents", "--json"]);
-        assert!(output.status.success(), "{}", stderr(&output));
-    };
+    (session, connection)
+}
+
+fn list_agents(home: &Path, session: &str, screen: &str) {
+    std::fs::write(home.join("screen"), screen).unwrap();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let output = swarm(home, &chair, &["agents", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+}
+
+fn rings(home: &Path) -> String {
+    std::fs::read_to_string(home.join("rings")).unwrap_or_default()
+}
+
+#[test]
+fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
+    let home = scratch("rering");
+    let (session, _connection) = lost_ring_session(&home);
+    let list = |screen: &str| list_agents(&home, &session, screen);
+    let rings = || rings(&home);
 
     // A pane in a turn gets no ring typed into it.
     list(include_str!("fixtures/screens/agy-working.txt"));
@@ -550,6 +569,33 @@ fn the_agent_listing_rings_again_a_message_lost_while_the_agent_started() {
     // One ring again, not one per listing.
     list(include_str!("fixtures/screens/agy-idle.txt"));
     assert_eq!(rings(), "ring\nring\n");
+}
+
+#[test]
+fn the_agent_listing_rings_no_agent_that_a_fresh_hook_reports_working() {
+    let home = scratch("rering-hook");
+    let (session, connection) = lost_ring_session(&home);
+    // The hook saw the turn start a second ago, before the screen shows it.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    swarm::store::set_state(
+        &connection,
+        &session,
+        "seat",
+        "working",
+        "hook",
+        None,
+        now - 1,
+    )
+    .unwrap();
+    list_agents(
+        &home,
+        &session,
+        include_str!("fixtures/screens/agy-idle.txt"),
+    );
+    assert_eq!(rings(&home), "ring\n");
 }
 
 #[test]
