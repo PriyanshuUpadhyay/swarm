@@ -12,6 +12,22 @@ brew install priyanshuupadhyay/tap/swarm   # macOS; installs tmux too
 swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapters/ directories
 ```
 
+### Swarm app
+
+Download `Swarm-<version>.dmg` from the
+[latest release](https://github.com/PriyanshuUpadhyay/swarm/releases/latest), open it, and drag
+Swarm onto Applications. The app carries its own `swarm` CLI. It still needs tmux
+(`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
+
+The app is not notarized by Apple, so macOS blocks the first launch. Allow it once:
+
+1. Open Swarm from Applications. macOS says it cannot verify the app. Click **Done**.
+2. Open **System Settings > Privacy & Security** and scroll to **Security**.
+3. Next to "Swarm was blocked", click **Open Anyway**, then confirm with your password.
+
+On macOS 15 and later, a Control-click on the app and **Open** no longer skips this check.
+If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applications/Swarm.app`.
+
 ## Environment
 
 When `SWARM_HOME` is not set, a build from `main` (or from a detached HEAD) uses `HOME`, and a
