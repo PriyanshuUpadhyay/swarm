@@ -480,3 +480,61 @@ fn a_child_agent_can_neither_launch_nor_spawn() {
     }
     assert!(!home.join("spawned").exists());
 }
+
+#[test]
+fn a_spawned_agent_runs_the_swarm_that_launched_it() {
+    let home = scratch("own-swarm");
+    // An older `swarm` installed first on the pane's PATH.
+    tool(&home, "swarm", "exit 1");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let output = swarm(
+        &home,
+        &chair,
+        &[
+            "spawn",
+            "seat",
+            "coder",
+            "--",
+            "sh",
+            "-c",
+            "command -v swarm > \"$HOME/which\"",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    // The pane's shell sources the run script with its own PATH.
+    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
+    let pane = Command::new("sh")
+        .arg(&script)
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .status()
+        .unwrap();
+    assert!(pane.success());
+    assert_eq!(
+        std::fs::read_to_string(home.join("which")).unwrap().trim(),
+        env!("CARGO_BIN_EXE_swarm")
+    );
+}

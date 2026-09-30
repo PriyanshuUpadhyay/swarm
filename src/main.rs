@@ -739,7 +739,16 @@ fn spawn_agent(
         &vars,
     )?;
     if !options.command.is_empty() {
-        let exe = env::current_exe()?.to_string_lossy().into_owned();
+        let exe = env::current_exe()?;
+        // The agent's own `swarm inbox` and `swarm finish` must run this binary, not an older
+        // `swarm` on the pane's PATH, which refuses a database another build made.
+        let path = exe.parent().map_or(String::new(), |dir| {
+            format!(
+                "export PATH={}:\"$PATH\"; ",
+                swarm::adapter::shell_line(&[dir.to_string_lossy().into_owned()])
+            )
+        });
+        let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
             let mut args = vec!["env".to_string(), "--".to_string()];
@@ -754,7 +763,7 @@ fn spawn_agent(
         } else {
             swarm::adapter::shell_line(options.command)
         };
-        let line = script_line(root, &session_id, agent_id, &child)?;
+        let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         adapter.run(
             "ring",
             &[("pane", &pane), ("text", &format!("{line}; {hook}"))],
