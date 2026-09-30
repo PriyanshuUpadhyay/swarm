@@ -743,7 +743,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     tool(
         &home,
         "yelo",
-        r#"echo '[{"name":"a","dir":"/p/a","signed_in":true,"remaining":50}]'"#,
+        r#"echo '[{"name":"personal","dir":"/p/personal","signed_in":true,"remaining":50}]'"#,
     );
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
@@ -770,10 +770,14 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/{seat}.sh"))).unwrap()
     };
 
-    let profile = swarm(&home, &env, &["launch", "chat-a", "chat", "--cwd", &cwd]);
+    let profile = swarm(
+        &home,
+        &env,
+        &["launch", "chat-profile", "chat", "--cwd", &cwd],
+    );
     assert!(profile.status.success(), "{}", stderr(&profile));
     assert!(stderr(&profile).contains("swarm: chat: running claude/opus/high"));
-    let command = script("chat-a");
+    let command = script("chat-profile");
     assert!(
         command.contains("'--model' 'opus' '--effort' 'high'"),
         "{command}"
@@ -784,7 +788,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &env,
         &[
             "launch",
-            "chat-b",
+            "chat-one-off",
             "chat",
             "--provider",
             "codex",
@@ -795,7 +799,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         ],
     );
     assert!(one_off.status.success(), "{}", stderr(&one_off));
-    let command = script("chat-b");
+    let command = script("chat-one-off");
     assert!(command.contains("'--model' 'gpt-6-luna'"), "{command}");
     assert!(
         command.contains(r#"'model_reasoning_effort="high"'"#),
@@ -814,7 +818,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &env,
         &[
             "launch",
-            "chat-c",
+            "chat-agy",
             "chat",
             "--provider",
             "agy",
@@ -827,7 +831,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         ],
     );
     assert!(agy.status.success(), "{}", stderr(&agy));
-    assert!(script("chat-c").contains("'agy' '--model' 'flash'"));
+    assert!(script("chat-agy").contains("'agy' '--model' 'flash'"));
 
     // A named account that no runner's provider has skips each runner before anything runs.
     let named = swarm(
@@ -835,7 +839,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &env,
         &[
             "launch",
-            "chat-d",
+            "chat-named",
             "chat",
             "--account",
             "work",
@@ -859,7 +863,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &env,
         &[
             "launch",
-            "chat-e",
+            "chat-no-yelo",
             "chat",
             "--account",
             "auto",
@@ -869,5 +873,29 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     );
     assert!(no_yelo.status.success(), "{}", stderr(&no_yelo));
     assert!(stderr(&no_yelo).contains("claude uses its own login"));
-    assert!(script("chat-e").contains("'--model' 'opus' '--effort' 'high'"));
+    assert!(script("chat-no-yelo").contains("'--model' 'opus' '--effort' 'high'"));
+
+    // A stuck yelo costs `auto` its 2 s read limit, not the whole launch.
+    tool(&home, "yelo", "sleep 8");
+    let started = std::time::Instant::now();
+    let stuck = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-stuck-yelo",
+            "chat",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(stuck.status.success(), "{}", stderr(&stuck));
+    assert!(started.elapsed() < std::time::Duration::from_secs(8));
+    assert!(
+        stderr(&stuck).contains("yelo did not answer within 2 s; claude uses its own login"),
+        "{}",
+        stderr(&stuck)
+    );
 }

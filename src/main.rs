@@ -190,8 +190,55 @@ fn run_tool(
         .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
 }
 
+/// `run_tool` that stops the tool after `limit`, for a read that a launch waits on.
+fn run_tool_within(
+    executable: &str,
+    args: &[&str],
+    limit: std::time::Duration,
+) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+    let mut child = std::process::Command::new(executable)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("swarm: cannot run {executable}: {error}"))?;
+    let stdout = read_within(child.stdout.take().ok_or("no stdout")?, limit);
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+    let status = match stdout.as_ref().map(|_| child.try_wait()) {
+        Some(Ok(Some(status))) => Some(status),
+        // stdout closed, so the tool is exiting; a short wait lets it finish.
+        Some(_) => {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            child.try_wait().ok().flatten()
+        }
+        None => None,
+    };
+    let Some(status) = status else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "swarm: {executable} did not answer within {} s",
+            limit.as_secs()
+        )
+        .into());
+    };
+    let stderr = read_within(stderr, std::time::Duration::from_millis(100)).unwrap_or_default();
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.unwrap_or_default().into_bytes(),
+        stderr: stderr.into_bytes(),
+    })
+}
+
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
-    let output = run_tool(executable, args)?;
+    checked_stdout(executable, run_tool(executable, args)?)
+}
+
+fn checked_stdout(
+    executable: &str,
+    output: std::process::Output,
+) -> Result<String, Box<dyn std::error::Error>> {
     if !output.status.success() {
         return Err(format!(
             "swarm: {executable} failed: {}",
@@ -380,13 +427,23 @@ fn load_accounts(
         }
         Some(_) => {}
     }
+    // A launch waits on these reads, so a stuck yelo fails them rather than the launch hanging.
+    let limit = std::time::Duration::from_secs(2);
     let command = yelo_command();
-    let list = tool_stdout(
+    let list = checked_stdout(
         &command,
-        &["profile", "list", "--cli", provider, "--usage", "--json"],
+        run_tool_within(
+            &command,
+            &["profile", "list", "--cli", provider, "--usage", "--json"],
+            limit,
+        )?,
     )?;
     let pick_json = if with_pick {
-        let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
+        let pick = run_tool_within(
+            &command,
+            &["profile", "pick", "--cli", provider, "--json"],
+            limit,
+        )?;
         pick.status
             .success()
             .then(|| String::from_utf8(pick.stdout))

@@ -356,7 +356,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
 
     yelo(
         &bin,
-        r#"[{"name":"a","dir":"/p/a","signed_in":true,"remaining":2},{"name":"b","dir":"/p/b","signed_in":false,"remaining":90}]"#,
+        r#"[{"name":"nearly-spent","dir":"/p/nearly-spent","signed_in":true,"remaining":2},{"name":"signed-out","dir":"/p/signed-out","signed_in":false,"remaining":90}]"#,
     );
     let low = swarm(&home, &path, &["roles", "get", "code"]);
     let resolved = json(&low);
@@ -369,7 +369,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
 
     yelo(
         &bin,
-        r#"[{"name":"a","dir":"/p/a","signed_in":false,"remaining":80}]"#,
+        r#"[{"name":"signed-out","dir":"/p/signed-out","signed_in":false,"remaining":80}]"#,
     );
     let signed_out = json(&swarm(&home, &path, &["roles", "get", "code"]));
     assert_eq!(signed_out["runnerId"], "code#2");
@@ -381,7 +381,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
 
     yelo(
         &bin,
-        r#"[{"name":"a","dir":"/p/a","signed_in":true,"remaining":40}]"#,
+        r#"[{"name":"personal","dir":"/p/personal","signed_in":true,"remaining":40}]"#,
     );
     let healthy = json(&swarm(&home, &path, &["roles", "get", "code"]));
     assert_eq!(healthy["runnerId"], "code#1");
