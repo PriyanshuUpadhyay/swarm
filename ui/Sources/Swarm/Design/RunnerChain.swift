@@ -29,9 +29,9 @@ struct ProfileHealthPill: View {
     let status: ProfileStatus?
 
     var body: some View {
-        // Only the symbol takes the status color; caption text in it is under 4.5:1 contrast.
+        // Only the symbol takes the status color; caption text in it, or in grey, is under 4.5:1.
         Label {
-            Text(status?.title ?? "Status unknown").foregroundStyle(.secondary)
+            Text(status?.title ?? "Status unknown")
         } icon: {
             Image(systemName: symbol).foregroundStyle(color)
         }

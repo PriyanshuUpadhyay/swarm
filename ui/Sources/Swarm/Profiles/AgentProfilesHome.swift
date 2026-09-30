@@ -16,6 +16,8 @@ struct AgentProfilesHome: View {
     @State private var error: String?
     @State private var editing: EditTarget?
     @State private var problemsOnly = false
+    /// The newest load; an older load that answers late writes nothing.
+    @State private var loads = 0
     @AppStorage("profiles.importBanner.dismissedFrom") private var dismissedImport = ""
     /// Closed group names, joined by commas; a group is open by default.
     @AppStorage("profiles.collapsedGroups") private var collapsedGroups = ""
@@ -163,9 +165,10 @@ struct AgentProfilesHome: View {
         }
     }
 
-    /// The groups with their shown rows; a group with none is left out.
+    /// The groups with their shown rows; a group with none is left out. With no check yet no
+    /// profile is known to be a problem, so every row shows.
     private func shownGroups(_ profiles: [SwarmProfile]) -> [ProfileGroup] {
-        ProfileGroup.groups(profiles.filter { !problemsOnly || isProblem($0) })
+        ProfileGroup.groups(profiles.filter { !problemsOnly || checks.isEmpty || isProblem($0) })
     }
 
     private var collapsed: Set<String> {
@@ -212,12 +215,15 @@ struct AgentProfilesHome: View {
     private func load() async {
         let timing = SwarmPerformance.begin("AgentProfiles")
         defer { timing.end(count: list?.profiles.count ?? 0) }
+        loads += 1
+        let generation = loads
         isLoading = true
-        defer { isLoading = false }
+        defer { if generation == loads { isLoading = false } }
         do {
             await LoginShellPath.ready()
             let loaded = try await source.profiles()
             try Task.checkCancellation()
+            guard generation == loads else { return }
             // A check marks runners by index, so an old check on a changed file marks wrong chips.
             if loaded.revision != list?.revision {
                 checks = [:]
@@ -234,7 +240,9 @@ struct AgentProfilesHome: View {
         }
         if providers.isEmpty { providers = (try? await source.providers()) ?? [] }
         // A failed or slow check leaves the health unknown rather than showing a wrong one.
-        guard let checked = try? await source.check() else {
+        let checked = try? await source.check()
+        guard generation == loads else { return }
+        guard let checked else {
             checks = [:]
             checkedAt = nil
             return
