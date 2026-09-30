@@ -99,6 +99,8 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         "yelo",
         &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
     );
+    // Launch starts only a runner whose CLI is on PATH (ADR 0031).
+    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
         home.join(".config/agent-routing/roles.json"),

@@ -1,0 +1,529 @@
+//! Agent profiles: which runners start each role, in order (ADRs 0030, 0031). The file is
+//! `$SWARM_HOME/.swarm/profiles.json`. With no file, the first read imports the old agent-routing
+//! `roles.json` if one exists, else the built-in `default-profiles.json` is used and nothing is
+//! written.
+
+use crate::providers::Provider;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+
+const DEFAULT: &str = include_str!("../default-profiles.json");
+
+/// Below this share of usage left on every signed-in account, a runner is skipped. Low enough
+/// that a nearly spent account still runs a short task, high enough to skip one that would stop
+/// mid-turn.
+const DEFAULT_MIN_USAGE_LEFT_PCT: u8 = 5;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Runner {
+    pub provider: Provider,
+    pub model: String,
+    pub effort: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission: Option<String>,
+}
+
+impl Runner {
+    /// `claude/opus/high`, the name launch output and skip reasons use.
+    pub fn label(&self) -> String {
+        format!("{}/{}/{}", self.provider.id(), self.model, self.effort)
+    }
+
+    fn extras(&self) -> [(&'static str, Option<&str>); 3] {
+        [
+            ("sandbox", self.sandbox.as_deref()),
+            ("approval", self.approval.as_deref()),
+            ("permission", self.permission.as_deref()),
+        ]
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profile {
+    pub name: String,
+    pub runners: Vec<Runner>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Imported {
+    pub from: String,
+    pub unmapped: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    pub version: u32,
+    #[serde(default = "default_min_usage_left_pct")]
+    pub min_usage_left_pct: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported: Option<Imported>,
+    pub profiles: Vec<Profile>,
+}
+
+fn default_min_usage_left_pct() -> u8 {
+    DEFAULT_MIN_USAGE_LEFT_PCT
+}
+
+impl Config {
+    pub fn profile(&self, name: &str) -> Result<&Profile, String> {
+        self.profiles
+            .iter()
+            .find(|profile| profile.name == name)
+            .ok_or_else(|| format!("profile '{name}' is not defined"))
+    }
+}
+
+/// What `swarm roles --json` prints: the config plus the revision a save must name.
+#[derive(Debug, Serialize)]
+pub struct Listing {
+    pub revision: String,
+    #[serde(flatten)]
+    pub config: Config,
+}
+
+/// One value that goes into an agent's argv after a flag, so it is the trust boundary: one word,
+/// not a flag.
+pub fn valid_name(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('-')
+        && !value
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch.is_control())
+}
+
+/// Every rule the config breaks.
+pub fn validate(config: &Config) -> Vec<String> {
+    let mut errors = Vec::new();
+    if config.version != 1 {
+        errors.push(format!("version must be 1, not {}.", config.version));
+    }
+    if config.min_usage_left_pct > 100 {
+        errors.push("min_usage_left_pct must be 0 to 100.".into());
+    }
+    if config.profiles.first().map(|profile| profile.name.as_str()) != Some("chat") {
+        errors.push("The first profile must be 'chat'.".into());
+    }
+    let mut names = std::collections::HashSet::new();
+    for profile in &config.profiles {
+        let name = &profile.name;
+        if name.is_empty()
+            || !name.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+            })
+        {
+            errors.push(format!(
+                "Profile name '{name}' must use a-z, 0-9, '.', '_', '-'."
+            ));
+        }
+        if !names.insert(name.as_str()) {
+            errors.push(format!("Profile '{name}' is defined twice."));
+        }
+        if profile.runners.is_empty() {
+            errors.push(format!("Profile '{name}' must have at least one runner."));
+        }
+        // Fable is a child seat only where it judges, never where it writes code.
+        let judges = name.starts_with("review.") || name.starts_with("council.");
+        for (index, runner) in profile.runners.iter().enumerate() {
+            let at = format!("Profile '{name}' runner {}", index + 1);
+            if profile.runners[..index].contains(runner) {
+                errors.push(format!("{at} repeats an earlier runner."));
+            }
+            if !valid_name(&runner.model) {
+                errors.push(format!("{at} has invalid model '{}'.", runner.model));
+            }
+            let info = runner.provider.info();
+            if !info.efforts.contains(&runner.effort.as_str()) {
+                errors.push(format!(
+                    "{at} has effort '{}', which {} does not take.",
+                    runner.effort, info.label
+                ));
+            }
+            for (field, value) in runner.extras() {
+                let Some(value) = value else { continue };
+                if !info.fields.iter().any(|known| known.name == field) {
+                    errors.push(format!("{at}: {} has no {field}.", info.label));
+                } else if !valid_name(value) {
+                    errors.push(format!("{at} has invalid {field} '{value}'."));
+                }
+            }
+            if runner.model.to_lowercase().contains("fable") && !judges {
+                errors.push(format!(
+                    "{at}: Fable is allowed only in a review.* or council.* profile."
+                ));
+            }
+        }
+    }
+    errors
+}
+
+pub fn parse(text: &str) -> Result<Config, String> {
+    let config: Config = serde_json::from_str(text).map_err(|error| error.to_string())?;
+    let errors = validate(&config);
+    match errors.is_empty() {
+        true => Ok(config),
+        false => Err(errors.join("\n")),
+    }
+}
+
+pub fn built_in() -> Config {
+    parse(DEFAULT).expect("default-profiles.json is valid; a test checks it")
+}
+
+/// Converts the old agent-routing config. Each route becomes a profile in the file's key order;
+/// its runners are the route's runners, then each one's substitutes, copied by value with exact
+/// repeats dropped. A route that cannot convert is named in `unmapped`, and the rest still import.
+pub fn import(old: &Value, from: &str) -> Result<Config, String> {
+    let (Some(routes), Some(runners)) = (old["routes"].as_object(), old["runners"].as_object())
+    else {
+        return Err(format!("{from}: routes and runners must be objects"));
+    };
+    let convert = |id: &str| -> Option<Runner> {
+        let fields = runners.get(id)?.as_object()?;
+        let text = |key: &str| fields.get(key).and_then(Value::as_str).map(str::to_string);
+        let provider = Provider::parse(&text("provider")?)?;
+        Some(Runner {
+            provider,
+            model: text("model")?,
+            effort: text("effort").unwrap_or_else(|| provider.info().default_effort.into()),
+            sandbox: text("sandbox"),
+            approval: text("approval"),
+            permission: text("permission"),
+        })
+    };
+    let mut profiles = Vec::new();
+    let mut unmapped = Vec::new();
+    for (route, ids) in routes {
+        let ids: Vec<&str> = ids
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        let substitutes = ids.iter().flat_map(|id| {
+            old["substitutes"][*id]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+        });
+        let Some(mut list) = ids
+            .iter()
+            .map(|id| convert(id))
+            .collect::<Option<Vec<Runner>>>()
+            .filter(|list| !list.is_empty())
+        else {
+            unmapped.push(route.clone());
+            continue;
+        };
+        for runner in substitutes.filter_map(convert) {
+            if !list.contains(&runner) {
+                list.push(runner);
+            }
+        }
+        profiles.push(Profile {
+            name: route.clone(),
+            runners: list,
+        });
+    }
+    if !profiles.iter().any(|profile| profile.name == "chat") {
+        profiles.insert(0, built_in().profiles.remove(0));
+    }
+    if let Some(at) = profiles.iter().position(|profile| profile.name == "chat") {
+        let chat = profiles.remove(at);
+        profiles.insert(0, chat);
+    }
+    let config = Config {
+        version: 1,
+        min_usage_left_pct: DEFAULT_MIN_USAGE_LEFT_PCT,
+        imported: Some(Imported {
+            from: from.into(),
+            unmapped,
+        }),
+        profiles,
+    };
+    let errors = validate(&config);
+    match errors.is_empty() {
+        true => Ok(config),
+        false => Err(format!("{from}: {}", errors.join("\n"))),
+    }
+}
+
+/// Why a runner did not start. New codes may appear; a reader shows `text` for one it does not
+/// know.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkipCode {
+    CliMissing,
+    SignedOut,
+    LowUsage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Skip {
+    pub index: usize,
+    pub code: SkipCode,
+    pub text: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Selection {
+    /// The runner that starts, as an index into the profile's runners; None when every one was
+    /// skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pick: Option<usize>,
+    pub skipped: Vec<Skip>,
+}
+
+/// The first runner `probe` does not skip. With `only`, that provider's runners are tried first
+/// and the rest after, so a seat for one provider still starts when that provider cannot run.
+pub fn select(
+    profile: &Profile,
+    only: Option<Provider>,
+    probe: impl Fn(&Runner) -> Option<(SkipCode, String)>,
+) -> Selection {
+    let mut order: Vec<usize> = (0..profile.runners.len()).collect();
+    if let Some(only) = only {
+        order.sort_by_key(|index| profile.runners[*index].provider != only);
+    }
+    let mut skipped = Vec::new();
+    for index in order {
+        match probe(&profile.runners[index]) {
+            None => {
+                return Selection {
+                    pick: Some(index),
+                    skipped,
+                };
+            }
+            Some((code, text)) => skipped.push(Skip { index, code, text }),
+        }
+    }
+    Selection {
+        pick: None,
+        skipped,
+    }
+}
+
+/// The first 12 hex digits of the SHA-256 of the bytes a listing was made from.
+pub fn revision(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .take(6)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+pub fn path() -> Result<PathBuf, String> {
+    crate::paths::root_dir()
+        .map(|root| root.join("profiles.json"))
+        .map_err(|error| error.to_string())
+}
+
+/// The old agent-routing file: `$AGENT_ROUTING_CONFIG`, else under `$XDG_CONFIG_HOME`, else under
+/// `~/.config`. An explicit path that is missing is an error, never a fall-through.
+fn old_path() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var("AGENT_ROUTING_CONFIG") {
+        let path = PathBuf::from(path);
+        return match path.exists() {
+            true => Ok(path),
+            false => Err(format!(
+                "AGENT_ROUTING_CONFIG names a missing file: {}",
+                path.display()
+            )),
+        };
+    }
+    let config_home = match std::env::var("XDG_CONFIG_HOME") {
+        Ok(dir) => PathBuf::from(dir),
+        Err(_) => PathBuf::from(std::env::var("HOME").map_err(|_| "HOME not set")?).join(".config"),
+    };
+    Ok(config_home.join("agent-routing/roles.json"))
+}
+
+/// Reads `path`, or None when nothing is there. A link to a missing file is an error, so a moved
+/// dotfiles checkout cannot switch every profile to the default without a word.
+fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    match std::fs::read(path) {
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && std::fs::symlink_metadata(path).is_err() =>
+        {
+            Ok(None)
+        }
+        result => result
+            .map(Some)
+            .map_err(|error| format!("cannot read {}: {error}", path.display())),
+    }
+}
+
+/// The profiles and the bytes they came from. The first read with no file imports the old
+/// config and writes the result; with no old config either, it is the built-in default.
+pub fn load() -> Result<(Config, Vec<u8>), String> {
+    let path = path()?;
+    if let Some(bytes) = read(&path)? {
+        let text = String::from_utf8(bytes.clone())
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let config = parse(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+        return Ok((config, bytes));
+    }
+    let old = old_path()?;
+    let Some(bytes) = read(&old)? else {
+        return Ok((built_in(), DEFAULT.as_bytes().to_vec()));
+    };
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|error| format!("{}: {error}", old.display()))?;
+    let config = import(&value, &old.to_string_lossy())?;
+    let bytes = write(&path, &config)?;
+    Ok((config, bytes))
+}
+
+pub fn listing() -> Result<Listing, String> {
+    let (config, bytes) = load()?;
+    Ok(Listing {
+        revision: revision(&bytes),
+        config,
+    })
+}
+
+/// Replaces one profile by name when the file still has `expected` as its revision, and returns
+/// the new revision.
+pub fn save(profile: Profile, expected: &str) -> Result<String, String> {
+    let (mut config, bytes) = load()?;
+    if revision(&bytes) != expected {
+        return Err("profiles changed on disk; reload and try again".into());
+    }
+    let slot = config
+        .profiles
+        .iter_mut()
+        .find(|slot| slot.name == profile.name)
+        .ok_or_else(|| format!("profile '{}' is not defined", profile.name))?;
+    *slot = profile;
+    let errors = validate(&config);
+    if !errors.is_empty() {
+        return Err(errors.join("\n"));
+    }
+    write(&path()?, &config).map(|bytes| revision(&bytes))
+}
+
+/// Writes `config`: a timestamped backup beside an existing file, then an atomic rename onto the
+/// real file, because the owner may link `profiles.json` into dotfiles and a rename onto the link
+/// itself would replace it.
+fn write(path: &Path, config: &Config) -> Result<Vec<u8>, String> {
+    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())? + "\n";
+    let at = |error: std::io::Error| format!("{}: {error}", path.display());
+    let target = if std::fs::symlink_metadata(path).is_ok() {
+        let target = std::fs::canonicalize(path).map_err(at)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_secs();
+        let backup = format!("{}.{stamp}.bak", path.display());
+        std::fs::copy(&target, &backup).map_err(|error| format!("{backup}: {error}"))?;
+        target
+    } else {
+        std::fs::create_dir_all(path.parent().ok_or("profiles path has no folder")?).map_err(at)?;
+        path.to_path_buf()
+    };
+    let temp = target.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temp, &text)
+        .and_then(|()| std::fs::rename(&temp, &target))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&temp);
+            format!("{}: {error}", target.display())
+        })?;
+    Ok(text.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runner(provider: Provider, model: &str) -> Runner {
+        Runner {
+            provider,
+            model: model.into(),
+            effort: "high".into(),
+            sandbox: None,
+            approval: None,
+            permission: None,
+        }
+    }
+
+    fn config(profiles: Vec<Profile>) -> Config {
+        Config {
+            version: 1,
+            min_usage_left_pct: 5,
+            imported: None,
+            profiles,
+        }
+    }
+
+    fn chat() -> Profile {
+        Profile {
+            name: "chat".into(),
+            runners: vec![runner(Provider::Claude, "opus")],
+        }
+    }
+
+    #[test]
+    fn the_built_in_profiles_are_valid_and_start_with_chat() {
+        let built_in = built_in();
+        assert_eq!(built_in.profiles[0].name, "chat");
+        assert!(built_in.imported.is_none());
+    }
+
+    #[test]
+    fn validate_names_each_broken_rule() {
+        assert_eq!(validate(&config(vec![chat()])), Vec::<String>::new());
+        let mut codex = runner(Provider::Codex, "--yolo");
+        codex.effort = "huge".into();
+        codex.permission = Some("auto".into());
+        codex.sandbox = Some("two words".into());
+        let broken = Config {
+            version: 2,
+            min_usage_left_pct: 101,
+            imported: None,
+            profiles: vec![
+                Profile {
+                    name: "Code".into(),
+                    runners: vec![codex, runner(Provider::Claude, "claude-fable-5")],
+                },
+                Profile {
+                    name: "chat".into(),
+                    runners: vec![],
+                },
+                chat(),
+            ],
+        };
+        assert_eq!(
+            validate(&broken),
+            [
+                "version must be 1, not 2.",
+                "min_usage_left_pct must be 0 to 100.",
+                "The first profile must be 'chat'.",
+                "Profile name 'Code' must use a-z, 0-9, '.', '_', '-'.",
+                "Profile 'Code' runner 1 has invalid model '--yolo'.",
+                "Profile 'Code' runner 1 has effort 'huge', which Codex does not take.",
+                "Profile 'Code' runner 1 has invalid sandbox 'two words'.",
+                "Profile 'Code' runner 1: Codex has no permission.",
+                "Profile 'Code' runner 2: Fable is allowed only in a review.* or council.* profile.",
+                "Profile 'chat' must have at least one runner.",
+                "Profile 'chat' is defined twice.",
+            ]
+        );
+        let mut repeated = chat();
+        repeated.runners.push(runner(Provider::Claude, "opus"));
+        assert_eq!(
+            validate(&config(vec![repeated])),
+            ["Profile 'chat' runner 2 repeats an earlier runner."]
+        );
+    }
+}

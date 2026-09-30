@@ -18,6 +18,10 @@
     "design.ui": [
       "claude-sonnet-high-agent"
     ],
+    "ink.build": [
+      "claude-sonnet-high-agent",
+      "claude-opus-high-agent"
+    ],
     "review.surface": [
       "claude-opus-high-agent",
       "codex-sol-high-agent"

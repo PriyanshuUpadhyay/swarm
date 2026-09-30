@@ -3,10 +3,11 @@
 //! place that must handle it. Code that reads a provider's own file format (hook payloads,
 //! screens, chair logs, trust files) still dispatches by provider in its own module.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Provider {
     Claude,
     Codex,

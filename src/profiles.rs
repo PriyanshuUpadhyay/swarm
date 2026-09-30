@@ -2,85 +2,6 @@ use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Deserialize)]
-struct RoutingConfig {
-    routes: BTreeMap<String, Vec<String>>,
-    runners: BTreeMap<String, RoutingRunner>,
-}
-
-#[derive(Deserialize)]
-struct RoutingRunner {
-    provider: String,
-    model: String,
-    effort: Option<String>,
-    sandbox: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct RoleList {
-    pub roles: Vec<Role>,
-    /// One launchable runner per route and provider, including non-primary runners.
-    pub choices: Vec<Role>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct Role {
-    pub role: String,
-    pub runner: String,
-    pub provider: String,
-    pub model: String,
-    pub effort: Option<String>,
-    pub sandbox: Option<String>,
-    pub fallbacks: Vec<String>,
-}
-
-pub fn translate_roles(config: &serde_json::Value) -> Result<RoleList, String> {
-    let config: RoutingConfig = serde_json::from_value(config.clone())
-        .map_err(|error| format!("routing config: {error}"))?;
-    let mut roles = Vec::with_capacity(config.routes.len());
-    let mut choices = Vec::new();
-    for (role, runner_ids) in config.routes {
-        let (runner, fallbacks) = runner_ids
-            .split_first()
-            .ok_or_else(|| format!("route {role} has no runners"))?;
-        let details = config
-            .runners
-            .get(runner)
-            .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
-        roles.push(Role {
-            role: role.clone(),
-            runner: runner.clone(),
-            provider: details.provider.clone(),
-            model: details.model.clone(),
-            effort: details.effort.clone(),
-            sandbox: details.sandbox.clone(),
-            fallbacks: fallbacks.to_vec(),
-        });
-        for runner in runner_ids {
-            let details = config
-                .runners
-                .get(&runner)
-                .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
-            if choices
-                .iter()
-                .any(|choice: &Role| choice.role == role && choice.provider == details.provider)
-            {
-                continue;
-            }
-            choices.push(Role {
-                role: role.clone(),
-                runner,
-                provider: details.provider.clone(),
-                model: details.model.clone(),
-                effort: details.effort.clone(),
-                sandbox: details.sandbox.clone(),
-                fallbacks: Vec::new(),
-            });
-        }
-    }
-    Ok(RoleList { roles, choices })
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AccountList {
     pub provider: String,
@@ -276,35 +197,6 @@ mod tests {
         {"name":"away","dir":"/profiles/away","email":null,"signed_in":false,"remaining":null,"usage":null},
         {"name":null,"dir":"/profiles/nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}
     ]"#;
-
-    #[test]
-    fn translates_routes_and_keeps_fallback_order() {
-        let json = r#"{"routes":{"ORCHESTRATOR":["claudeLead","codexBackup"],"CODER":["codexWork"]},"runners":{"claudeLead":{"provider":"claude","model":"opus","effort":null},"codexBackup":{"provider":"codex","model":"gpt-backup","sandbox":"workspace-write"},"codexWork":{"provider":"codex","model":"gpt-work","effort":"high","sandbox":"workspace-write"}}}"#;
-
-        let result = translate_roles(&serde_json::from_str(json).unwrap()).unwrap();
-
-        assert_eq!(result.roles[1].runner, "claudeLead");
-        assert_eq!(result.roles[1].fallbacks, ["codexBackup"]);
-        assert_eq!(result.roles[1].effort, None);
-        assert_eq!(result.roles[1].sandbox, None);
-        assert_eq!(
-            result
-                .choices
-                .iter()
-                .filter(|choice| choice.role == "ORCHESTRATOR")
-                .count(),
-            2
-        );
-        assert_eq!(
-            result
-                .choices
-                .iter()
-                .find(|choice| choice.role == "ORCHESTRATOR" && choice.provider == "codex")
-                .unwrap()
-                .model,
-            "gpt-backup"
-        );
-    }
 
     #[test]
     fn translates_accounts_and_resolves_auto() {

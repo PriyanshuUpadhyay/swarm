@@ -38,7 +38,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles save --revision <revision> (profile JSON on stdin) | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -207,29 +207,81 @@ fn yelo_command() -> String {
     env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
 }
 
-fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>> {
-    let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-    swarm::profiles::translate_roles(&config).map_err(|error| format!("swarm: {error}").into())
+/// Why `runner` cannot start now, or None. The CLI check only; see `swarm::config::select`.
+fn probe(runner: &swarm::config::Runner) -> Option<(swarm::config::SkipCode, String)> {
+    let id = runner.provider.id();
+    (!installed(id)).then(|| {
+        (
+            swarm::config::SkipCode::CliMissing,
+            format!("{id} CLI not found on PATH"),
+        )
+    })
 }
 
-fn set_role_model(runner: &str, model: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if model.is_empty() || model.chars().any(char::is_whitespace) {
-        return Err("swarm: model must be one non-empty name".into());
-    }
-    swarm::routing::set_model(runner, model).map_err(|error| format!("swarm: {error}"))?;
-    println!("Set model '{model}' on: {runner}");
-    Ok(())
-}
-
+/// The runner `role` starts with, as `roles get` prints it. Each skipped runner is one stderr
+/// line, and `running` adds the line that names the runner that starts.
 fn resolve_role(
     role: &str,
     provider: Option<&str>,
-) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
-    let fail = |error: String| format!("swarm: cannot resolve role {role}: {error}");
-    let (_, config) = swarm::routing::load().map_err(fail)?;
-    let value = swarm::routing::resolve(&config, role, provider, &installed).map_err(fail)?;
-    warn_substitute(&value);
-    serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
+    running: bool,
+) -> Result<serde_json::Value, String> {
+    let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+    let profile = config
+        .profile(role)
+        .map_err(|error| format!("swarm: {error}"))?;
+    let only = provider
+        .map(|name| Provider::parse(name).ok_or_else(|| format!("swarm: unknown provider {name}")))
+        .transpose()?;
+    let selection = swarm::config::select(profile, only, probe);
+    let id = |index: usize| format!("{role}#{}", index + 1);
+    for skip in &selection.skipped {
+        eprintln!(
+            "swarm: {role}: skipped {}: {}",
+            profile.runners[skip.index].label(),
+            skip.text
+        );
+    }
+    let Some(index) = selection.pick else {
+        let lines: Vec<String> = selection
+            .skipped
+            .iter()
+            .map(|skip| {
+                format!(
+                    "  {} {}: {}",
+                    skip.index + 1,
+                    profile.runners[skip.index].label(),
+                    skip.text
+                )
+            })
+            .collect();
+        return Err(format!(
+            "swarm: {role}: no runner can run\n{}",
+            lines.join("\n")
+        ));
+    };
+    let runner = &profile.runners[index];
+    if running {
+        eprintln!("swarm: {role}: running {}", runner.label());
+    }
+    let mut value = serde_json::to_value(runner).map_err(|error| error.to_string())?;
+    let fields = value
+        .as_object_mut()
+        .expect("a runner serializes to an object");
+    fields.insert("role".into(), role.into());
+    fields.insert("runnerId".into(), id(index).into());
+    let fallbacks: Vec<String> = (0..profile.runners.len())
+        .filter(|other| *other != index)
+        .map(id)
+        .collect();
+    fields.insert("fallbackRunnerIds".into(), fallbacks.into());
+    if let Some(first) = selection.skipped.first() {
+        fields.insert("substitutedFor".into(), id(first.index).into());
+    }
+    fields.insert(
+        "skipped".into(),
+        serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
+    );
+    Ok(value)
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that
@@ -242,18 +294,6 @@ fn installed(provider: &str) -> bool {
                 .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
         })
     })
-}
-
-/// A substitute seat can put two seats of one route on the same model family, so say so where the
-/// orchestrator reads it.
-fn warn_substitute(resolved: &serde_json::Value) {
-    if let Some(original) = resolved["substitutedFor"].as_str() {
-        eprintln!(
-            "swarm: role {} runs substitute {} in place of {original}, whose CLI is not on PATH",
-            resolved["role"].as_str().unwrap_or_default(),
-            resolved["runnerId"].as_str().unwrap_or_default()
-        );
-    }
 }
 
 fn load_accounts(
@@ -700,12 +740,13 @@ fn spawn_agent(
     let account = if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
-            None => load_roles()?
-                .roles
-                .into_iter()
-                .find(|entry| entry.role == *role)
-                .map(|entry| entry.provider)
-                .ok_or_else(|| format!("swarm: unknown role {role}"))?,
+            None => swarm::config::load()
+                .and_then(|(config, _)| {
+                    config
+                        .profile(role)
+                        .map(|profile| profile.runners[0].provider.id().to_string())
+                })
+                .map_err(|error| format!("swarm: {error}"))?,
         };
         let accounts = load_accounts(&provider, true)?;
         Some(
@@ -1053,7 +1094,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && cmd == "roles"
         && json == "--json"
     {
-        return print_json(&load_roles()?);
+        return print_json(&swarm::config::listing().map_err(|error| format!("swarm: {error}"))?);
     }
     if let [cmd] = args
         && cmd == "herdr-split"
@@ -1093,18 +1134,21 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-        let resolved = swarm::routing::resolve(&config, role, provider, &installed)
-            .map_err(|error| format!("swarm: {error}"))?;
-        warn_substitute(&resolved);
+        let resolved = resolve_role(role, provider, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
-    if let [cmd, sub, runner, model] = args
+    if let [cmd, sub, flag, revision] = args
         && cmd == "roles"
-        && sub == "set-model"
+        && sub == "save"
+        && flag == "--revision"
     {
-        return set_role_model(runner, model);
+        let text = std::io::read_to_string(std::io::stdin())?;
+        let profile: swarm::config::Profile =
+            serde_json::from_str(&text).map_err(|error| format!("swarm: profile JSON: {error}"))?;
+        let revision =
+            swarm::config::save(profile, revision).map_err(|error| format!("swarm: {error}"))?;
+        return print_json(&serde_json::json!({ "revision": revision }));
     }
     if let [cmd, json] = args
         && cmd == "providers"
@@ -1493,7 +1537,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             if requested_model.is_some() {
                 return Err("swarm: --model requires the chat role".into());
             }
-            resolve_role(role, requested_provider)?
+            serde_json::from_value(resolve_role(role, requested_provider, true)?)
+                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?
         };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
@@ -2066,12 +2111,6 @@ mod tests {
             assert!(reported(&["claude"], payload).is_none(), "{bad}");
         }
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn model_edit_rejects_blank_names() {
-        assert!(set_role_model("codex-sol-high-agent", " ").is_err());
-        assert!(set_role_model("codex-sol-high-agent", "").is_err());
     }
 
     #[test]
