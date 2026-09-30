@@ -44,6 +44,9 @@ pub struct InfoList {
 pub struct Model {
     pub id: String,
     pub label: String,
+    /// The efforts this model takes, when the CLI says; else the provider's list applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub efforts: Option<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -257,6 +260,7 @@ fn claude_models() -> Vec<Model> {
     .map(|id| Model {
         id: id.into(),
         label: id.into(),
+        efforts: None,
     })
     .collect()
 }
@@ -275,9 +279,16 @@ fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
             }
             let id = row["slug"].as_str()?;
             let label = row["display_name"].as_str().unwrap_or(id);
+            let efforts = row["supported_reasoning_levels"].as_array().map(|levels| {
+                levels
+                    .iter()
+                    .filter_map(|level| level["effort"].as_str().map(str::to_string))
+                    .collect()
+            });
             Some(Model {
                 id: id.into(),
                 label: label.into(),
+                efforts,
             })
         })
         .collect())
@@ -291,6 +302,7 @@ fn agy_models(output: &str) -> Vec<Model> {
             (!id.is_empty() && !label.is_empty()).then(|| Model {
                 id: id.into(),
                 label: label.into(),
+                efforts: None,
             })
         })
         .collect()
@@ -321,20 +333,29 @@ mod tests {
 
     #[test]
     fn catalogs_show_listed_codex_models_and_agy_models() {
-        let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
+        let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list","supported_reasoning_levels":[{"effort":"low"},{"effort":"ultra"}]},{"slug":"gpt-old","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
         assert_eq!(
             codex_models(codex).unwrap(),
-            vec![Model {
-                id: "gpt-6-sol".into(),
-                label: "GPT-6-Sol".into()
-            }]
+            vec![
+                Model {
+                    id: "gpt-6-sol".into(),
+                    label: "GPT-6-Sol".into(),
+                    efforts: Some(vec!["low".into(), "ultra".into()]),
+                },
+                Model {
+                    id: "gpt-old".into(),
+                    label: "gpt-old".into(),
+                    efforts: None,
+                },
+            ]
         );
         assert!(codex_models(b"not json").is_err());
         assert_eq!(
             agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
             vec![Model {
                 id: "gemini-3.8-flash-high".into(),
-                label: "Gemini 3.8 Flash (High)".into()
+                label: "Gemini 3.8 Flash (High)".into(),
+                efforts: None,
             }]
         );
     }

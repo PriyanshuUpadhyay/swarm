@@ -8,15 +8,13 @@
         {
           "provider": "claude",
           "model": "opus",
-          "effort": "high",
-          "permission": "auto"
+          "effort": "high"
         },
         {
           "provider": "codex",
           "model": "gpt-6.1-sol",
           "effort": "high",
-          "sandbox": "workspace-write",
-          "approval": "never"
+          "sandbox": "workspace-write"
         }
       ]
     },

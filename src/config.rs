@@ -257,6 +257,32 @@ pub fn import(old: &Value, from: &str) -> Result<Config, String> {
     }
 }
 
+/// The runner for a chat whose provider and model the owner picked once (ADR 0032): the chat
+/// profile's first runner of that provider with the picked model, else the provider's default
+/// effort and the flags a chat had before profiles existed.
+pub fn one_off(chat: &Profile, provider: Provider, model: &str) -> Result<Runner, String> {
+    if !valid_name(model) {
+        return Err("model must be one non-empty name".into());
+    }
+    let base = chat
+        .runners
+        .iter()
+        .find(|runner| runner.provider == provider)
+        .cloned()
+        .unwrap_or_else(|| Runner {
+            provider,
+            model: String::new(),
+            effort: provider.info().default_effort.into(),
+            sandbox: (provider == Provider::Codex).then(|| "workspace-write".into()),
+            approval: None,
+            permission: None,
+        });
+    Ok(Runner {
+        model: model.into(),
+        ..base
+    })
+}
+
 /// Why a runner did not start. New codes may appear; a reader shows `text` for one it does not
 /// know.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -658,5 +684,34 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0, 1, 2]
         );
+    }
+
+    #[test]
+    fn a_one_off_chat_takes_the_chat_profiles_runner_of_that_provider_or_the_defaults() {
+        let mut codex = runner(Provider::Codex, "gpt-6.1-sol");
+        codex.effort = "xhigh".into();
+        codex.sandbox = Some("read-only".into());
+        let chat = Profile {
+            name: "chat".into(),
+            runners: vec![runner(Provider::Claude, "opus"), codex],
+        };
+        let picked = one_off(&chat, Provider::Codex, "gpt-6-luna").unwrap();
+        assert_eq!(
+            (
+                picked.model.as_str(),
+                picked.effort.as_str(),
+                picked.sandbox.as_deref()
+            ),
+            ("gpt-6-luna", "xhigh", Some("read-only"))
+        );
+        let agy = one_off(&chat, Provider::Agy, "flash").unwrap();
+        assert_eq!((agy.effort.as_str(), agy.permission), ("medium", None));
+        let claude_only = Profile {
+            name: "chat".into(),
+            runners: vec![runner(Provider::Claude, "opus")],
+        };
+        let fresh = one_off(&claude_only, Provider::Codex, "gpt-6-luna").unwrap();
+        assert_eq!(fresh.sandbox.as_deref(), Some("workspace-write"));
+        assert!(one_off(&chat, Provider::Claude, "--bad").is_err());
     }
 }

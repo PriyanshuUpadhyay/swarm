@@ -732,3 +732,77 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(std::fs::canonicalize(swarm).unwrap(), launcher);
 }
+
+/// New Chat with no pick runs the chat profile with its effort; a one-off pick runs exactly that
+/// model with the chat profile's effort for that provider (ADR 0032).
+#[test]
+fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
+    let home = scratch("chat");
+    tool(&home, "claude", "true");
+    tool(&home, "codex", "true");
+    tool(
+        &home,
+        "yelo",
+        r#"echo '[{"name":"a","dir":"/p/a","signed_in":true,"remaining":50}]'"#,
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(&home, &fake, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let script = |seat: &str| {
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/{seat}.sh"))).unwrap()
+    };
+
+    let profile = swarm(&home, &env, &["launch", "chat-a", "chat", "--cwd", &cwd]);
+    assert!(profile.status.success(), "{}", stderr(&profile));
+    assert!(stderr(&profile).contains("swarm: chat: running claude/opus/high"));
+    let command = script("chat-a");
+    assert!(
+        command.contains("'--model' 'opus' '--effort' 'high'"),
+        "{command}"
+    );
+
+    let one_off = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-b",
+            "chat",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-6-luna",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(one_off.status.success(), "{}", stderr(&one_off));
+    let command = script("chat-b");
+    assert!(command.contains("'--model' 'gpt-6-luna'"), "{command}");
+    assert!(
+        command.contains(r#"'model_reasoning_effort="high"'"#),
+        "{command}"
+    );
+    assert!(
+        command.contains("'--sandbox' 'workspace-write'"),
+        "{command}"
+    );
+}

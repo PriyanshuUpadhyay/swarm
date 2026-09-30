@@ -1610,17 +1610,23 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved = if role == "chat" {
-            swarm::bus::chat_role(
-                requested_provider.ok_or("swarm: chat needs --provider")?,
-                requested_model.ok_or("swarm: chat needs --model")?,
-            )?
-        } else {
-            if requested_model.is_some() {
+        let resolved: swarm::bus::ResolvedRole = match requested_model {
+            Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
-            serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
-                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?
+            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0032).
+            Some(model) => {
+                let provider = requested_provider
+                    .and_then(Provider::parse)
+                    .ok_or("swarm: a chat --model needs --provider")?;
+                let (config, _) =
+                    swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+                let runner = swarm::config::one_off(&config.profiles[0], provider, model)
+                    .map_err(|error| format!("swarm: {error}"))?;
+                serde_json::from_value(serde_json::to_value(runner)?)?
+            }
+            None => serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
+                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
         };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
