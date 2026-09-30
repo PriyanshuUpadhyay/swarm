@@ -62,10 +62,12 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     public func launch(
-        _ agent: SwarmAgentID, role: String, provider: String, model: String, account: String?,
+        _ agent: SwarmAgentID, role: String, provider: String?, model: String?, account: String?,
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch {
-        var arguments = ["launch", agent.rawValue, role, "--provider", provider, "--model", model]
+        var arguments = ["launch", agent.rawValue, role]
+        if let provider { arguments += ["--provider", provider] }
+        if let model { arguments += ["--model", model] }
         if let account { arguments += ["--account", account] }
         let result = try await call(
             arguments, in: session, directory: directory, timeout: .seconds(60)
@@ -204,7 +206,8 @@ public struct SwarmCLIBus: SwarmBus {
             let output = stderr.isEmpty
                 ? result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                 : stderr
-            let message = firstLine(in: output) ?? "swarm exited \(result.status)"
+            // The whole text: "no runner can run" lists one reason per runner on its own line.
+            let message = output.isEmpty ? "swarm exited \(result.status)" : output
             throw SwarmProfileError.failed(message)
         }
         return result

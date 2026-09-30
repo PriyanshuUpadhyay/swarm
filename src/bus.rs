@@ -1,3 +1,4 @@
+use crate::providers::Provider;
 use std::os::unix::fs::OpenOptionsExt;
 
 use serde::{Deserialize, Serialize};
@@ -10,30 +11,6 @@ pub struct ResolvedRole {
     pub sandbox: Option<String>,
     pub approval: Option<String>,
     pub permission: Option<String>,
-}
-
-pub fn chat_role(provider: &str, model: &str) -> Result<ResolvedRole, String> {
-    if model.is_empty()
-        || model.starts_with('-')
-        || model
-            .chars()
-            .any(|ch| ch.is_whitespace() || ch.is_control())
-    {
-        return Err("swarm: model must be one non-empty name".into());
-    }
-    let sandbox = match provider {
-        "claude" | "agy" => None,
-        "codex" => Some("workspace-write".into()),
-        _ => return Err(format!("swarm: unsupported chat provider {provider}")),
-    };
-    Ok(ResolvedRole {
-        provider: Some(provider.into()),
-        model: Some(model.into()),
-        effort: Some("medium".into()),
-        sandbox,
-        approval: None,
-        permission: None,
-    })
 }
 
 #[derive(Debug, Serialize)]
@@ -118,10 +95,15 @@ pub fn argv(
     let provider = required(role, "provider", resolved.provider.as_deref())?;
     let effort = || required(role, "effort", resolved.effort.as_deref());
     let model = || required(role, "model", resolved.model.as_deref());
+    let Some(provider) = Provider::parse(provider) else {
+        return Err(format!(
+            "swarm: role {role} uses unsupported provider {provider}"
+        ));
+    };
     match provider {
-        "claude" => {
+        Provider::Claude => {
             let mut args = vec![
-                "claude".into(),
+                provider.id().into(),
                 "--model".into(),
                 model()?.into(),
                 "--effort".into(),
@@ -131,12 +113,12 @@ pub fn argv(
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
             let handler = |command: String| serde_json::json!([{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]);
-            let state = state_hook_command("claude")?;
+            let state = state_hook_command(provider.id())?;
             let mut hooks = serde_json::Map::new();
             if agent_id == "orchestrator" {
                 hooks.insert(
                     "SessionStart".into(),
-                    handler(chair_hook_command("claude")?),
+                    handler(chair_hook_command(provider.id())?),
                 );
             }
             for event in CLAUDE_STATE_EVENTS {
@@ -148,9 +130,9 @@ pub fn argv(
             ]);
             Ok(args)
         }
-        "codex" => {
+        Provider::Codex => {
             let mut args = vec![
-                "codex".into(),
+                provider.id().into(),
                 "--model".into(),
                 model()?.into(),
                 "-c".into(),
@@ -183,7 +165,7 @@ pub fn argv(
             // only while each value stays byte-identical, so nothing per launch goes in it. The
             // pane env names the agent. The empty first group puts swarm's hook in group 1, so
             // its trust key differs from another tool's `-c` hook in group 0.
-            let command = serde_json::to_string(&state_hook_command("codex")?)
+            let command = serde_json::to_string(&state_hook_command(provider.id())?)
                 .expect("string serialization cannot fail");
             for event in CODEX_STATE_EVENTS {
                 args.extend([
@@ -195,8 +177,8 @@ pub fn argv(
             }
             Ok(args)
         }
-        "agy" => {
-            let mut args = vec!["agy".into()];
+        Provider::Agy => {
+            let mut args = vec![provider.id().into()];
             if let Some(model) = resolved
                 .model
                 .as_deref()
@@ -223,9 +205,6 @@ pub fn argv(
             }
             Ok(args)
         }
-        provider => Err(format!(
-            "swarm: role {role} uses unsupported provider {provider}"
-        )),
     }
 }
 
@@ -241,21 +220,6 @@ pub fn command_model(command: &[String]) -> Option<&str> {
         return model.split('[').next();
     }
     None
-}
-
-/// `catalog` is the Claude binary itself, where every model id and alias sits as a quoted
-/// string, or the JSON of `codex debug models`.
-pub fn model_known(provider: &str, catalog: &[u8], model: &str) -> bool {
-    if provider == "claude" {
-        let quoted = format!("\"{model}\"");
-        return catalog
-            .windows(quoted.len())
-            .any(|window| window == quoted.as_bytes());
-    }
-    serde_json::from_slice::<serde_json::Value>(catalog)
-        .ok()
-        .and_then(|value| value["models"].as_array().cloned())
-        .is_some_and(|models| models.iter().any(|entry| entry["slug"] == model))
 }
 
 /// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
@@ -441,28 +405,6 @@ pub fn socket_refusal(herdr_status_stderr: &str) -> Option<&'static str> {
     )
 }
 
-/// Provider flags the role owns; a caller's extra args may not set them.
-fn owned_flags(provider: &str) -> &'static [&'static str] {
-    match provider {
-        "codex" => &[
-            "-m",
-            "--model",
-            "-s",
-            "--sandbox",
-            "-a",
-            "--ask-for-approval",
-        ],
-        _ => &[
-            "--model",
-            "--effort",
-            "--permission-mode",
-            "--mode",
-            "--dangerously-skip-permissions",
-            "--yolo",
-        ],
-    }
-}
-
 fn has_flag(args: &[String], flags: &[&str]) -> bool {
     // Everything past a bare `--` is a positional prompt, not a flag.
     args.iter()
@@ -471,14 +413,15 @@ fn has_flag(args: &[String], flags: &[&str]) -> bool {
 }
 
 /// The caller's extra args for `provider`, checked and in the provider's shape.
-pub fn extra_args(provider: &str, extra: &[String]) -> Result<Vec<String>, String> {
-    if has_flag(extra, owned_flags(provider)) {
+pub fn extra_args(provider: Provider, extra: &[String]) -> Result<Vec<String>, String> {
+    if has_flag(extra, provider.owned_flags()) {
         return Err(format!(
-            "swarm: the role owns {provider} model, effort, sandbox, and approval flags; remove them from the extra args"
+            "swarm: the role owns {} model, effort, sandbox, and approval flags; remove them from the extra args",
+            provider.id()
         ));
     }
     // AGY reads a leading positional as a one-shot prompt; `-i` keeps the pane interactive.
-    if provider == "agy" && extra.first().is_some_and(|arg| !arg.starts_with('-')) {
+    if provider == Provider::Agy && extra.first().is_some_and(|arg| !arg.starts_with('-')) {
         return Ok([vec!["-i".to_string()], extra.to_vec()].concat());
     }
     Ok(extra.to_vec())
@@ -1191,18 +1134,18 @@ mod tests {
 
     #[test]
     fn extra_args_keep_role_flags_out_and_agy_interactive() {
-        assert!(extra_args("claude", &strings(&["--model=opus"])).is_err());
-        assert!(extra_args("codex", &strings(&["-s", "danger-full-access"])).is_err());
+        assert!(extra_args(Provider::Claude, &strings(&["--model=opus"])).is_err());
+        assert!(extra_args(Provider::Codex, &strings(&["-s", "danger-full-access"])).is_err());
         assert_eq!(
-            extra_args("claude", &strings(&["--", "--model"])).unwrap(),
+            extra_args(Provider::Claude, &strings(&["--", "--model"])).unwrap(),
             strings(&["--", "--model"])
         );
         assert_eq!(
-            extra_args("agy", &strings(&["fix the bug"])).unwrap(),
+            extra_args(Provider::Agy, &strings(&["fix the bug"])).unwrap(),
             strings(&["-i", "fix the bug"])
         );
         assert_eq!(
-            extra_args("agy", &strings(&["-i", "fix"])).unwrap(),
+            extra_args(Provider::Agy, &strings(&["-i", "fix"])).unwrap(),
             strings(&["-i", "fix"])
         );
     }
@@ -1378,19 +1321,6 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_builds_the_chosen_model_without_a_router_role() {
-        let resolved = chat_role("codex", "gpt-6-sol").unwrap();
-        let args = argv("orchestrator", "chat", &resolved, "/home").unwrap();
-        assert!(args.windows(2).any(|pair| pair == ["--model", "gpt-6-sol"]));
-        assert!(
-            args.windows(2)
-                .any(|pair| pair == ["--sandbox", "workspace-write"])
-        );
-        assert!(chat_role("claude", "--bad").is_err());
-        assert!(chat_role("unknown", "model").is_err());
-    }
-
-    #[test]
     fn finds_the_command_model_and_checks_it_against_the_catalog() {
         let command = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
         assert_eq!(
@@ -1411,15 +1341,5 @@ mod tests {
             command_model(&command(&["agy", "--", "--model", "x"])),
             None
         );
-
-        let binary = br#"aliases:{opus:{default:"claude-opus-5-5"}},x="opus""#;
-        assert!(model_known("claude", binary, "claude-opus-5-5"));
-        assert!(model_known("claude", binary, "opus"));
-        assert!(!model_known("claude", binary, "claude-opus-5"));
-
-        let codex = br#"{"models":[{"slug":"gpt-6-sol"},{"slug":"gpt-6-luna"}]}"#;
-        assert!(model_known("codex", codex, "gpt-6-sol"));
-        assert!(!model_known("codex", codex, "gpt-5.6-sol"));
-        assert!(!model_known("codex", b"not json", "gpt-6-sol"));
     }
 }

@@ -99,6 +99,8 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         "yelo",
         &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
     );
+    // Launch starts only a runner whose CLI is on PATH (ADR 0032).
+    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
         home.join(".config/agent-routing/roles.json"),
@@ -729,4 +731,171 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
         .unwrap();
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(std::fs::canonicalize(swarm).unwrap(), launcher);
+}
+
+/// New Chat with no pick runs the chat profile with its effort; a one-off pick runs exactly that
+/// model with the chat profile's effort for that provider (ADR 0033).
+#[test]
+fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
+    let home = scratch("chat");
+    tool(&home, "claude", "true");
+    tool(&home, "codex", "true");
+    tool(
+        &home,
+        "yelo",
+        r#"echo '[{"name":"personal","dir":"/p/personal","signed_in":true,"remaining":50}]'"#,
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let fake = [("SWARM_ADAPTER", "fake")];
+    let session = swarm(&home, &fake, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let env = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let cwd = home.join("repo");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let script = |seat: &str| {
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/{seat}.sh"))).unwrap()
+    };
+
+    let profile = swarm(
+        &home,
+        &env,
+        &["launch", "chat-profile", "chat", "--cwd", &cwd],
+    );
+    assert!(profile.status.success(), "{}", stderr(&profile));
+    assert!(stderr(&profile).contains("swarm: chat: running claude/opus/high"));
+    let command = script("chat-profile");
+    assert!(
+        command.contains("'--model' 'opus' '--effort' 'high'"),
+        "{command}"
+    );
+
+    let one_off = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-one-off",
+            "chat",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-6-luna",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(one_off.status.success(), "{}", stderr(&one_off));
+    let command = script("chat-one-off");
+    assert!(command.contains("'--model' 'gpt-6-luna'"), "{command}");
+    assert!(
+        command.contains(r#"'model_reasoning_effort="high"'"#),
+        "{command}"
+    );
+    assert!(
+        command.contains("'--sandbox' 'workspace-write'"),
+        "{command}"
+    );
+
+    // The app always sends `--account auto` for the chat profile; a provider with no accounts
+    // launches on its own login instead of failing.
+    tool(&home, "agy", "true");
+    let agy = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-agy",
+            "chat",
+            "--provider",
+            "agy",
+            "--model",
+            "flash",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(agy.status.success(), "{}", stderr(&agy));
+    assert!(script("chat-agy").contains("'agy' '--model' 'flash'"));
+
+    // A named account that no runner's provider has skips each runner before anything runs.
+    let named = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-named",
+            "chat",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(!named.status.success());
+    let text = stderr(&named);
+    assert!(
+        text.contains("1 claude/opus/high: no claude account named work"),
+        "{text}"
+    );
+    assert!(text.contains("no runner can run"), "{text}");
+    assert!(!text.contains("running"), "{text}");
+
+    // On a Mac without yelo, `auto` falls back to the CLI's own login.
+    std::fs::remove_file(home.join("bin/yelo")).unwrap();
+    let no_yelo = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-no-yelo",
+            "chat",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(no_yelo.status.success(), "{}", stderr(&no_yelo));
+    assert!(stderr(&no_yelo).contains("claude uses its own login"));
+    assert!(script("chat-no-yelo").contains("'--model' 'opus' '--effort' 'high'"));
+
+    // A stuck yelo costs `auto` its 2 s read limit, not the whole launch.
+    tool(&home, "yelo", "sleep 8");
+    let started = std::time::Instant::now();
+    let stuck = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-stuck-yelo",
+            "chat",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(stuck.status.success(), "{}", stderr(&stuck));
+    assert!(started.elapsed() < std::time::Duration::from_secs(8));
+    assert!(
+        stderr(&stuck).contains("yelo did not answer within 2 s; claude uses its own login"),
+        "{}",
+        stderr(&stuck)
+    );
 }

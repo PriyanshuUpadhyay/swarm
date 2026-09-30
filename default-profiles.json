@@ -1,0 +1,320 @@
+{
+  "version": 1,
+  "min_usage_left_pct": 5,
+  "profiles": [
+    {
+      "name": "chat",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "high"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write"
+        }
+      ]
+    },
+    {
+      "name": "search.web",
+      "runners": [
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "effort": "low",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "permission": "auto"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high",
+          "effort": "high",
+          "permission": "skip"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "code.small",
+      "runners": [
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-medium",
+          "effort": "medium",
+          "permission": "skip"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "effort": "low",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "code.routine",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "code.complex",
+      "runners": [
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "high",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "design.ui",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "review.surface",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "review.deep",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "claude-fable-5-1",
+          "effort": "xhigh",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "claude-fable-5-1",
+          "effort": "high",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "review.challenger",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "xhigh",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "review.hunter",
+      "runners": [
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "xhigh",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "review.visual",
+      "runners": [
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "claude",
+          "model": "claude-fable-5-1",
+          "effort": "high",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "council.gpt",
+      "runners": [
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "xhigh",
+          "permission": "auto"
+        }
+      ]
+    },
+    {
+      "name": "council.gemini",
+      "runners": [
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high",
+          "effort": "high",
+          "permission": "skip"
+        },
+        {
+          "provider": "claude",
+          "model": "sonnet",
+          "effort": "high",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    },
+    {
+      "name": "council.claude",
+      "runners": [
+        {
+          "provider": "claude",
+          "model": "opus",
+          "effort": "xhigh",
+          "permission": "auto"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        }
+      ]
+    }
+  ]
+}

@@ -1,176 +1,6 @@
+use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-#[derive(Deserialize)]
-struct RoutingConfig {
-    routes: BTreeMap<String, Vec<String>>,
-    runners: BTreeMap<String, RoutingRunner>,
-}
-
-#[derive(Deserialize)]
-struct RoutingRunner {
-    provider: String,
-    model: String,
-    effort: Option<String>,
-    sandbox: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct RoleList {
-    pub roles: Vec<Role>,
-    /// One launchable runner per route and provider, including non-primary runners.
-    pub choices: Vec<Role>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct Role {
-    pub role: String,
-    pub runner: String,
-    pub provider: String,
-    pub model: String,
-    pub effort: Option<String>,
-    pub sandbox: Option<String>,
-    pub fallbacks: Vec<String>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct ModelList {
-    pub provider: String,
-    pub models: Vec<Model>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct Model {
-    pub id: String,
-    pub label: String,
-}
-
-pub fn claude_models() -> Vec<Model> {
-    [
-        "default",
-        "sonnet",
-        "opus",
-        "haiku",
-        "fable",
-        "best",
-        "sonnet[1m]",
-        "opus[1m]",
-        "opusplan",
-    ]
-    .into_iter()
-    .map(|id| Model {
-        id: id.into(),
-        label: id.into(),
-    })
-    .collect()
-}
-
-pub fn codex_models(json: &[u8]) -> Result<Vec<Model>, String> {
-    let value: serde_json::Value =
-        serde_json::from_slice(json).map_err(|error| format!("codex model JSON: {error}"))?;
-    let rows = value["models"]
-        .as_array()
-        .ok_or("codex model JSON has no models")?;
-    Ok(rows
-        .iter()
-        .filter_map(|row| {
-            if row["visibility"] == "hide" {
-                return None;
-            }
-            let id = row["slug"].as_str()?;
-            let label = row["display_name"].as_str().unwrap_or(id);
-            Some(Model {
-                id: id.into(),
-                label: label.into(),
-            })
-        })
-        .collect())
-}
-
-pub fn agy_models(output: &str) -> Vec<Model> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let (id, label) = line.split_once('\t')?;
-            (!id.is_empty() && !label.is_empty()).then(|| Model {
-                id: id.into(),
-                label: label.into(),
-            })
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod model_tests {
-    use super::*;
-
-    #[test]
-    fn catalogs_show_listed_codex_models_and_agy_models() {
-        let codex = br#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list"},{"slug":"internal","visibility":"hide"}]}"#;
-        assert_eq!(
-            codex_models(codex).unwrap(),
-            vec![Model {
-                id: "gpt-6-sol".into(),
-                label: "GPT-6-Sol".into()
-            }]
-        );
-        assert!(codex_models(b"not json").is_err());
-        assert_eq!(
-            agy_models("Fetching...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"),
-            vec![Model {
-                id: "gemini-3.8-flash-high".into(),
-                label: "Gemini 3.8 Flash (High)".into()
-            }]
-        );
-    }
-}
-
-pub fn translate_roles(config: &serde_json::Value) -> Result<RoleList, String> {
-    let config: RoutingConfig = serde_json::from_value(config.clone())
-        .map_err(|error| format!("routing config: {error}"))?;
-    let mut roles = Vec::with_capacity(config.routes.len());
-    let mut choices = Vec::new();
-    for (role, runner_ids) in config.routes {
-        let (runner, fallbacks) = runner_ids
-            .split_first()
-            .ok_or_else(|| format!("route {role} has no runners"))?;
-        let details = config
-            .runners
-            .get(runner)
-            .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
-        roles.push(Role {
-            role: role.clone(),
-            runner: runner.clone(),
-            provider: details.provider.clone(),
-            model: details.model.clone(),
-            effort: details.effort.clone(),
-            sandbox: details.sandbox.clone(),
-            fallbacks: fallbacks.to_vec(),
-        });
-        for runner in runner_ids {
-            let details = config
-                .runners
-                .get(&runner)
-                .ok_or_else(|| format!("route {role} names unknown runner {runner}"))?;
-            if choices
-                .iter()
-                .any(|choice: &Role| choice.role == role && choice.provider == details.provider)
-            {
-                continue;
-            }
-            choices.push(Role {
-                role: role.clone(),
-                runner,
-                provider: details.provider.clone(),
-                model: details.model.clone(),
-                effort: details.effort.clone(),
-                sandbox: details.sandbox.clone(),
-                fallbacks: Vec::new(),
-            });
-        }
-    }
-    Ok(RoleList { roles, choices })
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AccountList {
@@ -215,39 +45,6 @@ pub fn empty_accounts(provider: &str) -> AccountList {
     }
 }
 
-/// The same variables yelo writes into `~/.local/bin/<cli>-<account>`.
-///
-/// `CLAUDE_CONFIG_DIR` alone is not enough: Claude Code keeps the credentials in a second tree,
-/// so a pane that gets only the config dir starts at "Not logged in · Run /login".
-fn account_environment_with_env(
-    provider: &str,
-    name: &str,
-    dir: &str,
-    env_var: impl FnOnce(&str) -> Option<std::ffi::OsString>,
-) -> BTreeMap<String, String> {
-    match provider {
-        "claude" => {
-            let home = env_var("HOME").unwrap_or_default();
-            let home = std::path::PathBuf::from(home);
-            BTreeMap::from([
-                ("AGENT_PROFILE_LABEL".to_string(), name.to_string()),
-                ("CLAUDE_CONFIG_DIR".to_string(), dir.to_string()),
-                (
-                    "CLAUDE_SECURESTORAGE_CONFIG_DIR".to_string(),
-                    home.join(format!(".claude-{name}"))
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
-            ])
-        }
-        _ => BTreeMap::from([("CODEX_HOME".to_string(), dir.to_string())]),
-    }
-}
-
-fn account_environment(provider: &str, name: &str, dir: &str) -> BTreeMap<String, String> {
-    account_environment_with_env(provider, name, dir, |variable| std::env::var_os(variable))
-}
-
 pub fn translate_accounts(
     provider: &str,
     list_json: &str,
@@ -255,15 +52,15 @@ pub fn translate_accounts(
 ) -> Result<AccountList, String> {
     let input: Vec<YeloAccount> =
         serde_json::from_str(list_json).map_err(|error| format!("yelo account JSON: {error}"))?;
-    if !matches!(provider, "claude" | "codex") {
+    let Some(kind) = Provider::parse(provider).filter(|kind| kind.has_accounts()) else {
         return Err(format!("unknown provider {provider}"));
-    }
+    };
     let accounts: Vec<Account> = input
         .into_iter()
         .filter_map(|row| {
             let name = row.name?;
             Some(Account {
-                env: account_environment(provider, &name, &row.dir),
+                env: kind.account_env(&name, &row.dir, |variable| std::env::var_os(variable)),
                 name,
                 email: row.email,
                 home: row.dir,
@@ -402,35 +199,6 @@ mod tests {
     ]"#;
 
     #[test]
-    fn translates_routes_and_keeps_fallback_order() {
-        let json = r#"{"routes":{"ORCHESTRATOR":["claudeLead","codexBackup"],"CODER":["codexWork"]},"runners":{"claudeLead":{"provider":"claude","model":"opus","effort":null},"codexBackup":{"provider":"codex","model":"gpt-backup","sandbox":"workspace-write"},"codexWork":{"provider":"codex","model":"gpt-work","effort":"high","sandbox":"workspace-write"}}}"#;
-
-        let result = translate_roles(&serde_json::from_str(json).unwrap()).unwrap();
-
-        assert_eq!(result.roles[1].runner, "claudeLead");
-        assert_eq!(result.roles[1].fallbacks, ["codexBackup"]);
-        assert_eq!(result.roles[1].effort, None);
-        assert_eq!(result.roles[1].sandbox, None);
-        assert_eq!(
-            result
-                .choices
-                .iter()
-                .filter(|choice| choice.role == "ORCHESTRATOR")
-                .count(),
-            2
-        );
-        assert_eq!(
-            result
-                .choices
-                .iter()
-                .find(|choice| choice.role == "ORCHESTRATOR" && choice.provider == "codex")
-                .unwrap()
-                .model,
-            "gpt-backup"
-        );
-    }
-
-    #[test]
     fn translates_accounts_and_resolves_auto() {
         let result = translate_accounts(
             "claude",
@@ -455,26 +223,6 @@ mod tests {
             resolve_account(&result, "missing").unwrap_err(),
             "unknown claude account missing"
         );
-    }
-
-    #[test]
-    fn claude_secure_storage_uses_home_and_ignores_swarm_home() {
-        let requested = std::cell::RefCell::new(Vec::new());
-        let environment =
-            account_environment_with_env("claude", "work", "/profiles/work", |name| {
-                requested.borrow_mut().push(name.to_string());
-                match name {
-                    "HOME" => Some("/login-home".into()),
-                    "SWARM_HOME" => Some("/swarm-home".into()),
-                    _ => None,
-                }
-            });
-
-        assert_eq!(
-            environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"],
-            "/login-home/.claude-work"
-        );
-        assert_eq!(*requested.borrow(), ["HOME"]);
     }
 
     #[test]

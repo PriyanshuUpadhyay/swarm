@@ -1,5 +1,6 @@
 use std::env;
 use std::os::unix::process::ExitStatusExt;
+use swarm::providers::Provider;
 
 const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 
@@ -37,7 +38,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -95,7 +96,7 @@ fn hook_report(
         [provider, event] => (provider, Some(event.as_str())),
         _ => return Err(USAGE.into()),
     };
-    if !matches!(provider.as_str(), "claude" | "codex" | "agy") {
+    if Provider::parse(provider).is_none() {
         return Err(USAGE.into());
     }
     let (Some(session), Some(agent)) = (env("SWARM_SESSION_ID"), env("SWARM_AGENT_ID")) else {
@@ -189,8 +190,55 @@ fn run_tool(
         .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
 }
 
+/// `run_tool` that stops the tool after `limit`, for a read that a launch waits on.
+fn run_tool_within(
+    executable: &str,
+    args: &[&str],
+    limit: std::time::Duration,
+) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+    let mut child = std::process::Command::new(executable)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("swarm: cannot run {executable}: {error}"))?;
+    let stdout = read_within(child.stdout.take().ok_or("no stdout")?, limit);
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+    let status = match stdout.as_ref().map(|_| child.try_wait()) {
+        Some(Ok(Some(status))) => Some(status),
+        // stdout closed, so the tool is exiting; a short wait lets it finish.
+        Some(_) => {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            child.try_wait().ok().flatten()
+        }
+        None => None,
+    };
+    let Some(status) = status else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "swarm: {executable} did not answer within {} s",
+            limit.as_secs()
+        )
+        .into());
+    };
+    let stderr = read_within(stderr, std::time::Duration::from_millis(100)).unwrap_or_default();
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.unwrap_or_default().into_bytes(),
+        stderr: stderr.into_bytes(),
+    })
+}
+
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
-    let output = run_tool(executable, args)?;
+    checked_stdout(executable, run_tool(executable, args)?)
+}
+
+fn checked_stdout(
+    executable: &str,
+    output: std::process::Output,
+) -> Result<String, Box<dyn std::error::Error>> {
     if !output.status.success() {
         return Err(format!(
             "swarm: {executable} failed: {}",
@@ -206,29 +254,162 @@ fn yelo_command() -> String {
     env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
 }
 
-fn load_roles() -> Result<swarm::profiles::RoleList, Box<dyn std::error::Error>> {
-    let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-    swarm::profiles::translate_roles(&config).map_err(|error| format!("swarm: {error}").into())
+/// Whether each runner can start now (ADR 0032). Each provider's accounts are read at most once.
+struct Probe {
+    min_usage_left_pct: u8,
+    /// `--account <name>`: only that account counts. None or `auto` counts every account.
+    account: Option<String>,
+    accounts: std::cell::RefCell<
+        std::collections::HashMap<Provider, Option<Vec<swarm::config::AccountState>>>,
+    >,
 }
 
-fn set_role_model(runner: &str, model: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if model.is_empty() || model.chars().any(char::is_whitespace) {
-        return Err("swarm: model must be one non-empty name".into());
+impl Probe {
+    fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
+        Probe {
+            min_usage_left_pct: config.min_usage_left_pct,
+            account: account.filter(|name| *name != "auto").map(str::to_string),
+            accounts: Default::default(),
+        }
     }
-    swarm::routing::set_model(runner, model).map_err(|error| format!("swarm: {error}"))?;
-    println!("Set model '{model}' on: {runner}");
-    Ok(())
+
+    fn check(&self, runner: &swarm::config::Runner) -> Option<(swarm::config::SkipCode, String)> {
+        let provider = runner.provider;
+        if !installed(provider.id()) {
+            return Some((
+                swarm::config::SkipCode::CliMissing,
+                format!("{} CLI not found on PATH", provider.id()),
+            ));
+        }
+        if !provider.has_accounts() {
+            return None;
+        }
+        let mut cache = self.accounts.borrow_mut();
+        let accounts = cache
+            .entry(provider)
+            .or_insert_with(|| read_accounts(provider, self.account.as_deref()));
+        // A named account belongs to one provider; another provider's runner cannot use it.
+        if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
+            return Some((
+                swarm::config::SkipCode::SignedOut,
+                format!("no {} account named {name}", provider.id()),
+            ));
+        }
+        swarm::config::account_skip(provider, accounts.as_deref(), self.min_usage_left_pct)
+    }
 }
 
+/// yelo's accounts for `provider`, or None when yelo is missing, fails, or takes over 2 s. The
+/// read took 0.08 s on the owner's Mac; a launch must not wait on a stuck one.
+fn read_accounts(
+    provider: Provider,
+    only: Option<&str>,
+) -> Option<Vec<swarm::config::AccountState>> {
+    let mut child = std::process::Command::new(yelo_command())
+        .args([
+            "profile",
+            "list",
+            "--cli",
+            provider.id(),
+            "--usage",
+            "--json",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let text = read_within(child.stdout.take()?, std::time::Duration::from_secs(2));
+    let _ = child.kill();
+    let _ = child.wait();
+    let list = swarm::profiles::translate_accounts(provider.id(), &text?, None).ok()?;
+    Some(
+        list.accounts
+            .iter()
+            .filter(|account| only.is_none_or(|name| account.name == name))
+            .map(|account| swarm::config::AccountState {
+                signed_in: account.signed_in,
+                remaining_pct: account.remaining_pct,
+            })
+            .collect(),
+    )
+}
+
+/// The runner `role` starts with, as `roles get` prints it. Each skipped runner is one stderr
+/// line, and `running` adds the line that names the runner that starts.
 fn resolve_role(
     role: &str,
     provider: Option<&str>,
-) -> Result<swarm::bus::ResolvedRole, Box<dyn std::error::Error>> {
-    let fail = |error: String| format!("swarm: cannot resolve role {role}: {error}");
-    let (_, config) = swarm::routing::load().map_err(fail)?;
-    let value = swarm::routing::resolve(&config, role, provider, &installed).map_err(fail)?;
-    warn_substitute(&value);
-    serde_json::from_value(value).map_err(|error| fail(error.to_string()).into())
+    account: Option<&str>,
+    running: bool,
+) -> Result<serde_json::Value, String> {
+    let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+    let profile = config
+        .profile(role)
+        .map_err(|error| format!("swarm: {error}"))?;
+    let only = provider
+        .map(|name| Provider::parse(name).ok_or_else(|| format!("swarm: unknown provider {name}")))
+        .transpose()?;
+    if let Some(only) = only
+        && !profile.runners.iter().any(|runner| runner.provider == only)
+    {
+        return Err(format!(
+            "swarm: {role}: profile has no {} runner",
+            only.id()
+        ));
+    }
+    let probe = Probe::new(&config, account);
+    let selection = swarm::config::select(profile, only, |runner| probe.check(runner));
+    let id = |index: usize| format!("{role}#{}", index + 1);
+    let Some(index) = selection.pick else {
+        let lines: Vec<String> = selection
+            .skipped
+            .iter()
+            .map(|skip| {
+                format!(
+                    "  {} {}: {}",
+                    skip.index + 1,
+                    profile.runners[skip.index].label(),
+                    skip.text
+                )
+            })
+            .collect();
+        return Err(format!(
+            "swarm: {role}: no runner can run\n{}",
+            lines.join("\n")
+        ));
+    };
+    // The error above lists each skip once; these lines only go with a runner that starts.
+    for skip in &selection.skipped {
+        eprintln!(
+            "swarm: {role}: skipped {}: {}",
+            profile.runners[skip.index].label(),
+            skip.text
+        );
+    }
+    let runner = &profile.runners[index];
+    if running {
+        eprintln!("swarm: {role}: running {}", runner.label());
+    }
+    let mut value = serde_json::to_value(runner).map_err(|error| error.to_string())?;
+    let fields = value
+        .as_object_mut()
+        .expect("a runner serializes to an object");
+    fields.insert("role".into(), role.into());
+    fields.insert("runnerId".into(), id(index).into());
+    let fallbacks: Vec<String> = (0..profile.runners.len())
+        .filter(|other| *other != index)
+        .map(id)
+        .collect();
+    fields.insert("fallbackRunnerIds".into(), fallbacks.into());
+    if let Some(first) = selection.skipped.first() {
+        fields.insert("substitutedFor".into(), id(first.index).into());
+    }
+    fields.insert(
+        "skipped".into(),
+        serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
+    );
+    Ok(value)
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that
@@ -243,35 +424,34 @@ fn installed(provider: &str) -> bool {
     })
 }
 
-/// A substitute seat can put two seats of one route on the same model family, so say so where the
-/// orchestrator reads it.
-fn warn_substitute(resolved: &serde_json::Value) {
-    if let Some(original) = resolved["substitutedFor"].as_str() {
-        eprintln!(
-            "swarm: role {} runs substitute {} in place of {original}, whose CLI is not on PATH",
-            resolved["role"].as_str().unwrap_or_default(),
-            resolved["runnerId"].as_str().unwrap_or_default()
-        );
-    }
-}
-
 fn load_accounts(
     provider: &str,
     with_pick: bool,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    if provider == "agy" {
-        return Ok(swarm::profiles::empty_accounts(provider));
+    match Provider::parse(provider) {
+        None => return Err(format!("swarm: unknown provider {provider}").into()),
+        Some(kind) if !kind.has_accounts() => {
+            return Ok(swarm::profiles::empty_accounts(provider));
+        }
+        Some(_) => {}
     }
-    if !matches!(provider, "claude" | "codex") {
-        return Err(format!("swarm: unknown provider {provider}").into());
-    }
+    // A launch waits on these reads, so a stuck yelo fails them rather than the launch hanging.
+    let limit = std::time::Duration::from_secs(2);
     let command = yelo_command();
-    let list = tool_stdout(
+    let list = checked_stdout(
         &command,
-        &["profile", "list", "--cli", provider, "--usage", "--json"],
+        run_tool_within(
+            &command,
+            &["profile", "list", "--cli", provider, "--usage", "--json"],
+            limit,
+        )?,
     )?;
     let pick_json = if with_pick {
-        let pick = run_tool(&command, &["profile", "pick", "--cli", provider, "--json"])?;
+        let pick = run_tool_within(
+            &command,
+            &["profile", "pick", "--cli", provider, "--json"],
+            limit,
+        )?;
         pick.status
             .success()
             .then(|| String::from_utf8(pick.stdout))
@@ -635,41 +815,14 @@ fn register_spawned_pane(
     Ok(pane)
 }
 
-/// What the provider CLI on PATH knows as models, for `swarm::bus::model_known`. None when the
-/// check cannot run; agy is skipped because `agy models` asks the network (about 5 s).
-fn model_catalog(
-    provider: &str,
-    account_env: &std::collections::BTreeMap<String, String>,
-) -> Option<Vec<u8>> {
-    match provider {
-        "claude" => env::split_paths(&env::var_os("PATH")?)
-            .map(|dir| dir.join("claude"))
-            .find(|path| path.is_file())
-            .and_then(|path| std::fs::read(path).ok()),
-        "codex" => std::process::Command::new("codex")
-            .args(["debug", "models"])
-            .envs(account_env)
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| output.stdout),
-        _ => None,
-    }
-}
-
-fn list_models(provider: &str) -> Result<swarm::profiles::ModelList, Box<dyn std::error::Error>> {
-    let models = match provider {
-        "claude" => swarm::profiles::claude_models(),
-        "codex" => {
-            swarm::profiles::codex_models(tool_stdout("codex", &["debug", "models"])?.as_bytes())?
-        }
-        "agy" => swarm::profiles::agy_models(&tool_stdout("agy", &["models"])?),
-        _ => return Err(format!("swarm: unsupported model provider {provider}").into()),
-    };
+fn list_models(provider: &str) -> Result<swarm::providers::ModelList, Box<dyn std::error::Error>> {
+    let models = Provider::parse(provider)
+        .ok_or_else(|| format!("swarm: unsupported model provider {provider}"))?
+        .models(|cli, args| tool_stdout(cli, args).map_err(|error| error.to_string()))?;
     if models.is_empty() {
         return Err(format!("swarm: {provider} returned no models").into());
     }
-    Ok(swarm::profiles::ModelList {
+    Ok(swarm::providers::ModelList {
         provider: provider.into(),
         models,
     })
@@ -725,12 +878,13 @@ fn spawn_agent(
     let account = if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
-            None => load_roles()?
-                .roles
-                .into_iter()
-                .find(|entry| entry.role == *role)
-                .map(|entry| entry.provider)
-                .ok_or_else(|| format!("swarm: unknown role {role}"))?,
+            None => swarm::config::load()
+                .and_then(|(config, _)| {
+                    config
+                        .profile(role)
+                        .map(|profile| profile.runners[0].provider.id().to_string())
+                })
+                .map_err(|error| format!("swarm: {error}"))?,
         };
         let accounts = load_accounts(&provider, true)?;
         Some(
@@ -745,23 +899,21 @@ fn spawn_agent(
     let provider = options
         .provider
         .or_else(|| options.command.first().map(String::as_str))
-        .filter(|provider| matches!(*provider, "claude" | "codex" | "agy"))
-        .map(str::to_string);
+        .and_then(Provider::parse);
     // Warn, do not refuse: an unknown name usually means the role config or the CLI is stale,
     // and the pane shows the real error if the model does not run.
-    if let (Some(provider), Some(model)) = (
-        provider.as_deref(),
-        swarm::bus::command_model(options.command),
-    ) {
+    if let (Some(provider), Some(model)) = (provider, swarm::bus::command_model(options.command)) {
         let account_env = account
             .as_ref()
             .map(|account| account.env.clone())
             .unwrap_or_default();
-        if model_catalog(provider, &account_env)
-            .is_some_and(|catalog| !swarm::bus::model_known(provider, &catalog, model))
+        if provider
+            .catalog(&account_env)
+            .is_some_and(|catalog| !provider.model_known(&catalog, model))
         {
             eprintln!(
-                "swarm: warning: the installed {provider} CLI does not list model {model}; the role config may need an update"
+                "swarm: warning: the installed {} CLI does not list model {model}; the role config may need an update",
+                provider.id()
             );
         }
     }
@@ -781,7 +933,7 @@ fn spawn_agent(
         &session_id,
         agent_id,
         role,
-        provider.as_deref(),
+        provider.map(Provider::id),
         &vars,
     )?;
     if !options.command.is_empty() {
@@ -1080,7 +1232,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && cmd == "roles"
         && json == "--json"
     {
-        return print_json(&load_roles()?);
+        return print_json(&swarm::config::listing().map_err(|error| format!("swarm: {error}"))?);
     }
     if let [cmd] = args
         && cmd == "herdr-split"
@@ -1097,7 +1249,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, flag, provider] = args
         && cmd == "host-context"
         && flag == "--provider"
-        && matches!(provider.as_str(), "claude" | "codex" | "agy")
+        && Provider::parse(provider).is_some()
     {
         let mut payload = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
@@ -1120,18 +1272,43 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let (_, config) = swarm::routing::load().map_err(|error| format!("swarm: {error}"))?;
-        let resolved = swarm::routing::resolve(&config, role, provider, &installed)
-            .map_err(|error| format!("swarm: {error}"))?;
-        warn_substitute(&resolved);
+        let resolved = resolve_role(role, provider, None, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
-    if let [cmd, sub, runner, model] = args
+    if let [cmd, sub, json] = args
         && cmd == "roles"
-        && sub == "set-model"
+        && sub == "check"
+        && json == "--json"
     {
-        return set_role_model(runner, model);
+        let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+        let probe = Probe::new(&config, None);
+        let profiles: Vec<swarm::config::ProfileCheck> = config
+            .profiles
+            .iter()
+            .map(|profile| swarm::config::ProfileCheck {
+                name: profile.name.clone(),
+                selection: swarm::config::select(profile, None, |runner| probe.check(runner)),
+            })
+            .collect();
+        return print_json(&serde_json::json!({ "profiles": profiles }));
+    }
+    if let [cmd, sub, flag, revision, text] = args
+        && cmd == "roles"
+        && sub == "save"
+        && flag == "--revision"
+    {
+        let profile: swarm::config::Profile =
+            serde_json::from_str(text).map_err(|error| format!("swarm: profile JSON: {error}"))?;
+        let revision =
+            swarm::config::save(profile, revision).map_err(|error| format!("swarm: {error}"))?;
+        return print_json(&serde_json::json!({ "revision": revision }));
+    }
+    if let [cmd, json] = args
+        && cmd == "providers"
+        && json == "--json"
+    {
+        return print_json(&swarm::providers::info_list());
     }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "models"
@@ -1153,10 +1330,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         let command = yelo_command();
         let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = [
-            load_accounts("claude", false)?,
-            load_accounts("codex", false)?,
-        ];
+        let accounts = Provider::ALL
+            .into_iter()
+            .filter(|provider| provider.has_accounts())
+            .map(|provider| load_accounts(provider.id(), false))
+            .collect::<Result<Vec<_>, _>>()?;
         let (usage, skipped) = swarm::profiles::translate_usage(&json, &accounts)
             .map_err(|error| format!("swarm: {error}"))?;
         for reason in skipped {
@@ -1495,10 +1673,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
                 [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
-                [flag, value]
-                    if flag == "--provider"
-                        && matches!(value.as_str(), "claude" | "codex" | "agy") =>
-                {
+                [flag, value] if flag == "--provider" && Provider::parse(value).is_some() => {
                     requested_provider = Some(value.as_str())
                 }
                 [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
@@ -1508,42 +1683,59 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved = if role == "chat" {
-            swarm::bus::chat_role(
-                requested_provider.ok_or("swarm: chat needs --provider")?,
-                requested_model.ok_or("swarm: chat needs --model")?,
-            )?
-        } else {
-            if requested_model.is_some() {
+        let resolved: swarm::bus::ResolvedRole = match requested_model {
+            Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
-            resolve_role(role, requested_provider)?
+            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0033).
+            Some(model) => {
+                let provider = requested_provider
+                    .and_then(Provider::parse)
+                    .ok_or("swarm: a chat --model needs --provider")?;
+                let (config, _) =
+                    swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
+                let runner = swarm::config::one_off(&config.profiles[0], provider, model)
+                    .map_err(|error| format!("swarm: {error}"))?;
+                serde_json::from_value(serde_json::to_value(runner)?)?
+            }
+            None => serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
+                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
         };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
         let provider = resolved.provider.clone();
         let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
-        let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
+        let kind = Provider::parse(provider.as_deref().unwrap_or_default())
+            .ok_or("swarm: launch has no known provider")?;
+        let mut extra = swarm::bus::extra_args(kind, extra)?;
         // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
         // both use this one answer.
-        let picked = match (account, provider.as_deref()) {
-            (Some(requested), Some(provider)) => {
-                let accounts = load_accounts(provider, true)?;
-                Some(
-                    swarm::profiles::resolve_account(&accounts, requested)
-                        .map_err(|error| format!("swarm: {error}"))?
-                        .clone(),
-                )
-            }
+        // A provider with no account source launches on its CLI's own login, so `auto` means
+        // nothing there; the chat profile passes it whichever runner starts.
+        let picked = match (account, kind.has_accounts()) {
+            (Some(requested), true) => match load_accounts(kind.id(), true)
+                .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
+                .and_then(|accounts| {
+                    swarm::profiles::resolve_account(&accounts, requested).cloned()
+                }) {
+                Ok(account) => Some(account),
+                // `auto` is a preference. With no yelo or no automatic account the CLI's own
+                // login runs, as the probe already counts a missing yelo as can run (ADR 0032).
+                Err(error) if requested == "auto" => {
+                    eprintln!("swarm: {error}; {} uses its own login", kind.id());
+                    None
+                }
+                Err(error) => return Err(format!("swarm: {error}").into()),
+            },
             _ => None,
         };
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
-        match provider.as_deref() {
-            Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
-                Ok(target) if provider == "codex" => {
+        match kind {
+            Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
+                Ok(target) if kind == Provider::Codex => {
                     // Without --account, yelo's `codex` in the pane picks the profile, so every
                     // profile it might pick needs the entry.
                     let homes = if let Some(account) = &picked {
@@ -1564,10 +1756,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
                 Err(reason) => eprintln!(
-                    "swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"
+                    "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",
+                    kind.id()
                 ),
             },
-            Some("claude") => {
+            Provider::Claude => {
                 // The app hides the chair's pane, so a trust dialog there waits for nobody. The
                 // chair runs in cwd itself, as a resuming child does (ADR 0008).
                 if agent_id != "orchestrator" {
@@ -1641,7 +1834,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
             }
-            _ => {}
         }
         command.extend(extra);
         // Every adapter's spawn verb opens the pane in the working directory it runs in.
@@ -1653,9 +1845,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             role,
             SpawnOptions {
                 provider: provider.as_deref(),
-                account: picked
-                    .as_ref()
-                    .map_or(account, |picked| Some(picked.name.as_str())),
+                account: picked.as_ref().map(|picked| picked.name.as_str()),
                 command: &command,
             },
         );
@@ -2088,12 +2278,6 @@ mod tests {
             assert!(reported(&["claude"], payload).is_none(), "{bad}");
         }
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn model_edit_rejects_blank_names() {
-        assert!(set_role_model("codex-sol-high-agent", " ").is_err());
-        assert!(set_role_model("codex-sol-high-agent", "").is_err());
     }
 
     #[test]

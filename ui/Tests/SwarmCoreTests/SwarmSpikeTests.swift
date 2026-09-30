@@ -66,9 +66,9 @@ struct SwarmSpikeTests {
         let agy = SwarmChatLaunchPlan(directory: "/work", provider: "agy", model: "gemini-3.8-flash-low", account: .auto)
         #expect(agy?.role == "chat")
         #expect(agy?.model == "gemini-3.8-flash-low")
-        #expect(agy?.account == nil)
+        #expect(agy?.account == "auto")
         #expect(SwarmChatLaunchPlan(directory: "/work", provider: "codex", model: " gpt-6-sol ", account: .auto)?.model == "gpt-6-sol")
-        #expect(SwarmChatLaunchPlan(directory: "/work", provider: "unknown", model: "x", account: nil) == nil)
+        #expect(SwarmChatLaunchPlan(directory: "/work", provider: "", model: "x", account: nil) == nil)
         #expect(SwarmChatLaunchPlan(directory: "/work", provider: "claude", model: "--bad", account: nil) == nil)
     }
 

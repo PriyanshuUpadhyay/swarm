@@ -6,66 +6,96 @@ import Testing
 struct SwarmProfilesTests {
     private enum RunnerFailure: Error { case lost }
 
-    @Test("decodes the roles contract")
-    func decodesRoles() async throws {
+    @Test("decodes the profiles contract with its revision and import")
+    func decodesProfiles() async throws {
         let source = source(
             expectedArguments: ["roles", "--json"],
-            stdout: #"{"roles":[{"role":"code.complex","runner":"codex-sol-high-agent","provider":"codex","model":"gpt-5.6-sol","effort":"high","sandbox":"workspace-write","fallbacks":[]}],"choices":[]}"#
+            stdout: #"{"revision":"a1b2c3d4e5f6","version":1,"min_usage_left_pct":5,"imported":{"from":"/h/roles.json","unmapped":["old.route"]},"profiles":[{"name":"chat","runners":[{"provider":"claude","model":"opus","effort":"high"},{"provider":"codex","model":"gpt-6.1-sol","effort":"high","sandbox":"workspace-write"}]}]}"#
         )
 
-        let roles = try await source.roles()
+        let list = try await source.profiles()
 
-        #expect(roles == [SwarmRole(
-            role: "code.complex", runner: "codex-sol-high-agent", provider: "codex",
-            model: "gpt-5.6-sol", effort: "high", sandbox: "workspace-write", fallbacks: []
-        )])
+        #expect(list.revision == "a1b2c3d4e5f6")
+        #expect(list.minUsageLeftPct == 5)
+        #expect(list.imported == SwarmProfileImport(from: "/h/roles.json", unmapped: ["old.route"]))
+        #expect(list.profiles == [SwarmProfile(name: "chat", runners: [
+            SwarmRunner(provider: "claude", model: "opus", effort: "high"),
+            SwarmRunner(provider: "codex", model: "gpt-6.1-sol", effort: "high", sandbox: "workspace-write"),
+        ])])
     }
 
-    @Test("reads provider models without using routed roles")
-    func decodesModels() async throws {
+    @Test("decodes the launch check, where a profile with no runner that can run has no pick")
+    func decodesCheck() async throws {
         let source = source(
-            expectedArguments: ["models", "--provider", "codex", "--json"],
-            stdout: #"{"provider":"codex","models":[{"id":"gpt-6-sol","label":"GPT-6-Sol"}]}"#
+            expectedArguments: ["roles", "check", "--json"],
+            stdout: #"{"profiles":[{"name":"chat","pick":1,"skipped":[{"index":0,"code":"low_usage","text":"usage 2% left (threshold 5%)"}]},{"name":"council.gemini","skipped":[{"index":0,"code":"cli_missing","text":"agy CLI not found on PATH"}]}]}"#
         )
-        #expect(try await source.models(provider: "codex") == [
-            SwarmModel(id: "gpt-6-sol", label: "GPT-6-Sol")
+
+        let checks = try await source.check()
+
+        #expect(checks == [
+            SwarmProfileCheck(name: "chat", pick: 1, skipped: [
+                SwarmSkip(index: 0, code: "low_usage", text: "usage 2% left (threshold 5%)"),
+            ]),
+            SwarmProfileCheck(name: "council.gemini", pick: nil, skipped: [
+                SwarmSkip(index: 0, code: "cli_missing", text: "agy CLI not found on PATH"),
+            ]),
         ])
     }
 
-    @Test("decodes nullable role fields and fallbacks")
-    func decodesRoleOptionals() async throws {
+    @Test("decodes the providers contract")
+    func decodesProviders() async throws {
         let source = source(
-            expectedArguments: ["roles", "--json"],
-            stdout: #"{"roles":[{"role":"code.fast","runner":"claude-fast","provider":"claude","model":"haiku","effort":null,"sandbox":null,"fallbacks":["codex-fast"]}],"choices":[]}"#
+            expectedArguments: ["providers", "--json"],
+            stdout: #"{"providers":[{"id":"codex","label":"Codex","efforts":["low","high"],"default_effort":"medium","accounts":true,"fields":[{"name":"sandbox","label":"Sandbox","values":["read-only","workspace-write"],"default":"workspace-write"}]}]}"#
         )
 
-        let roles = try await source.roles()
+        let providers = try await source.providers()
 
-        #expect(roles == [SwarmRole(
-            role: "code.fast", runner: "claude-fast", provider: "claude", model: "haiku",
-            effort: nil, sandbox: nil, fallbacks: ["codex-fast"]
-        )])
+        #expect(providers.map(\.id) == ["codex"])
+        #expect(providers[0].defaultEffort == "medium")
+        #expect(providers[0].fields[0].default == "workspace-write")
+        #expect(providers[0].runner(model: "gpt-6-luna")
+            == SwarmRunner(provider: "codex", model: "gpt-6-luna", effort: "medium", sandbox: "workspace-write"))
     }
 
-    @Test("model edits use the runner shared by routed profiles")
-    func updatesRunnerModel() async throws {
+    @Test("reads provider models and each model's efforts")
+    func decodesModels() async throws {
         let source = source(
-            expectedArguments: ["roles", "set-model", "codex-sol-high-agent", "gpt-6-sol"],
-            stdout: "Set model 'gpt-6-sol' on: codex-sol-high-agent\n"
+            expectedArguments: ["models", "--provider", "codex", "--json"],
+            stdout: #"{"provider":"codex","models":[{"id":"gpt-6-sol","label":"GPT-6-Sol","efforts":["low","ultra"]},{"id":"gpt-old","label":"gpt-old"}]}"#
         )
-
-        try await source.setModel(" gpt-6-sol ", for: "codex-sol-high-agent")
+        #expect(try await source.models(provider: "codex") == [
+            SwarmModel(id: "gpt-6-sol", label: "GPT-6-Sol", efforts: ["low", "ultra"]),
+            SwarmModel(id: "gpt-old", label: "gpt-old"),
+        ])
     }
 
-    @Test("a failed model edit keeps the CLI error")
-    func failedModelEdit() async {
-        let source = source(
-            expectedArguments: ["roles", "set-model", "codex-sol-high-agent", "bad-model"],
-            status: 1, stderr: "agent-routing: invalid model\n"
-        )
+    @Test("saves one whole profile against the revision it was read at")
+    func savesProfile() async throws {
+        let profile = SwarmProfile(name: "code.complex", runners: [
+            SwarmRunner(provider: "claude", model: "opus", effort: "high", permission: "auto"),
+        ])
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+            #expect(arguments.count == 5)
+            #expect(Array(arguments.prefix(4)) == ["roles", "save", "--revision", "a1b2c3d4e5f6"])
+            let sent = try JSONDecoder().decode(SwarmProfile.self, from: Data(arguments[4].utf8))
+            #expect(sent == profile)
+            #expect(!arguments[4].contains("\"id\""))
+            return ShellResult(status: 0, stdout: #"{"revision":"ffeeddccbbaa"}"#, stderr: "")
+        }
 
-        await #expect(throws: SwarmProfileError.failed("agent-routing: invalid model")) {
-            try await source.setModel("bad-model", for: "codex-sol-high-agent")
+        #expect(try await source.save(profile, revision: "a1b2c3d4e5f6") == "ffeeddccbbaa")
+    }
+
+    @Test("a refused save keeps every broken rule")
+    func failedSave() async {
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+            ShellResult(status: 1, stdout: "", stderr: "swarm: chat: runner 1 has no model\nchat: runner 2 has no effort\n")
+        }
+
+        await #expect(throws: SwarmProfileError.failed("swarm: chat: runner 1 has no model\nchat: runner 2 has no effort")) {
+            try await source.save(SwarmProfile(name: "chat", runners: []), revision: "old")
         }
     }
 
@@ -130,10 +160,10 @@ struct SwarmProfilesTests {
             #expect(cwd == AgentScratchDirectory.current())
             #expect(cwd != NSHomeDirectory())
             #expect(FileManager.default.fileExists(atPath: cwd))
-            return ShellResult(status: 0, stdout: #"{"roles":[],"choices":[]}"#, stderr: "")
+            return ShellResult(status: 0, stdout: #"{"revision":"r","min_usage_left_pct":5,"profiles":[]}"#, stderr: "")
         }
 
-        _ = try await source.roles()
+        _ = try await source.profiles()
     }
 
     @Test("uses SWARM_BIN and the contract arguments")
@@ -173,18 +203,18 @@ struct SwarmProfilesTests {
         }
 
         await #expect(throws: SwarmProfileError.unavailable("swarm not found on PATH")) {
-            try await source.roles()
+            try await source.profiles()
         }
     }
 
-    @Test("maps a non-zero exit to the first stderr line")
+    @Test("maps a non-zero exit to the whole stderr")
     func mapsFailedExit() async {
         let source = source(
             expectedArguments: ["usage", "--json"], status: 2,
             stderr: "routing config is missing\nmore detail\n"
         )
 
-        await #expect(throws: SwarmProfileError.failed("routing config is missing")) {
+        await #expect(throws: SwarmProfileError.failed("routing config is missing\nmore detail")) {
             try await source.usage()
         }
     }
@@ -196,7 +226,7 @@ struct SwarmProfilesTests {
             stdout: "process was killed\nmore detail\n"
         )
 
-        await #expect(throws: SwarmProfileError.failed("process was killed")) {
+        await #expect(throws: SwarmProfileError.failed("process was killed\nmore detail")) {
             try await source.usage()
         }
     }
@@ -217,7 +247,7 @@ struct SwarmProfilesTests {
         }
 
         await #expect(throws: CancellationError.self) {
-            try await source.roles()
+            try await source.profiles()
         }
     }
 
@@ -228,7 +258,7 @@ struct SwarmProfilesTests {
         }
 
         await #expect(throws: SwarmProfileError.failed("lost")) {
-            try await source.roles()
+            try await source.profiles()
         }
     }
 
@@ -237,7 +267,7 @@ struct SwarmProfilesTests {
         let source = source(expectedArguments: ["roles", "--json"], stdout: "not json")
 
         await #expect(throws: SwarmProfileError.failed("swarm returned invalid JSON")) {
-            try await source.roles()
+            try await source.profiles()
         }
     }
 

@@ -8,27 +8,10 @@ struct ChatModelChoiceTests {
     @Test("The current model wins even when it is absent from the catalog")
     func currentModel() {
         let catalog = [SwarmModel(id: "sonnet", label: "Sonnet")]
-        #expect(ChatModelChoice.initial(current: "claude-opus-4-6", saved: "sonnet", models: catalog)
-            == "claude-opus-4-6")
-        #expect(ChatModelChoice.initial(current: nil, saved: "opus", models: catalog) == "opus")
-        #expect(ChatModelChoice.initial(current: nil, saved: nil, models: catalog) == "sonnet")
-        #expect(ChatModelChoice.initial(current: "", saved: nil, models: []) == "")
-    }
-
-    @Test("Model choices survive reopening and remain separate for each provider")
-    @MainActor func preferences() throws {
-        let suite = "swarm-model-test-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let preferences = ChatModelPreferences(defaults: defaults)
-        preferences.remember(provider: "claude", model: "opus")
-        preferences.remember(provider: "codex", model: "gpt-6-astra")
-        let reopened = ChatModelPreferences(defaults: defaults)
-        #expect(reopened.model(for: "claude") == "opus")
-        #expect(reopened.model(for: "codex") == "gpt-6-astra")
-        #expect(reopened.provider == "codex")
-        reopened.remember(provider: "claude", model: "--bad")
-        #expect(reopened.model(for: "claude") == "opus")
+        #expect(ChatModelChoice.initial(current: "claude-opus-4-6", models: catalog) == "claude-opus-4-6")
+        #expect(ChatModelChoice.initial(current: "--bad", models: catalog) == "sonnet")
+        #expect(ChatModelChoice.initial(current: nil, models: catalog) == "sonnet")
+        #expect(ChatModelChoice.initial(current: "", models: []) == "")
     }
 
     @Test("Only reported models set the active label")

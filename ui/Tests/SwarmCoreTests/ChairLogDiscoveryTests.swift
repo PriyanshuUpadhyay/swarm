@@ -380,7 +380,6 @@ private final class ChangingProfiles: SwarmProfileSource, @unchecked Sendable {
         lock.withLock { self.list = list }
     }
 
-    func roles() async throws -> [SwarmRole] { [] }
     func accounts(provider: String) async throws -> SwarmAccountList {
         lock.withLock { list }
     }
@@ -389,7 +388,6 @@ private final class ChangingProfiles: SwarmProfileSource, @unchecked Sendable {
 
 private struct FixtureProfiles: SwarmProfileSource {
     let accountList: SwarmAccountList
-    func roles() async throws -> [SwarmRole] { [] }
     func accounts(provider: String) async throws -> SwarmAccountList { accountList }
     func usage() async throws -> [SwarmUsageMeter] { [] }
 }
