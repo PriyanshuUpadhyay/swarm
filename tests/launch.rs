@@ -289,7 +289,9 @@ fn listed_prompt(home: &Path, session: &str) -> serde_json::Value {
         .clone()
 }
 
-const PERMISSION: &str = " Bash command\n\n   touch probe.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend\n";
+const PERMISSION: &str = "────\n Bash command\n\n   touch probe.txt\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel · Tab to amend\n";
+const ARROWS: &str =
+    "● Checking the folder.\n Do you want to proceed?\n > Yes\n   No\n tab amend\n";
 const FOLDER_TRUST: &str =
     "  Trust this folder?\n\n› 1. Trust and continue\n  2. Back\n\n  enter continue · esc back\n";
 
@@ -340,10 +342,15 @@ fn the_owner_answers_a_listed_question_with_its_choice_key() {
 }
 
 #[test]
-fn a_digit_that_only_moves_the_cursor_is_confirmed_with_enter() {
-    let home = scratch("answer-enter");
-    let session = answer_session(&home, "true");
-    std::fs::write(home.join("screen"), FOLDER_TRUST).unwrap();
+fn an_arrow_answer_sends_enter_only_once_the_cursor_moved() {
+    let home = scratch("answer-arrows");
+    let session = answer_session(&home, "cp \"$HOME/moved\" \"$HOME/screen\"");
+    std::fs::write(home.join("screen"), ARROWS).unwrap();
+    std::fs::write(
+        home.join("moved"),
+        ARROWS.replace(" > Yes\n   No", "   Yes\n > No"),
+    )
+    .unwrap();
     let id = listed_prompt(&home, &session)["id"]
         .as_str()
         .unwrap()
@@ -353,22 +360,47 @@ fn a_digit_that_only_moves_the_cursor_is_confirmed_with_enter() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "orchestrator"),
     ];
-    let output = swarm(&home, &app, &["answer", "seat", &id, "0"]);
+    let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(
         std::fs::read_to_string(home.join("keys")).unwrap(),
-        "1\nEnter\n"
+        "Down\nEnter\n"
     );
 
     // A cursor left on another choice means the screen took some other key: no Enter.
     std::fs::remove_file(home.join("keys")).unwrap();
+    std::fs::write(home.join("screen"), ARROWS).unwrap();
+    std::fs::write(home.join("moved"), ARROWS).unwrap();
     let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
     assert!(
         stderr(&output).contains("changed while the answer was sent"),
         "{}",
         stderr(&output)
     );
-    assert_eq!(std::fs::read_to_string(home.join("keys")).unwrap(), "2\n");
+    assert_eq!(
+        std::fs::read_to_string(home.join("keys")).unwrap(),
+        "Down\n"
+    );
+}
+
+#[test]
+fn a_folder_trust_screen_that_nothing_closes_above_is_answered_only_in_the_pane() {
+    let home = scratch("answer-trust");
+    let session = answer_session(&home, "true");
+    std::fs::write(home.join("screen"), FOLDER_TRUST).unwrap();
+    assert_eq!(listed_prompt(&home, &session), serde_json::Value::Null);
+    let app = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let output = swarm(&home, &app, &["answer", "seat", "0000000000000000", "0"]);
+    assert!(
+        stderr(&output).contains("shows no question now"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!home.join("keys").exists());
 }
 
 #[test]

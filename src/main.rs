@@ -1637,15 +1637,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if prompt.id != *prompt_id {
             return Err("swarm: the question changed; read it again".into());
         }
-        let mut keys = prompt
+        let keys = prompt
             .keys(choice)
             .ok_or(format!("swarm: the question has no choice {choice}"))?;
-        // A digit picks the choice, except on Codex's folder trust screen, where it only moves the
-        // cursor and Enter follows. On any other screen a later Enter could land on the next
-        // question.
-        if prompt.confirm {
-            keys.push("Enter".to_string());
-        }
         // Each key after the first goes only once the same question shows the cursor where the
         // keys before it put it.
         let settled = |cursor: usize| {

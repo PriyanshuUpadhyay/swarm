@@ -88,9 +88,6 @@ pub struct Prompt {
     pub cursor: usize,
     /// A hash of the question and choices, so an answer can prove it saw this prompt.
     pub id: String,
-    /// The digit only moves the cursor, so Enter confirms the choice (Codex folder trust).
-    #[serde(skip)]
-    pub confirm: bool,
     /// No rule or history row closes the question above, so rows of it can be off the screen.
     #[serde(skip)]
     pub cut: bool,
@@ -159,23 +156,16 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
 }
 
 /// The prompt a screen shows, read again from the pane's history when nothing closes its question
-/// above. None when that read fails, or when its question is still open and the history holds
-/// rows above the screen, so no prompt is shown or answered on part of its question.
+/// above. None when that read fails or nothing closes the question there either: a pane can keep
+/// no row above its screen, so no read proves the question starts at its top row. Such a prompt,
+/// as a folder trust screen, is answered in the pane.
 pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
     let found = prompt(screen)?;
     if !found.cut {
         return Some(found);
     }
-    let history = history()?;
-    let whole = prompt(&history)?;
-    // A history with no row above the screen (an alternate screen, or a new pane) holds the
-    // whole pane, so its open question starts at its top row. `capture -J` keeps trailing
-    // blanks, and a wrapped row it joins makes the two differ, so such a pane is refused.
-    let rows = |text: &str| {
-        let rows: Vec<&str> = text.lines().map(str::trim_end).collect();
-        rows.join("\n").trim_matches('\n').to_string()
-    };
-    (!whole.cut || rows(&history) == rows(screen)).then_some(whole)
+    let whole = prompt(&history()?)?;
+    (!whole.cut).then_some(whole)
 }
 
 fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
@@ -300,8 +290,6 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         numbered,
         cursor,
         id: format!("{id:016x}"),
-        // Codex's folder trust footer; there a digit moves the cursor and Enter picks.
-        confirm: numbered && lines[footer].to_lowercase().contains("enter continue"),
         cut: !bounded,
     })
 }
@@ -675,9 +663,11 @@ mod tests {
             whole.question
         );
         assert_eq!(whole_prompt(&screen, || None), None);
-        // History that lost the question's first rows is refused too.
+        // History that lost the question's first rows is refused too, also when it lost the
+        // same rows as the screen (a pane that keeps no rows above it).
         let lost = format!("   echo step 0\n{screen}");
         assert_eq!(whole_prompt(&screen, || Some(lost)), None);
+        assert_eq!(whole_prompt(&screen, || Some(screen.clone())), None);
         let never = || -> Option<String> { panic!("a whole question needs no history") };
         assert_eq!(whole_prompt(&command("ls"), never), prompt(&command("ls")));
     }
@@ -708,20 +698,11 @@ mod tests {
     }
 
     #[test]
-    fn an_open_question_counts_only_when_the_history_holds_no_row_above_the_screen() {
+    fn a_question_that_nothing_closes_above_is_refused_even_when_the_history_is_the_screen() {
         // A Codex folder trust pane is on the alternate screen, so its history is the screen.
         let screen = fixture!("codex-trust");
-        let found = prompt(screen).unwrap();
-        assert!(found.cut);
-        let padded: String = screen.lines().map(|line| format!("{line}   \n")).collect();
-        assert_eq!(
-            whole_prompt(screen, || Some(format!("{padded}\n\n"))),
-            Some(found)
-        );
-        assert_eq!(
-            whole_prompt(screen, || Some(format!("$ codex\n{screen}"))),
-            None
-        );
+        assert!(prompt(screen).unwrap().cut);
+        assert_eq!(whole_prompt(screen, || Some(screen.to_string())), None);
     }
 
     #[test]
@@ -772,19 +753,6 @@ mod tests {
         );
         assert_eq!(prompt(&rows), None);
         assert_eq!(screen_state("codex", &rows), Some(ScreenState::Idle));
-    }
-
-    #[test]
-    fn only_codex_folder_trust_confirms_its_digit_with_enter() {
-        assert!(prompt(fixture!("codex-trust")).unwrap().confirm);
-        for rows in [
-            fixture!("claude-waiting"),
-            fixture!("codex-waiting"),
-            fixture!("agy-question"),
-            fixture!("agy-trust"),
-        ] {
-            assert!(!prompt(rows).unwrap().confirm, "{rows}");
-        }
     }
 
     #[test]
