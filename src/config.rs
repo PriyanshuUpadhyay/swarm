@@ -231,6 +231,12 @@ pub fn import(old: &Value, from: &str) -> Result<Config, String> {
             unmapped.push(route.clone());
             continue;
         };
+        list = list.into_iter().fold(Vec::new(), |mut kept, runner| {
+            if !kept.contains(&runner) {
+                kept.push(runner);
+            }
+            kept
+        });
         for runner in substitutes.filter_map(convert) {
             if !list.contains(&runner) {
                 list.push(runner);

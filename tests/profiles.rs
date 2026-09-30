@@ -137,7 +137,7 @@ fn a_route_that_breaks_a_profile_rule_is_not_imported_and_the_rest_are() {
     let home = scratch("import-partial");
     old_config(
         &home,
-        r#"{"routes": {"code": ["codex-sol-high-agent"], "Review.Deep": ["codex-sol-high-agent"],
+        r#"{"routes": {"code": ["codex-sol-high-agent", "codex-sol-high-agent"], "Review.Deep": ["codex-sol-high-agent"],
                        "plan": ["claude-opus-none-agent"]},
             "runners": {
               "codex-sol-high-agent": {"provider": "codex", "model": "gpt-sol", "effort": "high"},
@@ -154,6 +154,11 @@ fn a_route_that_breaks_a_profile_rule_is_not_imported_and_the_rest_are() {
         .map(|profile| profile["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["chat", "code"]);
+    // A route that lists one runner twice keeps it once.
+    assert_eq!(
+        listing["profiles"][1]["runners"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(
         listing["imported"]["unmapped"],
         serde_json::json!(["Review.Deep", "plan"])
