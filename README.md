@@ -46,15 +46,28 @@ directory is always `$SWARM_HOME/.swarm`.
 |---|---|
 | `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
 | `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
-| `AGENT_ROUTING_CONFIG` | Routing config file. A path that does not exist is an error. |
+| `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
 
-Roles come from `$AGENT_ROUTING_CONFIG`, else `$XDG_CONFIG_HOME/agent-routing/roles.json`
-(`~/.config/agent-routing/roles.json`), else the `default-roles.json` built into the binary. The
-first `roles set-model` without a user file saves a copy of the default at the XDG path. A user
-file that is a broken symlink is an error, never a silent switch to the default.
+Agent profiles live in `$SWARM_HOME/.swarm/profiles.json` (ADR 0030). A profile is one role, such
+as `chat` or `code.complex`, with an ordered list of runners. A runner is a provider, a model, an
+effort, and the flags its provider takes. `chat` is always first. With no file, the first read
+imports the old routing file (`$AGENT_ROUTING_CONFIG`, else
+`$XDG_CONFIG_HOME/agent-routing/roles.json`, else `~/.config/agent-routing/roles.json`) and writes
+`profiles.json`. Each route becomes a profile whose runners are the route's runners, then their
+substitutes. The old file is never written, and a later edit to it only prints a warning. With
+neither file, the `default-profiles.json` built into the binary is used and nothing is written until
+the first save. A file that is a broken symlink is an error, never a silent switch to the default.
+A save writes through a symlink, so `profiles.json` can live in a dotfiles checkout.
+
+A launch takes the first runner that can run (ADR 0031). It skips a runner whose CLI is not on
+PATH, whose accounts are all signed out, or whose best account has less usage left than
+`min_usage_left_pct` (default 5). The account read has a 2 s deadline; a read that fails, times
+out, or finds no accounts counts as "can run". Each skip is one stderr line, such as
+`swarm: code.complex: skipped claude/opus/high: usage 2% left (threshold 5%)`, and a launch where
+no runner can run fails with one line per runner.
 
 ## Commands
 
@@ -74,17 +87,19 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
 | `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
-| `roles --json` | any | List routed roles and every provider choice for each role as JSON. |
-| `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the role's runner as JSON: its fields plus `role`, `runnerId`, and `fallbackRunnerIds`. |
-| `roles set-model <runner> <model>` | any | Save a runner's model in the shared routing config. Every role using that runner changes. |
-| `models --provider <claude\|codex\|agy> --json` | any | List models for a new chat. Codex and AGY use their CLI catalogs; Claude shows its model aliases. |
+| `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
+| `roles check --json` | any | Print, for each profile, the runner a launch would take now (`pick`) and each skipped runner with its `code` and `text`. |
+| `roles get <role> [--provider <claude\|codex\|agy>]` | any | Print the runner a launch would take as JSON: its fields plus `role`, `runnerId` (`<role>#<n>`), `fallbackRunnerIds`, `skipped`, and `substitutedFor` when a later runner was taken. With `--provider`, that provider's runners are tried first. |
+| `roles save --revision <revision> <profile-json>` | any | Replace one profile, as `{"name", "runners"}`, and print the new revision. Fails when the file changed after `revision` was read. |
+| `providers --json` | any | List each provider with its efforts, default effort, whether it has accounts, and the flags a runner of it takes. |
+| `models --provider <claude\|codex\|agy> --json` | any | List models for a provider. Codex and AGY use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
 | `usage --json` | any | List account use meters as JSON. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `working`, `waiting`, or `done` when the screen shows it and no hook reported in the last 10 s. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
-| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Resolve a routed role, or use `chat --provider <provider> --model <name>` for a direct model choice. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
+| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0032). `--account` is ignored for a provider with no accounts. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |

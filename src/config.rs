@@ -446,6 +446,7 @@ pub fn load() -> Result<(Config, Vec<u8>), String> {
         let text = String::from_utf8(bytes.clone())
             .map_err(|error| format!("{}: {error}", path.display()))?;
         let config = parse(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+        warn_if_old_is_newer(&path, &config);
         return Ok((config, bytes));
     }
     let old = old_path()?;
@@ -457,6 +458,32 @@ pub fn load() -> Result<(Config, Vec<u8>), String> {
     let config = import(&value, &old.to_string_lossy())?;
     let bytes = write(&path, &config)?;
     Ok((config, bytes))
+}
+
+/// The import runs once, so a later edit to the old file changes nothing; say so rather than
+/// lose it without a word.
+fn warn_if_old_is_newer(path: &Path, config: &Config) {
+    let Some(from) = config
+        .imported
+        .as_ref()
+        .map(|imported| PathBuf::from(&imported.from))
+    else {
+        return;
+    };
+    let modified = |path: &Path| {
+        std::fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()
+    };
+    if let (Some(old), Some(new)) = (modified(&from), modified(path))
+        && old > new
+    {
+        eprintln!(
+            "swarm: {} changed after import; {} is the source now",
+            from.display(),
+            path.display()
+        );
+    }
 }
 
 pub fn listing() -> Result<Listing, String> {

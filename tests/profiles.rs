@@ -81,10 +81,22 @@ fn the_first_read_imports_the_old_config_once_and_never_writes_it() {
     assert_eq!(std::fs::read_to_string(&old).unwrap(), OLD_CONFIG);
     assert!(profiles_file(&home).exists());
 
-    // A later edit to the old file does not import again.
+    // A later edit to the old file does not import again, and each read says so.
     old_config(&home, &OLD_CONFIG.replace("gpt-sol", "gpt-other"));
-    let again = json(&swarm(&home, &[], &["roles", "--json"]));
+    std::fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+    let output = swarm(&home, &[], &["roles", "--json"]);
+    let again = json(&output);
     assert_eq!(again["profiles"][1]["runners"][0]["model"], "gpt-sol");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("changed after import"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
