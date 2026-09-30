@@ -117,6 +117,47 @@ fn roles_get_keeps_the_keys_that_orchestrators_read() {
     assert_eq!(resolved["model"], "opus");
     assert_eq!(resolved["fallbackRunnerIds"], serde_json::json!(["code#1"]));
     assert!(resolved.get("substitutedFor").is_none());
+
+    // A provider the profile has no runner of is refused, not swapped for another provider.
+    let absent = swarm(
+        &home,
+        &[("PATH", &bin)],
+        &["roles", "get", "code", "--provider", "agy"],
+    );
+    assert!(!absent.status.success());
+    assert!(
+        String::from_utf8_lossy(&absent.stderr).contains("swarm: code: profile has no agy runner"),
+        "{}",
+        String::from_utf8_lossy(&absent.stderr)
+    );
+}
+
+#[test]
+fn a_route_that_breaks_a_profile_rule_is_not_imported_and_the_rest_are() {
+    let home = scratch("import-partial");
+    old_config(
+        &home,
+        r#"{"routes": {"code": ["codex-sol-high-agent"], "Review.Deep": ["codex-sol-high-agent"],
+                       "plan": ["claude-opus-none-agent"]},
+            "runners": {
+              "codex-sol-high-agent": {"provider": "codex", "model": "gpt-sol", "effort": "high"},
+              "claude-opus-none-agent": {"provider": "claude", "model": "opus", "effort": "none"}
+            }}"#,
+    );
+
+    let listing = json(&swarm(&home, &[], &["roles", "--json"]));
+
+    let names: Vec<&str> = listing["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|profile| profile["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["chat", "code"]);
+    assert_eq!(
+        listing["imported"]["unmapped"],
+        serde_json::json!(["Review.Deep", "plan"])
+    );
 }
 
 #[test]

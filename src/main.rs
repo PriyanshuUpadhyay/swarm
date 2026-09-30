@@ -350,6 +350,14 @@ fn resolve_role(
     let only = provider
         .map(|name| Provider::parse(name).ok_or_else(|| format!("swarm: unknown provider {name}")))
         .transpose()?;
+    if let Some(only) = only
+        && !profile.runners.iter().any(|runner| runner.provider == only)
+    {
+        return Err(format!(
+            "swarm: {role}: profile has no {} runner",
+            only.id()
+        ));
+    }
     let probe = Probe::new(&config, account);
     let selection = swarm::config::select(profile, only, |runner| probe.check(runner));
     let id = |index: usize| format!("{role}#{}", index + 1);

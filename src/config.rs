@@ -114,52 +114,59 @@ pub fn validate(config: &Config) -> Vec<String> {
     }
     let mut names = std::collections::HashSet::new();
     for profile in &config.profiles {
-        let name = &profile.name;
-        if name.is_empty()
-            || !name.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
-            })
-        {
+        errors.extend(profile_errors(profile));
+        if !names.insert(profile.name.as_str()) {
+            errors.push(format!("Profile '{}' is defined twice.", profile.name));
+        }
+    }
+    errors
+}
+
+/// Every rule one profile breaks on its own.
+fn profile_errors(profile: &Profile) -> Vec<String> {
+    let mut errors = Vec::new();
+    let name = &profile.name;
+    if name.is_empty()
+        || !name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
+    {
+        errors.push(format!(
+            "Profile name '{name}' must use a-z, 0-9, '.', '_', '-'."
+        ));
+    }
+    if profile.runners.is_empty() {
+        errors.push(format!("Profile '{name}' must have at least one runner."));
+    }
+    // Fable is a child seat only where it judges, never where it writes code.
+    let judges = name.starts_with("review.") || name.starts_with("council.");
+    for (index, runner) in profile.runners.iter().enumerate() {
+        let at = format!("Profile '{name}' runner {}", index + 1);
+        if profile.runners[..index].contains(runner) {
+            errors.push(format!("{at} repeats an earlier runner."));
+        }
+        if !valid_name(&runner.model) {
+            errors.push(format!("{at} has invalid model '{}'.", runner.model));
+        }
+        let info = runner.provider.info();
+        if !info.efforts.contains(&runner.effort.as_str()) {
             errors.push(format!(
-                "Profile name '{name}' must use a-z, 0-9, '.', '_', '-'."
+                "{at} has effort '{}', which {} does not take.",
+                runner.effort, info.label
             ));
         }
-        if !names.insert(name.as_str()) {
-            errors.push(format!("Profile '{name}' is defined twice."));
+        for (field, value) in runner.extras() {
+            let Some(value) = value else { continue };
+            if !info.fields.iter().any(|known| known.name == field) {
+                errors.push(format!("{at}: {} has no {field}.", info.label));
+            } else if !valid_name(value) {
+                errors.push(format!("{at} has invalid {field} '{value}'."));
+            }
         }
-        if profile.runners.is_empty() {
-            errors.push(format!("Profile '{name}' must have at least one runner."));
-        }
-        // Fable is a child seat only where it judges, never where it writes code.
-        let judges = name.starts_with("review.") || name.starts_with("council.");
-        for (index, runner) in profile.runners.iter().enumerate() {
-            let at = format!("Profile '{name}' runner {}", index + 1);
-            if profile.runners[..index].contains(runner) {
-                errors.push(format!("{at} repeats an earlier runner."));
-            }
-            if !valid_name(&runner.model) {
-                errors.push(format!("{at} has invalid model '{}'.", runner.model));
-            }
-            let info = runner.provider.info();
-            if !info.efforts.contains(&runner.effort.as_str()) {
-                errors.push(format!(
-                    "{at} has effort '{}', which {} does not take.",
-                    runner.effort, info.label
-                ));
-            }
-            for (field, value) in runner.extras() {
-                let Some(value) = value else { continue };
-                if !info.fields.iter().any(|known| known.name == field) {
-                    errors.push(format!("{at}: {} has no {field}.", info.label));
-                } else if !valid_name(value) {
-                    errors.push(format!("{at} has invalid {field} '{value}'."));
-                }
-            }
-            if runner.model.to_lowercase().contains("fable") && !judges {
-                errors.push(format!(
-                    "{at}: Fable is allowed only in a review.* or council.* profile."
-                ));
-            }
+        if runner.model.to_lowercase().contains("fable") && !judges {
+            errors.push(format!(
+                "{at}: Fable is allowed only in a review.* or council.* profile."
+            ));
         }
     }
     errors
@@ -229,10 +236,16 @@ pub fn import(old: &Value, from: &str) -> Result<Config, String> {
                 list.push(runner);
             }
         }
-        profiles.push(Profile {
+        let profile = Profile {
             name: route.clone(),
             runners: list,
-        });
+        };
+        // A route the old schema took but a profile may not hold is left out, not the import.
+        if !profile_errors(&profile).is_empty() {
+            unmapped.push(route.clone());
+            continue;
+        }
+        profiles.push(profile);
     }
     if !profiles.iter().any(|profile| profile.name == "chat") {
         profiles.insert(0, built_in().profiles.remove(0));
