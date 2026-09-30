@@ -1258,10 +1258,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         let command = yelo_command();
         let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = [
-            load_accounts("claude", false)?,
-            load_accounts("codex", false)?,
-        ];
+        let accounts = Provider::ALL
+            .into_iter()
+            .filter(|provider| provider.has_accounts())
+            .map(|provider| load_accounts(provider.id(), false))
+            .collect::<Result<Vec<_>, _>>()?;
         let (usage, skipped) = swarm::profiles::translate_usage(&json, &accounts)
             .map_err(|error| format!("swarm: {error}"))?;
         for reason in skipped {
@@ -1652,9 +1653,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
-        match provider.as_deref() {
-            Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
-                Ok(target) if provider == "codex" => {
+        match kind {
+            Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
+                Ok(target) if kind == Provider::Codex => {
                     // Without --account, yelo's `codex` in the pane picks the profile, so every
                     // profile it might pick needs the entry.
                     let homes = if let Some(account) = &picked {
@@ -1675,10 +1676,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
                 Err(reason) => eprintln!(
-                    "swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"
+                    "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",
+                    kind.id()
                 ),
             },
-            Some("claude") => {
+            Provider::Claude => {
                 // The app hides the chair's pane, so a trust dialog there waits for nobody. The
                 // chair runs in cwd itself, as a resuming child does (ADR 0008).
                 if agent_id != "orchestrator" {
@@ -1752,7 +1754,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
             }
-            _ => {}
         }
         command.extend(extra);
         // Every adapter's spawn verb opens the pane in the working directory it runs in.

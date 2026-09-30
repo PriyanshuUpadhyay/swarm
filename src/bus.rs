@@ -103,7 +103,7 @@ pub fn argv(
     match provider {
         Provider::Claude => {
             let mut args = vec![
-                "claude".into(),
+                provider.id().into(),
                 "--model".into(),
                 model()?.into(),
                 "--effort".into(),
@@ -132,7 +132,7 @@ pub fn argv(
         }
         Provider::Codex => {
             let mut args = vec![
-                "codex".into(),
+                provider.id().into(),
                 "--model".into(),
                 model()?.into(),
                 "-c".into(),
@@ -178,7 +178,7 @@ pub fn argv(
             Ok(args)
         }
         Provider::Agy => {
-            let mut args = vec!["agy".into()];
+            let mut args = vec![provider.id().into()];
             if let Some(model) = resolved
                 .model
                 .as_deref()
