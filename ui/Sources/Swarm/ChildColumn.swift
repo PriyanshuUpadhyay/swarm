@@ -131,6 +131,7 @@ struct ChildColumnView: View {
             isRunning: agent.status == .working,
             isSending: model.isSending,
             sendDisabledReason: agent.alive == false ? "This agent has ended." : nil,
+            placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(
                 provider: agent.provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,

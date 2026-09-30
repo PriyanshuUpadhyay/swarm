@@ -15,6 +15,7 @@ struct ComposerView: View {
     var usageLabel: String? = nil
     var showUsage: (() -> Void)? = nil
     var sendDisabledReason: String? = nil
+    var placeholder = "Message the chair"
     let commandSource: ComposerCommandSource
     let mentionSource: ComposerMentionSource
     let scratchDirectory: String
@@ -142,7 +143,7 @@ struct ComposerView: View {
     }
 
     private var editor: some View {
-        TextField("Message the chair", text: draft, axis: .vertical)
+        TextField(placeholder, text: draft, axis: .vertical)
             .onPasteCommand(of: [.png, .jpeg, .tiff], perform: receivePaste)
             .onKeyPress("v", phases: .down) { press in
                 guard press.modifiers.contains(.command), pasteImage() else { return .ignored }
