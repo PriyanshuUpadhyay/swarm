@@ -417,6 +417,27 @@ fn resolved_chair_log(row: &swarm::store::SessionRow) -> Option<std::path::PathB
     }
 }
 
+/// An agent's chat log, or the same Codex rollout under `archived_sessions/` once Codex has moved
+/// it there from `sessions/<y>/<m>/<d>/`.
+fn resolved_agent_log(log: String) -> String {
+    let path = std::path::Path::new(&log);
+    if path.is_file() {
+        return log;
+    }
+    path.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "sessions"))
+        .and_then(|sessions| {
+            Some(
+                sessions
+                    .parent()?
+                    .join("archived_sessions")
+                    .join(path.file_name()?),
+            )
+        })
+        .filter(|archived| archived.is_file())
+        .map_or(log, |archived| archived.to_string_lossy().into_owned())
+}
+
 struct SpawnOptions<'a> {
     provider: Option<&'a str>,
     account: Option<&'a str>,
@@ -1349,7 +1370,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 state_at_s: row.state_at,
                 state_source: row.state_source,
                 state_detail: row.state_detail,
-                log: row.log,
+                log: row.log.map(resolved_agent_log),
                 prompt,
             });
         }
@@ -1840,6 +1861,32 @@ mod tests {
             "{line}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_archived_codex_rollout_is_found_under_archived_sessions() {
+        let codex_home =
+            std::env::temp_dir().join(format!("swarm-archived-log-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&codex_home);
+        let name = "rollout-2026-09-30T10-00-00-0199a000-0000-7000-8000-000000000001.jsonl";
+        let recorded = codex_home.join("sessions/2026/09/30").join(name);
+        let archived = codex_home.join("archived_sessions").join(name);
+        std::fs::create_dir_all(archived.parent().unwrap()).unwrap();
+        std::fs::write(&archived, "{}\n").unwrap();
+        let recorded = recorded.to_string_lossy().into_owned();
+        assert_eq!(
+            resolved_agent_log(recorded.clone()),
+            archived.to_string_lossy()
+        );
+
+        // A log still in place, or one that is nowhere, stays as recorded.
+        std::fs::create_dir_all(codex_home.join("sessions/2026/09/30")).unwrap();
+        std::fs::write(&recorded, "{}\n").unwrap();
+        assert_eq!(resolved_agent_log(recorded.clone()), recorded);
+        let gone = codex_home.join("sessions/2026/09/30/rollout-gone.jsonl");
+        let gone = gone.to_string_lossy().into_owned();
+        assert_eq!(resolved_agent_log(gone.clone()), gone);
+        let _ = std::fs::remove_dir_all(&codex_home);
     }
 
     #[test]
