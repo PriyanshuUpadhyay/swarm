@@ -1,11 +1,15 @@
 import SwiftUI
 import SwarmCore
 
-/// Edits one profile's runners: add, remove, reorder, and each runner's provider, model, effort,
-/// and the flags its provider takes. Save writes the whole profile in one call; Cancel drops
-/// every edit.
+/// Edits one profile's runners as numbered cards: add, remove, reorder, and each runner's
+/// provider, model, effort, and the flags its provider takes. Save writes the whole profile in
+/// one call; Cancel drops every edit.
 struct ProfileEditorSheet: View {
     let providers: [SwarmProvider]
+    /// The last launch check of the saved profile, for each card's status.
+    let check: SwarmProfileCheck?
+    /// The runner to scroll to when a chip opened the sheet.
+    let focus: Int?
     let save: (SwarmProfile) async throws -> Void
     let onSaved: () -> Void
 
@@ -17,10 +21,12 @@ struct ProfileEditorSheet: View {
     @State private var error: String?
 
     init(
-        profile: SwarmProfile, providers: [SwarmProvider],
+        profile: SwarmProfile, providers: [SwarmProvider], check: SwarmProfileCheck?, focus: Int?,
         save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
     ) {
         self.providers = providers
+        self.check = check
+        self.focus = focus
         self.save = save
         self.onSaved = onSaved
         // A one-time seed: the sheet owns the edits from here until Save or Cancel.
@@ -28,38 +34,52 @@ struct ProfileEditorSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("Edit profile · \(draft.original.name)").font(.title2)
-            List {
-                ForEach($draft.runners) { $runner in
-                    let index = draft.runners.firstIndex { $0.id == runner.id } ?? 0
-                    RunnerRow(
-                        index: index,
-                        runner: $runner,
-                        provider: provider(runner.provider),
-                        providers: providers,
-                        models: models[runner.provider] ?? [],
-                        catalogError: catalogErrors[runner.provider],
-                        canRemove: draft.canRemove,
-                        isLast: index == draft.runners.count - 1,
-                        onProvider: { choice in
-                            Task { await changeProvider(choice, at: index) }
-                        },
-                        onRemove: { draft.remove(at: index) },
-                        onMove: { offset in
-                            let target = index + offset
-                            guard draft.runners.indices.contains(target) else { return }
-                            draft.move(
-                                fromOffsets: IndexSet(integer: index),
-                                toOffset: offset > 0 ? target + 1 : target
-                            )
-                        },
-                        onRetry: { Task { await loadModels(runner.provider, retry: true) } }
-                    )
-                }
-                .onMove { draft.move(fromOffsets: $0, toOffset: $1) }
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                Text("Edit profile · \(draft.original.name)").font(.title2)
+                Text("The first runner that can run starts. A runner is skipped when its CLI is missing, no account is signed in, or usage is low. Drag a card to change the order.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minHeight: DesignTokens.Size.sheetHeight)
+            ScrollViewReader { proxy in
+                List {
+                    ForEach($draft.runners) { $runner in
+                        let index = draft.runners.firstIndex { $0.id == runner.id } ?? 0
+                        RunnerCard(
+                            index: index,
+                            runner: $runner,
+                            provider: provider(runner.provider),
+                            providers: providers,
+                            models: models[runner.provider] ?? [],
+                            catalogError: catalogErrors[runner.provider],
+                            status: draft.cardStatus(at: index, check: check),
+                            blocked: check != nil && check?.pick == nil,
+                            canRemove: draft.canRemove,
+                            isLast: index == draft.runners.count - 1,
+                            onProvider: { choice in
+                                Task { await changeProvider(choice, at: index) }
+                            },
+                            onRemove: { draft.remove(at: index) },
+                            onMove: { offset in move(index, by: offset) },
+                            onRetry: { Task { await loadModels(runner.provider, retry: true) } }
+                        )
+                        .id(runner.id)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+                    .onMove { draft.move(fromOffsets: $0, toOffset: $1) }
+                }
+                .scrollContentBackground(.hidden)
+                .frame(height: min(
+                    CGFloat(draft.runners.count) * DesignTokens.Size.runnerCard,
+                    DesignTokens.Size.runnerListMax
+                ))
+                .onAppear {
+                    if let focus, draft.runners.indices.contains(focus) {
+                        proxy.scrollTo(draft.runners[focus].id, anchor: .center)
+                    }
+                }
+            }
             Button {
                 draft.add(from: providers) { models[$0]?.first?.id }
                 if let added = draft.runners.last {
@@ -71,9 +91,8 @@ struct ProfileEditorSheet: View {
             } label: {
                 Label("Add runner", systemImage: "plus")
             }
+            .buttonStyle(.borderless)
             .disabled(providers.isEmpty)
-            Text("The first runner that can run starts. A runner is skipped when its CLI is missing, no account is signed in, or usage is low.")
-                .font(.caption).foregroundStyle(.secondary)
             if let error {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
             }
@@ -97,6 +116,12 @@ struct ProfileEditorSheet: View {
 
     private func provider(_ id: String) -> SwarmProvider? {
         providers.first { $0.id == id }
+    }
+
+    private func move(_ index: Int, by offset: Int) {
+        let target = index + offset
+        guard draft.runners.indices.contains(target) else { return }
+        draft.move(fromOffsets: IndexSet(integer: index), toOffset: offset > 0 ? target + 1 : target)
     }
 
     private func changeProvider(_ choice: SwarmProvider, at index: Int) async {
@@ -143,29 +168,47 @@ struct ProfileEditorSheet: View {
     }
 }
 
-private struct RunnerRow: View {
+private struct RunnerCard: View {
     let index: Int
     @Binding var runner: SwarmRunner
     let provider: SwarmProvider?
     let providers: [SwarmProvider]
     let models: [SwarmModel]
     let catalogError: String?
+    let status: RunnerCardStatus
+    /// No runner of the saved profile can run.
+    let blocked: Bool
     let canRemove: Bool
     let isLast: Bool
     let onProvider: (SwarmProvider) -> Void
     let onRemove: () -> Void
     let onMove: (Int) -> Void
     let onRetry: () -> Void
+    @State private var showsFlags = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             HStack(spacing: DesignTokens.Spacing.s) {
                 Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
-                    .frame(width: DesignTokens.Size.glyphSlot)
                     .accessibilityHidden(true)
-                Text(index == 0 ? "\(index + 1)  Primary" : "\(index + 1)  Fallback")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Size.runnerLabel - DesignTokens.Size.glyphSlot - DesignTokens.Spacing.s, alignment: .leading)
+                Text(index == 0 ? "\(index + 1)  PRIMARY" : "\(index + 1)  FALLBACK")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                statusLabel
+                Menu {
+                    Button("Move Up") { onMove(-1) }.disabled(index == 0)
+                    Button("Move Down") { onMove(1) }.disabled(isLast)
+                    Divider()
+                    Button("Remove", role: .destructive, action: onRemove).disabled(!canRemove)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Runner \(index + 1) actions")
+            }
+            HStack(spacing: DesignTokens.Spacing.s) {
                 Picker("Provider", selection: Binding(
                     get: { runner.provider },
                     set: { id in if let choice = providers.first(where: { $0.id == id }) { onProvider(choice) } }
@@ -175,24 +218,8 @@ private struct RunnerRow: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                HStack(spacing: 0) {
-                    TextField("Model", text: $runner.model)
-                        .textFieldStyle(.roundedBorder)
-                        .font(DesignTokens.mono)
-                    Menu {
-                        ForEach(models) { model in
-                            Button(model.label) { runner.model = model.id }
-                        }
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .accessibilityLabel("Choose a listed model")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .disabled(models.isEmpty)
-                    .accessibilityLabel("Choose a listed model")
-                }
+                ModelField(model: $runner.model, models: models)
+                    .frame(width: DesignTokens.Size.modelField, alignment: .leading)
                 Picker("Effort", selection: $runner.effort) {
                     ForEach(ProfileDraft.efforts(for: runner, provider: provider, models: models), id: \.self) {
                         Text($0).tag($0)
@@ -200,26 +227,22 @@ private struct RunnerRow: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                Button(action: onRemove) { Image(systemName: "minus.circle") }
-                    .buttonStyle(.borderless)
-                    .disabled(!canRemove)
-                    .accessibilityLabel("Remove runner \(index + 1)")
+                Spacer(minLength: 0)
             }
             if let fields = provider?.fields, !fields.isEmpty {
-                HStack(spacing: DesignTokens.Spacing.l) {
-                    ForEach(fields, id: \.name) { field in
-                        // "" is no flag at all, so the CLI uses its own default.
-                        Picker(field.label, selection: Binding(
-                            get: { runner[field: field.name] ?? "" },
-                            set: { runner[field: field.name] = $0.isEmpty ? nil : $0 }
-                        )) {
-                            Text("CLI default").tag("")
-                            ForEach(values(field), id: \.self) { Text($0).tag($0) }
-                        }
-                        .fixedSize()
+                Button { showsFlags.toggle() } label: {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Text(fields.map { "\($0.label): \(runner[field: $0.name] ?? "CLI default")" }
+                            .joined(separator: " · "))
+                        Image(systemName: "chevron.right").font(.caption2)
                     }
+                    .font(.callout).foregroundStyle(.secondary)
                 }
-                .padding(.leading, DesignTokens.Size.runnerLabel)
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the flag pickers")
+                .popover(isPresented: $showsFlags, arrowEdge: .bottom) {
+                    FlagPickers(runner: $runner, fields: fields)
+                }
             }
             ForEach(ProfileDraft.warnings(for: runner, provider: provider, models: models), id: \.self) {
                 Label($0, systemImage: "exclamationmark.triangle")
@@ -233,18 +256,119 @@ private struct RunnerRow: View {
                 }
             }
         }
-        .padding(.vertical, DesignTokens.Spacing.xs)
+        .padding(DesignTokens.Spacing.m)
+        .background(fill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.card)
+                .strokeBorder(status == .next ? Color.accentColor : DesignTokens.quoteBar,
+                              lineWidth: DesignTokens.Size.hairline)
+        }
         // One container element, so the Move actions reach VoiceOver and its children stay usable.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(index == 0 ? "Runner \(index + 1), primary" : "Runner \(index + 1), fallback")
-        .contextMenu {
-            Button("Move Up") { onMove(-1) }.disabled(index == 0)
-            Button("Move Down") { onMove(1) }.disabled(isLast)
-            Divider()
-            Button("Remove", role: .destructive, action: onRemove).disabled(!canRemove)
-        }
         .accessibilityAction(named: "Move Up") { onMove(-1) }
         .accessibilityAction(named: "Move Down") { onMove(1) }
+    }
+
+    private var fill: Color {
+        guard case .skipped = status else { return DesignTokens.codeBlockFill }
+        return blocked ? DesignTokens.errorFill : DesignTokens.warningFill
+    }
+
+    @ViewBuilder
+    private var statusLabel: some View {
+        switch status {
+        case .unknown:
+            EmptyView()
+        case .next:
+            Label("Next launch", systemImage: "circle.fill")
+                .font(.caption).foregroundStyle(Color.accentColor)
+        case .standby:
+            Text("Standby").font(.caption).foregroundStyle(.secondary)
+        case .skipped(let reason):
+            Label("Skipped: \(reason)", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange).lineLimit(1)
+                .help(reason)
+        case .added:
+            Text("New").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+        case .changed:
+            Text("Changed").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+        case .saveToUpdate:
+            Text("Save to update").font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+}
+
+/// One model control: a menu of the CLI's models with "Other model…", or a text field when the
+/// list did not load or the model is not in it.
+private struct ModelField: View {
+    @Binding var model: String
+    let models: [SwarmModel]
+    @State private var typesOther = false
+
+    var body: some View {
+        if models.isEmpty || typesOther || !models.contains(where: { $0.id == model }) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                TextField("Model", text: $model)
+                    .textFieldStyle(.roundedBorder)
+                    .font(DesignTokens.mono)
+                if !models.isEmpty {
+                    Menu {
+                        list
+                    } label: {
+                        Image(systemName: "list.bullet").accessibilityLabel("Choose a listed model")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Choose a listed model")
+                }
+            }
+        } else {
+            Menu {
+                list
+                Divider()
+                Button("Other model…") { typesOther = true }
+            } label: {
+                Text(models.first { $0.id == model }?.label ?? model)
+            }
+            .fixedSize()
+            .help(model)
+            .accessibilityLabel("Model")
+            .accessibilityValue(model)
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
+        ForEach(models) { item in
+            Button(item.label) {
+                model = item.id
+                typesOther = false
+            }
+        }
+    }
+}
+
+/// The flags a provider takes. "" is no flag at all, so the CLI uses its own default.
+private struct FlagPickers: View {
+    @Binding var runner: SwarmRunner
+    let fields: [SwarmProviderField]
+
+    var body: some View {
+        Form {
+            ForEach(fields, id: \.name) { field in
+                Picker(field.label, selection: Binding(
+                    get: { runner[field: field.name] ?? "" },
+                    set: { runner[field: field.name] = $0.isEmpty ? nil : $0 }
+                )) {
+                    Text("CLI default").tag("")
+                    ForEach(values(field), id: \.self) { Text($0).tag($0) }
+                }
+            }
+        }
+        .padding(DesignTokens.Spacing.m)
+        .fixedSize()
     }
 
     /// The field's listed values, plus the runner's own value when the list lacks it, so the

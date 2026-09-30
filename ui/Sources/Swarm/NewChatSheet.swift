@@ -11,6 +11,8 @@ final class NewChatModel {
     /// The chat profile and the runner it would start now (ADR 0032). Nil until read, and for a
     /// model switch, which starts from the current chat instead.
     var chatChoice: ChatProfileChoice?
+    /// The launch check of the chat profile, for its chain's marks.
+    var chatCheck: SwarmProfileCheck?
     var profileList: SwarmProfileList?
     var providers: [SwarmProvider] = []
 
@@ -65,6 +67,7 @@ final class NewChatModel {
         profileList = list
         if providers.isEmpty { providers = (try? await profiles.providers()) ?? [] }
         let before = chatChoice
+        chatCheck = check
         chatChoice = ChatProfileChoice(profile: list.profiles.first { $0.name == "chat" }, check: check)
         guard !isSwitch, let runner = chatChoice?.runner,
               before == nil || before?.isProfilePick(provider: provider, model: selectedModel) == true,
@@ -77,7 +80,7 @@ final class NewChatModel {
 
     /// Moves the pick to the runner the launch check chose, unless the owner already picked
     /// something else.
-    private func loadChatProfileCheck() async {
+    func loadChatProfileCheck() async {
         guard let check = try? await profiles.check().first(where: { $0.name == "chat" }) else { return }
         await loadChatProfile(check: check)
     }
@@ -271,6 +274,8 @@ struct NewChatSheet: View {
             ProfileEditorSheet(
                 profile: chat,
                 providers: model.providers,
+                check: model.chatCheck,
+                focus: nil,
                 save: { edited in
                     guard let revision = model.profileList?.revision else {
                         throw SwarmProfileError.failed("Profiles are not loaded yet")
@@ -280,10 +285,18 @@ struct NewChatSheet: View {
                 onSaved: {
                     // The saved profile's first runner becomes the pick, as when the sheet opened.
                     model.chatChoice = nil
-                    Task { await model.loadChatProfile(check: nil) }
+                    Task {
+                        await model.loadChatProfile(check: nil)
+                        await model.loadChatProfileCheck()
+                    }
                 }
             )
         }
+    }
+
+    private var chatStatus: ProfileStatus? {
+        guard model.usesChatProfile, let chat = model.chatChoice?.profile else { return nil }
+        return ProfileStatus(check: model.chatCheck, profile: chat)
     }
 
     private var selection: some View {
@@ -325,14 +338,22 @@ struct NewChatSheet: View {
                     ))
                 }
             }
-            HStack {
-                Text(model.effortCaption).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: DesignTokens.Spacing.s) {
+                if model.usesChatProfile, let chat = model.chatChoice?.profile {
+                    Text("Chat profile").font(.caption).foregroundStyle(.secondary)
+                    RunnerChain(runners: chat.runners, check: model.chatCheck, providers: model.providers)
+                } else {
+                    Text(model.effortCaption).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if !isSwitch, let chat = model.profileList?.profiles.first(where: { $0.name == "chat" }) {
                     Button("Edit profile…") { editingProfile = chat }
                         .controlSize(.small)
                 }
             }
+            .padding(DesignTokens.Spacing.xs)
+            .background(chatStatus?.fill ?? .clear, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
+            .help(chatStatus?.text ?? "")
             DisclosureGroup(accountLabel, isExpanded: $showAccount) {
                 if !model.accountOptions.isEmpty {
                     Picker("Account", selection: $model.accountSelection) {

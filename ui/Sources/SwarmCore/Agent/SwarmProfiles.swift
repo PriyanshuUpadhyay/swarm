@@ -3,7 +3,7 @@ import Foundation
 // The profiles, providers, accounts and usage that swarm reports, as Swarm reads them.
 //
 // swarm owns these decisions (docs/decisions/0005 at the root of the swarm repository) and prints
-// them as JSON. `src/profiles.rs` owns the shapes, so a change must update swarm's output and these
+// them as JSON. `src/config.rs` and `src/profiles.rs` own the shapes, so a change must update swarm's output and these
 // types together. The JSON keys are snake_case; decode with `.convertFromSnakeCase`.
 
 /// One runner of a profile: a provider, model and effort, plus the flags that provider takes.

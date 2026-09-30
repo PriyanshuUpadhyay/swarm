@@ -1,22 +1,33 @@
 import SwiftUI
 import SwarmCore
 
-/// Every agent profile, `chat` first, with its runners in order and the runner the next launch
-/// takes. The list shows at once from the config; each status line fills in when the slower
-/// launch check returns.
+/// Every agent profile, one line each, grouped by the name before the first dot, `chat` first.
+/// A line shows the runners in order as chips and the profile's health. The list shows at once
+/// from the config; the chip marks and health fill in when the slower launch check returns.
 struct AgentProfilesHome: View {
     let sessionsError: String?
     let onOpenProject: () -> Void
     let onCreateProject: () -> Void
     @State private var list: SwarmProfileList?
     @State private var checks: [String: SwarmProfileCheck] = [:]
+    @State private var checkedAt: Date?
     @State private var providers: [SwarmProvider] = []
     @State private var isLoading = true
     @State private var error: String?
-    @State private var editing: SwarmProfile?
+    @State private var editing: EditTarget?
+    @State private var problemsOnly = false
     @AppStorage("profiles.importBanner.dismissedFrom") private var dismissedImport = ""
+    /// Closed group names, joined by commas; a group is open by default.
+    @AppStorage("profiles.collapsedGroups") private var collapsedGroups = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let source = SwarmCLIProfileSource()
     private static var cachedList: SwarmProfileList?
+
+    private struct EditTarget: Identifiable {
+        let profile: SwarmProfile
+        let focus: Int?
+        var id: String { profile.name }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
@@ -24,34 +35,25 @@ struct AgentProfilesHome: View {
                 Button("Open Project…", action: onOpenProject)
                 Button("Create Project…", action: onCreateProject)
             }
-            HStack {
-                Text("Agent profiles").font(.largeTitle.bold())
-                Spacer()
-                if isLoading && list != nil { DelayedProgress("Refreshing profiles…") }
-                Button("Refresh") { Task { await load() } }
-                    .disabled(isLoading)
-            }
-            Text("Swarm starts a new agent with the first runner of its profile that can run.")
-                .foregroundStyle(.secondary)
+            header
             if let sessionsError {
                 Text("Chats unavailable: \(sessionsError)").foregroundStyle(.red)
             }
             if let error {
-                Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
+                HStack {
+                    Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
+                    Button("Retry") { Task { await load() } }
+                }
             }
             if let imported = list?.imported, imported.from != dismissedImport {
-                importBanner(imported)
+                importNotice(imported)
             }
             if let list, !list.profiles.isEmpty {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(list.profiles) { profile in
-                            ProfileRow(
-                                profile: profile,
-                                status: ProfileStatus(check: checks[profile.name], profile: profile),
-                                onEdit: { editing = profile }
-                            )
-                            Divider()
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(ProfileGroup.groups(list.profiles)) { group in
+                            let rows = group.profiles.filter { !problemsOnly || isProblem($0) }
+                            if !rows.isEmpty { groupSection(group.name, rows: rows) }
                         }
                     }
                 }
@@ -59,7 +61,11 @@ struct AgentProfilesHome: View {
                 DelayedProgress("Loading profiles")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ContentUnavailableView("No agent profiles", systemImage: "person.crop.rectangle")
+                ContentUnavailableView {
+                    Label("No agent profiles", systemImage: "person.crop.rectangle")
+                } actions: {
+                    Button("Retry") { Task { await load() } }
+                }
             }
         }
         .padding(DesignTokens.Spacing.xl)
@@ -68,10 +74,12 @@ struct AgentProfilesHome: View {
             if list == nil { list = Self.cachedList }
             await load()
         }
-        .sheet(item: $editing) { profile in
+        .sheet(item: $editing) { target in
             ProfileEditorSheet(
-                profile: profile,
+                profile: target.profile,
                 providers: providers,
+                check: checks[target.profile.name],
+                focus: target.focus,
                 save: { edited in
                     guard let revision = list?.revision else {
                         throw SwarmProfileError.failed("Profiles are not loaded yet")
@@ -83,18 +91,108 @@ struct AgentProfilesHome: View {
         }
     }
 
-    private func importBanner(_ imported: SwarmProfileImport) -> some View {
-        HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
+    private var statuses: [ProfileStatus?] {
+        (list?.profiles ?? []).map(status)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            HStack {
+                Text("Agent profiles").font(.largeTitle.bold())
+                Spacer()
+                if isLoading && list != nil { DelayedProgress("Checking profiles…") }
+                if let checkedAt {
+                    Text("Checked \(checkedAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button { Task { await load() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(isLoading)
+                .help("Check the profiles again")
+                .accessibilityLabel("Refresh")
+            }
+            Text("Swarm starts a new agent with the first runner of its profile that can run.")
+                .foregroundStyle(.secondary)
+            if !checks.isEmpty {
+                let health = ProfileHealth(statuses)
+                HStack {
+                    Text("\(health.ready) ready · \(health.fallback) on fallback · \(health.blocked) blocked")
+                        .font(.callout)
+                    Spacer()
+                    Toggle("Show problems only", isOn: $problemsOnly)
+                        .toggleStyle(.checkbox)
+                        .disabled(health.fallback + health.blocked == 0 && !problemsOnly)
+                }
+            }
+        }
+    }
+
+    private func groupSection(_ name: String, rows: [SwarmProfile]) -> some View {
+        let isOpen = !collapsed.contains(name)
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(name) }
+            } label: {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Text(name).font(.subheadline.weight(.semibold))
+                    Text("\(rows.count)").font(.caption).foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(name) group, \(rows.count) profiles")
+            .accessibilityValue(isOpen ? "open" : "closed")
+            if isOpen {
+                ForEach(rows) { profile in
+                    ProfileRow(
+                        profile: profile,
+                        check: checks[profile.name],
+                        status: status(profile),
+                        providers: providers,
+                        onEdit: { editing = EditTarget(profile: profile, focus: $0) }
+                    )
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var collapsed: Set<String> {
+        Set(collapsedGroups.split(separator: ",").map(String.init))
+    }
+
+    private func toggle(_ group: String) {
+        var names = collapsed
+        if names.remove(group) == nil { names.insert(group) }
+        collapsedGroups = names.sorted().joined(separator: ",")
+    }
+
+    private func status(_ profile: SwarmProfile) -> ProfileStatus? {
+        ProfileStatus(check: checks[profile.name], profile: profile)
+    }
+
+    private func isProblem(_ profile: SwarmProfile) -> Bool {
+        status(profile).map { $0.kind != .primary } ?? false
+    }
+
+    private func importNotice(_ imported: SwarmProfileImport) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
             Image(systemName: "info.circle").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                Text("Imported \(list?.profiles.count ?? 0) profiles from \(imported.from).")
-                Text("The old file is not changed.").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                Text("Imported \(list?.profiles.count ?? 0) profiles from \(imported.from). The old file is not changed.")
+                    .foregroundStyle(.secondary)
                 if !imported.unmapped.isEmpty {
                     Text("Not imported: \(imported.unmapped.joined(separator: ", "))")
                         .foregroundStyle(.orange)
                 }
             }
-            .font(.callout)
             Spacer()
             Button {
                 dismissedImport = imported.from
@@ -104,8 +202,7 @@ struct AgentProfilesHome: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Dismiss import notice")
         }
-        .padding(DesignTokens.Spacing.m)
-        .background(DesignTokens.selectionFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.card))
+        .font(.callout)
     }
 
     private func load() async {
@@ -127,61 +224,56 @@ struct AgentProfilesHome: View {
             return
         }
         if providers.isEmpty { providers = (try? await source.providers()) ?? [] }
-        // A failed or slow check leaves the status lines empty rather than showing a wrong one.
-        let checked = (try? await source.check()) ?? []
+        // A failed or slow check leaves the health unknown rather than showing a wrong one.
+        guard let checked = try? await source.check() else {
+            checks = [:]
+            checkedAt = nil
+            return
+        }
         checks = Dictionary(checked.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        checkedAt = .now
     }
 }
 
 private struct ProfileRow: View {
     let profile: SwarmProfile
+    let check: SwarmProfileCheck?
     let status: ProfileStatus?
-    let onEdit: () -> Void
+    let providers: [SwarmProvider]
+    /// Opens the editor, focused on a runner when a chip was clicked.
+    let onEdit: (Int?) -> Void
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: DesignTokens.Spacing.l) {
-            Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                    Text(profile.name).font(.headline)
-                    Text(chain).font(DesignTokens.mono).foregroundStyle(.secondary)
-                    if let status {
-                        HStack(spacing: DesignTokens.Spacing.xs) {
-                            Image(systemName: symbol(status.kind))
-                                .foregroundStyle(color(status.kind))
-                                .accessibilityHidden(true)
-                            Text(status.text)
-                        }
-                        .font(.caption)
-                    }
-                }
+        HStack(spacing: DesignTokens.Spacing.m) {
+            Text(profile.name)
+                .fontWeight(.medium)
+                .lineLimit(1)
+                .frame(width: DesignTokens.Size.profileName, alignment: .leading)
+            RunnerChain(runners: profile.runners, check: check, providers: providers, onSelect: onEdit)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(profile.name), \(chain)")
-            .accessibilityHint(status?.text ?? "")
-            Button("Edit", action: onEdit)
+            Button { onEdit(nil) } label: { Image(systemName: "pencil") }
+                .buttonStyle(.borderless)
+                .opacity(isHovered ? 1 : 0)
+                .help("Edit \(profile.name)")
+                .accessibilityLabel("Edit \(profile.name)")
+            ProfileHealthPill(status: status)
+                .frame(width: DesignTokens.Size.healthPill, alignment: .leading)
         }
-        .padding(.vertical, DesignTokens.Spacing.m)
+        .padding(.horizontal, DesignTokens.Spacing.s)
+        .frame(minHeight: DesignTokens.Size.row + DesignTokens.Spacing.xs)
+        .background(status?.fill ?? .clear)
+        .background(isHovered ? DesignTokens.selectionFill : .clear)
+        .contentShape(Rectangle())
+        .onTapGesture { onEdit(nil) }
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAction(named: "Edit") { onEdit(nil) }
     }
 
-    private var chain: String {
-        profile.runners.map { "\($0.provider) · \($0.model) · \($0.effort)" }.joined(separator: "  →  ")
-    }
-
-    private func symbol(_ kind: ProfileStatus.Kind) -> String {
-        switch kind {
-        case .primary: "circle.fill"
-        case .fallback: "circle.lefthalf.filled"
-        case .none: "circle"
-        }
-    }
-
-    private func color(_ kind: ProfileStatus.Kind) -> Color {
-        switch kind {
-        case .primary: .green
-        case .fallback: .orange
-        case .none: .red
-        }
+    private var accessibilityText: String {
+        guard let status else { return profile.name }
+        return "\(profile.name), \(status.title.lowercased()), \(status.text)"
     }
 }

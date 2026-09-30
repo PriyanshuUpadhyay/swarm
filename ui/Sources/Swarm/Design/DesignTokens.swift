@@ -39,8 +39,17 @@ enum DesignTokens {
         static let narrowSheet: CGFloat = 420
         /// The profile editor: one runner row holds provider, model, effort, and a remove button.
         static let profileSheet: CGFloat = 680
-        /// The "1  Primary" label before a runner row's pickers; the flags row starts under the pickers.
-        static let runnerLabel: CGFloat = 104
+        /// The profile name column on the Agent profiles page.
+        static let profileName: CGFloat = 150
+        /// The health pill column, so every row's chain ends at the same place.
+        static let healthPill: CGFloat = 110
+        /// The round letter mark of a provider in a runner chip.
+        static let providerMark: CGFloat = 15
+        /// The editor's card list stops growing here and scrolls.
+        static let runnerCard: CGFloat = 104
+        /// The model control in a runner card, so the effort picker lines up across cards.
+        static let modelField: CGFloat = 300
+        static let runnerListMax: CGFloat = 460
         /// A model or account list inside a sheet.
         static let pickerList: CGFloat = 190
         /// Tool output and long text before Show full output.
@@ -78,6 +87,9 @@ enum DesignTokens {
     /// A question an agent waits on, in the waiting status colour.
     static let promptFill = color(.waiting).opacity(0.08)
     static let promptBorder = color(.waiting).opacity(0.4)
+    /// A profile row or runner card on a fallback, or with no runner that can run.
+    static let warningFill = color(.waiting).opacity(0.1)
+    static let errorFill = color(.failed).opacity(0.1)
     /// A chat's question strip before it scrolls.
     static let promptListMaxHeight: CGFloat = 280
 
