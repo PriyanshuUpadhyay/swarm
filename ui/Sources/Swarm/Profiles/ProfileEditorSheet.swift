@@ -41,6 +41,7 @@ struct ProfileEditorSheet: View {
                         models: models[runner.provider] ?? [],
                         catalogError: catalogErrors[runner.provider],
                         canRemove: draft.canRemove,
+                        isLast: index == draft.runners.count - 1,
                         onProvider: { choice in
                             Task { await changeProvider(choice, at: index) }
                         },
@@ -150,6 +151,7 @@ private struct RunnerRow: View {
     let models: [SwarmModel]
     let catalogError: String?
     let canRemove: Bool
+    let isLast: Bool
     let onProvider: (SwarmProvider) -> Void
     let onRemove: () -> Void
     let onMove: (Int) -> Void
@@ -237,7 +239,7 @@ private struct RunnerRow: View {
         .accessibilityLabel(index == 0 ? "Runner \(index + 1), primary" : "Runner \(index + 1), fallback")
         .contextMenu {
             Button("Move Up") { onMove(-1) }.disabled(index == 0)
-            Button("Move Down") { onMove(1) }
+            Button("Move Down") { onMove(1) }.disabled(isLast)
             Divider()
             Button("Remove", role: .destructive, action: onRemove).disabled(!canRemove)
         }

@@ -206,7 +206,8 @@ public struct SwarmCLIBus: SwarmBus {
             let output = stderr.isEmpty
                 ? result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                 : stderr
-            let message = firstLine(in: output) ?? "swarm exited \(result.status)"
+            // The whole text: "no runner can run" lists one reason per runner on its own line.
+            let message = output.isEmpty ? "swarm exited \(result.status)" : output
             throw SwarmProfileError.failed(message)
         }
         return result

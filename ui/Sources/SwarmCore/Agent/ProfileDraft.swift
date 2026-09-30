@@ -124,12 +124,16 @@ public struct ChatProfileChoice: Sendable, Equatable {
     /// The providers after it, in order.
     public let fallbacks: [String]
     public let profile: SwarmProfile
+    /// The check's "No runner can run" line when every runner is skipped.
+    public let noRunner: String?
 
     public init?(profile: SwarmProfile?, check: SwarmProfileCheck?) {
-        guard let profile, let first = profile.runners.first else { return nil }
+        guard let profile, !profile.runners.isEmpty else { return nil }
         let pick = check?.pick.flatMap { profile.runners.indices.contains($0) ? $0 : nil } ?? 0
         self.profile = profile
-        runner = pick == 0 ? first : profile.runners[pick]
+        noRunner = check.flatMap { ProfileStatus(check: $0, profile: profile) }
+            .flatMap { $0.kind == .none ? $0.text : nil }
+        runner = profile.runners[pick]
         fallbacks = profile.runners.enumerated()
             .filter { $0.offset > pick }.map(\.element.provider)
     }
@@ -142,6 +146,7 @@ public struct ChatProfileChoice: Sendable, Equatable {
     /// provider, else the provider's default, as `swarm launch` does.
     public func caption(provider: String, model: String, defaultEffort: String?) -> String {
         if isProfilePick(provider: provider, model: model) {
+            if let noRunner { return noRunner }
             let rest = fallbacks.isEmpty ? "no fallback" : "falls back to " + fallbacks.joined(separator: ", ")
             return "From the chat profile · \(runner.effort) effort · \(rest)"
         }

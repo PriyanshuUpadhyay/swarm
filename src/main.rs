@@ -306,13 +306,6 @@ fn resolve_role(
     let probe = Probe::new(&config, account);
     let selection = swarm::config::select(profile, only, |runner| probe.check(runner));
     let id = |index: usize| format!("{role}#{}", index + 1);
-    for skip in &selection.skipped {
-        eprintln!(
-            "swarm: {role}: skipped {}: {}",
-            profile.runners[skip.index].label(),
-            skip.text
-        );
-    }
     let Some(index) = selection.pick else {
         let lines: Vec<String> = selection
             .skipped
@@ -331,6 +324,14 @@ fn resolve_role(
             lines.join("\n")
         ));
     };
+    // The error above lists each skip once; these lines only go with a runner that starts.
+    for skip in &selection.skipped {
+        eprintln!(
+            "swarm: {role}: skipped {}: {}",
+            profile.runners[skip.index].label(),
+            skip.text
+        );
+    }
     let runner = &profile.runners[index];
     if running {
         eprintln!("swarm: {role}: running {}", runner.label());

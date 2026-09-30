@@ -846,7 +846,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(!named.status.success());
     let text = stderr(&named);
     assert!(
-        text.contains("skipped claude/opus/high: no claude account named work"),
+        text.contains("1 claude/opus/high: no claude account named work"),
         "{text}"
     );
     assert!(text.contains("no runner can run"), "{text}");

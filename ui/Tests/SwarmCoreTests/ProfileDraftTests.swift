@@ -112,6 +112,15 @@ struct ProfileDraftTests {
         #expect(spent.runner.provider == "codex")
         #expect(spent.caption(provider: "codex", model: "gpt-6.1-sol", defaultEffort: nil)
             == "From the chat profile · xhigh effort · no fallback")
+        let blocked = try #require(ChatProfileChoice(
+            profile: chat,
+            check: SwarmProfileCheck(name: "chat", pick: nil, skipped: [
+                SwarmSkip(index: 0, code: "low_usage", text: "usage 2% left"),
+                SwarmSkip(index: 1, code: "cli_missing", text: "codex CLI not found on PATH"),
+            ])
+        ))
+        #expect(blocked.caption(provider: "claude", model: "opus", defaultEffort: nil)
+            == "No runner can run. claude: usage 2% left; codex: codex CLI not found on PATH")
         #expect(ChatProfileChoice(profile: nil, check: nil) == nil)
     }
 }

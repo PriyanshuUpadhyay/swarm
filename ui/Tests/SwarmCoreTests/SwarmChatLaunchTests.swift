@@ -52,7 +52,7 @@ struct SwarmChatLaunchTests {
             _ = try await SwarmChatLauncher.start(plan, bus: bus(calls))
             Issue.record("Launch should fail")
         } catch let error as SwarmProfileError {
-            #expect(error.message == "not signed in")
+            #expect(error.message == "not signed in\nmore detail")
         }
     }
 

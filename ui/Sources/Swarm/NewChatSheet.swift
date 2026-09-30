@@ -83,7 +83,8 @@ final class NewChatModel {
     }
 
     var usesChatProfile: Bool {
-        !isSwitch && accountSelection == .auto
+        // No selection is a provider with no accounts, or no yelo; swarm then uses the CLI login.
+        !isSwitch && (accountSelection ?? .auto) == .auto
             && chatChoice?.isProfilePick(provider: provider, model: selectedModel) == true
     }
 
