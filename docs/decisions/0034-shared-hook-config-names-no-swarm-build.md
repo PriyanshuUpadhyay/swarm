@@ -41,12 +41,19 @@ Chosen: the pane's link through env.
   `runs/<session>/bin/swarm` to the launching build, so the hook runs that build on its own home.
 - The text is the same for every build, so setup from one build leaves the others' status true.
 - Claude's hooks go per process in `--settings` and keep the absolute path.
+- Codex runs a hook in the user's `$SHELL`, which can be fish, so the script is one single-quoted
+  word for `/bin/sh -c`, which every common shell passes through as it is.
+- An adapter's `spawn` must put `SWARM_HOME` and `SWARM_SESSION_ID` in the pane env, as the
+  shipped tmux and Herdr adapters do; else the hook finds no link and reports nothing.
 
 ### Consequences
 
 - Good: the brew CLI, the app, and branch builds share one setup and never ask again for it.
 - Good: an AGY session that swarm did not start gets `{}` with no `swarm` on the Mac.
 - Bad: the old hash and group no longer match, so `hooks status` is false once after the update.
+- Bad: while an older build is still on the Mac, its `hooks setup` writes its own path back, and
+  the builds take the slot from each other again until each one is updated.
+- Bad: inside an agent, a missing link gives the same silent `{}` as outside one, with no stderr.
 - Amends ADR 0029, whose consequence "the Codex trust hash follows ... the swarm binary path" no
   longer holds; it still follows Codex's hash rule.
 

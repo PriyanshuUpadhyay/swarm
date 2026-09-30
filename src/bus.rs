@@ -645,11 +645,12 @@ pub fn state_hook_command(provider: &str) -> Result<String, String> {
 /// trusts a hash of this text, and AGY's `hooks.json` is global. So the text names no build. It
 /// runs the `runs/<session>/bin/swarm` link that `swarm launch` made for the pane, not `swarm` on
 /// PATH, because a login shell can put another build first. Outside a swarm agent the link is
-/// missing, and the hook prints `{}` as `swarm hook` does (ADR 0034). `args` is `codex` or
-/// `agy <Event>`.
+/// missing, and the hook prints `{}` as `swarm hook` does (ADR 0034). Codex runs a hook in the
+/// user's `$SHELL`, which can be fish, so the script goes to `/bin/sh` as one single-quoted word
+/// that every shell passes through as it is. `args` is `codex` or `agy <Event>`.
 pub fn shared_hook_command(args: &str) -> String {
     format!(
-        r#"b="$SWARM_HOME/.swarm/runs/$SWARM_SESSION_ID/bin/swarm"; [ -x "$b" ] && exec "$b" hook {args}; printf '{{}}'"#
+        r#"/bin/sh -c '[ -x "$SWARM_HOME/.swarm/runs/$SWARM_SESSION_ID/bin/swarm" ] && exec "$SWARM_HOME/.swarm/runs/$SWARM_SESSION_ID/bin/swarm" hook {args}; printf "{{}}"'"#
     )
 }
 
@@ -947,27 +948,27 @@ mod tests {
         let reported = [
             (
                 "user_prompt_submit",
-                "06d399ba0ab917983dabd306356e603ba6a16480d6d9f6e80bf30e3a3633018b",
+                "3e695398bce1010ee0eebd574c64c8294ace860963b23ca648d56bc51f9e27c6",
             ),
             (
                 "pre_tool_use",
-                "d733906c835c3d2ee20fdc28807771ee70455ba601eaf6f7f66039e31faf1904",
+                "dfa165f23090cec590f7881a0c22425aef660ddc3e7eb8a0f00e950d369b6ae6",
             ),
             (
                 "post_tool_use",
-                "400d7fae85a77d8ed2f47af0ec1a503233eac8cfb8bcfeb33e11711d0bbd2795",
+                "35e581b33733e40e0cdf4a03e0b024f53f58e855cb33a9b3bb1c2799a82f077d",
             ),
             (
                 "permission_request",
-                "ef1652265a7d1d4304f2a47351f463a7dd2ec706cdd0674fb2487760febb10c2",
+                "cf69969f87fb6625bca8375eeaf360217099bd09aed0a4ebf2041da02e442322",
             ),
             (
                 "stop",
-                "fcf785bcb84f6c5b86760cd9344ffbf3929020e9121b3e562475a9619625b5e8",
+                "72d67131393317eb54b3bcc89528b7459b44e5133ef18e3abf6a54fa392144b9",
             ),
             (
                 "interrupt",
-                "2f5dbf4f86a6d1b63d5427c0571e0fd9a65ce09c418d4e2bfefcb192a6e9223c",
+                "d08c10f1e58597bc86da11ae4e0e209d094137ce0bd4811c54c21bbfa102e547",
             ),
         ];
         assert_eq!(

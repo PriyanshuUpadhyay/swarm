@@ -9,25 +9,26 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::canonicalize(dir).unwrap()
 }
 
-/// Runs the built binary with only HOME, PATH, and the given variables set. SWARM_HOME pins the
-/// data to HOME, so a branch build (ADR 0027) reads the same place as a `main` one.
-fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str], stdin: &str) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+/// `exe` with only HOME, PATH, and SWARM_HOME set. SWARM_HOME pins the data to HOME, so a branch
+/// build (ADR 0027) reads the same place as a `main` one.
+fn clean(exe: &Path, home: &Path) -> Command {
+    let mut command = Command::new(exe);
     command
         .env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
-        .env("PATH", "/usr/bin:/bin")
-        .env("SWARM_ADAPTER", "tmux")
-        .current_dir(home)
-        .args(args)
+        .env("PATH", "/usr/bin:/bin");
+    command
+}
+
+/// Runs `command` with `stdin` as its input.
+fn piped(mut command: Command, stdin: &str) -> Output {
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (name, value) in env {
-        command.env(name, value);
-    }
-    let mut child = command.spawn().unwrap();
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     child
         .stdin
         .take()
@@ -35,6 +36,17 @@ fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str], stdin: &str) -> Outpu
         .write_all(stdin.as_bytes())
         .unwrap();
     child.wait_with_output().unwrap()
+}
+
+/// Runs the built binary in a clean env with the given variables added.
+fn swarm(home: &Path, env: &[(&str, &str)], args: &[&str], stdin: &str) -> Output {
+    let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
+    command
+        .env("SWARM_ADAPTER", "tmux")
+        .envs(env.iter().copied())
+        .current_dir(home)
+        .args(args);
+    piped(command, stdin)
 }
 
 fn stdout(output: &Output) -> String {
@@ -104,15 +116,9 @@ fn build_at(home: &Path, name: &str) -> PathBuf {
 }
 
 fn hooks(exe: &Path, home: &Path, args: &[&str]) -> Output {
-    Command::new(exe)
-        .env_clear()
-        .env("HOME", home)
-        .env("SWARM_HOME", home)
-        .env("PATH", "/usr/bin:/bin")
-        .args(["hooks"])
-        .args(args)
-        .output()
-        .unwrap()
+    let mut command = clean(exe, home);
+    command.arg("hooks").args(args);
+    piped(command, "")
 }
 
 #[test]
@@ -158,28 +164,31 @@ fn two_swarm_builds_share_one_hook_setup_and_keep_the_owners_hooks() {
         assert!(!codex_after.contains(&*build.to_string_lossy()));
         assert!(!agy_after.contains(&*build.to_string_lossy()));
     }
+    std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// Runs a hook command from AGY's `hooks.json` as AGY does, through a shell, with no `swarm` on
-/// PATH.
-fn run_hook(command: &str, env: &[(&str, &str)], stdin: &str) -> Output {
-    let mut shell = Command::new("/bin/sh");
-    shell
-        .env_clear()
+/// Runs a hook command as Codex and AGY do, through the user's shell, with no `swarm` on PATH.
+fn run_hook(shell: &str, command: &str, env: &[(&str, &str)], stdin: &str) -> Output {
+    let mut hook = Command::new(shell);
+    hook.env_clear()
         .env("PATH", "/usr/bin:/bin")
         .envs(env.iter().copied())
-        .args(["-c", command])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = shell.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
+        .args(["-c", command]);
+    piped(hook, stdin)
+}
+
+/// The user shells on this machine that a hook may run in; fish is not in the macOS base system.
+fn shells() -> Vec<&'static str> {
+    [
+        "/bin/sh",
+        "/bin/zsh",
+        "/bin/csh",
+        "/opt/homebrew/bin/fish",
+        "/usr/bin/fish",
+    ]
+    .into_iter()
+    .filter(|shell| Path::new(shell).exists())
+    .collect()
 }
 
 #[test]
@@ -192,10 +201,12 @@ fn the_shared_hook_runs_the_panes_own_swarm_and_is_quiet_outside_an_agent() {
             .unwrap();
     let stop = agy["swarm"]["Stop"][0]["command"].as_str().unwrap();
 
-    let outside = run_hook(stop, &[], "{}");
-    assert!(outside.status.success(), "{outside:?}");
-    assert_eq!(stdout(&outside), "{}");
-    assert!(outside.stderr.is_empty(), "{outside:?}");
+    for shell in shells() {
+        let outside = run_hook(shell, stop, &[], "{}");
+        assert!(outside.status.success(), "{shell}: {outside:?}");
+        assert_eq!(stdout(&outside), "{}", "{shell}");
+        assert!(outside.stderr.is_empty(), "{shell}: {outside:?}");
+    }
 
     let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
         .trim()
@@ -216,8 +227,16 @@ fn the_shared_hook_runs_the_panes_own_swarm_and_is_quiet_outside_an_agent() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "coder"),
     ];
-    let reported = run_hook(stop, &as_coder, "{}");
-    assert!(reported.status.success(), "{reported:?}");
-    assert_eq!(stdout(&reported), "{}\n");
-    assert_eq!(coder_state(&home, &session)["state"], "done");
+    let working = agy["swarm"]["PreInvocation"][0]["command"]
+        .as_str()
+        .unwrap();
+    for shell in shells() {
+        for (command, state) in [(working, "working"), (stop, "done")] {
+            let reported = run_hook(shell, command, &as_coder, "{}");
+            assert!(reported.status.success(), "{shell}: {reported:?}");
+            assert_eq!(stdout(&reported), "{}\n", "{shell}");
+            assert_eq!(coder_state(&home, &session)["state"], state, "{shell}");
+        }
+    }
+    std::fs::remove_dir_all(&home).unwrap();
 }
