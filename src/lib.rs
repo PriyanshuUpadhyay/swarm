@@ -4,6 +4,7 @@ pub mod herdr;
 pub mod host;
 pub mod paths;
 pub mod profiles;
+pub mod providers;
 pub mod routing;
 pub mod screen;
 pub mod store;

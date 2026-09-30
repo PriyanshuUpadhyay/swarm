@@ -1,5 +1,6 @@
 use std::env;
 use std::os::unix::process::ExitStatusExt;
+use swarm::providers::Provider;
 
 const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 
@@ -37,7 +38,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -95,7 +96,7 @@ fn hook_report(
         [provider, event] => (provider, Some(event.as_str())),
         _ => return Err(USAGE.into()),
     };
-    if !matches!(provider.as_str(), "claude" | "codex" | "agy") {
+    if Provider::parse(provider).is_none() {
         return Err(USAGE.into());
     }
     let (Some(session), Some(agent)) = (env("SWARM_SESSION_ID"), env("SWARM_AGENT_ID")) else {
@@ -259,11 +260,12 @@ fn load_accounts(
     provider: &str,
     with_pick: bool,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    if provider == "agy" {
-        return Ok(swarm::profiles::empty_accounts(provider));
-    }
-    if !matches!(provider, "claude" | "codex") {
-        return Err(format!("swarm: unknown provider {provider}").into());
+    match Provider::parse(provider) {
+        None => return Err(format!("swarm: unknown provider {provider}").into()),
+        Some(kind) if !kind.has_accounts() => {
+            return Ok(swarm::profiles::empty_accounts(provider));
+        }
+        Some(_) => {}
     }
     let command = yelo_command();
     let list = tool_stdout(
@@ -635,41 +637,14 @@ fn register_spawned_pane(
     Ok(pane)
 }
 
-/// What the provider CLI on PATH knows as models, for `swarm::bus::model_known`. None when the
-/// check cannot run; agy is skipped because `agy models` asks the network (about 5 s).
-fn model_catalog(
-    provider: &str,
-    account_env: &std::collections::BTreeMap<String, String>,
-) -> Option<Vec<u8>> {
-    match provider {
-        "claude" => env::split_paths(&env::var_os("PATH")?)
-            .map(|dir| dir.join("claude"))
-            .find(|path| path.is_file())
-            .and_then(|path| std::fs::read(path).ok()),
-        "codex" => std::process::Command::new("codex")
-            .args(["debug", "models"])
-            .envs(account_env)
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| output.stdout),
-        _ => None,
-    }
-}
-
-fn list_models(provider: &str) -> Result<swarm::profiles::ModelList, Box<dyn std::error::Error>> {
-    let models = match provider {
-        "claude" => swarm::profiles::claude_models(),
-        "codex" => {
-            swarm::profiles::codex_models(tool_stdout("codex", &["debug", "models"])?.as_bytes())?
-        }
-        "agy" => swarm::profiles::agy_models(&tool_stdout("agy", &["models"])?),
-        _ => return Err(format!("swarm: unsupported model provider {provider}").into()),
-    };
+fn list_models(provider: &str) -> Result<swarm::providers::ModelList, Box<dyn std::error::Error>> {
+    let models = Provider::parse(provider)
+        .ok_or_else(|| format!("swarm: unsupported model provider {provider}"))?
+        .models(|cli, args| tool_stdout(cli, args).map_err(|error| error.to_string()))?;
     if models.is_empty() {
         return Err(format!("swarm: {provider} returned no models").into());
     }
-    Ok(swarm::profiles::ModelList {
+    Ok(swarm::providers::ModelList {
         provider: provider.into(),
         models,
     })
@@ -745,23 +720,21 @@ fn spawn_agent(
     let provider = options
         .provider
         .or_else(|| options.command.first().map(String::as_str))
-        .filter(|provider| matches!(*provider, "claude" | "codex" | "agy"))
-        .map(str::to_string);
+        .and_then(Provider::parse);
     // Warn, do not refuse: an unknown name usually means the role config or the CLI is stale,
     // and the pane shows the real error if the model does not run.
-    if let (Some(provider), Some(model)) = (
-        provider.as_deref(),
-        swarm::bus::command_model(options.command),
-    ) {
+    if let (Some(provider), Some(model)) = (provider, swarm::bus::command_model(options.command)) {
         let account_env = account
             .as_ref()
             .map(|account| account.env.clone())
             .unwrap_or_default();
-        if model_catalog(provider, &account_env)
-            .is_some_and(|catalog| !swarm::bus::model_known(provider, &catalog, model))
+        if provider
+            .catalog(&account_env)
+            .is_some_and(|catalog| !provider.model_known(&catalog, model))
         {
             eprintln!(
-                "swarm: warning: the installed {provider} CLI does not list model {model}; the role config may need an update"
+                "swarm: warning: the installed {} CLI does not list model {model}; the role config may need an update",
+                provider.id()
             );
         }
     }
@@ -781,7 +754,7 @@ fn spawn_agent(
         &session_id,
         agent_id,
         role,
-        provider.as_deref(),
+        provider.map(Provider::id),
         &vars,
     )?;
     if !options.command.is_empty() {
@@ -1097,7 +1070,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, flag, provider] = args
         && cmd == "host-context"
         && flag == "--provider"
-        && matches!(provider.as_str(), "claude" | "codex" | "agy")
+        && Provider::parse(provider).is_some()
     {
         let mut payload = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
@@ -1132,6 +1105,12 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && sub == "set-model"
     {
         return set_role_model(runner, model);
+    }
+    if let [cmd, json] = args
+        && cmd == "providers"
+        && json == "--json"
+    {
+        return print_json(&swarm::providers::info_list());
     }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "models"
@@ -1495,10 +1474,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             match pair {
                 [flag, value] if flag == "--account" => account = Some(value.as_str()),
                 [flag, value] if flag == "--cwd" => cwd = Some(std::path::PathBuf::from(value)),
-                [flag, value]
-                    if flag == "--provider"
-                        && matches!(value.as_str(), "claude" | "codex" | "agy") =>
-                {
+                [flag, value] if flag == "--provider" && Provider::parse(value).is_some() => {
                     requested_provider = Some(value.as_str())
                 }
                 [flag, value] if flag == "--model" => requested_model = Some(value.as_str()),
@@ -1524,7 +1500,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         let provider = resolved.provider.clone();
         let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
-        let mut extra = swarm::bus::extra_args(provider.as_deref().unwrap_or_default(), extra)?;
+        let kind = Provider::parse(provider.as_deref().unwrap_or_default())
+            .ok_or("swarm: launch has no known provider")?;
+        let mut extra = swarm::bus::extra_args(kind, extra)?;
         // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
         // both use this one answer.
         let picked = match (account, provider.as_deref()) {
