@@ -10,7 +10,7 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
 
     public init() {
         self.init(
-            environment: ProcessInfo.processInfo.environment,
+            environment: SwarmCLIBus.appEnvironment(),
             run: { executable, arguments, cwd in
                 // Usage can wait on a network quota read, so it gets the same bounded wait as
                 // sibling CLI reads instead of leaving a menu bar refresh alive forever.

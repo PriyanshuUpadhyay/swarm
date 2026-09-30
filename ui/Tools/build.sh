@@ -33,16 +33,22 @@ if (( install )); then
 fi
 
 zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
+# The app runs this swarm only when none is on the login PATH, as on a Mac that got the app from a DMG.
+cargo build --manifest-path "$repo/Cargo.toml" --release --locked
 swift build --package-path "$root" --disable-sandbox -c release --product Swarm
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 app="$root/.build/release/Swarm.app"
 
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp -R "$root/Sources/Swarm/Resources/DiffViewer" "$app/Contents/Resources/DiffViewer"
 cp "$bin_dir/Swarm" "$app/Contents/MacOS/Swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
+# Helpers, not MacOS: on a case-insensitive disk MacOS/swarm would overwrite MacOS/Swarm.
+cp "$repo/target/release/swarm" "$app/Contents/Helpers/swarm"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
+version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
+plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
 # The app picks its swarm home from this branch; see SwarmHome and ADR 0027. A detached HEAD is

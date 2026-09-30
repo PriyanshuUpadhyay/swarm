@@ -150,6 +150,22 @@ struct SwarmProfilesTests {
         _ = try await source.accounts(provider: "codex")
     }
 
+    @Test("falls back to the app's bundled swarm only when nothing else names one")
+    func fallsBackToBundledBinary() {
+        let bundledSwarm = URL(fileURLWithPath: "/bin/sh")
+        let missingBundle = URL(fileURLWithPath: "/nonexistent/Swarm.app/Contents/MacOS/swarm")
+        let notOnPath: (String) -> String? = { _ in nil }
+
+        #expect(SwarmCLIBus.appEnvironment([:], bundled: bundledSwarm, which: notOnPath)
+            == ["SWARM_BIN": "/bin/sh"])
+        #expect(SwarmCLIBus.appEnvironment([:], bundled: bundledSwarm, which: { "/opt/bin/\($0)" })
+            == [:])
+        #expect(SwarmCLIBus.appEnvironment(
+            ["SWARM_BIN": "/custom/swarm"], bundled: bundledSwarm, which: notOnPath
+        ) == ["SWARM_BIN": "/custom/swarm"])
+        #expect(SwarmCLIBus.appEnvironment([:], bundled: missingBundle, which: notOnPath) == [:])
+    }
+
     @Test("maps a missing swarm binary to unavailable")
     func mapsMissingBinary() async {
         let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { executable, _, _ in

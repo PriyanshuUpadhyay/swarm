@@ -14,7 +14,7 @@ public struct SwarmCLIBus: SwarmBus {
     private let run: Runner
     public init() {
         self.init(
-            environment: ProcessInfo.processInfo.environment,
+            environment: Self.appEnvironment(),
             resolveExecutable: { Shell.which($0) },
             run: { executable, arguments, cwd, environment, stdin, timeout in
                 let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
@@ -225,5 +225,21 @@ public struct SwarmCLIBus: SwarmBus {
         output.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
+    }
+}
+
+extension SwarmCLIBus {
+    /// The app's environment, with `SWARM_BIN` naming the `swarm` inside the app bundle when neither
+    /// `SWARM_BIN` nor the login PATH names one. A DMG install has only that bundled copy.
+    static func appEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundled: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm"),
+        which: (String) -> String? = { Shell.which($0) }
+    ) -> [String: String] {
+        let configured = environment["SWARM_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard configured?.isEmpty ?? true, which("swarm") == nil,
+              FileManager.default.isExecutableFile(atPath: bundled.path)
+        else { return environment }
+        return environment.merging(["SWARM_BIN": bundled.path]) { _, bundled in bundled }
     }
 }
