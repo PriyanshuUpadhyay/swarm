@@ -514,9 +514,9 @@ pub fn claude_child(
 
 /// The directory `swarm launch` may mark trusted for Codex and AGY: the git root when `cwd` is in a
 /// repository, since Codex keys trust on it, or else `cwd` itself when it sits inside one of the
-/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every checked dir
-/// must belong to the user and be closed to group and world writes, so another account cannot
-/// plant files in a place the agents then trust.
+/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every dir from `cwd`
+/// up to that root must belong to the user and be closed to group and world writes, so another
+/// account cannot plant files in a place the agents then trust.
 pub fn trust_target(
     cwd: &std::path::Path,
     git_root: Option<&std::path::Path>,
@@ -545,7 +545,12 @@ pub fn trust_target(
     let uid = std::fs::metadata(home)
         .map_err(|error| format!("{}: {error}", home.display()))?
         .uid();
-    let mut dir = target.as_path();
+    // Claude keys its trust on `cwd`, and each agent reads project config from the dirs between
+    // `cwd` and the root, so the walk starts at `cwd`.
+    if !cwd.starts_with(&top) {
+        return Err(format!("{} is not inside {}", cwd.display(), top.display()));
+    }
+    let mut dir = cwd;
     loop {
         let meta = std::fs::metadata(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         if meta.uid() != uid || meta.mode() & 0o022 != 0 {
@@ -1306,6 +1311,8 @@ mod tests {
         assert!(trust_target(&home, Some(&home), &home, &roots).is_err());
         assert!(trust_target(&scratch, None, &home, &roots).is_err());
         assert!(trust_target(&open, None, &home, &roots).is_err());
+        std::fs::set_permissions(repo.join("sub"), std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(trust_target(&repo.join("sub"), Some(&repo), &home, &roots).is_err());
         std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o775)).unwrap();
         assert!(trust_target(&seat, None, &home, &roots).is_err());
         std::fs::remove_dir_all(base).unwrap();
