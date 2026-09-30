@@ -99,6 +99,23 @@ fn the_first_read_imports_the_old_config_once_and_never_writes_it() {
     );
 }
 
+/// A Mac that ran an older swarm has `~/.swarm` with its db and runs but no `profiles.json`.
+#[test]
+fn a_home_from_an_older_swarm_gets_its_profiles_and_keeps_its_data() {
+    let home = scratch("older-home");
+    assert!(swarm(&home, &[], &["init"]).status.success());
+    let db = home.join(".swarm/swarm.db");
+    let before = std::fs::read(&db).unwrap();
+    old_config(&home, OLD_CONFIG);
+
+    let listing = json(&swarm(&home, &[], &["roles", "--json"]));
+
+    assert_eq!(listing["profiles"][1]["runners"][0]["model"], "gpt-sol");
+    assert!(profiles_file(&home).exists());
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+    assert!(home.join(".swarm/runs").is_dir());
+}
+
 #[test]
 fn roles_get_keeps_the_keys_that_orchestrators_read() {
     let home = scratch("get");

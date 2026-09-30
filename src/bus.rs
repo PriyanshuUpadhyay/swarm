@@ -165,7 +165,7 @@ pub fn argv(
             // only while each value stays byte-identical, so nothing per launch goes in it. The
             // pane env names the agent. The empty first group puts swarm's hook in group 1, so
             // its trust key differs from another tool's `-c` hook in group 0.
-            let command = serde_json::to_string(&state_hook_command(provider.id())?)
+            let command = serde_json::to_string(&shared_hook_command(provider.id()))
                 .expect("string serialization cannot fail");
             for event in CODEX_STATE_EVENTS {
                 args.extend([
@@ -641,6 +641,19 @@ pub fn state_hook_command(provider: &str) -> Result<String, String> {
     Ok(format!("{} hook {provider}", quoted_exe()?))
 }
 
+/// The state hook for Codex and AGY, whose hook config every swarm build on the Mac shares: Codex
+/// trusts a hash of this text, and AGY's `hooks.json` is global. So the text names no build. It
+/// runs the `runs/<session>/bin/swarm` link that `swarm launch` made for the pane, not `swarm` on
+/// PATH, because a login shell can put another build first. Outside a swarm agent the link is
+/// missing, and the hook prints `{}` as `swarm hook` does (ADR 0034). Codex runs a hook in the
+/// user's `$SHELL`, which can be fish, so the script goes to `/bin/sh` as one single-quoted word
+/// that every shell passes through as it is. `args` is `codex` or `agy <Event>`.
+pub fn shared_hook_command(args: &str) -> String {
+    format!(
+        r#"/bin/sh -c '[ -x "$SWARM_HOME/.swarm/runs/$SWARM_SESSION_ID/bin/swarm" ] && exec "$SWARM_HOME/.swarm/runs/$SWARM_SESSION_ID/bin/swarm" hook {args}; printf "{{}}"'"#
+    )
+}
+
 const CLAUDE_STATE_EVENTS: [&str; 8] = [
     "UserPromptSubmit",
     "PreToolUse",
@@ -662,11 +675,11 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 ];
 
 /// Put the `swarm` group in AGY's global `hooks.json`, which has no per-process hook flag.
-/// `command` is `state_hook_command("agy")`; AGY sends no event name, so each handler names it.
+/// AGY sends no event name, so each handler names it.
 /// Every other group is kept, and a file that is not a JSON object is refused, not replaced.
 /// Returns whether the file changed.
-pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, String> {
-    let group = agy_group(command);
+pub fn ensure_agy_hooks(path: &std::path::Path) -> Result<bool, String> {
+    let group = agy_group();
     let mut value = read_json_object(path)?;
     let groups = value
         .as_object_mut()
@@ -679,12 +692,12 @@ pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, S
 }
 
 /// Whether AGY's `hooks.json` holds swarm's group as `ensure_agy_hooks` writes it.
-pub fn agy_hooks_set(path: &std::path::Path, command: &str) -> bool {
-    read_json_object(path).is_ok_and(|value| value.get("swarm") == Some(&agy_group(command)))
+pub fn agy_hooks_set(path: &std::path::Path) -> bool {
+    read_json_object(path).is_ok_and(|value| value.get("swarm") == Some(&agy_group()))
 }
 
-fn agy_group(command: &str) -> serde_json::Value {
-    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
+fn agy_group() -> serde_json::Value {
+    let handler = |event: &str| serde_json::json!({"type": "command", "command": shared_hook_command(&format!("agy {event}")), "timeout": 3});
     // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
     // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
     // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
@@ -876,7 +889,7 @@ mod tests {
         };
         let coder = hook_args("coder");
         assert_eq!(coder, hook_args("reviewer"));
-        let codex_command = serde_json::to_string(&state_hook_command("codex").unwrap()).unwrap();
+        let codex_command = serde_json::to_string(&shared_hook_command("codex")).unwrap();
         assert_eq!(
             coder,
             CODEX_STATE_EVENTS
@@ -919,6 +932,47 @@ mod tests {
         ];
         assert_eq!(
             codex_hook_trust("'/opt/homebrew/bin/swarm' hook codex"),
+            reported
+                .map(|(label, hash)| (
+                    format!("/<session-flags>/config.toml:{label}:1:0"),
+                    format!("sha256:{hash}")
+                ))
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn the_shared_codex_hook_has_the_hashes_a_real_codex_reports() {
+        // `codex app-server` 0.159.0 `hooks/list`, empty CODEX_HOME, 2026-10-01, for the `-c`
+        // hooks that `argv` gives a Codex agent; each was `trusted` after `swarm hooks setup`.
+        let reported = [
+            (
+                "user_prompt_submit",
+                "3e695398bce1010ee0eebd574c64c8294ace860963b23ca648d56bc51f9e27c6",
+            ),
+            (
+                "pre_tool_use",
+                "dfa165f23090cec590f7881a0c22425aef660ddc3e7eb8a0f00e950d369b6ae6",
+            ),
+            (
+                "post_tool_use",
+                "35e581b33733e40e0cdf4a03e0b024f53f58e855cb33a9b3bb1c2799a82f077d",
+            ),
+            (
+                "permission_request",
+                "cf69969f87fb6625bca8375eeaf360217099bd09aed0a4ebf2041da02e442322",
+            ),
+            (
+                "stop",
+                "72d67131393317eb54b3bcc89528b7459b44e5133ef18e3abf6a54fa392144b9",
+            ),
+            (
+                "interrupt",
+                "d08c10f1e58597bc86da11ae4e0e209d094137ce0bd4811c54c21bbfa102e547",
+            ),
+        ];
+        assert_eq!(
+            codex_hook_trust(&shared_hook_command("codex")),
             reported
                 .map(|(label, hash)| (
                     format!("/<session-flags>/config.toml:{label}:1:0"),
@@ -1055,26 +1109,24 @@ mod tests {
         let root = std::env::temp_dir().join(format!("swarm-agy-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let hooks = root.join("config/hooks.json");
-        let command = "'/bin/swarm' hook agy";
-
-        assert!(ensure_agy_hooks(&hooks, command).unwrap());
+        assert!(ensure_agy_hooks(&hooks).unwrap());
         let created: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
         assert_eq!(created.as_object().unwrap().len(), 1);
         assert_eq!(
             created["swarm"]["Stop"][0]["command"],
-            "'/bin/swarm' hook agy Stop"
+            shared_hook_command("agy Stop")
         );
         assert_eq!(
             created["swarm"]["PostToolUse"][0]["hooks"][0]["command"],
-            "'/bin/swarm' hook agy PostToolUse"
+            shared_hook_command("agy PostToolUse")
         );
         assert!(created["swarm"].get("PreToolUse").is_none());
-        assert!(!ensure_agy_hooks(&hooks, command).unwrap());
+        assert!(!ensure_agy_hooks(&hooks).unwrap());
 
         let herdr = r#"{"herdr": {"PreInvocation": [{"command": "herdr-state session", "timeout": 10, "type": "command"}]}, "swarm": {"Stop": []}}"#;
         std::fs::write(&hooks, herdr).unwrap();
-        assert!(ensure_agy_hooks(&hooks, command).unwrap());
+        assert!(ensure_agy_hooks(&hooks).unwrap());
         let merged: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
         let before: serde_json::Value = serde_json::from_str(herdr).unwrap();
@@ -1082,7 +1134,7 @@ mod tests {
         assert_eq!(merged["swarm"], created["swarm"]);
 
         std::fs::write(&hooks, "{ not json").unwrap();
-        assert!(ensure_agy_hooks(&hooks, command).is_err());
+        assert!(ensure_agy_hooks(&hooks).is_err());
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), "{ not json");
     }
 

@@ -113,7 +113,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `ack <seq>` | agent | Mark one message read. |
 
 The Herdr adapter's spawn verb runs `swarm herdr-split` through `$SWARM_EXE`, the path of the binary
-that runs the verb, so Swarm.app finds it even with a short `PATH`. Claude, Codex, and AGY run
+that runs the verb, so Swarm.app finds it even with a short `PATH`. A disk adapter's spawn verb must pass
+`SWARM_HOME` and `SWARM_SESSION_ID` to the pane, because the Codex and AGY state hooks find the
+pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
 Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the

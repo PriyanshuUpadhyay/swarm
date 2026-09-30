@@ -539,15 +539,14 @@ fn codex_homes(
 /// Claude needs no step, because `swarm launch` passes its hooks with `--settings`.
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let user_home = std::path::PathBuf::from(env_var("HOME")?);
-    let codex = swarm::bus::codex_hook_trust(&swarm::bus::state_hook_command("codex")?);
+    let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
     let homes = codex_homes(&user_home)?;
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
-    let agy_command = swarm::bus::state_hook_command("agy")?;
     match args {
         [status, json] if status == "status" && json == "--json" => {
             print_json(&serde_json::json!({
                 "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
-                "agy": swarm::bus::agy_hooks_set(&agy_hooks, &agy_command),
+                "agy": swarm::bus::agy_hooks_set(&agy_hooks),
             }))
         }
         [setup] if setup == "setup" => {
@@ -562,7 +561,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                 }
-                if swarm::bus::ensure_agy_hooks(&agy_hooks, &agy_command)? {
+                if swarm::bus::ensure_agy_hooks(&agy_hooks)? {
                     println!("swarm: added swarm's hooks to {}", agy_hooks.display());
                 }
                 Ok(())
