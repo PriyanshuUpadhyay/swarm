@@ -63,7 +63,9 @@ final class NewChatModel {
         } catch {
             profileError = "Could not read the providers. \(message(error))"
         }
-        if let preferred = initialProvider, pickerProviders.contains(where: { $0.id == preferred }) {
+        // With no provider list, a switch keeps the chat's own provider rather than a default.
+        if let preferred = initialProvider,
+           providers.isEmpty || pickerProviders.contains(where: { $0.id == preferred }) {
             provider = preferred
         }
         selectedModel = ChatModelChoice.initial(current: initialModel, models: [])
@@ -252,6 +254,8 @@ struct NewChatSheet: View {
                 HStack {
                     Text(verbatim: error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
                     Button("Retry") {
+                        // As on first open, the chat profile's runner becomes the pick.
+                        model.chatChoice = nil
                         Task { await model.load(initialProvider: initialProvider, initialModel: initialModel) }
                     }
                 }

@@ -25,7 +25,7 @@ struct ProfileEditorSheet: View {
     @State private var contentHeight: CGFloat?
 
     init(
-        profile: SwarmProfile, providers: [SwarmProvider], providersError: String? = nil,
+        profile: SwarmProfile, providers: [SwarmProvider], providersError: String?,
         check: SwarmProfileCheck?, focus: Int?, save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
     ) {
         self.providers = providers

@@ -1,14 +1,13 @@
 import Foundation
 
 /// The profile list and the provider list, read when the app starts so New Chat and the profiles
-/// page open without waiting on swarm. Two callers share one read in flight. A failed read is not
-/// kept, so the next caller reads again.
+/// page open without waiting on swarm. Two callers share one provider read in flight. A failed
+/// read is not kept, so the next caller reads again.
 public actor SwarmProfileCatalog {
     public static let shared = SwarmProfileCatalog()
 
     private let loadProfiles: @Sendable () async throws -> SwarmProfileList
     private let loadProviders: @Sendable () async throws -> [SwarmProvider]
-    private var profileRead: Task<SwarmProfileList, any Error>?
     private var providerRead: Task<[SwarmProvider], any Error>?
     /// The last profile list read, for a view to show before its own read returns.
     public private(set) var cachedProfiles: SwarmProfileList?
@@ -31,12 +30,10 @@ public actor SwarmProfileCatalog {
         Task { _ = try? await self.providers() }
     }
 
-    /// Reads the profile file again, because a save can change it at any time.
+    /// Reads the profile file again on every call, never joining a read in flight, because a save
+    /// can change the file after that read began.
     public func profiles() async throws -> SwarmProfileList {
-        let read = profileRead ?? Task { try await loadProfiles() }
-        profileRead = read
-        defer { if profileRead == read { profileRead = nil } }
-        let list = try await read.value
+        let list = try await loadProfiles()
         cachedProfiles = list
         return list
     }
