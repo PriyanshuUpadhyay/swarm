@@ -785,7 +785,9 @@ fn spawn_agent(
         &vars,
     )?;
     if !options.command.is_empty() {
-        let exe = env::current_exe()?;
+        // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
+        // and linking to it would make the link point at itself.
+        let exe = std::fs::canonicalize(env::current_exe()?)?;
         // The agent's own `swarm inbox` and `swarm finish` must run this binary, not an older
         // `swarm` on the pane's PATH, which refuses a database another build made. The pane gets
         // a dir with only a link to it, since this binary's own dir (such as ~/.cargo/bin) holds

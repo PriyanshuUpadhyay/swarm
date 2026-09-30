@@ -714,4 +714,18 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
     };
     assert_eq!(std::fs::canonicalize(swarm).unwrap(), launcher);
     assert_eq!(Path::new(cargo), home.join("bin/cargo"));
+    // An agent in that pane launches the next one through the link, which must still lead to
+    // the launching binary and not to itself.
+    let again = Command::new(swarm)
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .envs(chair)
+        .current_dir(&home)
+        .args(["spawn", "next", "coder", "--", "true"])
+        .output()
+        .unwrap();
+    assert!(again.status.success(), "{}", stderr(&again));
+    assert_eq!(std::fs::canonicalize(swarm).unwrap(), launcher);
 }
