@@ -241,6 +241,13 @@ impl Probe {
         let accounts = cache
             .entry(provider)
             .or_insert_with(|| read_accounts(provider, self.account.as_deref()));
+        // A named account belongs to one provider; another provider's runner cannot use it.
+        if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
+            return Some((
+                swarm::config::SkipCode::SignedOut,
+                format!("no {} account named {name}", provider.id()),
+            ));
+        }
         swarm::config::account_skip(provider, accounts.as_deref(), self.min_usage_left_pct)
     }
 }
@@ -1641,14 +1648,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => {
-                let accounts = load_accounts(kind.id(), true)?;
-                Some(
-                    swarm::profiles::resolve_account(&accounts, requested)
-                        .map_err(|error| format!("swarm: {error}"))?
-                        .clone(),
-                )
-            }
+            (Some(requested), true) => match load_accounts(kind.id(), true)
+                .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
+                .and_then(|accounts| {
+                    swarm::profiles::resolve_account(&accounts, requested).cloned()
+                }) {
+                Ok(account) => Some(account),
+                // `auto` is a preference. With no yelo or no automatic account the CLI's own
+                // login runs, as the probe already counts a missing yelo as can run (ADR 0031).
+                Err(error) if requested == "auto" => {
+                    eprintln!("swarm: {error}; {} uses its own login", kind.id());
+                    None
+                }
+                Err(error) => return Err(format!("swarm: {error}").into()),
+            },
             _ => None,
         };
         let mut pane_dir = cwd.clone();

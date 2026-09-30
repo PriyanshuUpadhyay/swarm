@@ -828,4 +828,46 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     );
     assert!(agy.status.success(), "{}", stderr(&agy));
     assert!(script("chat-c").contains("'agy' '--model' 'flash'"));
+
+    // A named account that no runner's provider has skips each runner before anything runs.
+    let named = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-d",
+            "chat",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(!named.status.success());
+    let text = stderr(&named);
+    assert!(
+        text.contains("skipped claude/opus/high: no claude account named work"),
+        "{text}"
+    );
+    assert!(text.contains("no runner can run"), "{text}");
+    assert!(!text.contains("running"), "{text}");
+
+    // On a Mac without yelo, `auto` falls back to the CLI's own login.
+    std::fs::remove_file(home.join("bin/yelo")).unwrap();
+    let no_yelo = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "chat-e",
+            "chat",
+            "--account",
+            "auto",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(no_yelo.status.success(), "{}", stderr(&no_yelo));
+    assert!(stderr(&no_yelo).contains("claude uses its own login"));
+    assert!(script("chat-e").contains("'--model' 'opus' '--effort' 'high'"));
 }
