@@ -29,9 +29,13 @@ struct ProfileHealthPill: View {
     let status: ProfileStatus?
 
     var body: some View {
-        Label(status?.title ?? "Status unknown", systemImage: symbol)
+        // Only the symbol takes the status color; caption text in it is under 4.5:1 contrast.
+        Label {
+            Text(status?.title ?? "Status unknown").foregroundStyle(.secondary)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(color)
+        }
             .font(.caption)
-            .foregroundStyle(color)
             .help(status?.text ?? "The launch check has not answered.")
     }
 

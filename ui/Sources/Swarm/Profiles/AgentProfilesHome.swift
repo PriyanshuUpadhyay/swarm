@@ -51,9 +51,8 @@ struct AgentProfilesHome: View {
             if let list, !list.profiles.isEmpty {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(ProfileGroup.groups(list.profiles)) { group in
-                            let rows = group.profiles.filter { !problemsOnly || isProblem($0) }
-                            if !rows.isEmpty { groupSection(group.name, rows: rows) }
+                        ForEach(shownGroups(list.profiles)) { group in
+                            groupSection(group.name, rows: group.profiles)
                         }
                     }
                 }
@@ -162,6 +161,11 @@ struct AgentProfilesHome: View {
                 }
             }
         }
+    }
+
+    /// The groups with their shown rows; a group with none is left out.
+    private func shownGroups(_ profiles: [SwarmProfile]) -> [ProfileGroup] {
+        ProfileGroup.groups(profiles.filter { !problemsOnly || isProblem($0) })
     }
 
     private var collapsed: Set<String> {
