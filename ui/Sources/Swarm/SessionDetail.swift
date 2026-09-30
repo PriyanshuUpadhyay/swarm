@@ -340,7 +340,8 @@ struct SessionDetailView: View {
             waitingMessage: ChairTranscriptSnapshot.waitingMessage(isRunning: row.isRunning),
             chair: row.provider ?? chairProvider,
             rawSessionJSON: TranscriptDebugData.sessionJSON(session: row.session, agents: agents),
-            isActive: isActive, isVisible: isVisible,
+            // A focused child column takes find.
+            isActive: isActive, isVisible: isVisible && panes.focusedKey == nil,
             loadOlder: { [weak model, row, chairProvider] in
                 await model?.loadOlder(row: row, chairProvider: chairProvider)
             },
@@ -371,7 +372,6 @@ struct SessionDetailView: View {
         let composerFocus = $composerFocused
         let transcriptFocus = $transcriptFocused
         return ChatKeyActions(
-            terminalFocused: panes.focusedKey != nil,
             focusComposer: { [panes] in
                 panes.revealChat()
                 composerFocus.wrappedValue = true
@@ -397,9 +397,7 @@ struct SessionDetailView: View {
             cells: agentCells.map { cell in
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
-                    model: cell.agent.provider ?? "unknown",
-                    // A closed pane connection shows as ended even while the agent lives.
-                    status: panes.ended.contains(key(cell.agent.id.rawValue)) ? .ended : cell.agent.status
+                    model: cell.agent.provider ?? "unknown", status: cell.agent.status
                 )
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
@@ -408,25 +406,56 @@ struct SessionDetailView: View {
             revealCount: panes.revealCount,
             splitScope: session.id.rawValue,
             onFocus: { panes.focus(key: key($0)) },
-            // The same path as ⌘↩: the moved terminal takes focus again.
-            onZoom: { panes.toggleZoom(key: $0.map(key)) },
-            onReconnect: { id in
-                if let agent = byID[id]?.agent { panes.reconnect(session: session, agent: agent) }
-            }
+            onZoom: { panes.toggleZoom(key: $0.map(key)) }
         ) {
-            transcriptColumn
-        } pane: { cell in
-            switch byID[cell.id]?.kind {
-            case .attach?:
-                AgentTerminalView(key: key(cell.id), store: panes) {
-                    guard !SwarmOpenScript.isActive, let agent = byID[cell.id]?.agent else { return }
-                    _ = panes.terminal(session: session, agent: agent)
-                }
-            case .notice(let reason)?:
-                ContentUnavailableView(reason, systemImage: "terminal")
-            case nil:
-                EmptyView()
+            VStack(spacing: 0) {
+                waitingChildren(agentCells.map(\.agent))
+                transcriptColumn
             }
+        } pane: { cell in
+            if let agent = byID[cell.id]?.agent {
+                let paneKey = key(cell.id)
+                ChildColumnView(
+                    session: session, agent: agent, model: panes.column(key: paneKey),
+                    selected: panes.focusedKey == paneKey, focusRequest: panes.revealCount,
+                    onFocused: { [panes] in panes.focused(key: paneKey) }
+                )
+            }
+        }
+    }
+
+    /// Each child's question also shows on the chair page, so the owner can answer it while the
+    /// strip is scrolled away (ADR 0029).
+    @ViewBuilder
+    private func waitingChildren(_ children: [SwarmAgent]) -> some View {
+        let waiting = children.filter { $0.prompt != nil }
+        if !waiting.isEmpty {
+            let session = row.session
+            ScrollView {
+                VStack(spacing: DesignTokens.Spacing.s) {
+                    ForEach(waiting) { agent in
+                        if let prompt = agent.prompt {
+                            PromptCard(
+                                agent: agent.id.rawValue, prompt: prompt,
+                                answer: { [panes] choice in
+                                    try await panes.column(key: AgentPaneStore.key(
+                                        session: session.id, agent: agent.id.rawValue
+                                    )).answer(prompt, choice: choice, to: agent.id, in: session)
+                                },
+                                showColumn: { [panes] in
+                                    panes.focus(key: AgentPaneStore.key(
+                                        session: session.id, agent: agent.id.rawValue
+                                    ))
+                                }
+                            )
+                        }
+                    }
+                }
+                .padding(DesignTokens.Spacing.m)
+            }
+            .frame(maxHeight: DesignTokens.promptListMaxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(Color(nsColor: .textBackgroundColor))
         }
     }
 }

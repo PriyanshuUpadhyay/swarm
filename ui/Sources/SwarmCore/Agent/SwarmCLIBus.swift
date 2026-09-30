@@ -137,19 +137,32 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
+    /// `swarm hooks status --json`: whether swarm's own Codex and AGY hooks are set up (ADR 0029).
+    public func hooksStatus() async throws -> SwarmHooksStatus {
+        try await read(["hooks", "status", "--json"], as: SwarmHooksStatus.self)
+    }
+
+    /// `swarm hooks setup`, which changes the owner's Codex and AGY config; call it only on the
+    /// owner's consent.
+    public func setUpHooks() async throws {
+        _ = try await call(["hooks", "setup"])
+    }
+
+    public func answer(
+        _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
+        in session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(
+            ["answer", agent.rawValue, prompt.id, String(choice)], in: session, adapter: adapter
+        )
+    }
+
     public func close(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws {
         _ = try await call(["close", agent.rawValue], in: session, adapter: adapter)
     }
 
-    public func attachCommand(for agent: SwarmAgentID, in session: SwarmSessionID) -> SwarmAttachCommand {
-        SwarmAttachCommand(
-            executable: resolveExecutable(executable) ?? executable,
-            arguments: ["attach", agent.rawValue],
-            environment: environment(for: session)
-        )
-    }
 
     private func read<Value: Decodable>(
         _ arguments: [String], in session: SwarmSessionID? = nil,

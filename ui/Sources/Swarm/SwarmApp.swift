@@ -279,6 +279,9 @@ private struct SessionsWindow: View {
     @State private var recentActions: [AppKey: Int] = [:]
     @State private var showingArchive = false
     @State private var showingCreate = false
+    @State private var showingHooksSetup = false
+    /// "Not now" on the hooks question; the app menu can still open it (ADR 0029).
+    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -400,6 +403,27 @@ private struct SessionsWindow: View {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
             await model.run()
+        }
+        .task {
+            // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
+            // finds `swarm` only on the login shell's PATH.
+            await LoginShellPath.ready()
+            guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
+                  let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
+            showingHooksSetup = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
+            showingHooksSetup = true
+        }
+        .sheet(isPresented: $showingHooksSetup) {
+            HooksSetupSheet(
+                setUp: { try await SwarmCLIBus().setUpHooks() },
+                notNow: {
+                    hooksSetupDeclined = true
+                    showingHooksSetup = false
+                },
+                done: { showingHooksSetup = false }
+            )
         }
         .onDisappear { panes.stopAll() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -1036,6 +1060,11 @@ struct SwarmApp: App {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .commands {
+                CommandGroup(after: .appSettings) {
+                    Button("Set Up Agent Hooks…") {
+                        NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+                    }
+                }
                 DebugCommands()
                 AppKeyCommands()
             }
@@ -1075,8 +1104,8 @@ enum SwarmExecutable {
         } else if arguments.count == 3, arguments[0] == "--print-transcript",
                   arguments[2] == "--raw" {
             await printTranscript(prefix: arguments[1], raw: true)
-        } else if arguments.count == 3, arguments[0] == "--attach-check" {
-            await attachCheck(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
+        } else if arguments.count == 3, arguments[0] == "--print-child" {
+            await printChild(prefix: arguments[1], agentID: SwarmAgentID(arguments[2]))
         } else if arguments.count == 4, arguments[0] == "--launch-check" {
             await launchCheck(directory: arguments[1], provider: arguments[2], model: arguments[3])
         } else {
@@ -1125,25 +1154,20 @@ enum SwarmExecutable {
         }
     }
 
-    private static func attachCheck(prefix: String, agentID: SwarmAgentID) async {
+    /// A child column's content, headless: its transcript rows, then the question it shows.
+    private static func printChild(prefix: String, agentID: SwarmAgentID) async {
         do {
             let session = try await matchingSession(prefix: prefix)
-            let bus = SwarmCLIBus()
-            guard let agent = try await bus.agents(in: session).first(where: { $0.id == agentID }) else {
+            guard let agent = try await SwarmCLIBus().agents(in: session).first(where: { $0.id == agentID }) else {
                 throw SwarmProfileError.failed("agent not found")
             }
-            if let reason = SwarmPanePolicy.unavailableReason(session: session, agent: agent) {
-                throw SwarmProfileError.failed(reason)
+            let snapshot = await SwarmChairTranscript().poll(childLog: agent.log, provider: agent.provider)
+            print(snapshot.printText)
+            if let prompt = agent.prompt {
+                print("prompt \(prompt.id): \(prompt.question.replacingOccurrences(of: "\n", with: " / "))")
+                for (index, choice) in prompt.choices.enumerated() { print("choice \(index): \(choice)") }
             }
-            await LoginShellPath.ready()
-            let store = AgentPaneStore()
-            let terminal = store.terminal(session: session, agent: agent)
-            try await Task.sleep(for: .seconds(2))
-            let alive = terminal.process.running
-            print("child alive: \(alive)")
-            print("first screen line: \(terminal.firstScreenLine)")
-            store.stopAll()
-            if !alive { exit(1) }
+            if case .unavailable = snapshot { exit(1) }
         } catch {
             fputs("\(error)\n", stderr)
             exit(1)

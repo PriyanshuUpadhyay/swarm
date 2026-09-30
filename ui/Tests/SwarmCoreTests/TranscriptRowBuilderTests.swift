@@ -32,7 +32,35 @@ struct TranscriptRowBuilderTests {
         #expect(TranscriptRowBuilder.rows(from: [first, second]).map(\.text) == ["A", "B"])
     }
 
-    @Test("Known tool output joins its call, while permission and errors remain distinct")
+    @Test("An AskUserQuestion row reads as a question, not a permission ask")
+    func questionLabel() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .elicitation(toolCallID: "ask-1", questions: [Question(question: "Which color?")], meta: Meta()),
+        ])
+        #expect(rows.map { $0.label(chair: "claude") } == ["Question"])
+        #expect(rows.map(\.text) == ["Which color?"])
+    }
+
+    @Test("Claude bookkeeping records with no chat content produce no rows")
+    func bookkeepingRecordsHaveNoRows() async throws {
+        let binary = try #require(ProcessInfo.processInfo.environment["SWARM_TRANSCRIPT_TOOL"])
+        let log = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bookkeeping-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        try [
+            #"{"type":"attachment","uuid":"u1","sessionId":"s1","attachment":{"type":"credential_org","organizationUuid":"org-1"}}"#,
+            #"{"type":"worktree-state","worktreeSession":{"originalCwd":"/work/main","worktreePath":"/work/wt","worktreeName":"wt","worktreeBranch":"wt","sessionId":"s1","enteredExisting":true},"sessionId":"s1"}"#,
+            #"{"type":"relocated","sessionId":"s1","relocatedCwd":"/work/wt"}"#,
+            #"{"type":"agent-name","agentName":"council-claude","sessionId":"s1"}"#,
+        ].joined(separator: "\n").appending("\n").write(to: log, atomically: true, encoding: .utf8)
+        let process = TranscriptToolProcess(binary: URL(fileURLWithPath: binary), format: "claude", log: log, follow: false)
+        var records: [TranscriptRecord] = []
+        for try await record in process.stream { records.append(record) }
+        #expect(records.count == 4)
+        #expect(TranscriptRowBuilder.rows(from: records).isEmpty)
+    }
+
+    @Test("Known tool output joins its call, while questions and errors remain distinct")
     func actionRows() {
         let meta = Meta(uuid: "event-1")
         let rows = TranscriptRowBuilder.rows(from: [
@@ -41,7 +69,7 @@ struct TranscriptRowBuilderTests {
             .elicitation(toolCallID: "ask-1", questions: [Question(question: "Proceed?")], meta: meta),
             .error(message: "failed", meta: meta),
         ])
-        #expect(rows.map(\.kind) == [.toolUse, .permission, .error])
+        #expect(rows.map(\.kind) == [.toolUse, .question, .error])
         #expect(Set(rows.map(\.eventID)).count == rows.count)
         #expect(rows[0].eventID == "call-1:call")
         #expect(rows[0].tool?.output == "one\ntwo")

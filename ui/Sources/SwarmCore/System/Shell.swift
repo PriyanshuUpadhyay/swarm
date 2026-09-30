@@ -107,19 +107,6 @@ public enum Shell {
         return env
     }
 
-    public static func terminalEnvironment(
-        inheriting inherited: [String: String], extra: [String: String] = [:]
-    ) -> [String: String] {
-        var variables = inherited
-        // A headless build can leave its no-colour flag in the app's environment.
-        variables.removeValue(forKey: "NO_COLOR")
-        variables["TERM"] = "xterm-256color"
-        variables["COLORTERM"] = "truecolor"
-        variables["TERM_PROGRAM"] = "Swarm"
-        if variables["LANG"] == nil { variables["LANG"] = "en_US.UTF-8" }
-        return variables.merging(extra) { _, requested in requested }
-    }
-
     /// Where a name was last found, so a lookup is one `stat` rather than a walk of the whole PATH.
     ///
     /// A mutex protects this cache across actor and process-drain threads.

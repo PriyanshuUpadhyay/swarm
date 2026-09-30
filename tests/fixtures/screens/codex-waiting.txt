@@ -1,12 +1,15 @@
 
   Would you like to run the following command?
 
-  Reason: create the probe file
+  Environment: local
 
-  $ touch /tmp/work/probe.txt
+  Reason: Do you approve running touch probe.txt outside the sandbox?
+
+  $ touch probe.txt
 
 
 › 1. Yes, proceed (y)
-  2. No, and tell Codex what to do differently (esc)
+  2. Yes, and don't ask again for commands that start with `touch probe.txt` (p)
+  3. No, and tell Codex what to do differently (esc)
 
   Press enter to confirm or esc to cancel

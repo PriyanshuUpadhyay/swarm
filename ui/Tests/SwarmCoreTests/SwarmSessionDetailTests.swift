@@ -5,21 +5,6 @@ import TranscriptTool
 
 @Suite("Session detail")
 struct SwarmSessionDetailTests {
-    @Test("Tmux-solo and Herdr agents with panes can attach")
-    func adapterPolicy() {
-        let agent = SwarmAgent(id: .init("orchestrator"), role: "orchestrator", pane: "%1", alive: true)
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux-solo"), agent: agent) == nil)
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux"), agent: agent)
-            == "This session's host has no attach")
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "herdr"), agent: agent) == nil)
-        var unstarted = agent
-        unstarted.pane = nil
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "tmux-solo"), agent: unstarted)
-            == "This agent has no pane")
-        #expect(SwarmPanePolicy.unavailableReason(session: session(adapter: "herdr"), agent: unstarted)
-            == "This agent has no pane")
-    }
-
     @Test("The grid includes only live agents and sorts by creation time")
     func agentCells() {
         var value = session(adapter: "tmux-solo")
@@ -34,10 +19,6 @@ struct SwarmSessionDetailTests {
         ]
         let cells = SwarmPanePolicy.cells(session: value, agents: agents)
         #expect(cells.map(\.id.rawValue) == ["early", "later"])
-        #expect(cells.map(\.kind) == [.attach, .attach])
-        value.adapter = "herdr"
-        #expect(SwarmPanePolicy.cells(session: value, agents: agents).first?.kind
-            == .attach)
     }
 
     @Test("The pane column exists only while a child agent is live")
@@ -181,16 +162,42 @@ struct SwarmSessionDetailTests {
         #expect(rows.contains { $0.kind == .user && $0.text.contains("List files") })
     }
 
-    @Test("Attach keeps the selected session and adapter")
-    func attachEnvironment() {
+    @Test("An answer names the agent, the question it saw, and the choice, in the session")
+    func answerArguments() async throws {
+        let calls = CloseCalls()
         let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
-            _, _, _, _, _, _ in ShellResult(status: 0, stdout: "", stderr: "")
+            _, arguments, _, environment, _, _ in
+            await calls.reply(arguments: arguments, environment: environment)
         }
-        let value = session(adapter: "tmux")
-        let command = SwarmPanePolicy.attachCommand(bus: bus, session: value, agent: .init("coder"))
-        #expect(command.arguments == ["attach", "coder"])
-        #expect(command.environment["SWARM_SESSION_ID"] == value.id.rawValue)
-        #expect(command.environment["SWARM_ADAPTER"] == "tmux")
+        let value = session(adapter: "tmux-solo")
+        let prompt = SwarmPrompt(id: "015475c015dc4eae", question: "Do you want to proceed?", choices: ["Yes", "No"])
+        try await bus.answer(prompt, choice: 1, to: .init("seat"), in: value)
+        #expect(await calls.arguments == [["answer", "seat", "015475c015dc4eae", "1"]])
+        #expect(await calls.adapters == ["tmux-solo"])
+    }
+
+    @Test("Hook status decodes the CLI's answer, and setup runs only its own command")
+    func hooksStatusAndSetup() async throws {
+        let calls = CloseCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            _ = await calls.reply(arguments: arguments, environment: environment)
+            return ShellResult(status: 0, stdout: #"{"codex":true,"agy":false}"#, stderr: "")
+        }
+        let status = try await bus.hooksStatus()
+        #expect(status == SwarmHooksStatus(codex: true, agy: false))
+        #expect(!status.isSetUp)
+        try await bus.setUpHooks()
+        #expect(await calls.arguments == [["hooks", "status", "--json"], ["hooks", "setup"]])
+    }
+
+    @Test("A child's chat reads the log its hooks reported and waits before one exists")
+    func childTranscript() async throws {
+        let transcript = SwarmChairTranscript()
+        #expect(await transcript.poll(childLog: nil, provider: "claude") == .waiting)
+        #expect(await transcript.poll(childLog: "/missing/child.jsonl", provider: "codex") == .waiting)
+        #expect(await transcript.poll(childLog: "/missing/child.jsonl", provider: "gemini")
+            == .notice("No transcript reader for this provider yet"))
     }
 
     @Test("Close uses the session adapter and closes live children before the chair")

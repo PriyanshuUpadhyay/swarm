@@ -11,6 +11,8 @@ pub struct Adapter {
     pub interrupt: Option<String>,
     /// Prints a pane's visible rows, or Herdr's JSON for the agent in it (ADR 0021).
     pub screen: Option<String>,
+    /// Sends one key name, such as `2`, `Down`, or `Enter`, to a pane (`swarm answer`).
+    pub key: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -85,6 +87,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         attach: verbs.remove("attach"),
         interrupt: verbs.remove("interrupt"),
         screen: verbs.remove("screen"),
+        key: verbs.remove("key"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -140,6 +143,12 @@ impl Adapter {
                 .interrupt
                 .as_ref()
                 .ok_or_else(|| format!("swarm: adapter {} has no interrupt", self.name))?,
+            "key" => self.key.as_ref().ok_or_else(|| {
+                format!(
+                    "swarm: adapter {} cannot send a key, so answer in the pane",
+                    self.name
+                )
+            })?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         let output = self.command(line, vars).output()?;

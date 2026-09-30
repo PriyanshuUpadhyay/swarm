@@ -76,9 +76,247 @@ fn approval(
         .is_some_and(|question| !(question + 1..lines.len()).any(idle))
 }
 
+/// A question on an agent's screen and the choices it offers, in screen order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Prompt {
+    /// The rows above the choices, up to a rule or an earlier history row.
+    pub question: String,
+    pub choices: Vec<String>,
+    /// Numbered choices take their number as the key; unnumbered ones take arrow keys.
+    pub numbered: bool,
+    /// The choice the screen's cursor marker is on.
+    pub cursor: usize,
+    /// A hash of the question and choices, so an answer can prove it saw this prompt.
+    pub id: String,
+    /// No rule or history row closes the question above, so rows of it can be off the screen.
+    #[serde(skip)]
+    pub cut: bool,
+}
+
+/// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
+/// Codex approval and folder trust, AGY folder trust and ask_question (tests/fixtures/screens).
+const PROMPT_FOOTERS: &[&str] = &[
+    "esc to cancel",
+    "press enter to confirm",
+    "enter continue",
+    "enter to select",
+    "enter select",
+    "enter confirm",
+    "tab amend",
+];
+const CURSORS: &[char] = &['❯', '›', '>'];
+/// Rows the question does not reach past: a history entry's marker.
+const HISTORY: &[char] = &['❯', '›', '>', '•', '⏺', '●', '↳', '✻', '▸'];
+
+/// A numbered choice's number, label, and label column, as in `❯ 1. Yes` or `  2. No`.
+fn numbered_choice(line: &str) -> Option<(usize, &str, usize)> {
+    let rest = line.trim_start().trim_start_matches(CURSORS).trim_start();
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let after = rest[digits..].strip_prefix(". ")?.trim_start();
+    let label = after.trim_end();
+    let column = line.chars().count() - after.chars().count();
+    (!label.is_empty()).then_some((rest[..digits].parse().ok()?, label, column))
+}
+
+fn indent(line: &str) -> usize {
+    line.chars().count() - line.trim_start().chars().count()
+}
+
+/// How many status rows a live prompt's footer can have below it, such as AGY's mode line.
+const ROWS_BELOW_FOOTER: usize = 2;
+
+/// The prompt a pane's screen shows: at least two choices with only blank rows between the last
+/// one and a known footer row near the bottom. Numbered choices run 1, 2, … and may have a
+/// description or a rule row between them; unnumbered ones (AGY folder trust) are a cursor row and
+/// the rows below it at the same label column.
+pub fn prompt(rows: &str) -> Option<Prompt> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let is_footer = |line: &str| {
+        let line = line.to_lowercase();
+        PROMPT_FOOTERS.iter().any(|footer| line.contains(footer))
+    };
+    let mut below = 0;
+    // AGY's status row also says "esc to cancel", so each footer candidate near the bottom is tried.
+    for index in (0..lines.len()).rev() {
+        // An input line below a list makes the list history: the agent waits on text, not a
+        // choice, and a digit sent to it would be typed into the input line.
+        if below > ROWS_BELOW_FOOTER || lines[index].trim_start().starts_with(CURSORS) {
+            return None;
+        }
+        if is_footer(lines[index])
+            && let Some(found) = prompt_above(&lines, index)
+        {
+            return Some(found);
+        }
+        if !lines[index].trim().is_empty() {
+            below += 1;
+        }
+    }
+    None
+}
+
+/// The prompt a screen shows, read again from the pane's history when nothing closes its question
+/// above. None when that read fails or nothing closes the question there either: a pane can keep
+/// no row above its screen, so no read proves the question starts at its top row. Such a prompt,
+/// as a folder trust screen, is answered in the pane.
+pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
+    let found = prompt(screen)?;
+    if !found.cut {
+        return Some(found);
+    }
+    let whole = prompt(&history()?)?;
+    (!whole.cut).then_some(whole)
+}
+
+fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
+    let last = (0..footer)
+        .rev()
+        .find(|&index| !lines[index].trim().is_empty())?;
+    // The last choice can wrap onto rows below it.
+    let last_choice = (last.saturating_sub(3)..=last)
+        .rev()
+        .find(|&row| numbered_choice(lines[row]).is_some());
+    let (first, choices, numbered, cursor) = if let Some(mut index) = last_choice {
+        let mut number = numbered_choice(lines[index])?.0;
+        let mut rows = vec![index];
+        while number > 1 {
+            let found = (index.saturating_sub(6)..index)
+                .rev()
+                .find(|&row| numbered_choice(lines[row]).is_some_and(|(n, ..)| n == number - 1))?;
+            rows.push(found);
+            index = found;
+            number -= 1;
+        }
+        rows.reverse();
+        // A label takes every row up to the next choice, so a wrapped path or a description
+        // is shown and hashed with it. A row left of the label column is not the label's, so
+        // the list is not a prompt.
+        let ends = rows[1..].iter().copied().chain([footer]);
+        let labels: Vec<String> = rows
+            .iter()
+            .zip(ends)
+            .map(|(&row, end)| {
+                let (_, label, column) = numbered_choice(lines[row])?;
+                let mut parts = vec![label];
+                for line in &lines[row + 1..end] {
+                    let text = line.trim();
+                    if text.is_empty() || text.starts_with('─') {
+                        continue;
+                    }
+                    if indent(line) < column {
+                        return None;
+                    }
+                    parts.push(text);
+                }
+                Some(parts.join("\n"))
+            })
+            .collect::<Option<_>>()?;
+        let cursor = rows
+            .iter()
+            .position(|&row| lines[row].trim_start().starts_with(CURSORS))
+            .unwrap_or(0);
+        (rows[0], labels, true, cursor)
+    } else {
+        // The column a row's label starts in, past a cursor marker and its space.
+        let label_column = |line: &str| {
+            let text = line.trim_start();
+            let indent = line.chars().count() - text.chars().count();
+            match text.strip_prefix(CURSORS) {
+                Some(rest) => {
+                    indent + 1 + (text.chars().count() - 1 - rest.trim_start().chars().count())
+                }
+                None => indent,
+            }
+        };
+        let column = label_column(lines[last]);
+        let mut first = last;
+        while first > 0
+            && !lines[first - 1].trim().is_empty()
+            && label_column(lines[first - 1]) == column
+        {
+            first -= 1;
+        }
+        let rows = first..=last;
+        let cursors: Vec<usize> = rows
+            .clone()
+            .filter(|&row| lines[row].trim_start().starts_with(CURSORS))
+            .map(|row| row - first)
+            .collect();
+        let [cursor] = cursors[..] else {
+            return None;
+        };
+        let labels: Vec<String> = rows
+            .map(|row| {
+                lines[row]
+                    .trim()
+                    .trim_start_matches(CURSORS)
+                    .trim()
+                    .to_string()
+            })
+            .collect();
+        (first, labels, false, cursor)
+    };
+    if choices.len() < 2 || choices.iter().any(String::is_empty) {
+        return None;
+    }
+    // The whole question up to a rule or a history row, so no row of a long command is left
+    // out of the card or the id. Both start at column 0 on every capture; the question's own
+    // rows are indented, so a command row such as `> /tmp/out` stays in the question.
+    let mut question = Vec::new();
+    let mut bounded = false;
+    for line in lines[..first].iter().rev() {
+        let text = line.trim();
+        if text.is_empty() {
+            continue;
+        }
+        if line.starts_with('─') || line.starts_with(HISTORY) {
+            bounded = true;
+            break;
+        }
+        question.push(text);
+    }
+    question.reverse();
+    let question = question.join("\n");
+    // FNV-1a: stable across builds, so a listing and a later answer agree.
+    let id = std::iter::once(question.as_str())
+        .chain(choices.iter().map(String::as_str))
+        .flat_map(|part| part.bytes().chain([0]))
+        .fold(0xcbf29ce484222325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        });
+    Some(Prompt {
+        question,
+        choices,
+        numbered,
+        cursor,
+        id: format!("{id:016x}"),
+        cut: !bounded,
+    })
+}
+
+impl Prompt {
+    /// The tmux keys that pick choice `index`: its number, or arrows from the cursor then Enter.
+    pub fn keys(&self, index: usize) -> Option<Vec<String>> {
+        if index >= self.choices.len() {
+            return None;
+        }
+        if self.numbered {
+            return Some(vec![(index + 1).to_string()]);
+        }
+        let arrow = if index > self.cursor { "Down" } else { "Up" };
+        let mut keys = vec![arrow.to_string(); index.abs_diff(self.cursor)];
+        keys.push("Enter".to_string());
+        Some(keys)
+    }
+}
+
 /// The state the bottom rows of a pane show, or None when they show no prompt that needs the
 /// user, no turn in progress, and no idle input prompt.
 pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
+    // A folder trust or a question waits on the user as an approval does.
+    if prompt(rows).is_some() {
+        return Some(ScreenState::Waiting);
+    }
     let lines: Vec<&str> = rows.trim_end().lines().collect();
     let lines = &lines[lines.len().saturating_sub(ROWS)..];
     let lower = lines.join("\n").to_lowercase();
@@ -295,6 +533,246 @@ mod tests {
                 expected,
                 "{provider}:\n{rows}"
             );
+        }
+    }
+
+    #[test]
+    fn every_prompt_shape_gives_its_question_choices_cursor_and_keys() {
+        let cases = [
+            (
+                fixture!("claude-waiting"),
+                "Bash command\n│ touch /tmp/work/probe.txt\nCreate empty probe file\nDo you want to proceed?",
+                &[
+                    "Yes",
+                    "Yes, and always allow access to\n/tmp/work from this project",
+                    "No",
+                ][..],
+                true,
+            ),
+            (
+                fixture!("claude-question"),
+                "☐ Color\nWhich color do you prefer?",
+                &[
+                    "Red\nThe color red",
+                    "Blue\nThe color blue",
+                    "Type something.",
+                    "Chat about this",
+                ],
+                true,
+            ),
+            (
+                fixture!("codex-waiting"),
+                "Would you like to run the following command?\nEnvironment: local\n\
+                 Reason: Do you approve running touch probe.txt outside the sandbox?\n$ touch probe.txt",
+                &[
+                    "Yes, proceed (y)",
+                    "Yes, and don't ask again for commands that start with `touch probe.txt` (p)",
+                    "No, and tell Codex what to do differently (esc)",
+                ],
+                true,
+            ),
+            (
+                fixture!("codex-trust"),
+                "Folder access\n/tmp/work\nTrust this folder? Codex can read, edit, and run files here, \
+                 subject to your permission settings. Folder\nsettings can run code automatically, even \
+                 without a model request. Continue only if you trust these files.\nYour trust decision \
+                 will be saved.",
+                &["Trust and continue", "Back to Agent Command Center"],
+                true,
+            ),
+            (
+                fixture!("agy-question"),
+                "Question 1/1: Which color do you choose?",
+                &["Red", "Blue", "Write-in..."],
+                true,
+            ),
+            (
+                fixture!("agy-trust"),
+                "Accessing workspace:\n/tmp/work\nDo you trust the contents of this project?\n\
+                 Antigravity CLI requires permission to read, edit, and execute files here.",
+                &["Yes, I trust this folder", "No, exit"],
+                false,
+            ),
+            (
+                fixture!("agy-waiting"),
+                "Agent is requesting permission for: run_command\ntouch /tmp/work/probe.txt\n\
+                 Do you want to proceed?",
+                &["Yes", "No"],
+                false,
+            ),
+        ];
+        for (rows, question, choices, numbered) in cases {
+            let prompt = prompt(rows).unwrap_or_else(|| panic!("no prompt in:\n{rows}"));
+            assert_eq!(prompt.question, question, "{rows}");
+            assert_eq!(prompt.choices, choices, "{rows}");
+            assert_eq!((prompt.numbered, prompt.cursor), (numbered, 0), "{rows}");
+        }
+
+        let claude = prompt(fixture!("claude-waiting")).unwrap();
+        assert_eq!(claude.keys(2), Some(vec!["3".to_string()]));
+        assert_eq!(claude.keys(3), None);
+        let agy = prompt(fixture!("agy-trust")).unwrap();
+        assert_eq!(agy.keys(0), Some(vec!["Enter".to_string()]));
+        assert_eq!(
+            agy.keys(1),
+            Some(vec!["Down".to_string(), "Enter".to_string()])
+        );
+        // A moved cursor changes the arrows, and the id, so a stale answer is refused.
+        let moved = prompt(
+            &fixture!("agy-trust")
+                .replace("> Yes, I trust", "  Yes, I trust")
+                .replace("  No, exit", "> No, exit"),
+        )
+        .unwrap();
+        assert_eq!(moved.cursor, 1);
+        assert_eq!(
+            moved.keys(0),
+            Some(vec!["Up".to_string(), "Enter".to_string()])
+        );
+        assert_eq!(moved.id, agy.id);
+        let other = prompt(&fixture!("claude-waiting").replace("probe.txt", "other.txt")).unwrap();
+        assert_ne!(other.id, claude.id);
+    }
+
+    #[test]
+    fn every_row_of_a_long_command_is_in_the_question_and_its_id() {
+        let command = |first: &str| {
+            let rows: String = (1..=6).map(|n| format!("   echo step {n}\n")).collect();
+            format!(
+                "────\n Bash command\n\n   {first}\n{rows}\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel\n"
+            )
+        };
+        let harmless = prompt(&command("ls /tmp/work")).unwrap();
+        let deleting = prompt(&command("rm -rf /tmp/work")).unwrap();
+        assert!(
+            deleting.question.contains("rm -rf /tmp/work"),
+            "{}",
+            deleting.question
+        );
+        assert_ne!(deleting.id, harmless.id);
+        assert!(!deleting.cut);
+
+        // A question that reaches the top row is read again from the pane's history.
+        let screen = command("rm -rf /tmp/work").replace("────\n Bash command\n\n", "");
+        assert!(prompt(&screen).unwrap().cut);
+        let history = format!("● I will clean up.\n Bash command\n{screen}");
+        let whole = whole_prompt(&screen, || Some(history.clone())).unwrap();
+        assert!(
+            whole.question.starts_with("Bash command\nrm -rf"),
+            "{}",
+            whole.question
+        );
+        assert_eq!(whole_prompt(&screen, || None), None);
+        // History that lost the question's first rows is refused too, also when it lost the
+        // same rows as the screen (a pane that keeps no rows above it).
+        let lost = format!("   echo step 0\n{screen}");
+        assert_eq!(whole_prompt(&screen, || Some(lost)), None);
+        assert_eq!(whole_prompt(&screen, || Some(screen.clone())), None);
+        let never = || -> Option<String> { panic!("a whole question needs no history") };
+        assert_eq!(whole_prompt(&command("ls"), never), prompt(&command("ls")));
+    }
+
+    #[test]
+    fn a_blank_row_inside_a_command_at_the_top_row_does_not_end_the_question() {
+        let command = |first: &str| {
+            format!(
+                "────\n Bash command\n\n   {first}\n\n   echo done\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel\n"
+            )
+        };
+        // The pane shows the rows from the blank row below the first command row.
+        let screen = |first: &str| {
+            let history = command(first);
+            let start = history.find("\n\n   echo done").unwrap() + 1;
+            history[start..].to_string()
+        };
+        assert!(prompt(&screen("rm -rf /tmp/work")).unwrap().cut);
+        let whole = |first: &str| whole_prompt(&screen(first), || Some(command(first))).unwrap();
+        assert!(
+            whole("rm -rf /tmp/work")
+                .question
+                .contains("rm -rf /tmp/work"),
+            "{}",
+            whole("rm -rf /tmp/work").question
+        );
+        assert_ne!(whole("rm -rf /tmp/work").id, whole("ls /tmp/work").id);
+    }
+
+    #[test]
+    fn a_question_that_nothing_closes_above_is_refused_even_when_the_history_is_the_screen() {
+        // A Codex folder trust pane is on the alternate screen, so its history is the screen.
+        let screen = fixture!("codex-trust");
+        assert!(prompt(screen).unwrap().cut);
+        assert_eq!(whole_prompt(screen, || Some(screen.to_string())), None);
+    }
+
+    #[test]
+    fn an_indented_command_row_that_starts_like_history_stays_in_the_question() {
+        let command = |first: &str| {
+            format!(
+                "• Ran ls\n\n  Would you like to run the following command?\n\n  $ {first}\n  > /tmp/result\n  echo done\n\n› 1. Yes, proceed (y)\n  2. No (esc)\n\n  Press enter to confirm or esc to cancel\n"
+            )
+        };
+        let harmless = prompt(&command("printf safe")).unwrap();
+        let deleting = prompt(&command("rm -rf /tmp/work")).unwrap();
+        assert!(
+            deleting
+                .question
+                .contains("$ rm -rf /tmp/work\n> /tmp/result"),
+            "{}",
+            deleting.question
+        );
+        assert_ne!(deleting.id, harmless.id);
+        assert!(!deleting.cut);
+    }
+
+    #[test]
+    fn a_wrapped_choice_row_is_part_of_its_label_and_id() {
+        let rows = fixture!("claude-waiting");
+        let other = rows.replace("      /tmp/work from", "      /etc from");
+        assert_ne!(other, rows);
+        assert_ne!(prompt(&other).unwrap().id, prompt(rows).unwrap().id);
+        // The last choice wraps too.
+        let last = rows.replace(
+            "   3. No\n",
+            "   3. No, and tell Claude what\n      to do instead\n",
+        );
+        assert_eq!(
+            prompt(&last).unwrap().choices[2],
+            "No, and tell Claude what\nto do instead"
+        );
+        // A row left of the labels is not a choice's, so the list is not a prompt.
+        let stray = rows.replace("      /tmp/work from", " /tmp/work from");
+        assert_eq!(prompt(&stray), None);
+    }
+
+    #[test]
+    fn an_old_codex_list_above_the_idle_composer_is_no_prompt() {
+        let rows = format!(
+            "{}\n› Ask Codex to do anything\n\n  ? for shortcuts                                100% context left\n",
+            fixture!("codex-waiting")
+        );
+        assert_eq!(prompt(&rows), None);
+        assert_eq!(screen_state("codex", &rows), Some(ScreenState::Idle));
+    }
+
+    #[test]
+    fn a_screen_with_no_footer_below_its_list_has_no_prompt() {
+        for rows in [
+            fixture!("claude-idle"),
+            fixture!("claude-after-esc"),
+            fixture!("claude-working"),
+            fixture!("claude-done"),
+            fixture!("codex-idle"),
+            fixture!("codex-working"),
+            fixture!("codex-failed"),
+            fixture!("agy-idle"),
+            fixture!("agy-working"),
+            // A numbered answer with the working footer rows below it.
+            "• Plan\n  1. Read\n  2. Edit\n────\n>\n────\nesc to cancel      Gemini 3.7 Flash\n",
+            // A cursor history row with a wrapped second row, as Claude shows a sent message.
+            "❯ Use the tool to ask me\n  one question\n────\n",
+        ] {
+            assert_eq!(prompt(rows), None, "{rows}");
         }
     }
 

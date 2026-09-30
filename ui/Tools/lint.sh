@@ -15,7 +15,7 @@ fi
 stores='SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail'
 typeset -A surfaces=(
   Composer ComposerView PaneStrip 'PaneStrip\b' Sidebar SidebarView
-  Tabs ChatTabsView Transcript TranscriptView Palette CommandPalette Design '^$'
+  Tabs ChatTabsView Transcript TranscriptView Palette CommandPalette Prompt PromptCard Design '^$'
 )
 for folder entry in ${(kv)surfaces}; do
   others=(${(v)surfaces:#$entry})

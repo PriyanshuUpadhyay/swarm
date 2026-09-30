@@ -1,9 +1,5 @@
 import Foundation
 
-public enum FocusedSurface: Sendable {
-    case terminal, transcript, sidebar
-}
-
 /// One key press: the key without modifiers, and the modifiers held.
 public struct KeyChord: Sendable, Hashable {
     public enum Key: Sendable, Hashable {
@@ -99,37 +95,6 @@ public enum AppKey: Sendable, Hashable {
 
     public static func action(for chord: KeyChord) -> AppKey? {
         table.first { $0.1 == chord }?.0
-    }
-}
-
-public enum KeyRoute: Sendable, Equatable {
-    case app(AppKey)
-    /// Goes to the focused terminal as the agent's input.
-    case terminal
-    /// Taken by no one, such as ⌥⌘O, which would flip the terminal's Option-as-Meta.
-    case blocked
-    /// Copy, paste, or select all in a terminal, left to the Edit menu and the terminal's own
-    /// copy:, paste:, and selectAll:.
-    case edit
-    case ignore
-}
-
-public enum KeyRouting {
-    static let blocked: Set<KeyChord> = [KeyChord("o", [.option, .command])]
-    static let edit: Set<KeyChord> = [KeyChord("c", .command), KeyChord("v", .command), KeyChord("a", .command)]
-
-    /// App keys win in every focus. In a terminal, find keys use the terminal's own find, ⌘C,
-    /// ⌘V, and ⌘A edit, any other ⌘ key goes nowhere, and every key without ⌘, such as ⌃C, Esc,
-    /// or ⌥B, goes to the agent.
-    public static func route(focus: FocusedSurface, key: KeyChord) -> KeyRoute {
-        if blocked.contains(key) { return .blocked }
-        if let action = AppKey.action(for: key) {
-            if focus == .terminal, [.find, .findNext, .findPrevious].contains(action) { return .terminal }
-            return .app(action)
-        }
-        guard focus == .terminal else { return .ignore }
-        if edit.contains(key) { return .edit }
-        return key.modifiers.contains(.command) ? .blocked : .terminal
     }
 }
 

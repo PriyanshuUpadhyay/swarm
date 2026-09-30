@@ -71,6 +71,11 @@ enum DesignTokens {
     static let quoteBar = Color.secondary.opacity(0.5)
     static let codeHeaderFill = Color.primary.opacity(0.05)
     static let codeBlockFill = Color.primary.opacity(0.03)
+    /// A question an agent waits on, in the waiting status colour.
+    static let promptFill = color(.waiting).opacity(0.08)
+    static let promptBorder = color(.waiting).opacity(0.4)
+    /// A chat's question strip before it scrolls.
+    static let promptListMaxHeight: CGFloat = 280
 
     /// For pointer-driven and state-driven changes. Keyboard-driven changes get no animation.
     static let spring = Animation.spring(response: 0.3, dampingFraction: 1)

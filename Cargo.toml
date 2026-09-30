@@ -1,6 +1,6 @@
 [package]
 name = "swarm"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "Message bus and pane control for a tree of agent CLIs"
@@ -11,4 +11,6 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order keeps ~/.claude.json and the AGY settings in their own key order on a trust write.
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+toml_edit = "0.25.15"
 uuid = { version = "1", features = ["v7"] }

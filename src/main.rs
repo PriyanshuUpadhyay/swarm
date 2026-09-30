@@ -29,11 +29,15 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    // Setting up the hooks changes the owner's Codex and AGY config, so it waits for consent.
+    println!(
+        "swarm: to see Codex and AGY agents' chats and questions, run `swarm hooks setup`; it trusts swarm's own Codex hooks and adds swarm's AGY hooks"
+    );
 
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles set-model <runner> <model> | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -52,11 +56,35 @@ fn valid_session_id(id: &str) -> Result<String, String> {
 }
 
 /// (session, agent, state, detail)
-type HookReport = (String, String, &'static str, Option<String>);
+/// What one hook call reports: the session and agent, the state with its detail, and the chat log
+/// path from the payload.
+#[derive(Debug, PartialEq)]
+struct HookReport {
+    session: String,
+    agent: String,
+    state: Option<(&'static str, Option<String>)>,
+    log: Option<std::path::PathBuf>,
+}
+
+/// The chat log a hook payload names, only when it is an absolute path to an existing `.jsonl`
+/// file. Claude and Codex send `transcript_path`, which Codex may leave null; AGY sends
+/// `transcriptPath`.
+fn hook_log(payload: &serde_json::Value) -> Option<std::path::PathBuf> {
+    let path = ["transcript_path", "transcriptPath"]
+        .iter()
+        .find_map(|name| payload.get(*name)?.as_str())
+        .map(std::path::PathBuf::from)?;
+    (path.is_absolute()
+        && path
+            .extension()
+            .is_some_and(|extension| extension == "jsonl")
+        && path.is_file())
+    .then_some(path)
+}
 
 /// What one hook call reports, or None when the caller is no swarm agent or the event says
-/// nothing about state. `args` is `<provider> [event]`; AGY sends no event name in its payload,
-/// so its hook command names the event.
+/// nothing about state and names no chat log. `args` is `<provider> [event]`; AGY sends no event
+/// name in its payload, so its hook command names the event.
 fn hook_report(
     args: &[String],
     payload: &str,
@@ -80,10 +108,17 @@ fn hook_report(
     let event = event
         .or_else(|| payload.get("hook_event_name")?.as_str())
         .unwrap_or_default();
-    let Some((state, detail)) = swarm::host::hook_state(provider, event, &payload) else {
+    let state = swarm::host::hook_state(provider, event, &payload);
+    let log = hook_log(&payload);
+    if state.is_none() && log.is_none() {
         return Ok(None);
-    };
-    Ok(Some((valid_session_id(&session)?, agent, state, detail)))
+    }
+    Ok(Some(HookReport {
+        session: valid_session_id(&session)?,
+        agent,
+        state,
+        log,
+    }))
 }
 
 /// All of `reader` if it closes within `limit`, else None. The read runs on its own thread, so
@@ -110,21 +145,25 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2))
         .ok_or("swarm hook: stdin did not close within 2 s")?;
-    let Some((session, agent, state, detail)) =
-        hook_report(args, &payload, |name| env::var(name).ok())?
-    else {
+    let Some(report) = hook_report(args, &payload, |name| env::var(name).ok())? else {
         return Ok(());
     };
     let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The providers give a hook about 3 s; a busy bus loses this report rather than the turn.
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
+    if let Some(log) = &report.log {
+        swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
+    }
+    let Some((state, detail)) = report.state else {
+        return Ok(());
+    };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
     swarm::store::set_state(
         &connection,
-        &session,
-        &agent,
+        &report.session,
+        &report.agent,
         state,
         "hook",
         detail.as_deref(),
@@ -293,6 +332,67 @@ fn default_codex_home() -> Result<std::path::PathBuf, String> {
     default_codex_home_with_env(|variable| std::env::var_os(variable))
 }
 
+/// Every Codex home a pane's `codex` may read: the default one and each yelo profile
+/// (`~/.codex-<name>`).
+fn codex_homes(
+    user_home: &std::path::Path,
+) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    let mut homes = vec![default_codex_home()?];
+    if let Ok(entries) = std::fs::read_dir(user_home) {
+        homes.extend(
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry.file_name().to_string_lossy().starts_with(".codex-")
+                        && entry.path().is_dir()
+                })
+                .map(|entry| entry.path()),
+        );
+    }
+    homes.sort();
+    homes.dedup();
+    Ok(homes)
+}
+
+/// `swarm hooks status --json | setup`: whether swarm's own Codex and AGY state hooks are set up,
+/// and setting them up. The owner consents first, in the app or by running `setup` (ADR 0029).
+/// Claude needs no step, because `swarm launch` passes its hooks with `--settings`.
+fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let user_home = std::path::PathBuf::from(env_var("HOME")?);
+    let codex = swarm::bus::codex_hook_trust(&swarm::bus::state_hook_command("codex")?);
+    let homes = codex_homes(&user_home)?;
+    let agy_hooks = user_home.join(".gemini/config/hooks.json");
+    let agy_command = swarm::bus::state_hook_command("agy")?;
+    match args {
+        [status, json] if status == "status" && json == "--json" => {
+            print_json(&serde_json::json!({
+                "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
+                "agy": swarm::bus::agy_hooks_set(&agy_hooks, &agy_command),
+            }))
+        }
+        [setup] if setup == "setup" => {
+            let lock = swarm::paths::root_dir()?.join("trust.lock");
+            std::fs::create_dir_all(swarm::paths::root_dir()?)?;
+            swarm::bus::with_lock(&lock, || {
+                for home in &homes {
+                    if swarm::bus::ensure_codex_hook_trust(home, &codex)? {
+                        println!(
+                            "swarm: trusted swarm's Codex hooks in {}",
+                            home.join("config.toml").display()
+                        );
+                    }
+                }
+                if swarm::bus::ensure_agy_hooks(&agy_hooks, &agy_command)? {
+                    println!("swarm: added swarm's hooks to {}", agy_hooks.display());
+                }
+                Ok(())
+            })?;
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
     let config = env::var_os("CLAUDE_CONFIG_DIR")
         .map(std::path::PathBuf::from)
@@ -340,6 +440,27 @@ fn resolved_chair_log(row: &swarm::store::SessionRow) -> Option<std::path::PathB
         "codex" => codex_chair_log(id, &row.chair_days),
         _ => None,
     }
+}
+
+/// An agent's chat log, or the same Codex rollout under `archived_sessions/` once Codex has moved
+/// it there from `sessions/<y>/<m>/<d>/`.
+fn resolved_agent_log(log: String) -> String {
+    let path = std::path::Path::new(&log);
+    if path.is_file() {
+        return log;
+    }
+    path.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "sessions"))
+        .and_then(|sessions| {
+            Some(
+                sessions
+                    .parent()?
+                    .join("archived_sessions")
+                    .join(path.file_name()?),
+            )
+        })
+        .filter(|archived| archived.is_file())
+        .map_or(log, |archived| archived.to_string_lossy().into_owned())
 }
 
 struct SpawnOptions<'a> {
@@ -664,7 +785,19 @@ fn spawn_agent(
         &vars,
     )?;
     if !options.command.is_empty() {
-        let exe = env::current_exe()?.to_string_lossy().into_owned();
+        // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
+        // and linking to it would make the link point at itself.
+        let exe = std::fs::canonicalize(env::current_exe()?)?;
+        // The agent's own `swarm inbox` and `swarm finish` must run this binary, not an older
+        // `swarm` on the pane's PATH, which refuses a database another build made. The pane gets
+        // a dir with only a link to it, since this binary's own dir (such as ~/.cargo/bin) holds
+        // other tools that would shadow the owner's.
+        let bin = swarm_bin(root, &session_id, &exe)?;
+        let path = format!(
+            "export PATH={}:\"$PATH\"; ",
+            swarm::adapter::shell_line(&[bin.to_string_lossy().into_owned()])
+        );
+        let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
             let mut args = vec!["env".to_string(), "--".to_string()];
@@ -679,7 +812,7 @@ fn spawn_agent(
         } else {
             swarm::adapter::shell_line(options.command)
         };
-        let line = script_line(root, &session_id, agent_id, &child)?;
+        let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         adapter.run(
             "ring",
             &[("pane", &pane), ("text", &format!("{line}; {hook}"))],
@@ -690,6 +823,27 @@ fn spawn_agent(
         eprintln!("account {}", account.name);
     }
     Ok(())
+}
+
+/// Point `runs/<session>/bin/swarm` at `exe` and return that dir.
+fn swarm_bin(
+    root: &std::path::Path,
+    session_id: &str,
+    exe: &std::path::Path,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::DirBuilderExt;
+    valid_session_id(session_id)?;
+    let dir = root.join(format!("runs/{session_id}/bin"));
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    // A new link renamed over the old one, so a pane starting now never finds no `swarm`.
+    let tmp = dir.join(format!(".swarm.{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(exe, &tmp)?;
+    std::fs::rename(&tmp, dir.join("swarm"))?;
+    Ok(dir)
 }
 
 /// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
@@ -918,6 +1072,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().map(String::as_str) == Some("init") {
         return init();
+    }
+    if args.first().map(String::as_str) == Some("hooks") {
+        return hooks(&args[1..]);
     }
     if let [cmd, json] = args
         && cmd == "roles"
@@ -1174,39 +1331,52 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         // The screen check (ADR 0021) reads each live pane once per listing, all at the same
         // time, so six agents cost about one capture.
-        let screens: Vec<Option<(swarm::screen::ScreenState, Option<String>)>> =
-            std::thread::scope(|scope| {
-                let adapter = &adapter;
-                let reads: Vec<_> = rows
-                    .iter()
-                    .zip(&alive)
-                    .map(|(row, alive)| {
-                        let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
-                            (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
-                            _ => None,
-                        };
-                        scope.spawn(move || {
-                            let (pane, provider) = target?;
-                            let output = adapter
-                                .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                            swarm::screen::read_pane(provider, &output, || {
-                                adapter.capture_within(
-                                    &[("pane", pane)],
-                                    std::time::Duration::from_millis(300),
-                                )
-                            })
-                        })
+        type ScreenRead = (
+            swarm::screen::ScreenState,
+            Option<String>,
+            Option<swarm::screen::Prompt>,
+        );
+        let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
+            let adapter = &adapter;
+            let reads: Vec<_> = rows
+                .iter()
+                .zip(&alive)
+                .map(|(row, alive)| {
+                    let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
+                        (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                        _ => None,
+                    };
+                    scope.spawn(move || {
+                        let (pane, provider) = target?;
+                        let output = adapter
+                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                        let prompt = swarm::screen::whole_prompt(&output, || {
+                            adapter.capture_within(
+                                &[("pane", pane)],
+                                std::time::Duration::from_millis(300),
+                            )
+                        });
+                        let (state, detail) = swarm::screen::read_pane(provider, &output, || {
+                            adapter.capture_within(
+                                &[("pane", pane)],
+                                std::time::Duration::from_millis(300),
+                            )
+                        })?;
+                        Some((state, detail, prompt))
                     })
-                    .collect();
-                reads
-                    .into_iter()
-                    .map(|read| read.join().ok().flatten())
-                    .collect()
-            });
+                })
+                .collect();
+            reads
+                .into_iter()
+                .map(|read| read.join().ok().flatten())
+                .collect()
+        });
         let mut agents = Vec::new();
         for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
-            let (screen, detail) = screen.unzip();
-            let detail = detail.flatten();
+            let (screen, detail, prompt) = match screen {
+                Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
+                None => (None, None, None),
+            };
             let (state, write) = swarm::screen::resolve(
                 row.state.as_deref(),
                 row.state_at,
@@ -1214,6 +1384,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 screen,
                 now,
             );
+            // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
+            // so the listing it polls rings a due message again once the pane shows it idle. A
+            // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
+            if screen == Some(swarm::screen::ScreenState::Idle)
+                && prompt.is_none()
+                && !matches!(state.as_deref(), Some("working" | "waiting"))
+                && let Some(pane) = row.pane.as_deref()
+                && let Err(error) =
+                    rering_if_due(&mut connection, &root, &adapter, &session_id, &row.id, pane)
+            {
+                eprintln!("swarm: {error}");
+            }
             if let Some(seen) = write {
                 let detail = detail.filter(|_| seen == "failed");
                 match swarm::store::set_screen_state(
@@ -1250,6 +1432,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 state_at_s: row.state_at,
                 state_source: row.state_source,
                 state_detail: row.state_detail,
+                log: row.log.map(resolved_agent_log),
+                prompt,
             });
         }
         #[derive(serde::Serialize)]
@@ -1357,11 +1541,6 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let lock = root.join("trust.lock");
-        if provider.as_deref() == Some("agy") {
-            let hooks = user_home.join(".gemini/config/hooks.json");
-            let command = swarm::bus::state_hook_command("agy")?;
-            swarm::bus::with_lock(&lock, || swarm::bus::ensure_agy_hooks(&hooks, &command))?;
-        }
         match provider.as_deref() {
             Some(provider @ ("codex" | "agy")) => match trust_target(&cwd, &user_home) {
                 Ok(target) if provider == "codex" => {
@@ -1370,19 +1549,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     let homes = if let Some(account) = &picked {
                         vec![std::path::PathBuf::from(&account.home)]
                     } else {
-                        let mut homes = vec![default_codex_home()?];
-                        homes.extend(
-                            std::fs::read_dir(&user_home)?
-                                .filter_map(Result::ok)
-                                .filter(|entry| {
-                                    entry.file_name().to_string_lossy().starts_with(".codex-")
-                                        && entry.path().is_dir()
-                                })
-                                .map(|entry| entry.path()),
-                        );
-                        homes.sort();
-                        homes.dedup();
-                        homes
+                        codex_homes(&user_home)?
                     };
                     swarm::bus::with_lock(&lock, || {
                         homes
@@ -1400,61 +1567,79 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     "swarm: not pre-trusting for {provider}: {reason}; answer the prompt in the pane"
                 ),
             },
-            // The chair a person starts can answer its own trust dialog in the pane (ADR 0008).
-            Some("claude") if agent_id != "orchestrator" => {
-                let (dir, args) =
-                    swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
-                // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
-                // trusting where it points could trust any folder, such as `/`. The check stops
-                // create_dir_all from making dirs through a committed link. A resuming child runs
-                // in cwd itself, so nothing below cwd is checked for it.
-                for path in dir.ancestors().take_while(|path| *path != cwd) {
-                    if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+            Some("claude") => {
+                // The app hides the chair's pane, so a trust dialog there waits for nobody. The
+                // chair runs in cwd itself, as a resuming child does (ADR 0008).
+                if agent_id != "orchestrator" {
+                    let (dir, args) =
+                        swarm::bus::claude_child(agent_id, &cwd, &extra, &uuid::Uuid::now_v7());
+                    // A checked-out repo can commit `.herdr` or `.herdr/workers` as a link, and
+                    // trusting where it points could trust any folder, such as `/`. The check
+                    // stops create_dir_all from making dirs through a committed link. A resuming
+                    // child runs in cwd itself, so nothing below cwd is checked for it.
+                    for path in dir.ancestors().take_while(|path| *path != cwd) {
+                        if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+                            return Err(format!(
+                                "swarm: {} is a symlink; refusing to trust where it points",
+                                path.display()
+                            )
+                            .into());
+                        }
+                    }
+                    std::fs::create_dir_all(&dir)?;
+                    pane_dir = std::fs::canonicalize(&dir)?;
+                    // cwd is canonical, so a link made after the check still shows here.
+                    if pane_dir != dir {
                         return Err(format!(
-                            "swarm: {} is a symlink; refusing to trust where it points",
-                            path.display()
+                            "swarm: {} resolves to {}; refusing to trust it",
+                            dir.display(),
+                            pane_dir.display()
                         )
                         .into());
                     }
+                    extra = args;
                 }
-                std::fs::create_dir_all(&dir)?;
-                pane_dir = std::fs::canonicalize(&dir)?;
-                // cwd is canonical, so a link made after the check still shows here.
-                if pane_dir != dir {
-                    return Err(format!(
-                        "swarm: {} resolves to {}; refusing to trust it",
-                        dir.display(),
-                        pane_dir.display()
-                    )
-                    .into());
-                }
-                // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
-                // yelo's `claude` in the pane points that at the profile it picks, and a pane with
-                // no yelo reads ~/.claude.json, so each of them needs the entry.
-                let configs = if let Some(account) = &picked {
-                    vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                // The app lets the owner pick any folder for a chair, such as $HOME or a shared
+                // one, so it gets the entry only where Codex and AGY may be pre-trusted.
+                let refused = if agent_id == "orchestrator" {
+                    trust_target(&cwd, &user_home).err()
                 } else {
-                    let mut configs = vec![user_home.join(".claude.json")];
-                    if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles")) {
-                        configs.extend(
-                            profiles
-                                .filter_map(Result::ok)
-                                // yelo keeps its own data in hidden dirs here; a profile is not hidden.
-                                .filter(|entry| {
-                                    !entry.file_name().to_string_lossy().starts_with('.')
-                                        && entry.path().is_dir()
-                                })
-                                .map(|entry| entry.path().join(".claude.json")),
-                        );
-                    }
-                    configs
+                    None
                 };
-                swarm::bus::with_lock(&lock, || {
-                    configs.iter().try_for_each(|config| {
-                        swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
-                    })
-                })?;
-                extra = args;
+                if let Some(reason) = refused {
+                    eprintln!(
+                        "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
+                    );
+                } else {
+                    // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
+                    // yelo's `claude` in the pane points that at the profile it picks, and a pane
+                    // with no yelo reads ~/.claude.json, so each of them needs the entry.
+                    let configs = if let Some(account) = &picked {
+                        vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                    } else {
+                        let mut configs = vec![user_home.join(".claude.json")];
+                        if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles"))
+                        {
+                            configs.extend(
+                                profiles
+                                    .filter_map(Result::ok)
+                                    // yelo keeps its own data in hidden dirs here; a profile is
+                                    // not hidden.
+                                    .filter(|entry| {
+                                        !entry.file_name().to_string_lossy().starts_with('.')
+                                            && entry.path().is_dir()
+                                    })
+                                    .map(|entry| entry.path().join(".claude.json")),
+                            );
+                        }
+                        configs
+                    };
+                    swarm::bus::with_lock(&lock, || {
+                        configs.iter().try_for_each(|config| {
+                            swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
+                        })
+                    })?;
+                }
             }
             _ => {}
         }
@@ -1524,6 +1709,77 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
+        return Ok(());
+    }
+    if let [cmd, agent_id, prompt_id, choice] = args
+        && cmd == "answer"
+    {
+        // Only the owner answers, from the app. Every agent pane has one of these set, so a model
+        // cannot answer a question by mistake; it is a guard, not a trust boundary.
+        if ["TMUX_PANE", "HERDR_PANE_ID"]
+            .iter()
+            .any(|name| env::var_os(name).is_some())
+        {
+            return Err(
+                "swarm: only the owner answers an agent's question; the Swarm app sends it".into(),
+            );
+        }
+        let choice: usize = choice
+            .parse()
+            .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?;
+        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
+            .ok_or("swarm: no pane recorded")?;
+        let adapter = swarm::adapter::load(&root, &adapter_name())?;
+        // One answer per pane at a time, so the chair's card and the column's card cannot mix
+        // their keys. The lock ends with this process.
+        let lock =
+            std::fs::File::create(root.join(format!("answer-{}.lock", pane.replace('/', "_"))))?;
+        lock.try_lock()
+            .map_err(|_| format!("swarm: an answer to {agent_id} is still being sent"))?;
+        let read = || {
+            let pane = [("pane", pane.as_str())];
+            let screen = adapter.screen(&pane, std::time::Duration::from_secs(1))?;
+            swarm::screen::whole_prompt(&screen, || {
+                adapter.capture_within(&pane, std::time::Duration::from_secs(1))
+            })
+        };
+        let prompt = read().ok_or(format!("swarm: {agent_id} shows no question now"))?;
+        if prompt.id != *prompt_id {
+            return Err("swarm: the question changed; read it again".into());
+        }
+        let keys = prompt
+            .keys(choice)
+            .ok_or(format!("swarm: the question has no choice {choice}"))?;
+        // Each key after the first goes only once the same question shows the cursor where the
+        // keys before it put it.
+        let settled = |cursor: usize| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            loop {
+                if read().is_some_and(|now| now.id == prompt.id && now.cursor == cursor) {
+                    return true;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        };
+        let mut cursor = prompt.cursor;
+        for (step, key) in keys.iter().enumerate() {
+            if step > 0 && !settled(cursor) {
+                return Err(format!(
+                    "swarm: {agent_id}'s question changed while the answer was sent; read it again"
+                )
+                .into());
+            }
+            adapter.run("key", &[("pane", &pane), ("key", key)])?;
+            cursor = match key.as_str() {
+                "Down" => cursor + 1,
+                "Up" => cursor.saturating_sub(1),
+                "Enter" => cursor,
+                _ => choice,
+            };
+        }
         return Ok(());
     }
     if let [cmd, agent_id] = args
@@ -1685,6 +1941,32 @@ mod tests {
     }
 
     #[test]
+    fn an_archived_codex_rollout_is_found_under_archived_sessions() {
+        let codex_home =
+            std::env::temp_dir().join(format!("swarm-archived-log-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&codex_home);
+        let name = "rollout-2026-09-30T10-00-00-0199a000-0000-7000-8000-000000000001.jsonl";
+        let recorded = codex_home.join("sessions/2026/09/30").join(name);
+        let archived = codex_home.join("archived_sessions").join(name);
+        std::fs::create_dir_all(archived.parent().unwrap()).unwrap();
+        std::fs::write(&archived, "{}\n").unwrap();
+        let recorded = recorded.to_string_lossy().into_owned();
+        assert_eq!(
+            resolved_agent_log(recorded.clone()),
+            archived.to_string_lossy()
+        );
+
+        // A log still in place, or one that is nowhere, stays as recorded.
+        std::fs::create_dir_all(codex_home.join("sessions/2026/09/30")).unwrap();
+        std::fs::write(&recorded, "{}\n").unwrap();
+        assert_eq!(resolved_agent_log(recorded.clone()), recorded);
+        let gone = codex_home.join("sessions/2026/09/30/rollout-gone.jsonl");
+        let gone = gone.to_string_lossy().into_owned();
+        assert_eq!(resolved_agent_log(gone.clone()), gone);
+        let _ = std::fs::remove_dir_all(&codex_home);
+    }
+
+    #[test]
     fn hook_stdin_read_ends_at_its_deadline_while_the_writer_holds_the_pipe() {
         let (reader, mut writer) = std::io::pipe().unwrap();
         std::io::Write::write_all(&mut writer, b"{}").unwrap();
@@ -1724,9 +2006,17 @@ mod tests {
             "SWARM_AGENT_ID" => Some(CODER.to_string()),
             _ => None,
         };
+        let report = |state, log| {
+            Some(HookReport {
+                session: session.to_string(),
+                agent: CODER.to_string(),
+                state,
+                log,
+            })
+        };
         assert_eq!(
             hook_report(&claude, waiting, coder).unwrap(),
-            Some((session.to_string(), CODER.to_string(), "waiting", None))
+            report(Some(("waiting", None)), None)
         );
         assert!(
             hook_report(&claude, r#"{"hook_event_name":"SessionStart"}"#, coder)
@@ -1737,14 +2027,67 @@ mod tests {
         let agy_stop = ["agy".to_string(), "Stop".to_string()];
         assert_eq!(
             hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
-            Some((
-                session.to_string(),
-                CODER.to_string(),
-                "failed",
-                Some("quota".to_string())
-            ))
+            report(Some(("failed", Some("quota".to_string()))), None)
         );
         assert!(hook_report(&["gemini".to_string()], waiting, coder).is_err());
+    }
+
+    #[test]
+    fn a_hook_reports_the_chat_log_its_payload_names() {
+        let dir = std::env::temp_dir().join(format!("swarm-hook-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("chat.jsonl");
+        std::fs::write(&log, "").unwrap();
+        std::fs::write(dir.join("notes.txt"), "").unwrap();
+        let session = "0199a000-0000-7000-8000-000000000001";
+        let coder = |name: &str| match name {
+            "SWARM_SESSION_ID" => Some(session.to_string()),
+            "SWARM_AGENT_ID" => Some(CODER.to_string()),
+            _ => None,
+        };
+        let path = |value: &std::path::Path| serde_json::to_string(value).unwrap();
+        let reported = |args: &[&str], payload: String| {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            hook_report(&args, &payload, coder).unwrap()
+        };
+
+        // A start event says nothing about state, yet its log path is kept.
+        let start = format!(
+            r#"{{"hook_event_name":"SessionStart","transcript_path":{}}}"#,
+            path(&log)
+        );
+        let claude = reported(&["claude"], start).unwrap();
+        assert_eq!((claude.state, claude.log), (None, Some(log.clone())));
+        let codex = format!(
+            r#"{{"hook_event_name":"PermissionRequest","transcript_path":{}}}"#,
+            path(&log)
+        );
+        let codex = reported(&["codex"], codex).unwrap();
+        assert_eq!(
+            (codex.state, codex.log),
+            (Some(("waiting", None)), Some(log.clone()))
+        );
+        let agy = reported(
+            &["agy", "PreInvocation"],
+            format!(r#"{{"transcriptPath":{}}}"#, path(&log)),
+        )
+        .unwrap();
+        assert_eq!(agy.log, Some(log.clone()));
+
+        // Codex may send null; a relative, missing, or non-jsonl path is not a chat log.
+        for bad in [
+            "null".to_string(),
+            r#""chat.jsonl""#.to_string(),
+            path(&dir.join("missing.jsonl")),
+            path(&dir.join("notes.txt")),
+            path(&dir),
+        ] {
+            let payload =
+                format!(r#"{{"hook_event_name":"SessionStart","transcript_path":{bad}}}"#);
+            assert!(reported(&["claude"], payload).is_none(), "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

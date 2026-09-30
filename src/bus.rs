@@ -50,6 +50,10 @@ pub struct Agent {
     /// `hook` or `screen`.
     pub state_source: Option<String>,
     pub state_detail: Option<String>,
+    /// The chat log the agent's provider hooks reported; null until the first report.
+    pub log: Option<String>,
+    /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.
+    pub prompt: Option<crate::screen::Prompt>,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,7 +163,10 @@ pub fn argv(
             if let Some(sandbox) = &resolved.sandbox {
                 args.extend(["--sandbox".into(), sandbox.clone()]);
                 if sandbox == "workspace-write" {
+                    // Codex refuses every command when a writable root has a symlink in its path.
                     let root = format!("{swarm_home}/.swarm");
+                    let root = std::fs::canonicalize(&root)
+                        .map_or(root, |path| path.to_string_lossy().into_owned());
                     args.extend([
                         "-c".into(),
                         format!(
@@ -172,14 +179,18 @@ pub fn argv(
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            // The user trusts these once in Codex `/hooks`; the trust holds only while each value
-            // stays byte-identical, so nothing per launch goes in it. The pane env names the agent.
+            // `swarm hooks setup` trusts these for the owner (`codex_hook_trust`); the trust holds
+            // only while each value stays byte-identical, so nothing per launch goes in it. The
+            // pane env names the agent. The empty first group puts swarm's hook in group 1, so
+            // its trust key differs from another tool's `-c` hook in group 0.
             let command = serde_json::to_string(&state_hook_command("codex")?)
                 .expect("string serialization cannot fail");
             for event in CODEX_STATE_EVENTS {
                 args.extend([
                     "-c".into(),
-                    format!("hooks.{event}=[{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"),
+                    format!(
+                        "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"
+                    ),
                 ]);
             }
             Ok(args)
@@ -193,7 +204,16 @@ pub fn argv(
             {
                 args.extend(["--model".into(), model.into()]);
             }
-            args.extend(["--effort".into(), effort()?.into()]);
+            let effort = effort()?;
+            // An AGY model id such as `gemini-3.8-flash-high` fixes its own effort, and AGY
+            // refuses `--effort` for it.
+            if !resolved.model.as_deref().is_some_and(|model| {
+                ["-low", "-medium", "-high"]
+                    .iter()
+                    .any(|level| model.ends_with(level))
+            }) {
+                args.extend(["--effort".into(), effort.into()]);
+            }
             if let Some(permission) = &resolved.permission {
                 if permission == "skip" {
                     args.push("--dangerously-skip-permissions".into());
@@ -262,6 +282,132 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
         .open(path)
         .and_then(|mut file| std::io::Write::write_all(&mut file, addition.as_bytes()))
         .map_err(|error| format!("cannot update Codex config: {error}"))
+}
+
+/// The Codex `hooks.state` key and trusted hash of each state hook `swarm launch` passes with
+/// `-c`, as Codex computes them (codex-rs `hooks/src/engine/discovery.rs` `hook_hash` and
+/// `config/src/fingerprint.rs` `version_for_toml`): the SHA-256 of the hook's identity as JSON with
+/// sorted keys. `tests` pins the values a real Codex 0.159.0 app-server reported.
+pub fn codex_hook_trust(command: &str) -> Vec<(String, String)> {
+    use sha2::Digest;
+    CODEX_STATE_EVENTS
+        .iter()
+        .map(|event| {
+            let label = codex_event_label(event);
+            // Keys in sorted order; with `preserve_order` the map keeps them so.
+            let identity = serde_json::json!({
+                "event_name": label,
+                "hooks": [{"async": false, "command": command, "timeout": 3, "type": "command"}],
+            });
+            let digest = sha2::Sha256::digest(identity.to_string().as_bytes());
+            let hash: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+            (
+                format!("/<session-flags>/config.toml:{label}:1:0"),
+                format!("sha256:{hash}"),
+            )
+        })
+        .collect()
+}
+
+/// Codex's snake_case name for a hook event, as its trust keys use it.
+fn codex_event_label(event: &str) -> String {
+    let mut label = String::new();
+    for (index, character) in event.chars().enumerate() {
+        if character.is_ascii_uppercase() && index > 0 {
+            label.push('_');
+        }
+        label.push(character.to_ascii_lowercase());
+    }
+    label
+}
+
+/// The table `key` of `parent`, added when it is missing. An added `implicit` table writes no
+/// header of its own. None when `key` holds a value that is not a table.
+fn toml_table<'a>(
+    parent: &'a mut dyn toml_edit::TableLike,
+    key: &str,
+    implicit: bool,
+) -> Option<&'a mut dyn toml_edit::TableLike> {
+    if parent.get(key).is_none() {
+        let mut table = toml_edit::Table::new();
+        table.set_implicit(implicit);
+        parent.insert(key, toml_edit::Item::Table(table));
+    }
+    parent.get_mut(key)?.as_table_like_mut()
+}
+
+/// Write each trust entry into a Codex home's `config.toml`, replacing the hash of an entry
+/// that is already there and keeping every other line. Returns whether the file changed.
+/// The file is edited as TOML, so an entry in any form or key spelling is updated where it is and
+/// never added twice: a second table with the same name makes the whole file unreadable to Codex.
+pub fn ensure_codex_hook_trust(
+    home: &std::path::Path,
+    entries: &[(String, String)],
+) -> Result<bool, String> {
+    let path = home.join("config.toml");
+    // Only a missing file is empty: a file that cannot be read, such as one that is not UTF-8,
+    // would be written over whole.
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    let mut config: toml_edit::DocumentMut = existing.parse().map_err(|error| {
+        format!(
+            "{} is not valid TOML, so swarm does not edit it: {error}",
+            path.display()
+        )
+    })?;
+    let not_table = |name: &str| {
+        format!(
+            "{} has a {name} that is not a table; set its trusted_hash by hand",
+            path.display()
+        )
+    };
+    let hooks =
+        toml_table(config.as_table_mut(), "hooks", true).ok_or_else(|| not_table("hooks"))?;
+    let state = toml_table(hooks, "state", true).ok_or_else(|| not_table("hooks.state"))?;
+    for (key, hash) in entries {
+        let entry = toml_table(&mut *state, key, false).ok_or_else(|| not_table(key))?;
+        match entry
+            .get_mut("trusted_hash")
+            .and_then(toml_edit::Item::as_value_mut)
+        {
+            Some(value) if value.as_str() == Some(hash.as_str()) => {}
+            // The new hash keeps the old one's comment.
+            Some(value) => {
+                let decor = value.decor().clone();
+                *value = hash.as_str().into();
+                *value.decor_mut() = decor;
+            }
+            None => {
+                entry.insert("trusted_hash", toml_edit::value(hash.as_str()));
+            }
+        }
+    }
+    let text = config.to_string();
+    if text == existing {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(home).map_err(|error| format!("cannot create Codex home: {error}"))?;
+    std::fs::write(&path, text).map_err(|error| format!("cannot update Codex config: {error}"))?;
+    Ok(true)
+}
+
+/// Whether a Codex home's `config.toml` trusts every entry.
+pub fn codex_hooks_trusted(home: &std::path::Path, entries: &[(String, String)]) -> bool {
+    let text = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
+    let Ok(config) = text.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let state = config.get("hooks").and_then(|hooks| hooks.get("state"));
+    entries.iter().all(|(key, hash)| {
+        state
+            .and_then(|state| state.get(key.as_str()))
+            .and_then(|entry| entry.get("trusted_hash"))
+            .and_then(toml_edit::Item::as_str)
+            == Some(hash.as_str())
+    })
 }
 
 /// Why a caller may not launch an agent, or None. A pane `swarm spawn` made carries its own
@@ -368,9 +514,9 @@ pub fn claude_child(
 
 /// The directory `swarm launch` may mark trusted for Codex and AGY: the git root when `cwd` is in a
 /// repository, since Codex keys trust on it, or else `cwd` itself when it sits inside one of the
-/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every checked dir
-/// must belong to the user and be closed to group and world writes, so another account cannot
-/// plant files in a place the agents then trust.
+/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every dir from `cwd`
+/// up to that root must belong to the user and be closed to group and world writes, so another
+/// account cannot plant files in a place the agents then trust.
 pub fn trust_target(
     cwd: &std::path::Path,
     git_root: Option<&std::path::Path>,
@@ -399,7 +545,12 @@ pub fn trust_target(
     let uid = std::fs::metadata(home)
         .map_err(|error| format!("{}: {error}", home.display()))?
         .uid();
-    let mut dir = target.as_path();
+    // Claude keys its trust on `cwd`, and each agent reads project config from the dirs between
+    // `cwd` and the root, so the walk starts at `cwd`.
+    if !cwd.starts_with(&top) {
+        return Err(format!("{} is not inside {}", cwd.display(), top.display()));
+    }
+    let mut dir = cwd;
     loop {
         let meta = std::fs::metadata(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         if meta.uid() != uid || meta.mode() & 0o022 != 0 {
@@ -572,15 +723,7 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 /// Every other group is kept, and a file that is not a JSON object is refused, not replaced.
 /// Returns whether the file changed.
 pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, String> {
-    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
-    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
-    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
-    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
-    let group = serde_json::json!({
-        "PreInvocation": [handler("PreInvocation")],
-        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
-        "Stop": [handler("Stop")],
-    });
+    let group = agy_group(command);
     let mut value = read_json_object(path)?;
     let groups = value
         .as_object_mut()
@@ -590,6 +733,23 @@ pub fn ensure_agy_hooks(path: &std::path::Path, command: &str) -> Result<bool, S
     }
     groups.insert("swarm".into(), group);
     write_json(path, &value).map(|()| true)
+}
+
+/// Whether AGY's `hooks.json` holds swarm's group as `ensure_agy_hooks` writes it.
+pub fn agy_hooks_set(path: &std::path::Path, command: &str) -> bool {
+    read_json_object(path).is_ok_and(|value| value.get("swarm") == Some(&agy_group(command)))
+}
+
+fn agy_group(command: &str) -> serde_json::Value {
+    let handler = |event: &str| serde_json::json!({"type": "command", "command": format!("{command} {event}"), "timeout": 3});
+    // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
+    // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
+    // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
+    serde_json::json!({
+        "PreInvocation": [handler("PreInvocation")],
+        "PostToolUse": [{"matcher": "*", "hooks": [handler("PostToolUse")]}],
+        "Stop": [handler("Stop")],
+    })
 }
 
 fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
@@ -699,6 +859,14 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
+        agy.model = Some("gemini-3.8-flash-high".into());
+        assert_eq!(
+            argv("coder", "coder", &agy, "/home"),
+            Ok(vec!["agy", "--model", "gemini-3.8-flash-high"]
+                .into_iter()
+                .map(String::from)
+                .collect())
+        );
 
         let child_claude_args = argv("coder", "coder", &claude, "/home").unwrap();
         assert!(
@@ -706,6 +874,32 @@ mod tests {
                 .iter()
                 .any(|arg| arg.contains("SessionStart"))
         );
+    }
+
+    #[test]
+    fn a_codex_writable_root_has_no_symlink_in_its_path() {
+        let dir = std::env::temp_dir().join(format!("swarm-writable-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("real/.swarm")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let mut codex = role("codex");
+        codex.sandbox = Some("workspace-write".into());
+        let args = argv(
+            "coder",
+            "coder",
+            &codex,
+            &dir.join("link").to_string_lossy(),
+        )
+        .unwrap();
+        let real = std::fs::canonicalize(dir.join("real/.swarm")).unwrap();
+        assert!(
+            args.contains(&format!(
+                "sandbox_workspace_write.writable_roots=[{}]",
+                serde_json::to_string(&real.to_string_lossy()).unwrap()
+            )),
+            "{args:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -744,10 +938,173 @@ mod tests {
             coder,
             CODEX_STATE_EVENTS
                 .map(|event| format!(
-                    "hooks.{event}=[{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
+                    "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
                 ))
                 .to_vec()
         );
+    }
+
+    #[test]
+    fn codex_hook_trust_matches_the_hashes_a_real_codex_reports() {
+        // `codex app-server` 0.159.0 `hooks/list`, empty CODEX_HOME, 2026-09-29, for these `-c`
+        // hooks with the command below.
+        let reported = [
+            (
+                "user_prompt_submit",
+                "6ada9e2b38032d391c688b4b57e23d57dc704db197c59846631231b6de096fa3",
+            ),
+            (
+                "pre_tool_use",
+                "1aae45a70c770d9f20e8b9bb0606f189958d43d2cfd087e63bb2a929c354c43f",
+            ),
+            (
+                "post_tool_use",
+                "8e869f2203b834c487812e07bb16ef48cab40dd79e4e4c8b5be9970e3e6a3c27",
+            ),
+            (
+                "permission_request",
+                "fb62179a34ddeb588a7474baeb6c99f976299120c70f7b5c495e76d904e7321a",
+            ),
+            (
+                "stop",
+                "64466f2454b871f7b36673eaea4506ac61f374a030bf4b162cc432ae54612cc5",
+            ),
+            (
+                "interrupt",
+                "e24a3286d74cee9090a79c7dcf48e828202cfcccb8a511ecfadc4d0786234a8c",
+            ),
+        ];
+        assert_eq!(
+            codex_hook_trust("'/opt/homebrew/bin/swarm' hook codex"),
+            reported
+                .map(|(label, hash)| (
+                    format!("/<session-flags>/config.toml:{label}:1:0"),
+                    format!("sha256:{hash}")
+                ))
+                .to_vec()
+        );
+    }
+
+    #[test]
+    fn codex_hook_trust_is_written_once_and_keeps_every_other_line() {
+        let home = std::env::temp_dir().join(format!("swarm-codex-trust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        assert!(!codex_hooks_trusted(&home, &entries));
+
+        // A fresh Mac has no Codex home at all.
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
+        assert!(!ensure_codex_hook_trust(&home, &entries).unwrap());
+
+        // Another tool's group-0 entry stays; a moved binary replaces only swarm's hashes.
+        let other = "[hooks.state.\"/<session-flags>/config.toml:stop:0:0\"]\ntrusted_hash = \"sha256:other\"";
+        let config = home.join("config.toml");
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(&config, format!("model = \"x\"\n{other}\n\n{text}")).unwrap();
+        let moved = codex_hook_trust("'/opt/swarm' hook codex");
+        assert!(!codex_hooks_trusted(&home, &moved));
+        assert!(ensure_codex_hook_trust(&home, &moved).unwrap());
+        assert!(codex_hooks_trusted(&home, &moved));
+        assert!(!codex_hooks_trusted(&home, &entries));
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(
+            text.starts_with(&format!("model = \"x\"\n{other}\n")),
+            "{text}"
+        );
+        assert_eq!(
+            text.matches("[hooks.state.").count(),
+            1 + moved.len(),
+            "{text}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_commented_codex_trust_entry_is_updated_in_place_and_never_added_twice() {
+        let home = std::env::temp_dir().join(format!("swarm-codex-comment-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        ensure_codex_hook_trust(&home, &entries).unwrap();
+        let config = home.join("config.toml");
+        let plain = std::fs::read_to_string(&config).unwrap();
+
+        // The owner commented each header and hash; both still count and none is added again.
+        let commented: String = plain
+            .lines()
+            .map(
+                |line| match line.starts_with('[') || line.starts_with("trusted_hash") {
+                    true => format!("{line}  # swarm #1"),
+                    false => line.to_string(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&config, &commented).unwrap();
+        assert!(codex_hooks_trusted(&home, &entries));
+        let moved = codex_hook_trust("'/opt/swarm' hook codex");
+        assert!(ensure_codex_hook_trust(&home, &moved).unwrap());
+        assert!(codex_hooks_trusted(&home, &moved));
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert_eq!(text.matches("[hooks.state.").count(), moved.len(), "{text}");
+
+        // An entry in another form or key spelling is updated where it is, not added again.
+        let (key, _) = &entries[0];
+        let dotted = format!("[hooks.state]\n{key:?}.trusted_hash = \"sha256:x\"\n");
+        let escaped = format!("[hooks.state.{key:?}]\ntrusted_hash = \"sha256:x\"\n");
+        let inline =
+            format!("hooks = {{ state = {{ {key:?} = {{ trusted_hash = \"sha256:x\" }} }} }}\n");
+        // A string that holds a table header, and a nested array, are only values.
+        let values =
+            format!("note = \"\"\"\n[projects]\n\"\"\"\nlists = [[1, 2], [3]]\n\n{escaped}");
+        for form in [
+            dotted.clone(),
+            dotted.replacen('/', "\\u002f", 1),
+            escaped.replacen('/', "\\u002f", 1),
+            inline.replacen('/', "\\u002f", 1),
+            values.replacen("[hooks.state.\"/", "[hooks.state.\"\\u002f", 1),
+        ] {
+            std::fs::write(&config, &form).unwrap();
+            assert!(ensure_codex_hook_trust(&home, &entries).unwrap(), "{form}");
+            assert!(codex_hooks_trusted(&home, &entries), "{form}");
+            let text = std::fs::read_to_string(&config).unwrap();
+            let parsed: toml_edit::DocumentMut = text.parse().unwrap();
+            assert_eq!(
+                parsed["hooks"]["state"].as_table_like().unwrap().len(),
+                entries.len(),
+                "{text}"
+            );
+            assert!(!text.contains("sha256:x"), "{text}");
+        }
+        // An escape in a table that is not a hooks table does not block setup.
+        let project = "[projects.\"\\u002ftmp/project\"]\ntrust_level = \"trusted\"\n";
+        std::fs::write(&config, project).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
+        assert!(
+            std::fs::read_to_string(&config)
+                .unwrap()
+                .starts_with(project)
+        );
+
+        // A file that is not valid TOML, such as one with the same table twice, is refused and
+        // stays as it was.
+        let twice = format!("{escaped}{escaped}");
+        std::fs::write(&config, &twice).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), twice);
+        // So is a file that is not UTF-8, which cannot be read as text.
+        let latin1 = b"model = \"o3\"\n# caf\xe9\n".to_vec();
+        std::fs::write(&config, &latin1).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read(&config).unwrap(), latin1);
+
+        // A commented-out old entry is not an entry, so the missing ones are added.
+        let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
+        std::fs::write(&config, &old).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
+        assert!(codex_hooks_trusted(&home, &entries));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -954,6 +1311,8 @@ mod tests {
         assert!(trust_target(&home, Some(&home), &home, &roots).is_err());
         assert!(trust_target(&scratch, None, &home, &roots).is_err());
         assert!(trust_target(&open, None, &home, &roots).is_err());
+        std::fs::set_permissions(repo.join("sub"), std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(trust_target(&repo.join("sub"), Some(&repo), &home, &roots).is_err());
         std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o775)).unwrap();
         assert!(trust_target(&seat, None, &home, &roots).is_err());
         std::fs::remove_dir_all(base).unwrap();
