@@ -4,7 +4,7 @@ import TranscriptTool
 /// The text rows a chat can draw from typed transcript events.
 public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Hashable {
-        case user, assistant, thought, toolUse, toolResult, diff, permission, error, notice, system, result
+        case user, assistant, thought, toolUse, toolResult, diff, question, error, notice, system, result
     }
 
     public var kind: Kind
@@ -31,7 +31,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
         case .toolUse: "Tool"
         case .toolResult: "Result"
         case .diff: "Changes"
-        case .permission: "Permission"
+        case .question: "Question"
         case .error: "Error"
         case .notice: "Notice"
         case .system: "System"
@@ -216,7 +216,7 @@ public enum TranscriptRowBuilder {
             row.detail = diff.path
         case .elicitation(let id, let questions, _):
             row = TranscriptRow(
-                kind: .permission, text: questions.map(\.question).joined(separator: "\n"),
+                kind: .question, text: questions.map(\.question).joined(separator: "\n"),
                 eventID: id + ":ask"
             )
         case .elicitationResult(let id, let answers, _):
@@ -230,6 +230,8 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
         case .systemMessage(_, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
+        case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):
+            return nil
         case .sessionInfo(let kind, let value, let meta):
             row = TranscriptRow(
                 kind: .notice, text: "\(kind): \(value)", eventID: key(meta, "info", index)

@@ -330,7 +330,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             "task_reminder",          "compact_file_reference",    "invoked_skills",
             "date_change",            "dynamic_skill",             "task_status",
             "plan_mode_exit",         "thinking_stripped",         "read_truncation_notice",
-            "plan_mode",
+            "plan_mode",              "credential_org",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "attachment/{s}", .{kind}) } });
         } else {
@@ -377,7 +377,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
     if (oneOf(record_type, &.{
         "last-prompt",         "atis-latch",                "mode",                     "permission-mode", "file-history-snapshot",
         "file-history-delta",  "queue-operation",           "pr-link",                  "bridge-session",  "frame-link",
-        "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",
+        "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",    "worktree-state",
+        "relocated",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;
@@ -1041,6 +1042,17 @@ test "Claude bookkeeping and session link are ignored" {
     try std.testing.expectEqualStrings("mode", mode[0].ignored.kind);
     try std.testing.expectEqualStrings("session-link", link[0].ignored.kind);
     try std.testing.expectEqualStrings("attachment/total_tokens_reminder", attachment[0].ignored.kind);
+}
+
+test "Claude credential, worktree, and relocation records are ignored" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const credential = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"uuid\":\"u1\",\"attachment\":{\"type\":\"credential_org\",\"organizationUuid\":\"org-1\"}}");
+    const worktree = try parseLine(arena_state.allocator(), "{\"type\":\"worktree-state\",\"worktreeSession\":{\"worktreePath\":\"/work/wt\",\"enteredExisting\":true},\"sessionId\":\"s1\"}");
+    const relocated = try parseLine(arena_state.allocator(), "{\"type\":\"relocated\",\"sessionId\":\"s1\",\"relocatedCwd\":\"/work/wt\"}");
+    try std.testing.expectEqualStrings("attachment/credential_org", credential[0].ignored.kind);
+    try std.testing.expectEqualStrings("worktree-state", worktree[0].ignored.kind);
+    try std.testing.expectEqualStrings("relocated", relocated[0].ignored.kind);
 }
 
 test "Claude titles agent name and model become session info" {
