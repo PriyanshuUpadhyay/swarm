@@ -96,9 +96,8 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
             let output = stderr.isEmpty
                 ? result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                 : stderr
-            let firstLine = output.components(separatedBy: .newlines).first { !$0.isEmpty }
-                ?? "swarm exited \(result.status)"
-            throw SwarmProfileError.failed(firstLine)
+            // A refused save names every broken rule, one per line.
+            throw SwarmProfileError.failed(output.isEmpty ? "swarm exited \(result.status)" : output)
         }
 
         return result

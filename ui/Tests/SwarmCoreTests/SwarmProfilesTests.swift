@@ -88,13 +88,13 @@ struct SwarmProfilesTests {
         #expect(try await source.save(profile, revision: "a1b2c3d4e5f6") == "ffeeddccbbaa")
     }
 
-    @Test("a stale save keeps the CLI error")
+    @Test("a refused save keeps every broken rule")
     func failedSave() async {
         let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
-            ShellResult(status: 1, stdout: "", stderr: "swarm: profiles changed on disk; reload and try again\n")
+            ShellResult(status: 1, stdout: "", stderr: "swarm: chat: runner 1 has no model\nchat: runner 2 has no effort\n")
         }
 
-        await #expect(throws: SwarmProfileError.failed("swarm: profiles changed on disk; reload and try again")) {
+        await #expect(throws: SwarmProfileError.failed("swarm: chat: runner 1 has no model\nchat: runner 2 has no effort")) {
             try await source.save(SwarmProfile(name: "chat", runners: []), revision: "old")
         }
     }
@@ -207,14 +207,14 @@ struct SwarmProfilesTests {
         }
     }
 
-    @Test("maps a non-zero exit to the first stderr line")
+    @Test("maps a non-zero exit to the whole stderr")
     func mapsFailedExit() async {
         let source = source(
             expectedArguments: ["usage", "--json"], status: 2,
             stderr: "routing config is missing\nmore detail\n"
         )
 
-        await #expect(throws: SwarmProfileError.failed("routing config is missing")) {
+        await #expect(throws: SwarmProfileError.failed("routing config is missing\nmore detail")) {
             try await source.usage()
         }
     }
@@ -226,7 +226,7 @@ struct SwarmProfilesTests {
             stdout: "process was killed\nmore detail\n"
         )
 
-        await #expect(throws: SwarmProfileError.failed("process was killed")) {
+        await #expect(throws: SwarmProfileError.failed("process was killed\nmore detail")) {
             try await source.usage()
         }
     }

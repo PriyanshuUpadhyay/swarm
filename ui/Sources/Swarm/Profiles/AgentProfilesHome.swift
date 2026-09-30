@@ -214,6 +214,11 @@ struct AgentProfilesHome: View {
             await LoginShellPath.ready()
             let loaded = try await source.profiles()
             try Task.checkCancellation()
+            // A check marks runners by index, so an old check on a changed file marks wrong chips.
+            if loaded.revision != list?.revision {
+                checks = [:]
+                checkedAt = nil
+            }
             list = loaded
             Self.cachedList = loaded
             error = nil

@@ -37,7 +37,7 @@ enum DesignTokens {
         static let sheet: CGFloat = 480
         static let sheetHeight: CGFloat = 340
         static let narrowSheet: CGFloat = 420
-        /// The profile editor: one runner row holds provider, model, effort, and a remove button.
+        /// The profile editor: one numbered card per runner, with a Move Up, Move Down, Remove menu.
         static let profileSheet: CGFloat = 680
         /// The profile name column on the Agent profiles page.
         static let profileName: CGFloat = 150
@@ -45,10 +45,11 @@ enum DesignTokens {
         static let healthPill: CGFloat = 110
         /// The round letter mark of a provider in a runner chip.
         static let providerMark: CGFloat = 15
-        /// The editor's card list stops growing here and scrolls.
+        /// One runner card's height, for sizing the editor's card list.
         static let runnerCard: CGFloat = 104
         /// The model control in a runner card, so the effort picker lines up across cards.
         static let modelField: CGFloat = 300
+        /// The editor's card list stops growing here and scrolls.
         static let runnerListMax: CGFloat = 460
         /// A model or account list inside a sheet.
         static let pickerList: CGFloat = 190
