@@ -233,13 +233,55 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     assert!(trusted(&home.join(".claude.json"), &resumed));
 
     // The app hides the chair's pane, so nobody answers a trust dialog there; it runs in cwd.
-    let chair = launch("orchestrator", "chair", None);
-    assert!(trusted(&home.join(".claude.json"), &home.join("chair")));
-    assert!(trusted(
-        &profiles[0].join(".claude.json"),
-        &home.join("chair")
-    ));
-    assert!(!chair.exists());
+    // Each chair gets its own session, as each app chat does.
+    let chair_in = |cwd: &Path| {
+        let session = swarm(&home, &fake, &["session", "new", "lane"]);
+        assert!(session.status.success(), "{}", stderr(&session));
+        let session = String::from_utf8(session.stdout).unwrap();
+        let env = [
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", session.trim()),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ];
+        let cwd = cwd.to_string_lossy().into_owned();
+        let output = swarm(
+            &home,
+            &env,
+            &["launch", "orchestrator", "review.deep", "--cwd", &cwd],
+        );
+        assert!(output.status.success(), "{}", stderr(&output));
+        stderr(&output)
+    };
+    let git_repo = |name: &str| {
+        let dir = home.join(name);
+        let init = Command::new("git").arg("init").arg("-q").arg(&dir).status();
+        assert!(init.unwrap().success());
+        dir
+    };
+    let chair = git_repo("chair");
+    chair_in(&chair);
+    assert!(trusted(&home.join(".claude.json"), &chair));
+    assert!(trusted(&profiles[0].join(".claude.json"), &chair));
+    assert!(!chair.join(".herdr/workers").exists());
+
+    // A chair in $HOME, or in a folder another account can write, gets no entry and shows
+    // Claude's own trust screen.
+    let shared = git_repo("shared");
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+    for cwd in [&home, &shared] {
+        let warning = chair_in(cwd);
+        assert!(warning.contains("not pre-trusting for claude"), "{warning}");
+        assert!(
+            !trusted(&home.join(".claude.json"), cwd),
+            "{}",
+            cwd.display()
+        );
+        assert!(
+            !trusted(&profiles[0].join(".claude.json"), cwd),
+            "{}",
+            cwd.display()
+        );
+    }
 }
 
 /// A session with a chair and one child on a fake adapter whose screen is `$HOME/screen` and

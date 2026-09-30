@@ -16,4 +16,7 @@ without those private scripts and swarm keeps owning roles (ADR 0005), accepting
 in step with the router's fields and that trust prompts are answered by the user in the live pane.
 
 Note (2026-09-30): the Swarm app hides the chair's pane, so `swarm launch` now pre-trusts a Claude
-chair's cwd in the same configs a Claude child gets; nobody would see its trust dialog.
+chair's cwd in the same configs a Claude child gets; nobody would see its trust dialog. The cwd
+must pass the same guard as a Codex or AGY launch (`trust_target`), so $HOME, `/`, a folder outside
+a git repository or scratch dir, and a folder another account can write get no entry, and the
+chair then shows Claude's own trust screen.

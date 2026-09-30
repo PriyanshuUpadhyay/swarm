@@ -1549,32 +1549,47 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     extra = args;
                 }
-                // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
-                // yelo's `claude` in the pane points that at the profile it picks, and a pane with
-                // no yelo reads ~/.claude.json, so each of them needs the entry.
-                let configs = if let Some(account) = &picked {
-                    vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                // The app lets the owner pick any folder for a chair, such as $HOME or a shared
+                // one, so it gets the entry only where Codex and AGY may be pre-trusted.
+                let refused = if agent_id == "orchestrator" {
+                    trust_target(&cwd, &user_home).err()
                 } else {
-                    let mut configs = vec![user_home.join(".claude.json")];
-                    if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles")) {
-                        configs.extend(
-                            profiles
-                                .filter_map(Result::ok)
-                                // yelo keeps its own data in hidden dirs here; a profile is not hidden.
-                                .filter(|entry| {
-                                    !entry.file_name().to_string_lossy().starts_with('.')
-                                        && entry.path().is_dir()
-                                })
-                                .map(|entry| entry.path().join(".claude.json")),
-                        );
-                    }
-                    configs
+                    None
                 };
-                swarm::bus::with_lock(&lock, || {
-                    configs.iter().try_for_each(|config| {
-                        swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
-                    })
-                })?;
+                if let Some(reason) = refused {
+                    eprintln!(
+                        "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
+                    );
+                } else {
+                    // Claude reads `.claude.json` from its CLAUDE_CONFIG_DIR. Without --account,
+                    // yelo's `claude` in the pane points that at the profile it picks, and a pane
+                    // with no yelo reads ~/.claude.json, so each of them needs the entry.
+                    let configs = if let Some(account) = &picked {
+                        vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                    } else {
+                        let mut configs = vec![user_home.join(".claude.json")];
+                        if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles"))
+                        {
+                            configs.extend(
+                                profiles
+                                    .filter_map(Result::ok)
+                                    // yelo keeps its own data in hidden dirs here; a profile is
+                                    // not hidden.
+                                    .filter(|entry| {
+                                        !entry.file_name().to_string_lossy().starts_with('.')
+                                            && entry.path().is_dir()
+                                    })
+                                    .map(|entry| entry.path().join(".claude.json")),
+                            );
+                        }
+                        configs
+                    };
+                    swarm::bus::with_lock(&lock, || {
+                        configs.iter().try_for_each(|config| {
+                            swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
+                        })
+                    })?;
+                }
             }
             _ => {}
         }
