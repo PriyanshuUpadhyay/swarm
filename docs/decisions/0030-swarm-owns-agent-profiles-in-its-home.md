@@ -26,7 +26,7 @@ app could edit only a shared runner's model, so one edit changed every route tha
 ## Decision Outcome
 
 Chosen: one file per swarm home. A profile owns its ordered runners by value, so no runner is
-shared. The schema and validation live in `src/profiles.rs`. With no file, the first read imports
+shared. The schema and validation live in `src/config.rs`. With no file, the first read imports
 the old roles.json if it exists, writes `profiles.json`, and never writes the old file. With
 neither file, the built-in `default-profiles.json` is used and nothing is written. A per-home file
 follows ADR 0027, so a branch build cannot change the owner's real profiles.
