@@ -61,7 +61,12 @@ struct ProfileEditorSheet: View {
             .frame(minHeight: DesignTokens.Size.sheetHeight)
             Button {
                 draft.add(from: providers) { models[$0]?.first?.id }
-                if let added = draft.runners.last { Task { await loadModels(added.provider) } }
+                if let added = draft.runners.last {
+                    Task {
+                        await loadModels(added.provider)
+                        fillEmptyModel(of: added.id)
+                    }
+                }
             } label: {
                 Label("Add runner", systemImage: "plus")
             }
@@ -94,12 +99,19 @@ struct ProfileEditorSheet: View {
     }
 
     private func changeProvider(_ choice: SwarmProvider, at index: Int) async {
+        guard draft.runners.indices.contains(index) else { return }
+        let id = draft.runners[index].id
         draft.setProvider(choice, at: index, firstModel: models[choice.id]?.first?.id)
         await loadModels(choice.id)
-        if draft.runners.indices.contains(index), draft.runners[index].model.isEmpty,
-           let first = models[choice.id]?.first?.id {
-            draft.runners[index].model = first
-        }
+        fillEmptyModel(of: id)
+    }
+
+    /// A runner added or switched before its provider's list loaded takes the first listed model.
+    private func fillEmptyModel(of id: UUID) {
+        guard let index = draft.runners.firstIndex(where: { $0.id == id }),
+              draft.runners[index].model.isEmpty,
+              let first = models[draft.runners[index].provider]?.first?.id else { return }
+        draft.runners[index].model = first
     }
 
     private func loadModels(_ provider: String, retry: Bool = false) async {
@@ -171,8 +183,10 @@ private struct RunnerRow: View {
                         }
                     } label: {
                         Image(systemName: "chevron.down")
+                            .accessibilityLabel("Choose a listed model")
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                     .disabled(models.isEmpty)
                     .accessibilityLabel("Choose a listed model")
@@ -218,6 +232,9 @@ private struct RunnerRow: View {
             }
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
+        // One container element, so the Move actions reach VoiceOver and its children stay usable.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(index == 0 ? "Runner \(index + 1), primary" : "Runner \(index + 1), fallback")
         .contextMenu {
             Button("Move Up") { onMove(-1) }.disabled(index == 0)
             Button("Move Down") { onMove(1) }
