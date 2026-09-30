@@ -90,8 +90,10 @@ struct ProfileEditorSheet: View {
                 .frame(height: listHeight)
                 .onChange(of: draft.runners.count) { old, new in
                     if new > old, let added = draft.runners.last { proxy.scrollTo(added.id, anchor: .bottom) }
-                    // The content size never drops below the list's frame, so after a remove the
-                    // list goes back to the estimate, which is under the cards, and measures again.
+                }
+                // The content size never drops below the list's frame, so when a card goes away or
+                // loses a line, the list drops its old height and measures again.
+                .onChange(of: cardLines) { old, new in
                     if new < old { contentHeight = nil }
                 }
             }
@@ -145,6 +147,16 @@ struct ProfileEditorSheet: View {
     private var listHeight: CGFloat {
         let cards = contentHeight ?? CGFloat(draft.runners.count) * DesignTokens.Size.runnerCard
         return min(max(cards, DesignTokens.Size.runnerCard), DesignTokens.Size.runnerListMax)
+    }
+
+    /// Every line the cards show: one per card, its flags line, each warning, and a catalog error.
+    private var cardLines: Int {
+        draft.runners.reduce(0) { total, runner in
+            let known = provider(runner.provider)
+            let warnings = ProfileDraft.warnings(for: runner, provider: known, models: models[runner.provider] ?? [])
+            return total + 1 + (known?.fields.isEmpty == false ? 1 : 0) + warnings.count
+                + (catalogErrors[runner.provider] == nil ? 0 : 1)
+        }
     }
 
     private func provider(_ id: String) -> SwarmProvider? {
@@ -427,6 +439,7 @@ private struct SheetWindowHeight: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             var size = window.contentRect(forFrameRect: window.frame).size
+            // A change under a point is layout rounding; a resize for it would lay out again.
             guard abs(size.height - height) > 0.5 else { return }
             size.height = height
             window.setContentSize(size)
