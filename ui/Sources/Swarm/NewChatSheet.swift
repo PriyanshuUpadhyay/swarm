@@ -8,7 +8,7 @@ final class NewChatModel {
     private var choices: [String: String] = [:]
     private var generation = 0
     private var optionsTask: Task<Void, Never>?
-    /// The chat profile and the runner it would start now (ADR 0032). Nil until read, and for a
+    /// The chat profile and the runner it would start now (ADR 0033). Nil until read, and for a
     /// model switch, which starts from the current chat instead.
     var chatChoice: ChatProfileChoice?
     /// The launch check of the chat profile, for its chain's marks.

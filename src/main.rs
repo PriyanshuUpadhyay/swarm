@@ -254,7 +254,7 @@ fn yelo_command() -> String {
     env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
 }
 
-/// Whether each runner can start now (ADR 0031). Each provider's accounts are read at most once.
+/// Whether each runner can start now (ADR 0032). Each provider's accounts are read at most once.
 struct Probe {
     min_usage_left_pct: u8,
     /// `--account <name>`: only that account counts. None or `auto` counts every account.
@@ -1687,7 +1687,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
-            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0032).
+            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0033).
             Some(model) => {
                 let provider = requested_provider
                     .and_then(Provider::parse)
@@ -1721,7 +1721,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }) {
                 Ok(account) => Some(account),
                 // `auto` is a preference. With no yelo or no automatic account the CLI's own
-                // login runs, as the probe already counts a missing yelo as can run (ADR 0031).
+                // login runs, as the probe already counts a missing yelo as can run (ADR 0032).
                 Err(error) if requested == "auto" => {
                     eprintln!("swarm: {error}; {} uses its own login", kind.id());
                     None

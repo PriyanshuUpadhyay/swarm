@@ -1,6 +1,6 @@
 ---
 status: superseded
-superseded-by: "0032"
+superseded-by: "0033"
 date: 2026-09-24
 deciders: [user]
 supersedes: 0004

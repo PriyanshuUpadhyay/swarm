@@ -99,7 +99,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         "yelo",
         &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
     );
-    // Launch starts only a runner whose CLI is on PATH (ADR 0031).
+    // Launch starts only a runner whose CLI is on PATH (ADR 0032).
     tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
@@ -734,7 +734,7 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
 }
 
 /// New Chat with no pick runs the chat profile with its effort; a one-off pick runs exactly that
-/// model with the chat profile's effort for that provider (ADR 0032).
+/// model with the chat profile's effort for that provider (ADR 0033).
 #[test]
 fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     let home = scratch("chat");

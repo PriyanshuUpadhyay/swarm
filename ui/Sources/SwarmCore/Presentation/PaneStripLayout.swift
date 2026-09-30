@@ -1,6 +1,6 @@
 import Foundation
 
-/// The chat page and agent columns of the horizontal pane strip (ADR 0022).
+/// The chat page and agent columns of the horizontal pane strip (ADR 0030).
 public enum PaneStripLayout {
     /// About 60 terminal columns at 12 pt.
     public static let minimumColumnWidth: CGFloat = 440

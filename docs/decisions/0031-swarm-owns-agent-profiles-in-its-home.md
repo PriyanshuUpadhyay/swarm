@@ -9,7 +9,7 @@ informed-by:
   - "dotfiles ADRs 0009 and 0015, which made agent-routing roles.json the launch policy source"
 ---
 
-# 0030. Swarm owns agent profiles in its home
+# 0031. Swarm owns agent profiles in its home
 
 ## Context and Problem Statement
 

@@ -1,4 +1,4 @@
-//! Agent profiles: which runners start each role, in order (ADRs 0030, 0031). The file is
+//! Agent profiles: which runners start each role, in order (ADRs 0031, 0032). The file is
 //! `$SWARM_HOME/.swarm/profiles.json`. With no file, the first read imports the old agent-routing
 //! `roles.json` if one exists, else the built-in `default-profiles.json` is used and nothing is
 //! written.
@@ -276,7 +276,7 @@ pub fn import(old: &Value, from: &str) -> Result<Config, String> {
     }
 }
 
-/// The runner for a chat whose provider and model the owner picked once (ADR 0032): the chat
+/// The runner for a chat whose provider and model the owner picked once (ADR 0033): the chat
 /// profile's first runner of that provider with the picked model, else the provider's default
 /// effort and the flags a chat had before profiles existed.
 pub fn one_off(chat: &Profile, provider: Provider, model: &str) -> Result<Runner, String> {
@@ -374,7 +374,7 @@ pub struct AccountState {
 
 /// Why a provider's accounts cannot start a runner, or None. `accounts` is None when the read
 /// failed or timed out, and an empty list means no account source; both count as "can run", so a
-/// Mac without yelo still launches (ADR 0031). An account with no usage number counts as can run.
+/// Mac without yelo still launches (ADR 0032). An account with no usage number counts as can run.
 pub fn account_skip(
     provider: Provider,
     accounts: Option<&[AccountState]>,

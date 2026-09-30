@@ -52,7 +52,7 @@ pressing Enter again.
   costs 4 s, not 2 s. One read could serve both.
 - A hung yelo's own child process can outlive the kill after the 2 s limit.
 - `argv` stays in `bus.rs`, dispatching on the `Provider` enum, not in `providers.rs`.
-- The profile schema lives in `src/config.rs`, not `src/profiles.rs` (ADR 0030 names it).
+- The profile schema lives in `src/config.rs`, not `src/profiles.rs` (ADR 0031 names it).
 - `swarm roles save` takes the profile JSON as an argument, not on stdin.
 - New Chat shows skipped runners in its chain row before launch, not in the progress line during
   launch.

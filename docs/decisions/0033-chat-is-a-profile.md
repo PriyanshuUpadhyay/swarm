@@ -3,12 +3,12 @@ status: accepted
 date: 2026-09-30
 deciders: [user]
 supersedes: "0018"
-related: ["0030", "0031"]
+related: ["0031", "0032"]
 informed-by:
   - "User answer on 2026-09-30 (flow 01-frame): chat is a profile and is the first one in the list; the picker revamp comes later"
 ---
 
-# 0032. Chat is a profile
+# 0033. Chat is a profile
 
 In the context of starting a chat from the app, facing a picker whose choice lived in UserDefaults
 with effort fixed at `medium`, we chose to make `chat` a profile like every other, first in the

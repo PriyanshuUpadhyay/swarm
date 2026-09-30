@@ -2,13 +2,13 @@
 status: accepted
 date: 2026-09-30
 deciders: [user]
-related: ["0004", "0008", "0030"]
+related: ["0004", "0008", "0031"]
 informed-by:
   - "User answer on 2026-09-30 (flow 01-frame): fallback triggers at launch only (missing CLI, no signed-in account, low usage); no mid-run switch"
   - "yelo profile list --usage --json took 0.08 s on the owner's Mac on 2026-09-30"
 ---
 
-# 0031. Launch takes the first runner that can run
+# 0032. Launch takes the first runner that can run
 
 ## Context and Problem Statement
 

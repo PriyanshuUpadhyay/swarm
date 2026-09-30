@@ -117,7 +117,7 @@ public struct ProfileStatus: Sendable, Equatable {
     }
 }
 
-/// How New Chat relates its current pick to the chat profile (ADR 0032).
+/// How New Chat relates its current pick to the chat profile (ADR 0033).
 public struct ChatProfileChoice: Sendable, Equatable {
     /// The runner the chat profile would start now.
     public let runner: SwarmRunner

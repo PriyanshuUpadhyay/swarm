@@ -1,6 +1,6 @@
 import Foundation
 
-/// Performance gate aid (ADR 0022): `SWARM_PANE_STRESS=N` opens a window whose strip holds N chat
+/// Performance gate aid (ADR 0030): `SWARM_PANE_STRESS=N` opens a window whose strip holds N chat
 /// columns, so the strip can be measured without real agents.
 public enum SwarmPaneStress {
     public static var count: Int {

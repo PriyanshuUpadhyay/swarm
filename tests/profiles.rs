@@ -235,7 +235,7 @@ fn save_writes_through_a_link_keeps_a_backup_and_refuses_a_stale_revision() {
     let home = scratch("save");
     old_config(&home, OLD_CONFIG);
     json(&swarm(&home, &[], &["roles", "--json"]));
-    // The owner links profiles.json into dotfiles (ADR 0030).
+    // The owner links profiles.json into dotfiles (ADR 0031).
     let real = home.join("dotfiles-profiles.json");
     std::fs::rename(profiles_file(&home), &real).unwrap();
     std::os::unix::fs::symlink(&real, profiles_file(&home)).unwrap();

@@ -12,7 +12,7 @@ struct PaneCell: Identifiable, Equatable {
     var ended: Bool { status == .ended }
 }
 
-/// The chat page, then columns of agent panes that scroll in from the right (ADR 0022).
+/// The chat page, then columns of agent panes that scroll in from the right, with no snap (ADR 0030).
 /// Focus and zoom change with no animation, because keys drive them. The owner drags a column's
 /// trailing edge to size every column and the line in a two-pane column to split it (ADR 0026).
 struct PaneStrip<Chat: View, Pane: View>: View {
@@ -64,14 +64,12 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                             .overlay(alignment: .trailing) { widthHandle(column: index) }
                         }
                     }
-                    .scrollTargetLayout()
                 }
                 .scrollPosition($scrollPosition)
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
                     scrollOffset.x = x
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { main = $0 }
-                .scrollTargetBehavior(.viewAligned)
                 .scrollDisabled(!hasPanes)
                 .scrollIndicators(hasPanes ? .automatic : .hidden)
                 .onChange(of: revealCount) {
@@ -140,7 +138,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     }
 
     /// Every column changes width, so the strip scrolls by the change of the columns before this
-    /// one. Its leading edge stays put: the strip stays snapped and the edge tracks the pointer.
+    /// one. Its leading edge stays put, so the edge tracks the pointer.
     private func resizeColumns(to preferred: CGFloat?, keeping index: Int,
                                from start: (width: CGFloat, offset: CGFloat)) {
         let width = PaneStripLayout.columnWidth(main: main.width, preferred: preferred)

@@ -51,7 +51,7 @@ directory is always `$SWARM_HOME/.swarm`.
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
 
-Agent profiles live in `$SWARM_HOME/.swarm/profiles.json` (ADR 0030). A profile is one role, such
+Agent profiles live in `$SWARM_HOME/.swarm/profiles.json` (ADR 0031). A profile is one role, such
 as `chat` or `code.complex`, with an ordered list of runners. A runner is a provider, a model, an
 effort, and the flags its provider takes. `chat` is always first. With no file, the first read
 imports the old routing file (`$AGENT_ROUTING_CONFIG`, else
@@ -62,7 +62,7 @@ neither file, the `default-profiles.json` built into the binary is used and noth
 the first save. A file that is a broken symlink is an error, never a silent switch to the default.
 A save writes through a symlink, so `profiles.json` can live in a dotfiles checkout.
 
-A launch takes the first runner that can run (ADR 0031). It skips a runner whose CLI is not on
+A launch takes the first runner that can run (ADR 0032). It skips a runner whose CLI is not on
 PATH, whose accounts are all signed out, or whose best account has less usage left than
 `min_usage_left_pct` (default 5). The account read has a 2 s deadline; a read that fails, times
 out, or finds no accounts counts as "can run". Each skip is one stderr line, such as
@@ -99,7 +99,7 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
 | `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `working`, `waiting`, or `done` when the screen shows it and no hook reported in the last 10 s. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. |
-| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0032). `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
+| `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`, and the pane dir is pre-trusted for Claude, Codex, and AGY. |
 | `spawn <id> <role> [--provider <p>] [--account <auto\|name>] [-- <cmd>...]` | session | Register the agent, split a pane, and optionally run `<cmd>; swarm exited`. Print the pane id. |
 | `type <id>` | session | Read text from stdin and type it into a live agent pane. A closed pane causes an error before any input is sent. |
 | `interrupt <id>` | session | Send the adapter interrupt action to the agent pane. |
