@@ -309,95 +309,65 @@ fn codex_event_label(event: &str) -> String {
     label
 }
 
-/// A TOML line without its comment and outer blanks. A `#` inside a quoted string stays.
-fn toml_code(line: &str) -> &str {
-    let mut quote = None;
-    for (index, character) in line.char_indices() {
-        match quote {
-            None if character == '#' => return line[..index].trim(),
-            None if matches!(character, '"' | '\'') => quote = Some(character),
-            Some(open) if character == open => quote = None,
-            _ => {}
-        }
+/// The table `key` of `parent`, added when it is missing. An added `implicit` table writes no
+/// header of its own. None when `key` holds a value that is not a table.
+fn toml_table<'a>(
+    parent: &'a mut dyn toml_edit::TableLike,
+    key: &str,
+    implicit: bool,
+) -> Option<&'a mut dyn toml_edit::TableLike> {
+    if parent.get(key).is_none() {
+        let mut table = toml_edit::Table::new();
+        table.set_implicit(implicit);
+        parent.insert(key, toml_edit::Item::Table(table));
     }
-    line.trim()
+    parent.get_mut(key)?.as_table_like_mut()
 }
 
 /// Write each trust entry into a Codex home's `config.toml`, replacing the hash of an entry
 /// that is already there and keeping every other line. Returns whether the file changed.
-/// An entry written in a form other than its own table is refused, not added again: a second
-/// table with the same name makes the whole file unreadable to Codex.
+/// The file is edited as TOML, so an entry in any form or key spelling is updated where it is and
+/// never added twice: a second table with the same name makes the whole file unreadable to Codex.
 pub fn ensure_codex_hook_trust(
     home: &std::path::Path,
     entries: &[(String, String)],
 ) -> Result<bool, String> {
     let path = home.join("config.toml");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
-    // A key with an escape can name the same table in a spelling this line match cannot see.
-    // It counts only where it can name a hook: not below a path that starts with a plain key
-    // other than `hooks`.
-    let other_form = |key: &str| {
-        let not_hooks = |path: &str| {
-            let first = path
-                .split(['.', ']', '='])
-                .next()
-                .unwrap_or_default()
-                .trim();
-            !first.is_empty() && !first.starts_with(['"', '\'']) && first != "hooks"
-        };
-        // None before the first header; then whether the current table is not a hooks table.
-        let mut table_not_hooks = None;
-        existing.lines().map(toml_code).any(|code| {
-            if code.contains(key) {
-                return true;
-            }
-            if let Some(header) = code.strip_prefix('[') {
-                let other = not_hooks(header.trim_start_matches('['));
-                table_not_hooks = Some(other);
-                return code.contains('\\') && !other;
-            }
-            let name = code.split('=').next().unwrap_or_default();
-            name.contains('\\') && !table_not_hooks.unwrap_or_else(|| not_hooks(name))
-        })
+    let mut config: toml_edit::DocumentMut = existing.parse().map_err(|error| {
+        format!(
+            "{} is not valid TOML, so swarm does not edit it: {error}",
+            path.display()
+        )
+    })?;
+    let not_table = |name: &str| {
+        format!(
+            "{} has a {name} that is not a table; set its trusted_hash by hand",
+            path.display()
+        )
     };
+    let hooks =
+        toml_table(config.as_table_mut(), "hooks", true).ok_or_else(|| not_table("hooks"))?;
+    let state = toml_table(hooks, "state", true).ok_or_else(|| not_table("hooks.state"))?;
     for (key, hash) in entries {
-        let table = format!(
-            "[hooks.state.{}]",
-            serde_json::to_string(key).expect("string serialization cannot fail")
-        );
-        let value = format!(
-            "trusted_hash = {}",
-            serde_json::to_string(hash).expect("string")
-        );
-        match lines.iter().position(|line| toml_code(line) == table) {
-            Some(start) => {
-                let end = lines[start + 1..]
-                    .iter()
-                    .position(|line| toml_code(line).starts_with('['))
-                    .map_or(lines.len(), |offset| start + 1 + offset);
-                match (start + 1..end)
-                    .find(|&index| toml_code(&lines[index]).starts_with("trusted_hash"))
-                {
-                    Some(index) => lines[index] = value,
-                    None => lines.insert(start + 1, value),
-                }
-            }
-            None if other_form(key) => {
-                return Err(format!(
-                    "{} names hook {key} in a form swarm does not edit; set its trusted_hash by hand",
-                    path.display()
-                ));
+        let entry = toml_table(&mut *state, key, false).ok_or_else(|| not_table(key))?;
+        match entry
+            .get_mut("trusted_hash")
+            .and_then(toml_edit::Item::as_value_mut)
+        {
+            Some(value) if value.as_str() == Some(hash.as_str()) => {}
+            // The new hash keeps the old one's comment.
+            Some(value) => {
+                let decor = value.decor().clone();
+                *value = hash.as_str().into();
+                *value.decor_mut() = decor;
             }
             None => {
-                if lines.last().is_some_and(|line| !line.trim().is_empty()) {
-                    lines.push(String::new());
-                }
-                lines.extend([table, value]);
+                entry.insert("trusted_hash", toml_edit::value(hash.as_str()));
             }
         }
     }
-    let text = lines.join("\n") + "\n";
+    let text = config.to_string();
     if text == existing {
         return Ok(false);
     }
@@ -409,25 +379,16 @@ pub fn ensure_codex_hook_trust(
 /// Whether a Codex home's `config.toml` trusts every entry.
 pub fn codex_hooks_trusted(home: &std::path::Path, entries: &[(String, String)]) -> bool {
     let text = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
-    let lines: Vec<&str> = text.lines().map(toml_code).collect();
+    let Ok(config) = text.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let state = config.get("hooks").and_then(|hooks| hooks.get("state"));
     entries.iter().all(|(key, hash)| {
-        let table = format!(
-            "[hooks.state.{}]",
-            serde_json::to_string(key).expect("string")
-        );
-        let value = format!(
-            "trusted_hash = {}",
-            serde_json::to_string(hash).expect("string")
-        );
-        lines
-            .iter()
-            .position(|line| *line == table)
-            .is_some_and(|start| {
-                lines[start + 1..]
-                    .iter()
-                    .take_while(|line| !line.starts_with('['))
-                    .any(|line| *line == value)
-            })
+        state
+            .and_then(|state| state.get(key.as_str()))
+            .and_then(|entry| entry.get("trusted_hash"))
+            .and_then(toml_edit::Item::as_str)
+            == Some(hash.as_str())
     })
 }
 
@@ -1030,32 +991,51 @@ mod tests {
         let text = std::fs::read_to_string(&config).unwrap();
         assert_eq!(text.matches("[hooks.state.").count(), moved.len(), "{text}");
 
-        // A `#` inside the quoted key is not a comment.
-        assert_eq!(toml_code(r#"[a."x#y"]  # note"#), r#"[a."x#y"]"#);
-
-        // An entry in another form is refused, and the file stays as it was.
+        // An entry in another form or key spelling is updated where it is, not added again.
         let (key, _) = &entries[0];
         let dotted = format!("[hooks.state]\n{key:?}.trusted_hash = \"sha256:x\"\n");
-        std::fs::write(&config, &dotted).unwrap();
-        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
-        assert_eq!(std::fs::read_to_string(&config).unwrap(), dotted);
-        // So is a key spelled with an escape, which names the same table.
-        let escaped = format!("[hooks.state.{:?}]\ntrusted_hash = \"sha256:x\"\n", key)
-            .replacen('/', "\\u002f", 1);
-        std::fs::write(&config, &escaped).unwrap();
-        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
-        assert_eq!(std::fs::read_to_string(&config).unwrap(), escaped);
-
-        // So is an escaped key inside the hooks table.
-        let dotted_escaped = dotted.replacen('/', "\\u002f", 1);
-        std::fs::write(&config, &dotted_escaped).unwrap();
-        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
-        assert_eq!(std::fs::read_to_string(&config).unwrap(), dotted_escaped);
+        let escaped = format!("[hooks.state.{key:?}]\ntrusted_hash = \"sha256:x\"\n");
+        let inline =
+            format!("hooks = {{ state = {{ {key:?} = {{ trusted_hash = \"sha256:x\" }} }} }}\n");
+        // A string that holds a table header, and a nested array, are only values.
+        let values =
+            format!("note = \"\"\"\n[projects]\n\"\"\"\nlists = [[1, 2], [3]]\n\n{escaped}");
+        for form in [
+            dotted.clone(),
+            dotted.replacen('/', "\\u002f", 1),
+            escaped.replacen('/', "\\u002f", 1),
+            inline.replacen('/', "\\u002f", 1),
+            values.replacen("[hooks.state.\"/", "[hooks.state.\"\\u002f", 1),
+        ] {
+            std::fs::write(&config, &form).unwrap();
+            assert!(ensure_codex_hook_trust(&home, &entries).unwrap(), "{form}");
+            assert!(codex_hooks_trusted(&home, &entries), "{form}");
+            let text = std::fs::read_to_string(&config).unwrap();
+            let parsed: toml_edit::DocumentMut = text.parse().unwrap();
+            assert_eq!(
+                parsed["hooks"]["state"].as_table_like().unwrap().len(),
+                entries.len(),
+                "{text}"
+            );
+            assert!(!text.contains("sha256:x"), "{text}");
+        }
         // An escape in a table that is not a hooks table does not block setup.
         let project = "[projects.\"\\u002ftmp/project\"]\ntrust_level = \"trusted\"\n";
         std::fs::write(&config, project).unwrap();
         assert!(ensure_codex_hook_trust(&home, &entries).unwrap());
         assert!(codex_hooks_trusted(&home, &entries));
+        assert!(
+            std::fs::read_to_string(&config)
+                .unwrap()
+                .starts_with(project)
+        );
+
+        // A file that is not valid TOML, such as one with the same table twice, is refused and
+        // stays as it was.
+        let twice = format!("{escaped}{escaped}");
+        std::fs::write(&config, &twice).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), twice);
 
         // A commented-out old entry is not an entry, so the missing ones are added.
         let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
