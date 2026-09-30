@@ -27,3 +27,34 @@ but no hitch over 33 ms. In the one hang traced with Time Profiler, no Swarm thr
 the machine load was 5 to 18 on 10 cores. Find out on a quiet machine whether the app or the
 system causes them (`SWARM_PANE_STRESS=12`, see ui/README.md).
 
+
+## A ring to a new pane can lose its Enter
+
+Seen 2026-09-30: `swarm launch rc-8ca4dc1-fix3 review.deep` opened a Fable pane, and `swarm send`
+typed the ring into its prompt a few seconds later. The text arrived, but the Enter did not, so the
+seat sat idle with the ring in its input box. `swarm sweep` re-rang and typed the text a second
+time, again with no Enter. Pressing Enter by hand (`herdr pane send-keys wGS:pH Enter`) started the
+seat. The Enter probably lands before the new CLI's input box is ready. Fix it so that a ring to a
+pane is known to be submitted, for example by checking the screen for the ring text after Enter and
+pressing Enter again.
+
+## Agent profiles: open design choice
+
+- The profiles page group header is a Button with a turning chevron. The design named a
+  DisclosureGroup. Decide which one stays.
+
+## Agent profiles: known deviations
+
+- The profiles page rows are a LazyVStack, so they have no arrow-key selection.
+- Model ids show in full in a runner chip; they are not shortened.
+- The profiles page has no Restore defaults, because swarm has no command for it.
+- A launch with `--account` reads yelo twice (the probe and the account pick), so a stuck yelo
+  costs 4 s, not 2 s. One read could serve both.
+- A hung yelo's own child process can outlive the kill after the 2 s limit.
+- `argv` stays in `bus.rs`, dispatching on the `Provider` enum, not in `providers.rs`.
+- The profile schema lives in `src/config.rs`, not `src/profiles.rs` (ADR 0030 names it).
+- `swarm roles save` takes the profile JSON as an argument, not on stdin.
+- New Chat shows skipped runners in its chain row before launch, not in the progress line during
+  launch.
+- In dotfiles, `tests/orchestration-extraction/test_orchestration_contract.py:68` still reads
+  roles.json, and ADRs 0009 and 0015 still name roles.json as the launch policy source.
