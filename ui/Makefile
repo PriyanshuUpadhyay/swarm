@@ -1,10 +1,10 @@
 .DEFAULT_GOAL := help
-.PHONY: help build test lint app install run
+.PHONY: help build test lint app install run dmg
 export ZIG_GLOBAL_CACHE_DIR := $(CURDIR)/.build/zig-global
 export ZIG_LOCAL_CACHE_DIR := $(CURDIR)/.build/zig-local
 
 help:
-	@printf '%s\n' 'make build    Build all Swift targets' 'make test     Build transcript and run tests' 'make lint     Check source boundaries' 'make app      Build a release Swarm.app' 'make install  Keep the old app and install the new one' 'make run      Build and launch Swarm.app'
+	@printf '%s\n' 'make build    Build all Swift targets' 'make test     Build transcript and run tests' 'make lint     Check source boundaries' 'make app      Build a release Swarm.app' 'make install  Keep the old app and install the new one' 'make run      Build and launch Swarm.app' 'make dmg      Build Swarm.app and package it as a DMG'
 
 build:
 	swift build
@@ -25,3 +25,6 @@ install:
 
 run: app
 	open .build/release/Swarm.app
+
+dmg: app
+	./Tools/make-dmg.sh

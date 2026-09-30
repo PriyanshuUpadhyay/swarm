@@ -38,3 +38,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.sha256 --verify-tag --draft --generate-notes
+
+  app:
+    needs: source
+    # The app targets macOS 26, so it needs that SDK and Swift 6.2.
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - run: brew install uv
+      - run: make -C ui dmg
+      - name: Attach the DMG to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" ui/.build/release/Swarm-*.dmg
