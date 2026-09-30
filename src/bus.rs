@@ -333,7 +333,13 @@ pub fn ensure_codex_hook_trust(
     entries: &[(String, String)],
 ) -> Result<bool, String> {
     let path = home.join("config.toml");
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    // Only a missing file is empty: a file that cannot be read, such as one that is not UTF-8,
+    // would be written over whole.
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
     let mut config: toml_edit::DocumentMut = existing.parse().map_err(|error| {
         format!(
             "{} is not valid TOML, so swarm does not edit it: {error}",
@@ -1036,6 +1042,11 @@ mod tests {
         std::fs::write(&config, &twice).unwrap();
         assert!(ensure_codex_hook_trust(&home, &entries).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), twice);
+        // So is a file that is not UTF-8, which cannot be read as text.
+        let latin1 = b"model = \"o3\"\n# caf\xe9\n".to_vec();
+        std::fs::write(&config, &latin1).unwrap();
+        assert!(ensure_codex_hook_trust(&home, &entries).is_err());
+        assert_eq!(std::fs::read(&config).unwrap(), latin1);
 
         // A commented-out old entry is not an entry, so the missing ones are added.
         let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
