@@ -941,6 +941,47 @@ mod tests {
     }
 
     #[test]
+    fn the_shared_codex_hook_has_the_hashes_a_real_codex_reports() {
+        // `codex app-server` 0.159.0 `hooks/list`, empty CODEX_HOME, 2026-10-01, for the `-c`
+        // hooks that `argv` gives a Codex agent; each was `trusted` after `swarm hooks setup`.
+        let reported = [
+            (
+                "user_prompt_submit",
+                "06d399ba0ab917983dabd306356e603ba6a16480d6d9f6e80bf30e3a3633018b",
+            ),
+            (
+                "pre_tool_use",
+                "d733906c835c3d2ee20fdc28807771ee70455ba601eaf6f7f66039e31faf1904",
+            ),
+            (
+                "post_tool_use",
+                "400d7fae85a77d8ed2f47af0ec1a503233eac8cfb8bcfeb33e11711d0bbd2795",
+            ),
+            (
+                "permission_request",
+                "ef1652265a7d1d4304f2a47351f463a7dd2ec706cdd0674fb2487760febb10c2",
+            ),
+            (
+                "stop",
+                "fcf785bcb84f6c5b86760cd9344ffbf3929020e9121b3e562475a9619625b5e8",
+            ),
+            (
+                "interrupt",
+                "2f5dbf4f86a6d1b63d5427c0571e0fd9a65ce09c418d4e2bfefcb192a6e9223c",
+            ),
+        ];
+        assert_eq!(
+            codex_hook_trust(&shared_hook_command("codex")),
+            reported
+                .map(|(label, hash)| (
+                    format!("/<session-flags>/config.toml:{label}:1:0"),
+                    format!("sha256:{hash}")
+                ))
+                .to_vec()
+        );
+    }
+
+    #[test]
     fn codex_hook_trust_is_written_once_and_keeps_every_other_line() {
         let home = std::env::temp_dir().join(format!("swarm-codex-trust-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
