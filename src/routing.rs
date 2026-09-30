@@ -93,6 +93,29 @@ pub fn validate(config: &Value) -> Vec<String> {
     if routes.is_empty() {
         errors.push("At least one route is required.".into());
     }
+    let empty = serde_json::Map::new();
+    let substitutes = match &config["substitutes"] {
+        Value::Null => &empty,
+        Value::Object(substitutes) => substitutes,
+        _ => {
+            errors.push("substitutes must be an object.".into());
+            &empty
+        }
+    };
+    let substitutes_of = |id: &str| {
+        substitutes
+            .get(id)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+    };
+    let fable = |id: &str| {
+        runners
+            .get(id)
+            .and_then(|runner| runner["model"].as_str())
+            .is_some_and(|model| model.to_lowercase().contains("fable"))
+    };
     let mut routed = std::collections::HashSet::new();
     for (route, ids) in routes {
         let Some(ids) = ids.as_array().filter(|ids| !ids.is_empty()) else {
@@ -102,18 +125,44 @@ pub fn validate(config: &Value) -> Vec<String> {
         if ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len() {
             errors.push(format!("Route '{route}' has duplicate runners."));
         }
+        // Fable is a child seat only where it judges, never where it writes code, and a
+        // substitute can put it in a seat as surely as the route itself can.
+        let judges = route.starts_with("review.") || route.starts_with("council.");
         for id in ids.iter().map(|id| id.as_str().unwrap_or_default()) {
-            let Some(runner) = runners.get(id) else {
+            if !runners.contains_key(id) {
                 errors.push(format!("Route '{route}' references missing runner '{id}'."));
                 continue;
-            };
+            }
             routed.insert(id);
-            // Fable is a child seat only where it judges, never where it writes code.
-            let fable = runner["model"]
-                .as_str()
-                .is_some_and(|model| model.to_lowercase().contains("fable"));
-            if fable && !route.starts_with("review.") && !route.starts_with("council.") {
+            if fable(id) && !judges {
                 errors.push(format!("Route '{route}': Fable runner '{id}' is allowed only in a review.* or council.* route."));
+            }
+            for substitute in substitutes_of(id).filter(|substitute| fable(substitute) && !judges) {
+                errors.push(format!("Route '{route}': Fable substitute '{substitute}' for '{id}' is allowed only in a review.* or council.* route."));
+            }
+        }
+    }
+    for (id, list) in substitutes {
+        let Some(runner) = runners.get(id) else {
+            errors.push(format!("Substitutes name missing runner '{id}'."));
+            continue;
+        };
+        let Some(list) = list.as_array().filter(|list| !list.is_empty()) else {
+            errors.push(format!("Substitutes for '{id}' must be a list of runners."));
+            continue;
+        };
+        for substitute in list.iter().map(|id| id.as_str().unwrap_or_default()) {
+            let Some(other) = runners.get(substitute) else {
+                errors.push(format!(
+                    "Substitutes for '{id}' reference missing runner '{substitute}'."
+                ));
+                continue;
+            };
+            routed.insert(substitute);
+            if other["provider"] == runner["provider"] {
+                errors.push(format!(
+                    "Substitute '{substitute}' for '{id}' has the same provider."
+                ));
             }
         }
     }
@@ -172,37 +221,56 @@ const EFFORTS: [&str; 7] = ["none", "low", "medium", "high", "xhigh", "max", "ul
 
 /// The route's first runner, or its first runner of `provider`, with its fields plus `role`,
 /// `runnerId`, and `fallbackRunnerIds`: the route's other runners of the same provider, in order.
-pub fn resolve(config: &Value, role: &str, provider: Option<&str>) -> Result<Value, String> {
+/// When `installed` says that runner's provider is missing, its first installed substitute takes
+/// the seat and `substitutedFor` names the runner it replaced.
+pub fn resolve(
+    config: &Value,
+    role: &str,
+    provider: Option<&str>,
+    installed: &dyn Fn(&str) -> bool,
+) -> Result<Value, String> {
     let ids = config["routes"][role]
         .as_array()
         .filter(|ids| !ids.is_empty())
         .ok_or_else(|| format!("route '{role}' is not defined"))?;
-    let provider_of =
-        |id: &Value| config["runners"][id.as_str().unwrap_or_default()]["provider"].as_str();
-    let id = match provider {
+    let provider_of = |id: &str| config["runners"][id]["provider"].as_str();
+    let picked = match provider {
         Some(provider) => ids
             .iter()
+            .filter_map(Value::as_str)
             .find(|id| provider_of(id) == Some(provider))
             .ok_or_else(|| format!("route '{role}' has no {provider} runner"))?,
-        None => &ids[0],
+        None => ids[0].as_str().unwrap_or_default(),
     };
-    let Some(Value::Object(runner)) = config["runners"].get(id.as_str().unwrap_or_default()) else {
-        return Err(format!(
-            "runner '{}' for route '{role}' is not defined",
-            id.as_str().unwrap_or_default()
-        ));
+    // With no installed substitute the runner stays, as it did before substitutes existed.
+    let id = match provider_of(picked) {
+        Some(needed) if !installed(needed) => config["substitutes"][picked]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .find(|substitute| provider_of(substitute).is_some_and(installed))
+            .unwrap_or(picked),
+        _ => picked,
+    };
+    let Some(Value::Object(runner)) = config["runners"].get(id) else {
+        return Err(format!("runner '{id}' for route '{role}' is not defined"));
     };
     let fallbacks = ids
         .iter()
         .filter(|other| {
-            *other != id && provider_of(other) == runner.get("provider").and_then(Value::as_str)
+            other.as_str() != Some(id)
+                && provider_of(other.as_str().unwrap_or_default()) == provider_of(id)
         })
         .cloned()
         .collect();
     let mut resolved = runner.clone();
     resolved.insert("role".into(), role.into());
-    resolved.insert("runnerId".into(), id.clone());
+    resolved.insert("runnerId".into(), id.into());
     resolved.insert("fallbackRunnerIds".into(), Value::Array(fallbacks));
+    if id != picked {
+        resolved.insert("substitutedFor".into(), picked.into());
+    }
     Ok(Value::Object(resolved))
 }
 
@@ -223,7 +291,7 @@ mod tests {
 
     #[test]
     fn resolves_the_first_runner_with_same_provider_fallbacks() {
-        let resolved = resolve(&config(), "code", None).unwrap();
+        let resolved = resolve(&config(), "code", None, &|_| true).unwrap();
         assert_eq!(
             resolved.to_string(),
             r#"{"provider":"codex","model":"gpt-sol","effort":"high","role":"code","runnerId":"codex-sol-high-agent","fallbackRunnerIds":["codex-luna-low-agent"]}"#
@@ -262,16 +330,112 @@ mod tests {
     #[test]
     fn a_provider_picks_its_first_runner_and_a_missing_one_errors() {
         assert_eq!(
-            resolve(&config(), "code", Some("claude")).unwrap()["runnerId"],
+            resolve(&config(), "code", Some("claude"), &|_| true).unwrap()["runnerId"],
             "claude-opus-high-agent"
         );
         assert_eq!(
-            resolve(&config(), "code", Some("agy")).unwrap_err(),
+            resolve(&config(), "code", Some("agy"), &|_| true).unwrap_err(),
             "route 'code' has no agy runner"
         );
         assert_eq!(
-            resolve(&config(), "chat", None).unwrap_err(),
+            resolve(&config(), "chat", None, &|_| true).unwrap_err(),
             "route 'chat' is not defined"
+        );
+    }
+
+    fn with_substitutes() -> Value {
+        serde_json::json!({
+            "routes": {
+                "review.gate": ["claude-opus-xhigh-agent"],
+                "code.small": ["agy-flash-medium-agent"]
+            },
+            "runners": {
+                "claude-opus-xhigh-agent": {"provider": "claude", "model": "opus"},
+                "codex-sol-xhigh-agent": {"provider": "codex", "model": "gpt-sol"},
+                "agy-flash-medium-agent": {"provider": "agy", "model": "flash"},
+                "codex-luna-low-agent": {"provider": "codex", "model": "gpt-luna"}
+            },
+            "substitutes": {
+                "claude-opus-xhigh-agent": ["codex-sol-xhigh-agent"],
+                "agy-flash-medium-agent": ["codex-luna-low-agent", "claude-opus-xhigh-agent"]
+            }
+        })
+    }
+
+    #[test]
+    fn a_missing_provider_takes_the_first_installed_substitute() {
+        let config = with_substitutes();
+        let no_claude = |provider: &str| provider != "claude";
+        let resolved = resolve(&config, "review.gate", None, &no_claude).unwrap();
+        assert_eq!(resolved["runnerId"], "codex-sol-xhigh-agent");
+        assert_eq!(resolved["provider"], "codex");
+        assert_eq!(resolved["substitutedFor"], "claude-opus-xhigh-agent");
+        let seat = resolve(&config, "review.gate", Some("claude"), &no_claude).unwrap();
+        assert_eq!(seat["runnerId"], "codex-sol-xhigh-agent");
+        let agy_only_missing = |provider: &str| provider != "agy";
+        assert_eq!(
+            resolve(&config, "code.small", None, &agy_only_missing).unwrap()["runnerId"],
+            "codex-luna-low-agent"
+        );
+        let only_claude = |provider: &str| provider == "claude";
+        assert_eq!(
+            resolve(&config, "code.small", None, &only_claude).unwrap()["runnerId"],
+            "claude-opus-xhigh-agent"
+        );
+        let installed = resolve(&config, "review.gate", None, &|_| true).unwrap();
+        assert_eq!(installed["runnerId"], "claude-opus-xhigh-agent");
+        assert!(installed.get("substitutedFor").is_none());
+        let nothing = resolve(&config, "code.small", None, &|_| false).unwrap();
+        assert_eq!(nothing["runnerId"], "agy-flash-medium-agent");
+        assert!(nothing.get("substitutedFor").is_none());
+    }
+
+    #[test]
+    fn validate_checks_each_substitute() {
+        assert_eq!(validate(&with_substitutes()), Vec::<String>::new());
+        let bad = serde_json::json!({
+            "routes": {"code": ["claude-opus-high-agent"]},
+            "runners": {
+                "claude-opus-high-agent": {"provider": "claude", "model": "opus"},
+                "claude-sonnet-high-agent": {"provider": "claude", "model": "sonnet"},
+                "codex-astra-high-agent": {"provider": "codex", "model": "gpt-astra"},
+                "claude-fable-high-agent": {"provider": "claude", "model": "claude-fable-5"}
+            },
+            "substitutes": {
+                "claude-opus-high-agent": ["claude-sonnet-high-agent", "gone"],
+                "codex-astra-high-agent": ["claude-fable-high-agent"],
+                "lost": ["codex-astra-high-agent"]
+            }
+        });
+        assert_eq!(
+            validate(&bad),
+            [
+                "Substitute 'claude-sonnet-high-agent' for 'claude-opus-high-agent' has the same provider.",
+                "Substitutes for 'claude-opus-high-agent' reference missing runner 'gone'.",
+                "Substitutes name missing runner 'lost'.",
+                "Runner 'codex-astra-high-agent' is in no route.",
+            ]
+        );
+        let fable = serde_json::json!({
+            "routes": {"code": ["codex-astra-high-agent"]},
+            "runners": {
+                "codex-astra-high-agent": {"provider": "codex", "model": "gpt-astra"},
+                "claude-fable-high-agent": {"provider": "claude", "model": "claude-fable-5"}
+            },
+            "substitutes": {"codex-astra-high-agent": ["claude-fable-high-agent"]}
+        });
+        assert_eq!(
+            validate(&fable),
+            [
+                "Route 'code': Fable substitute 'claude-fable-high-agent' for 'codex-astra-high-agent' is allowed only in a review.* or council.* route."
+            ]
+        );
+        assert_eq!(
+            validate(&serde_json::json!({"routes": {}, "runners": {}, "substitutes": []})),
+            [
+                "At least one route is required.",
+                "substitutes must be an object."
+            ]
         );
     }
 }
