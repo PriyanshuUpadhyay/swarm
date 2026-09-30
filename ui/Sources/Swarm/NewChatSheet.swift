@@ -57,8 +57,6 @@ final class NewChatModel {
     }
 
     func load(initialProvider: String?, initialModel: String?) async {
-        // A Retry starts over as on first open, so the chat profile's runner becomes the pick.
-        chatChoice = nil
         let catalog = SwarmProfileCatalog.shared
         do {
             providers = try await catalog.providers()
@@ -70,9 +68,14 @@ final class NewChatModel {
            providers.isEmpty || pickerProviders.contains(where: { $0.id == preferred }) {
             provider = preferred
         }
+        let cached = await catalog.cachedProfiles
+        // A Retry starts over as on first open, so the chat profile's runner becomes the pick. The
+        // clear and the model reset sit with no await between them, so an older load that is
+        // still running cannot set a pick in the gap.
+        chatChoice = nil
         selectedModel = ChatModelChoice.initial(current: initialModel, models: [])
         // The list read at app launch shows at once; the fresh read below replaces it.
-        if let cached = await catalog.cachedProfiles { showChatProfile(cached, check: nil) }
+        if let cached { showChatProfile(cached, check: nil) }
         await loadChatProfile(check: nil)
         models = await SwarmModelCatalog.shared.cached(provider) ?? []
         await loadOptions()

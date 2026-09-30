@@ -10,8 +10,6 @@ struct ProfileEditorSheet: View {
     let providersError: String?
     /// The last launch check of the saved profile, for each card's status.
     let check: SwarmProfileCheck?
-    /// The runner to scroll to when a chip opened the sheet.
-    let focus: Int?
     let save: (SwarmProfile) async throws -> Void
     let onSaved: () -> Void
 
@@ -25,6 +23,8 @@ struct ProfileEditorSheet: View {
     @State private var contentHeight: CGFloat?
     /// The whole sheet's height as laid out, which the sheet window takes.
     @State private var sheetHeight: CGFloat = 0
+    /// The runner a chip click opened the sheet at; scrolled to once the list lays out.
+    @State private var pendingFocus: Int?
 
     init(
         profile: SwarmProfile, providers: [SwarmProvider], providersError: String?,
@@ -33,9 +33,9 @@ struct ProfileEditorSheet: View {
         self.providers = providers
         self.providersError = providersError
         self.check = check
-        self.focus = focus
         self.save = save
         self.onSaved = onSaved
+        _pendingFocus = State(initialValue: focus)
         // A one-time seed: the sheet owns the edits from here until Save or Cancel.
         _draft = State(initialValue: ProfileDraft(profile))
     }
@@ -78,16 +78,21 @@ struct ProfileEditorSheet: View {
                 }
                 .scrollContentBackground(.hidden)
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in
-                    if height > 0 { contentHeight = height }
+                    guard height > 0 else { return }
+                    contentHeight = height
+                    // A scroll before the first layout does nothing, so the chip's runner waits
+                    // for it.
+                    if let focus = pendingFocus, draft.runners.indices.contains(focus) {
+                        pendingFocus = nil
+                        proxy.scrollTo(draft.runners[focus].id, anchor: .center)
+                    }
                 }
                 .frame(height: listHeight)
                 .onChange(of: draft.runners.count) { old, new in
                     if new > old, let added = draft.runners.last { proxy.scrollTo(added.id, anchor: .bottom) }
-                }
-                .onAppear {
-                    if let focus, draft.runners.indices.contains(focus) {
-                        proxy.scrollTo(draft.runners[focus].id, anchor: .center)
-                    }
+                    // The content size never drops below the list's frame, so after a remove the
+                    // list goes back to the estimate, which is under the cards, and measures again.
+                    if new < old { contentHeight = nil }
                 }
             }
             Button {
@@ -418,6 +423,7 @@ private struct SheetWindowHeight: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         guard height > 0 else { return }
+        // After this update pass: a window resize inside a view update lays the view out again.
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             var size = window.contentRect(forFrameRect: window.frame).size
