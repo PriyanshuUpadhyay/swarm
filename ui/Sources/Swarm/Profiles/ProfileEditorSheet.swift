@@ -21,8 +21,8 @@ struct ProfileEditorSheet: View {
     @State private var catalogErrors: [String: String] = [:]
     @State private var isSaving = false
     @State private var error: String?
-    /// Each card's measured height, so the list fits its cards up to runnerListMax.
-    @State private var cardHeights: [UUID: CGFloat] = [:]
+    /// The card list's content height as the list lays it out, so the list fits its cards.
+    @State private var contentHeight: CGFloat?
 
     init(
         profile: SwarmProfile, providers: [SwarmProvider], providersError: String? = nil,
@@ -68,20 +68,22 @@ struct ProfileEditorSheet: View {
                             onMove: { offset in move(index, by: offset) },
                             onRetry: { Task { await loadModels(runner.provider, retry: true) } }
                         )
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                            cardHeights[runner.id] = $0
-                        }
                         .id(runner.id)
-                        .listRowInsets(EdgeInsets(
-                            top: DesignTokens.Spacing.xs, leading: 0, bottom: DesignTokens.Spacing.xs, trailing: 0
-                        ))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
                     .onMove { draft.move(fromOffsets: $0, toOffset: $1) }
                 }
                 .scrollContentBackground(.hidden)
-                .frame(height: listHeight)
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in
+                    if height > 0 { contentHeight = height }
+                }
+                // The sheet keeps the size it opened at, so when cards are added the list gives up
+                // height and scrolls rather than push the title and buttons out.
+                .frame(minHeight: DesignTokens.Size.runnerCard, idealHeight: listHeight, maxHeight: listHeight)
+                .onChange(of: draft.runners.count) { old, new in
+                    if new > old, let added = draft.runners.last { proxy.scrollTo(added.id, anchor: .bottom) }
+                }
                 .onAppear {
                     if let focus, draft.runners.indices.contains(focus) {
                         proxy.scrollTo(draft.runners[focus].id, anchor: .center)
@@ -122,18 +124,18 @@ struct ProfileEditorSheet: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.profileSheet)
+        // The sheet opens at the height its cards need.
+        .presentationSizing(.fitted)
         .interactiveDismissDisabled(isSaving)
         .task {
             for provider in Set(draft.runners.map(\.provider)) { await loadModels(provider) }
         }
     }
 
-    /// The cards' height, at least one card and at most runnerListMax, where the list scrolls. A
-    /// card not measured yet counts as runnerCard.
+    /// The cards' height, at least one card and at most runnerListMax, where the list scrolls.
+    /// Before the list lays out, each card counts as runnerCard.
     private var listHeight: CGFloat {
-        let cards = draft.runners.reduce(CGFloat.zero) { total, runner in
-            total + (cardHeights[runner.id] ?? DesignTokens.Size.runnerCard) + 2 * DesignTokens.Spacing.xs
-        }
+        let cards = contentHeight ?? CGFloat(draft.runners.count) * DesignTokens.Size.runnerCard
         return min(max(cards, DesignTokens.Size.runnerCard), DesignTokens.Size.runnerListMax)
     }
 
