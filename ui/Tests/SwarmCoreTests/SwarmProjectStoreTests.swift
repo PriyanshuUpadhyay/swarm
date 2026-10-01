@@ -25,4 +25,22 @@ struct SwarmProjectStoreTests {
         #expect(SwarmProjectStore(defaults: defaults).paths() == [created.path])
         await #expect(throws: SwarmProjectError.self) { try await store.create(at: created) }
     }
+
+    @Test("A folder that git init turns into a repository is listed as one after its identities are forgotten")
+    func gitInitChangesIdentity() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("notes")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let discovery = SwarmSessionDiscovery()
+        guard case .folder = await discovery.identity(for: folder.path) else {
+            Issue.record("a plain folder is a folder"); return
+        }
+
+        try await Git.initialize(at: folder.path)
+        await discovery.forgetIdentities()
+        guard case .repository = await discovery.identity(for: folder.path) else {
+            Issue.record("after git init the folder is a repository"); return
+        }
+    }
 }

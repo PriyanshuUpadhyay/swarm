@@ -297,7 +297,10 @@ final class SessionsTreeModel {
     func openProject(_ url: URL, initializeGit: Bool = false) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
-        if initializeGit { try await Git.initialize(at: url.path) }
+        if initializeGit {
+            try await Git.initialize(at: url.path)
+            await discovery.forgetIdentities()
+        }
         let path = try await projects.add(url)
         try await refresh()
         return path
@@ -311,9 +314,10 @@ final class SessionsTreeModel {
         return path
     }
 
-    /// Makes a plain-folder project a git repository; its key, `ProjectNode.path`, stays the same.
+    /// Makes a plain-folder project a git repository.
     func initializeGit(at path: String) async throws {
         try await Git.initialize(at: path)
+        await discovery.forgetIdentities()
         try await refresh()
     }
 
@@ -966,8 +970,9 @@ private struct SessionsWindow: View {
             Task {
                 do {
                     try await model.initializeGit(at: request.path)
-                    // `git init` changed the project's id, so it is found again by path.
-                    if let project = model.tree.projects.first(where: { $0.path == request.path }),
+                    // `git init` changed the project's id, and a repository's path has its links
+                    // resolved, so the project is found again by its workspace.
+                    if let project = model.tree.project(containing: request.path),
                        case .repository = project.id {
                         newTaskProject = project
                     }
