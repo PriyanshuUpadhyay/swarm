@@ -261,8 +261,8 @@ final class SessionsTreeModel {
         )
         try await projects.add(URL(fileURLWithPath: path))
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        navigation.selectedWorkspace = path
-        select(nil)
+        // The caller starts a chat there, which selects the workspace. Selecting it here, before the
+        // tree lists it, showed the Agent Profiles page and its availability check for a moment.
         do { try await refresh() }
         catch { self.error = String(describing: error) }
         return path
