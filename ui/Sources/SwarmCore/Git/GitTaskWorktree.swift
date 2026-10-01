@@ -56,7 +56,11 @@ public enum GitTaskWorktree {
         let commit = try await Git.runRaw(
             ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], in: commonDirectory
         )
-        guard commit.ok else { return nil }
+        // Exit 1 is "HEAD names no commit"; any other failure is a fault, not an empty repository.
+        if commit.status == 1 { return nil }
+        guard commit.ok else {
+            throw Git.error(["rev-parse", "HEAD^{commit}"], commit.status, commit.stderr, "")
+        }
         return String(decoding: commit.stdout, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -24,7 +24,7 @@ final class SessionsTreeModel {
 
     func selectWorkspace(_ entry: WorkspaceEntry) {
         navigation.select(entry)
-        expandProject(of: entry.id)
+        expandProject(of: entry)
         // A workspace whose only tabs are starts opens on the newest, so its Retry and Close show.
         if navigation.selectedChat(in: entry) == nil, let start = pendingChats.inWorkspace(entry.id).last {
             selectPending(start.id)
@@ -33,9 +33,11 @@ final class SessionsTreeModel {
         }
     }
 
-    /// A selected workspace in a collapsed project would be a hidden row.
-    private func expandProject(of path: String) {
-        if let project = tree.project(containing: path) { navigation.collapsed.remove(project.path) }
+    /// A selected workspace in a collapsed project would be a hidden row; a pinned row never is.
+    private func expandProject(of entry: WorkspaceEntry) {
+        guard !navigation.pinned.contains(entry.id),
+              let project = tree.project(containing: entry.id) else { return }
+        navigation.collapsed.remove(project.path)
     }
 
     func showHome() {
@@ -84,8 +86,10 @@ final class SessionsTreeModel {
         if let id, let entry = workspaces.first(where: {
             $0.chats.contains { $0.sessions.contains { $0.id == id } }
         }) {
+            // Only a move to another workspace opens its project; a tab switch keeps a collapse.
+            let moved = navigation.selectedWorkspace != entry.id
             navigation.select(entry, chat: id)
-            expandProject(of: entry.id)
+            if moved { expandProject(of: entry) }
         }
         agents = id.flatMap { tree.agentsBySession[$0] } ?? []
         commandSource = nil
@@ -105,7 +109,7 @@ final class SessionsTreeModel {
         let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
         navigation.archived.remove(workspace)
         navigation.selectedWorkspace = workspace
-        expandProject(of: workspace)
+        if let entry = workspaces.first(where: { $0.id == workspace }) { expandProject(of: entry) }
         selectPending(id)
         runStart(id, plan: plan)
     }
@@ -598,7 +602,7 @@ private struct SessionsWindow: View {
             Button("Run git init") { runGitInit(request) }
             switch request.reason {
             case .importFolder(let url):
-                Button("Keep as Folder", role: .cancel) { performProjectAction(url, create: false) }
+                Button("Keep as Folder", role: .cancel) { performProjectAction(url, .open) }
             case .newWorkspace:
                 Button("Cancel", role: .cancel) {}
             }
@@ -762,7 +766,8 @@ private struct SessionsWindow: View {
             },
             rename: { id in
                 guard let entry = entry(id) else { return }
-                workspaceName = model.navigation.title(for: entry)
+                // The name the row shows, so Save with no edit keeps it.
+                workspaceName = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
                 renameTarget = entry
             },
             archive: { id in entry(id).map(model.archiveWorkspace) },
@@ -974,7 +979,7 @@ private struct SessionsWindow: View {
     private func runGitInit(_ request: GitInitRequest) {
         switch request.reason {
         case .importFolder(let url):
-            performProjectAction(url, create: false, initializeGit: true)
+            performProjectAction(url, .initializeGitAndOpen)
         case .newWorkspace:
             Task {
                 do { newTaskProject = try await model.initializeGit(at: request.path) }
@@ -1063,7 +1068,7 @@ private struct SessionsWindow: View {
             Text("Rename workspace").font(.title2)
             TextField("Name", text: $workspaceName)
                 .textFieldStyle(.roundedBorder)
-            Text("Leave the name blank to use the project and folder name.")
+            Text("Leave the name blank to use the folder or branch name.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Spacer()
@@ -1111,7 +1116,7 @@ private struct SessionsWindow: View {
                 for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
             )
             if case .repository = identity {
-                performProjectAction(url, create: false)
+                performProjectAction(url, .open)
             } else {
                 gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
             }
@@ -1126,20 +1131,20 @@ private struct SessionsWindow: View {
         panel.canCreateDirectories = true
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            performProjectAction(url, create: true)
+            performProjectAction(url, .create)
         }
     }
 
-    private func performProjectAction(_ url: URL, create: Bool, initializeGit: Bool = false) {
+    private func performProjectAction(_ url: URL, _ action: ProjectAction) {
         guard projectAction == nil else { return }
-        projectAction = create ? "Creating project…" : "Opening project…"
+        projectAction = action == .create ? "Creating project…" : "Opening project…"
         let moves = ownerMoves
         Task {
             defer { projectAction = nil }
             do {
-                let path = try await (create
+                let path = try await (action == .create
                     ? model.createProject(at: url)
-                    : model.openProject(url, initializeGit: initializeGit))
+                    : model.openProject(url, initializeGit: action == .initializeGitAndOpen))
                 guard ownerMoves == moves else { return }
                 // The kept path is the project's launch folder. The tree can still lack the
                 // project when a later refresh overtook this one, so it is not read here.
@@ -1181,6 +1186,8 @@ private struct WorkspacePanels: View {
         }
     }
 }
+
+private enum ProjectAction { case create, open, initializeGitAndOpen }
 
 private enum CreateSheet: Identifiable {
     case pickProject, addProject
