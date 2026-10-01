@@ -675,12 +675,23 @@ fn json_text(value: &serde_json::Value) -> String {
 fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
     let target = match std::fs::symlink_metadata(path) {
-        // A link to a missing file gets that file made, as a write through the link would.
+        // A link, or a chain of links, to a missing file gets that file made, as a write through
+        // the link would. A chain longer than the system's 32 hops is refused.
         Ok(meta) if meta.file_type().is_symlink() => match std::fs::canonicalize(path) {
             Ok(target) => target,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let link = std::fs::read_link(path).map_err(fail)?;
-                path.parent().unwrap_or(path).join(link)
+                let mut target = path.to_path_buf();
+                for _ in 0..32 {
+                    if !std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
+                        break;
+                    }
+                    let link = std::fs::read_link(&target).map_err(fail)?;
+                    target = target.parent().unwrap_or(&target).join(link);
+                }
+                if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
+                    return Err(format!("swarm: {} links too many times", path.display()));
+                }
+                target
             }
             Err(error) => return Err(fail(error)),
         },
@@ -1384,6 +1395,26 @@ mod tests {
             std::fs::read_to_string(&dotfiles)
                 .unwrap()
                 .contains("[projects.\"/two\"]")
+        );
+
+        // A chain of links to a missing file keeps every link and makes the file at its end.
+        let middle = root.join("dotfiles/middle.toml");
+        std::fs::remove_file(&config).unwrap();
+        std::fs::remove_file(&dotfiles).unwrap();
+        std::os::unix::fs::symlink(&dotfiles, &middle).unwrap();
+        std::os::unix::fs::symlink(&middle, &config).unwrap();
+        ensure_codex_trust(&home, std::path::Path::new("/three")).unwrap();
+        assert!(linked());
+        assert!(
+            std::fs::symlink_metadata(&middle)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            std::fs::read_to_string(&dotfiles)
+                .unwrap()
+                .contains("[projects.\"/three\"]")
         );
         std::fs::remove_dir_all(&root).unwrap();
     }

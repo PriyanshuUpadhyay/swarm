@@ -84,11 +84,14 @@ struct HooksSetupSheet: View {
                 openFile = plan.files.first?.path
                 diffFailed = false
                 phase = .ready(plan)
-                Self.announce(plan.isSetUp
+                // One announcement, so a setup failure is not cut off by the plan that follows it.
+                let summary = plan.isSetUp
                     ? "Swarm's hooks are already set up."
-                    : "\(plan.files.count) files to change, \(plan.conflicts.count) conflicts.")
+                    : "\(plan.files.count) files to change, \(plan.conflicts.count) conflicts."
+                Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
             } catch {
                 phase = .failed(Self.message(error))
+                Self.announce(Self.message(error))
             }
         }
     }
@@ -232,7 +235,6 @@ struct HooksSetupSheet: View {
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
                 failure = Self.message(error)
-                Self.announce(failure ?? "")
                 planRun += 1
             }
             working = false
