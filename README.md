@@ -119,16 +119,18 @@ pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
 Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
-project list, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
-lets the user choose a provider and model without changing a routed role. Codex and AGY list CLI models; Claude lists
-aliases and accepts a full model name in Other model. In a chat, Switch model asks the live chair
+project list and starts a chat in it. Create Project makes a plain folder, adds it there, and starts a chat in it.
+New chat starts the chat profile at once with no sheet (ADR 0035): a "New chat" tab shows at once and becomes the
+chat when the chair is up, or shows the launch error with Retry. To use another model, start a chat and use Switch
+model. Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
+Switch model asks the live chair
 for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
 tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
 summary.
 
 For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
-project, then opens New Chat there. Empty task worktrees stay available from the project view.
-Plain folders keep the New Chat action without Git worktrees.
+project, then starts a chat there. Empty task worktrees stay in the sidebar with 0 chats.
+Plain folders keep the New chat action without Git worktrees.
 The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
 finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear
 as underlined tabs above the transcript. The plus button starts another chat in that workspace.

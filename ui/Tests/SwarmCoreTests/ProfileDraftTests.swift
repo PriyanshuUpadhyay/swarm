@@ -90,37 +90,4 @@ struct ProfileDraftTests {
         #expect(ProfileStatus(check: SwarmProfileCheck(name: "review.surface", pick: nil, skipped: [low, missing]), profile: profile)
             == ProfileStatus(kind: .none, text: "No runner can run. claude: usage 2% left (threshold 5%); codex: codex CLI not found on PATH"))
     }
-
-    @Test("New Chat opens on the profile's next runner and marks any other pick as a one-off")
-    func chatChoice() throws {
-        let chat = SwarmProfile(name: "chat", runners: [
-            SwarmRunner(provider: "claude", model: "opus", effort: "high"),
-            SwarmRunner(provider: "codex", model: "gpt-6.1-sol", effort: "xhigh"),
-        ])
-        let fresh = try #require(ChatProfileChoice(profile: chat, check: nil))
-        #expect(fresh.runner.provider == "claude")
-        #expect(fresh.caption(provider: "claude", model: "opus", defaultEffort: nil)
-            == "From the chat profile · high effort · falls back to codex")
-        #expect(fresh.caption(provider: "codex", model: "gpt-6-luna", defaultEffort: "medium")
-            == "One-off pick · xhigh effort · no fallback")
-        #expect(fresh.caption(provider: "agy", model: "flash", defaultEffort: "medium")
-            == "One-off pick · medium effort · no fallback")
-        let spent = try #require(ChatProfileChoice(
-            profile: chat,
-            check: SwarmProfileCheck(name: "chat", pick: 1, skipped: [SwarmSkip(index: 0, code: "low_usage", text: "x")])
-        ))
-        #expect(spent.runner.provider == "codex")
-        #expect(spent.caption(provider: "codex", model: "gpt-6.1-sol", defaultEffort: nil)
-            == "From the chat profile · xhigh effort · no fallback")
-        let blocked = try #require(ChatProfileChoice(
-            profile: chat,
-            check: SwarmProfileCheck(name: "chat", pick: nil, skipped: [
-                SwarmSkip(index: 0, code: "low_usage", text: "usage 2% left"),
-                SwarmSkip(index: 1, code: "cli_missing", text: "codex CLI not found on PATH"),
-            ])
-        ))
-        #expect(blocked.caption(provider: "claude", model: "opus", defaultEffort: nil)
-            == "No runner can run. claude: usage 2% left; codex: codex CLI not found on PATH")
-        #expect(ChatProfileChoice(profile: nil, check: nil) == nil)
-    }
 }

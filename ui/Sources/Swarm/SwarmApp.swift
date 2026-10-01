@@ -24,7 +24,12 @@ final class SessionsTreeModel {
 
     func selectWorkspace(_ entry: WorkspaceEntry) {
         navigation.select(entry)
-        select(navigation.selectedChat(in: entry)?.id)
+        // A workspace whose only tabs are starts opens on the newest, so its Retry and Close show.
+        if navigation.selectedChat(in: entry) == nil, let start = pendingChats.inWorkspace(entry.id).last {
+            selectPending(start.id)
+        } else {
+            select(navigation.selectedChat(in: entry)?.id)
+        }
     }
 
     func showHome() {
@@ -52,6 +57,10 @@ final class SessionsTreeModel {
         }
     }
     private var pendingID: SwarmSessionID?
+    /// Chats being started, each shown as its own tab (ADR 0035).
+    private(set) var pendingChats = PendingChats()
+    /// A pending chat's tab is selected; then `selectedSessionID` is nil.
+    private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
@@ -64,6 +73,7 @@ final class SessionsTreeModel {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         selectionRevision += 1
         pendingID = nil
+        selectedPendingID = nil
         selectedSessionID = id
         if let id, let entry = workspaces.first(where: {
             $0.chats.contains { $0.sessions.contains { $0.id == id } }
@@ -75,16 +85,119 @@ final class SessionsTreeModel {
         commandSourceKey = nil
     }
 
-    func startChat(_ plan: SwarmChatLaunchPlan) async throws -> SwarmSessionID {
-        try await SwarmChatLauncher.start(plan, bus: bus) { id in
-            await MainActor.run {
-                self.navigation.selectedWorkspace = plan.directory
-                self.navigation.selectedChats[plan.directory] = id.rawValue
-                self.navigation.archived.remove(plan.directory)
-                self.selectionRevision += 1
-                self.pendingID = id
-                self.selectedSessionID = id
-                self.agents = []
+    /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
+    func newChat(in directory: String) {
+        guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
+        let previous = selectedPendingID.map(PendingChat.Previous.pending)
+            ?? selectedSessionID.map(PendingChat.Previous.session)
+        // The deepest workspace that holds the directory; a project opened inside a repository
+        // launches in a folder that is no workspace id.
+        let workspace = workspaces.map(\.id)
+            .filter { directory == $0 || directory.hasPrefix($0 + "/") }
+            .max { $0.count < $1.count } ?? Self.hubWorkspace(for: directory) ?? directory
+        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
+        navigation.archived.remove(workspace)
+        navigation.selectedWorkspace = workspace
+        selectPending(id)
+        runStart(id, plan: plan)
+    }
+
+    /// The tree with archived rows and the sessions of starts left out.
+    private var visibleTree: SessionsTree {
+        archives.applying(to: sourceTree, hiding: pendingChats.sessions)
+    }
+
+    /// Selects the newest start of the selected workspace, so a failed one stays reachable when
+    /// the last chat beside it goes. Returns false when the workspace has none.
+    private func selectNewestStart() -> Bool {
+        guard let directory = navigation.selectedWorkspace,
+              let start = pendingChats.inWorkspace(directory).last else { return false }
+        selectPending(start.id)
+        return true
+    }
+
+    /// A chat in a hub root (a folder that holds `.bare`) lists under the hub's `.bare` path, as
+    /// `SessionsTree.build` files it; that path is the start's workspace before the tree has it.
+    private static func hubWorkspace(for directory: String) -> String? {
+        // Only the hub root holds `.bare`; a worktree of the hub has a `.git` file instead.
+        guard FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".bare")),
+              let common = Git.repositoryPaths(in: directory)?.commonDirectory,
+              URL(fileURLWithPath: common).lastPathComponent == ".bare" else { return nil }
+        return common
+    }
+
+    func selectPending(_ id: UUID) {
+        guard let chat = pendingChats[id] else { return }
+        selectionRevision += 1
+        pendingID = nil
+        navigation.selectedWorkspace = chat.workspace
+        selectedSessionID = nil
+        selectedPendingID = id
+        agents = []
+        commandSource = nil
+        commandSourceKey = nil
+    }
+
+    /// Runs `launch` again, in the session the failed start made if it made one.
+    func retryChat(_ id: UUID) {
+        guard let chat = pendingChats[id], case .failed = chat.state,
+              let plan = SwarmChatLaunchPlan(profileIn: chat.directory) else { return }
+        pendingChats.update(id) { $0.state = .starting }
+        runStart(id, plan: plan)
+    }
+
+    /// Archives the session a failed start made, then drops the start and selects the tab that
+    /// was selected before it. An archive error keeps the tab, with its Retry and Close.
+    func discardChat(_ id: UUID) async throws {
+        guard let start = pendingChats[id], case .failed(let failure) = start.state else { return }
+        if let session = start.session {
+            pendingChats.update(id) { $0.state = .closing(failure) }
+            do {
+                // A launch can fail after swarm registered the chair (no pane line, or a timeout).
+                try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: SwarmSessionInteraction.defaultAdapter)
+                try await bus.archive([session])
+            } catch {
+                pendingChats.update(id) { $0.state = .failed(failure) }
+                throw error
+            }
+            // The tree drops the archived row while the start still hides it, so it never shows.
+            try? await refresh()
+        }
+        guard let chat = pendingChats.remove(id), selectedPendingID == id else { return }
+        switch chat.previous {
+        case .pending(let start) where pendingChats[start] != nil:
+            selectPending(start)
+        case .session(let row) where tree.retainedSelection(row) != nil:
+            select(row)
+        default:
+            let saved = selectedWorkspace.flatMap { navigation.selectedChat(in: $0)?.id }
+            if saved != nil || !selectNewestStart() { select(saved) }
+        }
+    }
+
+    private func runStart(_ id: UUID, plan: SwarmChatLaunchPlan) {
+        Task {
+            do {
+                let session: SwarmSessionID
+                if let made = pendingChats[id]?.session {
+                    // A Retry: a failed launch may have registered the chair, which would make
+                    // this launch fail too.
+                    try? await bus.close(SwarmPanePolicy.chair, in: made, adapter: SwarmSessionInteraction.defaultAdapter)
+                    session = made
+                } else {
+                    session = try await SwarmChatLauncher.create(plan, bus: bus)
+                    pendingChats.update(id) { $0.session = session }
+                }
+                try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
+                pendingChats.update(id) { $0.state = .launched }
+                try await refresh()
+            } catch {
+                let failure = LaunchFailure(error)
+                guard pendingChats[id]?.state == .starting else { return }
+                pendingChats.update(id) { $0.state = .failed(failure) }
+                // Said here, not by the view: the failed tab may not be the selected one.
+                let first = failure.message.split(separator: "\n").first.map(String.init) ?? ""
+                AccessibilityNotification.Announcement("Could not start the chat. \(first)").post()
             }
         }
     }
@@ -96,6 +209,7 @@ final class SessionsTreeModel {
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
         pendingID = id
+        selectedPendingID = nil
         selectedSessionID = id
         if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
         agents = []
@@ -114,6 +228,7 @@ final class SessionsTreeModel {
             sessions = try await bus.sessions()
         }
         guard revision == refreshRevision else { return }
+        var settled: [PendingChat] = []
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
@@ -122,9 +237,14 @@ final class SessionsTreeModel {
             guard revision == refreshRevision else { return }
             sourceTree = loaded
             archives.reconcile(loaded)
-            tree = archives.applying(to: loaded)
+            settled = pendingChats.settle(listed: { loaded.session($0) != nil })
+            tree = visibleTree
         }
-        if pendingID == nil, let entry = selectedWorkspace {
+        // A start that the owner left selected selects its chat; one they moved away from does not.
+        for chat in settled where chat.id == selectedPendingID {
+            select(chat.session)
+        }
+        if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
         }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
@@ -160,28 +280,26 @@ final class SessionsTreeModel {
             agents = []
             commandSource = nil
             commandSourceKey = nil
+            // The selected chat closed while its workspace still has starts; the newest one shows.
+            if selectedSessionID == nil, selectedPendingID == nil { _ = selectNewestStart() }
         }
         error = nil
     }
 
-    func openProject(_ url: URL) async throws -> SwarmPathIdentity {
+    func openProject(_ url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
         let path = try await projects.add(url)
         try await refresh()
-        return await Task.detached {
-            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
-        }.value
+        return path
     }
 
-    func createProject(at url: URL) async throws -> SwarmPathIdentity {
+    func createProject(at url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
         let path = try await projects.create(at: url)
         try await refresh()
-        return await Task.detached {
-            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
-        }.value
+        return path
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
@@ -203,8 +321,8 @@ final class SessionsTreeModel {
         )
         try await projects.add(URL(fileURLWithPath: path))
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        navigation.selectedWorkspace = path
-        select(nil)
+        // The caller starts a chat there, which selects the workspace. Selecting it here, before the
+        // tree lists it, showed the Agent Profiles page and its availability check for a moment.
         do { try await refresh() }
         catch { self.error = String(describing: error) }
         return path
@@ -217,8 +335,9 @@ final class SessionsTreeModel {
         let workspace = navigation.selectedWorkspace
         let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
         refreshRevision += 1
-        tree = archives.applying(to: sourceTree)
-        if next != previous { select(next) }
+        tree = visibleTree
+        // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
+        if next != previous, next != nil || !selectNewestStart() { select(next) }
         let revision = selectionRevision
         SwarmPerformance.event("ChatArchiveApplied")
         do {
@@ -228,7 +347,7 @@ final class SessionsTreeModel {
         } catch {
             archives.finish(id, succeeded: false)
             refreshRevision += 1
-            tree = archives.applying(to: sourceTree)
+            tree = visibleTree
             if selectionRevision == revision, navigation.selectedWorkspace == workspace,
                let previous, tree.session(previous) != nil {
                 select(previous)
@@ -267,11 +386,11 @@ final class SessionsTreeModel {
 private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
-    @State private var newChatDirectory: String?
     @State private var newTaskProject: ProjectNode?
-    @State private var pendingTaskChatDirectory: String?
     @State private var switchTarget: SwitchTarget?
-    @State private var selectedProjectID: SwarmPathIdentity?
+    /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Open Project skips its
+    /// chat only when the owner went elsewhere, not when a refresh changed the selection.
+    @State private var ownerMoves = 0
     @State private var actionError: String?
     @State private var projectAction: String?
     @State private var showingPalette = false
@@ -392,7 +511,6 @@ private struct SessionsWindow: View {
             NSApp.keyWindow?.makeFirstResponder(nil)
             panes.stop(keepingSession: id)
             documentVisible = false
-            if id != nil { selectedProjectID = nil }
         }
         .background(WindowFrameRestorer())
         .task {
@@ -408,8 +526,11 @@ private struct SessionsWindow: View {
             // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
             // finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
-            // New Chat and the profiles page then open on these reads instead of waiting.
+            // Switch model and the profiles page then open on these reads instead of waiting.
             await SwarmProfileCatalog.shared.prefetch()
+            for provider in ModelSwitchChoice.switchable {
+                Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
+            }
             guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
                   let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
             showingHooksSetup = true
@@ -443,31 +564,17 @@ private struct SessionsWindow: View {
         )) {
             renameWorkspaceSheet
         }
-        .sheet(item: Binding(
-            get: { newChatDirectory.map(LaunchTarget.init) },
-            set: { newChatDirectory = $0?.directory }
-        )) { target in
-            NewChatSheet(directory: target.directory, launch: { plan, _ in try await model.startChat(plan) }) { _ in
-                Task { try? await model.refresh() }
-            }
-        }
-        .sheet(item: $newTaskProject, onDismiss: {
-            if let path = pendingTaskChatDirectory {
-                pendingTaskChatDirectory = nil
-                newChatDirectory = path
-            }
-        }) { project in
+        .sheet(item: $newTaskProject) { project in
             NewTaskSheet(
                 project: project,
                 create: { try await model.createTask(named: $0, in: project) },
-                onCreated: { pendingTaskChatDirectory = $0 }
+                onCreated: { startChat(in: $0) }
             )
         }
         .sheet(item: $switchTarget) { target in
             let row = target.row
-            NewChatSheet(
-                directory: row.session.cwd, isSwitch: true, initialProvider: row.provider,
-                initialModel: target.model,
+            SwitchModelSheet(
+                directory: row.session.cwd, currentProvider: row.provider, currentModel: target.model,
                 launch: { plan, progress in try await model.switchChat(plan, from: row, onProgress: progress) }
             ) { _ in
                 Task { try? await model.refresh() }
@@ -486,8 +593,8 @@ private struct SessionsWindow: View {
     private var workspaceContent: some View {
         ZStack {
             VStack(spacing: 0) {
-                if let row = model.selectedSession {
-                    workspaceTabs(for: row)
+                if let directory = tabsDirectory {
+                    workspaceTabs(in: directory)
                     Divider()
                 }
                 ZStack {
@@ -501,7 +608,26 @@ private struct SessionsWindow: View {
                 }
             }
             .retainedVisibility(model.selectedSession != nil)
-            if model.selectedSession == nil { workspaceLanding }
+            if let id = model.selectedPendingID, let chat = model.pendingChats[id] {
+                VStack(spacing: 0) {
+                    if let directory = tabsDirectory {
+                        workspaceTabs(in: directory)
+                        Divider()
+                    }
+                    PendingChatView(
+                        chat: chat,
+                        retry: { model.retryChat(id) },
+                        close: {
+                            Task {
+                                do { try await model.discardChat(id) }
+                                catch { actionError = LaunchFailure(error).message }
+                            }
+                        }
+                    )
+                }
+            } else if model.selectedSession == nil {
+                workspaceLanding
+            }
         }
         .navigationTitle(model.selectedSession.flatMap { model.tree.windowTitle(for: $0.id) } ?? "Swarm")
     }
@@ -511,15 +637,9 @@ private struct SessionsWindow: View {
             VStack(spacing: DesignTokens.Spacing.l) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
-                Button("New chat") { newChatDirectory = workspace.id }
+                Button("New chat") { startChat(in: workspace.id) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
-            ProjectHome(
-                project: project,
-                onNewChat: { newChatDirectory = $0 },
-                onNewTask: { newTaskProject = project }
-            )
         } else {
             AgentProfilesHome(
                 sessionsError: model.error,
@@ -562,11 +682,11 @@ private struct SessionsWindow: View {
                     model.navigation.archived.remove(id)
                     showingArchive = false
                 }
-                selectedProjectID = nil
+                ownerMoves += 1
                 model.selectWorkspace(entry)
             },
             home: {
-                selectedProjectID = nil
+                ownerMoves += 1
                 showingArchive = false
                 model.showHome()
             },
@@ -575,7 +695,7 @@ private struct SessionsWindow: View {
             toggleArchive: { showingArchive.toggle() },
             openProject: openExistingProject,
             createProject: createProject,
-            newChat: { newChatDirectory = $0 },
+            newChat: { startChat(in: $0) },
             togglePin: { id in
                 if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
                 else { model.navigation.pinned.insert(id) }
@@ -624,6 +744,7 @@ private struct SessionsWindow: View {
         case "workspace":
             sidebarActions.select(id)
         case "chat":
+            ownerMoves += 1
             model.select(SwarmSessionID(id))
         case "agent":
             if let session = model.selectedSession?.session {
@@ -688,27 +809,25 @@ private struct SessionsWindow: View {
 
     private var keyActions: WindowKeyActions {
         WindowKeyActions(
-            newChat: workspaceDirectory.map { directory in { newChatDirectory = directory } },
+            newChat: workspaceDirectory.map { directory in { startChat(in: directory) } },
             newWorkspace: { showingCreate = true },
             stepWorkspace: { delta in
                 let ids = sidebarSections(showingArchive: false).flatMap(\.rows).map(\.id)
                 let listed = ids.compactMap { id in model.workspaces.first { $0.id == id } }
                 let current = listed.firstIndex { $0.id == model.selectedWorkspace?.id }
                 guard let index = PaneSearch.step(current: current, count: listed.count, delta: delta) else { return }
-                selectedProjectID = nil
+                ownerMoves += 1
                 model.selectWorkspace(listed[index])
             },
             selectTab: { number in
-                guard let row = model.selectedSession else { return }
-                let chats = model.tree.workspaceChats(for: row.id)
-                if chats.indices.contains(number - 1) { model.select(chats[number - 1].id) }
+                let tabs = tabsDirectory.map(stripTabs) ?? []
+                if tabs.indices.contains(number - 1) { showTab(tabs[number - 1].id) }
             },
             stepTab: { delta in
-                guard let row = model.selectedSession else { return }
-                let chats = model.tree.workspaceChats(for: row.id)
-                let current = chats.firstIndex { $0.id == row.id }
-                if let index = PaneSearch.step(current: current, count: chats.count, delta: delta) {
-                    model.select(chats[index].id)
+                let tabs = tabsDirectory.map(stripTabs) ?? []
+                let current = tabs.firstIndex { $0.id == selectedTabID }
+                if let index = PaneSearch.step(current: current, count: tabs.count, delta: delta) {
+                    showTab(tabs[index].id)
                 }
             },
             toggleSidebar: { sidebarVisible.toggle() },
@@ -751,11 +870,7 @@ private struct SessionsWindow: View {
                                 if case .repository = project.id {
                                     newTaskProject = project
                                 } else {
-                                    if let entry = model.workspaces.first(where: { $0.project.id == project.id }) {
-                                        model.navigation.archived.remove(entry.id)
-                                        model.selectWorkspace(entry)
-                                    }
-                                    newChatDirectory = project.launchDirectory
+                                    startChat(in: project.launchDirectory)
                                 }
                             }
                             showingCreate = false
@@ -796,15 +911,48 @@ private struct SessionsWindow: View {
         )
     }
 
-    private func workspaceTabs(for selected: SwarmProjectSession) -> some View {
-        let chats = model.tree.workspaceChats(for: selected.id)
-        return ChatTabsView(
+    /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
+    private var tabsDirectory: String? {
+        if let id = model.selectedPendingID { return model.pendingChats[id]?.workspace }
+        return model.selectedSession.flatMap { model.tree.workspaceChats(for: $0.id).first?.workspacePath }
+    }
+
+    /// The tabs of `directory` in strip order: its starts, then its chats. The tab keys use it too.
+    private func stripTabs(in directory: String) -> [ChatTab] {
+        let first = model.selectedSession?.id
+            ?? model.workspaces.first { $0.id == directory }?.chats.first?.id
+        let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
+        return ChatTab.tabs(
+            chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
+            now: Int(Date().timeIntervalSince1970)
+        )
+    }
+
+    private var selectedTabID: String {
+        model.selectedPendingID.flatMap { model.pendingChats[$0]?.tabID }
+            ?? model.selectedSession?.id.rawValue ?? ""
+    }
+
+    private func showTab(_ id: String) {
+        // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
+        // not hide a file preview; hide it here.
+        documentVisible = false
+        ownerMoves += 1
+        if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
+            model.selectPending(start.id)
+        } else {
+            model.select(SwarmSessionID(id))
+        }
+    }
+
+    private func workspaceTabs(in directory: String) -> some View {
+        ChatTabsView(
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
-            tabs: ChatTab.tabs(chats, closing: model.closing, now: Int(Date().timeIntervalSince1970)),
-            selectedID: selected.id.rawValue,
+            tabs: stripTabs(in: directory),
+            selectedID: selectedTabID,
             actions: ChatTabActions(
-                select: { model.select(SwarmSessionID($0)) },
-                newChat: { if let path = chats.first?.workspacePath { newChatDirectory = path } },
+                select: showTab,
+                newChat: { startChat(in: directory) },
                 close: { id in
                     Task {
                         do { try await model.close(SwarmSessionID(id)) }
@@ -848,6 +996,13 @@ private struct SessionsWindow: View {
         }
     }
 
+    /// Every New chat entry ends here (ADR 0035).
+    private func startChat(in directory: String) {
+        ownerMoves += 1
+        documentVisible = false
+        model.newChat(in: directory)
+    }
+
     private func openExistingProject() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -875,14 +1030,15 @@ private struct SessionsWindow: View {
     private func performProjectAction(_ url: URL, create: Bool) {
         guard projectAction == nil else { return }
         projectAction = create ? "Creating project…" : "Opening project…"
-        let selection = model.selectionRevision
+        let moves = ownerMoves
         Task {
             defer { projectAction = nil }
             do {
-                let id = try await (create ? model.createProject(at: url) : model.openProject(url))
-                guard model.selectionRevision == selection else { return }
-                model.showHome()
-                selectedProjectID = id
+                let path = try await (create ? model.createProject(at: url) : model.openProject(url))
+                guard ownerMoves == moves else { return }
+                // The kept path is the project's launch folder. The tree can still lack the
+                // project when a later refresh overtook this one, so it is not read here.
+                startChat(in: path)
             } catch { actionError = error.localizedDescription }
         }
     }
@@ -918,44 +1074,6 @@ private struct WorkspacePanels: View {
             if mode == .files { visitedFiles = true }
             if mode.isDetails { visitedDetails = true; detailsMode = mode }
         }
-    }
-}
-
-private struct ProjectHome: View {
-    let project: ProjectNode
-    let onNewChat: (String) -> Void
-    let onNewTask: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text(project.name).font(.largeTitle.bold())
-            Text(project.launchDirectory).foregroundStyle(.secondary).textSelection(.enabled)
-            HStack {
-                Button("New chat") { onNewChat(project.launchDirectory) }
-                if case .repository = project.id {
-                    Button("New workspace…", action: onNewTask)
-                }
-            }
-            if case .repository = project.id {
-                Text("Worktrees").font(.headline)
-                ScrollView {
-                    LazyVStack(spacing: DesignTokens.Spacing.m) {
-                        ForEach(project.workspaces) { workspace in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(workspace.name)
-                                    Text(workspace.path).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button("New chat") { onNewChat(workspace.path) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(DesignTokens.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -1041,11 +1159,6 @@ private struct SwitchTarget: Identifiable {
     var id: SwarmSessionID { row.id }
 }
 
-private struct LaunchTarget: Identifiable {
-    let directory: String
-    var id: String { directory }
-}
-
 struct SwarmApp: App {
     init() {
         SwarmPerformance.event("AppStarted")
@@ -1123,7 +1236,7 @@ enum SwarmExecutable {
             ) else {
                 throw SwarmProfileError.failed("Provider, model, or directory is invalid")
             }
-            let id = try await SessionsTreeModel().startChat(plan)
+            let id = try await SwarmChatLauncher.start(plan, bus: SwarmCLIBus())
             let agent = try await SwarmChatLauncher.waitForChairPane(in: id, bus: SwarmCLIBus())
             print("session: \(id.rawValue)")
             print("agent: \(agent.id.rawValue)")
