@@ -38,7 +38,8 @@ struct PendingChatsTests {
         #expect(pending[first]?.previous == SwarmSessionID("old-chat"))
         let tabs = ChatTab.tabs([], pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.title) == ["New chat", "New chat"])
-        #expect(Set(tabs.map(\.id)).count == 2)
+        // Newest first, as the tree lists chats, so a started chat keeps its tab's place.
+        #expect(tabs.map(\.id) == [pending[second]!.tabID, pending[first]!.tabID])
         #expect(tabs.allSatisfy { $0.pending == .starting && !$0.canClose })
     }
 

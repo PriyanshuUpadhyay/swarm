@@ -14,24 +14,25 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
 
     public enum Pending: Sendable, Hashable { case starting, failed }
 
-    /// The workspace's chats, then the chats it is starting. A row that a pending chat stands for
-    /// is left out, so one chat never shows as two tabs.
+    /// The chats the workspace is starting, newest first, then its chats. The tree lists the newest
+    /// chat first, so a started chat keeps its place when its row replaces the pending tab. A row
+    /// that a pending chat stands for is left out, so one chat never shows as two tabs.
     public static func tabs(
         _ chats: [ChatRow], pending: [PendingChat] = [], closing: Set<SwarmSessionID>, now: Int
     ) -> [ChatTab] {
         let starting = Set(pending.compactMap(\.session))
-        return chats.filter { !starting.contains($0.id) }.map { chat in
+        return pending.reversed().map { chat in
+            let failed = if case .failed = chat.state { true } else { false }
+            return ChatTab(
+                id: chat.tabID, title: "New chat", status: nil, badge: nil, canClose: false,
+                pending: failed ? .failed : .starting
+            )
+        } + chats.filter { !starting.contains($0.id) }.map { chat in
             ChatTab(
                 id: chat.id.rawValue, title: chat.session.title, status: chat.session.status,
                 badge: chat.session.provider.map(badge),
                 canClose: SessionRowPresentation.make(chat, now: now).state == .live
                     && !closing.contains(chat.id)
-            )
-        } + pending.map { chat in
-            let failed = if case .failed = chat.state { true } else { false }
-            return ChatTab(
-                id: chat.tabID, title: "New chat", status: nil, badge: nil, canClose: false,
-                pending: failed ? .failed : .starting
             )
         }
     }
