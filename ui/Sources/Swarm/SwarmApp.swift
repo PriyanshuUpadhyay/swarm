@@ -94,7 +94,7 @@ final class SessionsTreeModel {
         // launches in a folder that is no workspace id.
         let workspace = workspaces.map(\.id)
             .filter { directory == $0 || directory.hasPrefix($0 + "/") }
-            .max { $0.count < $1.count } ?? directory
+            .max { $0.count < $1.count } ?? Self.hubWorkspace(for: directory) ?? directory
         let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
         navigation.archived.remove(workspace)
         navigation.selectedWorkspace = workspace
@@ -114,6 +114,14 @@ final class SessionsTreeModel {
               let start = pendingChats.inWorkspace(directory).last else { return false }
         selectPending(start.id)
         return true
+    }
+
+    /// A chat in a hub root (a folder that holds `.bare`) lists under the hub's `.bare` path, as
+    /// `SessionsTree.build` files it; that path is the start's workspace before the tree has it.
+    private static func hubWorkspace(for directory: String) -> String? {
+        guard let common = Git.repositoryPaths(in: directory)?.commonDirectory,
+              URL(fileURLWithPath: common).lastPathComponent == ".bare" else { return nil }
+        return common
     }
 
     func selectPending(_ id: UUID) {
@@ -144,7 +152,7 @@ final class SessionsTreeModel {
             pendingChats.update(id) { $0.state = .closing(failure) }
             do {
                 // A launch can fail after swarm registered the chair (no pane line, or a timeout).
-                try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: "tmux-solo")
+                try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: SwarmSessionInteraction.defaultAdapter)
                 try await bus.archive([session])
             } catch {
                 pendingChats.update(id) { $0.state = .failed(failure) }
@@ -172,7 +180,7 @@ final class SessionsTreeModel {
                 if let made = pendingChats[id]?.session {
                     // A Retry: a failed launch may have registered the chair, which would make
                     // this launch fail too.
-                    try? await bus.close(SwarmPanePolicy.chair, in: made, adapter: "tmux-solo")
+                    try? await bus.close(SwarmPanePolicy.chair, in: made, adapter: SwarmSessionInteraction.defaultAdapter)
                     session = made
                 } else {
                     session = try await SwarmChatLauncher.create(plan, bus: bus)

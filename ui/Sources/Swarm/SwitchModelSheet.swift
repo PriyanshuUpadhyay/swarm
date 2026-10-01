@@ -46,7 +46,7 @@ final class SwitchModelModel {
             || $0.id.localizedCaseInsensitiveContains(search) }
     }
 
-    /// The chat profile as read at app launch, for the effort a one-off switch takes. No read.
+    /// The chat profile, for the effort a one-off switch takes.
     private var chatProfile: SwarmProfile?
 
     /// A one-off launch takes the chat profile's effort for that provider, else the provider's
@@ -70,7 +70,10 @@ final class SwitchModelModel {
         provider = choice.initialProvider(offered: offeredProviders)
         selectedModel = choice.initialModel(provider: provider, models: [])
         loadOptions()
-        chatProfile = await SwarmProfileCatalog.shared.cachedProfiles?.profiles.first { $0.name == "chat" }
+        // The launch read can still be running; then read it here (about 10 ms), never blocking Switch.
+        let list = if let cached = await SwarmProfileCatalog.shared.cachedProfiles { cached }
+            else { try? await SwarmProfileCatalog.shared.profiles() }
+        chatProfile = list?.profiles.first { $0.name == "chat" }
         providers = try? await SwarmProfileCatalog.shared.providers()
     }
 
