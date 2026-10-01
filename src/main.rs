@@ -5,10 +5,13 @@ use swarm::providers::Provider;
 const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 
 /// The ring is typed into the recipient's prompt, so it names the next step. An agent that did
-/// not load the swarm skill otherwise takes the bare ring as the whole task and waits.
+/// not load the swarm skill otherwise takes the bare ring as the whole task and waits. The ack comes
+/// after the work: an acked message leaves the inbox, so an agent whose context is compacted
+/// mid-task can find the task again only while it is unacked. The re-ring keys on `seen_at`, so a
+/// late ack never rings twice.
 fn ring_text(root: &std::path::Path) -> String {
     format!(
-        "swarm: new message. Run swarm inbox, read each body at {}/<body_path>, then swarm ack <seq>.",
+        "swarm: new message. Run swarm inbox and read each body at {}/<body_path>. Run swarm ack <seq> only after you finish that message.",
         root.display()
     )
 }
