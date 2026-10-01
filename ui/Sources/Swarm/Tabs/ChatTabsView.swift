@@ -61,6 +61,8 @@ private struct ChatTabView: View {
                     switch tab.pending {
                     case .starting:
                         ProgressView().controlSize(.mini).accessibilityLabel("Starting")
+                    case .closing:
+                        ProgressView().controlSize(.mini).accessibilityLabel("Closing")
                     case .failed:
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(.red).accessibilityLabel("Failed")

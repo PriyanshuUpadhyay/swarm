@@ -48,10 +48,13 @@ final class SwitchModelModel {
 
     /// The chat profile, for the effort a one-off switch takes.
     private var chatProfile: SwarmProfile?
+    /// The chat profile could not be read, so the effort a switch takes is not known.
+    private var chatProfileUnread = false
 
     /// A one-off launch takes the chat profile's effort for that provider, else the provider's
     /// default, as `swarm launch` does (`one_off` in `src/config.rs`).
     var effortCaption: String {
+        if chatProfileUnread { return "Reasoning: unknown (could not read the chat profile)" }
         if let effort = chatProfile?.runners.first(where: { $0.provider == provider })?.effort {
             return "Reasoning: \(effort) (chat profile)"
         }
@@ -74,6 +77,7 @@ final class SwitchModelModel {
         let list = if let cached = await SwarmProfileCatalog.shared.cachedProfiles { cached }
             else { try? await SwarmProfileCatalog.shared.profiles() }
         chatProfile = list?.profiles.first { $0.name == "chat" }
+        chatProfileUnread = list == nil
         providers = try? await SwarmProfileCatalog.shared.providers()
     }
 

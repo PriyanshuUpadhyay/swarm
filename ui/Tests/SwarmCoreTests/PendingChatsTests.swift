@@ -96,6 +96,8 @@ struct PendingChatsTests {
         let tabs = ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.id) == [pending.items[0].tabID])
         #expect(tabs[0].pending == .failed)
+        pending.update(id) { $0.state = .closing(LaunchFailure(message: "not signed in")) }
+        #expect(ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)[0].pending == .closing)
     }
 
     @Test("A start in a folder inside a workspace shows in that workspace's strip")

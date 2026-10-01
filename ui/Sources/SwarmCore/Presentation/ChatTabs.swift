@@ -12,7 +12,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     /// Set for a chat the app is starting (ADR 0035). Such a tab offers no close or archive.
     public var pending: Pending? = nil
 
-    public enum Pending: Sendable, Hashable { case starting, failed }
+    public enum Pending: Sendable, Hashable { case starting, failed, closing }
 
     /// The chats the workspace is starting, newest first, then its chats. The tree lists the newest
     /// chat first, so a started chat keeps its place when its row replaces the pending tab. A row
@@ -22,10 +22,14 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     ) -> [ChatTab] {
         let starting = Set(pending.compactMap(\.session))
         return pending.reversed().map { chat in
-            let failed = if case .failed = chat.state { true } else { false }
+            let pending: Pending = switch chat.state {
+            case .starting, .launched: .starting
+            case .failed: .failed
+            case .closing: .closing
+            }
             return ChatTab(
                 id: chat.tabID, title: "New chat", status: nil, badge: nil, canClose: false,
-                pending: failed ? .failed : .starting
+                pending: pending
             )
         } + chats.filter { !starting.contains($0.id) }.map { chat in
             ChatTab(
