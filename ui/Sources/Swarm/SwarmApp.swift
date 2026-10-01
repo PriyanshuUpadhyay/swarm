@@ -314,11 +314,17 @@ final class SessionsTreeModel {
         return path
     }
 
-    /// Makes a plain-folder project a git repository.
-    func initializeGit(at path: String) async throws {
+    /// Makes a plain-folder project a git repository and returns it as one. The node comes from
+    /// git, not the tree: a later refresh can overtake this one and leave the tree without it.
+    func initializeGit(at path: String) async throws -> ProjectNode {
         try await Git.initialize(at: path)
         await discovery.forgetIdentities()
         try await refresh()
+        guard let paths = Git.repositoryPaths(in: path) else { throw GitTaskWorktreeError.notRepository }
+        return ProjectNode(
+            id: .repository(commonDirectory: paths.commonDirectory), path: path,
+            launchDirectory: path, workspaces: []
+        )
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
@@ -968,15 +974,8 @@ private struct SessionsWindow: View {
             performProjectAction(url, create: false, initializeGit: true)
         case .newWorkspace:
             Task {
-                do {
-                    try await model.initializeGit(at: request.path)
-                    // `git init` changed the project's id, and a repository's path has its links
-                    // resolved, so the project is found again by its workspace.
-                    if let project = model.tree.project(containing: request.path),
-                       case .repository = project.id {
-                        newTaskProject = project
-                    }
-                } catch { actionError = error.localizedDescription }
+                do { newTaskProject = try await model.initializeGit(at: request.path) }
+                catch { actionError = error.localizedDescription }
             }
         }
     }
