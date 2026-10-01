@@ -42,6 +42,11 @@ states the exact rule.
 `swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins. The data
 directory is always `$SWARM_HOME/.swarm`.
 
+Swarm writes there only when the folder is its own (ADR 0035). A missing or empty folder gets the
+marker file `.swarm/swarm-home` before any other file. A folder from an older swarm, with swarm's
+`swarm.db` and no marker, gets the marker. Any other folder is refused with no write, and the
+message names the folder and `SWARM_HOME`.
+
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
@@ -77,7 +82,9 @@ Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` need
 | Command | Caller | Effect and output |
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
-| `init` | any | Create `.swarm/`, `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
+| `init` | any | Claim `.swarm/` (ADR 0035), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
+| `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up. |
+| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. An entry that swarm needs where the owner already has another one is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0035). |
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
 | `session new <lane\|relay\|open> [--chair <claude\|codex>:<id>]` | any | Create a session for the physical current directory (`pwd -P`) and print its UUID v7 id. Without `--chair`, use a chair id from the current CLI environment when present. |
 | `session chair <claude\|codex>:<id>` | orchestrator | Set the chair transcript id. Refuse any other agent. |
