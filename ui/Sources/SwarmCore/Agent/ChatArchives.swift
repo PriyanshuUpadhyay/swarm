@@ -26,8 +26,9 @@ public struct ChatArchives {
         confirmed.formIntersection(present)
     }
 
-    public func applying(to source: SessionsTree) -> SessionsTree {
-        let excluded = hidden
+    /// The tree without archived rows, nor the rows in `starting` (sessions of chats being started).
+    public func applying(to source: SessionsTree, hiding starting: Set<SwarmSessionID> = []) -> SessionsTree {
+        let excluded = hidden.union(starting)
         return SessionsTree(projects: source.projects.map { project in
             ProjectNode(
                 id: project.id, path: project.path, launchDirectory: project.launchDirectory,

@@ -245,6 +245,13 @@ struct SwitchModelSheet: View {
         .interactiveDismissDisabled(model.isStarting)
         .task { await model.load(currentProvider: currentProvider, currentModel: currentModel) }
         .onDisappear { model.cancel() }
+        // Both appear in place of other text, so VoiceOver hears them only if they are said.
+        .onChange(of: model.errorMessage) { _, text in
+            if let text { AccessibilityNotification.Announcement(text).post() }
+        }
+        .onChange(of: model.modelCaption) { _, text in
+            if let text { AccessibilityNotification.Announcement(text).post() }
+        }
     }
 
     private var selection: some View {

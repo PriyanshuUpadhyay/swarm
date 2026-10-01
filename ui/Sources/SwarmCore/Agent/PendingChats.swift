@@ -48,7 +48,11 @@ public struct PendingChat: Identifiable, Sendable, Equatable {
     }
 
     public let id: UUID
+    /// Where the chair runs.
     public let directory: String
+    /// The workspace whose strip shows this start. It differs from `directory` for a project
+    /// opened at a folder inside a repository.
+    public let workspace: String
     /// The tab that was selected when this start began, for Close to return to.
     public let previous: Previous?
     /// Set when `session new` returns, so Retry launches in it and Close archives it.
@@ -66,9 +70,12 @@ public struct PendingChats: Sendable, Equatable {
 
     public subscript(id: UUID) -> PendingChat? { items.first { $0.id == id } }
 
-    public mutating func add(directory: String, previous: PendingChat.Previous?) -> UUID {
+    public mutating func add(
+        directory: String, workspace: String, previous: PendingChat.Previous?
+    ) -> UUID {
         let chat = PendingChat(
-            id: UUID(), directory: directory, previous: previous, session: nil, state: .starting
+            id: UUID(), directory: directory, workspace: workspace, previous: previous,
+            session: nil, state: .starting
         )
         items.append(chat)
         return chat.id
@@ -91,12 +98,12 @@ public struct PendingChats: Sendable, Equatable {
         return done
     }
 
-    public func inWorkspace(_ directory: String) -> [PendingChat] {
-        items.filter { $0.directory == directory }
+    public func inWorkspace(_ workspace: String) -> [PendingChat] {
+        items.filter { $0.workspace == workspace }
     }
 
-    /// Sessions that a pending tab stands for. Their rows stay out of the tab strip, so one chat
-    /// never shows as two tabs.
+    /// Sessions that a start stands for. The tree hides their rows, so a selection never lands on
+    /// one and a chat never shows as two tabs.
     public var sessions: Set<SwarmSessionID> { Set(items.compactMap(\.session)) }
 }
 

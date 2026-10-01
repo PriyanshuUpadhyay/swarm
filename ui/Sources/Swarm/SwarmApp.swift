@@ -90,11 +90,21 @@ final class SessionsTreeModel {
         guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
         let previous = selectedPendingID.map(PendingChat.Previous.pending)
             ?? selectedSessionID.map(PendingChat.Previous.session)
-        let id = pendingChats.add(directory: directory, previous: previous)
-        navigation.archived.remove(directory)
-        navigation.selectedWorkspace = directory
+        // The deepest workspace that holds the directory; a project opened inside a repository
+        // launches in a folder that is no workspace id.
+        let workspace = workspaces.map(\.id)
+            .filter { directory == $0 || directory.hasPrefix($0 + "/") }
+            .max { $0.count < $1.count } ?? directory
+        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
+        navigation.archived.remove(workspace)
+        navigation.selectedWorkspace = workspace
         selectPending(id)
         runStart(id, plan: plan)
+    }
+
+    /// The tree with archived rows and the sessions of starts left out.
+    private var visibleTree: SessionsTree {
+        archives.applying(to: sourceTree, hiding: pendingChats.sessions)
     }
 
     /// Selects the newest start of the selected workspace, so a failed one stays reachable when
@@ -110,7 +120,7 @@ final class SessionsTreeModel {
         guard let chat = pendingChats[id] else { return }
         selectionRevision += 1
         pendingID = nil
-        navigation.selectedWorkspace = chat.directory
+        navigation.selectedWorkspace = chat.workspace
         selectedSessionID = nil
         selectedPendingID = id
         agents = []
@@ -140,6 +150,8 @@ final class SessionsTreeModel {
                 pendingChats.update(id) { $0.state = .failed(failure) }
                 throw error
             }
+            // The tree drops the archived row while the start still hides it, so it never shows.
+            try? await refresh()
         }
         guard let chat = pendingChats.remove(id), selectedPendingID == id else { return }
         switch chat.previous {
@@ -200,6 +212,7 @@ final class SessionsTreeModel {
             sessions = try await bus.sessions()
         }
         guard revision == refreshRevision else { return }
+        var settled: [PendingChat] = []
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
@@ -208,10 +221,11 @@ final class SessionsTreeModel {
             guard revision == refreshRevision else { return }
             sourceTree = loaded
             archives.reconcile(loaded)
-            tree = archives.applying(to: loaded)
+            settled = pendingChats.settle(listed: { loaded.session($0) != nil })
+            tree = visibleTree
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
-        for chat in pendingChats.settle(listed: { tree.session($0) != nil }) where chat.id == selectedPendingID {
+        for chat in settled where chat.id == selectedPendingID {
             select(chat.session)
         }
         if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
@@ -309,7 +323,7 @@ final class SessionsTreeModel {
         let workspace = navigation.selectedWorkspace
         let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
         refreshRevision += 1
-        tree = archives.applying(to: sourceTree)
+        tree = visibleTree
         // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
         if next != previous, next != nil || !selectNewestStart() { select(next) }
         let revision = selectionRevision
@@ -321,7 +335,7 @@ final class SessionsTreeModel {
         } catch {
             archives.finish(id, succeeded: false)
             refreshRevision += 1
-            tree = archives.applying(to: sourceTree)
+            tree = visibleTree
             if selectionRevision == revision, navigation.selectedWorkspace == workspace,
                let previous, tree.session(previous) != nil {
                 select(previous)
@@ -891,7 +905,7 @@ private struct SessionsWindow: View {
 
     /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
     private var tabsDirectory: String? {
-        if let id = model.selectedPendingID { return model.pendingChats[id]?.directory }
+        if let id = model.selectedPendingID { return model.pendingChats[id]?.workspace }
         return model.selectedSession.flatMap { model.tree.workspaceChats(for: $0.id).first?.workspacePath }
     }
 
@@ -912,6 +926,9 @@ private struct SessionsWindow: View {
     }
 
     private func showTab(_ id: String) {
+        // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
+        // not hide a file preview; hide it here.
+        documentVisible = false
         if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
             model.selectPending(start.id)
         } else {

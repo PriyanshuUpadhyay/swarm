@@ -30,8 +30,8 @@ struct PendingChatsTests {
     @Test("Two starts in one workspace are two pending chats, each with its own tab")
     func twoStarts() {
         var pending = PendingChats()
-        let first = pending.add(directory: "/api", previous: .session(SwarmSessionID("old-chat")))
-        let second = pending.add(directory: "/api", previous: .pending(first))
+        let first = pending.add(directory: "/api", workspace: "/api", previous: .session(SwarmSessionID("old-chat")))
+        let second = pending.add(directory: "/api", workspace: "/api", previous: .pending(first))
         #expect(first != second)
         #expect(pending.inWorkspace("/api").map(\.id) == [first, second])
         #expect(pending.inWorkspace("/docs").isEmpty)
@@ -47,9 +47,9 @@ struct PendingChatsTests {
     @Test("A chat leaves the pending list only when launched and listed in the tree")
     func settle() {
         var pending = PendingChats()
-        let launched = pending.add(directory: "/api", previous: nil)
-        let created = pending.add(directory: "/api", previous: nil)
-        let failed = pending.add(directory: "/api", previous: nil)
+        let launched = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        let created = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        let failed = pending.add(directory: "/api", workspace: "/api", previous: nil)
         pending.update(launched) { $0.session = SwarmSessionID("launched-session"); $0.state = .launched }
         pending.update(created) { $0.session = SwarmSessionID("created-session") }
         pending.update(failed) {
@@ -60,7 +60,6 @@ struct PendingChatsTests {
         let done = pending.settle { _ in true }
         #expect(done.map(\.id) == [launched])
         #expect(pending.items.map(\.id) == [created, failed])
-        #expect(pending.sessions == [SwarmSessionID("created-session"), SwarmSessionID("failed-session")])
         #expect(pending.remove(failed)?.session == SwarmSessionID("failed-session"))
         #expect(pending.remove(failed) == nil)
     }
@@ -79,7 +78,7 @@ struct PendingChatsTests {
         let chats = tree.workspaceChats(for: made.id)
         #expect(chats.map(\.id) == [made.id])
         var pending = PendingChats()
-        let id = pending.add(directory: "/api", previous: nil)
+        let id = pending.add(directory: "/api", workspace: "/api", previous: nil)
         pending.update(id) {
             $0.session = made.id
             $0.state = .failed(LaunchFailure(message: "not signed in"))
@@ -87,6 +86,34 @@ struct PendingChatsTests {
         let tabs = ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.id) == [pending.items[0].tabID])
         #expect(tabs[0].pending == .failed)
+    }
+
+    @Test("A start in a folder inside a workspace shows in that workspace's strip")
+    func startInsideWorkspace() {
+        var pending = PendingChats()
+        let id = pending.add(directory: "/mono/ui", workspace: "/mono", previous: nil)
+        #expect(pending.inWorkspace("/mono").map(\.id) == [id])
+        #expect(pending.inWorkspace("/mono/ui").isEmpty)
+        #expect(pending[id]?.directory == "/mono/ui")
+    }
+
+    @Test("The tree hides the session of a start, so no selection lands on it")
+    func treeHidesStarts() {
+        let made = SwarmSession(
+            id: SwarmSessionID("made-session"), talkMode: "lane", adapter: "tmux-solo", cwd: "/api",
+            createdAt: 1, chairProvider: "codex", chairID: SwarmChairID("chair-1"), chairLog: nil,
+            agents: 1, messages: 0, lastMessageAt: nil, archivedAt: nil
+        )
+        let source = SessionsTree.build(
+            sessions: [made], projectPaths: ["/api"], agentsBySession: [:], titles: [:],
+            repositoryPathsResolver: { _ in nil }, worktreeLister: { _ in [] }
+        )
+        var pending = PendingChats()
+        let id = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        #expect(ChatArchives().applying(to: source, hiding: pending.sessions).session(made.id) != nil)
+        pending.update(id) { $0.session = made.id }
+        #expect(pending.sessions == [made.id])
+        #expect(ChatArchives().applying(to: source, hiding: pending.sessions).session(made.id) == nil)
     }
 
     @Test("Two starts at once create their sessions one at a time")
