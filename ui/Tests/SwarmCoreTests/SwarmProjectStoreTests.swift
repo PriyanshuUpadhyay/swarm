@@ -5,7 +5,7 @@ import Testing
 @Suite("Project folders")
 @MainActor
 struct SwarmProjectStoreTests {
-    @Test("Opened and created folders remain available")
+    @Test("Opened and created folders remain available, and a created folder is a git repo")
     func savedFolders() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "SwarmProjectStoreTests.\(UUID().uuidString)"
@@ -20,7 +20,7 @@ struct SwarmProjectStoreTests {
 
         #expect(try await store.create(at: created) == created.path)
         #expect(FileManager.default.fileExists(atPath: created.path))
-        #expect(!FileManager.default.fileExists(atPath: created.appendingPathComponent(".git").path))
+        #expect(Git.repositoryPaths(in: created.path) != nil)
         #expect(try await store.add(created) == created.path)
         #expect(SwarmProjectStore(defaults: defaults).paths() == [created.path])
         await #expect(throws: SwarmProjectError.self) { try await store.create(at: created) }
