@@ -224,7 +224,7 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 
 /// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
 /// The file is edited as TOML, so a project the owner wrote in any form counts as present and
-/// swarm adds nothing to it (ADR 0035); a second table for it would make the file unreadable.
+/// swarm adds nothing to it (ADR 0036); a second table for it would make the file unreadable.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
     retried(|| {
         let path = home.join("config.toml");
@@ -310,7 +310,7 @@ fn toml_table<'a>(
     parent.get_mut(key)?.as_table_like_mut()
 }
 
-/// An entry that swarm needs at a place where the file already holds another one (ADR 0035).
+/// An entry that swarm needs at a place where the file already holds another one (ADR 0036).
 /// Swarm never writes over it: the owner removes it, or does without swarm's hooks.
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct HookConflict {
@@ -788,7 +788,7 @@ fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
 
 /// Replace `path` in one rename, with the old file's permissions; a hard-linked TOML file is written
 /// in place. A linked file is replaced at its target, because a rename onto the link itself would
-/// replace the owner's link (ADR 0035).
+/// replace the owner's link (ADR 0036).
 /// `before` is the text the edit was made from ("" for a missing file); a file that another
 /// program changed since then is refused, not written over, and a file that already holds `text`
 /// is done, as when an earlier plan of the same setup wrote it through another link.
@@ -1258,7 +1258,7 @@ mod tests {
         assert!(!set_up(codex_hook_plan(&home, &entries)).unwrap());
 
         // Another tool's group-0 entry stays. An older hash at swarm's key is a conflict that
-        // names both hashes, and the file stays as it was (ADR 0035).
+        // names both hashes, and the file stays as it was (ADR 0036).
         let other = "[hooks.state.\"/<session-flags>/config.toml:stop:0:0\"]\ntrusted_hash = \"sha256:other\"";
         let config = home.join("config.toml");
         let text = std::fs::read_to_string(&config).unwrap();
@@ -1396,7 +1396,7 @@ mod tests {
         assert_eq!(merged["herdr"], before["herdr"]);
         assert_eq!(merged["swarm"], created["swarm"]);
 
-        // The owner's own group named `swarm` is a conflict, not replaced (ADR 0035).
+        // The owner's own group named `swarm` is a conflict, not replaced (ADR 0036).
         let owners = r#"{"herdr": {}, "swarm": {"Stop": []}}"#;
         std::fs::write(&hooks, owners).unwrap();
         let plan = agy_hook_plan(&hooks).unwrap();
@@ -1445,7 +1445,7 @@ mod tests {
     }
 
     /// The owner may have written the project in any TOML form. A second table for it would make
-    /// the whole file unreadable to Codex, so swarm adds nothing (ADR 0035).
+    /// the whole file unreadable to Codex, so swarm adds nothing (ADR 0036).
     #[test]
     fn codex_trust_keeps_a_project_in_any_form_and_a_broken_file() {
         let root = std::env::temp_dir().join(format!("swarm-trust-forms-{}", std::process::id()));
@@ -1483,7 +1483,7 @@ mod tests {
     }
 
     /// A Codex config that the owner links into dotfiles stays a link, and the change lands in
-    /// the file it points to (ADR 0035: a linked file is judged by its target).
+    /// the file it points to (ADR 0036: a linked file is judged by its target).
     #[test]
     fn a_linked_codex_config_stays_a_link_and_its_target_gets_the_change() {
         let root = std::env::temp_dir().join(format!("swarm-trust-link-{}", std::process::id()));

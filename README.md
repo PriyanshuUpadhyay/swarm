@@ -1,21 +1,68 @@
 # swarm
 
-Message bus and pane control for a tree of agent CLIs. One orchestrator spawns children into
-terminal panes (tmux or Herdr), the agents talk through a SQLite inbox, and a drainer summarizes
-the transcript of any child that exits without a summary.
+Message bus and pane control for a tree of agent CLIs. One agent, the chair, starts other agent
+CLIs (Claude Code, Codex, or AGY) in visible terminal panes, sends them work, and collects their
+answers. You see every worker and can type into any of them.
+
+![Swarm.app: the chair on the left, a worker's pane on the right](docs/images/app-chat-worker.png)
+
+## How it works
+
+An example: you ask Claude Code in a tmux pane to "have a cheap model add a `version()` function".
+
+1. The chair runs `swarm session new lane`. Swarm records a session and registers the chair's pane.
+2. The chair runs `swarm launch version-worker code.small --cwd "$PWD"`. Swarm reads the
+   `code.small` profile, takes its first runner that can run (for example AGY on a Gemini Flash
+   model), splits a pane, and starts that CLI in it.
+3. The chair runs `swarm send version-worker ask` with the task on stdin. Swarm stores the message
+   in its SQLite inbox and types a short ring into the worker's pane.
+4. The worker does the task and runs `swarm finish` with its answer. Swarm stores the answer and
+   rings the chair's pane with `swarm: new message`.
+5. The chair runs `swarm inbox`, reads the answer, runs `swarm ack`, and closes the worker with
+   `swarm close version-worker`.
+
+```mermaid
+flowchart LR
+  you([You]) --> chair[Chair pane<br/>Claude, Codex or AGY]
+  chair -- "swarm launch" --> worker[Worker pane]
+  chair -- "swarm send" --> db[(SQLite inbox)]
+  db -- ring --> worker
+  worker -- "swarm finish" --> db
+  db -- "swarm: new message" --> chair
+```
+
+Swarm itself does no AI work. It owns the session, the panes, the messages, and the choice of
+model. Each agent learns its part from a skill: `swarm-orchestrator` for the chair and
+`swarm-voice` for a worker. A worker that exits without an answer is caught by `swarm sweep`, and
+`swarm drain` writes a summary from its log.
+
+Panes live in [tmux](https://github.com/tmux/tmux) (the default) or in
+[Herdr](https://github.com/herdrdev/herdr). In a Herdr pane, swarm picks Herdr by itself.
+Swarm.app is a macOS chat window over the same sessions.
 
 ## Install
 
+The CLI with Homebrew (macOS). This also installs tmux:
+
 ```sh
-brew install priyanshuupadhyay/tap/swarm   # macOS; installs tmux too
-# or from a checkout: cargo install --path .
-swarm init          # creates $SWARM_HOME/.swarm with the db, runs/, and adapters/ directories
+brew tap priyanshuupadhyay/tap
+brew trust --tap priyanshuupadhyay/tap   # Homebrew 6 or newer
+brew install priyanshuupadhyay/tap/swarm
+swarm init                               # creates ~/.swarm with the db, runs/, and adapters/
 ```
+
+From a clone: `cargo install --path .`, then `swarm init`. Update with
+`brew upgrade priyanshuupadhyay/tap/swarm`.
 
 ### Swarm app
 
-Run `brew install --cask priyanshuupadhyay/tap/swarm-app`, which also installs the CLI and tmux. Or
-download `Swarm-<version>.dmg` from the
+The app needs macOS 26 (Tahoe) or newer. The cask also installs the CLI and tmux:
+
+```sh
+brew install --cask priyanshuupadhyay/tap/swarm-app
+```
+
+Or download `Swarm-<version>.dmg` from the
 [latest release](https://github.com/PriyanshuUpadhyay/swarm/releases/latest), open it, and drag
 Swarm onto Applications. The app carries its own `swarm` CLI. It still needs tmux
 (`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
@@ -28,6 +75,115 @@ The app is not notarized by Apple, so macOS blocks the first launch. Allow it on
 
 On macOS 15 and later, a Control-click on the app and **Open** no longer skips this check.
 If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applications/Swarm.app`.
+
+## Set up
+
+1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
+   [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
+2. **Link the swarm skills.** The chair and the workers learn the protocol from `skills/`. Clone
+   this repo and run the script from the `main` checkout. It links each skill into
+   `~/.claude/skills`, `~/.agents/skills` (Codex), and `~/.gemini/config/skills` (AGY):
+
+   ```sh
+   git clone https://github.com/PriyanshuUpadhyay/swarm ~/swarm
+   sh ~/swarm/scripts/install.sh
+   ```
+
+3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
+   ordered list of runners (provider, model, effort). Swarm ships defaults in
+   `default-profiles.json`. Edit them on the app's Home, or read them with
+   `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
+4. **Allow the Codex and AGY hooks.** On first launch the app asks
+   "Let swarm set up its own hooks for Codex and AGY?". Click **Set up**, so worker columns show
+   their chat and state. Claude needs no step. You can do it later from
+   **Swarm > Set Up Agent Hooks…**, or in a terminal with `swarm hooks setup`.
+
+### Optional: accounts with yelo
+
+[yelo](https://github.com/PriyanshuUpadhyay/yelo) keeps more than one Claude or Codex account
+(profiles) and reads how much usage each one has left. Swarm uses it when it is on `PATH`:
+
+- `swarm launch --account auto` starts the worker on the account with the most usage left, the
+  same answer as `yelo profile pick`. `--account work` takes the account named `work`. Without
+  `--account`, yelo's `claude` or `codex` command in the pane picks the account.
+- A runner whose best account has less than `min_usage_left_pct` (default 5%) left is skipped, so
+  the launch falls through to the next runner.
+- `swarm accounts --provider claude --json` and `swarm usage --json` show what yelo reports, and
+  the app shows it on the account row of Switch model.
+
+```sh
+brew install priyanshuupadhyay/tap/yelo
+yelo setup
+yelo profile create --cli claude work
+claude --profile work auth login
+```
+
+Without yelo, each CLI uses its own login. AGY has no account source yet.
+
+### Optional: workflow skills from agent-kit
+
+[agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit) has workflow skills that run their
+workers as visible swarm panes:
+
+| Skill | What it does with swarm |
+|---|---|
+| [`council`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/council) | Claude, GPT, and Gemini voices debate in panes and end in one verdict |
+| [`web-search`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/web-search) | Three seats search different parts of the web; the chair merges |
+| [`research`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/research) | Answers one question in a short report; can send the web part to a `search.web` seat |
+| [`review-check`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/review-check) | Seats judge each changed unit of a diff; a script gives the verdict |
+| [`orchestrate-claude`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-claude), [`-codex`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-codex), [`-agy`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-agy) | Bind a skill's worker needs to each agent CLI |
+
+The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
+profile names in `default-profiles.json`. The
+[agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit#install) shows how to link the skills.
+
+## Use it
+
+### From a terminal
+
+Start your agent CLI inside tmux, or in a Herdr pane, and ask it to use swarm:
+
+```sh
+tmux new -s work
+claude
+> Use swarm to have a code.small worker add a version() function to src/health.ts.
+```
+
+The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
+
+### From the app
+
+1. Click **Open Project…** and choose a folder. Swarm adds the project and starts a chat in it
+   with the `chat` profile. A Git project can also get a workspace (a branch in its own worktree)
+   from **Create workspace**.
+2. To use another model, click **Switch model** in the chat.
+3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
+   right of the chat, and you can type into it.
+
+![Swarm.app Home: each profile and the runner a launch would take](docs/images/app-profiles.png)
+
+## Swarm app reference
+
+Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
+project list and starts a chat in it. Create Project makes a plain folder, adds it there, and starts a chat in it.
+New chat starts the chat profile at once with no sheet (ADR 0035): a "New chat" tab shows at once and becomes the
+chat when the chair is up, or shows the launch error with Retry. To use another model, start a chat and use Switch
+model. Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
+Switch model asks the live chair
+for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
+tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
+summary.
+
+For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
+project, then starts a chat there. Empty task worktrees stay in the sidebar with 0 chats.
+Plain folders keep the New chat action without Git worktrees.
+The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
+finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear
+as underlined tabs above the transcript. The plus button starts another chat in that workspace.
+Pins, workspace names, and the last selected chat survive restarts. Archive workspace hides its
+row without deleting files, archiving chats, or stopping agents; Archived offers Restore workspace.
+Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane
+accepts input in Swarm. A closed connection can be reopened with Reconnect.
 
 ## Environment
 
@@ -42,7 +198,7 @@ states the exact rule.
 `swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins. The data
 directory is always `$SWARM_HOME/.swarm`.
 
-Swarm writes there only when the folder is its own (ADR 0035). A missing or empty folder gets the
+Swarm writes there only when the folder is its own (ADR 0036). A missing or empty folder gets the
 marker file `.swarm/swarm-home` before any other file. A folder from an older swarm, with swarm's
 `swarm.db` and no marker, gets the marker. Any other folder is refused with no write, and the
 message names the folder and `SWARM_HOME`.
@@ -50,11 +206,13 @@ message names the folder and `SWARM_HOME`.
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
-| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
+| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `herdr` in a Herdr pane, else `tmux`. |
 | `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
 | `SWARM_SUMMARIZER` | Shell line `drain` runs with a log on stdin. Required by `drain` only. |
+
+## Profiles and runners
 
 Agent profiles live in `$SWARM_HOME/.swarm/profiles.json` (ADR 0031). A profile is one role, such
 as `chat` or `code.complex`, with an ordered list of runners. A runner is a provider, a model, an
@@ -76,15 +234,17 @@ no runner can run fails with one line per runner.
 
 ## Commands
 
-Caller `any` needs no identity. `session` needs `SWARM_SESSION_ID`. `agent` needs both ids. The
+Caller `any` needs no identity. `session` needs a session, and `agent` needs a session and an agent
+id. A chair gets both from its pane, which `swarm session new` registers. A child gets
+`SWARM_SESSION_ID` and `SWARM_AGENT_ID`, which `launch` and `spawn` stamp into its pane. The
 `orchestrator` caller also must match the session's orchestrator agent.
 
 | Command | Caller | Effect and output |
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
-| `init` | any | Claim `.swarm/` (ADR 0035), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
+| `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up. |
-| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0035). |
+| `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). |
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
 | `session new <lane\|relay\|open> [--chair <claude\|codex>:<id>]` | any | Create a session for the physical current directory (`pwd -P`) and print its UUID v7 id. Without `--chair`, use a chair id from the current CLI environment when present. |
 | `session chair <claude\|codex>:<id>` | orchestrator | Set the chair transcript id. Refuse any other agent. |
@@ -125,24 +285,34 @@ that runs the verb, so Swarm.app finds it even with a short `PATH`. A disk adapt
 pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `swarm host-context --provider <claude|codex|agy>` as a SessionStart hook to learn the host contract.
 
-Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
-project list, even when it has no chats. Create Project makes a plain folder and adds it there. New Chat
-lets the user choose a provider and model without changing a routed role. Codex and AGY list CLI models; Claude lists
-aliases and accepts a full model name in Other model. In a chat, Switch model asks the live chair
-for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
-tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
-summary.
+## Skills and demos
 
-For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
-project, then opens New Chat there. Empty task worktrees stay available from the project view.
-Plain folders keep the New Chat action without Git worktrees.
-The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
-finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear
-as underlined tabs above the transcript. The plus button starts another chat in that workspace.
-Pins, workspace names, and the last selected chat survive restarts. Archive workspace hides its
-row without deleting files, archiving chats, or stopping agents; Archived offers Restore workspace.
-Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane
-accepts input in Swarm. A closed connection can be reopened with Reconnect.
+`skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
+`skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code finds them through
+`.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads `AGENTS.md`.
+`sh scripts/install.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
+`demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
+`VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
+
+## Walkthrough
+
+Run this in a tmux pane, so `spawn` has a pane to split. `my-agent` stands for any command.
+
+```sh
+swarm session new lane   # lane: children talk only to the orchestrator; registers this pane
+swarm spawn coder coder -- my-agent --task "write the parser"   # prints the pane id, e.g. %3
+
+# in the coder pane, SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
+echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
+
+# back in the orchestrator pane
+swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
+swarm ack 0
+swarm close coder
+
+# a child that exits without finish gets a fallback summary and a summarize job
+SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
+```
 
 ## Performance profiling
 
@@ -161,33 +331,3 @@ Interest for the stage intervals. `AppStarted` and `WindowReady` mark startup.
 `ChatSelected`, `ChatDetailAppeared`, and `ChatRowsShown` mark the visible chat-open path;
 `InitialRefresh`, `WorkspaceTree`, and `TranscriptPoll` show where the time goes before that.
 
-## Agents
-
-Two skills tell an agent CLI how to take part. `skills/swarm-voice` is for a child that
-`swarm spawn` started, and `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code
-finds them through `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads
-`AGENTS.md`. `sh scripts/install.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
-`demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
-`VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
-
-## Walkthrough
-
-Run the orchestrator inside tmux, so `spawn` has a pane to split.
-
-```sh
-export SWARM_SESSION_ID=$(swarm session new lane)   # lane: children talk only to the orchestrator
-export SWARM_AGENT_ID=orchestrator
-swarm agent add orchestrator orchestrator
-swarm spawn coder coder -- my-agent --task "write the parser"   # prints the pane id, e.g. %3
-
-# in the coder pane, SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
-echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
-
-# back in the orchestrator pane
-swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
-swarm ack 0
-swarm close coder
-
-# a child that exits without finish gets a fallback summary and a summarize job
-SWARM_SUMMARIZER='head -c 200' swarm drain            # done 1
-```

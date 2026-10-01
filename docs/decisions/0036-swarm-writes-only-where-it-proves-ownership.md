@@ -8,7 +8,7 @@ informed-by:
   - "User answer on 2026-10-01 (flow 03-contracts): marker file; an old hook entry is a conflict with a fix"
 ---
 
-# 0035. Swarm writes only where it proves ownership
+# 0036. Swarm writes only where it proves ownership
 
 ## Context and Problem Statement
 

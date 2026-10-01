@@ -60,7 +60,7 @@ fn snapshot(dir: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
     files
 }
 
-/// Another tool's `~/.swarm` (ADR 0035): swarm writes nothing in it and says why.
+/// Another tool's `~/.swarm` (ADR 0036): swarm writes nothing in it and says why.
 #[test]
 fn init_refuses_a_swarm_folder_that_another_tool_made() {
     let notes = scratch("other-tool-notes");

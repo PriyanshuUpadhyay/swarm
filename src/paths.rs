@@ -1,6 +1,6 @@
 const SWARM_DIR: &str = ".swarm";
 const SWARM_DB: &str = "swarm.db";
-/// The file that proves a `.swarm` folder is swarm's own (ADR 0035).
+/// The file that proves a `.swarm` folder is swarm's own (ADR 0036).
 const MARKER: &str = "swarm-home";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
@@ -70,7 +70,7 @@ pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     Ok(root)
 }
 
-/// Prove that swarm owns `root` before anything writes there (ADR 0035). A missing or empty
+/// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
 /// folder is claimed with the marker before any other write. A folder with no marker is adopted
 /// only when it holds a db that an older swarm made. Any other folder is refused with no write.
 /// A linked folder is judged by its target, because each read follows the link.

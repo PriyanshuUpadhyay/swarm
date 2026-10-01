@@ -248,7 +248,7 @@ fn hook_files(home: &Path) -> [Option<Vec<u8>>; 2] {
 }
 
 /// The plan shows each line that setup adds and writes nothing; apply with the plan's digest
-/// writes, and refuses a file that changed after the plan (ADR 0035).
+/// writes, and refuses a file that changed after the plan (ADR 0036).
 #[test]
 fn the_setup_plan_shows_each_change_and_writes_nothing() {
     let home = scratch("plan");
@@ -311,7 +311,7 @@ fn the_setup_plan_shows_each_change_and_writes_nothing() {
 }
 
 /// An owner's entry at the place swarm needs, in either provider, is a named conflict: setup
-/// leaves every file as it was and fails (ADR 0035).
+/// leaves every file as it was and fails (ADR 0036).
 #[test]
 fn an_owners_entry_at_swarms_place_is_a_conflict_and_nothing_is_written() {
     let exe = Path::new(env!("CARGO_BIN_EXE_swarm"));

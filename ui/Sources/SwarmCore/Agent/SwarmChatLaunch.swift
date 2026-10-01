@@ -48,29 +48,36 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
 }
 
 public enum SwarmChatLauncher {
-    public static func start(
-        _ plan: SwarmChatLaunchPlan, bus: any SwarmBus,
-        onCreated: @Sendable (SwarmSessionID) async -> Void = { _ in }
-    ) async throws -> SwarmSessionID {
+    /// Two `swarm init` at once on a new swarm home fail with "database is locked", so session
+    /// creation runs one at a time. Each takes under 10 ms; launches still run side by side.
+    private static let createGate = SerialGate()
+
+    public static func start(_ plan: SwarmChatLaunchPlan, bus: any SwarmBus) async throws -> SwarmSessionID {
         let timing = SwarmPerformance.begin("ChatLaunch")
         defer { timing.end() }
-        let id: SwarmSessionID
-        do {
-            let createTiming = SwarmPerformance.begin("SessionCreate")
-            defer { createTiming.end() }
-            id = try await bus.startChairSession(chair: nil, directory: plan.directory)
-        }
-        await onCreated(id)
-        do {
-            let launchTiming = SwarmPerformance.begin("ProviderLaunch")
-            defer { launchTiming.end() }
-            _ = try await bus.launch(
-                SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
-                account: plan.account,
-                in: id, directory: plan.directory
-            )
-        }
+        let id = try await create(plan, bus: bus)
+        try await launch(plan, in: id, bus: bus)
         return id
+    }
+
+    public static func create(_ plan: SwarmChatLaunchPlan, bus: any SwarmBus) async throws -> SwarmSessionID {
+        let timing = SwarmPerformance.begin("SessionCreate")
+        defer { timing.end() }
+        return try await createGate.run {
+            try await bus.startChairSession(chair: nil, directory: plan.directory)
+        }
+    }
+
+    public static func launch(
+        _ plan: SwarmChatLaunchPlan, in id: SwarmSessionID, bus: any SwarmBus
+    ) async throws {
+        let timing = SwarmPerformance.begin("ProviderLaunch")
+        defer { timing.end() }
+        _ = try await bus.launch(
+            SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
+            account: plan.account,
+            in: id, directory: plan.directory
+        )
     }
 
     public static func waitForChairPane(

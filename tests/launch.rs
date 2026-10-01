@@ -11,7 +11,7 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     std::fs::create_dir_all(dir.join(".swarm")).unwrap();
     // The marker says this home is swarm's, so a test can add adapter files before any command
-    // (ADR 0035).
+    // (ADR 0036).
     std::fs::write(dir.join(".swarm/swarm-home"), "swarm\n").unwrap();
     std::fs::canonicalize(dir).unwrap()
 }

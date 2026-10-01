@@ -73,7 +73,7 @@ public struct SwarmHooksStatus: Sendable, Hashable, Codable {
 }
 
 /// `swarm hooks setup --plan --json`: each file that setup would change, with its unified diff,
-/// and each entry of the owner's at a place where swarm needs its own (ADR 0035). Apply takes
+/// and each entry of the owner's at a place where swarm needs its own (ADR 0036). Apply takes
 /// `digest` back and refuses a file that changed after the owner saw this plan.
 public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     public struct File: Sendable, Hashable, Codable, Identifiable {

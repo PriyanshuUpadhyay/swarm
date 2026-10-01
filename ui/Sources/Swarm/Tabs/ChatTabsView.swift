@@ -58,7 +58,17 @@ private struct ChatTabView: View {
         HStack(spacing: 0) {
             Button { actions.select(tab.id) } label: {
                 HStack(spacing: DesignTokens.Spacing.xs) {
-                    if let status = tab.status { StatusGlyph(status: status).font(.caption).fixedSize() }
+                    switch tab.pending {
+                    case .starting:
+                        ProgressView().controlSize(.mini).accessibilityLabel("Starting")
+                    case .closing:
+                        ProgressView().controlSize(.mini).accessibilityLabel("Closing")
+                    case .failed:
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.red).accessibilityLabel("Failed")
+                    case nil:
+                        if let status = tab.status { StatusGlyph(status: status).font(.caption).fixedSize() }
+                    }
                     // The title gives way first, so the badge always shows whole.
                     Text(tab.title).lineLimit(1).truncationMode(.tail)
                     if let badge = tab.badge {
@@ -72,26 +82,35 @@ private struct ChatTabView: View {
                 .contentShape(Rectangle())
             }
             .accessibilityAddTraits(selected ? .isSelected : [])
-            Button { actions.archive(tab.id) } label: {
-                Image(systemName: "archivebox")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(DesignTokens.Spacing.s)
-                    .contentShape(Rectangle())
-                    .fixedSize()
+            // A start is never cut in half, so a pending tab has no archive or close.
+            if tab.pending == nil {
+                archiveButton
             }
-            .help("Archive chat")
-            .accessibilityLabel("Archive \(tab.title)")
         }
         .frame(minWidth: DesignTokens.Size.tabMinWidth, alignment: .leading)
         .modifier(CappedWidth(max: DesignTokens.Size.tabMaxWidth))
         .buttonStyle(.plain)
         .background(selected ? DesignTokens.selectionFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         .contextMenu {
-            Button("New chat here", action: actions.newChat)
-            Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
-            Button("Archive chat") { actions.archive(tab.id) }
+            if tab.pending == nil {
+                Button("New chat here", action: actions.newChat)
+                Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
+                Button("Archive chat") { actions.archive(tab.id) }
+            }
         }
+    }
+
+    private var archiveButton: some View {
+        Button { actions.archive(tab.id) } label: {
+            Image(systemName: "archivebox")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(DesignTokens.Spacing.s)
+                .contentShape(Rectangle())
+                .fixedSize()
+        }
+        .help("Archive chat")
+        .accessibilityLabel("Archive \(tab.title)")
     }
 }
 

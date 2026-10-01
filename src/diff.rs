@@ -1,4 +1,4 @@
-//! A unified line diff for the hook plan (ADR 0035), so the owner sees each line that setup
+//! A unified line diff for the hook plan (ADR 0036), so the owner sees each line that setup
 //! changes before they consent.
 
 const CONTEXT: usize = 3;

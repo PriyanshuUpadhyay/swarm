@@ -145,7 +145,7 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     /// `swarm hooks setup --plan --json`: what setup would change and what is in its way. It
-    /// writes nothing (ADR 0035).
+    /// writes nothing (ADR 0036).
     public func hooksPlan() async throws -> SwarmHooksPlan {
         try await read(["hooks", "setup", "--plan", "--json"], as: SwarmHooksPlan.self)
     }

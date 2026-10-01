@@ -90,7 +90,11 @@ struct AppKeyTarget {
 
     func perform(_ key: AppKey) {
         switch key {
-        case .newChat: window?.newChat?()
+        // Each press starts a chat at once (ADR 0035), so a held key must not start one per repeat.
+        // `isARepeat` raises for an event that is not a key event, such as a menu click.
+        case .newChat:
+            let repeated = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
+            if !repeated { window?.newChat?() }
         case .newWorkspace: window?.newWorkspace()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
