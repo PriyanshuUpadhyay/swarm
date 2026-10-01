@@ -6,8 +6,8 @@ use std::io::Write;
 
 const HERDR_CONTEXT: &str = r#"[agent-host: herdr]
 This session is running inside Herdr. The top-level session is the orchestrator.
-- A pane worker is a visible foreground pane split from HERDR_PANE_ID.
-- Open one session per run with `swarm session new lane`, export `SWARM_SESSION_ID` and `SWARM_AGENT_ID=orchestrator`, then `swarm agent add orchestrator orchestrator`.
+- A pane worker is a visible foreground pane split from this pane.
+- Open one session per run with `swarm session new lane`; it registers this pane as the orchestrator.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
@@ -25,7 +25,7 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 // the chair must not open a second session that the app would not show.
 const APP_CONTEXT: &str = r#"[agent-host: swarm-app]
 This session is a chair that the Swarm app started. The top-level session is the orchestrator.
-- The swarm session is already open and this chair is registered as `orchestrator`; `SWARM_SESSION_ID`, `SWARM_AGENT_ID` and `SWARM_ADAPTER` are set. Do not run `swarm session new` or `swarm agent add`.
+- The swarm session is already open and this chair is registered as `orchestrator`. Do not run `swarm session new` or `swarm agent add`.
 - A pane worker is a child agent CLI in its own tmux session; the app shows each child as a visible column beside the chat.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
