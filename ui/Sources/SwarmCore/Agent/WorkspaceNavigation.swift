@@ -47,11 +47,15 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
     }
 
-    public func title(for entry: WorkspaceEntry) -> String {
+    /// Under its project's header (`inProject`) a row drops the project name, and a main
+    /// checkout, whose folder is named like the project, shows its branch.
+    public func title(for entry: WorkspaceEntry, inProject: Bool = false) -> String {
         if let name = customName(for: entry) { return name }
         let project = entry.project.name
         let folder = entry.folderName
-        if project == folder { return folder.isEmpty ? entry.id : folder }
+        if folder.isEmpty { return entry.id }
+        if inProject { return folder == project ? entry.workspace.branch ?? folder : folder }
+        if project == folder { return folder }
         return "\(project) / \(folder)"
     }
 
@@ -66,22 +70,25 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     /// Workspace ids under each case-folded title, computed once for a whole list.
-    public func idsByTitle(_ entries: [WorkspaceEntry]) -> [String: [String]] {
-        Dictionary(grouping: entries.map { (Self.titleKey(title(for: $0)), $0.id) }, by: \.0)
+    public func idsByTitle(_ entries: [WorkspaceEntry], inProject: Bool = false) -> [String: [String]] {
+        Dictionary(grouping: entries.map { (Self.titleKey(title(for: $0, inProject: inProject)), $0.id) }, by: \.0)
             .mapValues { $0.map(\.1) }
     }
 
-    public func detail(for entry: WorkspaceEntry, idsByTitle: [String: [String]]) -> String {
+    public func detail(
+        for entry: WorkspaceEntry, idsByTitle: [String: [String]], inProject: Bool = false
+    ) -> String {
         var parts: [String] = []
-        let duplicates = (idsByTitle[Self.titleKey(title(for: entry))] ?? []).filter { $0 != entry.id }
+        let title = title(for: entry, inProject: inProject)
+        let duplicates = (idsByTitle[Self.titleKey(title)] ?? []).filter { $0 != entry.id }
         if !duplicates.isEmpty {
             parts.append(pathQualifier(for: entry.id, others: duplicates))
         }
-        if customName(for: entry) != nil, !parts.contains(entry.project.name) {
+        if !inProject, customName(for: entry) != nil, !parts.contains(entry.project.name) {
             parts.append(entry.project.name)
         }
         if let branch = entry.workspace.branch,
-           !parts.contains(branch),
+           !parts.contains(branch), branch != title,
            customName(for: entry) != nil || branch != entry.folderName {
             parts.append(branch)
         }

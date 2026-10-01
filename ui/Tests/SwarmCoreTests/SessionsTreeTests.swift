@@ -154,24 +154,83 @@ struct SessionsTreeTests {
         var navigation = WorkspaceNavigation()
         navigation.pinned = ["/docs"]
         let sections = SidebarRows.sections(
-            workspaces: workspaces, navigation: navigation, search: "", showingArchive: false, now: 61
+            projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "",
+            showingArchive: false, now: 61
         )
-        #expect(sections.map(\.title) == ["Pinned", "My workspaces"])
+        #expect(sections.map(\.title) == ["Pinned", "api", "docs"])
+        #expect(sections.map(\.kind) == [.pinned, .project(path: "/api"), .project(path: "/docs")])
         #expect(sections[0].rows.map(\.id) == ["/docs"])
+        // A project whose only workspace is pinned keeps its header for its "+".
+        #expect(sections[2].rows.isEmpty)
         let apiRow = sections[1].rows[0]
         #expect(apiRow.status == .waiting)
+        #expect(sections[1].status == .waiting)
         #expect(apiRow.counts == [StatusCount(status: .waiting, count: 1), StatusCount(status: .working, count: 2)])
         #expect(sections[0].rows[0].status == .done)
 
         navigation.archived = ["/api"]
         let archived = SidebarRows.sections(
-            workspaces: workspaces, navigation: navigation, search: "", showingArchive: true, now: 61
+            projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "",
+            showingArchive: true, now: 61
         )
-        #expect(archived.map(\.title) == ["Archived"])
+        #expect(archived.map(\.kind) == [.project(path: "/api")])
         #expect(archived[0].rows.map(\.id) == ["/api"])
         #expect(SidebarRows.sections(
-            workspaces: workspaces, navigation: navigation, search: "docs", showingArchive: false, now: 61
+            projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "docs",
+            showingArchive: false, now: 61
         ).flatMap(\.rows).map(\.id) == ["/docs"])
+    }
+
+    @Test("Workspaces sit under their project in activity order, titled without the project name")
+    func projectSections() {
+        var feature = session("feature-session", cwd: "/repo/wt/feature")
+        feature.lastMessageAt = 20
+        var main = session("main-session", cwd: "/repo/wt/main")
+        main.lastMessageAt = 10
+        let notes = session("notes-session", cwd: "/notes")
+        let tree = build([main, feature, notes], projectPaths: ["/repo/wt/main", "/empty"])
+        var navigation = WorkspaceNavigation()
+        let sections = SidebarRows.sections(
+            projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
+            search: "", showingArchive: false, now: 61
+        )
+        #expect(sections.map(\.kind) == [
+            .project(path: "/empty"), .project(path: "/notes"), .project(path: "/repo"),
+        ])
+        // A plain folder is its own one workspace.
+        #expect(sections[0].rows.map(\.title) == ["empty"])
+        #expect(sections[2].rows.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
+        #expect(sections[2].rows.map(\.title) == ["feature", "main"])
+        #expect(sections[1].rows.map(\.title) == ["notes"])
+
+        // The palette has no headers, so it keeps "project / folder".
+        let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
+        #expect(listed.workspaces.first { $0.id == "/repo/wt/main" }?.title == "repo / main")
+
+        navigation.names["/repo/wt/main"] = "Fix login"
+        let renamed = SidebarRows.sections(
+            projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
+            search: "", showingArchive: false, now: 61
+        )
+        let row = renamed[2].rows[1]
+        #expect(row.title == "Fix login")
+        #expect(row.detail == "main · 1 chat")
+
+        #expect(tree.project(containing: "/repo/wt/main/src")?.path == "/repo")
+        #expect(tree.project(containing: "/empty")?.path == "/empty")
+        #expect(tree.project(containing: "/elsewhere") == nil)
+    }
+
+    @Test("Two projects with one name show their parent folder")
+    func duplicateProjectNames() {
+        let tree = build([
+            session("work-app", cwd: "/work/app"), session("play-app", cwd: "/play/app"),
+        ])
+        let sections = SidebarRows.sections(
+            projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree),
+            navigation: WorkspaceNavigation(), search: "", showingArchive: false, now: 61
+        )
+        #expect(sections.map(\.title) == ["app — play", "app — work"])
     }
 
     @Test("The palette lists archived workspaces and their chats, marked Archived")

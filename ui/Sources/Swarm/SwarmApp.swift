@@ -665,7 +665,7 @@ private struct SessionsWindow: View {
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
         SidebarRows.sections(
-            workspaces: model.workspaces, navigation: model.navigation, search: "",
+            projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
             showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970)
         )
     }

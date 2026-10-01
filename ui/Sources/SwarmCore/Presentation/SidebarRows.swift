@@ -21,40 +21,73 @@ public struct StatusCount: Sendable, Hashable {
 }
 
 public struct SidebarSection: Sendable, Hashable, Identifiable {
-    public var id: String { title }
+    public enum Kind: Sendable, Hashable {
+        case pinned, archived
+        /// Keyed by `ProjectNode.path`, which stays the same when a folder becomes a git repo.
+        case project(path: String)
+    }
+
+    public let kind: Kind
     public let title: String
+    /// The most urgent status of the rows; the header shows it while collapsed.
+    public let status: AgentStatus?
     public let rows: [SidebarRow]
+
+    public var id: String {
+        switch kind {
+        case .pinned: "pinned"
+        case .archived: "archived"
+        case .project(let path): "project:" + path
+        }
+    }
+
+    init(kind: Kind, title: String, rows: [SidebarRow]) {
+        self.kind = kind
+        self.title = title
+        self.status = AgentStatus.aggregate(rows.compactMap(\.status))
+        self.rows = rows
+    }
 }
 
 public enum SidebarRows {
-    /// Pinned, then My workspaces; or Archived alone. Rows keep the workspace order, so a status
-    /// change sets a row's glyph but never moves the row.
+    /// Pinned, then one section per project in tree order, even an empty one, so its "+" stays
+    /// reachable. The archive view shows only projects with archived rows. Rows keep the
+    /// workspace order, so a status change sets a row's glyph but never moves the row.
     public static func sections(
-        workspaces: [WorkspaceEntry], navigation: WorkspaceNavigation,
+        projects: [ProjectNode], workspaces: [WorkspaceEntry], navigation: WorkspaceNavigation,
         search: String, showingArchive: Bool, now: Int
     ) -> [SidebarSection] {
         let visible = workspaces.filter { navigation.matches(search, entry: $0) }
-        // Titles once for the whole list; a per-row scan made this quadratic in workspaces.
-        let idsByTitle = navigation.idsByTitle(workspaces)
-        func rows(_ keep: (WorkspaceEntry) -> Bool) -> [SidebarRow] {
-            visible.filter(keep).map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now) }
-        }
-        if showingArchive {
-            return [SidebarSection(title: "Archived", rows: rows { navigation.archived.contains($0.id) })]
-        }
-        return [
-            SidebarSection(title: "Pinned", rows: rows {
+        var sections: [SidebarSection] = []
+        if !showingArchive {
+            // Titles once for the whole list; a per-row scan made this quadratic in workspaces.
+            let idsByTitle = navigation.idsByTitle(workspaces)
+            let pinned = visible.filter {
                 navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id)
-            }),
-            SidebarSection(title: "My workspaces", rows: rows {
-                !navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id)
-            }),
-        ]
+            }.map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now) }
+            if !pinned.isEmpty { sections.append(SidebarSection(kind: .pinned, title: "Pinned", rows: pinned)) }
+        }
+        let names = Dictionary(grouping: projects.map(\.name), by: { $0 }).mapValues(\.count)
+        for project in projects {
+            let members = workspaces.filter { $0.project.path == project.path }
+            let idsByTitle = navigation.idsByTitle(members, inProject: true)
+            let rows = visible.filter { entry in
+                entry.project.path == project.path && (showingArchive
+                    ? navigation.archived.contains(entry.id)
+                    : !navigation.pinned.contains(entry.id) && !navigation.archived.contains(entry.id))
+            }.map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now, inProject: true) }
+            if rows.isEmpty, showingArchive || !search.isEmpty { continue }
+            let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().lastPathComponent
+            let title = names[project.name, default: 0] > 1 && !parent.isEmpty
+                ? "\(project.name) — \(parent)" : project.name
+            sections.append(SidebarSection(kind: .project(path: project.path), title: title, rows: rows))
+        }
+        return sections
     }
 
     static func row(
         _ entry: WorkspaceEntry, idsByTitle: [String: [String]],
-        navigation: WorkspaceNavigation, now: Int
+        navigation: WorkspaceNavigation, now: Int, inProject: Bool = false
     ) -> SidebarRow {
         let age = entry.chats.max { $0.lastActivity < $1.lastActivity }.map {
             SessionRowPresentation.make(
@@ -65,8 +98,8 @@ public enum SidebarRows {
             .map { StatusCount(status: $0.key, count: $0.value) }
             .sorted { $0.status.urgency > $1.status.urgency }
         return SidebarRow(
-            id: entry.id, title: navigation.title(for: entry),
-            detail: navigation.detail(for: entry, idsByTitle: idsByTitle),
+            id: entry.id, title: navigation.title(for: entry, inProject: inProject),
+            detail: navigation.detail(for: entry, idsByTitle: idsByTitle, inProject: inProject),
             status: entry.status, counts: counts, age: age,
             help: "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),

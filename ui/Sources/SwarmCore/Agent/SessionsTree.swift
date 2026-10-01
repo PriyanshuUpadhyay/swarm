@@ -207,6 +207,12 @@ public struct SessionsTree: Sendable, Hashable {
         return nil
     }
 
+    /// The project with a workspace at or above `path`, else the project rooted at `path`.
+    public func project(containing path: String) -> ProjectNode? {
+        projects.first { $0.workspaces.contains { Self.contains(path, in: $0.path) } }
+            ?? projects.first { $0.path == path }
+    }
+
     public func launchDirectory(for id: SwarmSessionID) -> String? {
         chat(id)?.workspacePath
     }
