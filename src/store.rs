@@ -31,13 +31,17 @@ fn known_version(version: i64) -> bool {
 /// folder that may not be swarm's. It skips changes still in a `-wal`; swarm's schema was
 /// checkpointed long ago, and a miss is a refusal whose message gives the fix.
 pub fn made_by_swarm(path: &Path) -> bool {
+    // An absolute path after `file://`: a leading `//` would else read as a URI authority.
+    let Ok(path) = std::path::absolute(path) else {
+        return false;
+    };
     let escaped = path
         .to_string_lossy()
         .replace('%', "%25")
         .replace('?', "%3f")
         .replace('#', "%23");
     let Ok(connection) = Connection::open_with_flags(
-        format!("file:{escaped}?mode=ro&immutable=1"),
+        format!("file://{escaped}?mode=ro&immutable=1"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
     ) else {
         return false;
@@ -1630,8 +1634,25 @@ mod tests {
 
         assert!(!made_by_swarm(&db));
         assert_eq!(listing(), names);
+        // A path with a leading `//` or a relative one names the same db.
+        let mine = root.join("mine.db");
+        open(&mine).unwrap();
+        let double = std::path::PathBuf::from(format!("/{}", mine.display()));
+        let relative = pathdiff_from_cwd(&mine);
+        for path in [&mine, &double, &relative] {
+            assert!(made_by_swarm(path), "{}", path.display());
+        }
         assert!(open(&db).is_err());
         assert_eq!(std::fs::read(&db).unwrap(), bytes);
+    }
+
+    /// `path` written relative to the current directory, through `..` up to `/`.
+    fn pathdiff_from_cwd(path: &Path) -> std::path::PathBuf {
+        let cwd = std::env::current_dir().unwrap();
+        let up = cwd.components().count() - 1;
+        let mut relative: std::path::PathBuf = std::iter::repeat_n("..", up).collect();
+        relative.push(path.strip_prefix("/").unwrap());
+        relative
     }
 
     #[test]

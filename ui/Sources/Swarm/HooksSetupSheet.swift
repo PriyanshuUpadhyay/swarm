@@ -84,6 +84,9 @@ struct HooksSetupSheet: View {
                 openFile = plan.files.first?.path
                 diffFailed = false
                 phase = .ready(plan)
+                Self.announce(plan.isSetUp
+                    ? "Swarm's hooks are already set up."
+                    : "\(plan.files.count) files to change, \(plan.conflicts.count) conflicts.")
             } catch {
                 phase = .failed(Self.message(error))
             }
@@ -203,8 +206,12 @@ struct HooksSetupSheet: View {
             Button {
                 if let plan { apply(plan) }
             } label: {
-                if working { ProgressView().controlSize(.small) } else { Text("Set up") }
+                // The label keeps its size and its name while the spinner shows.
+                Text("Set up")
+                    .opacity(working ? 0 : 1)
+                    .overlay { if working { ProgressView().controlSize(.small) } }
             }
+            .accessibilityLabel("Set up")
             .keyboardShortcut(plan?.canApply == true ? .defaultAction : nil)
             .disabled(working || plan?.canApply != true)
         }
@@ -225,10 +232,16 @@ struct HooksSetupSheet: View {
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
                 failure = Self.message(error)
+                Self.announce(failure ?? "")
                 planRun += 1
             }
             working = false
         }
+    }
+
+    /// VoiceOver hears a result that replaces what it was reading.
+    private static func announce(_ text: String) {
+        AccessibilityNotification.Announcement(text).post()
     }
 
     private static func message(_ error: any Error) -> String {

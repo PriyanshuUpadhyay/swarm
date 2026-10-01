@@ -591,6 +591,23 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Folder trust in each Codex home a pane may read. With no account picked, a home whose config
+/// swarm cannot edit is named and skipped, so one broken spare profile does not stop every Codex
+/// launch; the home of a picked account must take the entry.
+fn trust_codex_homes(
+    homes: &[std::path::PathBuf],
+    target: &std::path::Path,
+    picked: bool,
+) -> Result<(), String> {
+    for home in homes {
+        match swarm::bus::ensure_codex_trust(home, target) {
+            Err(error) if !picked => eprintln!("swarm: skipped {}: {error}", home.display()),
+            result => result?,
+        }
+    }
+    Ok(())
+}
+
 fn hook_diff(plan: &swarm::bus::HookFilePlan) -> String {
     swarm::diff::unified(&plan.path.to_string_lossy(), &plan.before, &plan.after)
 }
@@ -1810,9 +1827,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         codex_homes(&user_home)?
                     };
                     swarm::bus::with_lock(&lock, || {
-                        homes
-                            .iter()
-                            .try_for_each(|home| swarm::bus::ensure_codex_trust(home, &target))
+                        trust_codex_homes(&homes, &target, picked.is_some())
                     })?;
                 }
                 Ok(target) => {
@@ -2240,6 +2255,30 @@ mod tests {
             read_within(reader, std::time::Duration::from_millis(200)).as_deref(),
             Some("{}")
         );
+    }
+
+    #[test]
+    fn a_broken_spare_codex_home_is_skipped_unless_its_account_was_picked() {
+        let root = std::env::temp_dir().join(format!("swarm-spare-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (main, spare) = (root.join(".codex"), root.join(".codex-spare"));
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::create_dir_all(&spare).unwrap();
+        std::fs::write(spare.join("config.toml"), "not toml = =\n").unwrap();
+        let project = std::path::Path::new("/project");
+
+        trust_codex_homes(&[spare.clone(), main.clone()], project, false).unwrap();
+        assert!(
+            std::fs::read_to_string(main.join("config.toml"))
+                .unwrap()
+                .contains("/project")
+        );
+        assert_eq!(
+            std::fs::read_to_string(spare.join("config.toml")).unwrap(),
+            "not toml = =\n"
+        );
+        assert!(trust_codex_homes(std::slice::from_ref(&spare), project, true).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

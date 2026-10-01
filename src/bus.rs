@@ -675,7 +675,15 @@ fn json_text(value: &serde_json::Value) -> String {
 fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
     let target = match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => std::fs::canonicalize(path).map_err(fail)?,
+        // A link to a missing file gets that file made, as a write through the link would.
+        Ok(meta) if meta.file_type().is_symlink() => match std::fs::canonicalize(path) {
+            Ok(target) => target,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let link = std::fs::read_link(path).map_err(fail)?;
+                path.parent().unwrap_or(path).join(link)
+            }
+            Err(error) => return Err(fail(error)),
+        },
         _ => path.to_path_buf(),
     };
     let path = target.as_path();
@@ -1366,6 +1374,17 @@ mod tests {
         assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
         assert!(linked());
         assert!(codex_hooks_trusted(&home, &entries));
+
+        // A link to a file that does not exist yet gets its target made, as an append through the
+        // link did before.
+        std::fs::remove_file(&dotfiles).unwrap();
+        ensure_codex_trust(&home, std::path::Path::new("/two")).unwrap();
+        assert!(linked());
+        assert!(
+            std::fs::read_to_string(&dotfiles)
+                .unwrap()
+                .contains("[projects.\"/two\"]")
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
