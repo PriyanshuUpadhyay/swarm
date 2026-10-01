@@ -144,10 +144,17 @@ public struct SwarmCLIBus: SwarmBus {
         try await read(["hooks", "status", "--json"], as: SwarmHooksStatus.self)
     }
 
-    /// `swarm hooks setup`, which changes the owner's Codex and AGY config; call it only on the
-    /// owner's consent.
-    public func setUpHooks() async throws {
-        _ = try await call(["hooks", "setup"])
+    /// `swarm hooks setup --plan --json`: what setup would change and what is in its way. It
+    /// writes nothing (ADR 0036).
+    public func hooksPlan() async throws -> SwarmHooksPlan {
+        try await read(["hooks", "setup", "--plan", "--json"], as: SwarmHooksPlan.self)
+    }
+
+    /// `swarm hooks setup --digest`, which changes the owner's Codex and AGY config; call it only
+    /// on the owner's consent to the plan with this digest. It fails on a conflict or on a file
+    /// that changed after that plan.
+    public func setUpHooks(digest: String) async throws {
+        _ = try await call(["hooks", "setup", "--digest", digest])
     }
 
     public func answer(

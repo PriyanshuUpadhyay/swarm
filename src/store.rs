@@ -5,9 +5,10 @@ use rusqlite::{Connection, TransactionBehavior};
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
 
-    connection.execute_batch("PRAGMA journal_mode=WAL;")?;
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    // Before WAL, which writes the db header: another program's db is refused unchanged.
     migrate(&mut connection)?;
+    connection.execute_batch("PRAGMA journal_mode=WAL;")?;
     connection.pragma_update(None, "foreign_keys", true)?;
 
     Ok(connection)
@@ -20,13 +21,54 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004.sql"),
 ];
 
+fn known_version(version: i64) -> bool {
+    (1..=MIGRATIONS.len() as i64).contains(&version)
+}
+
+/// Whether `path` is a db that a swarm made: it shows a known `user_version` and every table of
+/// migration 0001. A home from before the marker is adopted on this (ADR 0036). The open is
+/// `immutable`, because a plain read-only open of a WAL db makes `-shm` and `-wal` files in a
+/// folder that may not be swarm's. It skips changes still in a `-wal`; swarm's schema was
+/// checkpointed long ago, and a miss is a refusal whose message gives the fix.
+pub fn made_by_swarm(path: &Path) -> bool {
+    // An absolute path after `file://`: a leading `//` would else read as a URI authority.
+    let Ok(path) = std::path::absolute(path) else {
+        return false;
+    };
+    let escaped = path
+        .to_string_lossy()
+        .replace('%', "%25")
+        .replace('?', "%3f")
+        .replace('#', "%23");
+    let Ok(connection) = Connection::open_with_flags(
+        format!("file://{escaped}?mode=ro&immutable=1"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    ) else {
+        return false;
+    };
+    let version = connection.query_row("PRAGMA user_version", [], |row| row.get(0));
+    let tables = connection.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table'
+         AND name IN ('session', 'agent', 'message', 'read_mark', 'job')",
+        [],
+        |row| row.get::<_, i64>(0),
+    );
+    matches!((version, tables), (Ok(version), Ok(5)) if known_version(version))
+}
+
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
+        // A new db has no schema. Tables at version 0 belong to another program (ADR 0036).
+        let objects: i64 =
+            tx.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
+        if objects > 0 {
+            return Err("database not made by swarm; use another SWARM_HOME or move it".into());
+        }
         tx.execute_batch(MIGRATIONS[0])?;
-    } else if !(1..=4).contains(&version) {
+    } else if !known_version(version) {
         return Err(
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
@@ -1628,5 +1670,77 @@ mod tests {
             .execute_batch("PRAGMA user_version = 5")
             .unwrap();
         assert!(open(&db).is_err());
+    }
+
+    /// The probe that decides adoption writes nothing, also for a WAL db, which a read-only
+    /// open would give `-shm` and `-wal` files (ADR 0036).
+    #[test]
+    fn the_adoption_probe_leaves_another_programs_wal_database_as_it_was() {
+        let root = temp_root("other-program-wal");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE bookmark (url TEXT);")
+            .unwrap();
+        let listing = || {
+            let mut names: Vec<_> = std::fs::read_dir(&root)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let (names, bytes) = (listing(), std::fs::read(&db).unwrap());
+
+        assert!(!made_by_swarm(&db));
+        assert_eq!(listing(), names);
+        // A path with a leading `//` or a relative one names the same db.
+        let mine = root.join("mine.db");
+        open(&mine).unwrap();
+        let double = std::path::PathBuf::from(format!("/{}", mine.display()));
+        let relative = pathdiff_from_cwd(&mine);
+        for path in [&mine, &double, &relative] {
+            assert!(made_by_swarm(path), "{}", path.display());
+        }
+        assert!(open(&db).is_err());
+        assert_eq!(std::fs::read(&db).unwrap(), bytes);
+    }
+
+    /// `path` written relative to the current directory, through `..` up to `/`.
+    fn pathdiff_from_cwd(path: &Path) -> std::path::PathBuf {
+        let cwd = std::env::current_dir().unwrap();
+        let up = cwd.components().count() - 1;
+        let mut relative: std::path::PathBuf = std::iter::repeat_n("..", up).collect();
+        relative.push(path.strip_prefix("/").unwrap());
+        relative
+    }
+
+    #[test]
+    fn another_programs_database_gets_no_swarm_tables() {
+        let root = temp_root("other-program");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("CREATE TABLE bookmark (url TEXT)")
+            .unwrap();
+
+        assert!(!made_by_swarm(&db));
+        assert_eq!(
+            open(&db).unwrap_err().to_string(),
+            "database not made by swarm; use another SWARM_HOME or move it"
+        );
+        let tables: Vec<String> = Connection::open(&db)
+            .unwrap()
+            .prepare("SELECT name FROM sqlite_master")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(tables, ["bookmark"]);
+        open(&root.join("new.db")).unwrap();
+        assert!(made_by_swarm(&root.join("new.db")));
     }
 }

@@ -1,5 +1,7 @@
 const SWARM_DIR: &str = ".swarm";
 const SWARM_DB: &str = "swarm.db";
+/// The file that proves a `.swarm` folder is swarm's own (ADR 0036).
+const MARKER: &str = "swarm-home";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
@@ -61,8 +63,48 @@ pub fn branch_folder(branch: &str) -> Option<String> {
     Some(format!(".swarm-{slug}+{hash:016x}"))
 }
 
+/// The `.swarm` folder, after `claim` proves that swarm owns it.
 pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    Ok(std::path::PathBuf::from(home()?).join(SWARM_DIR))
+    let root = std::path::PathBuf::from(home()?).join(SWARM_DIR);
+    claim(&root)?;
+    Ok(root)
+}
+
+/// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
+/// folder is claimed with the marker before any other write. A folder with no marker is adopted
+/// only when it holds a db that an older swarm made. Any other folder is refused with no write.
+/// A linked folder is judged by its target, because each read follows the link.
+fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let marker = root.join(MARKER);
+    if marker.is_file() {
+        return Ok(());
+    }
+    let empty = match std::fs::read_dir(root) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(error) => return Err(format!("swarm: cannot read {}: {error}", root.display()).into()),
+    };
+    // Another swarm may have claimed it since the first look; a claim writes the marker first.
+    if !empty && !marker.is_file() && !crate::store::made_by_swarm(&root.join(SWARM_DB)) {
+        return Err(format!(
+            "swarm: {} is not a swarm home: it has files that swarm did not make, or a \
+             swarm.db that swarm cannot read.\n\
+             Move them, or set SWARM_HOME to another folder.",
+            root.display()
+        )
+        .into());
+    }
+    std::fs::create_dir_all(root)?;
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)
+    {
+        Ok(mut file) => std::io::Write::write_all(&mut file, b"swarm\n")?,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
 }
 
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {

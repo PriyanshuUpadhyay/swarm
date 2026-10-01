@@ -39,6 +39,10 @@ enum DesignTokens {
         static let narrowSheet: CGFloat = 420
         /// The profile editor: one numbered card per runner, with a Move Up, Move Down, Remove menu.
         static let profileSheet: CGFloat = 680
+        /// The hooks setup sheet: wide enough for a split diff, as the profile editor is.
+        static let hooksSheet: CGFloat = 680
+        /// The hooks setup conflicts stop growing here and scroll.
+        static let conflictList: CGFloat = 180
         /// The profile name column on the Agent profiles page.
         static let profileName: CGFloat = 150
         /// The health pill column, so every row's chain ends at the same place.
