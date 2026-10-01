@@ -173,7 +173,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn adapter_name() -> String {
-    env::var("SWARM_ADAPTER").unwrap_or("tmux".into())
+    swarm::host::adapter(|name| env::var(name).ok())
 }
 
 fn identity() -> Result<(String, String), String> {
