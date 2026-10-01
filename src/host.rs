@@ -6,8 +6,8 @@ use std::io::Write;
 
 const HERDR_CONTEXT: &str = r#"[agent-host: herdr]
 This session is running inside Herdr. The top-level session is the orchestrator.
-- A pane worker is a visible foreground pane split from HERDR_PANE_ID.
-- Set `SWARM_ADAPTER=herdr`. Open one session per run with `swarm session new lane`, export `SWARM_SESSION_ID` and `SWARM_AGENT_ID=orchestrator`, then `swarm agent add orchestrator orchestrator`.
+- A pane worker is a visible foreground pane split from this pane.
+- Open one session per run with `swarm session new lane`; it registers this pane as the orchestrator.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
@@ -25,7 +25,7 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 // the chair must not open a second session that the app would not show.
 const APP_CONTEXT: &str = r#"[agent-host: swarm-app]
 This session is a chair that the Swarm app started. The top-level session is the orchestrator.
-- The swarm session is already open and this chair is registered as `orchestrator`; `SWARM_SESSION_ID`, `SWARM_AGENT_ID` and `SWARM_ADAPTER` are set. Do not run `swarm session new` or `swarm agent add`.
+- The swarm session is already open and this chair is registered as `orchestrator`. Do not run `swarm session new` or `swarm agent add`.
 - A pane worker is a child agent CLI in its own tmux session; the app shows each child as a visible column beside the chat.
 - Spawn with `swarm launch <unique-name> ROLE --cwd "$PWD" [-- extra agent flags]`; it resolves the provider, model and effort, prepares trust, and opens the pane.
 - Send work with `swarm send <name> ask`; a reply arrives as the prompt `swarm: new message`, then `swarm inbox`, read, `swarm ack`. Close with `swarm close <name>`.
@@ -40,11 +40,26 @@ This session is a worker pane, a child of the orchestrator session. Act only on 
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
+/// Whether this process runs in a Herdr pane.
+fn in_herdr(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("HERDR_ENV").as_deref() == Some("1")
+        && env("HERDR_PANE_ID").is_some_and(|pane| !pane.is_empty())
+}
+
+/// The adapter every pane verb uses: `SWARM_ADAPTER` when set, else `herdr` in a Herdr pane, else
+/// `tmux`. So a chair in Herdr reaches its panes with no variable of its own to keep set.
+pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
+    env("SWARM_ADAPTER").unwrap_or_else(|| match in_herdr(&env) {
+        true => "herdr".into(),
+        false => "tmux".into(),
+    })
+}
+
 /// The contract for this session, or None outside a visible host. `env` reads one variable.
 /// Herdr wins over the app's tmux host when both match, because its pane is the one on screen.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
-    let (chair, worker) = if env("HERDR_ENV").as_deref() == Some("1") && set("HERDR_PANE_ID") {
+    let (chair, worker) = if in_herdr(&env) {
         (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
     } else if env("SWARM_ADAPTER").as_deref() == Some("tmux-solo")
         && set("SWARM_SESSION_ID")
@@ -162,6 +177,17 @@ mod tests {
     }
 
     const HERDR: [(&str, &str); 2] = [("HERDR_ENV", "1"), ("HERDR_PANE_ID", "wK:p1")];
+
+    #[test]
+    fn a_herdr_pane_picks_herdr_unless_swarm_adapter_names_another() {
+        assert_eq!(adapter(env(&HERDR)), "herdr");
+        assert_eq!(adapter(env(&[])), "tmux");
+        assert_eq!(adapter(env(&[HERDR[0], ("HERDR_PANE_ID", "")])), "tmux");
+        assert_eq!(
+            adapter(env(&[HERDR[0], HERDR[1], ("SWARM_ADAPTER", "tmux-solo")])),
+            "tmux-solo"
+        );
+    }
 
     #[test]
     fn outside_a_host_codex_gets_an_empty_object_and_claude_nothing() {

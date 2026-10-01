@@ -45,7 +45,7 @@ directory is always `$SWARM_HOME/.swarm`.
 | Variable | Meaning |
 |---|---|
 | `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
-| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `tmux`. |
+| `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `herdr` in a Herdr pane, else `tmux`. |
 | `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
 | `SWARM_AGENT_ID` | Identity of the caller. `spawn` stamps it into each child pane. |
