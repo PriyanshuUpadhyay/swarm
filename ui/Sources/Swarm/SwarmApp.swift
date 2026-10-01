@@ -148,7 +148,8 @@ final class SessionsTreeModel {
         case .session(let row) where tree.retainedSelection(row) != nil:
             select(row)
         default:
-            select(selectedWorkspace.flatMap { navigation.selectedChat(in: $0)?.id })
+            let saved = selectedWorkspace.flatMap { navigation.selectedChat(in: $0)?.id }
+            if saved != nil || !selectNewestStart() { select(saved) }
         }
     }
 
