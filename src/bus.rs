@@ -330,6 +330,24 @@ pub struct HookFilePlan {
 }
 
 impl HookFilePlan {
+    /// A file that swarm cannot read or edit, as a conflict, so setup writes no file and the
+    /// owner sees the fix (owner's choice, 2026-10-01).
+    pub fn unreadable(path: std::path::PathBuf, error: String) -> Self {
+        let file = path.display().to_string();
+        Self {
+            conflicts: vec![HookConflict {
+                file: file.clone(),
+                entry: "the whole file".into(),
+                found: error,
+                wanted: "a file that swarm can read and edit".into(),
+                fix: format!("repair {file}, or move it away"),
+            }],
+            path,
+            before: String::new(),
+            after: String::new(),
+        }
+    }
+
     /// Write the planned text. Returns whether the file changed. The caller checks every file of
     /// the plan first, because setup writes no file while any conflict stands.
     pub fn apply(&self) -> Result<bool, String> {

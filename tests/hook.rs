@@ -368,3 +368,35 @@ fn an_owners_entry_at_swarms_place_is_a_conflict_and_nothing_is_written() {
         std::fs::remove_dir_all(&home).unwrap();
     }
 }
+
+/// A Codex home whose config swarm cannot read is a named conflict in the plan, so setup writes no
+/// file and the owner sees the fix (owner's choice, 2026-10-01).
+#[test]
+fn a_broken_codex_home_is_a_conflict_and_nothing_is_written() {
+    let home = scratch("broken-home");
+    let exe = Path::new(env!("CARGO_BIN_EXE_swarm"));
+    let broken = home.join(".codex-old/config.toml");
+    std::fs::create_dir_all(broken.parent().unwrap()).unwrap();
+    std::fs::write(&broken, "not toml = =\n").unwrap();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/config.toml"), "model = \"o3\"\n").unwrap();
+    let before = (hook_files(&home), std::fs::read(&broken).unwrap());
+
+    let plan = hooks(exe, &home, &["setup", "--plan", "--json"]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let conflicts = plan["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 1, "{plan}");
+    assert_eq!(conflicts[0]["file"], broken.display().to_string());
+    assert!(
+        conflicts[0]["found"]
+            .as_str()
+            .unwrap()
+            .contains("not valid TOML")
+    );
+
+    let setup = hooks(exe, &home, &["setup"]);
+    assert!(!setup.status.success(), "{setup:?}");
+    assert_eq!((hook_files(&home), std::fs::read(&broken).unwrap()), before);
+    std::fs::remove_dir_all(&home).unwrap();
+}

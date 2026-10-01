@@ -203,6 +203,8 @@ struct SwarmSessionDetailTests {
         #expect(!decoded.isSetUp && !decoded.canApply)
         #expect(SwarmHooksPlan(digest: "d", files: decoded.files, conflicts: []).canApply)
         #expect(SwarmHooksPlan(digest: "d", files: [], conflicts: []).isSetUp)
+        let plusLine = SwarmHooksPlan.File(path: "/f", diff: "--- /f\n+++ /f\n@@ -0,0 +1 @@\n+++ x\n")
+        #expect(plusLine.added == 1 && plusLine.removed == 0)
 
         try await bus.setUpHooks(digest: decoded.digest)
         #expect(await calls.arguments == [

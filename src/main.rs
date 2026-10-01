@@ -545,13 +545,21 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
     let homes = codex_homes(&user_home)?;
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
-    let plan = || -> Result<Vec<swarm::bus::HookFilePlan>, String> {
-        let mut plans = homes
+    // A file that swarm cannot read or edit is a conflict in the plan, not an error.
+    let plan = || -> Vec<swarm::bus::HookFilePlan> {
+        let unreadable = swarm::bus::HookFilePlan::unreadable;
+        let mut plans: Vec<_> = homes
             .iter()
-            .map(|home| swarm::bus::codex_hook_plan(home, &codex))
-            .collect::<Result<Vec<_>, _>>()?;
-        plans.push(swarm::bus::agy_hook_plan(&agy_hooks)?);
-        Ok(plans)
+            .map(|home| {
+                swarm::bus::codex_hook_plan(home, &codex)
+                    .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
+            })
+            .collect();
+        plans.push(
+            swarm::bus::agy_hook_plan(&agy_hooks)
+                .unwrap_or_else(|error| unreadable(agy_hooks.clone(), error)),
+        );
+        plans
     };
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
@@ -560,14 +568,14 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "agy": swarm::bus::agy_hooks_set(&agy_hooks),
         })),
         ["setup", "--plan"] => {
-            print!("{}", hook_plan_text(&plan()?));
+            print!("{}", hook_plan_text(&plan()));
             Ok(())
         }
-        ["setup", "--plan", "--json"] => print_json(&hook_plan_json(&plan()?)),
+        ["setup", "--plan", "--json"] => print_json(&hook_plan_json(&plan())),
         ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
             let lock = swarm::paths::root_dir()?.join("trust.lock");
             swarm::bus::with_lock(&lock, || {
-                let plans = plan()?;
+                let plans = plan();
                 if let ["--digest", digest] = rest
                     && swarm::bus::hook_plan_digest(&plans) != *digest
                 {

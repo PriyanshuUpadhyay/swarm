@@ -100,11 +100,10 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         }
         public var removed: Int { count("-") }
 
-        /// Diff lines with `mark`, without the `+++` and `---` file headers.
+        /// Diff lines with `mark` after the two file header lines, so an added line that starts
+        /// with `++` still counts.
         private func count(_ mark: Character) -> Int {
-            diff.split(separator: "\n").filter {
-                $0.first == mark && !$0.hasPrefix(String(repeating: mark, count: 3) + " ")
-            }.count
+            diff.split(separator: "\n").dropFirst(2).filter { $0.first == mark }.count
         }
     }
 
