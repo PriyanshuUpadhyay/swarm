@@ -31,7 +31,8 @@ public enum GitTaskWorktree {
         return created.path
     }
 
-    /// Nil when the repository has no commit yet.
+    /// Nil when no default branch exists and HEAD names no commit: a new repository, or an
+    /// unborn HEAD beside other branches. The workspace then starts an orphan branch.
     private static func defaultReference(in commonDirectory: String) async throws -> String? {
         let remote = try await Git.runRaw(
             ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], in: commonDirectory

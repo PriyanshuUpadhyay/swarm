@@ -98,14 +98,15 @@ struct SidebarView<Details: View>: View {
                 List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
                     ForEach(sections) { section in
                         if case .project(let path) = section.kind {
-                            let expanded = !collapsed.contains(path)
+                            // The archive view lists every archived row, with no collapse.
+                            let expanded = showingArchive || !collapsed.contains(path)
                             Section {
                                 if expanded { rows(section.rows) }
                             } header: {
                                 ProjectHeader(
                                     title: section.title, expanded: expanded,
                                     status: expanded ? nil : section.status,
-                                    toggle: { actions.toggleCollapsed(path) },
+                                    toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
                                     newWorkspace: showingArchive ? nil : { actions.newWorkspace(path) }
                                 )
                             }
@@ -173,24 +174,29 @@ private struct ProjectHeader: View {
     let title: String
     let expanded: Bool
     let status: AgentStatus?
-    let toggle: () -> Void
+    /// Nil in the archive view, which has no collapse.
+    let toggle: (() -> Void)?
     let newWorkspace: (() -> Void)?
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Button(action: toggle) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .frame(width: DesignTokens.Size.glyphSlot)
-                    Text(title).lineLimit(1).truncationMode(.middle)
-                    if let status { StatusGlyph(status: status) }
+            if let toggle {
+                Button(action: toggle) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                            .font(.caption2.weight(.semibold))
+                            .frame(width: DesignTokens.Size.glyphSlot)
+                        Text(title).lineLimit(1).truncationMode(.middle)
+                        if let status { StatusGlyph(status: status) }
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
+            } else {
+                Text(title).lineLimit(1).truncationMode(.middle)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
             Spacer(minLength: DesignTokens.Spacing.xs)
             if let newWorkspace {
                 Button("New workspace in \(title)", systemImage: "plus", action: newWorkspace)

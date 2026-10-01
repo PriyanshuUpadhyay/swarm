@@ -22,7 +22,7 @@ public struct StatusCount: Sendable, Hashable {
 
 public struct SidebarSection: Sendable, Hashable, Identifiable {
     public enum Kind: Sendable, Hashable {
-        case pinned, archived
+        case pinned
         /// Keyed by `ProjectNode.path`, which stays the same when a folder becomes a git repo.
         case project(path: String)
     }
@@ -36,7 +36,6 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
     public var id: String {
         switch kind {
         case .pinned: "pinned"
-        case .archived: "archived"
         case .project(let path): "project:" + path
         }
     }

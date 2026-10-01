@@ -19,7 +19,7 @@ public struct ShellResult: Sendable {
     }
 }
 
-public struct ShellError: Error, CustomStringConvertible {
+public struct ShellError: LocalizedError, CustomStringConvertible {
     public let command: String
     public let status: Int32
     public let stderr: String
@@ -27,6 +27,9 @@ public struct ShellError: Error, CustomStringConvertible {
     public var description: String {
         "`\(command)` exited \(status): \(stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
+
+    /// Alerts read `localizedDescription`, which is otherwise "The operation couldn't be completed".
+    public var errorDescription: String? { description }
 }
 
 /// Every subprocess in Swarm goes through here.

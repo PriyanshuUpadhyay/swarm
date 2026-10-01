@@ -221,6 +221,20 @@ struct SessionsTreeTests {
         #expect(tree.project(containing: "/elsewhere") == nil)
     }
 
+    @Test("A path takes the deepest project, not a plain folder above it")
+    func deepestProject() {
+        // The plain folder "/work" holds the repository "/work/app"; a chat in the repo is the repo's.
+        let tree = SessionsTree.build(
+            sessions: [session("app-chat", cwd: "/work/app")], projectPaths: ["/work"],
+            repositoryPathsResolver: { path in
+                path == "/work/app" ? GitRepositoryPaths(gitDirectory: "/work/app/.git", commonDirectory: "/work/app/.git") : nil
+            },
+            worktreeLister: { _ in [WorktreeEntry(path: "/work/app", branch: "main")] }
+        )
+        #expect(tree.project(containing: "/work/app/src")?.path == "/work/app")
+        #expect(tree.project(containing: "/work/notes")?.path == "/work")
+    }
+
     @Test("Two projects with one name show their parent folder")
     func duplicateProjectNames() {
         let tree = build([

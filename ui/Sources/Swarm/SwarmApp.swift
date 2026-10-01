@@ -85,6 +85,7 @@ final class SessionsTreeModel {
             $0.chats.contains { $0.sessions.contains { $0.id == id } }
         }) {
             navigation.select(entry, chat: id)
+            expandProject(of: entry.id)
         }
         agents = id.flatMap { tree.agentsBySession[$0] } ?? []
         commandSource = nil
@@ -310,6 +311,8 @@ final class SessionsTreeModel {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
         let path = try await projects.create(at: url)
+        // A path made again after a delete can still be cached as a plain folder.
+        await discovery.forgetIdentities()
         try await refresh()
         return path
     }

@@ -34,8 +34,8 @@ remembered chat, with its other chats in the top tab strip. Empty workspaces off
 
 Under a project header a row uses the saved name or the folder name (the branch for a main
 checkout); a Pinned row and the palette use `project / workspace-folder`, with chat counts below.
-Saved names show project and branch details; default names show a branch when it differs from
-the folder. Duplicate names show a short distinct path, and hovering reveals the full path.
+Saved names show the branch, and outside a project header the project too; default names show a
+branch when it differs from the folder. Duplicate names show a short distinct path, and hovering reveals the full path.
 Names stay the same when chats or branches change. The green bar means an agent process is alive.
 
 Workspace names, pins, archive state, and selection survive restarts. Archive workspace hides its
