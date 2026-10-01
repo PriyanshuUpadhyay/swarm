@@ -37,6 +37,12 @@ struct SwarmProjectStoreTests {
             Issue.record("a plain folder is a folder"); return
         }
 
+        #expect(await Git.isRepository(at: folder.path) == false)
+        let bare = root.appendingPathComponent("app.git")
+        try await Shell.check("git", ["init", "-q", "--bare", bare.path])
+        // A bare clone is no `.folder` for git, so the app must never offer git init in it.
+        #expect(await Git.isRepository(at: bare.path))
+
         try await Git.initialize(at: folder.path)
         await discovery.forgetIdentities()
         guard case .repository = await discovery.identity(for: folder.path) else {

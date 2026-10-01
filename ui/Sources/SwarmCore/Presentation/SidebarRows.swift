@@ -28,20 +28,16 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
     }
 
     public let kind: Kind
+    /// Unique even when two projects share a path, such as a bare clone kept as a folder.
+    public let id: String
     public let title: String
     /// The most urgent status of the rows; the header shows it while collapsed.
     public let status: AgentStatus?
     public let rows: [SidebarRow]
 
-    public var id: String {
-        switch kind {
-        case .pinned: "pinned"
-        case .project(let path): "project:" + path
-        }
-    }
-
-    init(kind: Kind, title: String, rows: [SidebarRow]) {
+    init(kind: Kind, id: String, title: String, rows: [SidebarRow]) {
         self.kind = kind
+        self.id = id
         self.title = title
         self.status = AgentStatus.aggregate(rows.compactMap(\.status))
         self.rows = rows
@@ -64,14 +60,14 @@ public enum SidebarRows {
             let pinned = visible.filter {
                 navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id)
             }.map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now) }
-            if !pinned.isEmpty { sections.append(SidebarSection(kind: .pinned, title: "Pinned", rows: pinned)) }
+            if !pinned.isEmpty { sections.append(SidebarSection(kind: .pinned, id: "pinned", title: "Pinned", rows: pinned)) }
         }
         let names = Dictionary(grouping: projects.map(\.name), by: { $0 }).mapValues(\.count)
         for project in projects {
-            let members = workspaces.filter { $0.project.path == project.path }
+            let members = workspaces.filter { $0.project.id == project.id }
             let idsByTitle = navigation.idsByTitle(members, inProject: true)
             let rows = visible.filter { entry in
-                entry.project.path == project.path && (showingArchive
+                entry.project.id == project.id && (showingArchive
                     ? navigation.archived.contains(entry.id)
                     : !navigation.pinned.contains(entry.id) && !navigation.archived.contains(entry.id))
             }.map { row($0, idsByTitle: idsByTitle, navigation: navigation, now: now, inProject: true) }
@@ -79,7 +75,9 @@ public enum SidebarRows {
             let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().lastPathComponent
             let title = names[project.name, default: 0] > 1 && !parent.isEmpty
                 ? "\(project.name) — \(parent)" : project.name
-            sections.append(SidebarSection(kind: .project(path: project.path), title: title, rows: rows))
+            sections.append(SidebarSection(
+                kind: .project(path: project.path), id: "project:\(project.id)", title: title, rows: rows
+            ))
         }
         return sections
     }

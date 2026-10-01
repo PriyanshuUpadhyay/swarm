@@ -58,6 +58,11 @@ extension Git {
         _ = try await checkRaw(["init", "-q"], in: path)
     }
 
+    /// Git's own answer, which also knows a bare clone that `repositoryPaths` does not read.
+    public static func isRepository(at path: String) async -> Bool {
+        (try? await runRaw(["rev-parse", "--git-dir"], in: path))?.ok == true
+    }
+
     public static func worktrees(of repo: String) async throws -> [WorktreeEntry] {
         WorktreeListing.parse(try await checkRaw(["worktree", "list", "--porcelain", "-z"], in: repo).stdout)
     }

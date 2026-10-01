@@ -179,7 +179,7 @@ summary.
 The sidebar shows one header per project, with its workspaces under it in last-activity order, and
 Pinned workspaces in their own section at the top (ADR 0037). A header collapses with its chevron and
 then shows its most urgent status. The **+** at the top makes or imports a project (⇧⌘N). A project's
-**+** makes a workspace there (⌘N): a branch from the default branch in a worktree beside the
+**+** makes a workspace there, and ⌘N makes one in the current project: a branch from the default branch in a worktree beside the
 project, then a chat in it. In a repository with no commit yet, the branch starts empty (an orphan
 branch). A plain-folder project offers `git init` first. A workspace row's **+** adds a chat in it
 (⌘T). Empty task worktrees stay in the sidebar with 0 chats. The command palette (⌘K) finds

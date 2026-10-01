@@ -58,6 +58,8 @@ final class SessionsTreeModel {
     var tree = SessionsTree(projects: []) {
         didSet { workspaces = WorkspaceEntry.list(in: tree) }
     }
+    /// False until the first tree loads, so the sidebar does not claim "No projects yet" early.
+    private(set) var loaded = false
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
@@ -251,6 +253,7 @@ final class SessionsTreeModel {
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
             tree = visibleTree
+            self.loaded = true
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
         for chat in settled where chat.id == selectedPendingID {
@@ -299,7 +302,7 @@ final class SessionsTreeModel {
     }
 
     /// `initializeGit` runs `git init` in a plain folder first, after the owner agreed to it.
-    func openProject(_ url: URL, initializeGit: Bool = false) async throws -> String {
+    func openProject(_ url: URL, initializeGit: Bool) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
         if initializeGit {
@@ -451,6 +454,7 @@ private struct SessionsWindow: View {
                 mode: sidebarMode,
                 sections: sidebarSections(showingArchive: showingArchive),
                 collapsed: model.navigation.collapsed,
+                loaded: model.loaded,
                 selectedID: model.navigation.selectedWorkspace,
                 showingArchive: showingArchive,
                 actions: sidebarActions
@@ -971,8 +975,15 @@ private struct SessionsWindow: View {
     private func newWorkspace(in project: ProjectNode) {
         if case .repository = project.id {
             newTaskProject = project
-        } else {
-            gitInitRequest = GitInitRequest(path: project.path, reason: .newWorkspace)
+            return
+        }
+        Task {
+            // `git init` inside a bare clone would hide its worktrees behind a nested repository.
+            if await Git.isRepository(at: project.path) {
+                actionError = "“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."
+            } else {
+                gitInitRequest = GitInitRequest(path: project.path, reason: .newWorkspace)
+            }
         }
     }
 
@@ -1068,7 +1079,7 @@ private struct SessionsWindow: View {
             Text("Rename workspace").font(.title2)
             TextField("Name", text: $workspaceName)
                 .textFieldStyle(.roundedBorder)
-            Text("Leave the name blank to use the folder or branch name.")
+            Text("Leave the name blank to use the default name.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Spacer()
@@ -1077,7 +1088,10 @@ private struct SessionsWindow: View {
                 Button("Save") {
                     if let entry = renameTarget {
                         let name = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        model.navigation.names[entry.id] = name.isEmpty ? nil : name
+                        let shown = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
+                        // Saving the default title unchanged must not freeze it as a custom name.
+                        let unchanged = model.navigation.names[entry.id] == nil && name == shown
+                        model.navigation.names[entry.id] = name.isEmpty || unchanged ? nil : name
                     }
                     renameTarget = nil
                 }
@@ -1115,10 +1129,15 @@ private struct SessionsWindow: View {
             let identity = SwarmSessionDiscovery.identity(
                 for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
             )
-            if case .repository = identity {
-                performProjectAction(url, .open)
-            } else {
-                gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
+            Task {
+                if case .repository = identity {
+                    performProjectAction(url, .open)
+                } else if await Git.isRepository(at: url.path) {
+                    // A bare clone: adding it as today is safe, `git init` in it is not.
+                    performProjectAction(url, .open)
+                } else {
+                    gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
+                }
             }
         }
     }

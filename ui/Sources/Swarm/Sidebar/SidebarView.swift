@@ -42,6 +42,7 @@ struct SidebarView<Details: View>: View {
     let mode: WorkspaceSidebarMode
     let sections: [SidebarSection]
     let collapsed: Set<String>
+    let loaded: Bool
     let selectedID: String?
     let showingArchive: Bool
     let actions: SidebarActions
@@ -93,7 +94,8 @@ struct SidebarView<Details: View>: View {
             .padding(.horizontal, DesignTokens.Spacing.m)
             .padding(.vertical, DesignTokens.Spacing.xs)
             if sections.isEmpty {
-                emptyList
+                // A failed load shows its error on Home; the list stays blank until a tree loads.
+                if loaded { emptyList } else { Spacer() }
             } else {
                 List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
                     ForEach(sections) { section in
@@ -193,6 +195,7 @@ private struct ProjectHeader: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(title)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
             } else {
                 Text(title).lineLimit(1).truncationMode(.middle)
