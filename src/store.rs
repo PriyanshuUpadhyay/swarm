@@ -5,9 +5,10 @@ use rusqlite::{Connection, TransactionBehavior};
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
 
-    connection.execute_batch("PRAGMA journal_mode=WAL;")?;
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    // Before WAL, which writes the db header: another program's db is refused unchanged.
     migrate(&mut connection)?;
+    connection.execute_batch("PRAGMA journal_mode=WAL;")?;
     connection.pragma_update(None, "foreign_keys", true)?;
 
     Ok(connection)
@@ -24,12 +25,21 @@ fn known_version(version: i64) -> bool {
     (1..=MIGRATIONS.len() as i64).contains(&version)
 }
 
-/// Whether `path` is a db that a swarm made: a read-only open shows a known `user_version` and
-/// every table of migration 0001. A home from before the marker is adopted on this (ADR 0035).
+/// Whether `path` is a db that a swarm made: it shows a known `user_version` and every table of
+/// migration 0001. A home from before the marker is adopted on this (ADR 0035). The open is
+/// `immutable`, because a plain read-only open of a WAL db makes `-shm` and `-wal` files in a
+/// folder that may not be swarm's. It skips changes still in a `-wal`; swarm's schema was
+/// checkpointed long ago, and a miss is a refusal whose message gives the fix.
 pub fn made_by_swarm(path: &Path) -> bool {
-    let Ok(connection) =
-        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-    else {
+    let escaped = path
+        .to_string_lossy()
+        .replace('%', "%25")
+        .replace('?', "%3f")
+        .replace('#', "%23");
+    let Ok(connection) = Connection::open_with_flags(
+        format!("file:{escaped}?mode=ro&immutable=1"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    ) else {
         return false;
     };
     let version = connection.query_row("PRAGMA user_version", [], |row| row.get(0));
@@ -1595,6 +1605,33 @@ mod tests {
             .execute_batch("PRAGMA user_version = 5")
             .unwrap();
         assert!(open(&db).is_err());
+    }
+
+    /// The probe that decides adoption writes nothing, also for a WAL db, which a read-only
+    /// open would give `-shm` and `-wal` files (ADR 0035).
+    #[test]
+    fn the_adoption_probe_leaves_another_programs_wal_database_as_it_was() {
+        let root = temp_root("other-program-wal");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE bookmark (url TEXT);")
+            .unwrap();
+        let listing = || {
+            let mut names: Vec<_> = std::fs::read_dir(&root)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let (names, bytes) = (listing(), std::fs::read(&db).unwrap());
+
+        assert!(!made_by_swarm(&db));
+        assert_eq!(listing(), names);
+        assert!(open(&db).is_err());
+        assert_eq!(std::fs::read(&db).unwrap(), bytes);
     }
 
     #[test]

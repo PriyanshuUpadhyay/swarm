@@ -4,13 +4,29 @@
 const CONTEXT: usize = 3;
 
 /// The unified diff of `old` and `new` with three lines of context, or "" when they are equal.
-/// ponytail: the longest-common-subsequence table is O(lines²); hook config files are small. A
-/// change only to the final newline shows no hunk.
+/// ponytail: the longest-common-subsequence table is O(lines²) over the lines between the equal
+/// start and end; a hook plan only adds, so that middle is small. A change only to the final
+/// newline shows no hunk.
 pub fn unified(path: &str, old: &str, new: &str) -> String {
     if old == new {
         return String::new();
     }
-    let (old, new): (Vec<&str>, Vec<&str>) = (old.lines().collect(), new.lines().collect());
+    let (all_old, all_new): (Vec<&str>, Vec<&str>) = (old.lines().collect(), new.lines().collect());
+    let start = all_old
+        .iter()
+        .zip(&all_new)
+        .take_while(|(a, b)| a == b)
+        .count();
+    let end = all_old[start..]
+        .iter()
+        .rev()
+        .zip(all_new[start..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (old, new) = (
+        &all_old[start..all_old.len() - end],
+        &all_new[start..all_new.len() - end],
+    );
     // common[i][j] is the length of the longest common subsequence of old[i..] and new[j..].
     let mut common = vec![vec![0usize; new.len() + 1]; old.len() + 1];
     for i in (0..old.len()).rev() {
@@ -21,7 +37,7 @@ pub fn unified(path: &str, old: &str, new: &str) -> String {
             };
         }
     }
-    let mut lines = Vec::new();
+    let mut lines: Vec<(char, &str)> = all_old[..start].iter().map(|line| (' ', *line)).collect();
     let (mut i, mut j) = (0, 0);
     while i < old.len() || j < new.len() {
         if i < old.len() && j < new.len() && old[i] == new[j] {
@@ -36,6 +52,11 @@ pub fn unified(path: &str, old: &str, new: &str) -> String {
             j += 1;
         }
     }
+    lines.extend(
+        all_old[all_old.len() - end..]
+            .iter()
+            .map(|line| (' ', *line)),
+    );
 
     let mut out = format!("--- {path}\n+++ {path}\n");
     let changed: Vec<usize> = (0..lines.len()).filter(|&k| lines[k].0 != ' ').collect();
@@ -56,12 +77,16 @@ pub fn unified(path: &str, old: &str, new: &str) -> String {
             count(&lines[start..end], '+'),
             count(&lines[start..end], '-'),
         );
-        // An empty side starts at the line before it, as `diff -u` writes it.
-        let first = |before: usize, count: usize| before + usize::from(count > 0);
+        // As `diff -u` writes a range: an empty side starts at the line before it, and a count of
+        // one is left out.
+        let range = |before: usize, count: usize| match count {
+            1 => format!("{}", before + 1),
+            _ => format!("{},{count}", before + usize::from(count > 0)),
+        };
         out += &format!(
-            "@@ -{},{old_count} +{},{new_count} @@\n",
-            first(old_before, old_count),
-            first(new_before, new_count)
+            "@@ -{} +{} @@\n",
+            range(old_before, old_count),
+            range(new_before, new_count)
         );
         for (mark, text) in &lines[start..end] {
             out += &format!("{mark}{text}\n");
@@ -104,8 +129,23 @@ mod tests {
     /// The same diff as `diff -u` for a mixed change, so the app's diff view can parse it.
     #[test]
     fn matches_the_system_diff() {
-        let old = "model = \"o3\"\n[a]\nx = 1\n[b]\ny = 2\nz = 3\n";
-        let new = "model = \"o3\"\n[a]\nx = 2\n[b]\ny = 2\n[c]\nw = 1\n";
+        for (old, new) in [
+            (
+                "model = \"o3\"\n[a]\nx = 1\n[b]\ny = 2\nz = 3\n",
+                "model = \"o3\"\n[a]\nx = 2\n[b]\ny = 2\n[c]\nw = 1\n",
+            ),
+            ("model = \"o3\"\n", "model = \"o3\"\n\n[a]\nx = 1\n"),
+            ("a\nb\nc\n", "b\n"),
+        ] {
+            assert_eq!(
+                unified("f", old, new),
+                system_diff(old, new),
+                "{old:?} {new:?}"
+            );
+        }
+    }
+
+    fn system_diff(old: &str, new: &str) -> String {
         let dir = std::env::temp_dir().join(format!("swarm-diff-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("old"), old).unwrap();
@@ -116,9 +156,6 @@ mod tests {
             .output()
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(
-            unified("f", old, new),
-            String::from_utf8(system.stdout).unwrap()
-        );
+        String::from_utf8(system.stdout).unwrap()
     }
 }

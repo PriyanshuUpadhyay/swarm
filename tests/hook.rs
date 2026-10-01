@@ -263,7 +263,7 @@ fn the_setup_plan_shows_each_change_and_writes_nothing() {
     let codex = home.join(".codex/config.toml").display().to_string();
     let agy = home.join(".gemini/config/hooks.json").display().to_string();
     for added in [
-        format!("+++ {codex}\n@@ -1,1 +1,"),
+        format!("+++ {codex}\n@@ -1 +1,"),
         "+[hooks.state.\"/<session-flags>/config.toml:stop:1:0\"]\n".into(),
         format!("+++ {agy}\n@@ -0,0 +1,"),
         "+  \"swarm\": {\n".into(),

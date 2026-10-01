@@ -633,7 +633,7 @@ fn hook_plan_json(plans: &[swarm::bus::HookFilePlan]) -> serde_json::Value {
         "files": plans
             .iter()
             .filter(|plan| plan.after != plan.before)
-            .map(|plan| serde_json::json!({"path": plan.path, "diff": hook_diff(plan)}))
+            .map(|plan| serde_json::json!({"path": plan.path.to_string_lossy(), "diff": hook_diff(plan)}))
             .collect::<Vec<_>>(),
         "conflicts": plans.iter().flat_map(|plan| &plan.conflicts).collect::<Vec<_>>(),
     })

@@ -227,7 +227,7 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 /// swarm adds nothing to it (ADR 0035); a second table for it would make the file unreadable.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
     let path = home.join("config.toml");
-    let (existing, mut config) = read_codex_config(&path)?;
+    let (_, mut config) = read_codex_config(&path)?;
     let dir = cwd.to_string_lossy();
     let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
         format!(
@@ -241,11 +241,7 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
     toml_table(projects, &dir, false)
         .expect("a missing key becomes a table")
         .insert("trust_level", toml_edit::value("trusted"));
-    let text = config.to_string();
-    if text != existing {
-        write_text(&path, &text)?;
-    }
-    Ok(())
+    write_text(&path, &config.to_string())
 }
 
 /// A Codex `config.toml` as text and as TOML.
@@ -334,9 +330,12 @@ pub struct HookFilePlan {
 }
 
 impl HookFilePlan {
-    /// Write the planned text. The caller checks first that no file of the plan has a conflict,
-    /// because setup writes no file while any conflict stands. Returns whether the file changed.
+    /// Write the planned text. Returns whether the file changed. The caller checks every file of
+    /// the plan first, because setup writes no file while any conflict stands.
     pub fn apply(&self) -> Result<bool, String> {
+        if !self.conflicts.is_empty() {
+            return Err(format!("swarm: {} has a conflict", self.path.display()));
+        }
         if self.after == self.before {
             return Ok(false);
         }
@@ -344,8 +343,8 @@ impl HookFilePlan {
     }
 }
 
-/// A digest of each planned file's path and text, so apply refuses a file that changed after the
-/// owner saw the plan.
+/// A digest of each planned file's path, text, and planned text, so apply refuses a file that
+/// changed after the owner saw the plan, and a swarm whose entries differ from the plan's.
 pub fn hook_plan_digest(plans: &[HookFilePlan]) -> String {
     use sha2::Digest;
     let mut digest = sha2::Sha256::new();
@@ -353,6 +352,8 @@ pub fn hook_plan_digest(plans: &[HookFilePlan]) -> String {
         digest.update(plan.path.to_string_lossy().as_bytes());
         digest.update([0]);
         digest.update(plan.before.as_bytes());
+        digest.update([0]);
+        digest.update(plan.after.as_bytes());
         digest.update([0]);
     }
     digest
@@ -669,8 +670,15 @@ fn json_text(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n"
 }
 
+/// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
+/// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
 fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
+    let target = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => std::fs::canonicalize(path).map_err(fail)?,
+        _ => path.to_path_buf(),
+    };
+    let path = target.as_path();
     let dir = path
         .parent()
         .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
@@ -1248,8 +1256,21 @@ mod tests {
         assert_eq!(plan.conflicts.len(), 1);
         assert_eq!(plan.conflicts[0].found, r#"{"Stop":[]}"#);
         assert_eq!(plan.after, owners);
+        assert!(plan.apply().is_err());
         assert!(set_up(Ok(plan)).is_err());
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), owners);
+
+        // Consent covers the planned text too, so a swarm whose entries differ is refused.
+        let planned = |after: &str| HookFilePlan {
+            path: hooks.clone(),
+            before: owners.into(),
+            after: after.into(),
+            conflicts: Vec::new(),
+        };
+        assert_ne!(
+            hook_plan_digest(&[planned("{}")]),
+            hook_plan_digest(&[planned("{\"swarm\": {}}")])
+        );
 
         std::fs::write(&hooks, "{ not json").unwrap();
         assert!(agy_hook_plan(&hooks).is_err());
@@ -1312,6 +1333,40 @@ mod tests {
             Some("trusted")
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A Codex config that the owner links into dotfiles stays a link, and the change lands in
+    /// the file it points to (ADR 0035: a linked file is judged by its target).
+    #[test]
+    fn a_linked_codex_config_stays_a_link_and_its_target_gets_the_change() {
+        let root = std::env::temp_dir().join(format!("swarm-trust-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dotfiles = root.join("dotfiles/config.toml");
+        let home = root.join("codex");
+        std::fs::create_dir_all(dotfiles.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(&dotfiles, "model = \"o3\"\n").unwrap();
+        let config = home.join("config.toml");
+        std::os::unix::fs::symlink(&dotfiles, &config).unwrap();
+        let linked = || {
+            std::fs::symlink_metadata(&config)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        };
+
+        ensure_codex_trust(&home, std::path::Path::new("/one")).unwrap();
+        assert!(linked());
+        assert!(
+            std::fs::read_to_string(&dotfiles)
+                .unwrap()
+                .contains("[projects.\"/one\"]")
+        );
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(linked());
+        assert!(codex_hooks_trusted(&home, &entries));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn strings(args: &[&str]) -> Vec<String> {
