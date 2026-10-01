@@ -786,8 +786,9 @@ fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
     }
 }
 
-/// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
-/// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
+/// Replace `path` in one rename, with the old file's permissions; a hard-linked TOML file is written
+/// in place. A linked file is replaced at its target, because a rename onto the link itself would
+/// replace the owner's link (ADR 0035).
 /// `before` is the text the edit was made from ("" for a missing file); a file that another
 /// program changed since then is refused, not written over, and a file that already holds `text`
 /// is done, as when an earlier plan of the same setup wrote it through another link.
@@ -803,9 +804,16 @@ fn write_text(path: &std::path::Path, before: &str, text: &str) -> Result<(), St
     if now != before {
         return Err(changed_error(path));
     }
-    // A rename would split a hard-linked file from the owner's other name, so it is written in
-    // place, as the base did.
-    if std::fs::metadata(path).is_ok_and(|meta| std::os::unix::fs::MetadataExt::nlink(&meta) > 1) {
+    // A rename would split a hard-linked Codex config.toml from the owner's other name, so it is
+    // written in place, as the base did. A JSON file is renamed, as at the base, because a running
+    // CLI may read `~/.claude.json` at any moment.
+    let toml = path
+        .extension()
+        .is_some_and(|extension| extension == "toml");
+    if toml
+        && std::fs::metadata(path)
+            .is_ok_and(|meta| std::os::unix::fs::MetadataExt::nlink(&meta) > 1)
+    {
         return std::fs::write(path, text).map_err(fail);
     }
     let dir = path
@@ -1678,6 +1686,14 @@ mod tests {
         );
         assert_eq!((a.ino(), a.nlink()), (b.ino(), 2));
         assert!(std::fs::read_to_string(&dotfile).unwrap().contains("/one"));
+        // A JSON file is still replaced in one rename, as at the base, because a running CLI may
+        // read `~/.claude.json` at any moment.
+        let (claude, copy) = (root.join(".claude.json"), root.join("claude-copy.json"));
+        std::fs::write(&copy, "{}\n").unwrap();
+        std::fs::hard_link(&copy, &claude).unwrap();
+        assert!(ensure_claude_trust(&claude, std::path::Path::new("/one")).unwrap());
+        assert_eq!(std::fs::metadata(&claude).unwrap().nlink(), 1);
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "{}\n");
         std::fs::remove_dir_all(&root).unwrap();
     }
 
