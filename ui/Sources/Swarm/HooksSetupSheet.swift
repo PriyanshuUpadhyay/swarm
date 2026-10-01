@@ -85,10 +85,9 @@ struct HooksSetupSheet: View {
                 diffFailed = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
-                let summary = plan.isSetUp
-                    ? "Swarm's hooks are already set up."
-                    : "\(plan.files.count) files to change, \(plan.conflicts.count) conflicts."
-                Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
+                Self.announce([failure, plan.summary].compactMap { $0 }.joined(separator: " "))
+            } catch is CancellationError {
+                // The sheet closed or a newer plan run replaced this one.
             } catch {
                 phase = .failed(Self.message(error))
                 Self.announce(Self.message(error))

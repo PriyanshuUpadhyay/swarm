@@ -203,6 +203,10 @@ struct SwarmSessionDetailTests {
         #expect(!decoded.isSetUp && !decoded.canApply)
         #expect(SwarmHooksPlan(digest: "d", files: decoded.files, conflicts: []).canApply)
         #expect(SwarmHooksPlan(digest: "d", files: [], conflicts: []).isSetUp)
+        #expect(decoded.summary == "1 file to change, 1 conflict.")
+        #expect(SwarmHooksPlan(digest: "d", files: decoded.files + decoded.files, conflicts: []).summary
+            == "2 files to change, 0 conflicts.")
+        #expect(SwarmHooksPlan(digest: "d", files: [], conflicts: []).summary == "Swarm's hooks are already set up.")
         let plusLine = SwarmHooksPlan.File(path: "/f", diff: "--- /f\n+++ /f\n@@ -0,0 +1 @@\n+++ x\n")
         #expect(plusLine.added == 1 && plusLine.removed == 0)
 

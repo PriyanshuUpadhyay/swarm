@@ -139,6 +139,13 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     public var isSetUp: Bool { files.isEmpty && conflicts.isEmpty }
     /// Setup writes no file while any conflict stands.
     public var canApply: Bool { conflicts.isEmpty && !files.isEmpty }
+    /// What VoiceOver hears when the plan loads.
+    public var summary: String {
+        if isSetUp { return "Swarm's hooks are already set up." }
+        let fileCount = files.count == 1 ? "1 file" : "\(files.count) files"
+        let conflictCount = conflicts.count == 1 ? "1 conflict" : "\(conflicts.count) conflicts"
+        return "\(fileCount) to change, \(conflictCount)."
+    }
 }
 
 public struct SwarmAgentList: Sendable, Hashable, Codable {

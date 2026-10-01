@@ -429,6 +429,9 @@ pub fn codex_hook_plan(
     } else {
         before.clone()
     };
+    if after != before {
+        refuse_read_only(&path)?;
+    }
     Ok(HookFilePlan {
         path,
         before,
@@ -696,6 +699,16 @@ fn json_text(value: &serde_json::Value) -> String {
 
 /// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
 /// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
+/// A read-only file is the owner's lock, and a rename would replace it anyway, so swarm refuses it.
+fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.permissions().readonly() => {
+            Err(format!("swarm: {} is read-only", path.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
     let target = match std::fs::symlink_metadata(path) {
@@ -722,6 +735,7 @@ fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
         _ => path.to_path_buf(),
     };
     let path = target.as_path();
+    refuse_read_only(path)?;
     let dir = path
         .parent()
         .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
@@ -834,6 +848,9 @@ pub fn agy_hook_plan(path: &std::path::Path) -> Result<HookFilePlan, String> {
             before.clone()
         }
     };
+    if after != before {
+        refuse_read_only(path)?;
+    }
     Ok(HookFilePlan {
         path: path.to_path_buf(),
         before,
@@ -1458,6 +1475,30 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&empty).unwrap(), "");
         assert!(ensure_agy_trust(&missing, std::path::Path::new("/x")).unwrap());
         assert!(set_up(agy_hook_plan(&root.join("hooks.json"))).unwrap());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_read_only_file_is_refused_and_stays_as_it_was() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("swarm-read-only-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (config, hooks) = (root.join("config.toml"), root.join("hooks.json"));
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        for (file, text) in [(&config, "model = \"o4\"\n"), (&hooks, "{}\n")] {
+            std::fs::write(file, text).unwrap();
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o444)).unwrap();
+        }
+        assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
+        assert!(codex_hook_plan(&root, &entries).is_err());
+        assert!(agy_hook_plan(&hooks).is_err());
+        assert!(ensure_agy_trust(&hooks, std::path::Path::new("/one")).is_err());
+        for (file, text) in [(&config, "model = \"o4\"\n"), (&hooks, "{}\n")] {
+            assert_eq!(std::fs::read_to_string(file).unwrap(), text);
+            let mode = std::fs::metadata(file).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o444);
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 
