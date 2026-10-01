@@ -45,7 +45,10 @@ fn env_var(name: &str) -> Result<String, String> {
 }
 
 fn session_id() -> Result<String, String> {
-    valid_session_id(&env_var("SWARM_SESSION_ID")?)
+    match env::var("SWARM_SESSION_ID") {
+        Ok(session) => valid_session_id(&session),
+        Err(_) => Ok(identity()?.0),
+    }
 }
 
 fn valid_session_id(id: &str) -> Result<String, String> {
@@ -173,11 +176,33 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn adapter_name() -> String {
-    env::var("SWARM_ADAPTER").unwrap_or("tmux".into())
+    swarm::host::adapter(|name| env::var(name).ok())
 }
 
+/// A pane that `swarm launch` made carries its ids in its env. A chair keeps none: `swarm session
+/// new` records the chair's pane, and the chair is found from that pane.
 fn identity() -> Result<(String, String), String> {
-    Ok((session_id()?, env_var("SWARM_AGENT_ID")?))
+    if let Ok(session) = env::var("SWARM_SESSION_ID") {
+        return Ok((valid_session_id(&session)?, env_var("SWARM_AGENT_ID")?));
+    }
+    let found = own_pane().and_then(|pane| {
+        let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+        swarm::store::orchestrator_at_pane(&connection, &pane)
+    });
+    match found {
+        Ok(Some(identity)) => Ok(identity),
+        _ => Err("swarm: this pane has no swarm session; run `swarm session new lane`".into()),
+    }
+}
+
+/// The pane this process runs in, as the adapter's `self` verb reports it.
+fn own_pane() -> Result<String, Box<dyn std::error::Error>> {
+    let pane =
+        swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?.run("self", &[])?;
+    match pane.trim().is_empty() {
+        true => Err("swarm: the adapter gave no pane".into()),
+        false => Ok(pane),
+    }
 }
 
 fn run_tool(
@@ -1390,18 +1415,32 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     if let Some((talk_mode, chair)) = session_new {
         let adapter = adapter_name();
-        println!(
-            "{}",
-            swarm::store::create_session(
+        let session = swarm::store::create_session(
+            &connection,
+            talk_mode,
+            &env::current_dir()?,
+            chair
+                .as_ref()
+                .map(|(provider, id)| (provider.as_str(), id.as_str())),
+            Some(&adapter),
+        )?;
+        // A chair in a Herdr or tmux pane is registered here, so it needs no ids of its own. The
+        // app's `tmux-solo` chair is launched as an agent instead. A child pane already has an
+        // agent id, and registering it would take its pane from its own session.
+        if env::var_os("SWARM_AGENT_ID").is_none()
+            && matches!(adapter.as_str(), "herdr" | "tmux")
+            && own_pane().is_ok()
+        {
+            add_agent(
                 &connection,
-                talk_mode,
-                &env::current_dir()?,
-                chair
-                    .as_ref()
-                    .map(|(provider, id)| (provider.as_str(), id.as_str())),
-                Some(&adapter),
-            )?
-        );
+                &root,
+                &adapter,
+                &session,
+                "orchestrator",
+                "orchestrator",
+            )?;
+        }
+        println!("{session}");
         return Ok(());
     }
     if let [cmd, sub, value] = args

@@ -418,6 +418,27 @@ pub fn set_pane(
     Ok(())
 }
 
+/// The session and orchestrator whose pane this is. `set_pane` keeps an orchestrator's pane in one
+/// session of an adapter, so only a pane shared by two adapters needs the newest-session order.
+pub fn orchestrator_at_pane(
+    connection: &Connection,
+    pane_id: &str,
+) -> Result<Option<(String, String)>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT agent.session_id, agent.id FROM agent
+             JOIN session ON session.id = agent.session_id
+             WHERE agent.pane_id = ?1
+               AND (agent.role = 'orchestrator' OR agent.id = 'orchestrator')
+               AND session.archived_at IS NULL
+             ORDER BY session.created_at DESC, session.id DESC LIMIT 1",
+            [pane_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
 pub fn pane_of(
     connection: &Connection,
     session_id: &str,
@@ -1103,6 +1124,46 @@ mod tests {
                 .as_deref(),
             Some("%2")
         );
+    }
+
+    #[test]
+    fn a_chair_pane_finds_its_newest_session_and_no_archived_one() {
+        let mut connection = open(Path::new(":memory:")).unwrap();
+        let older = create_session(
+            &connection,
+            "lane",
+            Path::new("/older"),
+            None,
+            Some("herdr"),
+        )
+        .unwrap();
+        let newer = create_session(
+            &connection,
+            "lane",
+            Path::new("/newer"),
+            None,
+            Some("herdr"),
+        )
+        .unwrap();
+        for session in [&older, &newer] {
+            add_agent(&connection, session, ORCHESTRATOR, "orchestrator").unwrap();
+        }
+        add_agent(&connection, &older, "worker", "code.complex").unwrap();
+        set_pane(&connection, &older, "worker", "wK:p2").unwrap();
+        set_pane(&connection, &older, ORCHESTRATOR, "wK:p1").unwrap();
+        assert_eq!(
+            orchestrator_at_pane(&connection, "wK:p1").unwrap(),
+            Some((older.clone(), ORCHESTRATOR.to_string()))
+        );
+        assert_eq!(orchestrator_at_pane(&connection, "wK:p2").unwrap(), None);
+
+        set_pane(&connection, &newer, ORCHESTRATOR, "wK:p1").unwrap();
+        assert_eq!(
+            orchestrator_at_pane(&connection, "wK:p1").unwrap(),
+            Some((newer.clone(), ORCHESTRATOR.to_string()))
+        );
+        archive_sessions(&mut connection, &[newer]).unwrap();
+        assert_eq!(orchestrator_at_pane(&connection, "wK:p1").unwrap(), None);
     }
 
     #[test]
