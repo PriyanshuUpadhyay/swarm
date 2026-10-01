@@ -464,8 +464,11 @@ private struct SessionsWindow: View {
             // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
             // finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
-            // New Chat and the profiles page then open on these reads instead of waiting.
+            // Switch model and the profiles page then open on these reads instead of waiting.
             await SwarmProfileCatalog.shared.prefetch()
+            for provider in ModelSwitchChoice.switchable {
+                Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
+            }
             guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
                   let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
             showingHooksSetup = true
@@ -508,9 +511,8 @@ private struct SessionsWindow: View {
         }
         .sheet(item: $switchTarget) { target in
             let row = target.row
-            NewChatSheet(
-                directory: row.session.cwd, isSwitch: true, initialProvider: row.provider,
-                initialModel: target.model,
+            SwitchModelSheet(
+                directory: row.session.cwd, currentProvider: row.provider, currentModel: target.model,
                 launch: { plan, progress in try await model.switchChat(plan, from: row, onProgress: progress) }
             ) { _ in
                 Task { try? await model.refresh() }
