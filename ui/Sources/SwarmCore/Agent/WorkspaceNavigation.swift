@@ -30,8 +30,22 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var pinned: Set<String> = []
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
+    /// Project paths whose sidebar section is collapsed.
+    public var collapsed: Set<String> = []
 
     public init() {}
+
+    // A synthesized decoder throws for a missing key even when the property has a default, and
+    // `load()` then drops every saved pin and name. A key added later must decode as absent.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
+        selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
+        pinned = try container.decodeIfPresent(Set<String>.self, forKey: .pinned) ?? []
+        archived = try container.decodeIfPresent(Set<String>.self, forKey: .archived) ?? []
+        names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
+        collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
+    }
 
     public func title(for entry: WorkspaceEntry) -> String {
         if let name = customName(for: entry) { return name }
