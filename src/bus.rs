@@ -223,29 +223,57 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 }
 
 /// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
-/// Keep the existing file byte-identical when the project table is already present.
+/// The file is edited as TOML, so a project the owner wrote in any form counts as present and
+/// swarm adds nothing to it (ADR 0035); a second table for it would make the file unreadable.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
     let path = home.join("config.toml");
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let table = format!(
-        "[projects.{}]",
-        serde_json::to_string(&cwd.to_string_lossy()).expect("string serialization cannot fail")
-    );
-    if existing.lines().any(|line| line.trim() == table) {
+    let (existing, mut config) = read_codex_config(&path)?;
+    let dir = cwd.to_string_lossy();
+    let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
+        format!(
+            "{} has a projects that is not a table; trust {dir} by hand",
+            path.display()
+        )
+    })?;
+    if projects.contains_key(&dir) {
         return Ok(());
     }
-    let mut addition = String::new();
-    if !existing.is_empty() && !existing.ends_with('\n') {
-        addition.push('\n');
+    toml_table(projects, &dir, false)
+        .expect("a missing key becomes a table")
+        .insert("trust_level", toml_edit::value("trusted"));
+    write_codex_config(home, &path, &existing, &config.to_string()).map(drop)
+}
+
+/// A Codex `config.toml` as text and as TOML. Only a missing file is empty: a file that cannot be
+/// read, such as one that is not UTF-8, would be written over whole.
+fn read_codex_config(path: &std::path::Path) -> Result<(String, toml_edit::DocumentMut), String> {
+    let existing = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    let config = existing.parse().map_err(|error| {
+        format!(
+            "{} is not valid TOML, so swarm does not edit it: {error}",
+            path.display()
+        )
+    })?;
+    Ok((existing, config))
+}
+
+/// Write `text` when it differs from `existing`. Returns whether the file changed.
+fn write_codex_config(
+    home: &std::path::Path,
+    path: &std::path::Path,
+    existing: &str,
+    text: &str,
+) -> Result<bool, String> {
+    if text == existing {
+        return Ok(false);
     }
-    addition.push_str(&format!("{table}\ntrust_level = \"trusted\"\n"));
     std::fs::create_dir_all(home).map_err(|error| format!("cannot create Codex home: {error}"))?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, addition.as_bytes()))
-        .map_err(|error| format!("cannot update Codex config: {error}"))
+    std::fs::write(path, text).map_err(|error| format!("cannot update Codex config: {error}"))?;
+    Ok(true)
 }
 
 /// The Codex `hooks.state` key and trusted hash of each state hook `swarm launch` passes with
@@ -309,19 +337,7 @@ pub fn ensure_codex_hook_trust(
     entries: &[(String, String)],
 ) -> Result<bool, String> {
     let path = home.join("config.toml");
-    // Only a missing file is empty: a file that cannot be read, such as one that is not UTF-8,
-    // would be written over whole.
-    let existing = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
-    };
-    let mut config: toml_edit::DocumentMut = existing.parse().map_err(|error| {
-        format!(
-            "{} is not valid TOML, so swarm does not edit it: {error}",
-            path.display()
-        )
-    })?;
+    let (existing, mut config) = read_codex_config(&path)?;
     let not_table = |name: &str| {
         format!(
             "{} has a {name} that is not a table; set its trusted_hash by hand",
@@ -349,13 +365,7 @@ pub fn ensure_codex_hook_trust(
             }
         }
     }
-    let text = config.to_string();
-    if text == existing {
-        return Ok(false);
-    }
-    std::fs::create_dir_all(home).map_err(|error| format!("cannot create Codex home: {error}"))?;
-    std::fs::write(&path, text).map_err(|error| format!("cannot update Codex config: {error}"))?;
-    Ok(true)
+    write_codex_config(home, &path, &existing, &config.to_string())
 }
 
 /// Whether a Codex home's `config.toml` trusts every entry.
@@ -1154,6 +1164,44 @@ mod tests {
                 .matches("trust_level = \"trusted\"")
                 .count(),
             2
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The owner may have written the project in any TOML form. A second table for it would make
+    /// the whole file unreadable to Codex, so swarm adds nothing (ADR 0035).
+    #[test]
+    fn codex_trust_keeps_a_project_in_any_form_and_a_broken_file() {
+        let root = std::env::temp_dir().join(format!("swarm-trust-forms-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let config = root.join("config.toml");
+        for owner in [
+            "[projects]\n\"/one\" = { trust_level = \"trusted\" }\n",
+            "projects.\"/one\".trust_level = \"untrusted\"\n",
+            "[projects.'/one']\ntrust_level = \"trusted\"\n",
+            "projects = { \"/one\" = { trust_level = \"trusted\" } }\n",
+            "not toml = = \n",
+        ] {
+            std::fs::write(&config, owner).unwrap();
+            let result = ensure_codex_trust(&root, std::path::Path::new("/one"));
+            assert_eq!(std::fs::read_to_string(&config).unwrap(), owner);
+            assert_eq!(result.is_err(), owner.starts_with("not toml"), "{owner}");
+        }
+        std::fs::write(
+            &config,
+            "projects = { \"/one\" = { trust_level = \"trusted\" } }\n",
+        )
+        .unwrap();
+        ensure_codex_trust(&root, std::path::Path::new("/two")).unwrap();
+        let added: toml_edit::DocumentMut =
+            std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        assert_eq!(
+            added["projects"]["/one"]["trust_level"].as_str(),
+            Some("trusted")
+        );
+        assert_eq!(
+            added["projects"]["/two"]["trust_level"].as_str(),
+            Some("trusted")
         );
         std::fs::remove_dir_all(root).unwrap();
     }
