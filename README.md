@@ -129,7 +129,7 @@ tab. If the old pane has closed, the new chair receives recent messages and make
 summary.
 
 For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
-project, then starts a chat there. Empty task worktrees stay available from the project view.
+project, then starts a chat there. Empty task worktrees stay in the sidebar with 0 chats.
 Plain folders keep the New chat action without Git worktrees.
 The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
 finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear

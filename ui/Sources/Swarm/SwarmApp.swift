@@ -119,7 +119,9 @@ final class SessionsTreeModel {
     /// A chat in a hub root (a folder that holds `.bare`) lists under the hub's `.bare` path, as
     /// `SessionsTree.build` files it; that path is the start's workspace before the tree has it.
     private static func hubWorkspace(for directory: String) -> String? {
-        guard let common = Git.repositoryPaths(in: directory)?.commonDirectory,
+        // Only the hub root holds `.bare`; a worktree of the hub has a `.git` file instead.
+        guard FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".bare")),
+              let common = Git.repositoryPaths(in: directory)?.commonDirectory,
               URL(fileURLWithPath: common).lastPathComponent == ".bare" else { return nil }
         return common
     }
@@ -386,7 +388,9 @@ private struct SessionsWindow: View {
     @State private var panes = AgentPaneStore()
     @State private var newTaskProject: ProjectNode?
     @State private var switchTarget: SwitchTarget?
-    @State private var selectedProjectID: SwarmPathIdentity?
+    /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Open Project skips its
+    /// chat only when the owner went elsewhere, not when a refresh changed the selection.
+    @State private var ownerMoves = 0
     @State private var actionError: String?
     @State private var projectAction: String?
     @State private var showingPalette = false
@@ -507,7 +511,6 @@ private struct SessionsWindow: View {
             NSApp.keyWindow?.makeFirstResponder(nil)
             panes.stop(keepingSession: id)
             documentVisible = false
-            if id != nil { selectedProjectID = nil }
         }
         .background(WindowFrameRestorer())
         .task {
@@ -637,12 +640,6 @@ private struct SessionsWindow: View {
                 Button("New chat") { startChat(in: workspace.id) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let project = model.tree.projects.first(where: { $0.id == selectedProjectID }) {
-            ProjectHome(
-                project: project,
-                onNewChat: { startChat(in: $0) },
-                onNewTask: { newTaskProject = project }
-            )
         } else {
             AgentProfilesHome(
                 sessionsError: model.error,
@@ -685,11 +682,11 @@ private struct SessionsWindow: View {
                     model.navigation.archived.remove(id)
                     showingArchive = false
                 }
-                selectedProjectID = nil
+                ownerMoves += 1
                 model.selectWorkspace(entry)
             },
             home: {
-                selectedProjectID = nil
+                ownerMoves += 1
                 showingArchive = false
                 model.showHome()
             },
@@ -747,6 +744,7 @@ private struct SessionsWindow: View {
         case "workspace":
             sidebarActions.select(id)
         case "chat":
+            ownerMoves += 1
             model.select(SwarmSessionID(id))
         case "agent":
             if let session = model.selectedSession?.session {
@@ -818,7 +816,7 @@ private struct SessionsWindow: View {
                 let listed = ids.compactMap { id in model.workspaces.first { $0.id == id } }
                 let current = listed.firstIndex { $0.id == model.selectedWorkspace?.id }
                 guard let index = PaneSearch.step(current: current, count: listed.count, delta: delta) else { return }
-                selectedProjectID = nil
+                ownerMoves += 1
                 model.selectWorkspace(listed[index])
             },
             selectTab: { number in
@@ -939,6 +937,7 @@ private struct SessionsWindow: View {
         // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
         // not hide a file preview; hide it here.
         documentVisible = false
+        ownerMoves += 1
         if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
             model.selectPending(start.id)
         } else {
@@ -999,7 +998,7 @@ private struct SessionsWindow: View {
 
     /// Every New chat entry ends here (ADR 0035).
     private func startChat(in directory: String) {
-        selectedProjectID = nil
+        ownerMoves += 1
         documentVisible = false
         model.newChat(in: directory)
     }
@@ -1031,12 +1030,12 @@ private struct SessionsWindow: View {
     private func performProjectAction(_ url: URL, create: Bool) {
         guard projectAction == nil else { return }
         projectAction = create ? "Creating project…" : "Opening project…"
-        let selection = model.selectionRevision
+        let moves = ownerMoves
         Task {
             defer { projectAction = nil }
             do {
                 let path = try await (create ? model.createProject(at: url) : model.openProject(url))
-                guard model.selectionRevision == selection else { return }
+                guard ownerMoves == moves else { return }
                 // The kept path is the project's launch folder. The tree can still lack the
                 // project when a later refresh overtook this one, so it is not read here.
                 startChat(in: path)
@@ -1075,44 +1074,6 @@ private struct WorkspacePanels: View {
             if mode == .files { visitedFiles = true }
             if mode.isDetails { visitedDetails = true; detailsMode = mode }
         }
-    }
-}
-
-private struct ProjectHome: View {
-    let project: ProjectNode
-    let onNewChat: (String) -> Void
-    let onNewTask: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text(project.name).font(.largeTitle.bold())
-            Text(project.launchDirectory).foregroundStyle(.secondary).textSelection(.enabled)
-            HStack {
-                Button("New chat") { onNewChat(project.launchDirectory) }
-                if case .repository = project.id {
-                    Button("New workspace…", action: onNewTask)
-                }
-            }
-            if case .repository = project.id {
-                Text("Worktrees").font(.headline)
-                ScrollView {
-                    LazyVStack(spacing: DesignTokens.Spacing.m) {
-                        ForEach(project.workspaces) { workspace in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(workspace.name)
-                                    Text(workspace.path).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button("New chat") { onNewChat(workspace.path) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(DesignTokens.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
