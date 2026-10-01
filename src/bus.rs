@@ -633,25 +633,31 @@ pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Re
     write_json(settings, &value).map(|()| true)
 }
 
-/// A file's text. Only a missing file is empty: a file that cannot be read, such as one that is
-/// not UTF-8, would be written over whole.
+/// A file's text, or "" for a missing file.
 fn read_text(path: &std::path::Path) -> Result<String, String> {
+    Ok(read_optional(path)?.unwrap_or_default())
+}
+
+/// A file's text, or None for a missing file. A file that cannot be read, such as one that is not
+/// UTF-8, is an error, so it is never written over whole.
+fn read_optional(path: &std::path::Path) -> Result<Option<String>, String> {
     match std::fs::read_to_string(path) {
-        Ok(text) => Ok(text),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!("swarm: cannot read {}: {error}", path.display())),
     }
 }
 
 fn read_json_object(path: &std::path::Path) -> Result<serde_json::Value, String> {
-    json_object(path, &read_text(path)?)
+    json_object(path, read_optional(path)?.as_deref())
 }
 
-/// `text` as a JSON object; an empty text is an empty object.
-fn json_object(path: &std::path::Path, text: &str) -> Result<serde_json::Value, String> {
-    if text.is_empty() {
+/// `text` as a JSON object; a missing file is an empty object. An empty file is refused, because
+/// another program may be writing it now.
+fn json_object(path: &std::path::Path, text: Option<&str>) -> Result<serde_json::Value, String> {
+    let Some(text) = text else {
         return Ok(serde_json::json!({}));
-    }
+    };
     let value: serde_json::Value = serde_json::from_str(text)
         .map_err(|error| format!("swarm: cannot parse {}: {error}", path.display()))?;
     value
@@ -784,8 +790,9 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 /// group stays, and a file that is not a JSON object is refused. AGY sends no event name, so each
 /// handler names it.
 pub fn agy_hook_plan(path: &std::path::Path) -> Result<HookFilePlan, String> {
-    let before = read_text(path)?;
-    let mut value = json_object(path, &before)?;
+    let text = read_optional(path)?;
+    let mut value = json_object(path, text.as_deref())?;
+    let before = text.unwrap_or_default();
     let groups = value
         .as_object_mut()
         .expect("json_object returns an object");
@@ -1416,6 +1423,23 @@ mod tests {
                 .unwrap()
                 .contains("[projects.\"/three\"]")
         );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An empty settings file may be one that another program is writing now, so it is refused,
+    /// as before; only a missing file counts as `{}`.
+    #[test]
+    fn an_empty_json_file_is_refused_and_a_missing_one_is_made() {
+        let root = std::env::temp_dir().join(format!("swarm-empty-json-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (empty, missing) = (root.join("empty.json"), root.join("missing.json"));
+        std::fs::write(&empty, "").unwrap();
+        assert!(ensure_agy_trust(&empty, std::path::Path::new("/x")).is_err());
+        assert!(agy_hook_plan(&empty).is_err());
+        assert_eq!(std::fs::read_to_string(&empty).unwrap(), "");
+        assert!(ensure_agy_trust(&missing, std::path::Path::new("/x")).unwrap());
+        assert!(set_up(agy_hook_plan(&root.join("hooks.json"))).unwrap());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
