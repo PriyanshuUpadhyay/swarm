@@ -143,7 +143,7 @@ public enum PaletteItems {
     /// App actions that belong in the palette. ⌘K itself, per-tab picks, focus moves, and find
     /// stepping stay keys only.
     public static let actions: [AppKey] = [
-        .newChat, .newWorkspace, .nextWorkspace, .previousWorkspace, .nextTab, .previousTab,
+        .newWorkspace, .newChat, .newProject, .nextWorkspace, .previousWorkspace, .nextTab, .previousTab,
         .zoom, .focusComposer, .toggleSidebar, .moveSidebar,
     ] + (1...5).map(AppKey.sidebarView) + [.showChanges, .find, .stop]
 
@@ -183,6 +183,7 @@ extension AppKey {
         switch self {
         case .newChat: "New Chat"
         case .newWorkspace: "New Workspace"
+        case .newProject: "New Project…"
         case .nextWorkspace: "Next Workspace"
         case .previousWorkspace: "Previous Workspace"
         case .selectTab(let number): "Chat \(number)"

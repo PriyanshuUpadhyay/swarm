@@ -812,6 +812,7 @@ private struct SessionsWindow: View {
         WindowKeyActions(
             newChat: workspaceDirectory.map { directory in { startChat(in: directory) } },
             newWorkspace: { showingCreate = true },
+            newProject: { showingCreate = true },
             stepWorkspace: { delta in
                 let ids = sidebarSections(showingArchive: false).flatMap(\.rows).map(\.id)
                 let listed = ids.compactMap { id in model.workspaces.first { $0.id == id } }

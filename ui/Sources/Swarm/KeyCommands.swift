@@ -50,6 +50,7 @@ extension KeyChord {
 struct WindowKeyActions {
     var newChat: (() -> Void)?
     var newWorkspace: () -> Void
+    var newProject: () -> Void
     var stepWorkspace: (Int) -> Void
     var selectTab: (Int) -> Void
     var stepTab: (Int) -> Void
@@ -96,6 +97,7 @@ struct AppKeyTarget {
             let repeated = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
             if !repeated { window?.newChat?() }
         case .newWorkspace: window?.newWorkspace()
+        case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
         case .selectTab(let number): window?.selectTab(number)
@@ -134,8 +136,9 @@ struct AppKeyCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            item("New Chat", .newChat)
             item("New Workspace", .newWorkspace)
+            item("New Chat", .newChat)
+            item("New Project…", .newProject)
         }
         CommandGroup(after: .textEditing) {
             Divider()

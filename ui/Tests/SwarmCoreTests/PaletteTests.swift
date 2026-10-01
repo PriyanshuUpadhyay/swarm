@@ -37,7 +37,11 @@ struct PaletteTests {
     func actions() {
         let newWorkspace = items.first { $0.id == "action:newWorkspace" }
         #expect(newWorkspace?.title == "New Workspace")
-        #expect(newWorkspace?.shortcut == "⇧⌘N")
+        #expect(newWorkspace?.shortcut == "⌘N")
+        #expect(items.first { $0.id == "action:newChat" }?.shortcut == "⌘T")
+        let newProject = items.first { $0.id == "action:newProject" }
+        #expect(newProject?.title == "New Project…")
+        #expect(newProject?.shortcut == "⇧⌘N")
         #expect(items.first { $0.id == "action:sidebarView(2)" }?.title == "Show Files")
         #expect(items.first { $0.id == "action:sidebarView(2)" }?.shortcut == "⌥⌘2")
         #expect(KeyChord(.right, [.option, .command]).displayText == "⌥⌘→")
