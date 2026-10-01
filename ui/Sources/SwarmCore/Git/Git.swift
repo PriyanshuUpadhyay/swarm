@@ -53,6 +53,11 @@ public enum Git {
 }
 
 extension Git {
+    /// `git init` with the user's own `init.defaultBranch`.
+    public static func initialize(at path: String) async throws {
+        _ = try await checkRaw(["init", "-q"], in: path)
+    }
+
     public static func worktrees(of repo: String) async throws -> [WorktreeEntry] {
         WorktreeListing.parse(try await checkRaw(["worktree", "list", "--porcelain", "-z"], in: repo).stdout)
     }
