@@ -196,9 +196,9 @@ struct SwarmSessionDetailTests {
         let decoded = try await bus.hooksPlan()
         #expect(decoded.digest == "d1")
         #expect(decoded.files.map { [$0.added, $0.removed] } == [[2, 0]])
-        #expect(decoded.files[0].patch.hasPrefix(
+        #expect(decoded.files.first?.patch.hasPrefix(
             #"diff --git "a/h/.codex/config.toml" "b/h/.codex/config.toml"\#n--- /h/.codex/config.toml\#n"#
-        ))
+        ) == true)
         #expect(decoded.conflicts.first?.entry == #"group "swarm""#)
         #expect(!decoded.isSetUp && !decoded.canApply)
         #expect(SwarmHooksPlan(digest: "d", files: decoded.files, conflicts: []).canApply)

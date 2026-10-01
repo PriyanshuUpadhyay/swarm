@@ -49,7 +49,9 @@ struct HooksSetupSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
-                    Button("Close", action: done).keyboardShortcut(.cancelAction)
+                    // A plan that keeps failing, such as on a broken config.toml, must not
+                    // reopen the sheet at each launch.
+                    Button("Not now", action: notNow).keyboardShortcut(.cancelAction)
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
                 }
             case .loading:
@@ -92,6 +94,7 @@ struct HooksSetupSheet: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             Text("Let swarm set up its own hooks for Codex and AGY?")
                 .font(.headline)
+                .accessibilityAddTraits(.isHeader)
             Text("Agents then report their chat and state to the app, so their columns show a chat and their questions. Swarm trusts only its own Codex hooks and adds its own AGY hooks; your other hooks stay as they are. Claude needs no step.")
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -131,6 +134,7 @@ struct HooksSetupSheet: View {
                 .font(.caption)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
             }
         }
     }
@@ -192,7 +196,10 @@ struct HooksSetupSheet: View {
     private func buttons(_ plan: SwarmHooksPlan?) -> some View {
         HStack {
             Spacer()
-            Button("Not now", action: notNow).keyboardShortcut(.cancelAction)
+            // While setup writes, "Not now" would record a decline for files being set up.
+            Button("Not now", action: notNow)
+                .keyboardShortcut(.cancelAction)
+                .disabled(working)
             Button {
                 if let plan { apply(plan) }
             } label: {

@@ -50,8 +50,8 @@ also change the ADR 0034 hook text and break the linked `profiles.json` of ADR 0
 
 - Good: a user's other tool and own hooks are never changed without a visible diff and consent.
 - Good: every build and every link reads the same proof from the thing it guards.
-- Bad: a Mac that set up hooks with swarm 0.4.0 sees one conflict and must delete the old entry
-  by hand.
+- Bad: a Mac that set up hooks with swarm 0.4.0 sees one conflict for each of the six Codex hook
+  keys in each Codex home and one for the AGY group, and must delete the old entries by hand.
 - Bad: a false refusal is possible, for example a half-made home from an older crashed `init`;
   the message must give the fix.
 - Rejected `application_id` because `init` makes folders before the db, so a crash leaves a home

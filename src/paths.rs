@@ -87,7 +87,8 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     // Another swarm may have claimed it since the first look; a claim writes the marker first.
     if !empty && !marker.is_file() && !crate::store::made_by_swarm(&root.join(SWARM_DB)) {
         return Err(format!(
-            "swarm: {} is not a swarm home: it has files that swarm did not make.\n\
+            "swarm: {} is not a swarm home: it has files that swarm did not make, or a \
+             swarm.db that swarm cannot read.\n\
              Move them, or set SWARM_HOME to another folder.",
             root.display()
         )
