@@ -21,12 +21,14 @@ struct SidebarActions {
     var selectMode: (WorkspaceSidebarMode) -> Void
     var select: (String) -> Void
     var home: () -> Void
-    var create: () -> Void
+    /// Makes a workspace in the project at this path.
+    var newWorkspace: (String) -> Void
     /// Opens the command palette, which is also the workspace search.
     var openPalette: () -> Void
     var toggleArchive: () -> Void
-    var openProject: () -> Void
+    var importProject: () -> Void
     var createProject: () -> Void
+    var toggleCollapsed: (String) -> Void
     var newChat: (String) -> Void
     var togglePin: (String) -> Void
     var rename: (String) -> Void
@@ -39,6 +41,7 @@ struct SidebarActions {
 struct SidebarView<Details: View>: View {
     let mode: WorkspaceSidebarMode
     let sections: [SidebarSection]
+    let collapsed: Set<String>
     let selectedID: String?
     let showingArchive: Bool
     let actions: SidebarActions
@@ -70,7 +73,17 @@ struct SidebarView<Details: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: DesignTokens.Spacing.m) {
                 Button("Home", systemImage: "house", action: actions.home)
-                Button("Create workspace", systemImage: "plus", action: actions.create)
+                Menu {
+                    Button("Create Project…", action: actions.createProject)
+                    Button("Import Project…", action: actions.importProject)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Add project")
+                .help("Add project")
                 Button("Command palette", systemImage: "magnifyingglass", action: actions.openPalette)
                 Spacer()
             }
@@ -79,42 +92,65 @@ struct SidebarView<Details: View>: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, DesignTokens.Spacing.m)
             .padding(.vertical, DesignTokens.Spacing.xs)
-            List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
-                ForEach(sections) { section in
-                    Section(section.title) {
-                        if section.rows.isEmpty {
-                            Text("No workspaces")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        ForEach(section.rows) { row in
-                            SidebarRowView(row: row)
-                                .tag(row.id)
-                                .contextMenu { menu(for: row) }
+            if sections.isEmpty {
+                emptyList
+            } else {
+                List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
+                    ForEach(sections) { section in
+                        if case .project(let path) = section.kind {
+                            let expanded = !collapsed.contains(path)
+                            Section {
+                                if expanded { rows(section.rows) }
+                            } header: {
+                                ProjectHeader(
+                                    title: section.title, expanded: expanded,
+                                    status: expanded ? nil : section.status,
+                                    toggle: { actions.toggleCollapsed(path) },
+                                    newWorkspace: showingArchive ? nil : { actions.newWorkspace(path) }
+                                )
+                            }
+                        } else {
+                            Section(section.title) { rows(section.rows) }
                         }
                     }
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
             HStack {
                 Button(action: actions.toggleArchive) {
                     Label(showingArchive ? "Workspaces" : "Archived", systemImage: "clock.arrow.circlepath")
                 }
                 Spacer()
-                Menu {
-                    Button("Open Project…", action: actions.openProject)
-                    Button("Create Project…", action: actions.createProject)
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel("Add project")
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .padding(DesignTokens.Spacing.m)
+        }
+    }
+
+    @ViewBuilder
+    private var emptyList: some View {
+        VStack(spacing: DesignTokens.Spacing.m) {
+            if showingArchive {
+                Text("No archived workspaces").foregroundStyle(.secondary)
+            } else {
+                Text("No projects yet").foregroundStyle(.secondary)
+                Button("Create Project…", action: actions.createProject)
+                Button("Import Project…", action: actions.importProject)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func rows(_ rows: [SidebarRow]) -> some View {
+        ForEach(rows) { row in
+            SidebarRowView(
+                row: row, selected: row.id == selectedID,
+                newChat: row.archived ? nil : { actions.newChat(row.id) }
+            )
+            .tag(row.id)
+            .contextMenu { menu(for: row) }
         }
     }
 
@@ -131,10 +167,50 @@ struct SidebarView<Details: View>: View {
     }
 }
 
+/// A project's header: a chevron and name that collapse it, its most urgent status while
+/// collapsed, and a "+" that makes a workspace in it.
+private struct ProjectHeader: View {
+    let title: String
+    let expanded: Bool
+    let status: AgentStatus?
+    let toggle: () -> Void
+    let newWorkspace: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Button(action: toggle) {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Text(title).lineLimit(1).truncationMode(.middle)
+                    if let status { StatusGlyph(status: status) }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
+            Spacer(minLength: DesignTokens.Spacing.xs)
+            if let newWorkspace {
+                Button("New workspace in \(title)", systemImage: "plus", action: newWorkspace)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("New workspace in \(title)")
+            }
+        }
+        .contextMenu {
+            if let newWorkspace { Button("New Workspace…", action: newWorkspace) }
+        }
+    }
+}
+
 /// One line: status glyph, name, and branch; the last-activity age turns into agent counts by
 /// status while the pointer is over the row.
 private struct SidebarRowView: View {
     let row: SidebarRow
+    let selected: Bool
+    let newChat: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
@@ -162,6 +238,13 @@ private struct SidebarRowView: View {
             } else if let age = row.age {
                 Text(age).font(.caption).foregroundStyle(.secondary)
             }
+            if let newChat, hovering || selected {
+                Button("New chat in \(row.title)", systemImage: "plus", action: newChat)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("New chat in \(row.title)")
+            }
         }
         .frame(minHeight: DesignTokens.Size.row)
         .contentShape(Rectangle())
@@ -170,6 +253,9 @@ private struct SidebarRowView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.detail.isEmpty ? row.title : "\(row.title), \(row.detail)")
         .accessibilityValue(accessibilityValue)
+        .accessibilityActions {
+            if let newChat { Button("New chat", action: newChat) }
+        }
     }
 
     private var accessibilityValue: String {

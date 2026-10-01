@@ -24,12 +24,18 @@ final class SessionsTreeModel {
 
     func selectWorkspace(_ entry: WorkspaceEntry) {
         navigation.select(entry)
+        expandProject(of: entry.id)
         // A workspace whose only tabs are starts opens on the newest, so its Retry and Close show.
         if navigation.selectedChat(in: entry) == nil, let start = pendingChats.inWorkspace(entry.id).last {
             selectPending(start.id)
         } else {
             select(navigation.selectedChat(in: entry)?.id)
         }
+    }
+
+    /// A selected workspace in a collapsed project would be a hidden row.
+    private func expandProject(of path: String) {
+        if let project = tree.project(containing: path) { navigation.collapsed.remove(project.path) }
     }
 
     func showHome() {
@@ -98,6 +104,7 @@ final class SessionsTreeModel {
         let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
         navigation.archived.remove(workspace)
         navigation.selectedWorkspace = workspace
+        expandProject(of: workspace)
         selectPending(id)
         runStart(id, plan: plan)
     }
@@ -286,9 +293,11 @@ final class SessionsTreeModel {
         error = nil
     }
 
-    func openProject(_ url: URL) async throws -> String {
+    /// `initializeGit` runs `git init` in a plain folder first, after the owner agreed to it.
+    func openProject(_ url: URL, initializeGit: Bool = false) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
+        if initializeGit { try await Git.initialize(at: url.path) }
         let path = try await projects.add(url)
         try await refresh()
         return path
@@ -300,6 +309,12 @@ final class SessionsTreeModel {
         let path = try await projects.create(at: url)
         try await refresh()
         return path
+    }
+
+    /// Makes a plain-folder project a git repository; its key, `ProjectNode.path`, stays the same.
+    func initializeGit(at path: String) async throws {
+        try await Git.initialize(at: path)
+        try await refresh()
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
@@ -388,7 +403,7 @@ private struct SessionsWindow: View {
     @State private var panes = AgentPaneStore()
     @State private var newTaskProject: ProjectNode?
     @State private var switchTarget: SwitchTarget?
-    /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Open Project skips its
+    /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
     /// chat only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
     @State private var actionError: String?
@@ -397,7 +412,8 @@ private struct SessionsWindow: View {
     /// When each palette action last ran, in this window only.
     @State private var recentActions: [AppKey: Int] = [:]
     @State private var showingArchive = false
-    @State private var showingCreate = false
+    @State private var createSheet: CreateSheet?
+    @State private var gitInitRequest: GitInitRequest?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question; the app menu can still open it (ADR 0029).
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
@@ -417,6 +433,7 @@ private struct SessionsWindow: View {
             SidebarView(
                 mode: sidebarMode,
                 sections: sidebarSections(showingArchive: showingArchive),
+                collapsed: model.navigation.collapsed,
                 selectedID: model.navigation.selectedWorkspace,
                 showingArchive: showingArchive,
                 actions: sidebarActions
@@ -553,12 +570,27 @@ private struct SessionsWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             panes.stopAll()
         }
-        .sheet(isPresented: $showingCreate, onDismiss: {
+        .sheet(item: $createSheet, onDismiss: {
             let action = createAction
             createAction = nil
             action?()
-        }) {
-            createWorkspacePicker
+        }) { sheet in
+            createSheetView(sheet)
+        }
+        .alert(
+            gitInitRequest.map { "“\($0.name)” is not a git repository" } ?? "",
+            isPresented: Binding(get: { gitInitRequest != nil }, set: { if !$0 { gitInitRequest = nil } }),
+            presenting: gitInitRequest
+        ) { request in
+            Button("Run git init") { runGitInit(request) }
+            switch request.reason {
+            case .importFolder(let url):
+                Button("Keep as Folder", role: .cancel) { performProjectAction(url, create: false) }
+            case .newWorkspace:
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: { _ in
+            Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
         }
         .sheet(isPresented: Binding(
             get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
@@ -644,7 +676,7 @@ private struct SessionsWindow: View {
         } else {
             AgentProfilesHome(
                 sessionsError: model.error,
-                onOpenProject: openExistingProject,
+                onOpenProject: importProject,
                 onCreateProject: createProject
             )
         }
@@ -670,6 +702,14 @@ private struct SessionsWindow: View {
         )
     }
 
+    /// Rows in the order the sidebar shows them, without the rows of a collapsed project.
+    private var visibleSidebarRows: [SidebarRow] {
+        sidebarSections(showingArchive: false).flatMap { section -> [SidebarRow] in
+            if case .project(let path) = section.kind, model.navigation.collapsed.contains(path) { return [] }
+            return section.rows
+        }
+    }
+
     private var sidebarActions: SidebarActions {
         func entry(_ id: String) -> WorkspaceEntry? { model.workspaces.first { $0.id == id } }
         return SidebarActions(
@@ -691,11 +731,17 @@ private struct SessionsWindow: View {
                 showingArchive = false
                 model.showHome()
             },
-            create: { showingCreate = true },
+            newWorkspace: { path in
+                if let project = model.tree.projects.first(where: { $0.path == path }) { newWorkspace(in: project) }
+            },
             openPalette: { showingPalette = true },
             toggleArchive: { showingArchive.toggle() },
-            openProject: openExistingProject,
+            importProject: importProject,
             createProject: createProject,
+            toggleCollapsed: { path in
+                if model.navigation.collapsed.contains(path) { model.navigation.collapsed.remove(path) }
+                else { model.navigation.collapsed.insert(path) }
+            },
             newChat: { startChat(in: $0) },
             togglePin: { id in
                 if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
@@ -811,10 +857,10 @@ private struct SessionsWindow: View {
     private var keyActions: WindowKeyActions {
         WindowKeyActions(
             newChat: workspaceDirectory.map { directory in { startChat(in: directory) } },
-            newWorkspace: { showingCreate = true },
-            newProject: { showingCreate = true },
+            newWorkspace: newWorkspaceInCurrentProject,
+            newProject: { createSheet = .addProject },
             stepWorkspace: { delta in
-                let ids = sidebarSections(showingArchive: false).flatMap(\.rows).map(\.id)
+                let ids = visibleSidebarRows.map(\.id)
                 let listed = ids.compactMap { id in model.workspaces.first { $0.id == id } }
                 let current = listed.firstIndex { $0.id == model.selectedWorkspace?.id }
                 guard let index = PaneSearch.step(current: current, count: listed.count, delta: delta) else { return }
@@ -860,35 +906,74 @@ private struct SessionsWindow: View {
         document = nil
     }
 
-    private var createWorkspacePicker: some View {
+    /// ⌘N's fallback lists the projects; ⇧⌘N's sheet has only the two project buttons.
+    private func createSheetView(_ sheet: CreateSheet) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("Create workspace").font(.title2)
-            Text("Choose a project").foregroundStyle(.secondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                    ForEach(model.tree.projects) { project in
-                        Button(project.name) {
-                            createAction = {
-                                if case .repository = project.id {
-                                    newTaskProject = project
-                                } else {
-                                    startChat(in: project.launchDirectory)
-                                }
+            Text(sheet == .pickProject ? "New workspace" : "Add project").font(.title2)
+            if sheet == .pickProject {
+                Text("Choose a project").foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                        ForEach(model.tree.projects) { project in
+                            Button(project.name) {
+                                createAction = { newWorkspace(in: project) }
+                                createSheet = nil
                             }
-                            showingCreate = false
                         }
                     }
                 }
+            } else {
+                Text("Create a new git repository, or import a folder from disk.").foregroundStyle(.secondary)
+                Spacer()
             }
             HStack {
-                Button("Open Project…") { createAction = openExistingProject; showingCreate = false }
-                Button("Create Project…") { createAction = createProject; showingCreate = false }
+                Button("Create Project…") { createAction = createProject; createSheet = nil }
+                    .keyboardShortcut(sheet == .addProject ? .defaultAction : nil)
+                Button("Import Project…") { createAction = importProject; createSheet = nil }
                 Spacer()
-                Button("Cancel") { showingCreate = false }
+                Button("Cancel") { createSheet = nil }
+                    .keyboardShortcut(.cancelAction)
             }
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
+    }
+
+    /// The project of the selected workspace or chat, else the only project, else a picker.
+    private func newWorkspaceInCurrentProject() {
+        let path = model.selectedWorkspace?.id ?? tabsDirectory ?? model.selectedSession?.session.cwd
+        let projects = model.tree.projects
+        if let project = path.flatMap(model.tree.project(containing:)) ?? (projects.count == 1 ? projects.first : nil) {
+            newWorkspace(in: project)
+        } else {
+            createSheet = projects.isEmpty ? .addProject : .pickProject
+        }
+    }
+
+    private func newWorkspace(in project: ProjectNode) {
+        if case .repository = project.id {
+            newTaskProject = project
+        } else {
+            gitInitRequest = GitInitRequest(path: project.path, reason: .newWorkspace)
+        }
+    }
+
+    private func runGitInit(_ request: GitInitRequest) {
+        switch request.reason {
+        case .importFolder(let url):
+            performProjectAction(url, create: false, initializeGit: true)
+        case .newWorkspace:
+            Task {
+                do {
+                    try await model.initializeGit(at: request.path)
+                    // `git init` changed the project's id, so it is found again by path.
+                    if let project = model.tree.projects.first(where: { $0.path == request.path }),
+                       case .repository = project.id {
+                        newTaskProject = project
+                    }
+                } catch { actionError = error.localizedDescription }
+            }
+        }
     }
 
     private func chatDetail(
@@ -1005,15 +1090,24 @@ private struct SessionsWindow: View {
         model.newChat(in: directory)
     }
 
-    private func openExistingProject() {
+    /// A folder in a git repository, a linked worktree, or a bare hub joins its repository's
+    /// project; a plain folder asks for `git init` first.
+    private func importProject() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Open Project"
+        panel.prompt = "Import Project"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            performProjectAction(url, create: false)
+            let identity = SwarmSessionDiscovery.identity(
+                for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
+            )
+            if case .repository = identity {
+                performProjectAction(url, create: false)
+            } else {
+                gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
+            }
         }
     }
 
@@ -1029,14 +1123,16 @@ private struct SessionsWindow: View {
         }
     }
 
-    private func performProjectAction(_ url: URL, create: Bool) {
+    private func performProjectAction(_ url: URL, create: Bool, initializeGit: Bool = false) {
         guard projectAction == nil else { return }
         projectAction = create ? "Creating project…" : "Opening project…"
         let moves = ownerMoves
         Task {
             defer { projectAction = nil }
             do {
-                let path = try await (create ? model.createProject(at: url) : model.openProject(url))
+                let path = try await (create
+                    ? model.createProject(at: url)
+                    : model.openProject(url, initializeGit: initializeGit))
                 guard ownerMoves == moves else { return }
                 // The kept path is the project's launch folder. The tree can still lack the
                 // project when a later refresh overtook this one, so it is not read here.
@@ -1079,6 +1175,19 @@ private struct WorkspacePanels: View {
     }
 }
 
+private enum CreateSheet: Identifiable {
+    case pickProject, addProject
+    var id: Self { self }
+}
+
+/// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
+private struct GitInitRequest {
+    enum Reason { case importFolder(URL), newWorkspace }
+    let path: String
+    let reason: Reason
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+}
+
 private struct NewTaskSheet: View {
     let project: ProjectNode
     let create: (String) async throws -> String
@@ -1091,15 +1200,18 @@ private struct NewTaskSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("Create workspace").font(.title2)
+            Text("New workspace in \(project.name)").font(.title2)
             Text(project.path).foregroundStyle(.secondary)
             TextField("Workspace name", text: $name)
-            Text("This workspace will have its own branch and files.")
+            Text("This workspace has its own branch and files.")
                 .foregroundStyle(.secondary)
+            Text("To add a chat in the current workspace, press ⌘T.")
+                .font(.callout).foregroundStyle(.secondary)
             if let error { Text(verbatim: error).foregroundStyle(.red) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                     .disabled(isCreating)
                 Button(isCreating ? "Creating…" : "Create") {
                     guard !isCreating else { return }
@@ -1116,6 +1228,7 @@ private struct NewTaskSheet: View {
                         }
                     }
                 }
+                .keyboardShortcut(.defaultAction)
                 .disabled(isCreating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }

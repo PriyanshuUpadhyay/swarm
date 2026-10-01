@@ -35,7 +35,7 @@ struct AgentProfilesHome: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             HStack {
-                Button("Open Project…", action: onOpenProject)
+                Button("Import Project…", action: onOpenProject)
                 Button("Create Project…", action: onCreateProject)
             }
             header
