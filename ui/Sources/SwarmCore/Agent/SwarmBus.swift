@@ -72,6 +72,76 @@ public struct SwarmHooksStatus: Sendable, Hashable, Codable {
     public var isSetUp: Bool { codex && agy }
 }
 
+/// `swarm hooks setup --plan --json`: each file that setup would change, with its unified diff,
+/// and each entry of the owner's at a place where swarm needs its own (ADR 0035). Apply takes
+/// `digest` back and refuses a file that changed after the owner saw this plan.
+public struct SwarmHooksPlan: Sendable, Hashable, Codable {
+    public struct File: Sendable, Hashable, Codable, Identifiable {
+        public var path: String
+        public var diff: String
+
+        public init(path: String, diff: String) {
+            self.path = path
+            self.diff = diff
+        }
+
+        public var id: String { path }
+        public var added: Int { count("+") }
+
+        /// The diff with the `diff --git` line that the app's diff viewer needs to draw it as a
+        /// diff, with quoted names as `TranscriptDiffPreview` writes them.
+        public var patch: String {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .withoutEscapingSlashes
+            func quoted(_ name: String) -> String {
+                String(decoding: try! encoder.encode(name), as: UTF8.self)
+            }
+            return "diff --git \(quoted("a" + path)) \(quoted("b" + path))\n" + diff
+        }
+        public var removed: Int { count("-") }
+
+        /// Diff lines with `mark`, without the `+++` and `---` file headers.
+        private func count(_ mark: Character) -> Int {
+            diff.split(separator: "\n").filter {
+                $0.first == mark && !$0.hasPrefix(String(repeating: mark, count: 3) + " ")
+            }.count
+        }
+    }
+
+    public struct Conflict: Sendable, Hashable, Codable, Identifiable {
+        public var file: String
+        public var entry: String
+        public var found: String
+        public var wanted: String
+        public var fix: String
+
+        public init(file: String, entry: String, found: String, wanted: String, fix: String) {
+            self.file = file
+            self.entry = entry
+            self.found = found
+            self.wanted = wanted
+            self.fix = fix
+        }
+
+        public var id: String { file + "\u{0}" + entry }
+    }
+
+    public var digest: String
+    public var files: [File]
+    public var conflicts: [Conflict]
+
+    public init(digest: String, files: [File], conflicts: [Conflict]) {
+        self.digest = digest
+        self.files = files
+        self.conflicts = conflicts
+    }
+
+    /// Nothing to change and nothing in the way.
+    public var isSetUp: Bool { files.isEmpty && conflicts.isEmpty }
+    /// Setup writes no file while any conflict stands.
+    public var canApply: Bool { conflicts.isEmpty && !files.isEmpty }
+}
+
 public struct SwarmAgentList: Sendable, Hashable, Codable {
     public var agents: [SwarmAgent]
     public var attachable: Bool?

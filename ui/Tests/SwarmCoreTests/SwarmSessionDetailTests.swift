@@ -176,19 +176,40 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
-    @Test("Hook status decodes the CLI's answer, and setup runs only its own command")
-    func hooksStatusAndSetup() async throws {
+    @Test("Hook status and plan decode the CLI's answers, and setup sends the plan's digest")
+    func hooksStatusPlanAndSetup() async throws {
         let calls = CloseCalls()
+        let plan = #"""
+            {"digest":"d1","files":[{"path":"/h/.codex/config.toml","diff":"--- /h/.codex/config.toml\n+++ /h/.codex/config.toml\n@@ -1,1 +1,3 @@\n model = 1\n+[a]\n+b = 2\n"}],
+             "conflicts":[{"file":"/h/.gemini/config/hooks.json","entry":"group \"swarm\"","found":"{}","wanted":"{\"Stop\":[]}","fix":"rename or delete it"}]}
+            """#
         let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
             _, arguments, _, environment, _, _ in
             _ = await calls.reply(arguments: arguments, environment: environment)
-            return ShellResult(status: 0, stdout: #"{"codex":true,"agy":false}"#, stderr: "")
+            let stdout = arguments.contains("--plan") ? plan : #"{"codex":true,"agy":false}"#
+            return ShellResult(status: 0, stdout: stdout, stderr: "")
         }
         let status = try await bus.hooksStatus()
         #expect(status == SwarmHooksStatus(codex: true, agy: false))
         #expect(!status.isSetUp)
-        try await bus.setUpHooks()
-        #expect(await calls.arguments == [["hooks", "status", "--json"], ["hooks", "setup"]])
+
+        let decoded = try await bus.hooksPlan()
+        #expect(decoded.digest == "d1")
+        #expect(decoded.files.map { [$0.added, $0.removed] } == [[2, 0]])
+        #expect(decoded.files[0].patch.hasPrefix(
+            #"diff --git "a/h/.codex/config.toml" "b/h/.codex/config.toml"\#n--- /h/.codex/config.toml\#n"#
+        ))
+        #expect(decoded.conflicts.first?.entry == #"group "swarm""#)
+        #expect(!decoded.isSetUp && !decoded.canApply)
+        #expect(SwarmHooksPlan(digest: "d", files: decoded.files, conflicts: []).canApply)
+        #expect(SwarmHooksPlan(digest: "d", files: [], conflicts: []).isSetUp)
+
+        try await bus.setUpHooks(digest: decoded.digest)
+        #expect(await calls.arguments == [
+            ["hooks", "status", "--json"],
+            ["hooks", "setup", "--plan", "--json"],
+            ["hooks", "setup", "--digest", "d1"],
+        ])
     }
 
     @Test("A child's chat reads the log its hooks reported and waits before one exists")

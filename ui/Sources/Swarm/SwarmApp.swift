@@ -419,7 +419,8 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                setUp: { try await SwarmCLIBus().setUpHooks() },
+                loadPlan: { try await SwarmCLIBus().hooksPlan() },
+                setUp: { try await SwarmCLIBus().setUpHooks(digest: $0) },
                 notNow: {
                     hooksSetupDeclined = true
                     showingHooksSetup = false
