@@ -27,6 +27,8 @@ struct PendingChatView: View {
                     Button("Close", action: close)
                     Button("Retry", action: retry).keyboardShortcut(.defaultAction)
                 }
+            } else if case .closing = chat.state {
+                DelayedProgress("Closing…")
             } else {
                 DelayedProgress("Starting chat…")
                 Text(verbatim: chat.directory)

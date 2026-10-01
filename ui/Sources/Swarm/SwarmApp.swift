@@ -97,6 +97,15 @@ final class SessionsTreeModel {
         runStart(id, plan: plan)
     }
 
+    /// Selects the newest start of the selected workspace, so a failed one stays reachable when
+    /// the last chat beside it goes. Returns false when the workspace has none.
+    private func selectNewestStart() -> Bool {
+        guard let directory = navigation.selectedWorkspace,
+              let start = pendingChats.inWorkspace(directory).last else { return false }
+        selectPending(start.id)
+        return true
+    }
+
     func selectPending(_ id: UUID) {
         guard let chat = pendingChats[id] else { return }
         selectionRevision += 1
@@ -120,11 +129,17 @@ final class SessionsTreeModel {
     /// Archives the session a failed start made, then drops the start and selects the tab that
     /// was selected before it. An archive error keeps the tab, with its Retry and Close.
     func discardChat(_ id: UUID) async throws {
-        guard let start = pendingChats[id] else { return }
+        guard let start = pendingChats[id], case .failed(let failure) = start.state else { return }
         if let session = start.session {
-            // A launch can fail after swarm registered the chair (no pane line, or a timeout).
-            try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: "tmux-solo")
-            try await bus.archive([session])
+            pendingChats.update(id) { $0.state = .closing(failure) }
+            do {
+                // A launch can fail after swarm registered the chair (no pane line, or a timeout).
+                try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: "tmux-solo")
+                try await bus.archive([session])
+            } catch {
+                pendingChats.update(id) { $0.state = .failed(failure) }
+                throw error
+            }
         }
         guard let chat = pendingChats.remove(id), selectedPendingID == id else { return }
         switch chat.previous {
@@ -234,6 +249,8 @@ final class SessionsTreeModel {
             agents = []
             commandSource = nil
             commandSourceKey = nil
+            // The selected chat closed while its workspace still has starts; the newest one shows.
+            if selectedSessionID == nil, selectedPendingID == nil { _ = selectNewestStart() }
         }
         error = nil
     }
@@ -292,7 +309,8 @@ final class SessionsTreeModel {
         let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
         refreshRevision += 1
         tree = archives.applying(to: sourceTree)
-        if next != previous { select(next) }
+        // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
+        if next != previous, next != nil || !selectNewestStart() { select(next) }
         let revision = selectionRevision
         SwarmPerformance.event("ChatArchiveApplied")
         do {

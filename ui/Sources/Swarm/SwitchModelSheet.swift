@@ -7,6 +7,7 @@ final class SwitchModelModel {
     private let profiles = SwarmCLIProfileSource()
     private var choices: [String: String] = [:]
     private var optionsTask: Task<Void, Never>?
+    private var modelsRetry: Task<Void, Never>?
     private(set) var choice = ModelSwitchChoice(currentProvider: nil, currentModel: nil)
     /// Nil until read; the picker then offers Claude and Codex with their plain names.
     var providers: [SwarmProvider]?
@@ -91,14 +92,16 @@ final class SwitchModelModel {
     func retry() {
         modelCaption = nil
         let requested = provider
-        optionsTask?.cancel()
-        optionsTask = Task { await loadModels(provider: requested) }
+        // Its own task: cancelling `optionsTask` would also drop an account read still running.
+        modelsRetry?.cancel()
+        modelsRetry = Task { await loadModels(provider: requested) }
     }
 
     /// Shows the cached models at once and reads them only when none are cached. Accounts read
     /// beside it. A provider change cancels both, so a late answer cannot land on the new provider.
     private func loadOptions() {
         optionsTask?.cancel()
+        modelsRetry?.cancel()
         let requested = provider
         optionsTask = Task {
             async let modelsRead: Void = loadModels(provider: requested)
@@ -169,6 +172,7 @@ final class SwitchModelModel {
 
     func cancel() {
         optionsTask?.cancel()
+        modelsRetry?.cancel()
         guard phase?.canCancel == true else { return }
         isCancelling = true
         operation?.cancel()

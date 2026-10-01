@@ -37,6 +37,8 @@ public struct PendingChat: Identifiable, Sendable, Equatable {
         /// The chair is up; the tab waits for the tree to list the session.
         case launched
         case failed(LaunchFailure)
+        /// Close is archiving the session of this failed start; Retry and Close wait for it.
+        case closing(LaunchFailure)
     }
 
     /// The tab that was selected when a start began: a chat, or another start.
