@@ -227,7 +227,7 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 /// swarm adds nothing to it (ADR 0035); a second table for it would make the file unreadable.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
     let path = home.join("config.toml");
-    let (_, mut config) = read_codex_config(&path)?;
+    let (before, mut config) = read_codex_config(&path)?;
     let dir = cwd.to_string_lossy();
     let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
         format!(
@@ -241,7 +241,7 @@ pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Resu
     toml_table(projects, &dir, false)
         .expect("a missing key becomes a table")
         .insert("trust_level", toml_edit::value("trusted"));
-    write_text(&path, &config.to_string())
+    write_text(&path, &before, &config.to_string())
 }
 
 /// A Codex `config.toml` as text and as TOML.
@@ -357,7 +357,7 @@ impl HookFilePlan {
         if self.after == self.before {
             return Ok(false);
         }
-        write_text(&self.path, &self.after).map(|()| true)
+        write_text(&self.path, &self.before, &self.after).map(|()| true)
     }
 }
 
@@ -615,7 +615,7 @@ pub fn ensure_claude_trust(
     config: &std::path::Path,
     dir: &std::path::Path,
 ) -> Result<bool, String> {
-    let mut value = read_json_object(config)?;
+    let (before, mut value) = read_json_object(config)?;
     let key = dir.to_string_lossy().into_owned();
     let project = value
         .as_object_mut()
@@ -633,12 +633,12 @@ pub fn ensure_claude_trust(
         .as_object_mut()
         .ok_or("swarm: a project entry in ~/.claude.json is not an object")?
         .insert("hasTrustDialogAccepted".into(), true.into());
-    write_json(config, &value).map(|()| true)
+    write_json(config, &before, &value).map(|()| true)
 }
 
 /// Add `dir` to AGY's `trustedWorkspaces`. Returns whether the file changed.
 pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
-    let mut value = read_json_object(settings)?;
+    let (before, mut value) = read_json_object(settings)?;
     let trusted = value
         .as_object_mut()
         .expect("read_json_object returns an object")
@@ -651,7 +651,7 @@ pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Re
         return Ok(false);
     }
     trusted.push(dir);
-    write_json(settings, &value).map(|()| true)
+    write_json(settings, &before, &value).map(|()| true)
 }
 
 /// A file's text, or "" for a missing file.
@@ -669,8 +669,11 @@ fn read_optional(path: &std::path::Path) -> Result<Option<String>, String> {
     }
 }
 
-fn read_json_object(path: &std::path::Path) -> Result<serde_json::Value, String> {
-    json_object(path, read_optional(path)?.as_deref())
+/// A JSON file's text ("" for a missing file) and its object.
+fn read_json_object(path: &std::path::Path) -> Result<(String, serde_json::Value), String> {
+    let text = read_optional(path)?;
+    let value = json_object(path, text.as_deref())?;
+    Ok((text.unwrap_or_default(), value))
 }
 
 /// `text` as a JSON object; a missing file is an empty object. An empty file is refused, because
@@ -689,56 +692,88 @@ fn json_object(path: &std::path::Path, text: Option<&str>) -> Result<serde_json:
 
 /// Replace `path` in one rename, with the old file's permissions, because `~/.claude.json` holds
 /// credentials and a running CLI may read it at any moment.
-fn write_json(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
-    write_text(path, &json_text(value))
+fn write_json(
+    path: &std::path::Path,
+    before: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    write_text(path, before, &json_text(value))
 }
 
 fn json_text(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n"
 }
 
-/// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
-/// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
-/// A read-only file is the owner's lock, and a rename would replace it anyway, so swarm refuses it.
+/// Where a write to `path` lands: the file at the end of its links, or `path` itself. A link, or a
+/// chain of links, to a missing file gets that file made, as a write through the link would, but
+/// never a missing folder. A chain longer than the system's 32 hops is refused.
+fn write_target(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
+    if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
+        return Ok(path.to_path_buf());
+    }
+    match std::fs::canonicalize(path) {
+        Ok(target) => Ok(target),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let mut target = path.to_path_buf();
+            for _ in 0..32 {
+                if !std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
+                    break;
+                }
+                let link = std::fs::read_link(&target).map_err(fail)?;
+                target = target.parent().unwrap_or(&target).join(link);
+            }
+            if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
+                return Err(format!("swarm: {} links too many times", path.display()));
+            }
+            match target.parent() {
+                Some(dir) if dir.is_dir() => Ok(target),
+                _ => Err(format!(
+                    "swarm: {} links to {}, whose folder is missing",
+                    path.display(),
+                    target.display()
+                )),
+            }
+        }
+        Err(error) => Err(fail(error)),
+    }
+}
+
+/// A file that swarm cannot edit is the owner's lock, and a rename would replace it anyway, so
+/// swarm refuses it. An open for write, with no truncate, changes nothing and fails for a
+/// read-only mode, Finder's Locked box, an ACL, or another user's file. The folder needs its
+/// write bit for the rename. Checks the file at the end of `path`'s links.
 fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
-    match std::fs::metadata(path) {
-        Ok(meta) if meta.permissions().readonly() => {
-            Err(format!("swarm: {} is read-only", path.display()))
+    let target = write_target(path)?;
+    let refused =
+        |error: std::io::Error| format!("swarm: cannot edit {}: {error}", target.display());
+    match std::fs::OpenOptions::new().write(true).open(&target) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(refused(error)),
+        _ => {}
+    }
+    // ponytail: mode bits only; a locked or ACL-denied folder fails at the rename, add an
+    // access(2) check if that case is seen.
+    match target.parent() {
+        Some(dir) if std::fs::metadata(dir).is_ok_and(|meta| meta.permissions().readonly()) => {
+            Err(format!("swarm: {} is read-only", dir.display()))
         }
         _ => Ok(()),
     }
 }
 
-fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
+/// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
+/// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
+/// `before` is the text the edit was made from ("" for a missing file); a file that another
+/// program changed since then is refused, not written over.
+fn write_text(path: &std::path::Path, before: &str, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
-    let target = match std::fs::symlink_metadata(path) {
-        // A link, or a chain of links, to a missing file gets that file made, as a write through
-        // the link would. A chain longer than the system's 32 hops is refused.
-        Ok(meta) if meta.file_type().is_symlink() => match std::fs::canonicalize(path) {
-            Ok(target) => target,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let mut target = path.to_path_buf();
-                for _ in 0..32 {
-                    if !std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
-                        break;
-                    }
-                    let link = std::fs::read_link(&target).map_err(fail)?;
-                    target = target.parent().unwrap_or(&target).join(link);
-                }
-                if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
-                    return Err(format!("swarm: {} links too many times", path.display()));
-                }
-                target
-            }
-            Err(error) => return Err(fail(error)),
-        },
-        _ => path.to_path_buf(),
-    };
+    let target = write_target(path)?;
     let path = target.as_path();
     refuse_read_only(path)?;
     let dir = path
         .parent()
         .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
+    // A linked file's folder exists already (`write_target`); this makes a missing ~/.gemini/config.
     std::fs::create_dir_all(dir).map_err(fail)?;
     let tmp = dir.join(format!(
         ".{}.swarm-{}",
@@ -755,10 +790,18 @@ fn write_text(path: &std::path::Path, text: &str) -> Result<(), String> {
         .open(&tmp)
         .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()))
         .and_then(|()| std::fs::set_permissions(&tmp, permissions))
-        .and_then(|()| std::fs::rename(&tmp, path))
-        .map_err(|error| {
+        .map_err(fail)
+        .and_then(
+            |()| match read_optional(path)?.unwrap_or_default() == before {
+                true => std::fs::rename(&tmp, path).map_err(fail),
+                false => Err(format!(
+                    "swarm: {} changed while swarm edited it; run the command again",
+                    path.display()
+                )),
+            },
+        )
+        .inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp);
-            fail(error)
         })
 }
 
@@ -861,7 +904,7 @@ pub fn agy_hook_plan(path: &std::path::Path) -> Result<HookFilePlan, String> {
 
 /// Whether AGY's `hooks.json` holds swarm's group as `agy_hook_plan` adds it.
 pub fn agy_hooks_set(path: &std::path::Path) -> bool {
-    read_json_object(path).is_ok_and(|value| value.get("swarm") == Some(&agy_group()))
+    read_json_object(path).is_ok_and(|(_, value)| value.get("swarm") == Some(&agy_group()))
 }
 
 fn agy_group() -> serde_json::Value {
@@ -1499,6 +1542,98 @@ mod tests {
             let mode = std::fs::metadata(file).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o444);
         }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_changes_after_it_was_read_is_not_written_over() {
+        let root = std::env::temp_dir().join(format!("swarm-changed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let config = root.join("config.toml");
+        std::fs::write(&config, "model = \"o3\"\n").unwrap();
+        let plan = codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex")).unwrap();
+        let owners = "model = \"o3\"\napproval_policy = \"never\"\n";
+        std::fs::write(&config, owners).unwrap();
+        assert!(plan.apply().is_err());
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), owners);
+        let hooks = root.join("hooks.json");
+        let plan = agy_hook_plan(&hooks).unwrap();
+        std::fs::write(&hooks, "{\"other\": {}}\n").unwrap();
+        assert!(plan.apply().is_err());
+        assert_eq!(
+            std::fs::read_to_string(&hooks).unwrap(),
+            "{\"other\": {}}\n"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            2,
+            "no temp file left"
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_locked_file_with_write_bits_is_refused_in_the_plan() {
+        let root = std::env::temp_dir().join(format!("swarm-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (config, hooks) = (root.join("config.toml"), root.join("hooks.json"));
+        std::fs::write(&config, "model = \"o4\"\n").unwrap();
+        std::fs::write(&hooks, "{}\n").unwrap();
+        let chflags = |flag: &str| {
+            let status = std::process::Command::new("chflags")
+                .args([flag])
+                .args([&config, &hooks])
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        // Finder's Locked box: the mode stays 0644, but no one can write the file.
+        chflags("uchg");
+        let (plan, agy) = (
+            codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex")),
+            agy_hook_plan(&hooks),
+        );
+        chflags("nouchg");
+        assert!(plan.is_err());
+        assert!(agy.is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_config_in_a_read_only_folder_is_refused_in_the_plan() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("swarm-read-only-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("config.toml"), "model = \"o4\"\n").unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        let (plan, trust) = (
+            codex_hook_plan(&root, &entries),
+            ensure_codex_trust(&root, std::path::Path::new("/one")),
+        );
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(plan.is_err());
+        assert!(trust.is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_link_into_a_missing_folder_makes_no_folder() {
+        let root = std::env::temp_dir().join(format!("swarm-link-gone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let gone = root.join("dotfiles");
+        std::os::unix::fs::symlink(gone.join("codex/config.toml"), root.join("config.toml"))
+            .unwrap();
+        std::os::unix::fs::symlink(gone.join("agy/hooks.json"), root.join("hooks.json")).unwrap();
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
+        assert!(codex_hook_plan(&root, &entries).is_err());
+        assert!(agy_hook_plan(&root.join("hooks.json")).is_err());
+        assert!(!gone.exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
