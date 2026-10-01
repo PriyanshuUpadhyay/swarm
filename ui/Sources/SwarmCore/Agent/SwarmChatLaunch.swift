@@ -52,14 +52,10 @@ public enum SwarmChatLauncher {
     /// creation runs one at a time. Each takes under 10 ms; launches still run side by side.
     private static let createGate = SerialGate()
 
-    public static func start(
-        _ plan: SwarmChatLaunchPlan, bus: any SwarmBus,
-        onCreated: @Sendable (SwarmSessionID) async -> Void = { _ in }
-    ) async throws -> SwarmSessionID {
+    public static func start(_ plan: SwarmChatLaunchPlan, bus: any SwarmBus) async throws -> SwarmSessionID {
         let timing = SwarmPerformance.begin("ChatLaunch")
         defer { timing.end() }
         let id = try await create(plan, bus: bus)
-        await onCreated(id)
         try await launch(plan, in: id, bus: bus)
         return id
     }

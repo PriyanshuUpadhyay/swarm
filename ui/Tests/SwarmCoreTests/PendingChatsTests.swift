@@ -30,12 +30,13 @@ struct PendingChatsTests {
     @Test("Two starts in one workspace are two pending chats, each with its own tab")
     func twoStarts() {
         var pending = PendingChats()
-        let first = pending.add(directory: "/api", previous: SwarmSessionID("old-chat"))
-        let second = pending.add(directory: "/api", previous: nil)
+        let first = pending.add(directory: "/api", previous: .session(SwarmSessionID("old-chat")))
+        let second = pending.add(directory: "/api", previous: .pending(first))
         #expect(first != second)
         #expect(pending.inWorkspace("/api").map(\.id) == [first, second])
         #expect(pending.inWorkspace("/docs").isEmpty)
-        #expect(pending[first]?.previous == SwarmSessionID("old-chat"))
+        #expect(pending[first]?.previous == .session(SwarmSessionID("old-chat")))
+        #expect(pending[second]?.previous == .pending(first))
         let tabs = ChatTab.tabs([], pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.title) == ["New chat", "New chat"])
         // Newest first, as the tree lists chats, so a started chat keeps its tab's place.

@@ -24,7 +24,12 @@ final class SessionsTreeModel {
 
     func selectWorkspace(_ entry: WorkspaceEntry) {
         navigation.select(entry)
-        select(navigation.selectedChat(in: entry)?.id)
+        // A workspace whose only tabs are starts opens on the newest, so its Retry and Close show.
+        if navigation.selectedChat(in: entry) == nil, let start = pendingChats.inWorkspace(entry.id).last {
+            selectPending(start.id)
+        } else {
+            select(navigation.selectedChat(in: entry)?.id)
+        }
     }
 
     func showHome() {
@@ -83,7 +88,9 @@ final class SessionsTreeModel {
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
     func newChat(in directory: String) {
         guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
-        let id = pendingChats.add(directory: directory, previous: selectedSessionID)
+        let previous = selectedPendingID.map(PendingChat.Previous.pending)
+            ?? selectedSessionID.map(PendingChat.Previous.session)
+        let id = pendingChats.add(directory: directory, previous: previous)
         navigation.archived.remove(directory)
         navigation.selectedWorkspace = directory
         selectPending(id)
@@ -110,16 +117,24 @@ final class SessionsTreeModel {
         runStart(id, plan: plan)
     }
 
-    /// Drops a failed start, selects the chat that was selected before it, and archives the
-    /// session it made, which has no agent.
+    /// Archives the session a failed start made, then drops the start and selects the tab that
+    /// was selected before it. An archive error keeps the tab, with its Retry and Close.
     func discardChat(_ id: UUID) async throws {
-        guard let chat = pendingChats.remove(id) else { return }
-        if selectedPendingID == id {
-            let back = chat.previous.flatMap(tree.retainedSelection)
-                ?? selectedWorkspace.flatMap { navigation.selectedChat(in: $0)?.id }
-            select(back)
+        guard let start = pendingChats[id] else { return }
+        if let session = start.session {
+            // A launch can fail after swarm registered the chair (no pane line, or a timeout).
+            try? await bus.close(SwarmPanePolicy.chair, in: session, adapter: "tmux-solo")
+            try await bus.archive([session])
         }
-        if let session = chat.session { try await bus.archive([session]) }
+        guard let chat = pendingChats.remove(id), selectedPendingID == id else { return }
+        switch chat.previous {
+        case .pending(let start) where pendingChats[start] != nil:
+            selectPending(start)
+        case .session(let row) where tree.retainedSelection(row) != nil:
+            select(row)
+        default:
+            select(selectedWorkspace.flatMap { navigation.selectedChat(in: $0)?.id })
+        }
     }
 
     private func runStart(_ id: UUID, plan: SwarmChatLaunchPlan) {
@@ -150,6 +165,7 @@ final class SessionsTreeModel {
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
         pendingID = id
+        selectedPendingID = nil
         selectedSessionID = id
         if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
         agents = []
@@ -763,16 +779,14 @@ private struct SessionsWindow: View {
                 model.selectWorkspace(listed[index])
             },
             selectTab: { number in
-                guard let row = model.selectedSession else { return }
-                let chats = model.tree.workspaceChats(for: row.id)
-                if chats.indices.contains(number - 1) { model.select(chats[number - 1].id) }
+                let tabs = tabsDirectory.map(stripTabs) ?? []
+                if tabs.indices.contains(number - 1) { showTab(tabs[number - 1].id) }
             },
             stepTab: { delta in
-                guard let row = model.selectedSession else { return }
-                let chats = model.tree.workspaceChats(for: row.id)
-                let current = chats.firstIndex { $0.id == row.id }
-                if let index = PaneSearch.step(current: current, count: chats.count, delta: delta) {
-                    model.select(chats[index].id)
+                let tabs = tabsDirectory.map(stripTabs) ?? []
+                let current = tabs.firstIndex { $0.id == selectedTabID }
+                if let index = PaneSearch.step(current: current, count: tabs.count, delta: delta) {
+                    showTab(tabs[index].id)
                 }
             },
             toggleSidebar: { sidebarVisible.toggle() },
@@ -862,26 +876,37 @@ private struct SessionsWindow: View {
         return model.selectedSession.flatMap { model.tree.workspaceChats(for: $0.id).first?.workspacePath }
     }
 
-    private func workspaceTabs(in directory: String) -> some View {
+    /// The tabs of `directory` in strip order: its starts, then its chats. The tab keys use it too.
+    private func stripTabs(in directory: String) -> [ChatTab] {
         let first = model.selectedSession?.id
             ?? model.workspaces.first { $0.id == directory }?.chats.first?.id
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
-        let pending = model.pendingChats.inWorkspace(directory)
-        return ChatTabsView(
+        return ChatTab.tabs(
+            chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
+            now: Int(Date().timeIntervalSince1970)
+        )
+    }
+
+    private var selectedTabID: String {
+        model.selectedPendingID.flatMap { model.pendingChats[$0]?.tabID }
+            ?? model.selectedSession?.id.rawValue ?? ""
+    }
+
+    private func showTab(_ id: String) {
+        if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
+            model.selectPending(start.id)
+        } else {
+            model.select(SwarmSessionID(id))
+        }
+    }
+
+    private func workspaceTabs(in directory: String) -> some View {
+        ChatTabsView(
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
-            tabs: ChatTab.tabs(
-                chats, pending: pending, closing: model.closing, now: Int(Date().timeIntervalSince1970)
-            ),
-            selectedID: model.selectedPendingID.flatMap { model.pendingChats[$0]?.tabID }
-                ?? model.selectedSession?.id.rawValue ?? "",
+            tabs: stripTabs(in: directory),
+            selectedID: selectedTabID,
             actions: ChatTabActions(
-                select: { id in
-                    if let chat = pending.first(where: { $0.tabID == id }) {
-                        model.selectPending(chat.id)
-                    } else {
-                        model.select(SwarmSessionID(id))
-                    }
-                },
+                select: showTab,
                 newChat: { startChat(in: directory) },
                 close: { id in
                     Task {

@@ -87,9 +87,12 @@ final class SwitchModelModel {
         errorMessage = nil
     }
 
+    /// Reads the models again. The accounts stay, so an account the owner picked is kept.
     func retry() {
         modelCaption = nil
-        loadOptions()
+        let requested = provider
+        optionsTask?.cancel()
+        optionsTask = Task { await loadModels(provider: requested) }
     }
 
     /// Shows the cached models at once and reads them only when none are cached. Accounts read
@@ -267,13 +270,9 @@ struct SwitchModelSheet: View {
                 HStack {
                     TextField("Model name", text: $model.customModel)
                         .textFieldStyle(.roundedBorder)
-                    Button("Use") {
-                        model.selectModel(model.customModel.trimmingCharacters(in: .whitespacesAndNewlines))
-                        model.query = ""
-                    }
-                    .disabled(!SwarmChatLaunchPlan.validModel(
-                        model.customModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ))
+                        .onSubmit(useCustomModel)
+                    Button("Use", action: useCustomModel)
+                        .disabled(!SwarmChatLaunchPlan.validModel(customModelName))
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
@@ -296,6 +295,17 @@ struct SwitchModelSheet: View {
                 Text(model.effortCaption).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var customModelName: String {
+        model.customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Return in the Model name field picks the name, as Use does; it does not start the switch.
+    private func useCustomModel() {
+        guard SwarmChatLaunchPlan.validModel(customModelName) else { return }
+        model.selectModel(customModelName)
+        model.query = ""
     }
 
     private var accountLabel: String {

@@ -11,9 +11,15 @@ struct PendingChatView: View {
         VStack(spacing: DesignTokens.Spacing.m) {
             if case .failed(let failure) = chat.state {
                 Text("Could not start the chat").font(.title3.weight(.semibold))
-                Text(verbatim: failure.message)
-                    .font(.callout).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).textSelection(.enabled)
+                // swarm's whole stderr can be long; it scrolls, so Retry and Close stay in view.
+                ScrollView {
+                    Text(verbatim: failure.message)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).textSelection(.enabled)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxHeight: DesignTokens.Size.pickerList)
+                .fixedSize(horizontal: false, vertical: true)
                 if failure.missingCLI {
                     Text("Install Claude Code or Codex, then Retry.").font(.callout)
                 }
@@ -30,5 +36,11 @@ struct PendingChatView: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: chat.state) { _, state in
+            // The view swaps its text in place, so VoiceOver hears a failure only if it is said.
+            guard case .failed(let failure) = state else { return }
+            let first = failure.message.split(separator: "\n").first.map(String.init) ?? ""
+            AccessibilityNotification.Announcement("Could not start the chat. \(first)").post()
+        }
     }
 }

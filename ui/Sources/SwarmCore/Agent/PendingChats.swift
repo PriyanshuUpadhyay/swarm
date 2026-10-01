@@ -39,10 +39,16 @@ public struct PendingChat: Identifiable, Sendable, Equatable {
         case failed(LaunchFailure)
     }
 
+    /// The tab that was selected when a start began: a chat, or another start.
+    public enum Previous: Sendable, Equatable {
+        case session(SwarmSessionID)
+        case pending(UUID)
+    }
+
     public let id: UUID
     public let directory: String
-    /// The chat that was selected when this start began, for Close to return to.
-    public let previous: SwarmSessionID?
+    /// The tab that was selected when this start began, for Close to return to.
+    public let previous: Previous?
     /// Set when `session new` returns, so Retry launches in it and Close archives it.
     public var session: SwarmSessionID?
     public var state: State
@@ -58,7 +64,7 @@ public struct PendingChats: Sendable, Equatable {
 
     public subscript(id: UUID) -> PendingChat? { items.first { $0.id == id } }
 
-    public mutating func add(directory: String, previous: SwarmSessionID?) -> UUID {
+    public mutating func add(directory: String, previous: PendingChat.Previous?) -> UUID {
         let chat = PendingChat(
             id: UUID(), directory: directory, previous: previous, session: nil, state: .starting
         )
