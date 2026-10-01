@@ -235,6 +235,25 @@ struct SessionsTreeTests {
         #expect(tree.project(containing: "/work/notes")?.path == "/work")
     }
 
+    @Test("A bare clone kept as a folder and its repository share a path but not a section")
+    func sharedPath() {
+        let folderSide = WorkspaceNode(path: "/x/app.git", name: "app.git", sessions: [])
+        let worktree = WorkspaceNode(path: "/x/wt/feat", name: "feat", sessions: [], branch: "feat")
+        let folder = ProjectNode(id: .folder("/x/app.git"), path: "/x/app.git", launchDirectory: "/x/app.git", workspaces: [folderSide])
+        let repository = ProjectNode(
+            id: .repository(commonDirectory: "/x/app.git"), path: "/x/app.git", launchDirectory: "/x/wt/feat",
+            workspaces: [worktree]
+        )
+        let tree = SessionsTree(projects: [folder, repository])
+        let sections = SidebarRows.sections(
+            projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree),
+            navigation: WorkspaceNavigation(), search: "", showingArchive: false, now: 61
+        )
+        #expect(Set(sections.map(\.id)).count == 2)
+        #expect(sections.map { $0.rows.map(\.id) } == [["/x/app.git"], ["/x/wt/feat"]])
+        #expect(sections.map(\.id) == tree.projects.map(SidebarSection.id(of:)))
+    }
+
     @Test("Two projects with one name show their parent folder")
     func duplicateProjectNames() {
         let tree = build([

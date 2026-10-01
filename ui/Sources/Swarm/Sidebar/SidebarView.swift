@@ -21,7 +21,7 @@ struct SidebarActions {
     var selectMode: (WorkspaceSidebarMode) -> Void
     var select: (String) -> Void
     var home: () -> Void
-    /// Makes a workspace in the project at this path.
+    /// Makes a workspace in the project of this section id.
     var newWorkspace: (String) -> Void
     /// Opens the command palette, which is also the workspace search.
     var openPalette: () -> Void
@@ -109,7 +109,7 @@ struct SidebarView<Details: View>: View {
                                     title: section.title, expanded: expanded,
                                     status: expanded ? nil : section.status,
                                     toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
-                                    newWorkspace: showingArchive ? nil : { actions.newWorkspace(path) }
+                                    newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) }
                                 )
                             }
                         } else {
@@ -199,6 +199,7 @@ private struct ProjectHeader: View {
                 .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
             } else {
                 Text(title).lineLimit(1).truncationMode(.middle)
+                    .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: DesignTokens.Spacing.xs)
             if let newWorkspace {

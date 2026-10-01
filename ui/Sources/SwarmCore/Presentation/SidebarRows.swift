@@ -35,6 +35,9 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
     public let status: AgentStatus?
     public let rows: [SidebarRow]
 
+    /// A project section's id, which also names the project for its header's "+".
+    public static func id(of project: ProjectNode) -> String { "project:\(project.id)" }
+
     init(kind: Kind, id: String, title: String, rows: [SidebarRow]) {
         self.kind = kind
         self.id = id
@@ -76,7 +79,7 @@ public enum SidebarRows {
             let title = names[project.name, default: 0] > 1 && !parent.isEmpty
                 ? "\(project.name) — \(parent)" : project.name
             sections.append(SidebarSection(
-                kind: .project(path: project.path), id: "project:\(project.id)", title: title, rows: rows
+                kind: .project(path: project.path), id: SidebarSection.id(of: project), title: title, rows: rows
             ))
         }
         return sections

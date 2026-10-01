@@ -59,7 +59,7 @@ final class SessionsTreeModel {
         didSet { workspaces = WorkspaceEntry.list(in: tree) }
     }
     /// False until the first tree loads, so the sidebar does not claim "No projects yet" early.
-    private(set) var loaded = false
+    private(set) var hasLoaded = false
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
@@ -253,7 +253,7 @@ final class SessionsTreeModel {
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
             tree = visibleTree
-            self.loaded = true
+            hasLoaded = true
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
         for chat in settled where chat.id == selectedPendingID {
@@ -454,7 +454,7 @@ private struct SessionsWindow: View {
                 mode: sidebarMode,
                 sections: sidebarSections(showingArchive: showingArchive),
                 collapsed: model.navigation.collapsed,
-                loaded: model.loaded,
+                loaded: model.hasLoaded,
                 selectedID: model.navigation.selectedWorkspace,
                 showingArchive: showingArchive,
                 actions: sidebarActions
@@ -752,8 +752,11 @@ private struct SessionsWindow: View {
                 showingArchive = false
                 model.showHome()
             },
-            newWorkspace: { path in
-                if let project = model.tree.projects.first(where: { $0.path == path }) { newWorkspace(in: project) }
+            newWorkspace: { id in
+                // By id, not path: a bare clone kept as a folder shares its path with its repository.
+                if let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) {
+                    newWorkspace(in: project)
+                }
             },
             openPalette: { showingPalette = true },
             toggleArchive: { showingArchive.toggle() },
