@@ -20,13 +20,41 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004.sql"),
 ];
 
+fn known_version(version: i64) -> bool {
+    (1..=MIGRATIONS.len() as i64).contains(&version)
+}
+
+/// Whether `path` is a db that a swarm made: a read-only open shows a known `user_version` and
+/// every table of migration 0001. A home from before the marker is adopted on this (ADR 0035).
+pub fn made_by_swarm(path: &Path) -> bool {
+    let Ok(connection) =
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return false;
+    };
+    let version = connection.query_row("PRAGMA user_version", [], |row| row.get(0));
+    let tables = connection.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table'
+         AND name IN ('session', 'agent', 'message', 'read_mark', 'job')",
+        [],
+        |row| row.get::<_, i64>(0),
+    );
+    matches!((version, tables), (Ok(version), Ok(5)) if known_version(version))
+}
+
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
+        // A new db has no schema. Tables at version 0 belong to another program (ADR 0035).
+        let objects: i64 =
+            tx.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
+        if objects > 0 {
+            return Err("database not made by swarm; use another SWARM_HOME or move it".into());
+        }
         tx.execute_batch(MIGRATIONS[0])?;
-    } else if !(1..=4).contains(&version) {
+    } else if !known_version(version) {
         return Err(
             "database made by another swarm build; use another SWARM_HOME or delete it".into(),
         );
@@ -1567,5 +1595,33 @@ mod tests {
             .execute_batch("PRAGMA user_version = 5")
             .unwrap();
         assert!(open(&db).is_err());
+    }
+
+    #[test]
+    fn another_programs_database_gets_no_swarm_tables() {
+        let root = temp_root("other-program");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        Connection::open(&db)
+            .unwrap()
+            .execute_batch("CREATE TABLE bookmark (url TEXT)")
+            .unwrap();
+
+        assert!(!made_by_swarm(&db));
+        assert_eq!(
+            open(&db).unwrap_err().to_string(),
+            "database not made by swarm; use another SWARM_HOME or move it"
+        );
+        let tables: Vec<String> = Connection::open(&db)
+            .unwrap()
+            .prepare("SELECT name FROM sqlite_master")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(tables, ["bookmark"]);
+        open(&root.join("new.db")).unwrap();
+        assert!(made_by_swarm(&root.join("new.db")));
     }
 }
