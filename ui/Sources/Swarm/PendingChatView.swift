@@ -38,11 +38,5 @@ struct PendingChatView: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: chat.state) { _, state in
-            // The view swaps its text in place, so VoiceOver hears a failure only if it is said.
-            guard case .failed(let failure) = state else { return }
-            let first = failure.message.split(separator: "\n").first.map(String.init) ?? ""
-            AccessibilityNotification.Announcement("Could not start the chat. \(first)").post()
-        }
     }
 }

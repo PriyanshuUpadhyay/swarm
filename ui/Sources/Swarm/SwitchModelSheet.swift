@@ -46,7 +46,15 @@ final class SwitchModelModel {
             || $0.id.localizedCaseInsensitiveContains(search) }
     }
 
+    /// The chat profile as read at app launch, for the effort a one-off switch takes. No read.
+    private var chatProfile: SwarmProfile?
+
+    /// A one-off launch takes the chat profile's effort for that provider, else the provider's
+    /// default, as `swarm launch` does (`one_off` in `src/config.rs`).
     var effortCaption: String {
+        if let effort = chatProfile?.runners.first(where: { $0.provider == provider })?.effort {
+            return "Reasoning: \(effort) (chat profile)"
+        }
         guard let effort = providers?.first(where: { $0.id == provider })?.defaultEffort else {
             return "Reasoning: provider default"
         }
@@ -62,6 +70,7 @@ final class SwitchModelModel {
         provider = choice.initialProvider(offered: offeredProviders)
         selectedModel = choice.initialModel(provider: provider, models: [])
         loadOptions()
+        chatProfile = await SwarmProfileCatalog.shared.cachedProfiles?.profiles.first { $0.name == "chat" }
         providers = try? await SwarmProfileCatalog.shared.providers()
     }
 

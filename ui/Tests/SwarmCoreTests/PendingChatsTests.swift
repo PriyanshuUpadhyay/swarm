@@ -64,6 +64,16 @@ struct PendingChatsTests {
         #expect(pending.remove(failed) == nil)
     }
 
+    @Test("A start that pointed back to a settled start points to its chat")
+    func previousFollowsSettle() {
+        var pending = PendingChats()
+        let first = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        let second = pending.add(directory: "/api", workspace: "/api", previous: .pending(first))
+        pending.update(first) { $0.session = SwarmSessionID("first-chat"); $0.state = .launched }
+        _ = pending.settle { _ in true }
+        #expect(pending[second]?.previous == .session(SwarmSessionID("first-chat")))
+    }
+
     @Test("A session that a pending tab stands for shows once, as the pending tab")
     func oneTabPerChat() {
         let made = SwarmSession(

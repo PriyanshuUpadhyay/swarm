@@ -54,7 +54,7 @@ public struct PendingChat: Identifiable, Sendable, Equatable {
     /// opened at a folder inside a repository.
     public let workspace: String
     /// The tab that was selected when this start began, for Close to return to.
-    public let previous: Previous?
+    public var previous: Previous?
     /// Set when `session new` returns, so Retry launches in it and Close archives it.
     public var session: SwarmSessionID?
     public var state: State
@@ -95,6 +95,13 @@ public struct PendingChats: Sendable, Equatable {
     public mutating func settle(listed: (SwarmSessionID) -> Bool) -> [PendingChat] {
         let done = items.filter { $0.state == .launched && $0.session.map(listed) == true }
         items.removeAll { chat in done.contains { $0.id == chat.id } }
+        // A start that pointed back to a settled one now points to its chat, so Close still returns there.
+        for chat in done {
+            guard let session = chat.session else { continue }
+            for index in items.indices where items[index].previous == .pending(chat.id) {
+                items[index].previous = .session(session)
+            }
+        }
         return done
     }
 

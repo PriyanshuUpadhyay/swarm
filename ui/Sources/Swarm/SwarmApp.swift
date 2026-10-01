@@ -170,6 +170,9 @@ final class SessionsTreeModel {
             do {
                 let session: SwarmSessionID
                 if let made = pendingChats[id]?.session {
+                    // A Retry: a failed launch may have registered the chair, which would make
+                    // this launch fail too.
+                    try? await bus.close(SwarmPanePolicy.chair, in: made, adapter: "tmux-solo")
                     session = made
                 } else {
                     session = try await SwarmChatLauncher.create(plan, bus: bus)
@@ -179,9 +182,12 @@ final class SessionsTreeModel {
                 pendingChats.update(id) { $0.state = .launched }
                 try await refresh()
             } catch {
-                pendingChats.update(id) { chat in
-                    if chat.state == .starting { chat.state = .failed(LaunchFailure(error)) }
-                }
+                let failure = LaunchFailure(error)
+                guard pendingChats[id]?.state == .starting else { return }
+                pendingChats.update(id) { $0.state = .failed(failure) }
+                // Said here, not by the view: the failed tab may not be the selected one.
+                let first = failure.message.split(separator: "\n").first.map(String.init) ?? ""
+                AccessibilityNotification.Announcement("Could not start the chat. \(first)").post()
             }
         }
     }
@@ -270,24 +276,20 @@ final class SessionsTreeModel {
         error = nil
     }
 
-    func openProject(_ url: URL) async throws -> SwarmPathIdentity {
+    func openProject(_ url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectOpen")
         defer { timing.end() }
         let path = try await projects.add(url)
         try await refresh()
-        return await Task.detached {
-            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
-        }.value
+        return path
     }
 
-    func createProject(at url: URL) async throws -> SwarmPathIdentity {
+    func createProject(at url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
         let path = try await projects.create(at: url)
         try await refresh()
-        return await Task.detached {
-            SwarmSessionDiscovery.identity(for: path, repositoryPathsResolver: Git.repositoryPaths)
-        }.value
+        return path
     }
 
     func createTask(named name: String, in project: ProjectNode) async throws -> String {
@@ -607,7 +609,7 @@ private struct SessionsWindow: View {
                         close: {
                             Task {
                                 do { try await model.discardChat(id) }
-                                catch { actionError = String(describing: error) }
+                                catch { actionError = LaunchFailure(error).message }
                             }
                         }
                     )
@@ -1025,14 +1027,11 @@ private struct SessionsWindow: View {
         Task {
             defer { projectAction = nil }
             do {
-                let id = try await (create ? model.createProject(at: url) : model.openProject(url))
+                let path = try await (create ? model.createProject(at: url) : model.openProject(url))
                 guard model.selectionRevision == selection else { return }
-                if let project = model.tree.projects.first(where: { $0.id == id }) {
-                    startChat(in: project.launchDirectory)
-                } else {
-                    model.showHome()
-                    selectedProjectID = id
-                }
+                // The kept path is the project's launch folder. The tree can still lack the
+                // project when a later refresh overtook this one, so it is not read here.
+                startChat(in: path)
             } catch { actionError = error.localizedDescription }
         }
     }
