@@ -226,22 +226,24 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 /// The file is edited as TOML, so a project the owner wrote in any form counts as present and
 /// swarm adds nothing to it (ADR 0035); a second table for it would make the file unreadable.
 pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
-    let path = home.join("config.toml");
-    let (before, mut config) = read_codex_config(&path)?;
-    let dir = cwd.to_string_lossy();
-    let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
-        format!(
-            "{} has a projects that is not a table; trust {dir} by hand",
-            path.display()
-        )
-    })?;
-    if projects.contains_key(&dir) {
-        return Ok(());
-    }
-    toml_table(projects, &dir, false)
-        .expect("a missing key becomes a table")
-        .insert("trust_level", toml_edit::value("trusted"));
-    write_text(&path, &before, &config.to_string())
+    retried(|| {
+        let path = home.join("config.toml");
+        let (before, mut config) = read_codex_config(&path)?;
+        let dir = cwd.to_string_lossy();
+        let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
+            format!(
+                "{} has a projects that is not a table; trust {dir} by hand",
+                path.display()
+            )
+        })?;
+        if projects.contains_key(&dir) {
+            return Ok(());
+        }
+        toml_table(projects, &dir, false)
+            .expect("a missing key becomes a table")
+            .insert("trust_level", toml_edit::value("trusted"));
+        write_text(&path, &before, &config.to_string())
+    })
 }
 
 /// A Codex `config.toml` as text and as TOML.
@@ -615,43 +617,47 @@ pub fn ensure_claude_trust(
     config: &std::path::Path,
     dir: &std::path::Path,
 ) -> Result<bool, String> {
-    let (before, mut value) = read_json_object(config)?;
-    let key = dir.to_string_lossy().into_owned();
-    let project = value
-        .as_object_mut()
-        .expect("read_json_object returns an object")
-        .entry("projects")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or("swarm: projects in ~/.claude.json is not an object")?
-        .entry(key)
-        .or_insert_with(|| serde_json::json!({}));
-    if project["hasTrustDialogAccepted"] == true {
-        return Ok(false);
-    }
-    project
-        .as_object_mut()
-        .ok_or("swarm: a project entry in ~/.claude.json is not an object")?
-        .insert("hasTrustDialogAccepted".into(), true.into());
-    write_json(config, &before, &value).map(|()| true)
+    retried(|| {
+        let (before, mut value) = read_json_object(config)?;
+        let key = dir.to_string_lossy().into_owned();
+        let project = value
+            .as_object_mut()
+            .expect("read_json_object returns an object")
+            .entry("projects")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or("swarm: projects in ~/.claude.json is not an object")?
+            .entry(key)
+            .or_insert_with(|| serde_json::json!({}));
+        if project["hasTrustDialogAccepted"] == true {
+            return Ok(false);
+        }
+        project
+            .as_object_mut()
+            .ok_or("swarm: a project entry in ~/.claude.json is not an object")?
+            .insert("hasTrustDialogAccepted".into(), true.into());
+        write_json(config, &before, &value).map(|()| true)
+    })
 }
 
 /// Add `dir` to AGY's `trustedWorkspaces`. Returns whether the file changed.
 pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
-    let (before, mut value) = read_json_object(settings)?;
-    let trusted = value
-        .as_object_mut()
-        .expect("read_json_object returns an object")
-        .entry("trustedWorkspaces")
-        .or_insert_with(|| serde_json::json!([]))
-        .as_array_mut()
-        .ok_or("swarm: trustedWorkspaces in the AGY settings is not a list")?;
-    let dir = serde_json::Value::from(dir.to_string_lossy().into_owned());
-    if trusted.contains(&dir) {
-        return Ok(false);
-    }
-    trusted.push(dir);
-    write_json(settings, &before, &value).map(|()| true)
+    retried(|| {
+        let (before, mut value) = read_json_object(settings)?;
+        let trusted = value
+            .as_object_mut()
+            .expect("read_json_object returns an object")
+            .entry("trustedWorkspaces")
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .ok_or("swarm: trustedWorkspaces in the AGY settings is not a list")?;
+        let dir = serde_json::Value::from(dir.to_string_lossy().into_owned());
+        if trusted.contains(&dir) {
+            return Ok(false);
+        }
+        trusted.push(dir);
+        write_json(settings, &before, &value).map(|()| true)
+    })
 }
 
 /// A file's text, or "" for a missing file.
@@ -702,6 +708,25 @@ fn write_json(
 
 fn json_text(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n"
+}
+
+/// The end of the error of a write that found its file changed since the read.
+const CHANGED: &str = "changed while swarm edited it; run the command again";
+
+fn changed_error(path: &std::path::Path) -> String {
+    format!("swarm: {} {CHANGED}", path.display())
+}
+
+/// A launch edits a file that a running CLI may rewrite at any moment, such as `~/.claude.json`,
+/// so an edit that found its file changed reads it again and tries again, up to 3 more times.
+fn retried<T>(mut edit: impl FnMut() -> Result<T, String>) -> Result<T, String> {
+    for _ in 0..3 {
+        match edit() {
+            Err(error) if error.ends_with(CHANGED) => {}
+            result => return result,
+        }
+    }
+    edit()
 }
 
 /// Where a write to `path` lands: the file at the end of its links, or `path` itself. A link, or a
@@ -764,12 +789,25 @@ fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
 /// Replace `path` in one rename, with the old file's permissions. A linked file is replaced at its
 /// target, because a rename onto the link itself would replace the owner's link (ADR 0035).
 /// `before` is the text the edit was made from ("" for a missing file); a file that another
-/// program changed since then is refused, not written over.
+/// program changed since then is refused, not written over, and a file that already holds `text`
+/// is done, as when an earlier plan of the same setup wrote it through another link.
 fn write_text(path: &std::path::Path, before: &str, text: &str) -> Result<(), String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
     let target = write_target(path)?;
     let path = target.as_path();
     refuse_read_only(path)?;
+    let now = read_optional(path)?.unwrap_or_default();
+    if now == text {
+        return Ok(());
+    }
+    if now != before {
+        return Err(changed_error(path));
+    }
+    // A rename would split a hard-linked file from the owner's other name, so it is written in
+    // place, as the base did.
+    if std::fs::metadata(path).is_ok_and(|meta| std::os::unix::fs::MetadataExt::nlink(&meta) > 1) {
+        return std::fs::write(path, text).map_err(fail);
+    }
     let dir = path
         .parent()
         .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
@@ -794,10 +832,7 @@ fn write_text(path: &std::path::Path, before: &str, text: &str) -> Result<(), St
         .and_then(
             |()| match read_optional(path)?.unwrap_or_default() == before {
                 true => std::fs::rename(&tmp, path).map_err(fail),
-                false => Err(format!(
-                    "swarm: {} changed while swarm edited it; run the command again",
-                    path.display()
-                )),
+                false => Err(changed_error(path)),
             },
         )
         .inspect_err(|_| {
@@ -1573,6 +1608,80 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
+    #[test]
+    fn a_launch_edit_reads_a_changed_file_again_and_stops_on_any_other_error() {
+        let changed = |path: &str| changed_error(std::path::Path::new(path));
+        let mut tries = 0;
+        let result = retried(|| {
+            tries += 1;
+            if tries < 3 {
+                Err(changed("/c.json"))
+            } else {
+                Ok(tries)
+            }
+        });
+        assert_eq!(result, Ok(3));
+        let mut tries = 0;
+        let result: Result<(), String> = retried(|| {
+            tries += 1;
+            Err("swarm: cannot parse /c.json".into())
+        });
+        assert_eq!((result.is_err(), tries), (true, 1));
+        let mut tries = 0;
+        let result: Result<(), String> = retried(|| {
+            tries += 1;
+            Err(changed("/c.json"))
+        });
+        assert_eq!((result, tries), (Err(changed("/c.json")), 4));
+    }
+
+    #[test]
+    fn two_homes_that_link_to_one_config_both_set_up() {
+        let root = std::env::temp_dir().join(format!("swarm-twin-homes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (home, spare) = (root.join(".codex"), root.join(".codex-work"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&spare).unwrap();
+        std::fs::write(home.join("config.toml"), "model = \"o4\"\n").unwrap();
+        std::os::unix::fs::symlink(home.join("config.toml"), spare.join("config.toml")).unwrap();
+        let entries = codex_hook_trust("'/bin/swarm' hook codex");
+        let plans = [
+            codex_hook_plan(&home, &entries).unwrap(),
+            codex_hook_plan(&spare, &entries).unwrap(),
+        ];
+        assert_eq!(plans[0].apply(), Ok(true));
+        assert!(plans[1].apply().is_ok());
+        assert!(codex_hooks_trusted(&spare, &entries));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_hard_linked_config_keeps_one_file_for_both_names() {
+        use std::os::unix::fs::MetadataExt;
+        let root = std::env::temp_dir().join(format!("swarm-hard-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let (config, dotfile) = (root.join("config.toml"), root.join("dotfiles-config.toml"));
+        std::fs::write(&dotfile, "model = \"o4\"\n").unwrap();
+        std::fs::hard_link(&dotfile, &config).unwrap();
+        ensure_codex_trust(&root, std::path::Path::new("/one")).unwrap();
+        assert!(
+            set_up(codex_hook_plan(
+                &root,
+                &codex_hook_trust("'/bin/swarm' hook codex")
+            ))
+            .unwrap()
+        );
+        let (a, b) = (
+            std::fs::metadata(&config).unwrap(),
+            std::fs::metadata(&dotfile).unwrap(),
+        );
+        assert_eq!((a.ino(), a.nlink()), (b.ino(), 2));
+        assert!(std::fs::read_to_string(&dotfile).unwrap().contains("/one"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_locked_file_with_write_bits_is_refused_in_the_plan() {
         let root = std::env::temp_dir().join(format!("swarm-locked-{}", std::process::id()));
