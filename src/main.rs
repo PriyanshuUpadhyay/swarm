@@ -38,7 +38,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -534,35 +534,54 @@ fn codex_homes(
     Ok(homes)
 }
 
-/// `swarm hooks status --json | setup`: whether swarm's own Codex and AGY state hooks are set up,
-/// and setting them up. The owner consents first, in the app or by running `setup` (ADR 0029).
-/// Claude needs no step, because `swarm launch` passes its hooks with `--settings`.
+/// `swarm hooks status --json | setup [--plan [--json] | --digest <digest>]`: whether swarm's own
+/// Codex and AGY state hooks are set up, the plan of each change and conflict, and setting them up.
+/// The owner consents first, in the app or by running `setup` (ADR 0029). Setup writes no file
+/// while any entry conflicts with one the owner has, and `--digest` refuses a file that changed
+/// after the plan (ADR 0035). Claude needs no step, because `swarm launch` passes its hooks with
+/// `--settings`.
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let user_home = std::path::PathBuf::from(env_var("HOME")?);
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
     let homes = codex_homes(&user_home)?;
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
-    match args {
-        [status, json] if status == "status" && json == "--json" => {
-            print_json(&serde_json::json!({
-                "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
-                "agy": swarm::bus::agy_hooks_set(&agy_hooks),
-            }))
+    let plan = || -> Result<Vec<swarm::bus::HookFilePlan>, String> {
+        let mut plans = homes
+            .iter()
+            .map(|home| swarm::bus::codex_hook_plan(home, &codex))
+            .collect::<Result<Vec<_>, _>>()?;
+        plans.push(swarm::bus::agy_hook_plan(&agy_hooks)?);
+        Ok(plans)
+    };
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match args.as_slice() {
+        ["status", "--json"] => print_json(&serde_json::json!({
+            "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
+            "agy": swarm::bus::agy_hooks_set(&agy_hooks),
+        })),
+        ["setup", "--plan"] => {
+            print!("{}", hook_plan_text(&plan()?));
+            Ok(())
         }
-        [setup] if setup == "setup" => {
+        ["setup", "--plan", "--json"] => print_json(&hook_plan_json(&plan()?)),
+        ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
             let lock = swarm::paths::root_dir()?.join("trust.lock");
-            std::fs::create_dir_all(swarm::paths::root_dir()?)?;
             swarm::bus::with_lock(&lock, || {
-                for home in &homes {
-                    if swarm::bus::ensure_codex_hook_trust(home, &codex)? {
-                        println!(
-                            "swarm: trusted swarm's Codex hooks in {}",
-                            home.join("config.toml").display()
-                        );
-                    }
+                let plans = plan()?;
+                if let ["--digest", digest] = rest
+                    && swarm::bus::hook_plan_digest(&plans) != *digest
+                {
+                    return Err(
+                        "swarm: a hook file changed after the plan; check the plan again".into(),
+                    );
                 }
-                if swarm::bus::ensure_agy_hooks(&agy_hooks)? {
-                    println!("swarm: added swarm's hooks to {}", agy_hooks.display());
+                if let Some(conflicts) = hook_conflicts_text(&plans) {
+                    return Err(conflicts);
+                }
+                for plan in &plans {
+                    if plan.apply()? {
+                        println!("swarm: set up swarm's hooks in {}", plan.path.display());
+                    }
                 }
                 Ok(())
             })?;
@@ -570,6 +589,54 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => Err(USAGE.into()),
     }
+}
+
+fn hook_diff(plan: &swarm::bus::HookFilePlan) -> String {
+    swarm::diff::unified(&plan.path.to_string_lossy(), &plan.before, &plan.after)
+}
+
+/// Each conflict with its fix, and a last line that says no file was written; None without one.
+fn hook_conflicts_text(plans: &[swarm::bus::HookFilePlan]) -> Option<String> {
+    let conflicts: Vec<_> = plans.iter().flat_map(|plan| &plan.conflicts).collect();
+    if conflicts.is_empty() {
+        return None;
+    }
+    let mut text: String = conflicts
+        .iter()
+        .map(|conflict| {
+            format!(
+                "conflict: {} {}\n  found:  {}\n  wanted: {}\n  fix:    {}\n\n",
+                conflict.file, conflict.entry, conflict.found, conflict.wanted, conflict.fix
+            )
+        })
+        .collect();
+    let plural = if conflicts.len() == 1 { "" } else { "s" };
+    text += &format!("{} conflict{plural}. No file written.", conflicts.len());
+    Some(text)
+}
+
+fn hook_plan_text(plans: &[swarm::bus::HookFilePlan]) -> String {
+    let diffs: String = plans.iter().map(hook_diff).collect();
+    let last = match hook_conflicts_text(plans) {
+        Some(conflicts) => format!("\n{conflicts}"),
+        None if diffs.is_empty() => "swarm's hooks are already set up. No file changes.".into(),
+        None => "\nPlan only. No file written. Run `swarm hooks setup` to apply.".into(),
+    };
+    format!("{diffs}{last}\n")
+}
+
+/// The plan for the app: the digest that apply checks, each file that changes with its diff, and
+/// each conflict.
+fn hook_plan_json(plans: &[swarm::bus::HookFilePlan]) -> serde_json::Value {
+    serde_json::json!({
+        "digest": swarm::bus::hook_plan_digest(plans),
+        "files": plans
+            .iter()
+            .filter(|plan| plan.after != plan.before)
+            .map(|plan| serde_json::json!({"path": plan.path, "diff": hook_diff(plan)}))
+            .collect::<Vec<_>>(),
+        "conflicts": plans.iter().flat_map(|plan| &plan.conflicts).collect::<Vec<_>>(),
+    })
 }
 
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
