@@ -39,7 +39,9 @@ public enum QueuedMessages {
 
 /// What Claude's queue records say after the app pressed Up to pull its queued messages back.
 public enum QueuePullBack: Sendable, Equatable {
-    case pulled([String])
+    /// `owner` goes into the draft; `popped` is every popped text in log order, CLI-made ones
+    /// too, because the CLI puts them all into its box.
+    case pulled(owner: [String], popped: [String])
     /// The CLI took every message first; Up then recalled the last sent prompt into its box.
     case alreadySent
     case waiting
@@ -54,20 +56,19 @@ public enum QueuePullBack: Sendable, Equatable {
         queue: [String], after records: some Sequence<TranscriptRecord>, pastDeadline: Bool
     ) -> QueuePullBack {
         var open = queue.map { (text: $0, waits: QueuedMessages.isOwners($0)) }
-        var pulled: [String] = []
+        var popped: [String] = []
         for record in records {
             QueuedMessages.apply(record, to: &open)
-            if case .queueOperation("popAll", let content?, _, _) = record.event, QueuedMessages.isOwners(content) {
-                pulled.append(content)
-            }
+            if case .queueOperation("popAll", let content?, _, _) = record.event { popped.append(content) }
         }
         if open.contains(where: \.waits) { return pastDeadline ? .unconfirmed : .waiting }
-        return pulled.isEmpty ? .alreadySent : .pulled(pulled)
+        let owner = popped.filter(QueuedMessages.isOwners)
+        return owner.isEmpty ? .alreadySent : .pulled(owner: owner, popped: popped)
     }
 
-    /// `C-u` presses that empty the CLI box holding `text`. One press empties a line and the next
-    /// joins it to the line above; extra presses on an empty box do nothing.
-    public static func clearPresses(for text: String) -> Int {
-        2 * text.split(separator: "\n", omittingEmptySubsequences: false).count + 1
+    /// `C-u` presses that empty the CLI box holding `texts`, one per line. One press empties a
+    /// line and the next joins it to the line above; extra presses on an empty box do nothing.
+    public static func clearPresses(for texts: [String]) -> Int {
+        2 * texts.joined(separator: "\n").split(separator: "\n", omittingEmptySubsequences: false).count + 1
     }
 }

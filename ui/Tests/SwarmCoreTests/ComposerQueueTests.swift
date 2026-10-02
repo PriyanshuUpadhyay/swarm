@@ -58,11 +58,11 @@ struct ComposerQueueTests {
         #expect(QueuePullBack.decide(
             queue: queue, after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
             pastDeadline: false
-        ) == .pulled(queue))
+        ) == .pulled(owner: queue, popped: queue))
         #expect(QueuePullBack.decide(
             queue: queue, after: [op("popAll", Self.ADD_TEST), op("remove", Self.KEEP_NAME)],
             pastDeadline: false
-        ) == .pulled([Self.ADD_TEST]))
+        ) == .pulled(owner: [Self.ADD_TEST], popped: [Self.ADD_TEST]))
     }
 
     @Test("A popAll for a message the queue did not list yet is pulled too")
@@ -70,7 +70,7 @@ struct ComposerQueueTests {
         #expect(QueuePullBack.decide(
             queue: [Self.ADD_TEST], after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
             pastDeadline: false
-        ) == .pulled([Self.ADD_TEST, Self.KEEP_NAME]))
+        ) == .pulled(owner: [Self.ADD_TEST, Self.KEEP_NAME], popped: [Self.ADD_TEST, Self.KEEP_NAME]))
     }
 
     @Test("A popAll of a CLI-made entry never goes into the pulled text")
@@ -79,7 +79,20 @@ struct ComposerQueueTests {
             queue: [Self.TASK_NOTIFICATION, Self.ADD_TEST],
             after: [op("popAll", Self.TASK_NOTIFICATION), op("popAll", Self.ADD_TEST)],
             pastDeadline: false
-        ) == .pulled([Self.ADD_TEST]))
+        ) == .pulled(owner: [Self.ADD_TEST], popped: [Self.TASK_NOTIFICATION, Self.ADD_TEST]))
+    }
+
+    @Test("A popped CLI-made entry stays out of the draft but its lines count for the C-u presses")
+    func pullBackClearsCLIEntryLines() {
+        let notification = "<task-notification>a\nb"
+        let owner = "c"
+        let decision = QueuePullBack.decide(
+            queue: [notification, owner],
+            after: [op("popAll", notification), op("popAll", owner)],
+            pastDeadline: false
+        )
+        #expect(decision == .pulled(owner: [owner], popped: [notification, owner]))
+        #expect(QueuePullBack.clearPresses(for: [notification, owner]) == 7)
     }
 
     @Test("A dequeue of a CLI-made head entry is not credited to the owner's message")
@@ -88,7 +101,7 @@ struct ComposerQueueTests {
         #expect(QueuePullBack.decide(queue: queue, after: [op("dequeue")], pastDeadline: false) == .waiting)
         #expect(QueuePullBack.decide(
             queue: queue, after: [op("dequeue"), op("popAll", Self.ADD_TEST)], pastDeadline: false
-        ) == .pulled([Self.ADD_TEST]))
+        ) == .pulled(owner: [Self.ADD_TEST], popped: [Self.ADD_TEST]))
     }
 
     @Test("A message the CLI took first is already sent, and no record by the deadline is unconfirmed")
@@ -118,8 +131,8 @@ struct ComposerQueueTests {
 
     @Test("C-u presses cover each line of the CLI box twice, plus one")
     func clearPresses() {
-        #expect(QueuePullBack.clearPresses(for: Self.ADD_TEST) == 3)
-        #expect(QueuePullBack.clearPresses(for: "a\nb") == 5)
+        #expect(QueuePullBack.clearPresses(for: [Self.ADD_TEST]) == 3)
+        #expect(QueuePullBack.clearPresses(for: ["a\nb"]) == 5)
     }
 
     @Test("Claude rows come from the queue and keep their ids while the head leaves")
