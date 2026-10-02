@@ -6,8 +6,9 @@ struct KeyRoutingTests {
     @Test("Each app key has one chord")
     func table() {
         let appKeys: [(KeyChord, AppKey)] = [
-            (KeyChord("n", .command), .newChat),
-            (KeyChord("n", [.command, .shift]), .newWorkspace),
+            (KeyChord("n", .command), .newWorkspace),
+            (KeyChord("t", .command), .newChat),
+            (KeyChord("n", [.command, .shift]), .newProject),
             (KeyChord(.down, [.control, .command]), .nextWorkspace),
             (KeyChord(.up, [.control, .command]), .previousWorkspace),
             (KeyChord("1", .command), .selectTab(1)),

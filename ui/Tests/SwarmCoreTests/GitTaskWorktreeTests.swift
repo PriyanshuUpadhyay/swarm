@@ -54,4 +54,25 @@ struct GitTaskWorktreeTests {
         )
         #expect(try await Shell.check("git", ["rev-parse", "HEAD"], cwd: bareTaskPath).trimmed == mainHead)
     }
+
+    @Test("A task in a repository with no commit starts an orphan branch")
+    func createsOrphanWorktree() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try await Git.initialize(at: project.path)
+
+        let taskPath = try await GitTaskWorktree.create(
+            named: "First task", in: project.path,
+            commonDirectory: project.appendingPathComponent(".git").path,
+            under: root.appendingPathComponent("tasks").path
+        )
+        let task = try #require(try await Git.worktrees(of: project.path).first { $0.path == taskPath })
+        #expect(task.branch?.hasPrefix("swarm/first-task-") == true)
+        // An unborn branch has no commit for HEAD to name.
+        await #expect(throws: (any Error).self) {
+            try await Shell.check("git", ["rev-parse", "--verify", "HEAD"], cwd: taskPath)
+        }
+    }
 }

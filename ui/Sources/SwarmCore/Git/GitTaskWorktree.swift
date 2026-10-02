@@ -21,16 +21,19 @@ public enum GitTaskWorktree {
         let parent = URL(fileURLWithPath: parentDirectory).standardizedFileURL
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let path = parent.appendingPathComponent(stem, isDirectory: true).path
-        _ = try await Git.checkRaw(
-            ["worktree", "add", "-b", branch, path, base], in: repositoryDirectory
-        )
+        // A repository with no commit has no base; its first workspaces start unborn branches.
+        let add = base.map { ["worktree", "add", "-b", branch, path, $0] }
+            ?? ["worktree", "add", "--orphan", "-b", branch, path]
+        _ = try await Git.checkRaw(add, in: repositoryDirectory)
         guard let created = try await Git.worktrees(of: repositoryDirectory).first(where: { $0.branch == branch }) else {
             throw GitTaskWorktreeError.notListed(branch)
         }
         return created.path
     }
 
-    private static func defaultReference(in commonDirectory: String) async throws -> String {
+    /// Nil when no default branch exists and HEAD names no commit: a new repository, or an
+    /// unborn HEAD beside other branches. The workspace then starts an orphan branch.
+    private static func defaultReference(in commonDirectory: String) async throws -> String? {
         let remote = try await Git.runRaw(
             ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], in: commonDirectory
         )
@@ -47,11 +50,17 @@ public enum GitTaskWorktree {
         }
         // Repositories without a known default branch fall back to their primary HEAD.
         let head = try await Git.runRaw(["symbolic-ref", "--quiet", "HEAD"], in: commonDirectory)
-        if head.ok {
-            return String(decoding: head.stdout, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+        let headRef = String(decoding: head.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if head.ok, try await hasReference(headRef, in: commonDirectory) { return headRef }
+        let commit = try await Git.runRaw(
+            ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], in: commonDirectory
+        )
+        // Exit 1 is "HEAD names no commit"; any other failure is a fault, not an empty repository.
+        if commit.status == 1 { return nil }
+        guard commit.ok else {
+            throw Git.error(["rev-parse", "HEAD^{commit}"], commit.status, commit.stderr, "")
         }
-        let commit = try await Git.checkRaw(["rev-parse", "HEAD"], in: commonDirectory)
         return String(decoding: commit.stdout, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

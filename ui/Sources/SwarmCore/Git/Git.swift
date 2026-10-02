@@ -16,13 +16,13 @@ struct GitOutput: Sendable {
 /// Running git, and the facts every other part of `Git` asks it for.
 public enum Git {
     static func runRaw(
-        _ arguments: [String], in directory: String,
+        _ arguments: [String], in directory: String, env: [String: String] = [:],
         timeout: Duration? = nil, outputLimit: Int = 64 * 1024 * 1024
     ) async throws -> GitOutput {
         let result = try await Shell.runBytes("git", arguments, cwd: directory, env: [
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_OPTIONAL_LOCKS": "0",
-        ], timeout: timeout, outputLimit: outputLimit)
+        ].merging(env) { $1 }, timeout: timeout, outputLimit: outputLimit)
         return GitOutput(
             status: result.status,
             stdout: result.stdout,
@@ -53,6 +53,22 @@ public enum Git {
 }
 
 extension Git {
+    /// `git init` with the user's own `init.defaultBranch`.
+    public static func initialize(at path: String) async throws {
+        _ = try await checkRaw(["init", "-q"], in: path)
+    }
+
+    /// Git's own answer, which also knows a bare clone that `repositoryPaths` does not read. It is
+    /// false only when git says "not a git repository"; a fault (no git, dubious ownership) counts
+    /// as true, so the app never offers `git init` on a doubt.
+    public static func isRepository(at path: String) async -> Bool {
+        // The C locale keeps git's message in English, which the check below reads.
+        guard let result = try? await runRaw(["rev-parse", "--git-dir"], in: path, env: ["LC_ALL": "C"]) else {
+            return true
+        }
+        return result.ok || !result.stderr.contains("not a git repository")
+    }
+
     public static func worktrees(of repo: String) async throws -> [WorktreeEntry] {
         WorktreeListing.parse(try await checkRaw(["worktree", "list", "--porcelain", "-z"], in: repo).stdout)
     }

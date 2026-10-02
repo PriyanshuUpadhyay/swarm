@@ -21,6 +21,7 @@ public final class SwarmProjectStore {
         return path
     }
 
+    /// Makes the folder and runs `git init` in it, so a workspace can be made there at once.
     @discardableResult
     public func create(at url: URL) async throws -> String {
         let path = try await Task.detached {
@@ -31,6 +32,15 @@ public final class SwarmProjectStore {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
             return try Self.directoryPath(url)
         }.value
+        do {
+            try await Git.initialize(at: path)
+        } catch {
+            // Only the empty folder made above is removed; anything else there stays.
+            if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+            throw error
+        }
         remember(path)
         return path
     }

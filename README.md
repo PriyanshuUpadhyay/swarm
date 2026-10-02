@@ -153,9 +153,9 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 ### From the app
 
-1. Click **Open Project…** and choose a folder. Swarm adds the project and starts a chat in it
-   with the `chat` profile. A Git project can also get a workspace (a branch in its own worktree)
-   from **Create workspace**.
+1. Click **Import Project…** and choose a folder. Swarm adds the project and starts a chat in it
+   with the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
+   The **+** on a project's header makes a workspace (a branch in its own worktree) there.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
    right of the chat, and you can type into it.
@@ -164,8 +164,10 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 ## Swarm app reference
 
-Swarm.app opens on Home, where routed roles show their models. Open Project adds a folder to the
-project list and starts a chat in it. Create Project makes a plain folder, adds it there, and starts a chat in it.
+Swarm.app opens on Home, where routed roles show their models. Import Project adds a folder to the
+project list and starts a chat in it; a folder that is not a Git repository first gets an offer to run
+`git init`, and "Keep as Folder" adds it as a plain project. Create Project makes a folder, runs `git init`
+in it, adds it there, and starts a chat in it.
 New chat starts the chat profile at once with no sheet (ADR 0035): a "New chat" tab shows at once and becomes the
 chat when the chair is up, or shows the launch error with Retry. To use another model, start a chat and use Switch
 model. Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
@@ -174,12 +176,15 @@ for a compact summary, starts the chosen Claude or Codex model, and keeps both p
 tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
 summary.
 
-For a Git project, Create workspace starts a branch from the default branch in a worktree beside the
-project, then starts a chat there. Empty task worktrees stay in the sidebar with 0 chats.
-Plain folders keep the New chat action without Git worktrees.
-The sidebar lists one row per workspace across projects, in Pinned and My workspaces. Search
-finds workspace names, projects, branches, and chat titles. Chats in the selected workspace appear
-as underlined tabs above the transcript. The plus button starts another chat in that workspace.
+The sidebar shows one header per project, with its workspaces under it in last-activity order, and
+Pinned workspaces in their own section at the top (ADR 0037). A header collapses with its chevron and
+then shows its most urgent status. The **+** at the top makes or imports a project (⇧⌘N). A project's
+**+** makes a workspace there, and ⌘N makes one in the current project: a branch from the default branch in a worktree beside the
+project, then a chat in it. In a repository with no commit yet, the branch starts empty (an orphan
+branch). A plain-folder project offers `git init` first. A workspace row's **+** adds a chat in it
+(⌘T). Empty task worktrees stay in the sidebar with 0 chats. The command palette (⌘K) finds
+workspace names, projects, branches, and chat titles. Chats in the selected workspace appear as
+underlined tabs above the transcript. The plus button starts another chat in that workspace.
 Pins, workspace names, and the last selected chat survive restarts. Archive workspace hides its
 row without deleting files, archiving chats, or stopping agents; Archived offers Restore workspace.
 Herdr-hosted agents with live panes attach through Herdr's direct terminal stream, so the pane

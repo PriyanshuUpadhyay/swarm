@@ -42,6 +42,7 @@ struct PaneStressWindow: View {
         .focusedSceneValue(\.windowKeyActions, WindowKeyActions(
             newChat: { lastWindowAction = "newChat" },
             newWorkspace: { lastWindowAction = "newWorkspace" },
+            newProject: { lastWindowAction = "newProject" },
             stepWorkspace: { lastWindowAction = "stepWorkspace(\($0))" },
             selectTab: { lastWindowAction = "selectTab(\($0))" },
             stepTab: { lastWindowAction = "stepTab(\($0))" },

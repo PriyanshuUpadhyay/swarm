@@ -309,6 +309,9 @@ public actor SwarmSessionDiscovery {
         )
     }
 
+    /// `git init` makes a cached folder a repository, so the app forgets every identity after it.
+    public func forgetIdentities() { locations.removeAll() }
+
     func identity(for path: String) -> SwarmPathIdentity {
         let normal = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
         if let cached = locations[normal] { return cached }

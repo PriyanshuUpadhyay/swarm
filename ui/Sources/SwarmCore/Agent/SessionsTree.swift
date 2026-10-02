@@ -207,6 +207,15 @@ public struct SessionsTree: Sendable, Hashable {
         return nil
     }
 
+    /// The project with the deepest workspace at or above `path`, so a repository inside a
+    /// plain-folder project wins over that folder; else the project rooted at `path`.
+    public func project(containing path: String) -> ProjectNode? {
+        projects.flatMap { project in project.workspaces.map { (project, $0.path) } }
+            .filter { Self.contains(path, in: $0.1) }
+            .max { $0.1.count < $1.1.count }?.0
+            ?? projects.first { $0.path == path }
+    }
+
     public func launchDirectory(for id: SwarmSessionID) -> String? {
         chat(id)?.workspacePath
     }

@@ -172,6 +172,28 @@ struct WorkspaceNavigationTests {
         SwarmSession(id: .init(id), talkMode: "lane", adapter: "tmux-solo", cwd: path, createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
     }
 
+    @Test("A value saved before collapsed projects existed keeps its pins, names, and archive marks")
+    func loadsOlderValue() throws {
+        let suite = "WorkspaceNavigationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let saved = #"{"selectedWorkspace":"/repo/main","selectedChats":{"/repo/main":"one"},"pinned":["/repo/main"],"archived":["/repo/old"],"names":{"/repo/main":"Fix login"}}"#
+        defaults.set(Data(saved.utf8), forKey: "workspaces.navigation")
+
+        let store = WorkspaceNavigationStore(defaults: defaults)
+        var navigation = store.load()
+        #expect(navigation.selectedWorkspace == "/repo/main")
+        #expect(navigation.selectedChats == ["/repo/main": "one"])
+        #expect(navigation.pinned == ["/repo/main"])
+        #expect(navigation.archived == ["/repo/old"])
+        #expect(navigation.names == ["/repo/main": "Fix login"])
+        #expect(navigation.collapsed.isEmpty)
+
+        navigation.collapsed = ["/repo"]
+        store.save(navigation)
+        #expect(store.load() == navigation)
+    }
+
     @Test("Titles equal in the user's locale ignoring case count as duplicates")
     func localeCaseFolding() {
         #expect("Straße".localizedCaseInsensitiveCompare("STRASSE") == .orderedSame)
