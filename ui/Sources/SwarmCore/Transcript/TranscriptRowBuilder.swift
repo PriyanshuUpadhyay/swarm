@@ -17,6 +17,8 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var tool: TranscriptToolActivity? = nil
     public var toolStatus: ToolStatus? = nil
     public var endsTurn = false
+    /// A row that is not the user's but starts an agent turn, such as a background task's end.
+    public var startsTurn = false
     public var id: String { eventID }
 
     public init(kind: Kind, text: String, eventID: String) {
@@ -244,13 +246,14 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
         case .systemMessage("queued_prompt", let text, let meta):
             row = TranscriptRow(kind: .user, text: text, eventID: key(meta, "queued", index))
-        case .systemMessage(_, let text, let meta) where text.hasPrefix("<task-notification>"):
+        case .systemMessage(_, let text, let meta)
+            where text.drop(while: \.isWhitespace).hasPrefix("<task-notification>"):
             // Claude writes a background task's end as a user record or a queued command; show its
             // summary line, not the XML.
             row = TranscriptRow(
                 kind: .notice, text: taskNotificationSummary(text), eventID: key(meta, "task", index)
             )
-            row.detail = text
+            row.startsTurn = true
         case .systemMessage(_, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
         case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):
@@ -305,9 +308,9 @@ public enum TranscriptRowBuilder {
 }
 
 public enum ChairTurn {
-    /// A turn runs from the user's last message until a turn-ended row follows it.
+    /// A turn runs from the last row that starts one until a turn-ended row follows it.
     public static func isActive(_ rows: [TranscriptRow]) -> Bool {
-        guard let lastUser = rows.lastIndex(where: { $0.kind == .user }) else { return false }
-        return !rows[lastUser...].contains(where: \.endsTurn)
+        guard let start = rows.lastIndex(where: { $0.kind == .user || $0.startsTurn }) else { return false }
+        return !rows[start...].contains(where: \.endsTurn)
     }
 }

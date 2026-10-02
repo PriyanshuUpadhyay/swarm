@@ -166,7 +166,20 @@ struct TranscriptRowBuilderTests {
             "Background task failed",
             "Background task finished",
         ])
-        #expect(rows.first?.detail == xml)
+    }
+
+    @Test("A background task notification after a finished turn starts a running turn")
+    func taskNotificationStartsTurn() {
+        let meta = Meta(agentSessionID: "s")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run it in the background", meta: Meta(agentSessionID: "s", uuid: "u1")),
+            .turnEnded(durationMs: 1, reason: .completed, meta: meta),
+            .systemMessage(kind: "task_notification", text: " <task-notification><summary>done</summary></task-notification>", meta: meta),
+            .toolCall(toolCallID: "t1", name: "Bash", input: .object([:]), status: .pending, meta: meta),
+        ])
+        #expect(rows.map(\.kind).contains(.notice))
+        #expect(ChairTurn.isActive(rows))
+        #expect(!ChairTurn.isActive(Array(rows.prefix(2))))
     }
 
     @Test("Interleaved calls keep their own output and their call order")
