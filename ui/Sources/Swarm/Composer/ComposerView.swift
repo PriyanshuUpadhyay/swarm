@@ -159,6 +159,7 @@ struct ComposerView: View {
             matchGeneration += 1
             fileMatchTask?.cancel()
             alreadySentTimer?.cancel()
+            showsAlreadySent = false
         }
     }
 
