@@ -67,6 +67,11 @@ final class ChildColumnModel {
         if draft == text { draft = "" }
     }
 
+    func update(isRunning: Bool) {
+        sentMessages.update(isRunning: isRunning)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
+    }
+
     func interrupt(_ agent: SwarmAgentID, in session: SwarmSession) async throws {
         try await bus.interrupt(agent, in: session)
     }
@@ -148,6 +153,7 @@ struct ChildColumnView: View {
         .onChange(of: focusRequest, initial: true) {
             if selected { composerFocused = true }
         }
+        .onChange(of: agent.status == .working) { _, running in model.update(isRunning: running) }
     }
 
     private var composer: some View {

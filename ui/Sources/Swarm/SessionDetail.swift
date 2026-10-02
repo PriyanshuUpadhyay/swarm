@@ -199,6 +199,11 @@ final class SessionDetailModel {
         }
     }
 
+    func update(isRunning: Bool) {
+        sentMessages.update(isRunning: isRunning)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
+    }
+
     func interrupt(session: SwarmSession) async throws {
         try await bus.interrupt(SwarmPanePolicy.chair, in: session)
     }
@@ -281,6 +286,7 @@ struct SessionDetailView: View {
         .onAppear {
             SwarmPerformance.event("ChatDetailAppeared")
         }
+        .onChange(of: isRunning) { _, running in model.update(isRunning: running) }
         .onChange(of: model.usage, initial: true) { _, usage in
             if isCurrentSession() { onUsageChanged(usage) }
         }
@@ -324,11 +330,14 @@ struct SessionDetailView: View {
         return nil
     }
 
+    private var isRunning: Bool {
+        row.isRunning == true && ChairTurn.isActive(model.rows)
+    }
+
     private var transcriptColumn: some View {
         // Built here, so the transcript holds the composer value and not a closure over this
         // view; the menu keeps transcript find closures alive, and this view holds the model.
         let provider = row.provider ?? chairProvider
-        let isRunning = row.isRunning == true && ChairTurn.isActive(model.rows)
         let composer = ComposerView(
             sessionID: row.id.rawValue, isActive: isActive,
             draft: Binding(

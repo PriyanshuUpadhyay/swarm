@@ -67,6 +67,12 @@ public struct ComposerSentMessages: Sendable, Equatable {
         ))
     }
 
+    /// Once the agent stops running, the CLI has taken or dropped every typed text, so all leave.
+    /// This also ends a text the log records in another form than the one typed.
+    public mutating func update(isRunning: Bool) {
+        if !isRunning { entries.removeAll() }
+    }
+
     /// Drops each text that a user row after its send now shows. One row confirms one text.
     public mutating func confirm(by transcript: [TranscriptRow]) {
         var used = Set<Int>()

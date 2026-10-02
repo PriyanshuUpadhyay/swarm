@@ -161,6 +161,17 @@ struct ComposerQueueTests {
         #expect(queued.accessibilityLabel == "Queued message: \(Self.ADD_TEST)")
     }
 
+    @Test("Sent rows stay while the agent runs and all leave when it stops, even if no user row matched")
+    func sentRowsLeaveWhenStopped() {
+        var sent = ComposerSentMessages()
+        sent.record(Self.ADD_TEST, provider: "codex", isRunning: true, transcript: Self.EARLIER)
+        sent.record(Self.KEEP_NAME, provider: "agy", isRunning: true, transcript: Self.EARLIER)
+        sent.update(isRunning: true)
+        #expect(sent.rows.count == 2)
+        sent.update(isRunning: false)
+        #expect(sent.rows.isEmpty)
+    }
+
     @Test("Only running Codex and AGY sends are held")
     func onlyRunningCodexAndAGY() {
         var sent = ComposerSentMessages()
