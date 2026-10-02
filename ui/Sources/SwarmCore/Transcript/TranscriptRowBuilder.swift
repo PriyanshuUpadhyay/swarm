@@ -163,6 +163,17 @@ public enum TranscriptRowBuilder {
         let scope: Int
     }
 
+    static func taskNotificationSummary(_ text: String) -> String {
+        for tag in ["summary", "status"] {
+            if let open = text.range(of: "<\(tag)>"),
+               let close = text.range(of: "</\(tag)>", range: open.upperBound..<text.endIndex) {
+                let value = text[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { return tag == "summary" ? value : "Background task \(value)" }
+            }
+        }
+        return "Background task finished"
+    }
+
     private static func scopes(for events: [TranscriptEvent]) -> [Int] {
         var scope = 0
         var sawTool = false
@@ -233,6 +244,13 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
         case .systemMessage("queued_prompt", let text, let meta):
             row = TranscriptRow(kind: .user, text: text, eventID: key(meta, "queued", index))
+        case .systemMessage(_, let text, let meta) where text.hasPrefix("<task-notification>"):
+            // Claude writes a background task's end as a user record or a queued command; show its
+            // summary line, not the XML.
+            row = TranscriptRow(
+                kind: .notice, text: taskNotificationSummary(text), eventID: key(meta, "task", index)
+            )
+            row.detail = text
         case .systemMessage(_, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
         case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):

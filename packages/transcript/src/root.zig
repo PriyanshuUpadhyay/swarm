@@ -194,6 +194,7 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     const trimmed = std.mem.trimStart(u8, text, " \t\r\n");
     if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
     if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>" })) return "command_output";
+    if (std.mem.startsWith(u8, trimmed, "<task-notification>")) return "task_notification";
     return "";
 }
 
@@ -1115,6 +1116,13 @@ test "Claude command wrappers and compact summary are system text" {
     try std.testing.expectEqualStrings("command", command[0].system_message.kind);
     try std.testing.expectEqualStrings("command_output", output[0].system_message.kind);
     try std.testing.expectEqualStrings("compact_summary", summary[0].system_message.kind);
+}
+
+test "Claude background task notification is system text, not a user prompt" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const notification = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<task-notification>\\n<status>completed</status>\\n<summary>Background command done</summary>\\n</task-notification>\"}}");
+    try std.testing.expectEqualStrings("task_notification", notification[0].system_message.kind);
 }
 
 test "Claude queued command and fallback block become system messages" {

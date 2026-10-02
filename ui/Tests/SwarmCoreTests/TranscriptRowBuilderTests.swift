@@ -65,7 +65,7 @@ struct TranscriptRowBuilderTests {
         #expect(TranscriptRowBuilder.rows(from: records).isEmpty)
     }
 
-    @Test("A queued message the owner typed shows as a user row, a CLI notification stays system, and the turn still ends")
+    @Test("A queued message the owner typed shows as a user row, a CLI notification shows as a notice, and the turn still ends")
     func absorbedQueuedMessage() async throws {
         let binary = try #require(ProcessInfo.processInfo.environment["SWARM_TRANSCRIPT_TOOL"])
         let log = FileManager.default.temporaryDirectory
@@ -84,7 +84,7 @@ struct TranscriptRowBuilderTests {
         for try await record in process.stream { records.append(record) }
         let rows = TranscriptRowBuilder.rows(from: records).filter { !$0.isHiddenByDefault }
 
-        #expect(rows.map(\.kind) == [.user, .assistant, .user, .system, .assistant, .result])
+        #expect(rows.map(\.kind) == [.user, .assistant, .user, .notice, .assistant, .result])
         #expect(rows.map(\.text).dropFirst(2).first == "keep the old name")
         #expect(ChairTurn.isActive(Array(rows.dropLast())))
         #expect(!ChairTurn.isActive(rows))
@@ -150,6 +150,23 @@ struct TranscriptRowBuilderTests {
             .systemMessage(kind: "system", text: "Ready", meta: Meta()),
         ])
         #expect(rows.map(\.isHiddenByDefault) == [true, true, true, false])
+    }
+
+    @Test("A background task notification shows its summary as a notice, not raw XML from You")
+    func taskNotification() {
+        let xml = "<task-notification>\n<task-id>b4</task-id>\n<status>completed</status>\n<summary>Background command \"Wait 20 seconds\" completed (exit code 0)</summary>\n</task-notification>"
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "task_notification", text: xml, meta: Meta()),
+            .systemMessage(kind: "queued_command", text: "<task-notification>\n<status>failed</status>\n</task-notification>", meta: Meta()),
+            .systemMessage(kind: "task_notification", text: "<task-notification></task-notification>", meta: Meta()),
+        ])
+        #expect(rows.map(\.kind) == [.notice, .notice, .notice])
+        #expect(rows.map(\.text) == [
+            "Background command \"Wait 20 seconds\" completed (exit code 0)",
+            "Background task failed",
+            "Background task finished",
+        ])
+        #expect(rows.first?.detail == xml)
     }
 
     @Test("Interleaved calls keep their own output and their call order")
