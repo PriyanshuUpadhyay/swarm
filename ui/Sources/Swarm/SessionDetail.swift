@@ -16,6 +16,8 @@ final class SessionDetailModel {
     var snapshot: ChairTranscriptSnapshot
     private(set) var transcriptRevision = 0
     var draft = ""
+    private(set) var queued: [ComposerQueuedRow] = []
+    private var sentMessages = ComposerSentMessages()
     private var sendState = ComposerSendState()
     private var loadedSessionCount = 1
     private var snapshots: [SwarmSessionID: ChairTranscriptSnapshot] = [:]
@@ -71,8 +73,12 @@ final class SessionDetailModel {
             snapshots[session.id] = result
             currentModel = await transcript.currentModel
             usage = await transcript.usage
+            let pending = await transcript.queuedMessages
             await updateHistoryAvailability(row: row)
             compose(row: row)
+            sentMessages.confirm(by: rows)
+            let nextQueued = ComposerQueuedRow.queued(pending) + sentMessages.rows
+            if queued != nextQueued { queued = nextQueued }
             cycleTiming.end(count: rows.count)
             if !opened {
                 openTiming.end(count: rows.count)
@@ -170,11 +176,16 @@ final class SessionDetailModel {
         drafts.save(value, for: sessionID)
     }
 
-    func send(_ requestedText: String, session: SwarmSession) async throws {
+    func send(
+        _ requestedText: String, session: SwarmSession, provider: String?, isRunning: Bool
+    ) async throws {
         let sessionID = session.id.rawValue
         guard let text = sendState.begin(sessionID: sessionID, draft: requestedText) else { return }
+        let before = rows
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)
+            sentMessages.record(text, provider: provider, isRunning: isRunning, transcript: before)
+            queued = queued.filter { $0.state == .queued } + sentMessages.rows
             let current = activeSessionID == sessionID ? draft : drafts.draft(for: sessionID)
             let next = sendState.finish(
                 sessionID: sessionID, currentDraft: current, succeeded: true
@@ -198,6 +209,8 @@ final class SessionDetailModel {
         activeSessionID = sessionID
         currentModel = nil
         usage = ChatUsage()
+        queued = []
+        sentMessages = ComposerSentMessages()
         draft = drafts.draft(for: sessionID)
     }
 }
@@ -303,14 +316,17 @@ struct SessionDetailView: View {
     private var transcriptColumn: some View {
         // Built here, so the transcript holds the composer value and not a closure over this
         // view; the menu keeps transcript find closures alive, and this view holds the model.
+        let provider = row.provider ?? chairProvider
+        let isRunning = row.isRunning == true && ChairTurn.isActive(model.rows)
         let composer = ComposerView(
             sessionID: row.id.rawValue, isActive: isActive,
             draft: Binding(
                 get: { [weak model] in model?.draft ?? "" },
                 set: { [weak model, id = row.id.rawValue] in model?.setDraft($0, sessionID: id) }
             ),
-            isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
+            isRunning: isRunning,
             isSending: model.isSending(sessionID: row.id.rawValue),
+            queued: model.queued,
             modelLabel: modelLabel,
             modelSwitchDisabledReason: modelSwitchDisabledReason,
             selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
@@ -320,14 +336,16 @@ struct SessionDetailView: View {
                 ? "This chat's pane has closed. Start a new chat or switch model."
                 : nil,
             commandSource: commandSource ?? ComposerCommandSource(
-                provider: row.provider ?? chairProvider,
+                provider: provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
                 projectDirectory: row.session.cwd
             ),
             mentionSource: ComposerMentionSource(root: row.session.cwd),
             scratchDirectory: AgentScratchDirectory.current(),
             focus: $composerFocused,
-            send: { [weak model, session = row.session] in try await model?.send($0, session: session) },
+            send: { [weak model, session = row.session] in
+                try await model?.send($0, session: session, provider: provider, isRunning: isRunning)
+            },
             interrupt: { [weak model, session = row.session] in try await model?.interrupt(session: session) },
             onFocused: { [panes] in panes.clearFocus() },
             isCurrentSession: isCurrentSession

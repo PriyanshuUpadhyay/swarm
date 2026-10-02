@@ -213,6 +213,28 @@ struct TranscriptEventTests {
         #expect(decision == "allow")
     }
 
+    @Test("Decodes each queue operation with its content and reason")
+    func queueOperationEvents() {
+        let meta = #""meta":{"session_id":"s1","uuid":"","timestamp":"2026-10-02T00:00:00Z"}"#
+        let lines = [
+            #"{"type":"queue_operation","operation":"enqueue","content":"add a test","reason":null,"#,
+            #"{"type":"queue_operation","operation":"dequeue","content":null,"reason":null,"#,
+            #"{"type":"queue_operation","operation":"remove","content":"add a test","reason":"absorbed_mid_turn","#,
+            #"{"type":"queue_operation","operation":"popAll","content":"keep the old name","reason":null,"#,
+        ].map { $0 + meta + "}" }
+        let decoded = lines.map { line -> [String?] in
+            guard case .queueOperation(let operation, let content, let reason, let meta)
+                = TranscriptEvent.decode(line: line) else { return ["not a queue operation"] }
+            return [operation, content, reason, meta.sessionID]
+        }
+        #expect(decoded == [
+            ["enqueue", "add a test", nil, "s1"],
+            ["dequeue", nil, nil, "s1"],
+            ["remove", "add a test", "absorbed_mid_turn", "s1"],
+            ["popAll", "keep the old name", nil, "s1"],
+        ])
+    }
+
     @Test("Decodes unknown event")
     func unknownEvent() {
         let fixture = #"{"type":"unknown","raw":"{\"key\":\"val\"}","meta":{"session_id":"s1","uuid":"u17","timestamp":"2026-09-22T00:00:16Z"}}"#

@@ -116,6 +116,14 @@ pub const PermissionDecision = struct {
     decision: []const u8,
 };
 
+/// `operation` is an open set (enqueue, dequeue, remove, popAll so far); `dequeue` has no content.
+pub const QueueOperation = struct {
+    meta: Meta,
+    operation: []const u8,
+    content: ?[]const u8,
+    reason: ?[]const u8,
+};
+
 pub const Event = union(enum) {
     ignored: Ignored,
     turn_started: TurnStarted,
@@ -135,12 +143,18 @@ pub const Event = union(enum) {
     elicitation_result: ElicitationResult,
     hook_result: HookResult,
     permission_decision: PermissionDecision,
+    queue_operation: QueueOperation,
     unknown: Unknown,
 };
 
 pub fn str(obj: std.json.ObjectMap, key: []const u8) []const u8 {
     const value = obj.get(key) orelse return "";
     return if (value == .string) value.string else "";
+}
+
+fn optionalStr(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const value = obj.get(key) orelse return null;
+    return if (value == .string) value.string else null;
 }
 
 pub fn tokenCount(obj: std.json.ObjectMap, key: []const u8) ?i64 {
@@ -374,11 +388,19 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         } });
         return events.items;
     }
+    if (std.mem.eql(u8, record_type, "queue-operation")) {
+        try events.append(arena, .{ .queue_operation = .{
+            .meta = meta,
+            .operation = str(rec, "operation"),
+            .content = optionalStr(rec, "content"),
+            .reason = optionalStr(rec, "reason"),
+        } });
+        return events.items;
+    }
     if (oneOf(record_type, &.{
-        "last-prompt",         "atis-latch",                "mode",                     "permission-mode", "file-history-snapshot",
-        "file-history-delta",  "queue-operation",           "pr-link",                  "bridge-session",  "frame-link",
-        "history-suppression", "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",    "worktree-state",
-        "relocated",
+        "last-prompt",               "atis-latch",               "mode",           "permission-mode", "file-history-snapshot",
+        "file-history-delta",        "pr-link",                  "bridge-session", "frame-link",      "history-suppression",
+        "artifact-autoreact-ledger", "artifact-comment-monitor", "continued-in",   "worktree-state",  "relocated",
     })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
         return events.items;
@@ -1099,6 +1121,27 @@ test "Claude queued command and fallback block become system messages" {
     try std.testing.expectEqualStrings("go", queued[0].system_message.text);
     try std.testing.expectEqualStrings("model_fallback", fallback[0].system_message.kind);
     try std.testing.expectEqualStrings("a -> b", fallback[0].system_message.text);
+}
+
+test "Claude queue operations keep operation, content, and reason" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const enqueue = try parseLine(arena, "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"timestamp\":\"t1\",\"sessionId\":\"s1\",\"content\":\"add a test\"}");
+    const dequeue = try parseLine(arena, "{\"type\":\"queue-operation\",\"operation\":\"dequeue\",\"timestamp\":\"t2\",\"sessionId\":\"s1\"}");
+    const remove = try parseLine(arena, "{\"type\":\"queue-operation\",\"operation\":\"remove\",\"timestamp\":\"t3\",\"sessionId\":\"s1\",\"content\":\"add a test\",\"reason\":\"absorbed_mid_turn\",\"commandUuid\":\"c1\",\"deliveryId\":\"d1\"}");
+    const pop_all = try parseLine(arena, "{\"type\":\"queue-operation\",\"operation\":\"popAll\",\"timestamp\":\"t4\",\"sessionId\":\"s1\",\"content\":\"keep the old name\"}");
+    try std.testing.expectEqualStrings("enqueue", enqueue[0].queue_operation.operation);
+    try std.testing.expectEqualStrings("add a test", enqueue[0].queue_operation.content.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), enqueue[0].queue_operation.reason);
+    try std.testing.expectEqualStrings("s1", enqueue[0].queue_operation.meta.session_id);
+    try std.testing.expectEqualStrings("dequeue", dequeue[0].queue_operation.operation);
+    try std.testing.expectEqual(@as(?[]const u8, null), dequeue[0].queue_operation.content);
+    try std.testing.expectEqualStrings("remove", remove[0].queue_operation.operation);
+    try std.testing.expectEqualStrings("add a test", remove[0].queue_operation.content.?);
+    try std.testing.expectEqualStrings("absorbed_mid_turn", remove[0].queue_operation.reason.?);
+    try std.testing.expectEqualStrings("popAll", pop_all[0].queue_operation.operation);
+    try std.testing.expectEqualStrings("keep the old name", pop_all[0].queue_operation.content.?);
 }
 
 test "unseen Claude type stays unknown" {

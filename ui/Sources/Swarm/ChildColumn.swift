@@ -14,7 +14,14 @@ final class ChildColumnModel {
     private(set) var isLoadingOlder = false
     private(set) var historyError: String?
     private(set) var isSending = false
+    private(set) var queued: [ComposerQueuedRow] = []
+    private var sentMessages = ComposerSentMessages()
     var draft = ""
+
+    private var rows: [TranscriptRow] {
+        if case .rows(let rows, _) = snapshot { return rows }
+        return []
+    }
 
     /// Reads the child's log once a second while its column is on screen.
     func poll(log: String?, provider: String?) async {
@@ -26,6 +33,9 @@ final class ChildColumnModel {
                 snapshot = next
                 revision += 1
             }
+            sentMessages.confirm(by: rows)
+            let nextQueued = ComposerQueuedRow.queued(await transcript.queuedMessages) + sentMessages.rows
+            if queued != nextQueued { queued = nextQueued }
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -44,10 +54,16 @@ final class ChildColumnModel {
         hasOlder = await transcript.hasOlder
     }
 
-    func send(_ text: String, to agent: SwarmAgentID, in session: SwarmSession) async throws {
+    func send(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSession,
+        provider: String?, isRunning: Bool
+    ) async throws {
         isSending = true
         defer { isSending = false }
+        let before = rows
         try await bus.type(text, to: agent, in: session)
+        sentMessages.record(text, provider: provider, isRunning: isRunning, transcript: before)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
         if draft == text { draft = "" }
     }
 
@@ -130,6 +146,7 @@ struct ChildColumnView: View {
             draft: Binding(get: { [model] in model.draft }, set: { [model] in model.draft = $0 }),
             isRunning: agent.status == .working,
             isSending: model.isSending,
+            queued: model.queued,
             sendDisabledReason: agent.alive == false ? "This agent has ended." : nil,
             placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(
@@ -143,7 +160,12 @@ struct ChildColumnView: View {
             mentionSource: ComposerMentionSource(root: session.cwd),
             scratchDirectory: AgentScratchDirectory.current(),
             focus: $composerFocused,
-            send: { [model, session, agent] in try await model.send($0, to: agent.id, in: session) },
+            send: { [model, session, agent] in
+                try await model.send(
+                    $0, to: agent.id, in: session,
+                    provider: agent.provider, isRunning: agent.status == .working
+                )
+            },
             interrupt: { [model, session, agent] in try await model.interrupt(agent.id, in: session) },
             onFocused: onFocused,
             isCurrentSession: { true }

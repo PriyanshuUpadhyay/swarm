@@ -332,6 +332,26 @@ struct SwarmSessionDetailTests {
         #expect(rows.first?.text == "Resumed")
     }
 
+    @Test("The chair's queued messages come from its log, and a clear's new log starts empty")
+    func queuedMessagesFollowLog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-queue-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([
+            Self.USER_ASKS,
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#,
+        ], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.queuedMessages == ["keep the old name"])
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.queuedMessages.isEmpty)
+    }
+
     @Test("A gap in the log on the same path never freezes the rows")
     func gapKeepsRows() async throws {
         let directory = FileManager.default.temporaryDirectory

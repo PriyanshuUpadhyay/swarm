@@ -52,11 +52,16 @@ struct TranscriptRowBuilderTests {
             #"{"type":"worktree-state","worktreeSession":{"originalCwd":"/work/main","worktreePath":"/work/wt","worktreeName":"wt","worktreeBranch":"wt","sessionId":"s1","enteredExisting":true},"sessionId":"s1"}"#,
             #"{"type":"relocated","sessionId":"s1","relocatedCwd":"/work/wt"}"#,
             #"{"type":"agent-name","agentName":"council-claude","sessionId":"s1"}"#,
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"add a test"}"#,
+            #"{"type":"queue-operation","operation":"dequeue","timestamp":"t2","sessionId":"s1"}"#,
         ].joined(separator: "\n").appending("\n").write(to: log, atomically: true, encoding: .utf8)
         let process = TranscriptToolProcess(binary: URL(fileURLWithPath: binary), format: "claude", log: log, follow: false)
         var records: [TranscriptRecord] = []
         for try await record in process.stream { records.append(record) }
-        #expect(records.count == 4)
+        #expect(records.count == 6)
+        #expect(records.suffix(2).allSatisfy {
+            if case .queueOperation = $0.event { true } else { false }
+        })
         #expect(TranscriptRowBuilder.rows(from: records).isEmpty)
     }
 

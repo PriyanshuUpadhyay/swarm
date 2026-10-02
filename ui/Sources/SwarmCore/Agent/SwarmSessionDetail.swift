@@ -92,6 +92,8 @@ public actor SwarmChairTranscript {
     private var reader: ToolTranscriptReader?
     public private(set) var currentModel: String?
     public private(set) var usage = ChatUsage()
+    /// Claude's queued messages in the current log; a clear's new log has its own queue.
+    public private(set) var queuedMessages: [String] = []
     private var rows: [TranscriptRow] = []
     /// The path of the last log that was read. `log` also clears on a gap, so it cannot tell a new
     /// log from the same one that came back.
@@ -162,6 +164,7 @@ public actor SwarmChairTranscript {
             log = path
             currentModel = nil
             usage = ChatUsage()
+            queuedMessages = []
             reader = ToolTranscriptReader(binary: binary, format: format, log: path)
         }
         do {
@@ -211,6 +214,7 @@ public actor SwarmChairTranscript {
         rawEntries = TranscriptDebugData.entries(from: window.records, indexOffset: window.indexOffset)
         hasOlder = window.hasOlder
         usage = window.usage
+        queuedMessages = QueuedMessages.pending(in: window.records)
         if let model = ChatModelChoice.latest(in: window.records) { currentModel = model }
     }
 

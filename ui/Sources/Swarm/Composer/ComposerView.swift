@@ -9,6 +9,8 @@ struct ComposerView: View {
     var draft: Binding<String>
     let isRunning: Bool
     let isSending: Bool
+    /// Messages the agent has not taken yet, drawn above the text field.
+    var queued: [ComposerQueuedRow] = []
     var modelLabel: String = "Choose model"
     var modelSwitchDisabledReason: String? = nil
     var selectModel: (() -> Void)? = nil
@@ -48,15 +50,18 @@ struct ComposerView: View {
     @State private var matchGeneration = 0
     @State private var isMatchingFiles = false
     @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             if menuVisible { completionMenu }
             VStack(alignment: .leading, spacing: 0) {
+                if !queued.isEmpty { queuedRows }
                 if !attachments.isEmpty { attachmentRow }
                 editor
                 footer
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: queued)
             .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous))
             .overlay {
                 if isDropTarget {
@@ -233,6 +238,37 @@ struct ComposerView: View {
         }
         .padding(.horizontal, DesignTokens.Spacing.m)
         .padding(.bottom, DesignTokens.Spacing.s)
+    }
+
+    private var queuedRows: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ForEach(queued) { row in
+                HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+                    Text(verbatim: row.text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text(row.caption(provider: commandSource.provider))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(row.accessibilityLabel)
+                .transition(.opacity)
+            }
+            if draft.wrappedValue.isEmpty, queued.contains(where: { $0.state == .queued }) {
+                Text("↑ to edit")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Press Up to edit queued messages")
+            }
+            Divider().padding(.top, DesignTokens.Spacing.xs)
+        }
+        .font(DesignTokens.body)
+        .padding(.horizontal, DesignTokens.Spacing.m)
+        .padding(.top, DesignTokens.Spacing.m)
+        .transition(.opacity)
     }
 
     private var attachmentRow: some View {
