@@ -8,14 +8,15 @@ public enum Composer {
     }
 
     /// The text to type into a CLI, so the Enter after it can only submit. Claude sends nothing
-    /// when it must remove invisible format characters, so they go first. A CR is Enter, so CR
-    /// and CRLF become LF. A trailing `\` turns Enter into a newline, and a last word that starts
-    /// with `@`, `$`, or `/` or ends with `:` leaves a popup open that takes Enter, so each gets
-    /// one space.
+    /// when it must remove invisible format characters, so they go first. A typed ESC is the
+    /// Escape key and interrupts the turn, so control characters other than LF and TAB go too.
+    /// A CR is Enter, so CR and CRLF become LF. A trailing `\` turns Enter into a newline, and a
+    /// last word that starts with `@`, `$`, or `/` or ends with `:` leaves a popup open that takes
+    /// Enter, so each gets one space.
     public static func submission(_ text: String) -> String {
         var scalars = String.UnicodeScalarView()
         var afterCR = false
-        for scalar in text.unicodeScalars where !isInvisibleFormat(scalar) {
+        for scalar in text.unicodeScalars where !isRemoved(scalar) {
             if scalar == "\n", afterCR {
                 afterCR = false
                 continue
@@ -31,8 +32,10 @@ public enum Composer {
         return cleaned + " "
     }
 
-    private static func isInvisibleFormat(_ scalar: Unicode.Scalar) -> Bool {
+    private static func isRemoved(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
+        // C0 controls and DEL, but not TAB, LF, or CR, which the loop turns into LF (row C5.6).
+        case 0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F, 0x7F: true
         // The classes Claude removes (research row C5.1). U+200C and U+200D stay: they join
         // emoji and script letters.
         case 0x200B, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069, 0xFEFF, 0xE0000...0xE007F:

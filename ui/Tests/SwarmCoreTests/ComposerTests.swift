@@ -159,6 +159,13 @@ struct ComposerTests {
         #expect(Composer.submission("word\u{2060}joiner") == "word\u{2060}joiner")
     }
 
+    @Test("Control characters other than LF and TAB are removed, because an ESC interrupts the turn")
+    func submissionRemovesControlCharacters() {
+        #expect(Composer.submission("red\u{1B}[31m text") == "red[31m text")
+        #expect(Composer.submission("a\u{0}b\u{8}c\u{B}d\u{1F}e\u{7F}f") == "abcdef")
+        #expect(Composer.submission("tab\there\r\nnext") == "tab\there\nnext")
+    }
+
     @Test("CR and CRLF become LF, because a CR is Enter")
     func submissionNormalizesLineEnds() {
         #expect(Composer.submission("one\r\ntwo\rthree\nfour") == "one\ntwo\nthree\nfour")
