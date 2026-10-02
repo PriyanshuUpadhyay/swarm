@@ -98,6 +98,15 @@ struct ComposerQueueTests {
         ) == .waiting)
     }
 
+    @Test("Pull-back is offered only for Claude in a session whose adapter can press keys")
+    func pullBackNeedsKeyVerb() {
+        #expect(SwarmSessionInteraction.canPullBack(provider: "claude", adapter: "tmux-solo"))
+        #expect(SwarmSessionInteraction.canPullBack(provider: "claude", adapter: "tmux"))
+        #expect(!SwarmSessionInteraction.canPullBack(provider: "claude", adapter: "herdr"))
+        #expect(!SwarmSessionInteraction.canPullBack(provider: "claude", adapter: nil))
+        #expect(!SwarmSessionInteraction.canPullBack(provider: "codex", adapter: "tmux-solo"))
+    }
+
     @Test("C-u presses cover each line of the CLI box twice, plus one")
     func clearPresses() {
         #expect(QueuePullBack.clearPresses(for: Self.ADD_TEST) == 3)

@@ -205,6 +205,14 @@ public enum SwarmSessionInteraction {
             && text.contains { !$0.isWhitespace }
     }
 
+    /// Pull-back reads Claude's queue records and presses Up and C-u through the adapter's `key`
+    /// verb, which Herdr does not have.
+    // ponytail: the shipped adapters with `key`, by name; a custom adapter with `key` gets no
+    // pull-back until the CLI reports adapter verbs.
+    public static func canPullBack(provider: String?, adapter: String?) -> Bool {
+        provider == "claude" && ["tmux", "tmux-solo"].contains(adapter)
+    }
+
     public static func lastActivity(of session: SwarmSession) -> Int {
         session.lastMessageAt ?? session.createdAt
     }

@@ -338,7 +338,7 @@ struct SessionDetailView: View {
             isRunning: isRunning,
             isSending: model.isSending(sessionID: row.id.rawValue),
             queued: model.queued,
-            pullBack: provider == "claude"
+            pullBack: SwarmSessionInteraction.canPullBack(provider: provider, adapter: row.session.adapter)
                 ? { [weak model, session = row.session] in try await model?.pullBack(session: session) }
                 : nil,
             modelLabel: modelLabel,

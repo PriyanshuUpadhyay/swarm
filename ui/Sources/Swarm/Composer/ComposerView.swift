@@ -269,7 +269,7 @@ struct ComposerView: View {
                 .accessibilityLabel(row.accessibilityLabel)
                 .transition(.opacity)
             }
-            if draft.wrappedValue.isEmpty, queued.contains(where: { $0.state == .queued }) {
+            if pullBack != nil, draft.wrappedValue.isEmpty, queued.contains(where: { $0.state == .queued }) {
                 Text("↑ to edit")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
