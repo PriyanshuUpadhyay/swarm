@@ -162,7 +162,6 @@ public actor SwarmChairTranscript {
         }
         if path != log {
             log = path
-            currentModel = nil
             usage = ChatUsage()
             queuedMessages = []
             reader = ToolTranscriptReader(binary: binary, format: format, log: path)
@@ -254,6 +253,8 @@ public actor SwarmChairTranscript {
                 frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
             } else {
                 frozenRows = []
+                // `/clear` keeps the model, but another log may come from another agent.
+                currentModel = nil
             }
             lastLogPath = path
         }

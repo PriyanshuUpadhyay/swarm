@@ -303,6 +303,27 @@ struct SwarmSessionDetailTests {
         #expect(!rows.contains { $0.text.contains("<local-command-") })
     }
 
+    @Test("A /clear log keeps the model of the log before it until a reply names one")
+    func clearKeepsModel() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let reply = #"{"type":"assistant","uuid":"a1","message":{"model":"claude-opus-4-6","content":[{"type":"text","text":"Fixed"}]}}"#
+
+        value.chairLog = try chat([Self.USER_ASKS, reply], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.currentModel == "claude-opus-4-6")
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "other.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.currentModel == nil)
+    }
+
     @Test("A clear log read while it holds only bookkeeping lines keeps the old rows and still gets its divider")
     func clearReadBeforeItsRecords() async throws {
         let directory = FileManager.default.temporaryDirectory
