@@ -248,6 +248,112 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["herdr", "herdr", "herdr", "herdr", "tmux-solo"])
     }
 
+    private func chat(_ lines: [String], in directory: URL, named name: String) throws -> URL {
+        let log = directory.appendingPathComponent(name)
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: log)
+        return log
+    }
+
+    private static let USER_ASKS = #"{"type":"user","uuid":"u1","message":{"role":"user","content":"Fix the bug"}}"#
+    private static let CLEAR_LOG = [
+        #"{"type":"attachment","uuid":"h1","attachment":{"type":"hook_success","hookName":"SessionStart:clear","hookEvent":"SessionStart","toolUseID":"t1","exitCode":0}}"#,
+        #"{"type":"user","uuid":"c1","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>"}}"#,
+        #"{"type":"user","uuid":"u2","message":{"role":"user","content":"Start fresh"}}"#,
+    ]
+
+    @Test("A /clear log keeps the earlier rows behind one divider and drops the /clear command row")
+    func clearKeepsEarlierRows() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the clear")
+            return
+        }
+        let visible = rows.filter { !$0.isHiddenByDefault }
+        #expect(visible.map(\.kind) == [.user, .divider, .user])
+        #expect(visible.map(\.text).first == "Fix the bug")
+        #expect(visible[1].text.hasPrefix("Context cleared · "))
+        #expect(visible[1].eventID == "clear-second.jsonl")
+        #expect(visible[2].text == "Start fresh")
+        #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
+    }
+
+    @Test("Two clears in a row give two dividers")
+    func twoClears() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "third.jsonl").path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the second clear")
+            return
+        }
+        #expect(rows.filter { $0.kind == .divider }.map(\.eventID)
+            == ["clear-second.jsonl", "clear-third.jsonl"])
+        #expect(rows.filter { $0.kind == .user }.map(\.text) == ["Fix the bug", "Start fresh", "Start fresh"])
+    }
+
+    @Test("A new log that is not a clear, such as a model switch, replaces the rows with no divider")
+    func switchGivesNoDivider() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(
+            [#"{"type":"user","uuid":"u3","message":{"role":"user","content":"Resumed"}}"#],
+            in: directory, named: "second.jsonl"
+        ).path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the switch")
+            return
+        }
+        #expect(rows.map(\.kind) == [.user])
+        #expect(rows.first?.text == "Resumed")
+    }
+
+    @Test("A gap in the log on the same path never freezes the rows")
+    func gapKeepsRows() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        let path = try chat(Self.CLEAR_LOG, in: directory, named: "only.jsonl")
+        value.chairLog = path.path
+        _ = await reader.poll(session: value)
+        value.chairLog = nil
+        _ = await reader.poll(session: value)
+        value.chairLog = path.path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the gap")
+            return
+        }
+        #expect(!rows.contains { $0.kind == .divider })
+    }
+
     private func session(adapter: String) -> SwarmSession {
         SwarmSession(
             id: .init("01a0c8e6-7afc-7544-95cc-37c77567c776"),

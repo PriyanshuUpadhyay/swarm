@@ -5,6 +5,8 @@ import TranscriptTool
 public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Hashable {
         case user, assistant, thought, toolUse, toolResult, diff, question, error, notice, system, result
+        /// A line between two conversations of one chat; `text` is its caption and `detail` its time.
+        case divider
     }
 
     public var kind: Kind
@@ -36,6 +38,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
         case .notice: "Notice"
         case .system: "System"
         case .result: "Turn"
+        case .divider: "Context cleared"
         }
     }
 

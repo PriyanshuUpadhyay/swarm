@@ -93,6 +93,11 @@ public actor SwarmChairTranscript {
     public private(set) var currentModel: String?
     public private(set) var usage = ChatUsage()
     private var rows: [TranscriptRow] = []
+    /// The path of the last log that was read. `log` also clears on a gap, so it cannot tell a new
+    /// log from the same one that came back.
+    private var lastLogPath: URL?
+    /// Rows of the logs before a `/clear`, each clear closed by its divider.
+    private var frozenRows: [TranscriptRow] = []
     private var rawEntries: [RawTranscriptEntry] = []
     public private(set) var hasOlder = false
 
@@ -190,11 +195,32 @@ public actor SwarmChairTranscript {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
-        rows = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        var built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        if let path = log, path != lastLogPath {
+            if lastLogPath != nil, ConversationBoundary.isClear(window.records), !rows.isEmpty {
+                frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
+            } else {
+                frozenRows = []
+            }
+            lastLogPath = path
+        }
+        if !frozenRows.isEmpty {
+            built.removeAll { $0.kind == .system && $0.text.contains("<command-name>/clear</command-name>") }
+        }
+        rows = frozenRows + built
         rawEntries = TranscriptDebugData.entries(from: window.records, indexOffset: window.indexOffset)
         hasOlder = window.hasOlder
         usage = window.usage
         if let model = ChatModelChoice.latest(in: window.records) { currentModel = model }
+    }
+
+    private static func clearDivider(logName: String) -> TranscriptRow {
+        let time = Date.now.formatted(date: .omitted, time: .shortened)
+        var row = TranscriptRow(
+            kind: .divider, text: "Context cleared · \(time)", eventID: "clear-\(logName)"
+        )
+        row.detail = time
+        return row
     }
 
     func discoveredLog(
