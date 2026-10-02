@@ -192,7 +192,8 @@ struct ComposerPluginsTests {
         #expect(found.contains { $0.name == "tools:lint" && $0.kind == .plugin("tools") })
         #expect(!found.contains { $0.name == "claude-only" })
         #expect(found.contains { $0.name == "clear" && $0.kind == .builtIn })
-        #expect(!found.contains { $0.name == "rewind" || $0.name == "add-dir" })
+        #expect(found.contains { $0.name == "rewind" })
+        #expect(!found.contains { $0.name == "memory" || $0.name == "cost" })
     }
 
     @Test("Codex finds project skills from a subfolder up to the repository root")

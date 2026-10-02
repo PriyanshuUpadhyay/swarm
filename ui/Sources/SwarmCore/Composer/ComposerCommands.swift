@@ -201,11 +201,33 @@ public enum ComposerCommandCatalog {
     public static func builtIns(provider: String?) -> [ComposerCommand] {
         let values: [(String, String)]
         if provider?.lowercased() == "agy" {
+            // AGY 1.2.14 reference (antigravity.google/docs/cli/reference) and its changelog.
             values = [
+                ("add-dir", "Add a working folder"),
+                ("agents", "Manage agents"),
+                ("btw", "Ask a side question"),
                 ("clear", "Start a new conversation"),
+                ("config", "Open settings"),
+                ("context", "Show context use"),
+                ("copy", "Copy the last answer"),
                 ("diff", "Show the current changes"),
+                ("effort", "Choose the reasoning effort"),
+                ("fork", "Fork the conversation"),
+                ("goal", "Set a goal"),
                 ("help", "Show help"),
+                ("hooks", "Show hook settings"),
+                ("mcp", "Manage MCP servers"),
+                ("model", "Choose the model"),
                 ("new", "Start a new conversation"),
+                ("permissions", "Change tool permissions"),
+                ("plan", "Start plan mode"),
+                ("plugin", "Manage plugins"),
+                ("rename", "Rename the conversation"),
+                ("resume", "Resume an earlier conversation"),
+                ("rewind", "Rewind the conversation"),
+                ("skills", "List skills"),
+                ("tasks", "Show background tasks"),
+                ("usage", "Show plan usage"),
             ]
         } else if provider?.lowercased().contains("codex") == true {
             values = [
@@ -217,8 +239,17 @@ public enum ComposerCommandCatalog {
                 ("model", "Choose the model"),
                 ("new", "Start a new conversation"),
                 ("permissions", "Change approval permissions"),
+                ("plan", "Start plan mode"),
+                ("agents", "Manage agents"),
+                ("export", "Export the conversation"),
+                ("fork", "Fork the conversation"),
+                ("mcp", "Manage MCP servers"),
+                ("rename", "Rename the conversation"),
+                ("resume", "Resume an earlier conversation"),
                 ("review", "Review the current changes"),
+                ("skills", "List skills"),
                 ("status", "Show session status"),
+                ("usage", "Show plan usage"),
             ]
         } else {
             values = [
