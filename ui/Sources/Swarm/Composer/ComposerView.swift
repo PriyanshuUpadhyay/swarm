@@ -528,6 +528,7 @@ struct ComposerView: View {
             do {
                 guard let text = try await pullBack() else {
                     showsAlreadySent = true
+                    AccessibilityNotification.Announcement("Already sent").post()
                     try? await Task.sleep(for: .seconds(2))
                     showsAlreadySent = false
                     return
