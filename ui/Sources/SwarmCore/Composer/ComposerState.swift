@@ -33,8 +33,10 @@ public enum Composer {
 
     private static func isInvisibleFormat(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
-        // U+200C and U+200D stay: they join emoji and script letters (research row C5.1).
-        case 0x00AD, 0x200B, 0x200E, 0x200F, 0x2060...0x2064, 0xFEFF: true
+        // The classes Claude removes (research row C5.1). U+200C and U+200D stay: they join
+        // emoji and script letters.
+        case 0x200B, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069, 0xFEFF, 0xE0000...0xE007F:
+            true
         default: false
         }
     }

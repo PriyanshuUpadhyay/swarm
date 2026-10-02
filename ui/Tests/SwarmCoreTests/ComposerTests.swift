@@ -148,11 +148,15 @@ struct ComposerTests {
 
     @Test("Invisible format characters are removed before typing")
     func submissionRemovesInvisibleCharacters() {
-        #expect(Composer.submission("a\u{00AD}b\u{200B}c\u{200E}d\u{200F}e") == "abcde")
+        #expect(Composer.submission("a\u{200B}b\u{200E}c\u{200F}d\u{FEFF}e") == "abcde")
+        #expect(Composer.submission("a\u{202E}b") == "ab")
+        #expect(Composer.submission("a\u{202A}b\u{2066}c\u{2069}d") == "abcd")
+        #expect(Composer.submission("a\u{E0041}b\u{E007F}c") == "abc")
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
         #expect(Composer.submission("hi " + family + " there") == "hi " + family + " there")
         #expect(Composer.submission("a\u{200C}b") == "a\u{200C}b")
-        #expect(Composer.submission("h\u{2060}i\u{2061}j\u{2062}k\u{2063}l\u{2064}m\u{FEFF}n") == "hijklmn")
+        #expect(Composer.submission("soft\u{00AD}hyphen") == "soft\u{00AD}hyphen")
+        #expect(Composer.submission("word\u{2060}joiner") == "word\u{2060}joiner")
     }
 
     @Test("CR and CRLF become LF, because a CR is Enter")
