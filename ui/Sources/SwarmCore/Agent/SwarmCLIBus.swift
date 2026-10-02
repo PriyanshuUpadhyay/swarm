@@ -166,6 +166,12 @@ public struct SwarmCLIBus: SwarmBus {
         )
     }
 
+    public func pressKey(
+        _ key: String, agent: SwarmAgentID, session: SwarmSessionID, adapter: String
+    ) async throws {
+        _ = try await call(["key", agent.rawValue, key], in: session, adapter: adapter)
+    }
+
     public func close(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws {

@@ -11,6 +11,9 @@ struct ComposerView: View {
     let isSending: Bool
     /// Messages the agent has not taken yet, drawn above the text field.
     var queued: [ComposerQueuedRow] = []
+    /// Moves the queued messages back out of the CLI; returns their text, or nil if the CLI took
+    /// them first. Nil for a provider with no pull-back.
+    var pullBack: (() async throws -> String?)? = nil
     var modelLabel: String = "Choose model"
     var modelSwitchDisabledReason: String? = nil
     var selectModel: (() -> Void)? = nil
@@ -47,6 +50,9 @@ struct ComposerView: View {
     @State private var pendingAttachments = 0
     @State private var isSubmitting = false
     @State private var isStopping = false
+    @State private var isPullingBack = false
+    @State private var pullBackError: String?
+    @State private var showsAlreadySent = false
     @State private var matchGeneration = 0
     @State private var isMatchingFiles = false
     @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
@@ -77,6 +83,12 @@ struct ComposerView: View {
             }
             if let stopError {
                 Text(verbatim: stopError).font(.caption).foregroundStyle(.red)
+            }
+            if let pullBackError {
+                Text(verbatim: pullBackError).font(.caption).foregroundStyle(.red)
+            }
+            if showsAlreadySent {
+                Text("Already sent").font(.caption).foregroundStyle(.secondary)
             }
             if pendingAttachments > 0 {
                 Text("Adding attachment…").font(.caption).foregroundStyle(.secondary)
@@ -431,7 +443,8 @@ struct ComposerView: View {
     private func handle(_ key: ComposerInputKey) -> KeyPress.Result {
         let action = ComposerKeyRouter.route(
             key, menu: resolvedMenu, menuOpen: menuVisible, hasRows: completionCount > 0,
-            draftIsEmpty: draft.wrappedValue.isEmpty, canPullBack: false
+            draftIsEmpty: draft.wrappedValue.isEmpty,
+            canPullBack: pullBack != nil && queued.contains { $0.state == .queued }
         )
         switch action {
         case .move(let delta):
@@ -446,7 +459,7 @@ struct ComposerView: View {
             guard completionCount > 0 else { return .ignored }
             submit(pick(min(selectedIndex, completionCount - 1)))
         case .pullBack:
-            return .ignored
+            pullBackQueued()
         case .dismissMenu:
             dismissMenu()
         case .clear:
@@ -501,6 +514,31 @@ struct ComposerView: View {
                 if isCurrentSession() { focus.wrappedValue = true }
             } catch {
                 sendError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            }
+        }
+    }
+
+    private func pullBackQueued() {
+        guard let pullBack, !isPullingBack else { return }
+        isPullingBack = true
+        pullBackError = nil
+        Task {
+            defer { isPullingBack = false }
+            do {
+                guard let text = try await pullBack() else {
+                    showsAlreadySent = true
+                    try? await Task.sleep(for: .seconds(2))
+                    showsAlreadySent = false
+                    return
+                }
+                // Keep anything typed while the CLI let go of the text.
+                let typed = draft.wrappedValue
+                let next = typed.isEmpty ? text : text + "\n" + typed
+                draft.wrappedValue = next
+                selection = TextSelection(insertionPoint: next.endIndex)
+                if isCurrentSession() { focus.wrappedValue = true }
+            } catch {
+                pullBackError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }

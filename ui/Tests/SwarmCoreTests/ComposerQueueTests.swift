@@ -52,6 +52,41 @@ struct ComposerQueueTests {
         #expect(QueuedMessages.pending(in: records) == [Self.ADD_TEST])
     }
 
+    @Test("Up pulls back each queued message that gets its own popAll, in queue order")
+    func pullBackPullsEach() {
+        let queued = [Self.ADD_TEST, Self.KEEP_NAME]
+        #expect(QueuePullBack.decide(
+            queued: queued, after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
+            pastDeadline: false
+        ) == .pulled(queued))
+        #expect(QueuePullBack.decide(
+            queued: queued, after: [op("popAll", Self.ADD_TEST), op("remove", Self.KEEP_NAME)],
+            pastDeadline: false
+        ) == .pulled([Self.ADD_TEST]))
+    }
+
+    @Test("A message the CLI took first, or no record by the deadline, is already sent")
+    func pullBackAlreadySent() {
+        #expect(QueuePullBack.decide(
+            queued: [Self.ADD_TEST], after: [op("remove", Self.ADD_TEST)], pastDeadline: false
+        ) == .alreadySent)
+        #expect(QueuePullBack.decide(
+            queued: [Self.ADD_TEST], after: [op("dequeue")], pastDeadline: false
+        ) == .alreadySent)
+        #expect(QueuePullBack.decide(queued: [Self.ADD_TEST], after: [], pastDeadline: false) == .waiting)
+        #expect(QueuePullBack.decide(queued: [Self.ADD_TEST], after: [], pastDeadline: true) == .alreadySent)
+        // A CLI-made entry's record decides nothing for the owner's message.
+        #expect(QueuePullBack.decide(
+            queued: [Self.ADD_TEST], after: [op("remove", Self.TASK_NOTIFICATION)], pastDeadline: false
+        ) == .waiting)
+    }
+
+    @Test("C-u presses cover each line of the CLI box twice, plus one")
+    func clearPresses() {
+        #expect(QueuePullBack.clearPresses(for: Self.ADD_TEST) == 3)
+        #expect(QueuePullBack.clearPresses(for: "a\nb") == 5)
+    }
+
     @Test("Claude rows come from the queue and keep their ids while the head leaves")
     func claudeRows() {
         let before = ComposerQueuedRow.queued([Self.ADD_TEST, Self.KEEP_NAME])

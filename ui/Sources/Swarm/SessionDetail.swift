@@ -203,6 +203,17 @@ final class SessionDetailModel {
         try await bus.interrupt(SwarmPanePolicy.chair, in: session)
     }
 
+    /// Claude's queued messages back out of the chair's CLI; nil when the CLI took them first.
+    func pullBack(session: SwarmSession) async throws -> String? {
+        guard let transcript = transcripts[session.id] else { return nil }
+        let bus = bus
+        let text = try await transcript.pullBack { key in
+            try await bus.pressKey(key, agent: SwarmPanePolicy.chair, session: session)
+        }
+        queued.removeAll { $0.state == .queued }
+        return text
+    }
+
     private func activate(sessionID: String) {
         guard activeSessionID != sessionID else { return }
         if let activeSessionID { drafts.save(draft, for: activeSessionID) }
@@ -327,6 +338,9 @@ struct SessionDetailView: View {
             isRunning: isRunning,
             isSending: model.isSending(sessionID: row.id.rawValue),
             queued: model.queued,
+            pullBack: provider == "claude"
+                ? { [weak model, session = row.session] in try await model?.pullBack(session: session) }
+                : nil,
             modelLabel: modelLabel,
             modelSwitchDisabledReason: modelSwitchDisabledReason,
             selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },

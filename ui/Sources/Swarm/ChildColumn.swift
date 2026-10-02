@@ -71,6 +71,16 @@ final class ChildColumnModel {
         try await bus.interrupt(agent, in: session)
     }
 
+    /// Claude's queued messages back out of the child's CLI; nil when the CLI took them first.
+    func pullBack(_ agent: SwarmAgentID, in session: SwarmSession) async throws -> String? {
+        let bus = bus
+        let text = try await transcript.pullBack { key in
+            try await bus.pressKey(key, agent: agent, session: session)
+        }
+        queued.removeAll { $0.state == .queued }
+        return text
+    }
+
     func answer(
         _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID, in session: SwarmSession
     ) async throws {
@@ -147,6 +157,9 @@ struct ChildColumnView: View {
             isRunning: agent.status == .working,
             isSending: model.isSending,
             queued: model.queued,
+            pullBack: agent.provider == "claude"
+                ? { [model, session, agent] in try await model.pullBack(agent.id, in: session) }
+                : nil,
             sendDisabledReason: agent.alive == false ? "This agent has ended." : nil,
             placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(

@@ -41,7 +41,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -60,6 +60,14 @@ fn valid_session_id(id: &str) -> Result<String, String> {
         return Err("swarm: bad SWARM_SESSION_ID".to_string());
     }
     Ok(id.to_string())
+}
+
+/// Every agent pane has one of these set. It is a guard against a model's mistake, not a trust
+/// boundary.
+fn in_agent_pane() -> bool {
+    ["TMUX_PANE", "HERDR_PANE_ID"]
+        .iter()
+        .any(|name| env::var_os(name).is_some())
 }
 
 /// (session, agent, state, detail)
@@ -2037,12 +2045,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let [cmd, agent_id, prompt_id, choice] = args
         && cmd == "answer"
     {
-        // Only the owner answers, from the app. Every agent pane has one of these set, so a model
-        // cannot answer a question by mistake; it is a guard, not a trust boundary.
-        if ["TMUX_PANE", "HERDR_PANE_ID"]
-            .iter()
-            .any(|name| env::var_os(name).is_some())
-        {
+        // Only the owner answers, from the app, so a model cannot answer a question by mistake.
+        if in_agent_pane() {
             return Err(
                 "swarm: only the owner answers an agent's question; the Swarm app sends it".into(),
             );
@@ -2111,6 +2115,25 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
             .ok_or("swarm: no pane recorded")?;
         swarm::adapter::load(&root, &adapter_name())?.run("interrupt", &[("pane", &pane)])?;
+        return Ok(());
+    }
+    if let [cmd, agent_id, key] = args
+        && cmd == "key"
+    {
+        // The app's pull-back of a queued message. Escape and C-c would stop the agent's turn.
+        if in_agent_pane() {
+            return Err(
+                "swarm: only the owner presses keys in an agent's pane; the Swarm app sends them"
+                    .into(),
+            );
+        }
+        if !["Up", "C-u"].contains(&key.as_str()) {
+            return Err(format!("swarm: key {key:?} is not allowed; only Up and C-u").into());
+        }
+        let pane = swarm::store::pane_of(&connection, &session_id()?, agent_id)?
+            .ok_or("swarm: no pane recorded")?;
+        swarm::adapter::load(&root, &adapter_name())?
+            .run("key", &[("pane", &pane), ("key", key)])?;
         return Ok(());
     }
     let (session_id, agent_id) = identity()?;

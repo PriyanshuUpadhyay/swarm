@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 import TranscriptTool
 @testable import SwarmCore
@@ -176,6 +177,18 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
+    @Test("A key press names the agent and the key, in the session")
+    func pressKeyArguments() async throws {
+        let calls = CloseCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            await calls.reply(arguments: arguments, environment: environment)
+        }
+        try await bus.pressKey("Up", agent: .init("seat"), session: session(adapter: "tmux-solo"))
+        #expect(await calls.arguments == [["key", "seat", "Up"]])
+        #expect(await calls.adapters == ["tmux-solo"])
+    }
+
     @Test("Hook status and plan decode the CLI's answers, and setup sends the plan's digest")
     func hooksStatusPlanAndSetup() async throws {
         let calls = CloseCalls()
@@ -350,6 +363,33 @@ struct SwarmSessionDetailTests {
         value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
         _ = await reader.poll(session: value)
         #expect(await reader.queuedMessages.isEmpty)
+    }
+
+    @Test("Pull-back presses Up, reads the popAll records the log gets, and clears the CLI box")
+    func pullBackReadsLog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let enqueue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        let log = try chat([Self.USER_ASKS, enqueue], in: directory, named: "chat.jsonl")
+        value.chairLog = log.path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        let pulled = try await reader.pullBack { key in
+            keys.withLock { $0.append(key) }
+            guard key == "Up" else { return }
+            let handle = try FileHandle(forWritingTo: log)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((enqueue.replacingOccurrences(of: "enqueue", with: "popAll") + "\n").utf8))
+            try handle.close()
+        }
+
+        #expect(pulled == "keep the old name")
+        #expect(keys.withLock { $0 } == ["Up", "C-u", "C-u", "C-u"])
     }
 
     @Test("A gap in the log on the same path never freezes the rows")

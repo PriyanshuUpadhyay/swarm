@@ -194,6 +194,40 @@ public actor SwarmChairTranscript {
         return .rows(rows, raw: rawEntries)
     }
 
+    /// Claude's pull-back of its queued messages: `press("Up")`, then this log's queue records
+    /// until each message has its own or 1.5 s pass, then `press("C-u")` until the CLI box is
+    /// empty. Returns the pulled text, or nil when the CLI took the messages first. It never
+    /// presses Escape or C-c, because both stop the turn.
+    public func pullBack(press: @Sendable (String) async throws -> Void) async throws -> String? {
+        let queued = queuedMessages
+        guard let reader, let last = queued.last else { return nil }
+        let deadline = ContinuousClock.now + .milliseconds(1500)
+        let start = await reader.window()
+        let mark = start.indexOffset + start.records.count
+        try await press("Up")
+        var decision = QueuePullBack.waiting
+        while decision == .waiting {
+            // The live reader, not the next poll: the follow stream lands records within ms.
+            let window = await reader.window()
+            decision = QueuePullBack.decide(
+                queued: queued, after: window.records.dropFirst(mark - window.indexOffset),
+                pastDeadline: ContinuousClock.now >= deadline
+            )
+            if decision == .waiting { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let pulled: String? = if case .pulled(let texts) = decision {
+            texts.joined(separator: "\n")
+        } else {
+            nil
+        }
+        // The CLI box holds the pulled text, or the last sent prompt that Up recalled.
+        for index in 0..<QueuePullBack.clearPresses(for: pulled ?? last) {
+            if index > 0 { try await Task.sleep(for: .milliseconds(50)) }
+            try await press("C-u")
+        }
+        return pulled
+    }
+
     private func rebuild(from reader: ToolTranscriptReader) async {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
