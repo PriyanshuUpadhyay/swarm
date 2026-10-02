@@ -433,6 +433,57 @@ struct SwarmSessionDetailTests {
         #expect(keys.withLock { $0 } == ["Up", "C-u", "C-u", "C-u"])
     }
 
+    @Test("Pull-back keeps a message sent after the last poll, from its popAll")
+    func pullBackKeepsUnpolledMessage() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let keepName = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        let addTest = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t2","sessionId":"s1","content":"add a test"}"#
+        let log = try chat([Self.USER_ASKS, keepName], in: directory, named: "chat.jsonl")
+        value.chairLog = log.path
+        _ = await reader.poll(session: value)
+        try append([addTest], to: log)
+
+        let pulled = try await reader.pullBack { key in
+            guard key == "Up" else { return }
+            try append([keepName, addTest].map {
+                $0.replacingOccurrences(of: "enqueue", with: "popAll").replacingOccurrences(of: "t1", with: "t2")
+            }, to: log)
+        }
+
+        #expect(pulled == "keep the old name\nadd a test")
+    }
+
+    @Test("Pull-back with no queue record by the deadline presses no C-u and says to check the input box")
+    func pullBackUnconfirmed() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let enqueue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        value.chairLog = try chat([Self.USER_ASKS, enqueue], in: directory, named: "chat.jsonl").path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        await #expect(throws: SwarmProfileError.failed("Could not confirm the pull-back. Check the agent's input box.")) {
+            _ = try await reader.pullBack { key in keys.withLock { $0.append(key) } }
+        }
+        #expect(keys.withLock { $0 } == ["Up"])
+    }
+
+    private func append(_ lines: [String], to log: URL) throws {
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((lines.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+    }
+
     @Test("A gap in the log on the same path never freezes the rows")
     func gapKeepsRows() async throws {
         let directory = FileManager.default.temporaryDirectory

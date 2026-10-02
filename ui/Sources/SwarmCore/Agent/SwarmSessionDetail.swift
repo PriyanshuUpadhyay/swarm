@@ -195,30 +195,34 @@ public actor SwarmChairTranscript {
     }
 
     /// Claude's pull-back of its queued messages: `press("Up")`, then this log's queue records
-    /// until each message has its own or 1.5 s pass, then `press("C-u")` until the CLI box is
-    /// empty. Returns the pulled text, or nil when the CLI took the messages first. It never
+    /// until each owner message has its own, then `press("C-u")` until the CLI box is empty.
+    /// Returns the pulled text, or nil when the CLI took the messages first. With no record by
+    /// 1.5 s it presses nothing more and throws, because C-u could wipe text Up pulled. It never
     /// presses Escape or C-c, because both stop the turn.
     public func pullBack(press: @Sendable (String) async throws -> Void) async throws -> String? {
-        let queued = queuedMessages
-        guard let reader, let last = queued.last else { return nil }
+        guard let reader else { return nil }
         let deadline = ContinuousClock.now + .milliseconds(1500)
+        // The live reader, not the last poll: it holds messages sent after that poll.
         let start = await reader.window()
+        let queue = QueuedMessages.replay(start.records)
+        guard let last = queue.last(where: QueuedMessages.isOwners) else { return nil }
         let mark = start.indexOffset + start.records.count
         try await press("Up")
         var decision = QueuePullBack.waiting
         while decision == .waiting {
-            // The live reader, not the next poll: the follow stream lands records within ms.
             let window = await reader.window()
             decision = QueuePullBack.decide(
-                queued: queued, after: window.records.dropFirst(mark - window.indexOffset),
+                queue: queue, after: window.records.dropFirst(mark - window.indexOffset),
                 pastDeadline: ContinuousClock.now >= deadline
             )
             if decision == .waiting { try await Task.sleep(for: .milliseconds(50)) }
         }
-        let pulled: String? = if case .pulled(let texts) = decision {
-            texts.joined(separator: "\n")
-        } else {
-            nil
+        let pulled: String?
+        switch decision {
+        case .pulled(let texts): pulled = texts.joined(separator: "\n")
+        case .unconfirmed:
+            throw SwarmProfileError.failed("Could not confirm the pull-back. Check the agent's input box.")
+        case .alreadySent, .waiting: pulled = nil
         }
         // The CLI box holds the pulled text, or the last sent prompt that Up recalled.
         for index in 0..<QueuePullBack.clearPresses(for: pulled ?? last) {

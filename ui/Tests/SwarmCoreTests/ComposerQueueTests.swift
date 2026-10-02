@@ -52,32 +52,49 @@ struct ComposerQueueTests {
         #expect(QueuedMessages.pending(in: records) == [Self.ADD_TEST])
     }
 
-    @Test("Up pulls back each queued message that gets its own popAll, in queue order")
+    @Test("Up pulls back each queued message that gets its own popAll, in log order")
     func pullBackPullsEach() {
-        let queued = [Self.ADD_TEST, Self.KEEP_NAME]
+        let queue = [Self.ADD_TEST, Self.KEEP_NAME]
         #expect(QueuePullBack.decide(
-            queued: queued, after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
+            queue: queue, after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
             pastDeadline: false
-        ) == .pulled(queued))
+        ) == .pulled(queue))
         #expect(QueuePullBack.decide(
-            queued: queued, after: [op("popAll", Self.ADD_TEST), op("remove", Self.KEEP_NAME)],
+            queue: queue, after: [op("popAll", Self.ADD_TEST), op("remove", Self.KEEP_NAME)],
             pastDeadline: false
         ) == .pulled([Self.ADD_TEST]))
     }
 
-    @Test("A message the CLI took first, or no record by the deadline, is already sent")
+    @Test("A popAll for a message the queue did not list yet is pulled too")
+    func pullBackKeepsUnlistedText() {
+        #expect(QueuePullBack.decide(
+            queue: [Self.ADD_TEST], after: [op("popAll", Self.ADD_TEST), op("popAll", Self.KEEP_NAME)],
+            pastDeadline: false
+        ) == .pulled([Self.ADD_TEST, Self.KEEP_NAME]))
+    }
+
+    @Test("A dequeue of a CLI-made head entry is not credited to the owner's message")
+    func pullBackDequeueOfCLIEntry() {
+        let queue = [Self.TASK_NOTIFICATION, Self.ADD_TEST]
+        #expect(QueuePullBack.decide(queue: queue, after: [op("dequeue")], pastDeadline: false) == .waiting)
+        #expect(QueuePullBack.decide(
+            queue: queue, after: [op("dequeue"), op("popAll", Self.ADD_TEST)], pastDeadline: false
+        ) == .pulled([Self.ADD_TEST]))
+    }
+
+    @Test("A message the CLI took first is already sent, and no record by the deadline is unconfirmed")
     func pullBackAlreadySent() {
         #expect(QueuePullBack.decide(
-            queued: [Self.ADD_TEST], after: [op("remove", Self.ADD_TEST)], pastDeadline: false
+            queue: [Self.ADD_TEST], after: [op("remove", Self.ADD_TEST)], pastDeadline: false
         ) == .alreadySent)
         #expect(QueuePullBack.decide(
-            queued: [Self.ADD_TEST], after: [op("dequeue")], pastDeadline: false
+            queue: [Self.ADD_TEST], after: [op("dequeue")], pastDeadline: false
         ) == .alreadySent)
-        #expect(QueuePullBack.decide(queued: [Self.ADD_TEST], after: [], pastDeadline: false) == .waiting)
-        #expect(QueuePullBack.decide(queued: [Self.ADD_TEST], after: [], pastDeadline: true) == .alreadySent)
+        #expect(QueuePullBack.decide(queue: [Self.ADD_TEST], after: [], pastDeadline: false) == .waiting)
+        #expect(QueuePullBack.decide(queue: [Self.ADD_TEST], after: [], pastDeadline: true) == .unconfirmed)
         // A CLI-made entry's record decides nothing for the owner's message.
         #expect(QueuePullBack.decide(
-            queued: [Self.ADD_TEST], after: [op("remove", Self.TASK_NOTIFICATION)], pastDeadline: false
+            queue: [Self.ADD_TEST], after: [op("remove", Self.TASK_NOTIFICATION)], pastDeadline: false
         ) == .waiting)
     }
 
