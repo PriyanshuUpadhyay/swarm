@@ -299,6 +299,43 @@ struct SwarmSessionDetailTests {
         #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
     }
 
+    @Test("A clear log read while it holds only bookkeeping lines keeps the old rows and still gets its divider")
+    func clearReadBeforeItsRecords() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        let cleared = try chat([
+            #"{"type":"mode","mode":"normal","sessionId":"s2"}"#,
+            #"{"type":"file-history-snapshot","messageId":"m1","snapshot":{"messageId":"m1","trackedFileBackups":{},"timestamp":"t1"},"isSnapshotUpdate":false}"#,
+        ], in: directory, named: "second.jsonl")
+        value.chairLog = cleared.path
+        guard case .rows(let early, _) = await reader.poll(session: value) else {
+            Issue.record("No rows while the new log holds only bookkeeping lines")
+            return
+        }
+        #expect(early.map(\.text) == ["Fix the bug"])
+
+        let handle = try FileHandle(forWritingTo: cleared)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((Self.CLEAR_LOG.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+        var rows: [TranscriptRow] = []
+        for _ in 0..<40 {
+            if case .rows(let latest, _) = await reader.poll(session: value) { rows = latest }
+            if rows.contains(where: { $0.text == "Start fresh" }) { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let visible = rows.filter { !$0.isHiddenByDefault }
+        #expect(visible.map(\.kind) == [.user, .divider, .user])
+        #expect(visible.map(\.text).first == "Fix the bug")
+    }
+
     @Test("Two clears in a row give two dividers")
     func twoClears() async throws {
         let directory = FileManager.default.temporaryDirectory
