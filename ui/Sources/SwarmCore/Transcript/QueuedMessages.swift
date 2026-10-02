@@ -49,7 +49,7 @@ public enum QueuePullBack: Sendable, Equatable {
     /// `queue` is the whole replay when Up was sent, and `records` are the log records after it.
     /// Each owner message is decided by its own record against that replay: a `popAll` pulls it,
     /// and a `remove` or a `dequeue` that takes it from the head means the CLI took it. The pulled
-    /// text is every `popAll` after Up in log order, also one for a message the replay missed.
+    /// text is every owner `popAll` after Up in log order, also one for a message the replay missed.
     public static func decide(
         queue: [String], after records: some Sequence<TranscriptRecord>, pastDeadline: Bool
     ) -> QueuePullBack {
@@ -57,7 +57,9 @@ public enum QueuePullBack: Sendable, Equatable {
         var pulled: [String] = []
         for record in records {
             QueuedMessages.apply(record, to: &open)
-            if case .queueOperation("popAll", let content?, _, _) = record.event { pulled.append(content) }
+            if case .queueOperation("popAll", let content?, _, _) = record.event, QueuedMessages.isOwners(content) {
+                pulled.append(content)
+            }
         }
         if open.contains(where: \.waits) { return pastDeadline ? .unconfirmed : .waiting }
         return pulled.isEmpty ? .alreadySent : .pulled(pulled)

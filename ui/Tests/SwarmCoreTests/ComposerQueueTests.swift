@@ -73,6 +73,15 @@ struct ComposerQueueTests {
         ) == .pulled([Self.ADD_TEST, Self.KEEP_NAME]))
     }
 
+    @Test("A popAll of a CLI-made entry never goes into the pulled text")
+    func pullBackSkipsCLIEntries() {
+        #expect(QueuePullBack.decide(
+            queue: [Self.TASK_NOTIFICATION, Self.ADD_TEST],
+            after: [op("popAll", Self.TASK_NOTIFICATION), op("popAll", Self.ADD_TEST)],
+            pastDeadline: false
+        ) == .pulled([Self.ADD_TEST]))
+    }
+
     @Test("A dequeue of a CLI-made head entry is not credited to the owner's message")
     func pullBackDequeueOfCLIEntry() {
         let queue = [Self.TASK_NOTIFICATION, Self.ADD_TEST]
