@@ -7,6 +7,37 @@ public enum Composer {
         return text.isEmpty ? nil : text
     }
 
+    /// The text to type into a CLI, so the Enter after it can only submit. Claude sends nothing
+    /// when it must remove invisible format characters, so they go first. A CR is Enter, so CR
+    /// and CRLF become LF. A trailing `\` turns Enter into a newline, and a last word that starts
+    /// with `@`, `$`, or `/` or ends with `:` leaves a popup open that takes Enter, so each gets
+    /// one space.
+    public static func submission(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        var afterCR = false
+        for scalar in text.unicodeScalars where !isInvisibleFormat(scalar) {
+            if scalar == "\n", afterCR {
+                afterCR = false
+                continue
+            }
+            afterCR = scalar == "\r"
+            scalars.append(afterCR ? "\n" : scalar)
+        }
+        let cleaned = String(scalars)
+        guard cleaned.last?.isWhitespace == false,
+              let word = cleaned.split(whereSeparator: \.isWhitespace).last, let first = word.first,
+              word.hasSuffix("\\") || word.hasSuffix(":") || "@$/".contains(first)
+        else { return cleaned }
+        return cleaned + " "
+    }
+
+    private static func isInvisibleFormat(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x00AD, 0x200B...0x200F, 0x2060...0x2064, 0xFEFF: true
+        default: false
+        }
+    }
+
     /// Adds a path as its own token and leaves the caret ready for more text.
     public static func appending(path: String, to draft: String, prefix: String = "") -> String {
         let separator = draft.isEmpty || draft.last?.isWhitespace == true ? "" : " "

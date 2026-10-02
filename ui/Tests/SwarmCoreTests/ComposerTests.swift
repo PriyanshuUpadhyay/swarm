@@ -140,6 +140,36 @@ struct ComposerTests {
             == .move(-1))
     }
 
+    @Test("A plain sentence is typed unchanged")
+    func submissionKeepsPlainText() {
+        let sentence = "Add a test for the empty case, then mail me@host.\nThanks"
+        #expect(Composer.submission(sentence) == sentence)
+    }
+
+    @Test("Invisible format characters are removed before typing")
+    func submissionRemovesInvisibleCharacters() {
+        #expect(Composer.submission("a\u{00AD}b\u{200B}c\u{200C}d\u{200D}e\u{200E}f\u{200F}g") == "abcdefg")
+        #expect(Composer.submission("h\u{2060}i\u{2061}j\u{2062}k\u{2063}l\u{2064}m\u{FEFF}n") == "hijklmn")
+    }
+
+    @Test("CR and CRLF become LF, because a CR is Enter")
+    func submissionNormalizesLineEnds() {
+        #expect(Composer.submission("one\r\ntwo\rthree\nfour") == "one\ntwo\nthree\nfour")
+    }
+
+    @Test("A trailing backslash or a last word that opens a popup gets one space")
+    func submissionClosesPopups() {
+        #expect(Composer.submission("join this\\") == "join this\\ ")
+        #expect(Composer.submission("look at @src/main.rs") == "look at @src/main.rs ")
+        #expect(Composer.submission("use $tdd") == "use $tdd ")
+        #expect(Composer.submission("/clear") == "/clear ")
+        #expect(Composer.submission("please run /review") == "please run /review ")
+        #expect(Composer.submission("ship it :tada:") == "ship it :tada: ")
+        #expect(Composer.submission("Note:") == "Note: ")
+        #expect(Composer.submission("first line\nsee @README.md") == "first line\nsee @README.md ")
+        #expect(Composer.submission("look at @src/main.rs\u{200B}") == "look at @src/main.rs ")
+    }
+
     @Test("A waiting agent blocks typing, and the chair's reason points to its pane")
     func waitingAgentBlocksTyping() {
         #expect(SwarmSessionInteraction.questionReason(status: .waiting, target: .agent)
