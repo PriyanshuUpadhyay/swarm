@@ -212,7 +212,10 @@ struct ComposerTests {
         let text = "soft\u{00AD}hyphen a\u{200C}b c\u{200B}d e\u{0085}f \u{1F3F4}\u{E0067}\u{E007F}"
         #expect(Composer.submission(text, provider: CODEX) == text)
         #expect(Composer.submission(text, provider: AGY) == text)
-        // A pane started with no provider name may be Claude, so it gets Claude's cleaning.
+    }
+
+    @Test("A pane with no provider name may be Claude, so it gets Claude's cleaning")
+    func submissionCleansLikeClaudeWithoutProvider() {
         #expect(Composer.submission("a\u{200B}b", provider: nil) == "ab")
     }
 
