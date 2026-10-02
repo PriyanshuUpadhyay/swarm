@@ -338,6 +338,7 @@ struct SessionDetailView: View {
         // Built here, so the transcript holds the composer value and not a closure over this
         // view; the menu keeps transcript find closures alive, and this view holds the model.
         let provider = row.provider ?? chairProvider
+        let isRunning = self.isRunning
         let composer = ComposerView(
             sessionID: row.id.rawValue, isActive: isActive,
             draft: Binding(
