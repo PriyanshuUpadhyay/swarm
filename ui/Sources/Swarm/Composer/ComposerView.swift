@@ -53,6 +53,7 @@ struct ComposerView: View {
     @State private var isPullingBack = false
     @State private var pullBackError: String?
     @State private var showsAlreadySent = false
+    @State private var alreadySentTimer: Task<Void, Never>?
     @State private var matchGeneration = 0
     @State private var isMatchingFiles = false
     @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
@@ -157,6 +158,7 @@ struct ComposerView: View {
             pendingAttachments = 0
             matchGeneration += 1
             fileMatchTask?.cancel()
+            alreadySentTimer?.cancel()
         }
     }
 
@@ -524,6 +526,8 @@ struct ComposerView: View {
         guard let pullBack, !isPullingBack, !isSending, !isSubmitting else { return }
         isPullingBack = true
         pullBackError = nil
+        alreadySentTimer?.cancel()
+        showsAlreadySent = false
         Task {
             defer { isPullingBack = false }
             do {
@@ -531,9 +535,10 @@ struct ComposerView: View {
                     showsAlreadySent = true
                     AccessibilityNotification.Announcement("Already sent").post()
                     // Only the caption waits, so Send works again at once.
-                    Task {
+                    alreadySentTimer = Task {
                         try? await Task.sleep(for: .seconds(2))
-                        showsAlreadySent = false
+                        // A cancelled timer belongs to an older pull-back and must not hide a newer caption.
+                        if !Task.isCancelled { showsAlreadySent = false }
                     }
                     return
                 }
