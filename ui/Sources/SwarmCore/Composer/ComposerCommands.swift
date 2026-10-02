@@ -120,6 +120,12 @@ public enum ComposerCommandCatalog {
                 for path in plugin.commandRoots {
                     add(namespaced(pluginCommands(at: path), plugin: plugin.name), to: &values)
                 }
+                let mapped = plugin.commandFiles.compactMap { name, path in
+                    valid(name).map {
+                        ComposerCommand(name: $0, detail: description(in: path), kind: .command, path: path)
+                    }
+                }
+                add(namespaced(mapped, plugin: plugin.name), to: &values)
             }
             add(commandFiles(in: root + "/commands"), to: &values)
             add(skillFiles(in: root + "/skills"), to: &values)

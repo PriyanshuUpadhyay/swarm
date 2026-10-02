@@ -95,6 +95,86 @@ struct ComposerPluginsTests {
         #expect(names == ["matt:grilling", "matt:handoff", "matt:tdd"])
     }
 
+    @Test("A plugin.json skills list adds to the default skills folder")
+    func skillsAddToDefault() throws {
+        let tree = Tree()
+        defer { tree.remove() }
+        let install = try tree.install("deploy@market", as: "deploy")
+        try tree.write("config/settings.json", #"{"enabledPlugins": {"deploy@market": true}}"#)
+        let manifest = "config/plugins/cache/deploy/.claude-plugin/plugin.json"
+        try tree.write(manifest, #"{"skills": "./extra-skills/"}"#)
+        try tree.write("config/plugins/cache/deploy/skills/release/SKILL.md", Self.skill)
+        try tree.write("config/plugins/cache/deploy/extra-skills/rollback/SKILL.md", Self.skill)
+        let config = tree.path("config")
+
+        #expect(ComposerPluginReader.enabled(configDirectory: config, projectDirectory: nil).map(\.skillRoots)
+            == [[install + "/skills", install + "/extra-skills"]])
+        let found = ComposerCommandCatalog.discover(from: ComposerCommandSource(
+            provider: "claude", homeDirectory: tree.path("home"), configDirectory: config
+        ))
+        #expect(found.filter { $0.kind == .plugin("deploy") }.map(\.name) == ["deploy:release", "deploy:rollback"])
+
+        try tree.write(manifest, #"{"skills": ["./skills/", "./extra-skills"]}"#)
+        #expect(ComposerPluginReader.enabled(configDirectory: config, projectDirectory: nil).map(\.skillRoots)
+            == [[install + "/skills", install + "/extra-skills"]])
+    }
+
+    @Test("A plugin.json commands list or name map replaces the default commands folder")
+    func commandsReplaceDefault() throws {
+        let tree = Tree()
+        defer { tree.remove() }
+        let install = try tree.install("deploy@market", as: "deploy")
+        try tree.write("config/settings.json", #"{"enabledPlugins": {"deploy@market": true}}"#)
+        try tree.write("config/plugins/cache/deploy/commands/stale.md", "---\ndescription: Not loaded\n---\n")
+        try tree.write("config/plugins/cache/deploy/extras/ship.md", "---\ndescription: Ship it\n---\n")
+        try tree.write("config/plugins/cache/deploy/docs/status.md", "---\ndescription: Show status\n---\n")
+        try tree.write("config/plugins/cache/deploy/docs/notes.md", "---\ndescription: Show notes\n---\n")
+        let manifest = "config/plugins/cache/deploy/.claude-plugin/plugin.json"
+        let source = ComposerCommandSource(
+            provider: "claude", homeDirectory: tree.path("home"), configDirectory: tree.path("config")
+        )
+        func pluginCommands() -> [String] {
+            ComposerCommandCatalog.discover(from: source).filter { $0.kind == .plugin("deploy") }.map(\.name)
+        }
+
+        try tree.write(manifest, #"{"commands": ["./extras"]}"#)
+        #expect(pluginCommands() == ["deploy:ship"])
+
+        try tree.write(manifest, """
+        {"commands": {
+          "status": {"source": "./docs/status.md", "argumentHint": "[env]"},
+          "notes": "./docs/notes.md",
+          "outside": {"source": "../escape.md"}
+        }}
+        """)
+        let plugins = ComposerPluginReader.enabled(configDirectory: tree.path("config"), projectDirectory: nil)
+        #expect(plugins.map(\.commandRoots) == [[]])
+        #expect(plugins.map(\.commandFiles) == [[
+            "status": install + "/docs/status.md", "notes": install + "/docs/notes.md",
+        ]])
+        #expect(pluginCommands() == ["deploy:notes", "deploy:status"])
+        #expect(ComposerCommandCatalog.discover(from: source).first { $0.name == "deploy:status" }?.detail
+            == "Show status")
+    }
+
+    @Test("The command prefix is the plugin.json name, and the id before @ without one")
+    func prefixFromManifestName() throws {
+        let tree = Tree()
+        defer { tree.remove() }
+        _ = try tree.install("deploy@market", as: "deploy")
+        try tree.write("config/settings.json", #"{"enabledPlugins": {"deploy@market": true}}"#)
+        try tree.write("config/plugins/cache/deploy/skills/release/SKILL.md", Self.skill)
+        let config = tree.path("config")
+
+        #expect(ComposerPluginReader.enabled(configDirectory: config, projectDirectory: nil).map(\.name) == ["deploy"])
+        try tree.write("config/plugins/cache/deploy/.claude-plugin/plugin.json", #"{"name": "deploy-tools"}"#)
+        #expect(ComposerPluginReader.enabled(configDirectory: config, projectDirectory: nil).map(\.name) == ["deploy-tools"])
+        let found = ComposerCommandCatalog.discover(from: ComposerCommandSource(
+            provider: "claude", homeDirectory: tree.path("home"), configDirectory: config
+        ))
+        #expect(found.contains { $0.name == "deploy-tools:release" && $0.kind == .plugin("deploy-tools") })
+    }
+
     @Test("A project entry counts inside its project, and project local settings win")
     func projectScope() throws {
         let tree = Tree()

@@ -5,11 +5,16 @@ public struct ComposerPlugin: Equatable, Sendable {
     public var name: String
     public var skillRoots: [String]
     public var commandRoots: [String]
+    /// plugin.json's `commands` map: command name to its Markdown file.
+    public var commandFiles: [String: String]
 
-    public init(name: String, skillRoots: [String], commandRoots: [String]) {
+    public init(
+        name: String, skillRoots: [String], commandRoots: [String], commandFiles: [String: String] = [:]
+    ) {
         self.name = name
         self.skillRoots = skillRoots
         self.commandRoots = commandRoots
+        self.commandFiles = commandFiles
     }
 }
 
@@ -39,21 +44,39 @@ public enum ComposerPluginReader {
         }
 
         return plugins.keys.sorted().compactMap { id -> ComposerPlugin? in
+            // The docs say an id absent from enabledPlugins follows `defaultEnabled`, but
+            // `claude plugin list --json` reports such an id as disabled, so only `true` counts.
             guard switches[id] == true,
                   let entry = (plugins[id] as? [[String: Any]])?.first(where: {
                       applies($0, to: projectDirectory)
                   }),
                   let installPath = entry["installPath"] as? String else { return nil }
-            let name = id.lastIndex(of: "@").map { String(id[..<$0]) } ?? id
-            guard !name.isEmpty else { return nil }
             let install = URL(fileURLWithPath: installPath).standardizedFileURL.path
             let manifest = object(at: install + "/.claude-plugin/plugin.json") ?? [:]
+            // Claude prefixes commands with the manifest name, which can differ from the id.
+            let name = (manifest["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                ?? id.lastIndex(of: "@").map { String(id[..<$0]) } ?? id
+            guard !name.isEmpty else { return nil }
+            // `skills` adds to ./skills; `commands` replaces ./commands, also as a name map.
+            var seen = Set<String>()
+            let skillRoots = roots(["./skills"] + (paths(manifest["skills"]) ?? []), in: install)
+                .filter { seen.insert($0).inserted }
+            let commandMap = manifest["commands"] as? [String: Any]
             return ComposerPlugin(
                 name: name,
-                skillRoots: roots(manifest["skills"], default: "./skills", in: install),
-                commandRoots: roots(manifest["commands"], default: "./commands", in: install)
+                skillRoots: skillRoots,
+                commandRoots: commandMap == nil
+                    ? roots(paths(manifest["commands"]) ?? ["./commands"], in: install) : [],
+                commandFiles: (commandMap ?? [:]).compactMapValues { value in
+                    let source = value as? String ?? (value as? [String: Any])?["source"] as? String
+                    return source.flatMap { roots([$0], in: install).first }
+                }
             )
         }
+    }
+
+    private static func paths(_ value: Any?) -> [String]? {
+        (value as? String).map { [$0] } ?? value as? [String]
     }
 
     /// A project or local entry belongs to one project folder and its subfolders.
@@ -66,9 +89,8 @@ public enum ComposerPluginReader {
     }
 
     /// Paths in plugin.json are relative to the install folder and may not leave it.
-    private static func roots(_ value: Any?, default fallback: String, in install: String) -> [String] {
-        let listed = (value as? String).map { [$0] } ?? value as? [String] ?? [fallback]
-        return listed.compactMap { path in
+    private static func roots(_ listed: [String], in install: String) -> [String] {
+        listed.compactMap { path in
             let resolved = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: install))
                 .standardized.path
             guard resolved.hasPrefix(install + "/"),
