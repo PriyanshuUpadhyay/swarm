@@ -458,6 +458,28 @@ struct SwarmSessionDetailTests {
         #expect(pulled == "keep the old name\nadd a test")
     }
 
+    @Test("Pull-back presses no key while the queue holds a CLI-made entry the agent still needs")
+    func pullBackLeavesCLIEntry() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let notification = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"<task-notification>done</task-notification>"}"#
+        let owner = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t2","sessionId":"s1","content":"keep the old name"}"#
+        value.chairLog = try chat([Self.USER_ASKS, notification, owner], in: directory, named: "chat.jsonl").path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        await #expect(throws: SwarmProfileError.failed(
+            "The agent has its own message in the queue. Edit after it is delivered."
+        )) {
+            _ = try await reader.pullBack { key in keys.withLock { $0.append(key) } }
+        }
+        #expect(keys.withLock { $0 }.isEmpty)
+    }
+
     @Test("Pull-back with no queue record by the deadline presses no C-u and says to check the input box")
     func pullBackUnconfirmed() async throws {
         let directory = FileManager.default.temporaryDirectory

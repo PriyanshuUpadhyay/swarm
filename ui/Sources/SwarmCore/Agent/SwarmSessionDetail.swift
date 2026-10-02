@@ -206,6 +206,11 @@ public actor SwarmChairTranscript {
         let start = await reader.window()
         let queue = QueuedMessages.replay(start.records)
         guard let last = queue.last(where: QueuedMessages.isOwners) else { return nil }
+        // Up pops the whole queue, so it would take a notification or agent message that the
+        // agent still needs out of the queue.
+        guard queue.allSatisfy(QueuedMessages.isOwners) else {
+            throw SwarmProfileError.failed("The agent has its own message in the queue. Edit after it is delivered.")
+        }
         let mark = start.indexOffset + start.records.count
         try await press("Up")
         var decision = QueuePullBack.waiting
