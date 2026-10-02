@@ -148,7 +148,10 @@ struct ComposerTests {
 
     @Test("Invisible format characters are removed before typing")
     func submissionRemovesInvisibleCharacters() {
-        #expect(Composer.submission("a\u{00AD}b\u{200B}c\u{200C}d\u{200D}e\u{200E}f\u{200F}g") == "abcdefg")
+        #expect(Composer.submission("a\u{00AD}b\u{200B}c\u{200E}d\u{200F}e") == "abcde")
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+        #expect(Composer.submission("hi " + family + " there") == "hi " + family + " there")
+        #expect(Composer.submission("a\u{200C}b") == "a\u{200C}b")
         #expect(Composer.submission("h\u{2060}i\u{2061}j\u{2062}k\u{2063}l\u{2064}m\u{FEFF}n") == "hijklmn")
     }
 
