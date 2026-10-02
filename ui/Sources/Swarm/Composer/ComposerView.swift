@@ -520,7 +520,8 @@ struct ComposerView: View {
     }
 
     private func pullBackQueued() {
-        guard let pullBack, !isPullingBack else { return }
+        // Up and C-u pressed while a send types into the CLI box would cut or garble it.
+        guard let pullBack, !isPullingBack, !isSending, !isSubmitting else { return }
         isPullingBack = true
         pullBackError = nil
         Task {
