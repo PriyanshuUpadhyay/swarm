@@ -140,6 +140,18 @@ struct ComposerTests {
             == .move(-1))
     }
 
+    @Test("A waiting agent blocks typing, and the chair's reason points to its pane")
+    func waitingAgentBlocksTyping() {
+        #expect(SwarmSessionInteraction.questionReason(status: .waiting, target: .agent)
+            == "The agent is asking a question. Answer it first.")
+        #expect(SwarmSessionInteraction.questionReason(status: .waiting, target: .chair)
+            == "The agent is asking a question. Answer it first in its pane.")
+        for status in [AgentStatus.working, .done, .failed, .ended] {
+            #expect(SwarmSessionInteraction.questionReason(status: status, target: .chair) == nil)
+        }
+        #expect(SwarmSessionInteraction.questionReason(status: nil, target: .chair) == nil)
+    }
+
     @Test("An empty completion menu lets Return send")
     func emptyMenuKeys() {
         #expect(route(.return, menuOpen: true, hasRows: false) == .send)

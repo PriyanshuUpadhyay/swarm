@@ -213,6 +213,16 @@ public enum SwarmSessionInteraction {
         provider == "claude" && ["tmux", "tmux-solo"].contains(adapter)
     }
 
+    /// A waiting agent has a dialog open, where Enter means yes and a digit picks an option, so
+    /// typed text could approve a tool call. A child's question shows on its card above the
+    /// composer; the chair's shows only in its pane.
+    public static func questionReason(status: AgentStatus?, target: SwarmSessionInputTarget) -> String? {
+        guard status == .waiting else { return nil }
+        return target == .chair
+            ? "The agent is asking a question. Answer it first in its pane."
+            : "The agent is asking a question. Answer it first."
+    }
+
     public static func lastActivity(of session: SwarmSession) -> Int {
         session.lastMessageAt ?? session.createdAt
     }

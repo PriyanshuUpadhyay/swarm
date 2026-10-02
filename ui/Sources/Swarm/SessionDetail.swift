@@ -311,9 +311,11 @@ struct SessionDetailView: View {
         }
     }
 
-    private var chairProvider: String? {
-        agents.first { $0.id == SwarmPanePolicy.chair }?.provider
+    private var chair: SwarmAgent? {
+        agents.first { $0.id == SwarmPanePolicy.chair }
     }
+
+    private var chairProvider: String? { chair?.provider }
 
     private var modelLabel: String {
         if let current = model.currentModel { return current }
@@ -356,9 +358,9 @@ struct SessionDetailView: View {
             selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
             usageLabel: model.usage.summary,
             showUsage: onShowUsage,
-            sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
+            sendDisabledReason: chair?.alive == false
                 ? "This chat's pane has closed. Start a new chat or switch model."
-                : nil,
+                : SwarmSessionInteraction.questionReason(status: chair?.status, target: .chair),
             commandSource: commandSource ?? ComposerCommandSource(
                 provider: provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,

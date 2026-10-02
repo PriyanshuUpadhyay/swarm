@@ -271,7 +271,7 @@ struct ComposerView: View {
                 .accessibilityLabel(row.accessibilityLabel)
                 .transition(.opacity)
             }
-            if pullBack != nil, draft.wrappedValue.isEmpty, queued.contains(where: { $0.state == .queued }) {
+            if canPullBack, draft.wrappedValue.isEmpty {
                 Text("↑ to edit")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -446,7 +446,7 @@ struct ComposerView: View {
         let action = ComposerKeyRouter.route(
             key, menu: resolvedMenu, menuOpen: menuVisible, hasRows: completionCount > 0,
             draftIsEmpty: draft.wrappedValue.isEmpty,
-            canPullBack: pullBack != nil && queued.contains { $0.state == .queued }
+            canPullBack: canPullBack
         )
         switch action {
         case .move(let delta):
@@ -498,6 +498,12 @@ struct ComposerView: View {
 
     private var showsStop: Bool { isRunning }
 
+    /// Up presses a key in the CLI, so it waits for any reason that blocks a send, such as an
+    /// open question where Up moves the choice.
+    private var canPullBack: Bool {
+        pullBack != nil && sendDisabledReason == nil && queued.contains { $0.state == .queued }
+    }
+
     /// Takes the draft as a value, so a pick and its send in one key press use the same text.
     private func submit(_ snapshot: String) {
         // A send typed into the CLI box while C-u presses run would be cut or garbled.
@@ -523,7 +529,7 @@ struct ComposerView: View {
 
     private func pullBackQueued() {
         // Up and C-u pressed while a send types into the CLI box would cut or garble it.
-        guard let pullBack, !isPullingBack, !isSending, !isSubmitting else { return }
+        guard let pullBack, sendDisabledReason == nil, !isPullingBack, !isSending, !isSubmitting else { return }
         isPullingBack = true
         pullBackError = nil
         alreadySentTimer?.cancel()
