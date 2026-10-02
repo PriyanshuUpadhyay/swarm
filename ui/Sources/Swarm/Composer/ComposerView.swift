@@ -294,6 +294,9 @@ struct ComposerView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
             Spacer(minLength: 0)
+            Text(verbatim: completionSource(index))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -367,6 +370,13 @@ struct ComposerView: View {
         switch resolvedMenu {
         case .none, .mention: ""
         case .slash: slashMatches[index].command.detail
+        }
+    }
+
+    private func completionSource(_ index: Int) -> String {
+        switch resolvedMenu {
+        case .none, .mention: ""
+        case .slash: slashMatches[index].command.kind.sourceLabel
         }
     }
 

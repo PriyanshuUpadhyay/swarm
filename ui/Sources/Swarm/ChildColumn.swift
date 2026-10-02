@@ -135,6 +135,9 @@ struct ChildColumnView: View {
             commandSource: ComposerCommandSource(
                 provider: agent.provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+                configDirectory: agent.log.flatMap {
+                    ComposerCommandSource.configDirectory(fromLog: $0, provider: agent.provider)
+                },
                 projectDirectory: session.cwd
             ),
             mentionSource: ComposerMentionSource(root: session.cwd),
