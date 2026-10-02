@@ -4,6 +4,7 @@ import Testing
 
 private let CLAUDE = "claude"
 private let CODEX = "codex"
+private let AGY = "agy"
 
 /// Inputs and outputs of the cleaner (`fue`) in Claude Code 2.1.287, cut from the installed binary
 /// and run with node. Claude sends nothing when that cleaner changes the text.
@@ -210,14 +211,16 @@ struct ComposerTests {
     func submissionKeepsInvisibleCharactersOutsideClaude() {
         let text = "soft\u{00AD}hyphen a\u{200C}b c\u{200B}d e\u{0085}f \u{1F3F4}\u{E0067}\u{E007F}"
         #expect(Composer.submission(text, provider: CODEX) == text)
-        #expect(Composer.submission(text, provider: "agy") == text)
+        #expect(Composer.submission(text, provider: AGY) == text)
+        // A pane started with no provider name may be Claude, so it gets Claude's cleaning.
+        #expect(Composer.submission("a\u{200B}b", provider: nil) == "ab")
     }
 
     @Test("Control characters other than LF and TAB are removed, because an ESC interrupts the turn")
     func submissionRemovesControlCharacters() {
         #expect(Composer.submission("red\u{1B}[31m text", provider: CODEX) == "red[31m text")
         #expect(Composer.submission("a\u{0}b\u{8}c\u{B}d\u{1F}e\u{7F}f", provider: CODEX) == "abcdef")
-        #expect(Composer.submission("tab\there\r\nnext", provider: "agy") == "tab\there\nnext")
+        #expect(Composer.submission("tab\there\r\nnext", provider: AGY) == "tab\there\nnext")
     }
 
     @Test("CR and CRLF become LF, because a CR is Enter")
@@ -233,7 +236,7 @@ struct ComposerTests {
         #expect(Composer.submission("use $tdd", provider: CODEX) == "use $tdd ")
         #expect(Composer.submission("/clear", provider: CLAUDE) == "/clear ")
         #expect(Composer.submission("please run /review", provider: CODEX) == "please run /review ")
-        #expect(Composer.submission("ship it :tada:", provider: "agy") == "ship it :tada: ")
+        #expect(Composer.submission("ship it :tada:", provider: AGY) == "ship it :tada: ")
         #expect(Composer.submission("Note:", provider: CLAUDE) == "Note: ")
         #expect(Composer.submission("first line\nsee @README.md", provider: CLAUDE)
             == "first line\nsee @README.md ")

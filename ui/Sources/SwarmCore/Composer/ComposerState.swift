@@ -14,7 +14,8 @@ public enum Composer {
     /// A trailing `\` turns Enter into a newline, and a last word that starts with `@`, `$`, or
     /// `/` or ends with `:` leaves a popup open that takes Enter, so each gets one space.
     public static func submission(_ text: String, provider: String?) -> String {
-        let cleaned = provider == "claude"
+        // A pane started with no provider name (`swarm spawn -- <path>/claude`) may be Claude.
+        let cleaned = provider == "claude" || provider == nil
             ? ClaudeInvisibleText.cleaned(text) : withoutControlCharacters(text)
         guard cleaned.last?.isWhitespace == false,
               let word = cleaned.split(whereSeparator: \.isWhitespace).last, let first = word.first,

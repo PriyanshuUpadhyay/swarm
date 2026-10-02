@@ -5,6 +5,9 @@ import Foundation
 /// characters first. Claude keeps some of them in their script or emoji context, which it judges
 /// from the last 16 scalars it kept, so this does the same.
 struct ClaudeInvisibleText {
+    /// How many kept scalars judge the context; Claude's cleaner uses the same size.
+    static let contextSize = 16
+
     static func cleaned(_ text: String) -> String {
         guard text.unicodeScalars.contains(where: { !isPlain($0) }) else { return text }
         var cleaner = ClaudeInvisibleText(scalars: Array(text.unicodeScalars))
@@ -115,7 +118,7 @@ struct ClaudeInvisibleText {
 
     private mutating func remember(_ scalar: Unicode.Scalar, contextual: Bool) {
         recent.append(scalar)
-        if recent.count > 16 { recent.removeFirst() }
+        if recent.count > Self.contextSize { recent.removeFirst() }
         lastWasContextual = contextual
     }
 
@@ -181,7 +184,7 @@ struct ClaudeInvisibleText {
                 ? Sets.letter.contains(scalar) && Self.isRightToLeft(scalar) == Self.isRightToLeft(next)
                 : Sets.digit.contains(scalar)
         }
-        return recent.count >= 16
+        return recent.count >= Self.contextSize
     }
 
     private static let subdivisionTags: [[Unicode.Scalar]] = ["gbeng", "gbsct", "gbwls"].map { name in
