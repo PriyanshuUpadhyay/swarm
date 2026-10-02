@@ -111,7 +111,7 @@ public enum PaletteSource {
 }
 
 extension PaletteSource {
-    /// Workspaces and their chats in sidebar order, archived ones last with "Archived" in their
+    /// Workspaces and their chats, pinned first, then by activity, archived ones last with "Archived" in their
     /// detail, so the palette finds them from any sidebar view.
     public static func workspaces(
         _ entries: [WorkspaceEntry], navigation: WorkspaceNavigation, now: Int
