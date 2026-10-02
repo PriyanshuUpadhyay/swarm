@@ -1322,7 +1322,9 @@ struct SwarmApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // A fixed id: without one, SwiftUI names the scene by a type address that changes with
+        // each build, so a new build restores no window and opens none.
+        WindowGroup(id: "sessions") {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .commands {
