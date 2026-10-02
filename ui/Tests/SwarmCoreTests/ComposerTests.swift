@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import SwarmCore
 
+private let CLAUDE = "claude"
+private let CODEX = "codex"
+
 @Suite("Composer")
 struct ComposerTests {
     @Test("Drafts are separate for each chat and survive a new store")
@@ -21,16 +24,72 @@ struct ComposerTests {
         #expect(reopened.draft(for: "chat-two") == "second")
     }
 
-    @Test("A slash menu opens only at the start and mentions open at word starts")
+    @Test("Mentions open at word starts")
     func menuTokens() {
-        #expect(ComposerMenu.resolve(draft: "/rev", caret: 4) == .slash(
-            ComposerToken(start: 0, length: 4, query: "rev")
+        #expect(ComposerMenu.resolve(draft: "open @Sou", caret: 9, provider: CLAUDE) == .mention(
+            ComposerToken(start: 5, length: 4, query: "Sou", reachesDraftEnd: true)
         ))
-        #expect(ComposerMenu.resolve(draft: "do /rev", caret: 7) == .none)
-        #expect(ComposerMenu.resolve(draft: "open @Sou", caret: 9) == .mention(
-            ComposerToken(start: 5, length: 4, query: "Sou")
+        #expect(ComposerMenu.resolve(draft: "mail@host", caret: 9, provider: CLAUDE) == .none)
+    }
+
+    @Test("A slash opens at any word start, with built-ins only at the draft start")
+    func slashTokens() {
+        #expect(ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CLAUDE) == .slash(
+            ComposerToken(start: 11, length: 4, query: "rev", reachesDraftEnd: true), .skillsAndCommands
         ))
-        #expect(ComposerMenu.resolve(draft: "mail@host", caret: 9) == .none)
+        let wholeDraft = ComposerMenu.resolve(draft: "/cle", caret: 4, provider: CLAUDE)
+        #expect(wholeDraft == .slash(
+            ComposerToken(start: 0, length: 4, query: "cle", reachesDraftEnd: true), .all
+        ))
+        #expect(wholeDraft.isWholeDraft)
+        #expect(ComposerMenu.resolve(draft: "src/a/b", caret: 7, provider: CLAUDE) == .none)
+        #expect(ComposerMenu.resolve(draft: "(/rev", caret: 5, provider: CLAUDE) == .slash(
+            ComposerToken(start: 1, length: 4, query: "rev", reachesDraftEnd: true), .skillsAndCommands
+        ))
+        let middle = ComposerMenu.resolve(draft: "fix /rev now", caret: 8, provider: CLAUDE)
+        #expect(middle == .slash(ComposerToken(start: 4, length: 4, query: "rev"), .skillsAndCommands))
+        #expect(!middle.isWholeDraft)
+        #expect(!ComposerMenu.resolve(draft: "/cle now", caret: 4, provider: CLAUDE).isWholeDraft)
+    }
+
+    @Test("Codex opens a slash only at the draft start and a dollar skill anywhere")
+    func codexTokens() {
+        #expect(ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CODEX) == .none)
+        #expect(ComposerMenu.resolve(draft: "/rev", caret: 4, provider: CODEX) == .slash(
+            ComposerToken(start: 0, length: 4, query: "rev", reachesDraftEnd: true), .all
+        ))
+        #expect(ComposerMenu.resolve(draft: "use $tdd", caret: 8, provider: CODEX) == .skill(
+            ComposerToken(start: 4, length: 4, query: "tdd", reachesDraftEnd: true)
+        ))
+        #expect(ComposerMenu.resolve(draft: "use $tdd", caret: 8, provider: CLAUDE) == .none)
+        #expect(ComposerMenu.resolve(draft: "cost5$tdd", caret: 9, provider: CODEX) == .none)
+    }
+
+    @Test("A mid-draft menu offers no built-ins and a dollar menu offers only skills")
+    func menuScopes() {
+        let commands = [
+            ComposerCommand(name: "clear", detail: "", kind: .builtIn),
+            ComposerCommand(name: "ship", detail: "", kind: .command),
+            ComposerCommand(name: "tdd", detail: "", kind: .skill, path: "/skills/tdd/SKILL.md"),
+            ComposerCommand(
+                name: "ponytail:ponytail", detail: "", kind: .plugin("ponytail"),
+                path: "/plugins/ponytail/skills/ponytail/SKILL.md"
+            ),
+            ComposerCommand(
+                name: "ponytail:audit", detail: "", kind: .plugin("ponytail"),
+                path: "/plugins/ponytail/commands/audit.md"
+            ),
+        ]
+        let token = ComposerToken(start: 4, length: 1, query: "")
+        #expect(ComposerMenu.slash(token, .all).offered(commands) == commands)
+        #expect(ComposerMenu.slash(token, .skillsAndCommands).offered(commands).map(\.name)
+            == ["ship", "tdd", "ponytail:ponytail", "ponytail:audit"])
+        #expect(ComposerMenu.skill(token).offered(commands).map(\.name) == ["tdd", "ponytail:ponytail"])
+        #expect(ComposerMenu.skill(token).insertion(for: commands[2]) == "$tdd")
+        #expect(ComposerMenu.slash(token, .skillsAndCommands).insertion(for: commands[2]) == "/tdd")
+        #expect(ComposerMenu.slash(token, .all).showsWhenEmpty)
+        #expect(!ComposerMenu.slash(token, .skillsAndCommands).showsWhenEmpty)
+        #expect(!ComposerMenu.skill(token).showsWhenEmpty)
     }
 
     @Test("A pick replaces only its token")
@@ -41,25 +100,63 @@ struct ComposerTests {
         ) == "open @Sources/App.swift now")
     }
 
+    @Test("A pick at a cursor in the middle keeps the text after the token")
+    func insertionAtCursor() throws {
+        let draft = "fix /rev now"
+        let token = try #require(ComposerMenu.resolve(draft: draft, caret: 8, provider: CLAUDE).token)
+        #expect(ComposerMenu.inserting("/review", into: draft, token: token) == "fix /review now")
+    }
+
     @Test("Menu keys move, pick, dismiss, and preserve composer keys")
     func keyRouting() {
-        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: true) == .move(1))
-        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: true) == .pick)
-        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: true) == .pick)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: true) == .dismissMenu)
-        #expect(ComposerKeyRouter.route(.return, menuOpen: false, hasRows: false) == .send)
-        #expect(ComposerKeyRouter.route(.shiftReturn, menuOpen: false, hasRows: false) == .insertNewline)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: false, hasRows: false) == .clear)
+        #expect(route(.down, menuOpen: true, hasRows: true) == .move(1))
+        #expect(route(.return, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.tab, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.escape, menuOpen: true, hasRows: true) == .dismissMenu)
+        #expect(route(.return, menuOpen: false, hasRows: false) == .send)
+        #expect(route(.shiftReturn, menuOpen: false, hasRows: false) == .insertNewline)
+        #expect(route(.escape, menuOpen: false, hasRows: false) == .clear)
         #expect(ComposerKeyRouter.movedSelection(current: 0, count: 3, delta: -1) == 2)
+    }
+
+    @Test("Return on a whole-draft command picks and sends, and mid-draft it only picks")
+    func returnPicks() {
+        let wholeDraft = ComposerMenu.resolve(draft: "/cle", caret: 4, provider: CLAUDE)
+        let midDraft = ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CLAUDE)
+        #expect(route(.return, menu: wholeDraft, menuOpen: true, hasRows: true) == .pickAndSend)
+        #expect(route(.tab, menu: wholeDraft, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.return, menu: midDraft, menuOpen: true, hasRows: true) == .pick)
+    }
+
+    @Test("Up in an empty draft pulls back only when the chat can")
+    func upPullsBack() {
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: true, canPullBack: true)
+            == .pullBack)
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: false, canPullBack: true)
+            == .move(0))
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: true, canPullBack: false)
+            == .move(0))
+        #expect(route(.up, menuOpen: true, hasRows: true, draftIsEmpty: true, canPullBack: true)
+            == .move(-1))
     }
 
     @Test("An empty completion menu lets Return send")
     func emptyMenuKeys() {
-        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: false) == .send)
-        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.up, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: false) == .dismissMenu)
+        #expect(route(.return, menuOpen: true, hasRows: false) == .send)
+        #expect(route(.tab, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.up, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.down, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.escape, menuOpen: true, hasRows: false) == .dismissMenu)
+    }
+
+    private func route(
+        _ key: ComposerInputKey, menu: ComposerMenu = .none, menuOpen: Bool, hasRows: Bool,
+        draftIsEmpty: Bool = false, canPullBack: Bool = false
+    ) -> ComposerKeyAction {
+        ComposerKeyRouter.route(
+            key, menu: menu, menuOpen: menuOpen, hasRows: hasRows,
+            draftIsEmpty: draftIsEmpty, canPullBack: canPullBack
+        )
     }
 
     @Test("Command matching is fuzzy and provider built-ins differ")

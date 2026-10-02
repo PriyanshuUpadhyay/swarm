@@ -33,7 +33,9 @@ struct ComposerView: View {
     @State private var slashMatches: [ComposerCommandMatch] = []
     @State private var fileMatches: [ComposerFileMatch] = []
     @State private var selectedIndex = 0
-    @State private var dismissedToken: ComposerToken?
+    @State private var selection: TextSelection?
+    /// Esc closes the token that starts here until the text changes.
+    @State private var dismissedTokenStart: Int?
     @State private var attachments: [ComposerAttachment] = []
     @State private var actionError: String?
     @State private var sendError: String?
@@ -109,7 +111,11 @@ struct ComposerView: View {
         }
         .onChange(of: draft.wrappedValue) {
             attachments = Composer.retainedAttachments(attachments, in: draft.wrappedValue)
-            dismissedToken = nil
+            dismissedTokenStart = nil
+            selectedIndex = 0
+            updateMatches()
+        }
+        .onChange(of: selection) {
             selectedIndex = 0
             updateMatches()
         }
@@ -143,7 +149,7 @@ struct ComposerView: View {
     }
 
     private var editor: some View {
-        TextField(placeholder, text: draft, axis: .vertical)
+        TextField(placeholder, text: draft, selection: $selection, axis: .vertical)
             .onPasteCommand(of: [.png, .jpeg, .tiff], perform: receivePaste)
             .onKeyPress("v", phases: .down) { press in
                 guard press.modifiers.contains(.command), pasteImage() else { return .ignored }
@@ -161,8 +167,6 @@ struct ComposerView: View {
                 focus.wrappedValue = true
                 onFocused()
             })
-            .onKeyPress(.leftArrow) { dismissMenuForCaretMove() }
-            .onKeyPress(.rightArrow) { dismissMenuForCaretMove() }
             .onKeyPress(.upArrow) { handle(.up) }
             .onKeyPress(.downArrow) { handle(.down) }
             .onKeyPress(.tab) { handle(.tab) }
@@ -214,7 +218,7 @@ struct ComposerView: View {
                 .disabled(isStopping)
             }
             if !showsStop || Composer.outgoing(draft.wrappedValue) != nil {
-                Button(action: submit) {
+                Button { submit(draft.wrappedValue) } label: {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.background)
@@ -300,11 +304,12 @@ struct ComposerView: View {
         }
     }
 
-    // TextField exposes no selection, so completion works only at the end of the draft.
     private func updateMatches() {
         guard isActive else { return }
         let text = draft.wrappedValue
-        resolvedMenu = ComposerMenu.resolve(draft: text, caret: (text as NSString).length)
+        resolvedMenu = ComposerMenu.resolve(
+            draft: text, caret: caret(in: text), provider: commandSource.provider
+        )
         matchGeneration += 1
         fileMatchTask?.cancel()
         fileMatchTask = nil
@@ -313,8 +318,10 @@ struct ComposerView: View {
             slashMatches = []
             fileMatches = []
             isMatchingFiles = false
-        case .slash(let token):
-            slashMatches = ComposerCommandCatalog.matches(commands, query: token.query)
+        case .slash(let token, _), .skill(let token):
+            slashMatches = ComposerCommandCatalog.matches(
+                resolvedMenu.offered(commands), query: token.query
+            )
             fileMatches = []
             isMatchingFiles = false
         case .mention(let token):
@@ -339,21 +346,26 @@ struct ComposerView: View {
             }
         }
     }
+    /// The cursor as a UTF-16 offset. A selection left from an older draft is clamped to it.
+    private func caret(in text: String) -> Int {
+        guard case .selection(let range) = selection?.indices else { return text.utf16.count }
+        return min(range.upperBound, text.endIndex).utf16Offset(in: text)
+    }
     private var menuVisible: Bool {
-        guard let token = resolvedMenu.token else { return false }
-        return token != dismissedToken
+        guard let token = resolvedMenu.token, token.start != dismissedTokenStart else { return false }
+        return completionCount > 0 || resolvedMenu.showsWhenEmpty
     }
     private var completionCount: Int {
         switch resolvedMenu {
         case .none: 0
-        case .slash: slashMatches.count
+        case .slash, .skill: slashMatches.count
         case .mention: fileMatches.count
         }
     }
     private var emptyMenuText: String {
         switch resolvedMenu {
         case .none: ""
-        case .slash: "No command matches"
+        case .slash, .skill: "No command matches"
         case .mention: isMatchingFiles ? "Finding files…" : "No file matches"
         }
     }
@@ -361,7 +373,7 @@ struct ComposerView: View {
     private func completionName(_ index: Int) -> String {
         switch resolvedMenu {
         case .none: ""
-        case .slash: "/" + slashMatches[index].command.name
+        case .slash, .skill: resolvedMenu.insertion(for: slashMatches[index].command)
         case .mention: "@" + fileMatches[index].path
         }
     }
@@ -369,20 +381,21 @@ struct ComposerView: View {
     private func completionDetail(_ index: Int) -> String {
         switch resolvedMenu {
         case .none, .mention: ""
-        case .slash: slashMatches[index].command.detail
+        case .slash, .skill: slashMatches[index].command.detail
         }
     }
 
     private func completionSource(_ index: Int) -> String {
         switch resolvedMenu {
         case .none, .mention: ""
-        case .slash: slashMatches[index].command.kind.sourceLabel
+        case .slash, .skill: slashMatches[index].command.kind.sourceLabel
         }
     }
 
     private func handle(_ key: ComposerInputKey) -> KeyPress.Result {
         let action = ComposerKeyRouter.route(
-            key, menuOpen: menuVisible, hasRows: completionCount > 0
+            key, menu: resolvedMenu, menuOpen: menuVisible, hasRows: completionCount > 0,
+            draftIsEmpty: draft.wrappedValue.isEmpty, canPullBack: false
         )
         switch action {
         case .move(let delta):
@@ -393,6 +406,11 @@ struct ComposerView: View {
         case .pick:
             guard completionCount > 0 else { return .ignored }
             pick(min(selectedIndex, completionCount - 1))
+        case .pickAndSend:
+            guard completionCount > 0 else { return .ignored }
+            submit(pick(min(selectedIndex, completionCount - 1)))
+        case .pullBack:
+            return .ignored
         case .dismissMenu:
             dismissMenu()
         case .clear:
@@ -400,48 +418,37 @@ struct ComposerView: View {
             pendingAttachments = 0
             draft.wrappedValue = ""
         case .send:
-            submit()
+            submit(draft.wrappedValue)
         case .insertNewline:
             draft.wrappedValue.append("\n")
         }
         return .handled
     }
 
-    private func pick(_ index: Int) {
-        guard let token = resolvedMenu.token else { return }
-        switch resolvedMenu {
-        case .none:
-            return
-        case .slash:
-            draft.wrappedValue = ComposerMenu.inserting(
-                "/" + slashMatches[index].command.name,
-                into: draft.wrappedValue,
-                token: token
-            )
-        case .mention:
-            draft.wrappedValue = ComposerMenu.inserting(
-                "@" + fileMatches[index].path,
-                into: draft.wrappedValue,
-                token: token
-            )
-        }
+    /// Puts the row in place of the token, moves the cursor after it, and returns the new draft.
+    @discardableResult
+    private func pick(_ index: Int) -> String {
+        let old = draft.wrappedValue
+        guard let token = resolvedMenu.token else { return old }
+        let new = ComposerMenu.inserting(completionName(index), into: old, token: token)
+        let tail = old.utf16.count - min(token.end, old.utf16.count)
+        draft.wrappedValue = new
+        selection = TextSelection(
+            insertionPoint: String.Index(utf16Offset: new.utf16.count - tail, in: new)
+        )
         selectedIndex = 0
         focus.wrappedValue = true
-    }
-
-    private func dismissMenuForCaretMove() -> KeyPress.Result {
-        dismissMenu()
-        return .ignored
+        return new
     }
 
     private func dismissMenu() {
-        if menuVisible { dismissedToken = resolvedMenu.token }
+        if menuVisible { dismissedTokenStart = resolvedMenu.token?.start }
     }
 
     private var showsStop: Bool { isRunning }
 
-    private func submit() {
-        let snapshot = draft.wrappedValue
+    /// Takes the draft as a value, so a pick and its send in one key press use the same text.
+    private func submit(_ snapshot: String) {
         guard !isSending, !isSubmitting, pendingAttachments == 0, sendDisabledReason == nil,
               Composer.outgoing(snapshot) != nil else {
             return
