@@ -95,6 +95,24 @@ struct ComposerQueueTests {
         #expect(QueuePullBack.clearPresses(for: [notification, owner]) == 7)
     }
 
+    @Test("Already sent with a popped CLI-made entry clears the larger of its lines and the last prompt's")
+    func alreadySentClearsPoppedCLIEntry() {
+        let decision = QueuePullBack.decide(
+            queue: [Self.TASK_NOTIFICATION, Self.ADD_TEST],
+            after: [op("popAll", Self.TASK_NOTIFICATION), op("remove", Self.ADD_TEST)],
+            pastDeadline: false
+        )
+        #expect(decision == .alreadySent(popped: [Self.TASK_NOTIFICATION]))
+        // The two-line notification needs more presses than the one-line prompt Up recalls.
+        #expect(decision.clearPresses(last: Self.ADD_TEST) == 5)
+        // A three-line recalled prompt needs more than the notification.
+        #expect(decision.clearPresses(last: "one\ntwo\nthree") == 7)
+        #expect(QueuePullBack.alreadySent(popped: []).clearPresses(last: Self.ADD_TEST) == 3)
+        #expect(QueuePullBack.pulled(owner: [Self.ADD_TEST], popped: [Self.TASK_NOTIFICATION, Self.ADD_TEST])
+            .clearPresses(last: Self.ADD_TEST) == 7)
+        #expect(QueuePullBack.unconfirmed.clearPresses(last: Self.ADD_TEST) == 0)
+    }
+
     @Test("A dequeue of a CLI-made head entry is not credited to the owner's message")
     func pullBackDequeueOfCLIEntry() {
         let queue = [Self.TASK_NOTIFICATION, Self.ADD_TEST]
@@ -108,10 +126,10 @@ struct ComposerQueueTests {
     func pullBackAlreadySent() {
         #expect(QueuePullBack.decide(
             queue: [Self.ADD_TEST], after: [op("remove", Self.ADD_TEST)], pastDeadline: false
-        ) == .alreadySent)
+        ) == .alreadySent(popped: []))
         #expect(QueuePullBack.decide(
             queue: [Self.ADD_TEST], after: [op("dequeue")], pastDeadline: false
-        ) == .alreadySent)
+        ) == .alreadySent(popped: []))
         #expect(QueuePullBack.decide(queue: [Self.ADD_TEST], after: [], pastDeadline: false) == .waiting)
         #expect(QueuePullBack.decide(queue: [Self.ADD_TEST], after: [], pastDeadline: true) == .unconfirmed)
         // A CLI-made entry's record decides nothing for the owner's message.

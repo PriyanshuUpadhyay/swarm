@@ -42,8 +42,9 @@ public enum QueuePullBack: Sendable, Equatable {
     /// `owner` goes into the draft; `popped` is every popped text in log order, CLI-made ones
     /// too, because the CLI puts them all into its box.
     case pulled(owner: [String], popped: [String])
-    /// The CLI took every message first; Up then recalled the last sent prompt into its box.
-    case alreadySent
+    /// The CLI took every owner message first; Up then recalled the last sent prompt into its
+    /// box. `popped` holds CLI-made texts Up popped into the box all the same.
+    case alreadySent(popped: [String])
     case waiting
     /// The deadline passed while an owner message had no record, so the CLI box is unknown.
     case unconfirmed
@@ -63,7 +64,20 @@ public enum QueuePullBack: Sendable, Equatable {
         }
         if open.contains(where: \.waits) { return pastDeadline ? .unconfirmed : .waiting }
         let owner = popped.filter(QueuedMessages.isOwners)
-        return owner.isEmpty ? .alreadySent : .pulled(owner: owner, popped: popped)
+        return owner.isEmpty ? .alreadySent(popped: popped) : .pulled(owner: owner, popped: popped)
+    }
+
+    /// `C-u` presses that empty the CLI box after this decision. `last` is the last owner message
+    /// in the queue, the prompt Up recalls when the CLI took it first. An unconfirmed box gets
+    /// none, because C-u could wipe text Up pulled.
+    public func clearPresses(last: String) -> Int {
+        switch self {
+        case .pulled(_, let popped): Self.clearPresses(for: popped)
+        // Up can pop CLI-made entries and recall the last prompt; the larger box covers both.
+        case .alreadySent(let popped): max(Self.clearPresses(for: popped), Self.clearPresses(for: [last]))
+        case .waiting: Self.clearPresses(for: [last])
+        case .unconfirmed: 0
+        }
     }
 
     /// `C-u` presses that empty the CLI box holding `texts`, one per line. One press empties a

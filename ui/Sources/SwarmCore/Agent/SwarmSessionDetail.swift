@@ -218,19 +218,15 @@ public actor SwarmChairTranscript {
             if decision == .waiting { try await Task.sleep(for: .milliseconds(50)) }
         }
         let pulled: String?
-        // The CLI box holds every popped text, or the last sent prompt that Up recalled.
-        let box: [String]
         switch decision {
-        case .pulled(let owner, let popped):
+        case .pulled(let owner, _):
             pulled = owner.joined(separator: "\n")
-            box = popped
         case .unconfirmed:
             throw SwarmProfileError.failed("Could not confirm the pull-back. Check the agent's input box.")
         case .alreadySent, .waiting:
             pulled = nil
-            box = [last]
         }
-        for index in 0..<QueuePullBack.clearPresses(for: box) {
+        for index in 0..<decision.clearPresses(last: last) {
             if index > 0 { try await Task.sleep(for: .milliseconds(50)) }
             try await press("C-u")
         }
