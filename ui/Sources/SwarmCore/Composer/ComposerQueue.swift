@@ -67,8 +67,9 @@ public struct ComposerSentMessages: Sendable, Equatable {
         ))
     }
 
-    /// Once the agent stops running, the CLI has taken or dropped every typed text, so all leave.
-    /// This also ends a text the log records in another form than the one typed.
+    /// Once the agent's turn ends, the CLI has taken or dropped every typed text, so all leave.
+    /// This also ends a text the log records in another form than the one typed. A child that
+    /// waits on a question mid-turn still holds its texts, so pass `AgentStatus.isMidTurn`.
     public mutating func update(isRunning: Bool) {
         if !isRunning { entries.removeAll() }
     }

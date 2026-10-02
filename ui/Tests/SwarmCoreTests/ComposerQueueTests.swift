@@ -181,6 +181,17 @@ struct ComposerQueueTests {
         #expect(sent.rows.isEmpty)
     }
 
+    @Test("Sent rows stay while a child waits on a question mid-turn, and leave when its turn ends")
+    func sentRowsStayWhileWaiting() {
+        var sent = ComposerSentMessages()
+        sent.record(Self.ADD_TEST, provider: "codex", isRunning: true, transcript: Self.EARLIER)
+        sent.update(isRunning: AgentStatus.waiting.isMidTurn)
+        #expect(sent.rows.map(\.text) == [Self.ADD_TEST])
+        #expect([AgentStatus.done, .failed, .ended].allSatisfy { !$0.isMidTurn })
+        sent.update(isRunning: AgentStatus.done.isMidTurn)
+        #expect(sent.rows.isEmpty)
+    }
+
     @Test("Only running Codex and AGY sends are held")
     func onlyRunningCodexAndAGY() {
         var sent = ComposerSentMessages()

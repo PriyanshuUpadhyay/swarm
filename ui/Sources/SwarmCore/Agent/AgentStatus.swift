@@ -13,6 +13,9 @@ public enum AgentStatus: String, Sendable, Hashable, CaseIterable {
         }
     }
 
+    /// A waiting agent paused on a question inside its turn, so only done, failed, and ended end it.
+    public var isMidTurn: Bool { self == .working || self == .waiting }
+
     /// Higher is more urgent: waiting, failed, working, done, ended.
     public var urgency: Int {
         switch self {

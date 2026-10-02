@@ -153,7 +153,8 @@ struct ChildColumnView: View {
         .onChange(of: focusRequest, initial: true) {
             if selected { composerFocused = true }
         }
-        .onChange(of: agent.status == .working) { _, running in model.update(isRunning: running) }
+        // Initial, because a column scrolled off screen misses the change while its model lives on.
+        .onChange(of: agent.status.isMidTurn, initial: true) { _, running in model.update(isRunning: running) }
     }
 
     private var composer: some View {
