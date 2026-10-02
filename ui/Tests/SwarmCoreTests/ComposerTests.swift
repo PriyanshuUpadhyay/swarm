@@ -205,7 +205,9 @@ struct ComposerTests {
     func commandMatching() {
         let codex = ComposerCommandCatalog.builtIns(provider: "codex")
         let claude = ComposerCommandCatalog.builtIns(provider: "claude")
-        #expect(codex.contains { $0.name == "new" })
+        // Codex /new opens a worktree picker in a git repository, so one Return starts nothing.
+        #expect(!codex.contains { $0.name == "new" })
+        #expect(codex.contains { $0.name == "clear" })
         #expect(!claude.contains { $0.name == "new" })
         #expect(ComposerCommandCatalog.matches(codex, query: "rv").first?.command.name == "review")
     }

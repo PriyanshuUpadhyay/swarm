@@ -244,7 +244,6 @@ public enum ComposerCommandCatalog {
                 ("init", "Create agent instructions for this repository"),
                 ("mention", "Add a file to the conversation"),
                 ("model", "Choose the model"),
-                ("new", "Start a new conversation"),
                 ("permissions", "Change approval permissions"),
                 ("plan", "Start plan mode"),
                 ("agents", "Manage agents"),
