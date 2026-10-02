@@ -294,6 +294,7 @@ struct SwarmSessionDetailTests {
         }
         let visible = rows.filter { !$0.isHiddenByDefault }
         #expect(visible.map(\.kind) == [.user, .divider, .user])
+        try #require(visible.count == 3)
         #expect(visible.map(\.text).first == "Fix the bug")
         #expect(visible[1].text.hasPrefix("Context cleared · "))
         #expect(visible[1].eventID == "clear-second.jsonl")
