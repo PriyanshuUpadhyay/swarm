@@ -183,7 +183,7 @@ struct ChildColumnView: View {
             send: { [model, session, agent] in
                 try await model.send(
                     $0, to: agent.id, in: session,
-                    provider: agent.provider, isRunning: agent.status == .working
+                    provider: agent.provider, isRunning: agent.status.isMidTurn
                 )
             },
             interrupt: { [model, session, agent] in try await model.interrupt(agent.id, in: session) },
