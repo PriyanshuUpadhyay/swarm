@@ -181,7 +181,7 @@ final class SessionDetailModel {
     ) async throws {
         let sessionID = session.id.rawValue
         guard let outgoing = sendState.begin(sessionID: sessionID, draft: requestedText) else { return }
-        let text = Composer.submission(outgoing)
+        let text = Composer.submission(outgoing, provider: provider)
         let before = rows
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)

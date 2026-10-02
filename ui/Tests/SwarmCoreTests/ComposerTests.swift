@@ -5,6 +5,58 @@ import Testing
 private let CLAUDE = "claude"
 private let CODEX = "codex"
 
+/// Inputs and outputs of the cleaner (`fue`) in Claude Code 2.1.287, cut from the installed binary
+/// and run with node. Claude sends nothing when that cleaner changes the text.
+private let CLAUDE_CLEANER_VECTORS: [(String, String)] = [
+    ("Add a test for the empty case, then mail me@host.", "Add a test for the empty case, then mail me@host."),
+    ("caf\u{E9} na\u{EF}ve r\u{E9}sum\u{E9} \u{4E2D}\u{6587}", "caf\u{E9} na\u{EF}ve r\u{E9}sum\u{E9} \u{4E2D}\u{6587}"),
+    ("soft\u{AD}hyphen", "softhyphen"),
+    ("word\u{2060}joiner", "wordjoiner"),
+    ("h\u{2061}i\u{2062}j\u{2063}k\u{2064}l", "hijkl"),
+    ("a\u{80}b\u{90}c\u{9F}d", "abcd"),
+    ("a\u{85}b", "a\nb"),
+    ("a\u{2028}b\u{2029}c", "a\nb\nc"),
+    ("one\r\ntwo\rthree\nfour", "one\ntwo\nthree\nfour"),
+    ("a\u{B}b\u{C}c", "a\nb\nc"),
+    ("red\u{1B}[31m text", "red[31m text"),
+    ("a\u{0}b\u{8}c\u{1F}d\u{7F}e", "abcde"),
+    ("tab\there", "tab\there"),
+    ("a\u{34F}b", "ab"),
+    ("e\u{301}\u{34F}\u{302}x", "e\u{301}\u{34F}\u{302}x"),
+    ("\u{115F}\u{1160}x\u{3164}y\u{FFA0}z", "xyz"),
+    ("a\u{17B4}b \u{1780}\u{17B4}", "ab \u{1780}\u{17B4}"),
+    ("a\u{206A}b\u{206F}c", "abc"),
+    ("a\u{FFF0}b\u{FFFB}c", "abc"),
+    ("a\u{E0080}b\u{E0FFF}c", "abc"),
+    ("a\u{E0041}b\u{E007F}c", "abc"),
+    ("flag \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} ok", "flag \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} ok"),
+    ("\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} and \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} and \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}"),
+    ("\u{1F3F4}\u{E0075}\u{E0073}\u{E0074}\u{E0078}\u{E007F} texas", "\u{1F3F4} texas"),
+    ("a\u{61C}b", "ab"),
+    ("\u{645}\u{61C}\u{661}", "\u{645}\u{61C}\u{661}"),
+    ("abc\u{200E}def", "abcdef"),
+    ("\u{5E9}\u{5DC}\u{5D5}\u{5DD}\u{200E} abc", "\u{5E9}\u{5DC}\u{5D5}\u{5DD}\u{200E} abc"),
+    ("a\u{180B}b \u{1820}\u{180B}", "ab \u{1820}\u{180B}"),
+    ("a\u{FE0F}b \u{2764}\u{FE0F} ok", "ab \u{2764}\u{FE0F} ok"),
+    ("1\u{FE0F}\u{20E3} x\u{FE0E}", "1\u{FE0F}\u{20E3} x"),
+    ("\u{2200}\u{FE00} a\u{FE00}", "\u{2200}\u{FE00} a"),
+    ("a\u{200C}b", "ab"),
+    ("Auf\u{200C}lage", "Auflage"),
+    ("\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}", "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}"),
+    ("\u{915}\u{94D}\u{200D}\u{937} \u{915}\u{94D}\u{200C}\u{937}", "\u{915}\u{94D}\u{200D}\u{937} \u{915}\u{94D}\u{200C}\u{937}"),
+    ("hi \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} there", "hi \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} there"),
+    ("\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB} dev", "\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB} dev"),
+    ("a\u{200D}b \u{1F600}\u{200D}", "ab \u{1F600}"),
+    ("\u{E01}\u{200B}\u{E02} a\u{200B}b", "\u{E01}\u{200B}\u{E02} ab"),
+    ("a\u{202A}b\u{202E}c\u{2066}d\u{2069}e", "abcde"),
+    ("\u{FEFF}hello", "hello"),
+    ("\u{11013}\u{1107F}\u{11013} a\u{1107F}b", "\u{11013}\u{1107F}\u{11013} ab"),
+    ("\u{13000}\u{13430}\u{13001} a\u{13430}b", "\u{13000}\u{13430}\u{13001} ab"),
+    ("a\u{16FE4}b\u{1D173}c", "abc"),
+    ("\u{644}\u{200D}\u{627}", "\u{644}\u{200D}\u{627}"),
+    ("Fix\u{AD} the\u{200B} bug \u{1F600}\u{200D}\u{1F525} in\u{2028} file\u{90} \u{915}\u{94D}\u{200D}\u{937} done", "Fix the bug \u{1F600}\u{200D}\u{1F525} in\n file \u{915}\u{94D}\u{200D}\u{937} done"),
+]
+
 @Suite("Composer")
 struct ComposerTests {
     @Test("Drafts are separate for each chat and survive a new store")
@@ -143,45 +195,50 @@ struct ComposerTests {
     @Test("A plain sentence is typed unchanged")
     func submissionKeepsPlainText() {
         let sentence = "Add a test for the empty case, then mail me@host.\nThanks"
-        #expect(Composer.submission(sentence) == sentence)
+        #expect(Composer.submission(sentence, provider: CLAUDE) == sentence)
+        #expect(Composer.submission(sentence, provider: CODEX) == sentence)
     }
 
-    @Test("Invisible format characters are removed before typing")
-    func submissionRemovesInvisibleCharacters() {
-        #expect(Composer.submission("a\u{200B}b\u{200E}c\u{200F}d\u{FEFF}e") == "abcde")
-        #expect(Composer.submission("a\u{202E}b") == "ab")
-        #expect(Composer.submission("a\u{202A}b\u{2066}c\u{2069}d") == "abcd")
-        #expect(Composer.submission("a\u{E0041}b\u{E007F}c") == "abc")
-        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
-        #expect(Composer.submission("hi " + family + " there") == "hi " + family + " there")
-        #expect(Composer.submission("a\u{200C}b") == "a\u{200C}b")
-        #expect(Composer.submission("soft\u{00AD}hyphen") == "soft\u{00AD}hyphen")
-        #expect(Composer.submission("word\u{2060}joiner") == "word\u{2060}joiner")
+    @Test("A Claude chat types what Claude's own cleaner leaves, so Claude never holds it back",
+          arguments: CLAUDE_CLEANER_VECTORS)
+    func submissionCleansLikeClaude(input: String, cleaned: String) {
+        #expect(Array(Composer.submission(input, provider: CLAUDE).unicodeScalars)
+            == Array(cleaned.unicodeScalars))
+    }
+
+    @Test("A Codex or AGY chat keeps invisible characters, because only Claude refuses them")
+    func submissionKeepsInvisibleCharactersOutsideClaude() {
+        let text = "soft\u{00AD}hyphen a\u{200C}b c\u{200B}d e\u{0085}f \u{1F3F4}\u{E0067}\u{E007F}"
+        #expect(Composer.submission(text, provider: CODEX) == text)
+        #expect(Composer.submission(text, provider: "agy") == text)
     }
 
     @Test("Control characters other than LF and TAB are removed, because an ESC interrupts the turn")
     func submissionRemovesControlCharacters() {
-        #expect(Composer.submission("red\u{1B}[31m text") == "red[31m text")
-        #expect(Composer.submission("a\u{0}b\u{8}c\u{B}d\u{1F}e\u{7F}f") == "abcdef")
-        #expect(Composer.submission("tab\there\r\nnext") == "tab\there\nnext")
+        #expect(Composer.submission("red\u{1B}[31m text", provider: CODEX) == "red[31m text")
+        #expect(Composer.submission("a\u{0}b\u{8}c\u{B}d\u{1F}e\u{7F}f", provider: CODEX) == "abcdef")
+        #expect(Composer.submission("tab\there\r\nnext", provider: "agy") == "tab\there\nnext")
     }
 
     @Test("CR and CRLF become LF, because a CR is Enter")
     func submissionNormalizesLineEnds() {
-        #expect(Composer.submission("one\r\ntwo\rthree\nfour") == "one\ntwo\nthree\nfour")
+        #expect(Composer.submission("one\r\ntwo\rthree\nfour", provider: CODEX)
+            == "one\ntwo\nthree\nfour")
     }
 
     @Test("A trailing backslash or a last word that opens a popup gets one space")
     func submissionClosesPopups() {
-        #expect(Composer.submission("join this\\") == "join this\\ ")
-        #expect(Composer.submission("look at @src/main.rs") == "look at @src/main.rs ")
-        #expect(Composer.submission("use $tdd") == "use $tdd ")
-        #expect(Composer.submission("/clear") == "/clear ")
-        #expect(Composer.submission("please run /review") == "please run /review ")
-        #expect(Composer.submission("ship it :tada:") == "ship it :tada: ")
-        #expect(Composer.submission("Note:") == "Note: ")
-        #expect(Composer.submission("first line\nsee @README.md") == "first line\nsee @README.md ")
-        #expect(Composer.submission("look at @src/main.rs\u{200B}") == "look at @src/main.rs ")
+        #expect(Composer.submission("join this\\", provider: CODEX) == "join this\\ ")
+        #expect(Composer.submission("look at @src/main.rs", provider: CLAUDE) == "look at @src/main.rs ")
+        #expect(Composer.submission("use $tdd", provider: CODEX) == "use $tdd ")
+        #expect(Composer.submission("/clear", provider: CLAUDE) == "/clear ")
+        #expect(Composer.submission("please run /review", provider: CODEX) == "please run /review ")
+        #expect(Composer.submission("ship it :tada:", provider: "agy") == "ship it :tada: ")
+        #expect(Composer.submission("Note:", provider: CLAUDE) == "Note: ")
+        #expect(Composer.submission("first line\nsee @README.md", provider: CLAUDE)
+            == "first line\nsee @README.md ")
+        #expect(Composer.submission("look at @src/main.rs\u{200B}", provider: CLAUDE)
+            == "look at @src/main.rs ")
     }
 
     @Test("A waiting agent blocks typing, and the chair's reason points to its pane")

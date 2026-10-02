@@ -61,7 +61,7 @@ final class ChildColumnModel {
         isSending = true
         defer { isSending = false }
         let before = rows
-        let typed = Composer.submission(text)
+        let typed = Composer.submission(text, provider: provider)
         try await bus.type(typed, to: agent, in: session)
         sentMessages.record(typed, provider: provider, isRunning: isRunning, transcript: before)
         queued = queued.filter { $0.state == .queued } + sentMessages.rows
