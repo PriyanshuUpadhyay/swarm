@@ -256,7 +256,8 @@ struct ComposerTests {
         #expect(claude.contains {
             $0.name == "explain" && $0.kind == .skill && $0.detail == "Project explain"
         })
-        #expect(claude.contains { $0.name == "shared" })
+        // ~/.agents/skills is a Codex and AGY folder, not a Claude Code one.
+        #expect(!claude.contains { $0.name == "shared" })
         let unknown = ComposerCommandCatalog.discover(from: ComposerCommandSource(
             provider: nil, homeDirectory: root.path
         ))

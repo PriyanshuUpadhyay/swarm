@@ -135,8 +135,9 @@ public enum ComposerCommandCatalog {
             add(promptFiles(in: root + "/prompts"), to: &values)
             add(skillFiles(in: root + "/skills"), to: &values)
             add(skillFiles(in: root + "/skills/.system"), to: &values)
+            // Codex reads it; Claude Code does not, so a Claude row from it would not run.
+            add(skillFiles(in: home + "/.agents/skills"), to: &values)
         }
-        add(skillFiles(in: home + "/.agents/skills"), to: &values)
         if let project = source.projectDirectory {
             if provider == "claude" {
                 add(commandFiles(in: project + "/.claude/commands"), to: &values)
