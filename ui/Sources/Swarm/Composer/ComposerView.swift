@@ -529,8 +529,11 @@ struct ComposerView: View {
                 guard let text = try await pullBack() else {
                     showsAlreadySent = true
                     AccessibilityNotification.Announcement("Already sent").post()
-                    try? await Task.sleep(for: .seconds(2))
-                    showsAlreadySent = false
+                    // Only the caption waits, so Send works again at once.
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        showsAlreadySent = false
+                    }
                     return
                 }
                 // Keep anything typed while the CLI let go of the text.
