@@ -243,8 +243,8 @@ struct ComposerView: View {
                         .background(.primary, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
                 }
                 .buttonStyle(.plain)
-                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending
-                    || isSubmitting || pendingAttachments > 0 || sendDisabledReason != nil)
+                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending || isSubmitting
+                    || isPullingBack || pendingAttachments > 0 || sendDisabledReason != nil)
                 .help("Send (Return)")
             }
         }
@@ -498,8 +498,9 @@ struct ComposerView: View {
 
     /// Takes the draft as a value, so a pick and its send in one key press use the same text.
     private func submit(_ snapshot: String) {
-        guard !isSending, !isSubmitting, pendingAttachments == 0, sendDisabledReason == nil,
-              Composer.outgoing(snapshot) != nil else {
+        // A send typed into the CLI box while C-u presses run would be cut or garbled.
+        guard !isSending, !isSubmitting, !isPullingBack, pendingAttachments == 0,
+              sendDisabledReason == nil, Composer.outgoing(snapshot) != nil else {
             return
         }
         attachmentGeneration += 1
