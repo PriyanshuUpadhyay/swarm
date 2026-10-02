@@ -328,7 +328,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .decision = str(attachment.object, "decision"),
             } });
         } else if (std.mem.eql(u8, kind, "queued_command")) {
-            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = str(attachment.object, "prompt") } });
+            // A queued message the owner typed is their prompt; CLI-made ones such as task
+            // notifications stay system text.
+            const origin = attachment.object.get("origin") orelse .null;
+            const human = origin == .object and std.mem.eql(u8, str(origin.object, "kind"), "human");
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = if (human) "queued_prompt" else kind, .text = str(attachment.object, "prompt") } });
         } else if (std.mem.eql(u8, kind, "model")) {
             const identity = attachment.object.get("identity") orelse .null;
             const model = if (identity == .object) str(identity.object, "modelId") else "";
@@ -1118,7 +1122,10 @@ test "Claude queued command and fallback block become system messages" {
     defer arena_state.deinit();
     const queued = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"attachment\":{\"type\":\"queued_command\",\"prompt\":\"go\"}}");
     const fallback = try parseLine(arena_state.allocator(), "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"fallback\",\"from\":{\"model\":\"a\"},\"to\":{\"model\":\"b\"}}]}}");
+    const typed = try parseLine(arena_state.allocator(), "{\"type\":\"attachment\",\"attachment\":{\"type\":\"queued_command\",\"prompt\":\"go\",\"origin\":{\"kind\":\"human\"}}}");
     try std.testing.expectEqualStrings("go", queued[0].system_message.text);
+    try std.testing.expectEqualStrings("queued_command", queued[0].system_message.kind);
+    try std.testing.expectEqualStrings("queued_prompt", typed[0].system_message.kind);
     try std.testing.expectEqualStrings("model_fallback", fallback[0].system_message.kind);
     try std.testing.expectEqualStrings("a -> b", fallback[0].system_message.text);
 }

@@ -231,6 +231,8 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .result, text: decision, eventID: id + ":decision")
         case .error(let message, let meta):
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
+        case .systemMessage("queued_prompt", let text, let meta):
+            row = TranscriptRow(kind: .user, text: text, eventID: key(meta, "queued", index))
         case .systemMessage(_, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
         case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):

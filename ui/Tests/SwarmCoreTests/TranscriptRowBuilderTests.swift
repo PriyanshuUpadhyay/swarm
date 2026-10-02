@@ -65,6 +65,31 @@ struct TranscriptRowBuilderTests {
         #expect(TranscriptRowBuilder.rows(from: records).isEmpty)
     }
 
+    @Test("A queued message the owner typed shows as a user row, a CLI notification stays system, and the turn still ends")
+    func absorbedQueuedMessage() async throws {
+        let binary = try #require(ProcessInfo.processInfo.environment["SWARM_TRANSCRIPT_TOOL"])
+        let log = FileManager.default.temporaryDirectory
+            .appendingPathComponent("queued-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        try [
+            #"{"type":"user","uuid":"u1","sessionId":"s1","message":{"role":"user","content":"Fix the bug"}}"#,
+            #"{"type":"assistant","uuid":"a1","sessionId":"s1","message":{"role":"assistant","model":"m","content":[{"type":"text","text":"On it"}]}}"#,
+            #"{"type":"attachment","uuid":"q1","sessionId":"s1","attachment":{"type":"queued_command","prompt":"keep the old name","origin":{"kind":"human"}}}"#,
+            #"{"type":"attachment","uuid":"q2","sessionId":"s1","attachment":{"type":"queued_command","prompt":"<task-notification>done</task-notification>","origin":{"kind":"task-notification"}}}"#,
+            #"{"type":"assistant","uuid":"a2","sessionId":"s1","message":{"role":"assistant","model":"m","content":[{"type":"text","text":"Kept it"}]}}"#,
+            #"{"type":"system","subtype":"turn_duration","durationMs":1200,"uuid":"d1","sessionId":"s1"}"#,
+        ].joined(separator: "\n").appending("\n").write(to: log, atomically: true, encoding: .utf8)
+        let process = TranscriptToolProcess(binary: URL(fileURLWithPath: binary), format: "claude", log: log, follow: false)
+        var records: [TranscriptRecord] = []
+        for try await record in process.stream { records.append(record) }
+        let rows = TranscriptRowBuilder.rows(from: records).filter { !$0.isHiddenByDefault }
+
+        #expect(rows.map(\.kind) == [.user, .assistant, .user, .system, .assistant, .result])
+        #expect(rows.map(\.text).dropFirst(2).first == "keep the old name")
+        #expect(ChairTurn.isActive(Array(rows.dropLast())))
+        #expect(!ChairTurn.isActive(rows))
+    }
+
     @Test("Known tool output joins its call, while questions and errors remain distinct")
     func actionRows() {
         let meta = Meta(uuid: "event-1")
