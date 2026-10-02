@@ -44,6 +44,19 @@ struct ConversationBoundaryTests {
         #expect(!ConversationBoundary.isClear([ordinaryMessage]))
     }
 
+    @Test("The clear preamble goes only before the first user row, and command output with text stays")
+    func clearPreamble() {
+        let system = { (text: String) in TranscriptRow(kind: .system, text: text, eventID: text) }
+        let caveat = system("<local-command-caveat>Caveat</local-command-caveat>")
+        let modelOutput = system("<local-command-stdout>Set model to opus</local-command-stdout>")
+        let fresh = TranscriptRow(kind: .user, text: "Start fresh", eventID: "u2")
+        let rows = ConversationBoundary.withoutClearPreamble([
+            caveat, system("<command-name>/clear</command-name>"),
+            system("<local-command-stdout></local-command-stdout>"), modelOutput, fresh, caveat,
+        ])
+        #expect(rows == [modelOutput, fresh, caveat])
+    }
+
     @Test("A marker after the first 30 records does not count")
     func lateMarker() {
         let late = Array(repeating: ordinaryMessage, count: 30) + [hook("SessionStart:clear")]

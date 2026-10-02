@@ -232,7 +232,7 @@ public actor SwarmChairTranscript {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
-        var built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        let built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
         if let path = log, path != lastLogPath {
             // Claude writes bookkeeping lines first, so until a real record lands the new log
             // cannot say whether it is a clear. Keep the old rows and decide on a later read.
@@ -247,10 +247,7 @@ public actor SwarmChairTranscript {
             }
             lastLogPath = path
         }
-        if !frozenRows.isEmpty {
-            built.removeAll { $0.kind == .system && $0.text.contains("<command-name>/clear</command-name>") }
-        }
-        rows = frozenRows + built
+        rows = frozenRows + (frozenRows.isEmpty ? built : ConversationBoundary.withoutClearPreamble(built))
         rawEntries = TranscriptDebugData.entries(from: window.records, indexOffset: window.indexOffset)
         hasOlder = window.hasOlder
         usage = window.usage

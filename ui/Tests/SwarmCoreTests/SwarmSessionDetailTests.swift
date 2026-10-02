@@ -270,11 +270,13 @@ struct SwarmSessionDetailTests {
     private static let USER_ASKS = #"{"type":"user","uuid":"u1","message":{"role":"user","content":"Fix the bug"}}"#
     private static let CLEAR_LOG = [
         #"{"type":"attachment","uuid":"h1","attachment":{"type":"hook_success","hookName":"SessionStart:clear","hookEvent":"SessionStart","toolUseID":"t1","exitCode":0}}"#,
+        #"{"type":"user","uuid":"m1","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>Caveat: local command output follows.</local-command-caveat>"}}"#,
         #"{"type":"user","uuid":"c1","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>"}}"#,
+        #"{"type":"user","uuid":"o1","message":{"role":"user","content":"<local-command-stdout></local-command-stdout>"}}"#,
         #"{"type":"user","uuid":"u2","message":{"role":"user","content":"Start fresh"}}"#,
     ]
 
-    @Test("A /clear log keeps the earlier rows behind one divider and drops the /clear command row")
+    @Test("A /clear log keeps the earlier rows behind one divider and drops the /clear command, caveat, and empty output rows")
     func clearKeepsEarlierRows() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
@@ -297,6 +299,7 @@ struct SwarmSessionDetailTests {
         #expect(visible[1].eventID == "clear-second.jsonl")
         #expect(visible[2].text == "Start fresh")
         #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
+        #expect(!rows.contains { $0.text.contains("<local-command-") })
     }
 
     @Test("A clear log read while it holds only bookkeeping lines keeps the old rows and still gets its divider")
