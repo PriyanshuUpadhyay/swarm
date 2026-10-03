@@ -6,6 +6,8 @@ pub const Meta = struct {
     session_id: []const u8,
     uuid: []const u8,
     timestamp: []const u8,
+    parent_uuid: ?[]const u8 = null,
+    source_tool_use_id: ?[]const u8 = null,
 };
 
 pub const Text = struct { meta: Meta, text: []const u8 };
@@ -195,6 +197,15 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
     if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>" })) return "command_output";
     if (std.mem.startsWith(u8, trimmed, "<task-notification>")) return "task_notification";
+    if (std.mem.startsWith(u8, trimmed, "<bash-input>")) return "shell_input";
+    if (oneOfPrefix(trimmed, &.{ "<bash-stdout>", "<bash-stderr>" })) return "shell_output";
+    const is_meta = if (rec.get("isMeta")) |flag| flag == .bool and flag.bool else false;
+    if (is_meta and std.mem.startsWith(u8, trimmed, "Base directory for this skill:")) return "skill_body";
+    if (std.mem.startsWith(u8, trimmed, "[Request interrupted by user")) return "interrupted";
+    // Claude Code writes these as user records, but the owner did not type them.
+    const origin = rec.get("origin") orelse .null;
+    const from_cli = origin == .object and if (optionalStr(origin.object, "kind")) |kind| !std.mem.eql(u8, kind, "human") else false;
+    if (is_meta or from_cli or oneOfPrefix(trimmed, &.{ "<system-reminder>", "<teammate-message", "<fork-boilerplate", "<cross-session-message" })) return "injected";
     return "";
 }
 
@@ -294,7 +305,13 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         return events.items;
     }
     const rec = root.object;
-    const meta: Meta = .{ .session_id = str(rec, "sessionId"), .uuid = str(rec, "uuid"), .timestamp = str(rec, "timestamp") };
+    const meta: Meta = .{
+        .session_id = str(rec, "sessionId"),
+        .uuid = str(rec, "uuid"),
+        .timestamp = str(rec, "timestamp"),
+        .parent_uuid = optionalStr(rec, "parentUuid"),
+        .source_tool_use_id = optionalStr(rec, "sourceToolUseID"),
+    };
     const record_type = str(rec, "type");
     if (std.mem.eql(u8, record_type, "attachment")) {
         const attachment = rec.get("attachment") orelse {
@@ -1125,6 +1142,95 @@ test "Claude background task notification is system text, not a user prompt" {
     try std.testing.expectEqualStrings("task_notification", notification[0].system_message.kind);
 }
 
+test "Claude shell mode input is shell_input" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const input = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<bash-input>ls</bash-input>\"}}");
+    try std.testing.expectEqualStrings("shell_input", input[0].system_message.kind);
+}
+
+test "Claude shell mode stdout and stderr are shell_output" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const stdout = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<bash-stdout>out</bash-stdout><bash-stderr></bash-stderr>\"}}");
+    const stderr = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\" <bash-stderr>bad</bash-stderr>\"}}");
+    try std.testing.expectEqualStrings("shell_output", stdout[0].system_message.kind);
+    try std.testing.expectEqualStrings("shell_output", stderr[0].system_message.kind);
+}
+
+test "Claude meta skill body is skill_body, a typed one is a user chunk" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const body = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Base directory for this skill: /skills/flow\\n\\nbody\"}]}}");
+    const typed = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"Base directory for this skill: /skills/flow\"}}");
+    try std.testing.expectEqualStrings("skill_body", body[0].system_message.kind);
+    try std.testing.expectEqualStrings("Base directory for this skill: /skills/flow", typed[0].user_message_chunk.text);
+}
+
+test "Claude interrupt notice is interrupted" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const plain = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}");
+    const tool = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user for tool use]\"}]}}");
+    try std.testing.expectEqualStrings("interrupted", plain[0].system_message.kind);
+    try std.testing.expectEqualStrings("interrupted", tool[0].system_message.kind);
+}
+
+test "Claude meta, CLI-origin, and tagged text are injected" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const meta = try parseLine(arena, "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"Stop hook feedback: fix it\"}}");
+    const cli_origin = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"task-notification\"},\"message\":{\"content\":\"done\"}}");
+    const reminder = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"  <system-reminder>note</system-reminder>\"}}");
+    const teammate = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<teammate-message teammate_id=\\\"t1\\\">hi</teammate-message>\"}}");
+    const fork = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<fork-boilerplate>rules</fork-boilerplate>\"}]}}");
+    const cross_session = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<cross-session-message>hello</cross-session-message>\"}}");
+    for ([_][]Event{ meta, cli_origin, reminder, teammate, fork, cross_session }) |events| {
+        try std.testing.expectEqualStrings("injected", events[0].system_message.kind);
+    }
+}
+
+test "Claude typed bold prompt and human-origin text stay user chunks" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const bold = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<b>bold</b>\"}}");
+    const human = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"origin\":{\"kind\":\"human\"},\"message\":{\"content\":\"plain\"}}");
+    try std.testing.expectEqualStrings("<b>bold</b>", bold[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("plain", human[0].user_message_chunk.text);
+}
+
+test "Claude typed block and reminder block in one record split into prompt and injected" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"fix the bug\"},{\"type\":\"text\",\"text\":\"<system-reminder>note</system-reminder>\"}]}}");
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("fix the bug", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("injected", events[1].system_message.kind);
+}
+
+test "Claude parent and source tool ids fill meta, null when absent" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const linked = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"parentUuid\":\"result-1\",\"sourceToolUseID\":\"toolu_1\",\"message\":{\"content\":\"Base directory for this skill: /skills/flow\"}}");
+    const unlinked = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"parentUuid\":7,\"message\":{\"content\":\"hello\"}}");
+    try std.testing.expectEqualStrings("result-1", linked[0].system_message.meta.parent_uuid.?);
+    try std.testing.expectEqualStrings("toolu_1", linked[0].system_message.meta.source_tool_use_id.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), unlinked[0].user_message_chunk.meta.parent_uuid);
+    try std.testing.expectEqual(@as(?[]const u8, null), unlinked[0].user_message_chunk.meta.source_tool_use_id);
+}
+
+test "event JSON writes parent_uuid when meta has one" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try writeEventJson(&output.writer, .{ .system_message = .{
+        .meta = .{ .session_id = "s1", .uuid = "output-1", .timestamp = "t", .parent_uuid = "input-1" },
+        .kind = "shell_output",
+        .text = "<bash-stdout>out</bash-stdout>",
+    } });
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"parent_uuid\":\"input-1\"") != null);
+}
+
 test "Claude queued command and fallback block become system messages" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1339,7 +1445,7 @@ test "event JSON output uses a type and nested meta" {
         .text = "hello",
     } });
     try std.testing.expectEqualStrings(
-        "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\"}}",
+        "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\",\"parent_uuid\":null,\"source_tool_use_id\":null}}",
         output.written(),
     );
 }
@@ -1500,7 +1606,7 @@ test "translate flushes each input line" {
     try translate(std.testing.allocator, .claude, "", &reader, &output.writer);
 
     try std.testing.expectEqualStrings(
-        "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",
+        "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\",\"parent_uuid\":null,\"source_tool_use_id\":null}}\n",
         output.sink.written(),
     );
 }
