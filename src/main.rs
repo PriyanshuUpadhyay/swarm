@@ -1661,8 +1661,8 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .zip(&alive)
                 .map(|(row, alive)| {
-                    let target = match (alive, row.pane.as_deref(), row.provider.as_deref()) {
-                        (Some(true), Some(pane), Some(provider)) => Some((pane, provider)),
+                    let target = match (alive, row.pane.as_deref()) {
+                        (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
                         _ => None,
                     };
                     scope.spawn(move || {

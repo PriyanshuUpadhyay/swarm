@@ -321,7 +321,7 @@ fn answer_session(home: &Path, key_then: &str) -> String {
         let output = swarm(home, &chair, args);
         assert!(output.status.success(), "{args:?}: {}", stderr(&output));
     }
-    // The screen check reads only an agent with a provider; `spawn --provider` needs an account.
+    // A text screen is read by its provider's patterns; `spawn --provider` needs an account.
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
     swarm::store::set_provider(&connection, &session, "seat", "claude").unwrap();
     session
@@ -531,6 +531,46 @@ fn a_second_answer_to_the_same_pane_is_refused_and_sends_nothing() {
     let output = swarm(&home, &app, &["answer", "seat", &id, "0"]);
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(std::fs::read_to_string(home.join("keys")).unwrap(), "1\n");
+}
+
+#[test]
+fn a_seat_with_no_provider_shows_the_state_that_herdr_reports() {
+    let home = scratch("no-provider");
+    let session = answer_session(&home, "true");
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    connection
+        .execute("UPDATE agent SET provider = NULL WHERE id = 'seat'", [])
+        .unwrap();
+    let chair = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let seat = |screen: &str| {
+        std::fs::write(home.join("screen"), screen).unwrap();
+        let output = swarm(&home, &chair, &["agents", "--json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        list["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|agent| agent["id"] == "seat")
+            .unwrap()
+            .clone()
+    };
+    // A text screen (tmux) needs a known provider to be read, so the state stays unset.
+    let text = seat(PERMISSION);
+    assert_eq!(text["state"], serde_json::Value::Null);
+    assert_eq!(text["prompt"], serde_json::Value::Null);
+    // Herdr's status names no provider.
+    let working = seat(r#"{"result":{"agent":{"agent_status":"working"}}}"#);
+    assert_eq!(working["state"], "working");
+    assert_eq!(working["state_source"], "screen");
+    let idle = seat(r#"{"result":{"agent":{"agent_status":"idle"}}}"#);
+    assert_eq!(idle["state"], "done");
+    let blocked = seat(r#"{"result":{"agent":{"agent_status":"blocked"}}}"#);
+    assert_eq!(blocked["state"], "waiting");
 }
 
 #[test]
