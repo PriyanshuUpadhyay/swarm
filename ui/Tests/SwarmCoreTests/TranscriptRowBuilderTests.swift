@@ -306,6 +306,134 @@ struct TranscriptRowBuilderTests {
         #expect(rows.first?.tool?.output == "error text")
     }
 
+    @Test("A shell output joins its input into one shell row with the input's id")
+    func shellPair() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            shellInput("ls", uuid: "input"),
+            shellOutput("<bash-stdout>a &amp; b</bash-stdout><bash-stderr></bash-stderr>", parent: "input"),
+        ])
+        #expect(rows.map(\.kind) == [.shell])
+        #expect(rows[0].eventID == "input:shell")
+        #expect(rows[0].shell == TranscriptShellRun(command: "ls", output: "a & b", exitCode: nil))
+        #expect(rows[0].printLine == "shell $ ls\na & b")
+    }
+
+    @Test("A shell input without output and an output without input each stay a shell row")
+    func unmatchedShell() {
+        let lone = TranscriptRowBuilder.rows(from: [shellInput("pwd", uuid: "input")])
+        #expect(lone.map(\.shell) == [TranscriptShellRun(command: "pwd", output: "", exitCode: nil)])
+        let orphan = TranscriptRowBuilder.rows(from: [
+            shellOutput("<bash-stdout>/work</bash-stdout>", parent: "outside-window"),
+        ])
+        #expect(orphan.map(\.kind) == [.shell])
+        #expect(orphan.map(\.shell) == [TranscriptShellRun(command: nil, output: "/work", exitCode: nil)])
+    }
+
+    @Test("Two shell inputs with one id do not take the output that names it")
+    func duplicateShellInputs() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            shellInput("first", uuid: "same"),
+            shellInput("second", uuid: "same"),
+            shellOutput("<bash-stdout>which one</bash-stdout>", parent: "same"),
+        ])
+        #expect(rows.map(\.kind) == [.shell, .shell, .shell])
+        #expect(rows.map { $0.shell?.command } == ["first", "second", nil])
+        #expect(rows.map { $0.shell?.output } == ["", "", "which one"])
+        #expect(Set(rows.map(\.eventID)).count == rows.count)
+    }
+
+    @Test("A typed skill command takes its body, keeps its raw text, and starts a turn")
+    func skillBodyToCommand() {
+        let commandText = "<command-message>flow</command-message>\n<command-name>/flow</command-name>\n<command-args>start\nthe chat</command-args>"
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: commandText, meta: Meta(uuid: "command")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "command")),
+        ])
+        #expect(rows.map(\.kind) == [.system])
+        #expect(rows[0].text == commandText)
+        #expect(rows[0].systemKind == "command")
+        #expect(rows[0].command == TranscriptCommandChip(
+            name: "/flow", arguments: "start\nthe chat", skillBody: "Base directory for this skill: /skills/flow"
+        ))
+        #expect(rows[0].startsTurn)
+    }
+
+    @Test("A skill body that a Skill call loaded joins that call and adds no row")
+    func skillBodyToTool() {
+        let meta = Meta(agentSessionID: "s")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "skill-call", name: "Skill", input: .object(["skill": .string("flow")]), status: .pending, meta: meta),
+            .toolCallUpdate(toolCallID: "skill-call", status: .completed, content: "Launching skill: flow", meta: meta),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(agentSessionID: "s", uuid: "body", parentUUID: "tool-result", sourceToolUseID: "skill-call")),
+        ])
+        #expect(rows.map(\.kind) == [.toolUse])
+        #expect(rows[0].tool?.skillBody == "Base directory for this skill: /skills/flow")
+    }
+
+    @Test("A skill body with no command or call is a system row, never the owner's")
+    func unlinkedSkillBody() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "outside-window")),
+        ])
+        #expect(rows.map(\.kind) == [.system])
+        #expect(rows[0].systemKind == "skill_body")
+        #expect(!rows[0].isHiddenByDefault)
+    }
+
+    @Test("A /model command takes its stdout as output and does not start a turn")
+    func modelCommandOutput() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/model</command-name>\n<command-args>sonnet</command-args>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "command_output", text: "<local-command-stdout>Set model to \u{1B}[1msonnet\u{1B}[22m</local-command-stdout>", meta: Meta(uuid: "stdout", parentUUID: "command")),
+        ])
+        #expect(rows.count == 1)
+        #expect(rows[0].command == TranscriptCommandChip(name: "/model", arguments: "sonnet", output: "Set model to sonnet"))
+        #expect(!rows[0].startsTurn)
+        #expect(!ChairTurn.isActive(rows))
+    }
+
+    @Test("After a finished turn a shell command leaves the chat idle, a skill starts a turn, and an interrupt ends it")
+    func turnStateForInjectedRows() {
+        let finished: [TranscriptEvent] = [
+            .userMessageChunk(text: "Fix the bug", meta: Meta(uuid: "prompt")),
+            .turnEnded(durationMs: 1, reason: .completed, meta: Meta()),
+        ]
+        let shell: [TranscriptEvent] = [
+            shellInput("git status", uuid: "input"),
+            shellOutput("<bash-stdout>clean</bash-stdout>", parent: "input"),
+        ]
+        let skill: [TranscriptEvent] = [
+            .systemMessage(kind: "command", text: "<command-name>/flow</command-name>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "command")),
+        ]
+        let interrupt = TranscriptEvent.systemMessage(kind: "interrupted", text: "[Request interrupted by user]", meta: Meta(uuid: "stop"))
+
+        #expect(!ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + shell)))
+        #expect(ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + skill)))
+        let interrupted = TranscriptRowBuilder.rows(from: finished + skill + [interrupt])
+        #expect(interrupted.last?.kind == .notice)
+        #expect(interrupted.last?.text == "Interrupted")
+        #expect(!ChairTurn.isActive(interrupted))
+    }
+
+    @Test("Injected records are hidden system rows, while a typed chunk stays the owner's")
+    func injectedRows() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Fix the bug", meta: Meta(uuid: "prompt")),
+            .systemMessage(kind: "injected", text: "<system-reminder>Be brief</system-reminder>", meta: Meta(uuid: "prompt")),
+        ])
+        #expect(rows.map(\.kind) == [.user, .system])
+        #expect(rows.map(\.isHiddenByDefault) == [false, true])
+    }
+
+    private func shellInput(_ command: String, uuid: String) -> TranscriptEvent {
+        .systemMessage(kind: "shell_input", text: "<bash-input>\(command)</bash-input>", meta: Meta(uuid: uuid))
+    }
+
+    private func shellOutput(_ text: String, parent: String) -> TranscriptEvent {
+        .systemMessage(kind: "shell_output", text: text, meta: Meta(uuid: "output-of-\(parent)", parentUUID: parent))
+    }
+
     private func diff(_ id: String, path: String, session: String = "s") -> TranscriptEvent {
         .decode(line: """
         {"type":"tool_diff","tool_call_id":"\(id)","path":"\(path)","hunks":[],"meta":{"session_id":"\(session)"}}

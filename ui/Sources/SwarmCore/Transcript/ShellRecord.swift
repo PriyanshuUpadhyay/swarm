@@ -1,7 +1,7 @@
 import Foundation
 
 /// One `!` shell command and its output, as Claude Code writes them into the session log.
-public struct TranscriptShellRun: Equatable, Sendable {
+public struct TranscriptShellRun: Hashable, Sendable {
     /// Nil when the input record is outside the loaded window.
     public var command: String?
     /// Stdout, then stderr, cleaned for display.
@@ -90,7 +90,7 @@ public enum ShellRecord {
         return String(kept)
     }
 
-    private static func tagged(_ name: String, in text: String) -> String? {
+    static func tagged(_ name: String, in text: String) -> String? {
         guard let open = text.range(of: "<\(name)>"),
               let close = text.range(of: "</\(name)>", range: open.upperBound..<text.endIndex)
         else { return nil }

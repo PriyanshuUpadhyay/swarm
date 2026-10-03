@@ -5,6 +5,8 @@ import TranscriptTool
 public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Hashable {
         case user, assistant, thought, toolUse, toolResult, diff, question, error, notice, system, result
+        /// A `!` command the owner ran in Claude Code's shell mode, with its output.
+        case shell
         /// A line between two conversations of one chat; `text` is its caption and `detail` its time.
         case divider
     }
@@ -16,6 +18,11 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var diff: TranscriptDiff? = nil
     public var tool: TranscriptToolActivity? = nil
     public var toolStatus: ToolStatus? = nil
+    /// The parser's `system_message` kind, for `.system` rows.
+    public var systemKind: String? = nil
+    public var shell: TranscriptShellRun? = nil
+    /// Set on `.system` rows whose `systemKind` is "command".
+    public var command: TranscriptCommandChip? = nil
     public var endsTurn = false
     /// A row that is not the user's but starts an agent turn, such as a background task's end.
     public var startsTurn = false
@@ -39,6 +46,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
         case .error: "Error"
         case .notice: "Notice"
         case .system: "System"
+        case .shell: "Shell"
         case .result: "Turn"
         case .divider: "Context cleared"
         }
@@ -48,14 +56,49 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
         (kind == .notice && (text.hasPrefix("hook_success")
             || text.hasPrefix("title:") || text.hasPrefix("model:")))
             || (kind == .system && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || (kind == .system && systemKind == "injected")
     }
 
     public var printLine: String {
+        if kind == .shell { return "\(kind.rawValue) \(text)" }
         let first = text.components(separatedBy: .newlines).first ?? ""
         return "\(kind.rawValue) \(String(first.prefix(80)))"
     }
 }
 
+/// A slash command the owner typed, as Claude Code echoes it into the session log.
+public struct TranscriptCommandChip: Hashable, Sendable {
+    /// "/flow", from `<command-name>`.
+    public var name: String
+    /// From `<command-args>`; "" when absent.
+    public var arguments: String
+    public var skillBody: String?
+    /// The linked `<local-command-stdout>` text, unwrapped and cleaned.
+    public var output: String?
+
+    public init(name: String, arguments: String, skillBody: String? = nil, output: String? = nil) {
+        self.name = name
+        self.arguments = arguments
+        self.skillBody = skillBody
+        self.output = output
+    }
+
+    /// Reads `<command-name>` and `<command-args>`; `<command-message>` repeats the name and is ignored.
+    public init(commandText text: String) {
+        self.init(
+            name: ShellRecord.tagged("command-name", in: text)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            arguments: ShellRecord.tagged("command-args", in: text)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+    }
+
+    /// The text between `<local-command-stdout>` and `<local-command-stderr>` tags, joined and cleaned.
+    static func output(fromCommandOutput text: String) -> String {
+        let parts = ["local-command-stdout", "local-command-stderr"].compactMap { ShellRecord.tagged($0, in: text) }
+        return ShellRecord.clean(parts.isEmpty ? text : parts.filter { !$0.isEmpty }.joined(separator: "\n"))
+    }
+}
+
+// ShellRecord.swift declares the run Equatable only, and TranscriptRow is Hashable.
 public enum TranscriptRowBuilder {
     public static func rows(from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0) -> [TranscriptRow] {
         rows(from: records.map(\.event), indexOffset: indexOffset)
@@ -64,33 +107,52 @@ public enum TranscriptRowBuilder {
     public static func rows(from events: some Sequence<TranscriptEvent>, indexOffset: Int = 0) -> [TranscriptRow] {
         let events = Array(events)
         let scopes = scopes(for: events)
-        let calls = events.enumerated().compactMap { index, event -> ToolCall? in
-            guard case .toolCall(let id, _, _, _, let meta) = event else { return nil }
-            return ToolCall(index: index, id: id, session: meta.sessionID, scope: scopes[index])
-        }
-        var updates: [Int: [Int]] = [:]
-        var diffs: [Int: [Int]] = [:]
-        var joined = Set<Int>()
-        for (index, event) in events.enumerated() {
-            let id: String
-            let session: String
-            let isUpdate: Bool
-            switch event {
-            case .toolCallUpdate(let callID, _, _, let meta):
-                (id, session, isUpdate) = (callID, meta.sessionID, true)
-            case .toolDiff(let diff, let meta):
-                (id, session, isUpdate) = (diff.toolCallID, meta.sessionID, false)
-            default:
-                continue
+        func anchors(_ pick: (TranscriptEvent) -> (id: String, meta: Meta)?) -> [Anchor] {
+            events.enumerated().compactMap { index, event in
+                pick(event).map { Anchor(index: index, id: $0.id, session: $0.meta.sessionID, scope: scopes[index]) }
             }
-            guard !id.isEmpty else { continue }
-            let matches = calls.filter {
+        }
+        let calls = anchors { if case .toolCall(let id, _, _, _, let meta) = $0 { (id, meta) } else { nil } }
+        let shellInputs = anchors { if case .systemMessage("shell_input", _, let meta) = $0 { (meta.uuid, meta) } else { nil } }
+        let commands = anchors { if case .systemMessage("command", _, let meta) = $0 { (meta.uuid, meta) } else { nil } }
+        /// The one anchor with this id in the event's scope and a compatible session; none when two match.
+        func match(_ id: String?, for index: Int, session: String, in anchors: [Anchor]) -> Int? {
+            guard let id, !id.isEmpty else { return nil }
+            let matches = anchors.filter {
                 $0.id == id && $0.scope == scopes[index]
                     && (session.isEmpty || $0.session.isEmpty || $0.session == session)
             }
-            guard matches.count == 1, let call = matches.first else { continue }
-            if isUpdate { updates[call.index, default: []].append(index) }
-            else { diffs[call.index, default: []].append(index) }
+            return matches.count == 1 ? matches[0].index : nil
+        }
+        var updates: [Int: [Int]] = [:]
+        var diffs: [Int: [Int]] = [:]
+        // System records that fold into another event's row: shell output, skill bodies, command output.
+        var attached: [Int: [Int]] = [:]
+        var joined = Set<Int>()
+        for (index, event) in events.enumerated() {
+            switch event {
+            case .toolCallUpdate(let callID, _, _, let meta):
+                guard let call = match(callID, for: index, session: meta.sessionID, in: calls) else { continue }
+                updates[call, default: []].append(index)
+            case .toolDiff(let diff, let meta):
+                guard let call = match(diff.toolCallID, for: index, session: meta.sessionID, in: calls) else { continue }
+                diffs[call, default: []].append(index)
+            case .systemMessage("shell_output", _, let meta):
+                guard let input = match(meta.parentUUID, for: index, session: meta.sessionID, in: shellInputs),
+                      attached[input] == nil else { continue }
+                attached[input] = [index]
+            case .systemMessage("skill_body", _, let meta):
+                guard let target = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
+                    ?? match(meta.sourceToolUseID, for: index, session: meta.sessionID, in: calls)
+                else { continue }
+                attached[target, default: []].append(index)
+            case .systemMessage("command_output", _, let meta):
+                guard let command = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
+                else { continue }
+                attached[command, default: []].append(index)
+            default:
+                continue
+            }
             joined.insert(index)
         }
 
@@ -140,6 +202,20 @@ public enum TranscriptRowBuilder {
                     path: TranscriptToolActivity.path(in: input), duration: duration
                 )
             }
+            for source in attached[index] ?? [] {
+                guard case .systemMessage(let kind, let text, _) = events[source] else { continue }
+                switch kind {
+                case "shell_output":
+                    row = shellRow(ShellRecord.run(command: row.shell?.command, outputText: text), eventID: row.eventID)
+                case "skill_body" where row.tool != nil:
+                    row.tool?.skillBody = text
+                case "skill_body":
+                    row.command?.skillBody = text
+                    row.startsTurn = true
+                default:
+                    row.command?.output = TranscriptCommandChip.output(fromCommandOutput: text)
+                }
+            }
             if let last = rows.last, last.kind == row.kind, lastSourceID == row.eventID,
                row.kind == .user || row.kind == .assistant || row.kind == .thought {
                 rows[rows.count - 1].text += row.text
@@ -158,7 +234,7 @@ public enum TranscriptRowBuilder {
         return rows
     }
 
-    private struct ToolCall {
+    private struct Anchor {
         let index: Int
         let id: String
         let session: String
@@ -254,8 +330,20 @@ public enum TranscriptRowBuilder {
                 kind: .notice, text: taskNotificationSummary(text), eventID: key(meta, "task", index)
             )
             row.startsTurn = true
-        case .systemMessage(_, let text, let meta):
+        case .systemMessage("shell_input", let text, let meta):
+            row = shellRow(
+                ShellRecord.run(command: ShellRecord.command(fromInput: text), outputText: nil),
+                eventID: key(meta, "shell", index)
+            )
+        case .systemMessage("shell_output", let text, let meta):
+            row = shellRow(ShellRecord.run(command: nil, outputText: text), eventID: key(meta, "shell", index))
+        case .systemMessage("interrupted", _, let meta):
+            row = TranscriptRow(kind: .notice, text: "Interrupted", eventID: key(meta, "interrupted", index))
+            row.endsTurn = true
+        case .systemMessage(let kind, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
+            row.systemKind = kind
+            if kind == "command" { row.command = TranscriptCommandChip(commandText: text) }
         case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):
             return nil
         case .sessionInfo(let kind, let value, let meta):
@@ -285,6 +373,13 @@ public enum TranscriptRowBuilder {
             return nil
         }
         if row.eventID.isEmpty || row.eventID.first == ":" { row.eventID = "event-\(index)" }
+        return row
+    }
+
+    private static func shellRow(_ run: TranscriptShellRun, eventID: String) -> TranscriptRow {
+        let text = [run.command.map { "$ \($0)" }, run.output].compactMap { $0 }.filter { !$0.isEmpty }
+        var row = TranscriptRow(kind: .shell, text: text.joined(separator: "\n"), eventID: eventID)
+        row.shell = run
         return row
     }
 

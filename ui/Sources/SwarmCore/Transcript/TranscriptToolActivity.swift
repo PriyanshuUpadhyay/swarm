@@ -16,6 +16,8 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public var path: String?
     /// Seconds from the call to its last result; nil when either time is missing.
     public var duration: Double?
+    /// The body of the skill a Skill call loaded, linked by the body record's `sourceToolUseID`.
+    public var skillBody: String?
 
     public init(
         name: String, input: JSONElement, output: String? = nil,
