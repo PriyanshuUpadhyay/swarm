@@ -37,11 +37,16 @@ struct TranscriptCommandChipView: View {
                 .onChange(of: revealForSearch, initial: true) { _, reveal in if reveal { skillExpanded = true } }
             }
             if let output = chip.output, !output.isEmpty {
-                Text(verbatim: output)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(revealForSearch ? nil : 1)
-                    .help(output)
+                if revealForSearch {
+                    // A find match can sit on any line, and the output can be a large dump.
+                    TranscriptBoundedTextView(text: output)
+                } else {
+                    Text(verbatim: output)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(output)
+                }
             }
         }
     }
