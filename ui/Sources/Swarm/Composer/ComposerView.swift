@@ -218,6 +218,7 @@ struct ComposerView: View {
                             // The capacity style draws at 58 pt on macOS and has no size option.
                             Gauge(value: Double(100 - remaining), in: 0...100) {}
                                 .gaugeStyle(.accessoryCircularCapacity)
+                                .tint(.accentColor)
                                 .scaleEffect(DesignTokens.Size.glyphSlot / 58)
                                 .frame(width: DesignTokens.Size.glyphSlot, height: DesignTokens.Size.glyphSlot)
                         }

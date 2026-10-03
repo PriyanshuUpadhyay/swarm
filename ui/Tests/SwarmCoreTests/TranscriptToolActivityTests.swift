@@ -38,7 +38,7 @@ struct TranscriptToolActivityTests {
         #expect(TranscriptToolActivity.command(in: .string("some text"), name: "write_file") == nil)
     }
 
-    @Test("The header title prefers the description, then the command's first line, then the file and line range")
+    @Test("The header title prefers the description, then the command's first line, then the search pattern, then the file and line range")
     func headerTitle() {
         let described = TranscriptToolActivity(
             name: "Bash", input: .object(["description": .string("Build the UI package"), "command": .string("swift build")]),
@@ -58,6 +58,11 @@ struct TranscriptToolActivityTests {
         #expect(read(["offset": .integer(12)]) == "SessionDetail.swift · from line 12")
         #expect(read([:]) == "SessionDetail.swift")
         #expect(TranscriptToolActivity(name: "Skill", input: .object(["skill": .string("research")]), state: .finished).headerTitle == "research")
+        func search(_ fields: [String: JSONElement]) -> String {
+            TranscriptToolActivity(name: "Grep", input: .object(fields), state: .finished).headerTitle
+        }
+        #expect(search(["pattern": .string("ShellRecord"), "path": .string("/work/ui/Sources")]) == "\"ShellRecord\" in Sources")
+        #expect(search(["pattern": .string("**/*.swift")]) == "\"**/*.swift\"")
         #expect(TranscriptToolActivity(name: "Unknown", input: .null, state: .waiting).headerTitle.isEmpty)
     }
 

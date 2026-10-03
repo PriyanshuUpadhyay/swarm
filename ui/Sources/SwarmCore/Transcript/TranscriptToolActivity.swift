@@ -35,7 +35,8 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     }
 
     /// The one-line title after the tool name: the call's description (or a Skill call's skill name),
-    /// else the command's first line, else the file name with the line range a Read asked for.
+    /// else the command's first line, else a search's `"pattern" in folder`, else the file name with
+    /// the line range a Read asked for.
     public var headerTitle: String {
         let fields: [String: JSONElement] = if case .object(let value) = input { value } else { [:] }
         for key in ["description", "Description", "toolSummary", "skill"] {
@@ -47,6 +48,10 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         if let command {
             let line = command.trimmingCharacters(in: .whitespacesAndNewlines).prefix(while: { !$0.isNewline })
             if !line.isEmpty { return String(line) }
+        }
+        if case .string(let pattern) = fields["pattern"] {
+            guard case .string(let folder) = fields["path"] else { return "\"\(pattern)\"" }
+            return "\"\(pattern)\" in \((folder as NSString).lastPathComponent)"
         }
         guard let path else { return "" }
         let name = (path as NSString).lastPathComponent

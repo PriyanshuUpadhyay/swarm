@@ -14,6 +14,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var kind: Kind
     public var text: String
     public var eventID: String
+    /// A tool call's input JSON, a diff's path, a divider's time, or a turn-ended row's duration label.
     public var detail: String? = nil
     public var diff: TranscriptDiff? = nil
     public var tool: TranscriptToolActivity? = nil
@@ -354,10 +355,11 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(
                 kind: .notice, text: "\(kind): \(name)", eventID: key(meta, "hook", index)
             )
-        case .turnEnded(_, let reason, let meta):
+        case .turnEnded(let durationMs, let reason, let meta):
             row = TranscriptRow(
                 kind: .result, text: reason.rawValue, eventID: key(meta, "result", index)
             )
+            row.detail = durationMs.map { TranscriptToolActivity.durationLabel(Double($0) / 1000) }
             row.endsTurn = true
         case .image(let role, let mediaType, let meta):
             row = TranscriptRow(

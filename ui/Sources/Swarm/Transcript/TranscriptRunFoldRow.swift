@@ -16,6 +16,7 @@ struct TranscriptRunFoldRow<Child: View>: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: DesignTokens.Size.glyphSlot)
                     TranscriptStatusGlyph(state: .finished)
                     Text(verbatim: "\(rows.count) tools").fontWeight(.semibold).lineLimit(1).layoutPriority(1)
                     Text(verbatim: ToolRunFold.summary(of: rows))
@@ -32,7 +33,6 @@ struct TranscriptRunFoldRow<Child: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, DesignTokens.Spacing.s)
             .padding(.vertical, DesignTokens.Spacing.xs)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(expanded ? "Hides the tools" : "Shows the tools")

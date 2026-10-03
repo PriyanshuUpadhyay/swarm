@@ -466,12 +466,12 @@ private struct TranscriptRowView: View {
     var body: some View {
         Group {
             if let activity = row.tool {
-                TranscriptToolCard(title: row.text, activity: activity, revealForSearch: revealForSearch)
+                TranscriptToolCard(activity: activity, revealForSearch: revealForSearch)
             } else if row.kind == .divider {
                 HStack(spacing: DesignTokens.Spacing.m) {
-                    Divider()
+                    hairline
                     Text(verbatim: row.text).font(.caption).foregroundStyle(.secondary).fixedSize()
-                    Divider()
+                    hairline
                 }
                 .padding(.vertical, DesignTokens.Spacing.s)
                 .accessibilityElement(children: .ignore)
@@ -485,6 +485,8 @@ private struct TranscriptRowView: View {
                 userBubble(TranscriptMessageView(text: row.text))
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("You")
+            } else if row.endsTurn {
+                turnEnd
             } else if row.kind == .assistant {
                 rowBody.padding(.vertical, DesignTokens.Spacing.xs)
             } else {
@@ -552,14 +554,23 @@ private struct TranscriptRowView: View {
                 Text(verbatim: row.text).foregroundStyle(.red)
             case .assistant:
                 TranscriptMessageView(text: row.text)
-            case .result where row.endsTurn:
-                Label(row.text == "aborted" ? "Turn interrupted" : "Turn finished",
-                      systemImage: row.text == "aborted" ? "stop.circle" : "checkmark.circle")
-                    .font(.caption).foregroundStyle(.secondary)
             default:
                 Text(verbatim: row.text)
             }
         }
+    }
+
+    /// A turn-ended row or the interrupt notice: one quiet line, "Turn finished · 41s".
+    private var turnEnd: some View {
+        let stopped = row.kind == .notice || row.text == "aborted"
+        let title = row.kind == .notice ? "Interrupted by you" : stopped ? "Turn interrupted" : "Turn finished"
+        return Label([title, row.detail].compactMap { $0 }.joined(separator: " · "),
+                     systemImage: stopped ? "stop.circle" : "checkmark.circle")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(.quaternary).frame(height: DesignTokens.Size.hairline)
     }
 
     private func userBubble(_ content: some View) -> some View {

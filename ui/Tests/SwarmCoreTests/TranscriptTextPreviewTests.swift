@@ -32,7 +32,9 @@ struct TranscriptTextPreviewTests {
         let preview = TranscriptTextPreview("one\ntwo\nthree\nfour\nfive\nsix", lineLimit: 5)
         #expect(preview.text == "one\ntwo\nthree\nfour\nfive")
         #expect(preview.isTruncated)
+        #expect(preview.hiddenLineCount == 1)
         #expect(!TranscriptTextPreview("one\ntwo\nthree\nfour\nfive", lineLimit: 5).isTruncated)
+        #expect(TranscriptTextPreview(String(repeating: "x", count: 12_001), lineLimit: 5).hiddenLineCount == 0)
     }
 
     @Test func chunksKeepOrdinaryLinesTogether() {

@@ -4,7 +4,6 @@ import SwarmCore
 import TranscriptTool
 
 struct TranscriptToolCard: View {
-    let title: String
     let activity: TranscriptToolActivity
     var revealForSearch = false
     @State private var expanded = false
@@ -54,7 +53,6 @@ struct TranscriptToolCard: View {
             }
             if expanded {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                    Text(verbatim: title).font(.callout).foregroundStyle(.secondary)
                     if let command = activity.command {
                         TranscriptOutputView(text: command, title: "Command")
                     }
@@ -98,6 +96,8 @@ struct TranscriptToolCard: View {
         .padding(.horizontal, DesignTokens.Spacing.s)
         .padding(.vertical, DesignTokens.Spacing.xs)
         .background(expanded ? DesignTokens.userMessageFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
+        // The fill bleeds past the column so the glyph and the right label share the edges of the other rows.
+        .padding(.horizontal, -DesignTokens.Spacing.s)
         .buttonStyle(.borderless)
         .onAppear {
             if activity.state == .failed || revealForSearch { expanded = true }
@@ -182,15 +182,12 @@ struct TranscriptOutputView: View {
                 }
             }
             .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
-            if preview?.isTruncated == true {
-                HStack {
-                    Text(showAll || revealAll ? "Full output shown." : "Preview only. Some output is hidden.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !revealAll {
-                        Button(showAll ? "Show less" : "Show full output") { showAll.toggle() }
-                            .font(.caption).buttonStyle(.borderless)
-                    }
-                }
+            if let preview, preview.isTruncated, !revealAll {
+                let hidden = preview.hiddenLineCount
+                let title: LocalizedStringKey = showAll ? "Show less"
+                    : hidden > 0 ? "… +^[\(hidden) line](inflect: true) · Show all" : "… Show all"
+                Button(title) { showAll.toggle() }
+                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
             }
         }
         .task(id: text) {

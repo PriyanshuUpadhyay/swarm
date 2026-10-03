@@ -299,10 +299,11 @@ struct TranscriptRowBuilderTests {
             .toolCall(toolCallID: "b", name: "b", input: .null, status: .pending, meta: meta),
             .turnEnded(durationMs: nil, reason: .aborted, meta: meta),
             .toolCall(toolCallID: "c", name: "c", input: .null, status: .pending, meta: meta),
-            .turnEnded(durationMs: nil, reason: .completed, meta: meta),
+            .turnEnded(durationMs: 41_000, reason: .completed, meta: meta),
             .toolCall(toolCallID: "d", name: "d", input: .null, status: .pending, meta: meta),
         ])
         #expect(rows.filter { $0.kind == .toolUse }.map { $0.tool?.state } == [.failed, .interrupted, .unreported, .waiting])
+        #expect(rows.filter(\.endsTurn).map(\.detail) == [nil, "41s"])
         #expect(rows.first?.tool?.output == "error text")
     }
 
