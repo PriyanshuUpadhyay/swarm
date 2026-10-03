@@ -180,10 +180,11 @@ public enum TranscriptRowBuilder {
                 else { continue }
                 attached[command, default: []].append(index)
             case .systemMessage(TranscriptSystemKind.injected, let text, let meta)
-                where !text.drop(while: \.isWhitespace).hasPrefix("<system-reminder>"):
+                where !["<system-reminder>", "<local-command-caveat>"].contains(where: text.drop(while: \.isWhitespace).hasPrefix):
                 // A bundled skill writes its body without the "Base directory for this skill:" line, so
                 // the parser calls it injected; its parent link to a command still marks it a skill body.
-                // A reminder can name the command as parent too, and stays a hidden System row.
+                // A reminder or a command caveat can name the command as parent too, and stays a hidden
+                // System row.
                 guard let command = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
                 else { continue }
                 attached[command, default: []].append(index)
@@ -245,7 +246,8 @@ public enum TranscriptRowBuilder {
                 case TranscriptSystemKind.shellOutput:
                     row = shellRow(ShellRecord.run(command: row.shell?.command, outputText: text), eventID: row.eventID)
                 case TranscriptSystemKind.skillBody where row.tool != nil:
-                    row.tool?.skillBody = text
+                    let earlier = row.tool?.skillBody
+                    row.tool?.skillBody = [earlier, text].compactMap { $0 }.joined(separator: "\n\n")
                 case TranscriptSystemKind.skillBody, TranscriptSystemKind.injected:
                     let earlier = row.command?.skillBody
                     row.command?.skillBody = [earlier, text].compactMap { $0 }.joined(separator: "\n\n")

@@ -195,7 +195,7 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     }
     const trimmed = std.mem.trimStart(u8, text, " \t\r\n");
     if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
-    if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>" })) return "command_output";
+    if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>" })) return "command_output";
     if (std.mem.startsWith(u8, trimmed, "<task-notification>")) return "task_notification";
     if (std.mem.startsWith(u8, trimmed, "<bash-input>")) return "shell_input";
     if (oneOfPrefix(trimmed, &.{ "<bash-stdout>", "<bash-stderr>" })) return "shell_output";
@@ -203,7 +203,7 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     if (is_meta and std.mem.startsWith(u8, trimmed, "Base directory for this skill:")) return "skill_body";
     if (std.mem.startsWith(u8, trimmed, "[Request interrupted by user")) return "interrupted";
     // Claude Code writes these as user records, but the owner did not type them.
-    if (oneOfPrefix(trimmed, &.{ "<system-reminder>", "<fork-boilerplate" })) return "injected";
+    if (oneOfPrefix(trimmed, &.{ "<system-reminder>", "<fork-boilerplate", "<local-command-caveat>" })) return "injected";
     // Another agent's message starts a turn. Claude marks a peer's message isMeta, so the origin
     // check runs before the isMeta check.
     const origin = rec.get("origin") orelse .null;
@@ -392,8 +392,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             const duration = rec.get("durationMs") orelse .null;
             try events.append(arena, .{ .turn_ended = .{ .meta = meta, .reason = .completed, .duration_ms = if (duration == .integer) duration.integer else null } });
         } else if (oneOf(subtype, &.{ "compact_boundary", "away_summary", "informational", "local_command", "scheduled_task_fire", "stop_hook_summary", "model_refusal_fallback" })) {
-            const kind: []const u8 = if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
             const content = str(rec, "content");
+            // Claude Code also writes a slash command's echo and output as local_command records.
+            const command_kind = if (std.mem.eql(u8, subtype, "local_command")) claudeTextKind(rec, content) else "";
+            const is_command = std.mem.eql(u8, command_kind, "command") or std.mem.eql(u8, command_kind, "command_output");
+            const kind: []const u8 = if (is_command) command_kind else if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = if (content.len != 0) content else str(rec, "summary") } });
         } else {
             try events.append(arena, try unknownEvent(arena, meta, line));
@@ -1126,6 +1129,20 @@ test "Claude system records become system messages and turn end" {
     try std.testing.expectEqualStrings("compaction", compact[0].system_message.kind);
     try std.testing.expectEqual(@as(?i64, 123), duration[0].turn_ended.duration_ms);
     try std.testing.expectEqualStrings("retry", fallback[0].system_message.text);
+}
+
+test "Claude local_command records keep the command and command output kinds" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const output = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"parentUuid\":\"command\",\"content\":\"<local-command-stdout>Usage</local-command-stdout>\"}");
+    const echo = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>/skills</command-name>\"}");
+    const other = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"plain\"}");
+    const caveat = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"<local-command-caveat>Caveat: do not respond</local-command-caveat>\"}}");
+    try std.testing.expectEqualStrings("command_output", output[0].system_message.kind);
+    try std.testing.expectEqualStrings("command", output[0].system_message.meta.parent_uuid orelse "");
+    try std.testing.expectEqualStrings("command", echo[0].system_message.kind);
+    try std.testing.expectEqualStrings("local_command", other[0].system_message.kind);
+    try std.testing.expectEqualStrings("injected", caveat[0].system_message.kind);
 }
 
 test "Claude command wrappers and compact summary are system text" {

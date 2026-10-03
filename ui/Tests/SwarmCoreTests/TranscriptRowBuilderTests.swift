@@ -380,6 +380,12 @@ struct TranscriptRowBuilderTests {
         ])
         try #require(rows.map(\.kind) == [.toolUse])
         #expect(rows[0].tool?.skillBody == "Base directory for this skill: /skills/flow")
+        let twice = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "skill-call", name: "Skill", input: .object(["skill": .string("flow")]), status: .pending, meta: meta),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(agentSessionID: "s", uuid: "first-body", sourceToolUseID: "skill-call")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow/more", meta: Meta(agentSessionID: "s", uuid: "second-body", sourceToolUseID: "skill-call")),
+        ])
+        #expect(twice.map(\.tool?.skillBody) == ["Base directory for this skill: /skills/flow\n\nBase directory for this skill: /skills/flow/more"])
     }
 
     @Test("A skill body with no command or call is a system row, never the owner's")
@@ -486,7 +492,7 @@ struct TranscriptRowBuilderTests {
         #expect(ChairTurn.isActive(rows))
     }
 
-    @Test("A system reminder whose parent is a command stays a hidden System row and starts no turn")
+    @Test("A system reminder or a command caveat whose parent is a command stays a hidden System row and starts no turn")
     func reminderUnderCommandStaysHidden() throws {
         let rows = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "command", text: "<command-name>/simplify</command-name>", meta: Meta(uuid: "command")),
@@ -497,6 +503,12 @@ struct TranscriptRowBuilderTests {
         #expect(!rows[0].startsTurn)
         #expect(rows[1].systemKind == "injected")
         #expect(rows[1].isHiddenByDefault)
+        let caveat = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/usage</command-name>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "injected", text: "<local-command-caveat>Caveat: do not respond</local-command-caveat>", meta: Meta(uuid: "caveat", parentUUID: "command")),
+        ])
+        #expect(caveat.map(\.command?.skillBody) == [nil, nil])
+        #expect(caveat.map(\.isHiddenByDefault) == [false, true])
     }
 
     @Test("Two skill bodies of one command join with a blank line in log order")
