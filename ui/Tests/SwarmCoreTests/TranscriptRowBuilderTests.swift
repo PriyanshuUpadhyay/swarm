@@ -308,12 +308,12 @@ struct TranscriptRowBuilderTests {
     }
 
     @Test("A shell output joins its input into one shell row with the input's id")
-    func shellPair() {
+    func shellPair() throws {
         let rows = TranscriptRowBuilder.rows(from: [
             shellInput("ls", uuid: "input"),
             shellOutput("<bash-stdout>a &amp; b</bash-stdout><bash-stderr></bash-stderr>", parent: "input"),
         ])
-        #expect(rows.map(\.kind) == [.shell])
+        try #require(rows.map(\.kind) == [.shell])
         #expect(rows[0].eventID == "input:shell")
         #expect(rows[0].shell == TranscriptShellRun(command: "ls", output: "a & b", exitCode: nil))
         #expect(rows[0].printLine == "shell $ ls\na & b")
@@ -344,13 +344,13 @@ struct TranscriptRowBuilderTests {
     }
 
     @Test("A typed skill command takes its body, keeps its raw text, and starts a turn")
-    func skillBodyToCommand() {
+    func skillBodyToCommand() throws {
         let commandText = "<command-message>flow</command-message>\n<command-name>/flow</command-name>\n<command-args>start\nthe chat</command-args>"
         let rows = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "command", text: commandText, meta: Meta(uuid: "command")),
             .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "command")),
         ])
-        #expect(rows.map(\.kind) == [.system])
+        try #require(rows.map(\.kind) == [.system])
         #expect(rows[0].text == commandText)
         #expect(rows[0].systemKind == "command")
         #expect(rows[0].command == TranscriptCommandChip(
@@ -360,34 +360,34 @@ struct TranscriptRowBuilderTests {
     }
 
     @Test("A skill body that a Skill call loaded joins that call and adds no row")
-    func skillBodyToTool() {
+    func skillBodyToTool() throws {
         let meta = Meta(agentSessionID: "s")
         let rows = TranscriptRowBuilder.rows(from: [
             .toolCall(toolCallID: "skill-call", name: "Skill", input: .object(["skill": .string("flow")]), status: .pending, meta: meta),
             .toolCallUpdate(toolCallID: "skill-call", status: .completed, content: "Launching skill: flow", meta: meta),
             .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(agentSessionID: "s", uuid: "body", parentUUID: "tool-result", sourceToolUseID: "skill-call")),
         ])
-        #expect(rows.map(\.kind) == [.toolUse])
+        try #require(rows.map(\.kind) == [.toolUse])
         #expect(rows[0].tool?.skillBody == "Base directory for this skill: /skills/flow")
     }
 
     @Test("A skill body with no command or call is a system row, never the owner's")
-    func unlinkedSkillBody() {
+    func unlinkedSkillBody() throws {
         let rows = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "outside-window")),
         ])
-        #expect(rows.map(\.kind) == [.system])
+        try #require(rows.map(\.kind) == [.system])
         #expect(rows[0].systemKind == "skill_body")
         #expect(!rows[0].isHiddenByDefault)
     }
 
     @Test("A /model command takes its stdout as output and does not start a turn")
-    func modelCommandOutput() {
+    func modelCommandOutput() throws {
         let rows = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "command", text: "<command-name>/model</command-name>\n<command-args>sonnet</command-args>", meta: Meta(uuid: "command")),
             .systemMessage(kind: "command_output", text: "<local-command-stdout>Set model to \u{1B}[1msonnet\u{1B}[22m</local-command-stdout>", meta: Meta(uuid: "stdout", parentUUID: "command")),
         ])
-        #expect(rows.count == 1)
+        try #require(rows.count == 1)
         #expect(rows[0].command == TranscriptCommandChip(name: "/model", arguments: "sonnet", output: "Set model to sonnet"))
         #expect(!rows[0].startsTurn)
         #expect(!ChairTurn.isActive(rows))
@@ -425,6 +425,44 @@ struct TranscriptRowBuilderTests {
         ])
         #expect(rows.map(\.kind) == [.user, .system])
         #expect(rows.map(\.isHiddenByDefault) == [false, true])
+    }
+
+    @Test("After a finished turn a message from another agent shows without its outer tag and starts a turn, while an injected record does not")
+    func peerMessageStartsTurn() throws {
+        let finished: [TranscriptEvent] = [
+            .userMessageChunk(text: "Fix the bug", meta: Meta(uuid: "prompt")),
+            .turnEnded(durationMs: 1, reason: .completed, meta: Meta()),
+        ]
+        let teammate = TranscriptEvent.systemMessage(
+            kind: "peer_message", text: "<teammate-message teammate_id=\"lead\">\nReview the parser\n</teammate-message>",
+            meta: Meta(uuid: "teammate")
+        )
+        let peerText = "Another Claude session sent a message:\n<agent-message>Done</agent-message>"
+        let peer = TranscriptEvent.systemMessage(kind: "peer_message", text: peerText, meta: Meta(uuid: "peer"))
+        let injected = TranscriptEvent.systemMessage(kind: "injected", text: "Stop hook feedback: fix it", meta: Meta(uuid: "hook"))
+
+        let rows = TranscriptRowBuilder.rows(from: finished + [teammate])
+        let message = try #require(rows.last)
+        #expect(message.kind == .notice)
+        #expect(message.text == "Review the parser")
+        #expect(!message.isHiddenByDefault)
+        #expect(ChairTurn.isActive(rows))
+        #expect(TranscriptRowBuilder.rows(from: [peer]).map(\.text) == [peerText])
+        #expect(!ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + [injected])))
+    }
+
+    @Test("A bundled skill's meta body without the base directory line joins its command and starts a turn")
+    func bundledSkillBodyToCommand() throws {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Fix the bug", meta: Meta(uuid: "prompt")),
+            .turnEnded(durationMs: 1, reason: .completed, meta: Meta()),
+            .systemMessage(kind: "command", text: "<command-name>/simplify</command-name>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "injected", text: "Review target: the changes", meta: Meta(uuid: "body", parentUUID: "command")),
+        ])
+        try #require(rows.map(\.kind) == [.user, .result, .system])
+        #expect(rows[2].command?.skillBody == "Review target: the changes")
+        #expect(rows[2].startsTurn)
+        #expect(ChairTurn.isActive(rows))
     }
 
     private func shellInput(_ command: String, uuid: String) -> TranscriptEvent {

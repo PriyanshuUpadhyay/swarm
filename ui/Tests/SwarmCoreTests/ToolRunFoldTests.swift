@@ -29,7 +29,9 @@ struct ToolRunFoldTests {
     }
 
     private func foldedIDs(_ rows: [TranscriptRow], pinned: Set<String> = []) -> [[String]] {
-        ToolRunFold.groups(in: rows, pinned: pinned).map { $0.map(\.eventID) }
+        ToolRunFold.items(in: rows, pinned: pinned).compactMap {
+            if case .fold(let group) = $0 { group.map(\.eventID) } else { nil }
+        }
     }
 
     @Test("Three finished tools in an ended turn fold, and the fold takes the first tool's id")

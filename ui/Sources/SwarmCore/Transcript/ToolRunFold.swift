@@ -38,12 +38,6 @@ public enum ToolRunFold {
         return items
     }
 
-    /// Groups of 3 or more adjacent tool rows whose state is .finished, inside one ended scope,
-    /// leaving out any row id in `pinned`.
-    public static func groups(in rows: [TranscriptRow], pinned: Set<String>) -> [[TranscriptRow]] {
-        items(in: rows, pinned: pinned).compactMap { if case .fold(let group) = $0 { group } else { nil } }
-    }
-
     /// The ids of tool rows whose turn has no ending row yet. A view pins them, so a row it showed
     /// while its turn ran never folds by itself.
     public static func openTurnToolIDs(in rows: [TranscriptRow]) -> Set<String> {

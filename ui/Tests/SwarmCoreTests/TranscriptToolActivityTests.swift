@@ -66,6 +66,26 @@ struct TranscriptToolActivityTests {
         #expect(TranscriptToolActivity(name: "Unknown", input: .null, state: .waiting).headerTitle.isEmpty)
     }
 
+    @Test("A Read range that is empty or runs past Int64 shows only its first line")
+    func readRangeEdges() {
+        func read(_ fields: [String: JSONElement]) -> String {
+            TranscriptToolActivity(name: "Read", input: .object(fields), state: .finished, path: "/work/a.swift").headerTitle
+        }
+        #expect(read(["offset": .integer(2), "limit": .integer(.max)]) == "a.swift · from line 2")
+        #expect(read(["offset": .integer(1), "limit": .integer(.max)]) == "a.swift · lines 1–\(Int64.max)")
+        #expect(read(["limit": .integer(0)]) == "a.swift · from line 1")
+        #expect(read(["offset": .integer(5), "limit": .integer(.min)]) == "a.swift · from line 5")
+    }
+
+    @Test("A tool row's text is the tool name and the header title")
+    func rowTextUsesHeaderTitle() {
+        let input = JSONElement.object(["pattern": .string("ShellRecord"), "path": .string("/work/ui/Sources")])
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "grep", name: "Grep", input: input, status: .pending, meta: Meta()),
+        ])
+        #expect(rows.map(\.text) == ["Grep · \"ShellRecord\" in Sources"])
+    }
+
     @Test("Diff counts add every diff's added and removed lines, and a call without diffs has none")
     func diffCounts() throws {
         let payload: [String: Any] = [

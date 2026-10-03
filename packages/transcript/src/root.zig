@@ -203,9 +203,13 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     if (is_meta and std.mem.startsWith(u8, trimmed, "Base directory for this skill:")) return "skill_body";
     if (std.mem.startsWith(u8, trimmed, "[Request interrupted by user")) return "interrupted";
     // Claude Code writes these as user records, but the owner did not type them.
+    if (oneOfPrefix(trimmed, &.{ "<system-reminder>", "<fork-boilerplate" })) return "injected";
+    // Another agent's message starts a turn. Claude marks a peer's message isMeta, so the origin
+    // check runs before the isMeta check.
     const origin = rec.get("origin") orelse .null;
-    const from_cli = origin == .object and if (optionalStr(origin.object, "kind")) |kind| !std.mem.eql(u8, kind, "human") else false;
-    if (is_meta or from_cli or oneOfPrefix(trimmed, &.{ "<system-reminder>", "<teammate-message", "<fork-boilerplate", "<cross-session-message" })) return "injected";
+    const from_agent = origin == .object and if (optionalStr(origin.object, "kind")) |kind| !std.mem.eql(u8, kind, "human") else false;
+    if (from_agent or oneOfPrefix(trimmed, &.{ "<teammate-message", "<cross-session-message" })) return "peer_message";
+    if (is_meta) return "injected";
     return "";
 }
 
@@ -1176,18 +1180,29 @@ test "Claude interrupt notice is interrupted" {
     try std.testing.expectEqualStrings("interrupted", tool[0].system_message.kind);
 }
 
-test "Claude meta, CLI-origin, and tagged text are injected" {
+test "Claude meta text, a reminder, and fork rules are injected" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const meta = try parseLine(arena, "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"Stop hook feedback: fix it\"}}");
-    const cli_origin = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"task-notification\"},\"message\":{\"content\":\"done\"}}");
     const reminder = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"  <system-reminder>note</system-reminder>\"}}");
-    const teammate = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<teammate-message teammate_id=\\\"t1\\\">hi</teammate-message>\"}}");
     const fork = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<fork-boilerplate>rules</fork-boilerplate>\"}]}}");
-    const cross_session = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<cross-session-message>hello</cross-session-message>\"}}");
-    for ([_][]Event{ meta, cli_origin, reminder, teammate, fork, cross_session }) |events| {
+    const peer_reminder = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"peer\"},\"message\":{\"content\":\"<system-reminder>note</system-reminder>\"}}");
+    for ([_][]Event{ meta, reminder, fork, peer_reminder }) |events| {
         try std.testing.expectEqualStrings("injected", events[0].system_message.kind);
+    }
+}
+
+test "Claude message from another agent is peer_message, also when Claude marks it meta" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const peer = try parseLine(arena, "{\"type\":\"user\",\"isMeta\":true,\"origin\":{\"kind\":\"peer\"},\"message\":{\"content\":\"Another Claude session sent a message:\\n<agent-message>hi</agent-message>\"}}");
+    const coordinator = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"coordinator\"},\"message\":{\"content\":\"done\"}}");
+    const teammate = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<teammate-message teammate_id=\\\"t1\\\">hi</teammate-message>\"}}");
+    const cross_session = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<cross-session-message>hello</cross-session-message>\"}}");
+    for ([_][]Event{ peer, coordinator, teammate, cross_session }) |events| {
+        try std.testing.expectEqualStrings("peer_message", events[0].system_message.kind);
     }
 }
 

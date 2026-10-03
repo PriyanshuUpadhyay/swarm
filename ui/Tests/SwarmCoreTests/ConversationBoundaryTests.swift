@@ -58,14 +58,14 @@ struct ConversationBoundaryTests {
     }
 
     @Test("A /clear command that took its empty output still drops with its caveat")
-    func clearPreambleWithLinkedOutput() {
+    func clearPreambleWithLinkedOutput() throws {
         let built = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "command_output", text: "<local-command-caveat>Caveat</local-command-caveat>", meta: Meta(uuid: "caveat")),
             .systemMessage(kind: "command", text: "<command-name>/clear</command-name>", meta: Meta(uuid: "clear", parentUUID: "caveat")),
             .systemMessage(kind: "command_output", text: "<local-command-stdout></local-command-stdout>", meta: Meta(uuid: "stdout", parentUUID: "clear")),
             .userMessageChunk(text: "Start fresh", meta: Meta(uuid: "prompt")),
         ])
-        #expect(built.count == 3)
+        try #require(built.count == 3)
         #expect(built[1].command?.output == "")
         #expect(ConversationBoundary.withoutClearPreamble(built).map(\.kind) == [.user])
     }

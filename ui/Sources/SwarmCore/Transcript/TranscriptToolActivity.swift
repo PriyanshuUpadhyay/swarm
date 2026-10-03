@@ -34,10 +34,14 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.duration = duration
     }
 
+    public var headerTitle: String {
+        Self.title(input: input, command: command, path: path)
+    }
+
     /// The one-line title after the tool name: the call's description (or a Skill call's skill name),
     /// else the command's first line, else a search's `"pattern" in folder`, else the file name with
     /// the line range a Read asked for.
-    public var headerTitle: String {
+    static func title(input: JSONElement, command: String?, path: String?) -> String {
         let fields: [String: JSONElement] = if case .object(let value) = input { value } else { [:] }
         for key in ["description", "Description", "toolSummary", "skill"] {
             if case .string(let value) = fields[key] {
@@ -58,15 +62,15 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         func number(_ key: String) -> Int64? {
             if case .integer(let value) = fields[key] { value } else { nil }
         }
-        switch (number("offset"), number("limit")) {
-        case (let offset, let limit?):
-            let first = offset ?? 1
-            return "\(name) · lines \(first)–\(first + limit - 1)"
-        case (let offset?, nil):
-            return "\(name) · from line \(offset)"
-        case (nil, nil):
-            return name
+        let offset = number("offset")
+        let limit = number("limit")
+        guard offset != nil || limit != nil else { return name }
+        let first = offset ?? 1
+        // Tool input is model output, so the range math must not trap on overflow.
+        if let limit, limit > 0, case (let last, false) = first.addingReportingOverflow(limit - 1) {
+            return "\(name) · lines \(first)–\(last)"
         }
+        return "\(name) · from line \(first)"
     }
 
     /// Added and removed lines across the call's diffs; nil when it has none.
