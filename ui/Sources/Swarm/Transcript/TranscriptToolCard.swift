@@ -41,7 +41,7 @@ struct TranscriptToolCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(activity.name) \(activity.headerTitle), \(TranscriptStatusGlyph.label(activity.state))")
+            .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(expanded ? "Hides the tool details" : "Shows the tool details")
             .accessibilityIdentifier("transcript-tool-card")
             if let skillBody = activity.skillBody {
@@ -111,8 +111,19 @@ struct TranscriptToolCard: View {
 
     /// "exit 1 · 8.6s", "exit 0", "0.4s", or "".
     private var resultLabel: String {
+        resultParts.joined(separator: " · ")
+    }
+
+    private var resultParts: [String] {
         [activity.exitCode.map { "exit \($0)" }, activity.duration.map(TranscriptToolActivity.durationLabel)]
-            .compactMap { $0 }.joined(separator: " · ")
+            .compactMap { $0 }
+    }
+
+    /// "Edit TranscriptView.swift, 12 added, 3 removed, exit 1, 8.6s, Failed": what the header shows.
+    private var accessibilityLabel: String {
+        let counts = activity.diffCounts.map { ["\($0.added) added", "\($0.removed) removed"] } ?? []
+        return (["\(activity.name) \(activity.headerTitle)"] + counts + resultParts
+            + [TranscriptStatusGlyph.label(activity.state)]).joined(separator: ", ")
     }
 }
 
@@ -183,11 +194,7 @@ struct TranscriptOutputView: View {
             }
             .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
             if let preview, preview.isTruncated, !revealAll {
-                let hidden = preview.hiddenLineCount
-                let title: LocalizedStringKey = showAll ? "Show less"
-                    : hidden > 0 ? "… +^[\(hidden) line](inflect: true) · Show all" : "… Show all"
-                Button(title) { showAll.toggle() }
-                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
+                TranscriptShowAllButton(showAll: $showAll, hiddenLineCount: preview.hiddenLineCount)
             }
         }
         .task(id: text) {
@@ -200,6 +207,19 @@ struct TranscriptOutputView: View {
             guard !Task.isCancelled else { return }
             preview = prepared
         }
+    }
+}
+
+/// Opens or closes folded output: "… +N lines · Show all", "… Show all", or "Show less".
+struct TranscriptShowAllButton: View {
+    @Binding var showAll: Bool
+    let hiddenLineCount: Int
+
+    var body: some View {
+        let title: LocalizedStringKey = showAll ? "Show less"
+            : hiddenLineCount > 0 ? "… +^[\(hiddenLineCount) line](inflect: true) · Show all" : "… Show all"
+        Button(title) { showAll.toggle() }
+            .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
     }
 }
 

@@ -37,6 +37,15 @@ struct TranscriptTextPreviewTests {
         #expect(TranscriptTextPreview(String(repeating: "x", count: 12_001), lineLimit: 5).hiddenLineCount == 0)
     }
 
+    @Test func windowsLineEndsCountAndFoldAsLines() {
+        let preview = TranscriptTextPreview("one\r\ntwo\r\nthree", lineLimit: 2)
+        #expect(preview.text == "one\r\ntwo\r")
+        #expect(preview.isTruncated)
+        #expect(preview.lineCount == 3)
+        #expect(preview.hiddenLineCount == 1)
+        #expect(TranscriptTextPreview("").lineCount == 1)
+    }
+
     @Test func chunksKeepOrdinaryLinesTogether() {
         let chunks = TranscriptTextChunks("first\nsecond\nthird\n", limit: 10)
         #expect(chunks.pieces == ["first\n", "second\n", "third\n"])

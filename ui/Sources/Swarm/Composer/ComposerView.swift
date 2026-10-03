@@ -211,10 +211,10 @@ struct ComposerView: View {
                 .help(modelSwitchDisabledReason ?? "Choose a model for this chat")
                 .disabled(modelSwitchDisabledReason != nil)
             }
-            if let contextMeter, let showUsage {
+            if let showUsage {
                 Button(action: showUsage) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let remaining = contextMeter.remainingPercent {
+                        if let remaining = contextMeter?.remainingPercent {
                             // The capacity style draws at 58 pt on macOS and has no size option.
                             Gauge(value: Double(100 - remaining), in: 0...100) {}
                                 .gaugeStyle(.accessoryCircularCapacity)
@@ -222,14 +222,14 @@ struct ComposerView: View {
                                 .scaleEffect(DesignTokens.Size.glyphSlot / 58)
                                 .frame(width: DesignTokens.Size.glyphSlot, height: DesignTokens.Size.glyphSlot)
                         }
-                        Text(contextMeter.label)
+                        Text(contextMeter?.label ?? "Usage")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Usage details: \(contextMeter.accessibilityLabel)")
+                .accessibilityLabel(contextMeter.map { "Usage details: \($0.accessibilityLabel)" } ?? "Usage details")
                 .help("Context, cache, and estimated cost for this agent session")
             }
             if showsStop {

@@ -4,15 +4,20 @@ import Foundation
 public struct TranscriptTextPreview: Sendable, Equatable {
     public let text: String
     public let isTruncated: Bool
+    /// Lines in the whole source; an empty source is one empty line.
+    public let lineCount: Int
     /// Lines of the source past `lineLimit`; 0 when only the character cap cut the preview.
     public let hiddenLineCount: Int
 
     public init(_ source: String, lineLimit: Int = 120) {
         let prefix = source.prefix(12_000)
-        text = prefix.split(separator: "\n", omittingEmptySubsequences: false)
-            .prefix(lineLimit).joined(separator: "\n")
+        // Lines end at byte 10, not at the Character "\n", because "\r\n" is one Character, and a
+        // byte scan keeps the count cheap on output of many megabytes.
+        text = prefix.utf8.split(separator: 10, omittingEmptySubsequences: false)
+            .prefix(lineLimit).map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n")
         isTruncated = prefix.endIndex != source.endIndex || text != String(prefix)
-        hiddenLineCount = max(0, source.count { $0 == "\n" } + 1 - lineLimit)
+        lineCount = source.utf8.count { $0 == 10 } + 1
+        hiddenLineCount = max(0, lineCount - lineLimit)
     }
 }
 

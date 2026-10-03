@@ -50,6 +50,8 @@ struct TranscriptView<Composer: View>: View {
     /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
     @State private var pinned: Set<String> = []
     @State private var openFolds: Set<String> = []
+    /// A find match inside a fold that find just opened; its row scrolls to it once it appears.
+    @State private var scrollOnAppearID: String?
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -214,10 +216,11 @@ struct TranscriptView<Composer: View>: View {
             pendingScrollID = nil
             if let fold = closedFoldID(containing: id) {
                 // The child has no view while its fold is closed: scroll to the fold, open it, and
-                // scroll to the child once the open fold is drawn.
+                // let the child's onAppear queue its own scroll, because a Task can run before the
+                // open fold is built and then scrollTo finds no view.
                 proxy.scrollTo(fold, anchor: .center)
+                scrollOnAppearID = id
                 openFolds.insert(fold)
-                Task { @MainActor in pendingScrollID = id }
             } else {
                 proxy.scrollTo(id, anchor: .center)
             }
@@ -235,6 +238,11 @@ struct TranscriptView<Composer: View>: View {
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
         .background(matchBackground(transcriptRow.eventID))
+        .onAppear {
+            guard scrollOnAppearID == transcriptRow.eventID else { return }
+            scrollOnAppearID = nil
+            pendingScrollID = transcriptRow.eventID
+        }
     }
 
     private var foldedItems: [ToolRunFold.Item] {

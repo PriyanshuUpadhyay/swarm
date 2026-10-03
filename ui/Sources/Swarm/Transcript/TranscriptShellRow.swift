@@ -8,11 +8,13 @@ struct TranscriptShellRow: View {
     var revealForSearch = false
     @State private var showAll = false
 
+    private static let foldLineLimit = 50
+
     var body: some View {
         // Claude Code moves long shell output into <persisted-output>, so the fold is built here,
-        // not in a task, and the row keeps its height once it appears.
-        let preview = TranscriptTextPreview(run.output, lineLimit: 50)
-        let lineCount = run.output.split(separator: "\n", omittingEmptySubsequences: false).count
+        // not in a task, and the row keeps its height once it appears. Past the 12,000-character
+        // preview, the only cost is one byte scan of the output for its line count.
+        let preview = TranscriptTextPreview(run.output, lineLimit: Self.foldLineLimit)
         let expanded = showAll || revealForSearch
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             if let command = run.command {
@@ -29,27 +31,19 @@ struct TranscriptShellRow: View {
                         .font(DesignTokens.mono)
                         .textSelection(.enabled)
                     Spacer(minLength: DesignTokens.Spacing.s)
-                    Text(verbatim: note(lineCount: lineCount))
+                    Text(verbatim: note(lineCount: preview.lineCount))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(noteColor)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Shell command \(command), \(note(lineCount: lineCount))")
+                .accessibilityLabel("Shell command \(command), \(note(lineCount: preview.lineCount))")
             }
             if !run.output.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     TranscriptBoundedTextView(text: expanded ? run.output : preview.text)
                     if preview.isTruncated, !revealForSearch {
-                        let hidden = lineCount - min(lineCount, 50)
-                        let title: LocalizedStringKey = showAll ? "Show less"
-                            : hidden > 0 ? "… +^[\(hidden) line](inflect: true) · Show all" : "… Show all"
-                        Button(title) {
-                            showAll.toggle()
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding([.horizontal, .bottom], DesignTokens.Spacing.s)
+                        TranscriptShowAllButton(showAll: $showAll, hiddenLineCount: preview.hiddenLineCount)
+                            .padding([.horizontal, .bottom], DesignTokens.Spacing.s)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -69,7 +63,7 @@ struct TranscriptShellRow: View {
     private func note(lineCount: Int) -> String {
         if let exitCode = run.exitCode { return "exit \(exitCode)" }
         if run.output.isEmpty { return "no output" }
-        return lineCount == 1 ? "1 line" : "\(lineCount) lines"
+        return String(AttributedString(localized: "^[\(lineCount) line](inflect: true)").characters)
     }
 
     private var noteColor: Color {

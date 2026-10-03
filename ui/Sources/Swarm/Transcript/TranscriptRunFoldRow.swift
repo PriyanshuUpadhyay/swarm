@@ -12,10 +12,9 @@ struct TranscriptRunFoldRow<Child: View>: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             Button { expanded.toggle() } label: {
                 HStack(spacing: DesignTokens.Spacing.s) {
-                    Image(systemName: "chevron.right")
+                    Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
                         .frame(width: DesignTokens.Size.glyphSlot)
                     TranscriptStatusGlyph(state: .finished)
                     Text(verbatim: "\(rows.count) tools").fontWeight(.semibold).lineLimit(1).layoutPriority(1)
@@ -35,6 +34,7 @@ struct TranscriptRunFoldRow<Child: View>: View {
             .buttonStyle(.plain)
             .padding(.vertical, DesignTokens.Spacing.xs)
             .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint(expanded ? "Hides the tools" : "Shows the tools")
             .accessibilityIdentifier("transcript-tool-run-fold")
             if expanded {
