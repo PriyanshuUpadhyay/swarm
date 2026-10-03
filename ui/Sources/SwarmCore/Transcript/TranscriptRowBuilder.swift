@@ -139,7 +139,11 @@ public enum TranscriptRowBuilder {
         }
         let calls = anchors { if case .toolCall(let id, _, _, _, let meta) = $0 { (id, meta) } else { nil } }
         let shellInputs = anchors { if case .systemMessage(TranscriptSystemKind.shellInput, _, let meta) = $0 { (meta.uuid, meta) } else { nil } }
-        let commands = anchors { if case .systemMessage(TranscriptSystemKind.command, _, let meta) = $0 { (meta.uuid, meta) } else { nil } }
+        // A cut command record gets no chip, so it takes no children; they stay their own rows.
+        let commands = anchors {
+            if case .systemMessage(TranscriptSystemKind.command, let text, let meta) = $0,
+               !TranscriptCommandChip(commandText: text).name.isEmpty { (meta.uuid, meta) } else { nil }
+        }
         /// The one anchor with this id in the event's scope and a compatible session; none when two match.
         func match(_ id: String?, for index: Int, session: String, in anchors: [Anchor]) -> Int? {
             guard let id, !id.isEmpty else { return nil }

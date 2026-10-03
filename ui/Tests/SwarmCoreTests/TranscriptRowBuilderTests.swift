@@ -344,13 +344,14 @@ struct TranscriptRowBuilderTests {
         #expect(Set(rows.map(\.eventID)).count == rows.count)
     }
 
-    @Test("A command record with no closed name tag gets no chip")
+    @Test("A command record with no closed name tag gets no chip and keeps its skill body as its own row")
     func cutCommandHasNoChip() {
         let rows = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: "command", text: "<command-name>/flo", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "body", parentUUID: "command")),
         ])
-        #expect(rows.map(\.command) == [nil])
-        #expect(rows.map(\.text) == ["<command-name>/flo"])
+        #expect(rows.map(\.command) == [nil, nil])
+        #expect(rows.map(\.text) == ["<command-name>/flo", "Base directory for this skill: /skills/flow"])
     }
 
     @Test("A typed skill command takes its body, keeps its raw text, and starts a turn")

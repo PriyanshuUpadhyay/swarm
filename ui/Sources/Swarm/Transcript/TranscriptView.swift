@@ -229,6 +229,7 @@ struct TranscriptView<Composer: View>: View {
                 scrollOnAppearID = id
                 openFolds.insert(fold)
             } else {
+                scrollOnAppearID = nil
                 proxy.scrollTo(id, anchor: .center)
             }
         }
@@ -458,6 +459,7 @@ struct TranscriptView<Composer: View>: View {
     private func closeFind() {
         findPresented = false
         findFieldFocused = false
+        scrollOnAppearID = nil
         focus.wrappedValue = true
     }
 
