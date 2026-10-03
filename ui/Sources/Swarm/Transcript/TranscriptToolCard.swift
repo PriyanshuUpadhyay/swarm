@@ -104,11 +104,11 @@ struct TranscriptToolCard: View {
         .buttonStyle(.borderless)
         .onAppear {
             if activity.state == .failed || revealForSearch { expanded = true }
-            if revealForSearch { inputExpanded = true }
+            if revealForSearch { inputExpanded = true; bodyExpanded = true }
         }
         .onChange(of: activity.state) { _, state in if state == .failed { expanded = true } }
         .onChange(of: revealForSearch) { _, reveal in
-            if reveal { expanded = true; inputExpanded = true }
+            if reveal { expanded = true; inputExpanded = true; bodyExpanded = true }
         }
     }
 

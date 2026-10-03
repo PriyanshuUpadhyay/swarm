@@ -49,6 +49,10 @@ struct TranscriptToolActivityTests {
             name: "Bash", input: .object([:]), state: .finished, command: "\n  swift build \\\n  --package-path ui"
         )
         #expect(multiline.headerTitle == "swift build \\")
+        let longLine = TranscriptToolActivity(
+            name: "Bash", input: .object([:]), state: .finished, command: String(repeating: "x", count: 5_000)
+        )
+        #expect(longLine.headerTitle.count == 200)
         let path = "/work/ui/SessionDetail.swift"
         func read(_ fields: [String: JSONElement]) -> String {
             TranscriptToolActivity(name: "Read", input: .object(fields), state: .finished, path: path).headerTitle

@@ -5,6 +5,7 @@ import SwarmCore
 /// skill body, and the command's local output. It is drawn inside the user's bubble.
 struct TranscriptCommandChipView: View {
     let chip: TranscriptCommandChip
+    var revealForSearch = false
     @State private var skillExpanded = false
 
     var body: some View {
@@ -33,12 +34,13 @@ struct TranscriptCommandChipView: View {
                     TranscriptBoundedTextView(text: skillBody)
                 }
                 .font(.caption)
+                .onChange(of: revealForSearch, initial: true) { _, reveal in if reveal { skillExpanded = true } }
             }
             if let output = chip.output, !output.isEmpty {
                 Text(verbatim: output)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(revealForSearch ? nil : 1)
                     .help(output)
             }
         }

@@ -34,7 +34,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.duration = duration
     }
 
-    /// The one-line title after the tool name; see `title(input:command:path:)`. O(command length).
+    /// The one-line title after the tool name; see `title(input:command:path:)`.
     public var headerTitle: String {
         Self.title(input: input, command: command, path: path)
     }
@@ -51,8 +51,10 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             }
         }
         if let command {
-            let line = command.trimmingCharacters(in: .whitespacesAndNewlines).prefix(while: { !$0.isNewline })
-            if !line.isEmpty { return String(line) }
+            // Only the first non-blank line is read, so a long heredoc costs nothing.
+            let line = command.drop(while: \.isWhitespace).prefix(while: { !$0.isNewline }).prefix(200)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { return trimmed }
         }
         if case .string(let pattern) = fields["pattern"] {
             guard case .string(let folder) = fields["path"] else { return "\"\(pattern)\"" }

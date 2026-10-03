@@ -493,7 +493,7 @@ private struct TranscriptRowView: View {
                 TranscriptShellRow(run: run, revealForSearch: revealForSearch)
             } else if let command = row.command {
                 // The owner typed the command, so it sits in their bubble.
-                userBubble(TranscriptCommandChipView(chip: command))
+                userBubble(TranscriptCommandChipView(chip: command, revealForSearch: revealForSearch))
             } else if row.kind == .user {
                 userBubble(TranscriptMessageView(text: row.text))
                     .accessibilityElement(children: .contain)
