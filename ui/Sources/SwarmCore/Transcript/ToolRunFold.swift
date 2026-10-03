@@ -7,11 +7,12 @@ public enum ToolRunFold {
         /// The folded tool rows, in transcript order.
         case fold([TranscriptRow])
 
-        /// A fold takes its first row's id.
+        /// A fold's id is its first row's id with a "fold:" prefix, because an open fold also draws
+        /// that row with its own id.
         public var id: String {
             switch self {
             case .row(let row): row.eventID
-            case .fold(let rows): rows[0].eventID
+            case .fold(let rows): "fold:" + rows[0].eventID
             }
         }
     }

@@ -37,6 +37,28 @@ struct TranscriptTextPreviewTests {
         #expect(TranscriptTextPreview(String(repeating: "x", count: 12_001), lineLimit: 5).hiddenLineCount == 0)
     }
 
+    @Test func trailingNewlineEndsTheLastLine() {
+        let fiveLines = "a\nb\nc\nd\ne\n"
+        let preview = TranscriptTextPreview(fiveLines, lineLimit: 5)
+        #expect(preview.text == fiveLines)
+        #expect(!preview.isTruncated)
+        #expect(preview.lineCount == 5)
+        #expect(preview.hiddenLineCount == 0)
+        #expect(TranscriptTextPreview("\n").lineCount == 1)
+    }
+
+    @Test func characterCapCountsEveryLineItHides() {
+        let longFirstLine = String(repeating: "x", count: 20_000)
+        let shortLines = (0..<9).map { "line \($0)" }
+        let capped = TranscriptTextPreview(([longFirstLine] + shortLines).joined(separator: "\n"), lineLimit: 5)
+        #expect(capped.text == String(longFirstLine.prefix(12_000)))
+        #expect(capped.hiddenLineCount == 9)
+        let wideLine = String(repeating: "w", count: 290)
+        let wideLines = TranscriptTextPreview(Array(repeating: wideLine, count: 60).joined(separator: "\n"), lineLimit: 50)
+        // 12,000 characters hold 41 lines of 291 (with the "\n") and the start of the 42nd.
+        #expect(wideLines.hiddenLineCount == 18)
+    }
+
     @Test func windowsLineEndsCountAndFoldAsLines() {
         let preview = TranscriptTextPreview("one\r\ntwo\r\nthree", lineLimit: 2)
         #expect(preview.text == "one\r\ntwo\r")

@@ -34,6 +34,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.duration = duration
     }
 
+    /// The one-line title after the tool name; see `title(input:command:path:)`. O(command length).
     public var headerTitle: String {
         Self.title(input: input, command: command, path: path)
     }
@@ -73,7 +74,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return "\(name) · from line \(first)"
     }
 
-    /// Added and removed lines across the call's diffs; nil when it has none.
+    /// Added and removed lines across the call's diffs; nil when it has none. O(total diff lines).
     public var diffCounts: (added: Int, removed: Int)? {
         guard !diffs.isEmpty else { return nil }
         let lines = diffs.flatMap(\.hunks).flatMap(\.lines)

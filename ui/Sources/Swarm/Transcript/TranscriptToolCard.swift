@@ -12,7 +12,9 @@ struct TranscriptToolCard: View {
     @State private var revealingFile = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let title = activity.headerTitle
+        let counts = activity.diffCounts
+        return VStack(alignment: .leading, spacing: 0) {
             // One line when closed: status, tool, title, diff size, exit and time. Click or Space opens it.
             Button { expanded.toggle() } label: {
                 HStack(spacing: DesignTokens.Spacing.s) {
@@ -20,12 +22,12 @@ struct TranscriptToolCard: View {
                         .help(TranscriptStatusGlyph.label(activity.state)
                             + ". The status describes the tool result; read the output for verification results.")
                     Text(verbatim: activity.name).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
-                    Text(verbatim: activity.headerTitle)
+                    Text(verbatim: title)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: DesignTokens.Spacing.s)
-                    if let counts = activity.diffCounts {
+                    if let counts {
                         HStack(spacing: DesignTokens.Spacing.xs) {
                             Text(verbatim: "+\(counts.added)").foregroundStyle(DesignTokens.color(.done))
                             Text(verbatim: "−\(counts.removed)").foregroundStyle(DesignTokens.color(.failed))
@@ -41,7 +43,8 @@ struct TranscriptToolCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
+            .accessibilityLabel(accessibilityLabel(title: title, counts: counts))
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint(expanded ? "Hides the tool details" : "Shows the tool details")
             .accessibilityIdentifier("transcript-tool-card")
             if let skillBody = activity.skillBody {
@@ -120,9 +123,9 @@ struct TranscriptToolCard: View {
     }
 
     /// "Edit TranscriptView.swift, 12 added, 3 removed, exit 1, 8.6s, Failed": what the header shows.
-    private var accessibilityLabel: String {
-        let counts = activity.diffCounts.map { ["\($0.added) added", "\($0.removed) removed"] } ?? []
-        return (["\(activity.name) \(activity.headerTitle)"] + counts + resultParts
+    private func accessibilityLabel(title: String, counts: (added: Int, removed: Int)?) -> String {
+        let countParts = counts.map { ["\($0.added) added", "\($0.removed) removed"] } ?? []
+        return (["\(activity.name) \(title)"] + countParts + resultParts
             + [TranscriptStatusGlyph.label(activity.state)]).joined(separator: ", ")
     }
 }

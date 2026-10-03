@@ -74,6 +74,16 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
             || (kind == .system && systemKind == TranscriptSystemKind.injected)
     }
 
+    /// The text find matches: the row's text plus what the row draws from joined records, such as a
+    /// tool's output and diffs or a command's output and skill body. O(total length of that text).
+    public var searchText: String {
+        let diff = tool?.diffs.map { ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n") }
+            .joined(separator: "\n")
+        return [text, detail, tool?.command, tool?.output, tool?.path, diff, tool?.skillBody,
+                command?.output, command?.skillBody]
+            .compactMap { $0 }.joined(separator: "\n")
+    }
+
     public var printLine: String {
         if kind == .shell { return "\(kind.rawValue) \(text)" }
         let first = text.components(separatedBy: .newlines).first ?? ""
@@ -164,9 +174,11 @@ public enum TranscriptRowBuilder {
                 guard let command = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
                 else { continue }
                 attached[command, default: []].append(index)
-            case .systemMessage(TranscriptSystemKind.injected, _, let meta):
+            case .systemMessage(TranscriptSystemKind.injected, let text, let meta)
+                where !text.drop(while: \.isWhitespace).hasPrefix("<system-reminder>"):
                 // A bundled skill writes its body without the "Base directory for this skill:" line, so
                 // the parser calls it injected; its parent link to a command still marks it a skill body.
+                // A reminder can name the command as parent too, and stays a hidden System row.
                 guard let command = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
                 else { continue }
                 attached[command, default: []].append(index)
@@ -227,10 +239,12 @@ public enum TranscriptRowBuilder {
                 switch kind {
                 case TranscriptSystemKind.shellOutput:
                     row = shellRow(ShellRecord.run(command: row.shell?.command, outputText: text), eventID: row.eventID)
+                    row.startsTurn = true
                 case TranscriptSystemKind.skillBody where row.tool != nil:
                     row.tool?.skillBody = text
                 case TranscriptSystemKind.skillBody, TranscriptSystemKind.injected:
-                    row.command?.skillBody = text
+                    let earlier = row.command?.skillBody
+                    row.command?.skillBody = [earlier, text].compactMap { $0 }.joined(separator: "\n\n")
                     row.startsTurn = true
                 default:
                     row.command?.output = TranscriptCommandChip.output(fromCommandOutput: text)
@@ -358,6 +372,8 @@ public enum TranscriptRowBuilder {
                 ShellRecord.run(command: ShellRecord.command(fromInput: text), outputText: nil),
                 eventID: key(meta, "shell", index)
             )
+            // Claude replies to a `!` command's output, so the command starts a turn.
+            row.startsTurn = true
         case .systemMessage(TranscriptSystemKind.shellOutput, let text, let meta):
             row = shellRow(ShellRecord.run(command: nil, outputText: text), eventID: key(meta, "shell", index))
         case .systemMessage(TranscriptSystemKind.interrupted, _, let meta):

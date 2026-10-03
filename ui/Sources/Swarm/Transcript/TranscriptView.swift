@@ -50,8 +50,10 @@ struct TranscriptView<Composer: View>: View {
     /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
     @State private var pinned: Set<String> = []
     @State private var openFolds: Set<String> = []
-    /// A find match inside a fold that find just opened; its row scrolls to it once it appears.
+    /// A find match inside a fold; its row queues a scroll to itself once it appears.
     @State private var scrollOnAppearID: String?
+    /// A fold child that just appeared for find; the next update scrolls to it.
+    @State private var appearedMatchID: String?
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -208,22 +210,32 @@ struct TranscriptView<Composer: View>: View {
         }
         .onScrollPhaseChange { _, phase in
             userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if phase == .interacting { scrollOnAppearID = nil }
             if phase == .idle { loadedHistoryThisGesture = false }
             if phase == .interacting, nearOldest { startLoadingOlder(automatic: true) }
         }
         .onChange(of: pendingScrollID) { _, id in
             guard let id else { return }
             pendingScrollID = nil
-            if let fold = closedFoldID(containing: id) {
-                // The child has no view while its fold is closed: scroll to the fold, open it, and
-                // let the child's onAppear queue its own scroll, because a Task can run before the
-                // open fold is built and then scrollTo finds no view.
+            if let fold = foldID(containing: id) {
+                // The lazy list knows only the fold's id, and a child's id exists only while its fold
+                // item is built and open. So scroll to the fold first, which builds the item, and open
+                // it. Building an open fold item builds all its children at once, so the child's
+                // onAppear then queues the scroll to itself; a Task could run before that build and
+                // find no view. A child that is already built does not appear again, so the second
+                // scrollTo reaches it now, and the owner's next scroll drops the queued id.
                 proxy.scrollTo(fold, anchor: .center)
+                proxy.scrollTo(id, anchor: .center)
                 scrollOnAppearID = id
                 openFolds.insert(fold)
             } else {
                 proxy.scrollTo(id, anchor: .center)
             }
+        }
+        .onChange(of: appearedMatchID) { _, id in
+            guard let id else { return }
+            appearedMatchID = nil
+            proxy.scrollTo(id, anchor: .center)
         }
         .onChange(of: revision, initial: true) {
             pinned.formUnion(ToolRunFold.openTurnToolIDs(in: rows))
@@ -241,7 +253,7 @@ struct TranscriptView<Composer: View>: View {
         .onAppear {
             guard scrollOnAppearID == transcriptRow.eventID else { return }
             scrollOnAppearID = nil
-            pendingScrollID = transcriptRow.eventID
+            appearedMatchID = transcriptRow.eventID
         }
     }
 
@@ -257,12 +269,10 @@ struct TranscriptView<Composer: View>: View {
         }
     }
 
-    private func closedFoldID(containing id: String) -> String? {
-        for case .fold(let group) in foldedItems
-        where !openFolds.contains(group[0].eventID) && group.contains(where: { $0.eventID == id }) {
-            return group[0].eventID
-        }
-        return nil
+    private func foldID(containing id: String) -> String? {
+        foldedItems.first {
+            if case .fold(let group) = $0 { group.contains { $0.eventID == id } } else { false }
+        }?.id
     }
 
     private func startLoadingOlder(automatic: Bool = false) {
@@ -355,12 +365,7 @@ struct TranscriptView<Composer: View>: View {
                 } else {
                     for row in rows where request.hidden || !row.isHiddenByDefault {
                         try Task.checkCancellation()
-                        let diff = row.tool?.diffs.map {
-                            ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n")
-                        }.joined(separator: "\n")
-                        let text = [row.text, row.detail, row.tool?.command, row.tool?.output, row.tool?.path, diff]
-                            .compactMap { $0 }.joined(separator: "\n")
-                        items.append(PaneSearchItem(id: row.eventID, text: text))
+                        items.append(PaneSearchItem(id: row.eventID, text: row.searchText))
                     }
                 }
             }

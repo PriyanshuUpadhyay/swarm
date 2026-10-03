@@ -393,7 +393,7 @@ struct TranscriptRowBuilderTests {
         #expect(!ChairTurn.isActive(rows))
     }
 
-    @Test("After a finished turn a shell command leaves the chat idle, a skill starts a turn, and an interrupt ends it")
+    @Test("After a finished turn a shell command and a skill each start a turn, and an interrupt ends it")
     func turnStateForInjectedRows() {
         let finished: [TranscriptEvent] = [
             .userMessageChunk(text: "Fix the bug", meta: Meta(uuid: "prompt")),
@@ -409,7 +409,12 @@ struct TranscriptRowBuilderTests {
         ]
         let interrupt = TranscriptEvent.systemMessage(kind: "interrupted", text: "[Request interrupted by user]", meta: Meta(uuid: "stop"))
 
-        #expect(!ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + shell)))
+        let reply = TranscriptEvent.agentMessageChunk(text: "The tree is clean.", meta: Meta(uuid: "reply"))
+        let replyEnded = TranscriptEvent.turnEnded(durationMs: 1, reason: .completed, meta: Meta(uuid: "reply-end"))
+        #expect(ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + shell)))
+        #expect(ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + shell + [reply])))
+        #expect(!ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + shell + [reply, replyEnded])))
+        #expect(ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + [shell[0]])))
         #expect(ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + skill)))
         let interrupted = TranscriptRowBuilder.rows(from: finished + skill + [interrupt])
         #expect(interrupted.last?.kind == .notice)
@@ -463,6 +468,47 @@ struct TranscriptRowBuilderTests {
         #expect(rows[2].command?.skillBody == "Review target: the changes")
         #expect(rows[2].startsTurn)
         #expect(ChairTurn.isActive(rows))
+    }
+
+    @Test("A system reminder whose parent is a command stays a hidden System row and starts no turn")
+    func reminderUnderCommandStaysHidden() throws {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/simplify</command-name>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "injected", text: "\n<system-reminder>Be brief</system-reminder>", meta: Meta(uuid: "reminder", parentUUID: "command")),
+        ])
+        try #require(rows.map(\.kind) == [.system, .system])
+        #expect(rows[0].command?.skillBody == nil)
+        #expect(!rows[0].startsTurn)
+        #expect(rows[1].systemKind == "injected")
+        #expect(rows[1].isHiddenByDefault)
+    }
+
+    @Test("Two skill bodies of one command join with a blank line in log order")
+    func twoSkillBodiesJoin() throws {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/flow</command-name>", meta: Meta(uuid: "command")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(uuid: "first-body", parentUUID: "command")),
+            .systemMessage(kind: "injected", text: "Review target: the changes", meta: Meta(uuid: "second-body", parentUUID: "command")),
+        ])
+        try #require(rows.count == 1)
+        #expect(rows[0].command?.skillBody == "Base directory for this skill: /skills/flow\n\nReview target: the changes")
+    }
+
+    @Test("Find text holds a command's output and skill body and a Skill call's body")
+    func searchTextHoldsJoinedRecords() throws {
+        let meta = Meta(agentSessionID: "s")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/model</command-name>", meta: Meta(agentSessionID: "s", uuid: "model-command")),
+            .systemMessage(kind: "command_output", text: "<local-command-stdout>Set model to sonnet</local-command-stdout>", meta: Meta(agentSessionID: "s", uuid: "stdout", parentUUID: "model-command")),
+            .systemMessage(kind: "command", text: "<command-name>/flow</command-name>", meta: Meta(agentSessionID: "s", uuid: "flow-command")),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/flow", meta: Meta(agentSessionID: "s", uuid: "command-body", parentUUID: "flow-command")),
+            .toolCall(toolCallID: "skill-call", name: "Skill", input: .object(["skill": .string("review")]), status: .pending, meta: meta),
+            .systemMessage(kind: "skill_body", text: "Base directory for this skill: /skills/review", meta: Meta(agentSessionID: "s", uuid: "tool-body", sourceToolUseID: "skill-call")),
+        ])
+        try #require(rows.count == 3)
+        #expect(rows[0].searchText.contains("Set model to sonnet"))
+        #expect(rows[1].searchText.contains("/skills/flow"))
+        #expect(rows[2].searchText.contains("/skills/review"))
     }
 
     private func shellInput(_ command: String, uuid: String) -> TranscriptEvent {

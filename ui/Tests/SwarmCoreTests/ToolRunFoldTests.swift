@@ -34,12 +34,12 @@ struct ToolRunFoldTests {
         }
     }
 
-    @Test("Three finished tools in an ended turn fold, and the fold takes the first tool's id")
+    @Test("Three finished tools in an ended turn fold, and the fold's id differs from its first tool's")
     func threeFinishedToolsFold() {
         let rows = [prompt(), tool("read"), tool("grep"), tool("edit"), turnEnd()]
         #expect(foldedIDs(rows) == [["read", "grep", "edit"]])
         let items = ToolRunFold.items(in: rows, pinned: [])
-        #expect(items.map(\.id) == ["prompt", "read", "turn-end"])
+        #expect(items.map(\.id) == ["prompt", "fold:read", "turn-end"])
     }
 
     @Test("Two finished tools stay as rows")
