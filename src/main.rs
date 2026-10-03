@@ -1101,6 +1101,11 @@ fn spawn_agent(
     if let Some(account) = account {
         eprintln!("account {}", account.name);
     }
+    // The app shows this model until the agent's own log reports one; a new chat writes no log
+    // before its first message.
+    if let Some(model) = swarm::bus::command_model(options.command) {
+        eprintln!("model {model}");
+    }
     Ok(())
 }
 

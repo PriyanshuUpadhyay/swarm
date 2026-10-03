@@ -75,11 +75,12 @@ public struct SwarmCLIBus: SwarmBus {
         guard let pane = firstLine(in: result.stdout) else {
             throw SwarmProfileError.failed("swarm returned no pane")
         }
-        let reported = result.stderr.components(separatedBy: .newlines)
+        let lines = result.stderr.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { $0.hasPrefix("account ") }
-            .map { String($0.dropFirst("account ".count)) }
-        return SwarmLaunch(pane: pane, account: reported)
+        func reported(_ key: String) -> String? {
+            lines.first { $0.hasPrefix(key + " ") }.map { String($0.dropFirst(key.count + 1)) }
+        }
+        return SwarmLaunch(pane: pane, account: reported("account"), model: reported("model"))
     }
 
     public func agents(

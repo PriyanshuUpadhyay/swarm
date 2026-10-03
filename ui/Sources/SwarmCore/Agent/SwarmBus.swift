@@ -298,14 +298,17 @@ public struct SwarmSessionList: Sendable, Hashable, Codable {
     }
 }
 
-/// What `swarm launch` reported: the new pane, and the account it runs on when one was asked for.
+/// What `swarm launch` reported: the new pane, the account it runs on when one was asked for,
+/// and the model its role or pick resolved to.
 public struct SwarmLaunch: Sendable, Hashable {
     public var pane: String
     public var account: String?
+    public var model: String?
 
-    public init(pane: String, account: String?) {
+    public init(pane: String, account: String?, model: String? = nil) {
         self.pane = pane
         self.account = account
+        self.model = model
     }
 }
 

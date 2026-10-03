@@ -187,6 +187,12 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     );
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stderr(&output).contains("account a"), "{}", stderr(&output));
+    // The app shows the role's model before the chair writes its first log.
+    assert!(
+        stderr(&output).contains("model opus"),
+        "{}",
+        stderr(&output)
+    );
     assert!(trusted(
         &profiles[0].join(".claude.json"),
         &cwd.join(".herdr/workers")

@@ -264,6 +264,7 @@ struct SessionDetailView: View {
     let row: SwarmProjectSession
     let model: SessionDetailModel
     let agents: [SwarmAgent]
+    let launchedModel: String?
     let panes: AgentPaneStore
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
@@ -317,15 +318,18 @@ struct SessionDetailView: View {
     }
 
     private var chairProvider: String? { chair?.provider }
+    private var currentModel: String? { model.currentModel ?? launchedModel }
 
     private var modelLabel: String {
-        if let current = model.currentModel { return current }
+        if let currentModel { return currentModel }
         if model.snapshot == .waiting || model.snapshot == .loading { return "Reading model…" }
         return "\((row.provider ?? chairProvider)?.capitalized ?? "Agent") · Model not reported"
     }
 
     private var modelSwitchDisabledReason: String? {
-        if model.snapshot == .waiting || model.snapshot == .loading { return "Waiting for this chat's model information." }
+        if currentModel == nil, model.snapshot == .waiting || model.snapshot == .loading {
+            return "Waiting for this chat's model information."
+        }
         if model.isSending(sessionID: row.id.rawValue)
             || (row.isRunning == true && ChairTurn.isActive(model.rows)) {
             return "Wait for the reply to finish, or stop it before switching model."
@@ -356,7 +360,9 @@ struct SessionDetailView: View {
                 : nil,
             modelLabel: modelLabel,
             modelSwitchDisabledReason: modelSwitchDisabledReason,
-            selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
+            selectModel: { [weak model, onSwitchModel, launchedModel] in
+                onSwitchModel(model?.currentModel ?? launchedModel)
+            },
             contextMeter: model.usage.contextMeter(),
             showUsage: onShowUsage,
             sendDisabledReason: chair?.alive == false

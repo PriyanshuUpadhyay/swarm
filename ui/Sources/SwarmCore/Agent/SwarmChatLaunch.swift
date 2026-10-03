@@ -68,12 +68,13 @@ public enum SwarmChatLauncher {
         }
     }
 
+    @discardableResult
     public static func launch(
         _ plan: SwarmChatLaunchPlan, in id: SwarmSessionID, bus: any SwarmBus
-    ) async throws {
+    ) async throws -> SwarmLaunch {
         let timing = SwarmPerformance.begin("ProviderLaunch")
         defer { timing.end() }
-        _ = try await bus.launch(
+        return try await bus.launch(
             SwarmPanePolicy.chair, role: plan.role, provider: plan.provider, model: plan.model,
             account: plan.account,
             in: id, directory: plan.directory

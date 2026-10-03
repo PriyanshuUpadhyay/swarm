@@ -72,6 +72,9 @@ final class SessionsTreeModel {
     /// A pending chat's tab is selected; then `selectedSessionID` is nil.
     private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
+    /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
+    /// log reports one.
+    private(set) var launchedModels: [SwarmSessionID: String] = [:]
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
@@ -202,7 +205,8 @@ final class SessionsTreeModel {
                     session = try await SwarmChatLauncher.create(plan, bus: bus)
                     pendingChats.update(id) { $0.session = session }
                 }
-                try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
+                let launch = try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
+                launchedModels[session] = launch.model
                 pendingChats.update(id) { $0.state = .launched }
                 try await refresh()
             } catch {
@@ -1008,6 +1012,7 @@ private struct SessionsWindow: View {
         SessionDetailView(
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
+            launchedModel: model.launchedModels[row.id],
             panes: panes, commandSource: active ? model.commandSource : nil,
             onSwitchModel: { currentModel in
                 switchTarget = SwitchTarget(row: row, model: currentModel)
