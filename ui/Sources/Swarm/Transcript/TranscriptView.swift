@@ -265,7 +265,13 @@ struct TranscriptView<Composer: View>: View {
         Binding {
             openFolds.contains(id)
         } set: { open in
-            if open { openFolds.insert(id) } else { openFolds.remove(id) }
+            if open {
+                openFolds.insert(id)
+            } else {
+                openFolds.remove(id)
+                // A queued find scroll would jump back to its match when the fold opens again.
+                scrollOnAppearID = nil
+            }
         }
     }
 

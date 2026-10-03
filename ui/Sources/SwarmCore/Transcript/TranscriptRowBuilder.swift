@@ -68,7 +68,8 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     }
 
     public var isHiddenByDefault: Bool {
-        (kind == .notice && (text.hasPrefix("hook_success")
+        // A notice that starts a turn is a message from another agent, so it always shows.
+        (kind == .notice && !startsTurn && (text.hasPrefix("hook_success")
             || text.hasPrefix("title:") || text.hasPrefix("model:")))
             || (kind == .system && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             || (kind == .system && systemKind == TranscriptSystemKind.injected)
@@ -239,7 +240,6 @@ public enum TranscriptRowBuilder {
                 switch kind {
                 case TranscriptSystemKind.shellOutput:
                     row = shellRow(ShellRecord.run(command: row.shell?.command, outputText: text), eventID: row.eventID)
-                    row.startsTurn = true
                 case TranscriptSystemKind.skillBody where row.tool != nil:
                     row.tool?.skillBody = text
                 case TranscriptSystemKind.skillBody, TranscriptSystemKind.injected:
@@ -372,8 +372,6 @@ public enum TranscriptRowBuilder {
                 ShellRecord.run(command: ShellRecord.command(fromInput: text), outputText: nil),
                 eventID: key(meta, "shell", index)
             )
-            // Claude replies to a `!` command's output, so the command starts a turn.
-            row.startsTurn = true
         case .systemMessage(TranscriptSystemKind.shellOutput, let text, let meta):
             row = shellRow(ShellRecord.run(command: nil, outputText: text), eventID: key(meta, "shell", index))
         case .systemMessage(TranscriptSystemKind.interrupted, _, let meta):
@@ -382,7 +380,11 @@ public enum TranscriptRowBuilder {
         case .systemMessage(let kind, let text, let meta):
             row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "system", index))
             row.systemKind = kind
-            if kind == TranscriptSystemKind.command { row.command = TranscriptCommandChip(commandText: text) }
+            if kind == TranscriptSystemKind.command {
+                // A cut record with no closed name tag stays plain System text, not an empty chip.
+                let chip = TranscriptCommandChip(commandText: text)
+                if !chip.name.isEmpty { row.command = chip }
+            }
         case .sessionInfo(SessionInfoKind.agentName.rawValue, _, _):
             return nil
         case .sessionInfo(let kind, let value, let meta):
@@ -420,6 +422,8 @@ public enum TranscriptRowBuilder {
         let text = [run.command.map { "$ \($0)" }, run.output].compactMap { $0 }.filter { !$0.isEmpty }
         var row = TranscriptRow(kind: .shell, text: text.joined(separator: "\n"), eventID: eventID)
         row.shell = run
+        // Claude replies to a `!` command's output, so every shell row starts a turn.
+        row.startsTurn = true
         return row
     }
 

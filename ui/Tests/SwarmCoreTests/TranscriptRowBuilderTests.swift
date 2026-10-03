@@ -319,7 +319,7 @@ struct TranscriptRowBuilderTests {
         #expect(rows[0].printLine == "shell $ ls\na & b")
     }
 
-    @Test("A shell input without output and an output without input each stay a shell row")
+    @Test("A shell input without output and an output without input each stay a shell row that starts a turn")
     func unmatchedShell() {
         let lone = TranscriptRowBuilder.rows(from: [shellInput("pwd", uuid: "input")])
         #expect(lone.map(\.shell) == [TranscriptShellRun(command: "pwd", output: "", exitCode: nil)])
@@ -328,6 +328,7 @@ struct TranscriptRowBuilderTests {
         ])
         #expect(orphan.map(\.kind) == [.shell])
         #expect(orphan.map(\.shell) == [TranscriptShellRun(command: nil, output: "/work", exitCode: nil)])
+        #expect((lone + orphan).map(\.startsTurn) == [true, true])
     }
 
     @Test("Two shell inputs with one id do not take the output that names it")
@@ -341,6 +342,15 @@ struct TranscriptRowBuilderTests {
         #expect(rows.map { $0.shell?.command } == ["first", "second", nil])
         #expect(rows.map { $0.shell?.output } == ["", "", "which one"])
         #expect(Set(rows.map(\.eventID)).count == rows.count)
+    }
+
+    @Test("A command record with no closed name tag gets no chip")
+    func cutCommandHasNoChip() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "command", text: "<command-name>/flo", meta: Meta(uuid: "command")),
+        ])
+        #expect(rows.map(\.command) == [nil])
+        #expect(rows.map(\.text) == ["<command-name>/flo"])
     }
 
     @Test("A typed skill command takes its body, keeps its raw text, and starts a turn")
@@ -453,6 +463,11 @@ struct TranscriptRowBuilderTests {
         #expect(!message.isHiddenByDefault)
         #expect(ChairTurn.isActive(rows))
         #expect(TranscriptRowBuilder.rows(from: [peer]).map(\.text) == [peerText])
+        let modelWord = TranscriptEvent.systemMessage(
+            kind: "peer_message", text: "<teammate-message teammate_id=\"lead\">model: use opus</teammate-message>",
+            meta: Meta(uuid: "model-word")
+        )
+        #expect(TranscriptRowBuilder.rows(from: [modelWord]).map(\.isHiddenByDefault) == [false])
         #expect(!ChairTurn.isActive(TranscriptRowBuilder.rows(from: finished + [injected])))
     }
 

@@ -29,10 +29,10 @@ struct TranscriptRunFoldRow<Child: View>: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.vertical, DesignTokens.Spacing.xs)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.vertical, DesignTokens.Spacing.xs)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint(expanded ? "Hides the tools" : "Shows the tools")

@@ -52,7 +52,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         }
         if let command {
             // Only the first non-blank line is read, so a long heredoc costs nothing.
-            let line = command.drop(while: \.isWhitespace).prefix(while: { !$0.isNewline }).prefix(200)
+            let line = command.drop(while: \.isWhitespace).prefix(200).prefix(while: { !$0.isNewline })
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { return trimmed }
         }
