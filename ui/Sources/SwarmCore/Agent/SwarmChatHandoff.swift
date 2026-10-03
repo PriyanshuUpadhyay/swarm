@@ -1,4 +1,5 @@
 import Foundation
+import TranscriptTool
 
 public enum SwarmChatHandoff {
     static let request = "Write a compact handoff summary for the next agent. Include the goal, decisions, work done, open tasks, and essential file paths. Do not start new work."
@@ -84,8 +85,10 @@ public enum SwarmChatHandoff {
               let question = rows[baseline...].firstIndex(where: {
                   $0.kind == .user && $0.text.contains(request)
               }),
-              rows[question...].contains(where: \.endsTurn),
-              let answer = rows[question...].last(where: { $0.kind == .assistant })?.text
+              // An interrupt also ends a turn, and then the reply is only part of a summary.
+              let end = rows[question...].firstIndex(where: \.endsTurn),
+              rows[end].kind == .result, rows[end].text == TurnEndedReason.completed.rawValue,
+              let answer = rows[question..<end].last(where: { $0.kind == .assistant })?.text
                 .trimmingCharacters(in: .whitespacesAndNewlines),
               !answer.isEmpty else { return nil }
         return String(answer.prefix(12_000))

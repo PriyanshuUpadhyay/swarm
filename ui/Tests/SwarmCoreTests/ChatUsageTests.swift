@@ -45,6 +45,30 @@ struct ChatUsageTests {
         #expect(usage.costLabel == nil)
     }
 
+    @Test("The composer meter shows percent left when capacity is known, else a compact count")
+    func composerMeter() {
+        #expect(ChatUsage().contextMeter() == nil)
+
+        var codex = ChatUsage()
+        codex.ingest(.decode(line: #"{"type":"usage","source":"codex","kind":"context","context_tokens":118000,"context_capacity_tokens":200000}"#))
+        let codexMeter = codex.contextMeter(locale: Locale(identifier: "en_US"))
+        #expect(codexMeter?.remainingPercent == 41)
+        #expect(codexMeter?.label == "41% left")
+        #expect(codexMeter?.accessibilityLabel == "Context 59 percent used, 41 percent left")
+
+        var claude = ChatUsage()
+        claude.ingest(.decode(line: #"{"type":"usage","source":"claude","kind":"context","context_tokens":235947}"#))
+        let american = claude.contextMeter(locale: Locale(identifier: "en_US"))
+        #expect(american?.remainingPercent == nil)
+        #expect(american?.contextTokens == 235_947)
+        #expect(american?.label == "236K")
+        #expect(american?.accessibilityLabel == "Context 235,947 tokens")
+        let indian = Locale(identifier: "en_IN")
+        let indianLabel = claude.contextMeter(locale: indian)?.label
+        #expect(indianLabel == 235_947.formatted(.number.notation(.compactName).locale(indian)))
+        #expect(indianLabel?.contains(",") == false)
+    }
+
     @Test("Live history retains metadata; initial page honestly reports its omission")
     func liveTrimAndInitialTail() async throws {
         let binary = try #require(TranscriptToolProcess.bundled)

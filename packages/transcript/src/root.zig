@@ -6,6 +6,8 @@ pub const Meta = struct {
     session_id: []const u8,
     uuid: []const u8,
     timestamp: []const u8,
+    parent_uuid: ?[]const u8 = null,
+    source_tool_use_id: ?[]const u8 = null,
 };
 
 pub const Text = struct { meta: Meta, text: []const u8 };
@@ -193,8 +195,21 @@ fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     }
     const trimmed = std.mem.trimStart(u8, text, " \t\r\n");
     if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
-    if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>" })) return "command_output";
+    if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>" })) return "command_output";
     if (std.mem.startsWith(u8, trimmed, "<task-notification>")) return "task_notification";
+    if (std.mem.startsWith(u8, trimmed, "<bash-input>")) return "shell_input";
+    if (oneOfPrefix(trimmed, &.{ "<bash-stdout>", "<bash-stderr>" })) return "shell_output";
+    const is_meta = if (rec.get("isMeta")) |flag| flag == .bool and flag.bool else false;
+    if (is_meta and std.mem.startsWith(u8, trimmed, "Base directory for this skill:")) return "skill_body";
+    if (std.mem.startsWith(u8, trimmed, "[Request interrupted by user")) return "interrupted";
+    // Claude Code writes these as user records, but the owner did not type them.
+    if (oneOfPrefix(trimmed, &.{ "<system-reminder>", "<fork-boilerplate", "<local-command-caveat>" })) return "injected";
+    // Another agent's message starts a turn. Claude marks a peer's message isMeta, so the origin
+    // check runs before the isMeta check.
+    const origin = rec.get("origin") orelse .null;
+    const from_agent = origin == .object and if (optionalStr(origin.object, "kind")) |kind| !std.mem.eql(u8, kind, "human") else false;
+    if (from_agent or oneOfPrefix(trimmed, &.{ "<teammate-message", "<cross-session-message" })) return "peer_message";
+    if (is_meta) return "injected";
     return "";
 }
 
@@ -294,7 +309,13 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         return events.items;
     }
     const rec = root.object;
-    const meta: Meta = .{ .session_id = str(rec, "sessionId"), .uuid = str(rec, "uuid"), .timestamp = str(rec, "timestamp") };
+    const meta: Meta = .{
+        .session_id = str(rec, "sessionId"),
+        .uuid = str(rec, "uuid"),
+        .timestamp = str(rec, "timestamp"),
+        .parent_uuid = optionalStr(rec, "parentUuid"),
+        .source_tool_use_id = optionalStr(rec, "sourceToolUseID"),
+    };
     const record_type = str(rec, "type");
     if (std.mem.eql(u8, record_type, "attachment")) {
         const attachment = rec.get("attachment") orelse {
@@ -371,8 +392,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             const duration = rec.get("durationMs") orelse .null;
             try events.append(arena, .{ .turn_ended = .{ .meta = meta, .reason = .completed, .duration_ms = if (duration == .integer) duration.integer else null } });
         } else if (oneOf(subtype, &.{ "compact_boundary", "away_summary", "informational", "local_command", "scheduled_task_fire", "stop_hook_summary", "model_refusal_fallback" })) {
-            const kind: []const u8 = if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
             const content = str(rec, "content");
+            // Claude Code also writes a slash command's echo and output as local_command records.
+            const command_kind = if (std.mem.eql(u8, subtype, "local_command")) claudeTextKind(rec, content) else "";
+            const is_command = std.mem.eql(u8, command_kind, "command") or std.mem.eql(u8, command_kind, "command_output");
+            const kind: []const u8 = if (is_command) command_kind else if (std.mem.eql(u8, subtype, "compact_boundary")) "compaction" else if (std.mem.eql(u8, subtype, "model_refusal_fallback")) "model_fallback" else subtype;
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = kind, .text = if (content.len != 0) content else str(rec, "summary") } });
         } else {
             try events.append(arena, try unknownEvent(arena, meta, line));
@@ -1107,6 +1131,20 @@ test "Claude system records become system messages and turn end" {
     try std.testing.expectEqualStrings("retry", fallback[0].system_message.text);
 }
 
+test "Claude local_command records keep the command and command output kinds" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const output = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"parentUuid\":\"command\",\"content\":\"<local-command-stdout>Usage</local-command-stdout>\"}");
+    const echo = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>/skills</command-name>\"}");
+    const other = try parseLine(arena_state.allocator(), "{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"plain\"}");
+    const caveat = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"<local-command-caveat>Caveat: do not respond</local-command-caveat>\"}}");
+    try std.testing.expectEqualStrings("command_output", output[0].system_message.kind);
+    try std.testing.expectEqualStrings("command", output[0].system_message.meta.parent_uuid orelse "");
+    try std.testing.expectEqualStrings("command", echo[0].system_message.kind);
+    try std.testing.expectEqualStrings("local_command", other[0].system_message.kind);
+    try std.testing.expectEqualStrings("injected", caveat[0].system_message.kind);
+}
+
 test "Claude command wrappers and compact summary are system text" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1123,6 +1161,106 @@ test "Claude background task notification is system text, not a user prompt" {
     defer arena_state.deinit();
     const notification = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<task-notification>\\n<status>completed</status>\\n<summary>Background command done</summary>\\n</task-notification>\"}}");
     try std.testing.expectEqualStrings("task_notification", notification[0].system_message.kind);
+}
+
+test "Claude shell mode input is shell_input" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const input = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<bash-input>ls</bash-input>\"}}");
+    try std.testing.expectEqualStrings("shell_input", input[0].system_message.kind);
+}
+
+test "Claude shell mode stdout and stderr are shell_output" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const stdout = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<bash-stdout>out</bash-stdout><bash-stderr></bash-stderr>\"}}");
+    const stderr = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\" <bash-stderr>bad</bash-stderr>\"}}");
+    try std.testing.expectEqualStrings("shell_output", stdout[0].system_message.kind);
+    try std.testing.expectEqualStrings("shell_output", stderr[0].system_message.kind);
+}
+
+test "Claude meta skill body is skill_body, a typed one is a user chunk" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const body = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Base directory for this skill: /skills/flow\\n\\nbody\"}]}}");
+    const typed = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"Base directory for this skill: /skills/flow\"}}");
+    try std.testing.expectEqualStrings("skill_body", body[0].system_message.kind);
+    try std.testing.expectEqualStrings("Base directory for this skill: /skills/flow", typed[0].user_message_chunk.text);
+}
+
+test "Claude interrupt notice is interrupted" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const plain = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user]\"}]}}");
+    const tool = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"[Request interrupted by user for tool use]\"}]}}");
+    try std.testing.expectEqualStrings("interrupted", plain[0].system_message.kind);
+    try std.testing.expectEqualStrings("interrupted", tool[0].system_message.kind);
+}
+
+test "Claude meta text, a reminder, and fork rules are injected" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const meta = try parseLine(arena, "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"Stop hook feedback: fix it\"}}");
+    const reminder = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"  <system-reminder>note</system-reminder>\"}}");
+    const fork = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"<fork-boilerplate>rules</fork-boilerplate>\"}]}}");
+    const peer_reminder = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"peer\"},\"message\":{\"content\":\"<system-reminder>note</system-reminder>\"}}");
+    for ([_][]Event{ meta, reminder, fork, peer_reminder }) |events| {
+        try std.testing.expectEqualStrings("injected", events[0].system_message.kind);
+    }
+}
+
+test "Claude message from another agent is peer_message, also when Claude marks it meta" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const peer = try parseLine(arena, "{\"type\":\"user\",\"isMeta\":true,\"origin\":{\"kind\":\"peer\"},\"message\":{\"content\":\"Another Claude session sent a message:\\n<agent-message>hi</agent-message>\"}}");
+    const coordinator = try parseLine(arena, "{\"type\":\"user\",\"origin\":{\"kind\":\"coordinator\"},\"message\":{\"content\":\"done\"}}");
+    const teammate = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<teammate-message teammate_id=\\\"t1\\\">hi</teammate-message>\"}}");
+    const cross_session = try parseLine(arena, "{\"type\":\"user\",\"message\":{\"content\":\"<cross-session-message>hello</cross-session-message>\"}}");
+    for ([_][]Event{ peer, coordinator, teammate, cross_session }) |events| {
+        try std.testing.expectEqualStrings("peer_message", events[0].system_message.kind);
+    }
+}
+
+test "Claude typed bold prompt and human-origin text stay user chunks" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const bold = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":\"<b>bold</b>\"}}");
+    const human = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"origin\":{\"kind\":\"human\"},\"message\":{\"content\":\"plain\"}}");
+    try std.testing.expectEqualStrings("<b>bold</b>", bold[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("plain", human[0].user_message_chunk.text);
+}
+
+test "Claude typed block and reminder block in one record split into prompt and injected" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"fix the bug\"},{\"type\":\"text\",\"text\":\"<system-reminder>note</system-reminder>\"}]}}");
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("fix the bug", events[0].user_message_chunk.text);
+    try std.testing.expectEqualStrings("injected", events[1].system_message.kind);
+}
+
+test "Claude parent and source tool ids fill meta, null when absent" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const linked = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"isMeta\":true,\"parentUuid\":\"result-1\",\"sourceToolUseID\":\"toolu_1\",\"message\":{\"content\":\"Base directory for this skill: /skills/flow\"}}");
+    const unlinked = try parseLine(arena_state.allocator(), "{\"type\":\"user\",\"parentUuid\":7,\"message\":{\"content\":\"hello\"}}");
+    try std.testing.expectEqualStrings("result-1", linked[0].system_message.meta.parent_uuid.?);
+    try std.testing.expectEqualStrings("toolu_1", linked[0].system_message.meta.source_tool_use_id.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), unlinked[0].user_message_chunk.meta.parent_uuid);
+    try std.testing.expectEqual(@as(?[]const u8, null), unlinked[0].user_message_chunk.meta.source_tool_use_id);
+}
+
+test "event JSON writes parent_uuid when meta has one" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    try writeEventJson(&output.writer, .{ .system_message = .{
+        .meta = .{ .session_id = "s1", .uuid = "output-1", .timestamp = "t", .parent_uuid = "input-1" },
+        .kind = "shell_output",
+        .text = "<bash-stdout>out</bash-stdout>",
+    } });
+    try std.testing.expect(std.mem.indexOf(u8, output.written(), "\"parent_uuid\":\"input-1\"") != null);
 }
 
 test "Claude queued command and fallback block become system messages" {
@@ -1339,7 +1477,7 @@ test "event JSON output uses a type and nested meta" {
         .text = "hello",
     } });
     try std.testing.expectEqualStrings(
-        "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\"}}",
+        "{\"type\":\"agent_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"s1\",\"uuid\":\"u1\",\"timestamp\":\"t\",\"parent_uuid\":null,\"source_tool_use_id\":null}}",
         output.written(),
     );
 }
@@ -1500,7 +1638,7 @@ test "translate flushes each input line" {
     try translate(std.testing.allocator, .claude, "", &reader, &output.writer);
 
     try std.testing.expectEqualStrings(
-        "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\"}}\n",
+        "{\"type\":\"user_message_chunk\",\"text\":\"hello\",\"meta\":{\"session_id\":\"\",\"uuid\":\"\",\"timestamp\":\"\",\"parent_uuid\":null,\"source_tool_use_id\":null}}\n",
         output.sink.written(),
     );
 }

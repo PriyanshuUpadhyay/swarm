@@ -357,7 +357,7 @@ struct SessionDetailView: View {
             modelLabel: modelLabel,
             modelSwitchDisabledReason: modelSwitchDisabledReason,
             selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
-            usageLabel: model.usage.summary,
+            contextMeter: model.usage.contextMeter(),
             showUsage: onShowUsage,
             sendDisabledReason: chair?.alive == false
                 ? "This chat's pane has closed. Start a new chat or switch model."

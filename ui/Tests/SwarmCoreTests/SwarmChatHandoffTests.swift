@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TranscriptTool
 @testable import SwarmCore
 
 @Suite("Chat handoff")
@@ -21,10 +22,30 @@ struct SwarmChatHandoffTests {
         let old = TranscriptRow(kind: .assistant, text: "old answer", eventID: "old")
         let request = TranscriptRow(kind: .user, text: SwarmChatHandoff.request, eventID: "request")
         let answer = TranscriptRow(kind: .assistant, text: "files and next step", eventID: "answer")
-        var ended = TranscriptRow(kind: .result, text: "done", eventID: "end")
+        var ended = TranscriptRow(kind: .result, text: "completed", eventID: "end")
         ended.endsTurn = true
         #expect(SwarmChatHandoff.completedSummary(in: [old, request, answer], after: 1) == nil)
         #expect(SwarmChatHandoff.completedSummary(in: [old, request, answer, ended], after: 1) == "files and next step")
+    }
+
+    @Test("A summary the owner stopped is not used, even when a later turn ends")
+    func interruptedSummary() throws {
+        let request = TranscriptRow(kind: .user, text: SwarmChatHandoff.request, eventID: "request")
+        let partial = TranscriptRow(kind: .assistant, text: "Goal: fix the", eventID: "partial")
+        let interrupt = try #require(TranscriptRowBuilder.row(
+            from: .systemMessage(kind: "interrupted", text: "[Request interrupted by user]", meta: Meta(uuid: "stop")), index: 2
+        ))
+        var aborted = TranscriptRow(kind: .result, text: "aborted", eventID: "aborted")
+        aborted.endsTurn = true
+        let laterPrompt = TranscriptRow(kind: .user, text: "Carry on", eventID: "later-prompt")
+        let laterReply = TranscriptRow(kind: .assistant, text: "Done", eventID: "later-reply")
+        var laterEnd = TranscriptRow(kind: .result, text: "completed", eventID: "later-end")
+        laterEnd.endsTurn = true
+        #expect(SwarmChatHandoff.completedSummary(in: [request, partial, interrupt], after: 0) == nil)
+        #expect(SwarmChatHandoff.completedSummary(in: [request, partial, aborted], after: 0) == nil)
+        #expect(SwarmChatHandoff.completedSummary(
+            in: [request, partial, interrupt, laterPrompt, laterReply, laterEnd], after: 0
+        ) == nil)
     }
 
     @Test("A closed pane can still carry recent messages")

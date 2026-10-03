@@ -16,7 +16,7 @@ public enum ConversationBoundary {
     static func isClearMarker(_ event: TranscriptEvent) -> Bool {
         switch event {
         case .hookResult(_, _, let name, _, _, _): name == clearHook
-        case .systemMessage(let kind, let text, _): kind == "command" && text.contains(clearCommand)
+        case .systemMessage(let kind, let text, _): kind == TranscriptSystemKind.command && text.contains(clearCommand)
         default: false
         }
     }

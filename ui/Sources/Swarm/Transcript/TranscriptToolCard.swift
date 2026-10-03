@@ -4,51 +4,58 @@ import SwarmCore
 import TranscriptTool
 
 struct TranscriptToolCard: View {
-    let title: String
     let activity: TranscriptToolActivity
     var revealForSearch = false
     @State private var expanded = false
     @State private var inputExpanded = false
+    @State private var bodyExpanded = false
     @State private var revealingFile = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // One line when closed: glyph, tool, target, duration, result. Click or Space opens it.
+        let title = activity.headerTitle
+        let counts = activity.diffCounts
+        return VStack(alignment: .leading, spacing: 0) {
+            // One line when closed: status, tool, title, diff size, exit and time. Click or Space opens it.
             Button { expanded.toggle() } label: {
                 HStack(spacing: DesignTokens.Spacing.s) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: DesignTokens.Size.glyphSlot)
-                    Image(systemName: activity.command == nil ? "wrench.and.screwdriver" : "terminal")
+                    TranscriptStatusGlyph(state: activity.state)
+                        .help(TranscriptStatusGlyph.label(activity.state)
+                            + ". The status describes the tool result; read the output for verification results.")
+                    Text(verbatim: activity.name).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
+                    Text(verbatim: title)
                         .foregroundStyle(.secondary)
-                    Text(verbatim: activity.name).fontWeight(.medium).lineLimit(1).layoutPriority(1)
-                    if let target {
-                        Text(verbatim: target)
-                            .font(DesignTokens.mono)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer(minLength: DesignTokens.Spacing.s)
-                    if let duration = activity.duration {
-                        Text(TranscriptToolActivity.durationLabel(duration))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                    if let counts {
+                        HStack(spacing: DesignTokens.Spacing.xs) {
+                            Text(verbatim: "+\(counts.added)").foregroundStyle(DesignTokens.color(.done))
+                            Text(verbatim: "−\(counts.removed)").foregroundStyle(DesignTokens.color(.failed))
+                        }
+                        .font(DesignTokens.mono)
                     }
-                    Image(systemName: stateSymbol)
-                        .foregroundStyle(stateColor)
-                        .help(stateLabel + ". The status describes the tool result; read the output for verification results.")
+                    if !resultLabel.isEmpty {
+                        Text(verbatim: resultLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(activity.state == .failed ? DesignTokens.color(.failed) : .secondary)
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(activity.name) \(target ?? ""), \(stateLabel)")
+            .accessibilityLabel(accessibilityLabel(title: title, counts: counts))
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint(expanded ? "Hides the tool details" : "Shows the tool details")
             .accessibilityIdentifier("transcript-tool-card")
+            if let skillBody = activity.skillBody {
+                DisclosureGroup("Body", isExpanded: $bodyExpanded) {
+                    TranscriptBoundedTextView(text: skillBody)
+                }
+                .font(.caption)
+                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+            }
             if expanded {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                    Text(verbatim: title).font(.callout).foregroundStyle(.secondary)
                     if let command = activity.command {
                         TranscriptOutputView(text: command, title: "Command")
                     }
@@ -72,7 +79,7 @@ struct TranscriptToolCard: View {
                         }
                     }
                     if let output = activity.output {
-                        TranscriptOutputView(text: output, title: "Output", revealAll: revealForSearch)
+                        TranscriptOutputView(text: output, title: "Output", revealAll: revealForSearch, lineLimit: 5)
                     } else {
                         Text(activity.state == .waiting ? "Waiting for tool result." : "No tool result was recorded.")
                             .font(.callout).foregroundStyle(.secondary)
@@ -92,49 +99,62 @@ struct TranscriptToolCard: View {
         .padding(.horizontal, DesignTokens.Spacing.s)
         .padding(.vertical, DesignTokens.Spacing.xs)
         .background(expanded ? DesignTokens.userMessageFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
+        // The fill bleeds past the column so the glyph and the right label share the edges of the other rows.
+        .padding(.horizontal, -DesignTokens.Spacing.s)
         .buttonStyle(.borderless)
         .onAppear {
             if activity.state == .failed || revealForSearch { expanded = true }
-            if revealForSearch { inputExpanded = true }
+            if revealForSearch { inputExpanded = true; bodyExpanded = true }
         }
         .onChange(of: activity.state) { _, state in if state == .failed { expanded = true } }
         .onChange(of: revealForSearch) { _, reveal in
-            if reveal { expanded = true; inputExpanded = true }
+            if reveal { expanded = true; inputExpanded = true; bodyExpanded = true }
         }
     }
 
-    /// The file name, or the command's first line.
-    private var target: String? {
-        if let path = activity.path { return (path as NSString).lastPathComponent }
-        return activity.command.map { String($0.prefix(200).prefix(while: { !$0.isNewline })) }
-            .flatMap { $0.isEmpty ? nil : $0 }
+    /// "exit 1 · 8.6s", "exit 0", "0.4s", or "".
+    private var resultLabel: String {
+        resultParts.joined(separator: " · ")
     }
 
-    private var stateLabel: String {
-        switch activity.state {
+    private var resultParts: [String] {
+        [activity.exitCode.map { "exit \($0)" }, activity.duration.map(TranscriptToolActivity.durationLabel)]
+            .compactMap { $0 }
+    }
+
+    /// "Edit TranscriptView.swift, 12 added, 3 removed, exit 1, 8.6s, Failed": what the header shows.
+    private func accessibilityLabel(title: String, counts: TranscriptToolActivity.DiffCounts?) -> String {
+        let countParts = counts.map { ["\($0.added) added", "\($0.removed) removed"] } ?? []
+        return (["\(activity.name) \(title)"] + countParts + resultParts
+            + [TranscriptStatusGlyph.label(activity.state)]).joined(separator: ", ")
+    }
+}
+
+/// A tool's or a shell command's result in the row's glyph slot.
+struct TranscriptStatusGlyph: View {
+    let state: TranscriptToolActivity.State
+
+    var body: some View {
+        Group {
+            switch state {
+            case .waiting: Text(verbatim: "●").foregroundStyle(DesignTokens.color(.working))
+            case .finished: Text(verbatim: "✓").foregroundStyle(DesignTokens.color(.done))
+            case .failed: Text(verbatim: "×").foregroundStyle(DesignTokens.color(.failed))
+            case .interrupted: Image(systemName: "stop.circle").foregroundStyle(.orange)
+            case .unreported: Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: DesignTokens.Size.glyphSlot)
+        .accessibilityLabel(Self.label(state))
+    }
+
+    static func label(_ state: TranscriptToolActivity.State) -> String {
+        switch state {
         case .waiting: "Waiting for result"
         case .finished: "Finished"
         case .failed: "Failed"
         case .interrupted: "Interrupted"
         case .unreported: "No result"
-        }
-    }
-
-    private var stateSymbol: String {
-        switch activity.state {
-        case .waiting: "clock"
-        case .finished: "checkmark.circle"
-        case .failed: "exclamationmark.circle"
-        case .interrupted: "stop.circle"
-        case .unreported: "questionmark.circle"
-        }
-    }
-
-    private var stateColor: Color {
-        switch activity.state {
-        case .failed: .red
-        case .interrupted: .orange
-        default: .secondary
         }
     }
 }
@@ -143,6 +163,7 @@ struct TranscriptOutputView: View {
     let text: String
     let title: String
     var revealAll = false
+    var lineLimit = 120
     @State private var showAll = false
     @State private var preview: TranscriptTextPreview?
     @State private var copying = false
@@ -175,26 +196,33 @@ struct TranscriptOutputView: View {
                 }
             }
             .background(DesignTokens.codeBlockFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
-            if preview?.isTruncated == true {
-                HStack {
-                    Text(showAll || revealAll ? "Full output shown." : "Preview only. Some output is hidden.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !revealAll {
-                        Button(showAll ? "Show less" : "Show full output") { showAll.toggle() }
-                            .font(.caption).buttonStyle(.borderless)
-                    }
-                }
+            if let preview, preview.isTruncated, !revealAll {
+                TranscriptShowAllButton(showAll: $showAll, hiddenLineCount: preview.hiddenLineCount)
             }
         }
         .task(id: text) {
             preview = nil
             let source = text
+            let limit = lineLimit
             let prepared = await Task.detached(priority: .userInitiated) {
-                TranscriptTextPreview(source)
+                TranscriptTextPreview(source, lineLimit: limit)
             }.value
             guard !Task.isCancelled else { return }
             preview = prepared
         }
+    }
+}
+
+/// Opens or closes folded output: "… +N lines · Show all", "… Show all", or "Show less".
+struct TranscriptShowAllButton: View {
+    @Binding var showAll: Bool
+    let hiddenLineCount: Int
+
+    var body: some View {
+        let title: LocalizedStringKey = showAll ? "Show less"
+            : hiddenLineCount > 0 ? "… +^[\(hiddenLineCount) line](inflect: true) · Show all" : "… Show all"
+        Button(title) { showAll.toggle() }
+            .font(.caption).foregroundStyle(.secondary).buttonStyle(.borderless)
     }
 }
 

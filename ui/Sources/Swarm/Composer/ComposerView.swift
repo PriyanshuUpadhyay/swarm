@@ -17,7 +17,7 @@ struct ComposerView: View {
     var modelLabel: String = "Choose model"
     var modelSwitchDisabledReason: String? = nil
     var selectModel: (() -> Void)? = nil
-    var usageLabel: String? = nil
+    var contextMeter: ComposerContextMeter? = nil
     var showUsage: (() -> Void)? = nil
     var sendDisabledReason: String? = nil
     var placeholder = "Message the chair"
@@ -211,12 +211,25 @@ struct ComposerView: View {
                 .help(modelSwitchDisabledReason ?? "Choose a model for this chat")
                 .disabled(modelSwitchDisabledReason != nil)
             }
-            if let usageLabel, let showUsage {
+            if let showUsage {
                 Button(action: showUsage) {
-                    Text(usageLabel).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        if let remaining = contextMeter?.remainingPercent {
+                            // The capacity style draws at 58 pt on macOS and has no size option.
+                            Gauge(value: Double(100 - remaining), in: 0...100) {}
+                                .gaugeStyle(.accessoryCircularCapacity)
+                                .tint(.accentColor)
+                                .scaleEffect(DesignTokens.Size.glyphSlot / 58)
+                                .frame(width: DesignTokens.Size.glyphSlot, height: DesignTokens.Size.glyphSlot)
+                        }
+                        Text(contextMeter?.label ?? "Usage")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Usage details: \(usageLabel)")
+                .accessibilityLabel(contextMeter.map { "Usage details: \($0.accessibilityLabel)" } ?? "Usage details")
                 .help("Context, cache, and estimated cost for this agent session")
             }
             if showsStop {

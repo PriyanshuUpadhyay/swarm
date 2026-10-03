@@ -5,19 +5,30 @@ public struct Meta: Sendable, Hashable, Decodable {
     public var agentSessionID: String
     public var uuid: String
     public var timestamp: String
+    /// The record this one answers, such as the shell input that a shell output belongs to.
+    public var parentUUID: String?
+    /// The tool call that injected this record, such as the Skill call of a skill body.
+    public var sourceToolUseID: String?
 
     public var sessionID: String { agentSessionID }
 
-    public init(agentSessionID: String = "", uuid: String = "", timestamp: String = "") {
+    public init(
+        agentSessionID: String = "", uuid: String = "", timestamp: String = "",
+        parentUUID: String? = nil, sourceToolUseID: String? = nil
+    ) {
         self.agentSessionID = agentSessionID
         self.uuid = uuid
         self.timestamp = timestamp
+        self.parentUUID = parentUUID
+        self.sourceToolUseID = sourceToolUseID
     }
 
     enum CodingKeys: String, CodingKey {
         case agentSessionID = "session_id"
         case uuid
         case timestamp
+        case parentUUID = "parent_uuid"
+        case sourceToolUseID = "source_tool_use_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -25,6 +36,8 @@ public struct Meta: Sendable, Hashable, Decodable {
         self.agentSessionID = (try container.decodeIfPresent(String.self, forKey: .agentSessionID)) ?? ""
         self.uuid = (try container.decodeIfPresent(String.self, forKey: .uuid)) ?? ""
         self.timestamp = (try container.decodeIfPresent(String.self, forKey: .timestamp)) ?? ""
+        self.parentUUID = try container.decodeIfPresent(String.self, forKey: .parentUUID)
+        self.sourceToolUseID = try container.decodeIfPresent(String.self, forKey: .sourceToolUseID)
     }
 }
 

@@ -47,6 +47,13 @@ struct TranscriptView<Composer: View>: View {
     @State private var isSearching = false
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
+    /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
+    @State private var pinned: Set<String> = []
+    @State private var openFolds: Set<String> = []
+    /// A find match inside a fold; its row queues a scroll to itself once it appears.
+    @State private var scrollOnAppearID: String?
+    /// A fold child that just appeared for find; the next update scrolls to it.
+    @State private var appearedMatchID: String?
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -148,15 +155,14 @@ struct TranscriptView<Composer: View>: View {
                         }
                         rawSessionBlock.upsideDown()
                     } else {
-                        ForEach(visibleRows.reversed()) { transcriptRow in
-                            TranscriptRowView(
-                                row: transcriptRow, chair: chair,
-                                revealForSearch: currentMatchID == transcriptRow.eventID
-                            )
-                            .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
-                            .padding(DesignTokens.Spacing.xxs)
-                            .background(matchBackground(transcriptRow.eventID))
-                            .upsideDown()
+                        ForEach(foldedItems.reversed()) { item in
+                            switch item {
+                            case .row(let transcriptRow):
+                                rowView(transcriptRow).upsideDown()
+                            case .fold(let group):
+                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id)) { rowView($0) }
+                                    .upsideDown()
+                            }
                         }
                         let hidden = rows.filter(\.isHiddenByDefault).count
                         if hidden > 0 {
@@ -204,14 +210,76 @@ struct TranscriptView<Composer: View>: View {
         }
         .onScrollPhaseChange { _, phase in
             userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if phase == .interacting { scrollOnAppearID = nil }
             if phase == .idle { loadedHistoryThisGesture = false }
             if phase == .interacting, nearOldest { startLoadingOlder(automatic: true) }
         }
         .onChange(of: pendingScrollID) { _, id in
             guard let id else { return }
-            proxy.scrollTo(id, anchor: .center)
             pendingScrollID = nil
+            if let fold = foldID(containing: id) {
+                // The lazy list knows only the fold's id, and a child's id exists only while its fold
+                // item is built and open. So scroll to the fold first, which builds the item, and open
+                // it. Building an open fold item builds all its children at once, so the child's
+                // onAppear then queues the scroll to itself; a Task could run before that build and
+                // find no view. A child that is already built does not appear again, so the second
+                // scrollTo reaches it now, and the owner's next scroll drops the queued id.
+                proxy.scrollTo(fold, anchor: .center)
+                proxy.scrollTo(id, anchor: .center)
+                scrollOnAppearID = id
+                openFolds.insert(fold)
+            } else {
+                scrollOnAppearID = nil
+                proxy.scrollTo(id, anchor: .center)
+            }
         }
+        .onChange(of: appearedMatchID) { _, id in
+            guard let id else { return }
+            appearedMatchID = nil
+            proxy.scrollTo(id, anchor: .center)
+        }
+        .onChange(of: revision, initial: true) {
+            pinned.formUnion(ToolRunFold.openTurnToolIDs(in: rows))
+        }
+    }
+
+    private func rowView(_ transcriptRow: TranscriptRow) -> some View {
+        TranscriptRowView(
+            row: transcriptRow, chair: chair,
+            revealForSearch: currentMatchID == transcriptRow.eventID
+        )
+        .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
+        .padding(DesignTokens.Spacing.xxs)
+        .background(matchBackground(transcriptRow.eventID))
+        .onAppear {
+            guard scrollOnAppearID == transcriptRow.eventID else { return }
+            scrollOnAppearID = nil
+            appearedMatchID = transcriptRow.eventID
+        }
+    }
+
+    private var foldedItems: [ToolRunFold.Item] {
+        ToolRunFold.items(in: visibleRows, pinned: pinned)
+    }
+
+    private func foldExpanded(_ id: String) -> Binding<Bool> {
+        Binding {
+            openFolds.contains(id)
+        } set: { open in
+            if open {
+                openFolds.insert(id)
+            } else {
+                openFolds.remove(id)
+                // A queued find scroll would jump back to its match when the fold opens again.
+                scrollOnAppearID = nil
+            }
+        }
+    }
+
+    private func foldID(containing id: String) -> String? {
+        foldedItems.first {
+            if case .fold(let group) = $0 { group.contains { $0.eventID == id } } else { false }
+        }?.id
     }
 
     private func startLoadingOlder(automatic: Bool = false) {
@@ -304,12 +372,7 @@ struct TranscriptView<Composer: View>: View {
                 } else {
                     for row in rows where request.hidden || !row.isHiddenByDefault {
                         try Task.checkCancellation()
-                        let diff = row.tool?.diffs.map {
-                            ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n")
-                        }.joined(separator: "\n")
-                        let text = [row.text, row.detail, row.tool?.command, row.tool?.output, row.tool?.path, diff]
-                            .compactMap { $0 }.joined(separator: "\n")
-                        items.append(PaneSearchItem(id: row.eventID, text: text))
+                        items.append(PaneSearchItem(id: row.eventID, text: row.searchText))
                     }
                 }
             }
@@ -396,6 +459,7 @@ struct TranscriptView<Composer: View>: View {
     private func closeFind() {
         findPresented = false
         findFieldFocused = false
+        scrollOnAppearID = nil
         focus.wrappedValue = true
     }
 
@@ -423,29 +487,38 @@ private struct TranscriptRowView: View {
     var body: some View {
         Group {
             if let activity = row.tool {
-                TranscriptToolCard(title: row.text, activity: activity, revealForSearch: revealForSearch)
+                TranscriptToolCard(activity: activity, revealForSearch: revealForSearch)
             } else if row.kind == .divider {
                 HStack(spacing: DesignTokens.Spacing.m) {
-                    Divider()
+                    hairline
                     Text(verbatim: row.text).font(.caption).foregroundStyle(.secondary).fixedSize()
-                    Divider()
+                    hairline
                 }
                 .padding(.vertical, DesignTokens.Spacing.s)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
+            } else if let run = row.shell {
+                TranscriptShellRow(run: run, revealForSearch: revealForSearch)
+            } else if let command = row.command {
+                // The owner typed the command, so it sits in their bubble.
+                userBubble(TranscriptCommandChipView(chip: command, revealForSearch: revealForSearch))
             } else if row.kind == .user {
-                // A quiet tinted block, not a bubble.
-                rowBody
-                    .padding(DesignTokens.Spacing.m)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DesignTokens.userMessageFill, in: .rect(cornerRadius: DesignTokens.Radius.card))
+                userBubble(TranscriptMessageView(text: row.text))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("You")
+            } else if row.endsTurn {
+                turnEnd
             } else if row.kind == .assistant {
+                // No visible label, so VoiceOver gets the speaker from the group, as "You" above.
                 rowBody.padding(.vertical, DesignTokens.Spacing.xs)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(row.label(chair: chair))
             } else {
                 rowBody
             }
         }
-        .overlay(alignment: .topTrailing) {
+        // The user's bubble sits on the trailing edge, so its copy button goes in the free leading space.
+        .overlay(alignment: row.kind == .user ? .topLeading : .topTrailing) {
             // Shown on hover only, so the transcript stays calm; VoiceOver has it as an action.
             if isMessage, hovering || copying {
                 Button(copying ? "Copying…" : "Copy message", systemImage: "doc.on.doc", action: copy)
@@ -470,9 +543,12 @@ private struct TranscriptRowView: View {
 
     private var rowBody: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text(row.label(chair: chair))
-                .font(labelFont)
-                .foregroundStyle(.secondary)
+            // Agent text has no label: the user bubble already sets the two voices apart.
+            if row.kind != .assistant {
+                Text(row.label(chair: chair))
+                    .font(labelFont)
+                    .foregroundStyle(.secondary)
+            }
             switch row.kind {
             case .diff:
                 if let diff = row.diff { TranscriptDiffView(diff: diff, revealForSearch: revealForSearch) }
@@ -500,15 +576,33 @@ private struct TranscriptRowView: View {
                 }
             case .error:
                 Text(verbatim: row.text).foregroundStyle(.red)
-            case .user, .assistant:
+            case .assistant:
                 TranscriptMessageView(text: row.text)
-            case .result where row.endsTurn:
-                Label(row.text == "aborted" ? "Turn interrupted" : "Turn finished",
-                      systemImage: row.text == "aborted" ? "stop.circle" : "checkmark.circle")
-                    .font(.caption).foregroundStyle(.secondary)
             default:
                 Text(verbatim: row.text)
             }
+        }
+    }
+
+    /// A turn-ended row or the interrupt notice: one quiet line, "Turn finished · 41s".
+    private var turnEnd: some View {
+        let stopped = row.kind == .notice || row.text == "aborted"
+        let title = row.kind == .notice ? "Interrupted by you" : stopped ? "Turn interrupted" : "Turn finished"
+        return Label([title, row.detail].compactMap { $0 }.joined(separator: " · "),
+                     systemImage: stopped ? "stop.circle" : "checkmark.circle")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(.quaternary).frame(height: DesignTokens.Size.hairline)
+    }
+
+    private func userBubble(_ content: some View) -> some View {
+        UserBubbleLayout {
+            content
+                .padding(.horizontal, DesignTokens.Spacing.m)
+                .padding(.vertical, DesignTokens.Spacing.s)
+                .background(DesignTokens.userMessageFill, in: .rect(cornerRadius: DesignTokens.Radius.panel))
         }
     }
 
@@ -531,6 +625,27 @@ private struct TranscriptRowView: View {
         default:
             .caption
         }
+    }
+}
+
+/// Fits the user's bubble to its text, at most `userBubbleMaxShare` of the column, on the trailing edge.
+private struct UserBubbleLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let bubble = subviews.first else { return .zero }
+        let size = bubble.sizeThatFits(bubbleProposal(width: proposal.width, bubble))
+        return CGSize(width: proposal.width ?? size.width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let bubble = subviews.first else { return }
+        bubble.place(at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing,
+                     proposal: bubbleProposal(width: bounds.width, bubble))
+    }
+
+    private func bubbleProposal(width: CGFloat?, _ bubble: LayoutSubview) -> ProposedViewSize {
+        let ideal = bubble.sizeThatFits(.unspecified).width
+        let limit = width.map { $0 * DesignTokens.userBubbleMaxShare } ?? ideal
+        return ProposedViewSize(width: min(ideal, limit), height: nil)
     }
 }
 

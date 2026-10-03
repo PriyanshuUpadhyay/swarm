@@ -29,6 +29,22 @@ struct TranscriptEventTests {
         #expect(meta.uuid == "u1")
     }
 
+    @Test("Meta reads the parent record and the source tool call, and a null or missing one is nil")
+    func metaLinks() {
+        let linked = #"{"type":"system_message","kind":"shell_output","text":"<bash-stdout>ok</bash-stdout>","meta":{"session_id":"s1","uuid":"output-1","timestamp":"t","parent_uuid":"input-1","source_tool_use_id":"toolu_1"}}"#
+        let unlinked = #"{"type":"system_message","kind":"shell_input","text":"<bash-input>ls</bash-input>","meta":{"session_id":"s1","uuid":"input-1","timestamp":"t","parent_uuid":null}}"#
+        guard case .systemMessage(_, _, let linkedMeta) = TranscriptEvent.decode(line: linked),
+              case .systemMessage(_, _, let unlinkedMeta) = TranscriptEvent.decode(line: unlinked) else {
+            Issue.record("Expected .systemMessage events")
+            return
+        }
+        #expect(linkedMeta.parentUUID == "input-1")
+        #expect(linkedMeta.sourceToolUseID == "toolu_1")
+        #expect(unlinkedMeta.uuid == "input-1")
+        #expect(unlinkedMeta.parentUUID == nil)
+        #expect(unlinkedMeta.sourceToolUseID == nil)
+    }
+
     @Test("Decodes turn started event")
     func turnStartedEvent() {
         let fixture = #"{"type":"turn_started","meta":{"session_id":"s1","uuid":"u2","timestamp":"2026-09-22T00:00:01Z"}}"#

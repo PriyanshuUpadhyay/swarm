@@ -10,12 +10,17 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public var name: String
     public var input: JSONElement
     public var output: String?
-    public var diffs: [TranscriptDiff]
+    /// Setting the diffs also sets `diffCounts`, so a card's body never sums the lines.
+    public var diffs: [TranscriptDiff] { didSet { diffCounts = Self.counts(of: diffs) } }
+    /// Added and removed lines across the call's diffs; nil when it has none.
+    public private(set) var diffCounts: DiffCounts?
     public var state: State
     public var command: String?
     public var path: String?
     /// Seconds from the call to its last result; nil when either time is missing.
     public var duration: Double?
+    /// The body of the skill a Skill call loaded, linked by the body record's `sourceToolUseID`.
+    public var skillBody: String?
 
     public init(
         name: String, input: JSONElement, output: String? = nil,
@@ -26,10 +31,74 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.input = input
         self.output = output
         self.diffs = diffs
+        diffCounts = Self.counts(of: diffs)
         self.state = state
         self.command = command
         self.path = path
         self.duration = duration
+    }
+
+    /// The one-line title after the tool name; see `title(input:command:path:)`.
+    public var headerTitle: String {
+        Self.title(input: input, command: command, path: path)
+    }
+
+    /// The one-line title after the tool name: the call's description (or a Skill call's skill name),
+    /// else the command's first line, else a search's `"pattern" in folder`, else the file name with
+    /// the line range a Read asked for.
+    static func title(input: JSONElement, command: String?, path: String?) -> String {
+        let fields: [String: JSONElement] = if case .object(let value) = input { value } else { [:] }
+        for key in ["description", "Description", "toolSummary", "skill"] {
+            if case .string(let value) = fields[key] {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        if let command {
+            // Only the first non-blank line is read, so a long heredoc costs nothing.
+            let line = command.drop(while: \.isWhitespace).prefix(200).prefix(while: { !$0.isNewline })
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if case .string(let pattern) = fields["pattern"] {
+            guard case .string(let folder) = fields["path"] else { return "\"\(pattern)\"" }
+            return "\"\(pattern)\" in \((folder as NSString).lastPathComponent)"
+        }
+        guard let path else { return "" }
+        let name = (path as NSString).lastPathComponent
+        func number(_ key: String) -> Int64? {
+            if case .integer(let value) = fields[key] { value } else { nil }
+        }
+        let offset = number("offset")
+        let limit = number("limit")
+        guard offset != nil || limit != nil else { return name }
+        let first = offset ?? 1
+        // Tool input is model output, so the range math must not trap on overflow.
+        if let limit, limit > 0, case (let last, false) = first.addingReportingOverflow(limit - 1) {
+            return "\(name) · lines \(first)–\(last)"
+        }
+        return "\(name) · from line \(first)"
+    }
+
+    public struct DiffCounts: Sendable, Hashable {
+        public var added: Int
+        public var removed: Int
+    }
+
+    /// O(total diff lines); runs when the row builder sets the diffs, not in a view's body.
+    private static func counts(of diffs: [TranscriptDiff]) -> DiffCounts? {
+        guard !diffs.isEmpty else { return nil }
+        var counts = DiffCounts(added: 0, removed: 0)
+        for line in diffs.lazy.flatMap(\.hunks).flatMap(\.lines) {
+            if line.hasPrefix("+") { counts.added += 1 } else if line.hasPrefix("-") { counts.removed += 1 }
+        }
+        return counts
+    }
+
+    /// The exit status Claude Code writes on the first line of a failed command's result.
+    public var exitCode: Int? {
+        guard command != nil, let output, output.hasPrefix("Exit code ") else { return nil }
+        return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
     }
 
     /// Seconds between two event timestamps (ISO 8601, with or without fractional seconds).
