@@ -43,10 +43,21 @@ public struct ChatUsage: Sendable, Equatable {
         return Int((Double(max(0, capacity - used)) / Double(capacity) * 100).rounded())
     }
 
-    public var contextLabel: String {
-        if let remainingPercent { return "Context ~\(remainingPercent)% left" }
-        if let tokens = context?.contextTokens { return "Context \(tokens.formatted()) tokens" }
-        return "Usage unavailable"
+    /// Nil when no context count is reported; the usage sidebar still shows the details.
+    public func contextMeter(locale: Locale = .current) -> ComposerContextMeter? {
+        guard let tokens = context?.contextTokens.map(Int.init) else { return nil }
+        if let remainingPercent {
+            return ComposerContextMeter(
+                contextTokens: tokens, remainingPercent: remainingPercent,
+                label: "\(remainingPercent)% left",
+                accessibilityLabel: "Context \(100 - remainingPercent) percent used, \(remainingPercent) percent left"
+            )
+        }
+        return ComposerContextMeter(
+            contextTokens: tokens, remainingPercent: nil,
+            label: tokens.formatted(.number.notation(.compactName).locale(locale)),
+            accessibilityLabel: "Context \(tokens.formatted(.number.locale(locale))) tokens"
+        )
     }
 
     public var costLabel: String? {
@@ -58,8 +69,13 @@ public struct ChatUsage: Sendable, Equatable {
         }
         return "\(prefix) " + amount.formatted(.currency(code: "USD"))
     }
+}
 
-    public var summary: String {
-        [contextLabel, costLabel].compactMap { $0 }.joined(separator: " · ")
-    }
+/// What the composer bar shows for the context window, as plain values.
+public struct ComposerContextMeter: Equatable, Sendable {
+    public var contextTokens: Int?
+    /// Set only when the provider reports the window capacity.
+    public var remainingPercent: Int?
+    public var label: String
+    public var accessibilityLabel: String
 }
