@@ -162,13 +162,16 @@ struct ClaudeInvisibleText {
     }
 
     /// The emoji a ZWJ would join, past one or two VS16 or skin tone scalars.
+    /// A plain loop: Swift 6.3.3's optimizer (Xcode 26.6) crashes on a `while let` over `dropLast`.
     private func emojiBeforeModifiers() -> Unicode.Scalar? {
-        var offset = 0
-        while offset < 2, let scalar = recent.dropLast(offset).last,
-              scalar.value == 0xFE0F || (0x1F3FB...0x1F3FF).contains(scalar.value) {
-            offset += 1
+        var skipped = 0
+        for scalar in recent.reversed() {
+            guard skipped < 2, scalar.value == 0xFE0F || (0x1F3FB...0x1F3FF).contains(scalar.value) else {
+                return scalar
+            }
+            skipped += 1
         }
-        return recent.dropLast(offset).last
+        return nil
     }
 
     /// Whether a direction mark sits between two letters of one direction or two digits, so it
