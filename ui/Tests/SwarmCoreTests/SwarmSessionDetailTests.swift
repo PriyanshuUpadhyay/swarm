@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 import TranscriptTool
 @testable import SwarmCore
@@ -176,6 +177,18 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
+    @Test("A key press names the agent and the key, in the session")
+    func pressKeyArguments() async throws {
+        let calls = CloseCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            await calls.reply(arguments: arguments, environment: environment)
+        }
+        try await bus.pressKey("Up", agent: .init("seat"), session: session(adapter: "tmux-solo"))
+        #expect(await calls.arguments == [["key", "seat", "Up"]])
+        #expect(await calls.adapters == ["tmux-solo"])
+    }
+
     @Test("Hook status and plan decode the CLI's answers, and setup sends the plan's digest")
     func hooksStatusPlanAndSetup() async throws {
         let calls = CloseCalls()
@@ -246,6 +259,294 @@ struct SwarmSessionDetailTests {
             ["session", "archive", value.id.rawValue],
         ])
         #expect(await calls.adapters == ["herdr", "herdr", "herdr", "herdr", "tmux-solo"])
+    }
+
+    private func chat(_ lines: [String], in directory: URL, named name: String) throws -> URL {
+        let log = directory.appendingPathComponent(name)
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: log)
+        return log
+    }
+
+    private static let USER_ASKS = #"{"type":"user","uuid":"u1","message":{"role":"user","content":"Fix the bug"}}"#
+    private static let CLEAR_LOG = [
+        #"{"type":"attachment","uuid":"h1","attachment":{"type":"hook_success","hookName":"SessionStart:clear","hookEvent":"SessionStart","toolUseID":"t1","exitCode":0}}"#,
+        #"{"type":"user","uuid":"m1","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>Caveat: local command output follows.</local-command-caveat>"}}"#,
+        #"{"type":"user","uuid":"c1","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>"}}"#,
+        #"{"type":"user","uuid":"o1","message":{"role":"user","content":"<local-command-stdout></local-command-stdout>"}}"#,
+        #"{"type":"user","uuid":"u2","message":{"role":"user","content":"Start fresh"}}"#,
+    ]
+
+    @Test("A /clear log keeps the earlier rows behind one divider and drops the /clear command, caveat, and empty output rows")
+    func clearKeepsEarlierRows() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the clear")
+            return
+        }
+        let visible = rows.filter { !$0.isHiddenByDefault }
+        #expect(visible.map(\.kind) == [.user, .divider, .user])
+        try #require(visible.count == 3)
+        #expect(visible.map(\.text).first == "Fix the bug")
+        #expect(visible[1].text.hasPrefix("Context cleared · "))
+        #expect(visible[1].eventID == "clear-second.jsonl")
+        #expect(visible[2].text == "Start fresh")
+        #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
+        #expect(!rows.contains { $0.text.contains("<local-command-") })
+    }
+
+    @Test("A /clear log keeps the model of the log before it until a reply names one")
+    func clearKeepsModel() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let reply = #"{"type":"assistant","uuid":"a1","message":{"model":"claude-opus-4-6","content":[{"type":"text","text":"Fixed"}]}}"#
+
+        value.chairLog = try chat([Self.USER_ASKS, reply], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.currentModel == "claude-opus-4-6")
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "other.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.currentModel == nil)
+    }
+
+    @Test("A clear log read while it holds only bookkeeping lines keeps the old rows and still gets its divider")
+    func clearReadBeforeItsRecords() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        let cleared = try chat([
+            #"{"type":"mode","mode":"normal","sessionId":"s2"}"#,
+            #"{"type":"file-history-snapshot","messageId":"m1","snapshot":{"messageId":"m1","trackedFileBackups":{},"timestamp":"t1"},"isSnapshotUpdate":false}"#,
+        ], in: directory, named: "second.jsonl")
+        value.chairLog = cleared.path
+        guard case .rows(let early, _) = await reader.poll(session: value) else {
+            Issue.record("No rows while the new log holds only bookkeeping lines")
+            return
+        }
+        #expect(early.map(\.text) == ["Fix the bug"])
+
+        let handle = try FileHandle(forWritingTo: cleared)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((Self.CLEAR_LOG.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+        var rows: [TranscriptRow] = []
+        for _ in 0..<40 {
+            if case .rows(let latest, _) = await reader.poll(session: value) { rows = latest }
+            if rows.contains(where: { $0.text == "Start fresh" }) { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let visible = rows.filter { !$0.isHiddenByDefault }
+        #expect(visible.map(\.kind) == [.user, .divider, .user])
+        #expect(visible.map(\.text).first == "Fix the bug")
+    }
+
+    @Test("Two clears in a row give two dividers")
+    func twoClears() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "third.jsonl").path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the second clear")
+            return
+        }
+        #expect(rows.filter { $0.kind == .divider }.map(\.eventID)
+            == ["clear-second.jsonl", "clear-third.jsonl"])
+        #expect(rows.filter { $0.kind == .user }.map(\.text) == ["Fix the bug", "Start fresh", "Start fresh"])
+    }
+
+    @Test("A new log that is not a clear, such as a model switch, replaces the rows with no divider")
+    func switchGivesNoDivider() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([Self.USER_ASKS], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        value.chairLog = try chat(
+            [#"{"type":"user","uuid":"u3","message":{"role":"user","content":"Resumed"}}"#],
+            in: directory, named: "second.jsonl"
+        ).path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the switch")
+            return
+        }
+        #expect(rows.map(\.kind) == [.user])
+        #expect(rows.first?.text == "Resumed")
+    }
+
+    @Test("The chair's queued messages come from its log, and a clear's new log starts empty")
+    func queuedMessagesFollowLog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-queue-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        value.chairLog = try chat([
+            Self.USER_ASKS,
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#,
+        ], in: directory, named: "first.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.queuedMessages == ["keep the old name"])
+        value.chairLog = try chat(Self.CLEAR_LOG, in: directory, named: "second.jsonl").path
+        _ = await reader.poll(session: value)
+        #expect(await reader.queuedMessages.isEmpty)
+    }
+
+    @Test("Pull-back presses Up, reads the popAll records the log gets, and clears the CLI box")
+    func pullBackReadsLog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let enqueue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        let log = try chat([Self.USER_ASKS, enqueue], in: directory, named: "chat.jsonl")
+        value.chairLog = log.path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        let pulled = try await reader.pullBack { key in
+            keys.withLock { $0.append(key) }
+            guard key == "Up" else { return }
+            let handle = try FileHandle(forWritingTo: log)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((enqueue.replacingOccurrences(of: "enqueue", with: "popAll") + "\n").utf8))
+            try handle.close()
+        }
+
+        #expect(pulled == "keep the old name")
+        #expect(keys.withLock { $0 } == ["Up", "C-u", "C-u", "C-u"])
+    }
+
+    @Test("Pull-back keeps a message sent after the last poll, from its popAll")
+    func pullBackKeepsUnpolledMessage() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let keepName = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        let addTest = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t2","sessionId":"s1","content":"add a test"}"#
+        let log = try chat([Self.USER_ASKS, keepName], in: directory, named: "chat.jsonl")
+        value.chairLog = log.path
+        _ = await reader.poll(session: value)
+        try append([addTest], to: log)
+
+        let pulled = try await reader.pullBack { key in
+            guard key == "Up" else { return }
+            try append([keepName, addTest].map {
+                $0.replacingOccurrences(of: "enqueue", with: "popAll").replacingOccurrences(of: "t1", with: "t2")
+            }, to: log)
+        }
+
+        #expect(pulled == "keep the old name\nadd a test")
+    }
+
+    @Test("Pull-back presses no key while the queue holds a CLI-made entry the agent still needs")
+    func pullBackLeavesCLIEntry() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let notification = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"<task-notification>done</task-notification>"}"#
+        let owner = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t2","sessionId":"s1","content":"keep the old name"}"#
+        value.chairLog = try chat([Self.USER_ASKS, notification, owner], in: directory, named: "chat.jsonl").path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        await #expect(throws: SwarmProfileError.failed(
+            "The agent has its own message in the queue. Edit after it is delivered."
+        )) {
+            _ = try await reader.pullBack { key in keys.withLock { $0.append(key) } }
+        }
+        #expect(keys.withLock { $0 }.isEmpty)
+    }
+
+    @Test("Pull-back with no queue record by the deadline presses no C-u and says to check the input box")
+    func pullBackUnconfirmed() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-pull-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+        let enqueue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"keep the old name"}"#
+        value.chairLog = try chat([Self.USER_ASKS, enqueue], in: directory, named: "chat.jsonl").path
+        _ = await reader.poll(session: value)
+        let keys = Mutex<[String]>([])
+
+        await #expect(throws: SwarmProfileError.failed("Could not confirm the pull-back. Check the agent's input box.")) {
+            _ = try await reader.pullBack { key in keys.withLock { $0.append(key) } }
+        }
+        #expect(keys.withLock { $0 } == ["Up"])
+    }
+
+    private func append(_ lines: [String], to log: URL) throws {
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((lines.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+    }
+
+    @Test("A gap in the log on the same path never freezes the rows")
+    func gapKeepsRows() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-clear-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = session(adapter: "tmux-solo")
+        let reader = SwarmChairTranscript(binary: try #require(TranscriptToolProcess.bundled))
+
+        let path = try chat(Self.CLEAR_LOG, in: directory, named: "only.jsonl")
+        value.chairLog = path.path
+        _ = await reader.poll(session: value)
+        value.chairLog = nil
+        _ = await reader.poll(session: value)
+        value.chairLog = path.path
+        guard case .rows(let rows, _) = await reader.poll(session: value) else {
+            Issue.record("No rows after the gap")
+            return
+        }
+        #expect(!rows.contains { $0.kind == .divider })
     }
 
     private func session(adapter: String) -> SwarmSession {

@@ -424,6 +424,15 @@ private struct TranscriptRowView: View {
         Group {
             if let activity = row.tool {
                 TranscriptToolCard(title: row.text, activity: activity, revealForSearch: revealForSearch)
+            } else if row.kind == .divider {
+                HStack(spacing: DesignTokens.Spacing.m) {
+                    Divider()
+                    Text(verbatim: row.text).font(.caption).foregroundStyle(.secondary).fixedSize()
+                    Divider()
+                }
+                .padding(.vertical, DesignTokens.Spacing.s)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Context cleared at \(row.detail ?? "")")
             } else if row.kind == .user {
                 // A quiet tinted block, not a bubble.
                 rowBody

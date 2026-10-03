@@ -16,6 +16,8 @@ final class SessionDetailModel {
     var snapshot: ChairTranscriptSnapshot
     private(set) var transcriptRevision = 0
     var draft = ""
+    private(set) var queued: [ComposerQueuedRow] = []
+    private var sentMessages = ComposerSentMessages()
     private var sendState = ComposerSendState()
     private var loadedSessionCount = 1
     private var snapshots: [SwarmSessionID: ChairTranscriptSnapshot] = [:]
@@ -71,8 +73,12 @@ final class SessionDetailModel {
             snapshots[session.id] = result
             currentModel = await transcript.currentModel
             usage = await transcript.usage
+            let pending = await transcript.queuedMessages
             await updateHistoryAvailability(row: row)
             compose(row: row)
+            sentMessages.confirm(by: rows)
+            let nextQueued = ComposerQueuedRow.queued(pending) + sentMessages.rows
+            if queued != nextQueued { queued = nextQueued }
             cycleTiming.end(count: rows.count)
             if !opened {
                 openTiming.end(count: rows.count)
@@ -170,11 +176,17 @@ final class SessionDetailModel {
         drafts.save(value, for: sessionID)
     }
 
-    func send(_ requestedText: String, session: SwarmSession) async throws {
+    func send(
+        _ requestedText: String, session: SwarmSession, provider: String?, isRunning: Bool
+    ) async throws {
         let sessionID = session.id.rawValue
-        guard let text = sendState.begin(sessionID: sessionID, draft: requestedText) else { return }
+        guard let outgoing = sendState.begin(sessionID: sessionID, draft: requestedText) else { return }
+        let text = Composer.submission(outgoing, provider: provider)
+        let before = rows
         do {
             try await bus.type(text, to: SwarmPanePolicy.chair, in: session)
+            sentMessages.record(text, provider: provider, isRunning: isRunning, transcript: before)
+            queued = queued.filter { $0.state == .queued } + sentMessages.rows
             let current = activeSessionID == sessionID ? draft : drafts.draft(for: sessionID)
             let next = sendState.finish(
                 sessionID: sessionID, currentDraft: current, succeeded: true
@@ -188,8 +200,24 @@ final class SessionDetailModel {
         }
     }
 
+    func update(isRunning: Bool) {
+        sentMessages.update(isRunning: isRunning)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
+    }
+
     func interrupt(session: SwarmSession) async throws {
         try await bus.interrupt(SwarmPanePolicy.chair, in: session)
+    }
+
+    /// Claude's queued messages back out of the chair's CLI; nil when the CLI took them first.
+    func pullBack(session: SwarmSession) async throws -> String? {
+        guard let transcript = transcripts[session.id] else { return nil }
+        let bus = bus
+        let text = try await transcript.pullBack { key in
+            try await bus.pressKey(key, agent: SwarmPanePolicy.chair, session: session)
+        }
+        queued.removeAll { $0.state == .queued }
+        return text
     }
 
     private func activate(sessionID: String) {
@@ -198,6 +226,8 @@ final class SessionDetailModel {
         activeSessionID = sessionID
         currentModel = nil
         usage = ChatUsage()
+        queued = []
+        sentMessages = ComposerSentMessages()
         draft = drafts.draft(for: sessionID)
     }
 }
@@ -257,6 +287,7 @@ struct SessionDetailView: View {
         .onAppear {
             SwarmPerformance.event("ChatDetailAppeared")
         }
+        .onChange(of: isRunning) { _, running in model.update(isRunning: running) }
         .onChange(of: model.usage, initial: true) { _, usage in
             if isCurrentSession() { onUsageChanged(usage) }
         }
@@ -281,9 +312,11 @@ struct SessionDetailView: View {
         }
     }
 
-    private var chairProvider: String? {
-        agents.first { $0.id == SwarmPanePolicy.chair }?.provider
+    private var chair: SwarmAgent? {
+        agents.first { $0.id == SwarmPanePolicy.chair }
     }
+
+    private var chairProvider: String? { chair?.provider }
 
     private var modelLabel: String {
         if let current = model.currentModel { return current }
@@ -300,34 +333,46 @@ struct SessionDetailView: View {
         return nil
     }
 
+    private var isRunning: Bool {
+        row.isRunning == true && ChairTurn.isActive(model.rows)
+    }
+
     private var transcriptColumn: some View {
         // Built here, so the transcript holds the composer value and not a closure over this
         // view; the menu keeps transcript find closures alive, and this view holds the model.
+        let provider = row.provider ?? chairProvider
+        let isRunning = self.isRunning
         let composer = ComposerView(
             sessionID: row.id.rawValue, isActive: isActive,
             draft: Binding(
                 get: { [weak model] in model?.draft ?? "" },
                 set: { [weak model, id = row.id.rawValue] in model?.setDraft($0, sessionID: id) }
             ),
-            isRunning: row.isRunning == true && ChairTurn.isActive(model.rows),
+            isRunning: isRunning,
             isSending: model.isSending(sessionID: row.id.rawValue),
+            queued: model.queued,
+            pullBack: SwarmSessionInteraction.canPullBack(provider: provider, adapter: row.session.adapter)
+                ? { [weak model, session = row.session] in try await model?.pullBack(session: session) }
+                : nil,
             modelLabel: modelLabel,
             modelSwitchDisabledReason: modelSwitchDisabledReason,
             selectModel: { [weak model, onSwitchModel] in onSwitchModel(model?.currentModel) },
             usageLabel: model.usage.summary,
             showUsage: onShowUsage,
-            sendDisabledReason: agents.first(where: { $0.id == SwarmPanePolicy.chair })?.alive == false
+            sendDisabledReason: chair?.alive == false
                 ? "This chat's pane has closed. Start a new chat or switch model."
-                : nil,
+                : SwarmSessionInteraction.questionReason(status: chair?.status, target: .chair),
             commandSource: commandSource ?? ComposerCommandSource(
-                provider: row.provider ?? chairProvider,
+                provider: provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
                 projectDirectory: row.session.cwd
             ),
             mentionSource: ComposerMentionSource(root: row.session.cwd),
             scratchDirectory: AgentScratchDirectory.current(),
             focus: $composerFocused,
-            send: { [weak model, session = row.session] in try await model?.send($0, session: session) },
+            send: { [weak model, session = row.session] in
+                try await model?.send($0, session: session, provider: provider, isRunning: isRunning)
+            },
             interrupt: { [weak model, session = row.session] in try await model?.interrupt(session: session) },
             onFocused: { [panes] in panes.clearFocus() },
             isCurrentSession: isCurrentSession

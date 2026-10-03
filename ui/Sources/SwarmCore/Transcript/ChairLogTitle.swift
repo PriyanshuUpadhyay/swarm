@@ -27,7 +27,9 @@ public enum ChairLogTitle {
             } else {
                 text = nil
             }
-            guard var text else { continue }
+            // `/clear` opens its log with a meta caveat and the `/clear` record, neither a prompt.
+            guard var text, object["isMeta"] as? Bool != true,
+                  !text.contains(ConversationBoundary.clearCommand) else { continue }
             text = text.replacingOccurrences(
                 of: #"(?s)<command-name>.*?</command-name>"#,
                 with: "", options: .regularExpression

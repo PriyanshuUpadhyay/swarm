@@ -61,6 +61,22 @@ struct SwarmSpikeTests {
         #expect(ChairLogTitle.firstUserPrompt(path: agents.path) == nil)
     }
 
+    @Test("A log that /clear opened takes its title from the first prompt after /clear")
+    func chairLogTitleSkipsClearPreamble() throws {
+        let log = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-chair-cleared-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let caveat = #"{"type":"user","isMeta":true,"message":{"content":"<local-command-caveat>The command below was run directly in Claude Code.</local-command-caveat>"}}"#
+        let clear = #"{"type":"user","message":{"content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"}}"#
+        let output = #"{"type":"user","message":{"content":"<local-command-stdout></local-command-stdout>"}}"#
+        try Data([caveat, clear, output].joined(separator: "\n").utf8).write(to: log)
+        #expect(ChairLogTitle.firstUserPrompt(path: log.path) == nil)
+
+        let prompt = #"{"type":"user","message":{"content":"fix the build"}}"#
+        try Data([caveat, clear, output, prompt].joined(separator: "\n").utf8).write(to: log)
+        #expect(ChairLogTitle.firstUserPrompt(path: log.path) == "fix the build")
+    }
+
     @Test("A chat accepts a provider model without a routed role")
     func directModel() {
         let agy = SwarmChatLaunchPlan(directory: "/work", provider: "agy", model: "gemini-3.8-flash-low", account: .auto)

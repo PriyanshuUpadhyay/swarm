@@ -9,6 +9,11 @@ struct ComposerView: View {
     var draft: Binding<String>
     let isRunning: Bool
     let isSending: Bool
+    /// Messages the agent has not taken yet, drawn above the text field.
+    var queued: [ComposerQueuedRow] = []
+    /// Moves the queued messages back out of the CLI; returns their text, or nil if the CLI took
+    /// them first. Nil for a provider with no pull-back.
+    var pullBack: (() async throws -> String?)? = nil
     var modelLabel: String = "Choose model"
     var modelSwitchDisabledReason: String? = nil
     var selectModel: (() -> Void)? = nil
@@ -33,7 +38,9 @@ struct ComposerView: View {
     @State private var slashMatches: [ComposerCommandMatch] = []
     @State private var fileMatches: [ComposerFileMatch] = []
     @State private var selectedIndex = 0
-    @State private var dismissedToken: ComposerToken?
+    @State private var selection: TextSelection?
+    /// Esc closes the token that starts here until the text changes.
+    @State private var dismissedTokenStart: Int?
     @State private var attachments: [ComposerAttachment] = []
     @State private var actionError: String?
     @State private var sendError: String?
@@ -43,18 +50,25 @@ struct ComposerView: View {
     @State private var pendingAttachments = 0
     @State private var isSubmitting = false
     @State private var isStopping = false
+    @State private var isPullingBack = false
+    @State private var pullBackError: String?
+    @State private var showsAlreadySent = false
+    @State private var alreadySentTimer: Task<Void, Never>?
     @State private var matchGeneration = 0
     @State private var isMatchingFiles = false
     @State private var fileMatchTask: Task<[ComposerFileMatch], Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             if menuVisible { completionMenu }
             VStack(alignment: .leading, spacing: 0) {
+                if !queued.isEmpty { queuedRows }
                 if !attachments.isEmpty { attachmentRow }
                 editor
                 footer
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: queued)
             .chromeSurface(in: RoundedRectangle(cornerRadius: DesignTokens.Radius.panel, style: .continuous))
             .overlay {
                 if isDropTarget {
@@ -70,6 +84,12 @@ struct ComposerView: View {
             }
             if let stopError {
                 Text(verbatim: stopError).font(.caption).foregroundStyle(.red)
+            }
+            if let pullBackError {
+                Text(verbatim: pullBackError).font(.caption).foregroundStyle(.red)
+            }
+            if showsAlreadySent {
+                Text("Already sent").font(.caption).foregroundStyle(.secondary)
             }
             if pendingAttachments > 0 {
                 Text("Adding attachment…").font(.caption).foregroundStyle(.secondary)
@@ -109,7 +129,11 @@ struct ComposerView: View {
         }
         .onChange(of: draft.wrappedValue) {
             attachments = Composer.retainedAttachments(attachments, in: draft.wrappedValue)
-            dismissedToken = nil
+            dismissedTokenStart = nil
+            selectedIndex = 0
+            updateMatches()
+        }
+        .onChange(of: selection) {
             selectedIndex = 0
             updateMatches()
         }
@@ -134,6 +158,8 @@ struct ComposerView: View {
             pendingAttachments = 0
             matchGeneration += 1
             fileMatchTask?.cancel()
+            alreadySentTimer?.cancel()
+            showsAlreadySent = false
         }
     }
 
@@ -143,7 +169,7 @@ struct ComposerView: View {
     }
 
     private var editor: some View {
-        TextField(placeholder, text: draft, axis: .vertical)
+        TextField(placeholder, text: draft, selection: $selection, axis: .vertical)
             .onPasteCommand(of: [.png, .jpeg, .tiff], perform: receivePaste)
             .onKeyPress("v", phases: .down) { press in
                 guard press.modifiers.contains(.command), pasteImage() else { return .ignored }
@@ -161,8 +187,6 @@ struct ComposerView: View {
                 focus.wrappedValue = true
                 onFocused()
             })
-            .onKeyPress(.leftArrow) { dismissMenuForCaretMove() }
-            .onKeyPress(.rightArrow) { dismissMenuForCaretMove() }
             .onKeyPress(.upArrow) { handle(.up) }
             .onKeyPress(.downArrow) { handle(.down) }
             .onKeyPress(.tab) { handle(.tab) }
@@ -214,7 +238,7 @@ struct ComposerView: View {
                 .disabled(isStopping)
             }
             if !showsStop || Composer.outgoing(draft.wrappedValue) != nil {
-                Button(action: submit) {
+                Button { submit(draft.wrappedValue) } label: {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.background)
@@ -222,13 +246,44 @@ struct ComposerView: View {
                         .background(.primary, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
                 }
                 .buttonStyle(.plain)
-                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending
-                    || isSubmitting || pendingAttachments > 0 || sendDisabledReason != nil)
+                .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending || isSubmitting
+                    || isPullingBack || pendingAttachments > 0 || sendDisabledReason != nil)
                 .help("Send (Return)")
             }
         }
         .padding(.horizontal, DesignTokens.Spacing.m)
         .padding(.bottom, DesignTokens.Spacing.s)
+    }
+
+    private var queuedRows: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ForEach(queued) { row in
+                HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+                    Text(verbatim: row.text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text(row.caption(provider: commandSource.provider))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(row.accessibilityLabel)
+                .transition(.opacity)
+            }
+            if canPullBack, draft.wrappedValue.isEmpty {
+                Text("↑ to edit")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Press Up to edit queued messages")
+            }
+            Divider().padding(.top, DesignTokens.Spacing.xs)
+        }
+        .font(DesignTokens.body)
+        .padding(.horizontal, DesignTokens.Spacing.m)
+        .padding(.top, DesignTokens.Spacing.m)
+        .transition(.opacity)
     }
 
     private var attachmentRow: some View {
@@ -294,14 +349,18 @@ struct ComposerView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
             Spacer(minLength: 0)
+            Text(verbatim: completionSource(index))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
-    // TextField exposes no selection, so completion works only at the end of the draft.
     private func updateMatches() {
         guard isActive else { return }
         let text = draft.wrappedValue
-        resolvedMenu = ComposerMenu.resolve(draft: text, caret: (text as NSString).length)
+        resolvedMenu = ComposerMenu.resolve(
+            draft: text, caret: caret(in: text), provider: commandSource.provider
+        )
         matchGeneration += 1
         fileMatchTask?.cancel()
         fileMatchTask = nil
@@ -310,8 +369,10 @@ struct ComposerView: View {
             slashMatches = []
             fileMatches = []
             isMatchingFiles = false
-        case .slash(let token):
-            slashMatches = ComposerCommandCatalog.matches(commands, query: token.query)
+        case .slash(let token, _), .skill(let token):
+            slashMatches = ComposerCommandCatalog.matches(
+                resolvedMenu.offered(commands), query: token.query
+            )
             fileMatches = []
             isMatchingFiles = false
         case .mention(let token):
@@ -336,21 +397,26 @@ struct ComposerView: View {
             }
         }
     }
+    /// The cursor as a UTF-16 offset. A selection left from an older draft is clamped to it.
+    private func caret(in text: String) -> Int {
+        guard case .selection(let range) = selection?.indices else { return text.utf16.count }
+        return min(range.upperBound, text.endIndex).utf16Offset(in: text)
+    }
     private var menuVisible: Bool {
-        guard let token = resolvedMenu.token else { return false }
-        return token != dismissedToken
+        guard let token = resolvedMenu.token, token.start != dismissedTokenStart else { return false }
+        return completionCount > 0 || resolvedMenu.showsWhenEmpty
     }
     private var completionCount: Int {
         switch resolvedMenu {
         case .none: 0
-        case .slash: slashMatches.count
+        case .slash, .skill: slashMatches.count
         case .mention: fileMatches.count
         }
     }
     private var emptyMenuText: String {
         switch resolvedMenu {
         case .none: ""
-        case .slash: "No command matches"
+        case .slash, .skill: "No command matches"
         case .mention: isMatchingFiles ? "Finding files…" : "No file matches"
         }
     }
@@ -358,7 +424,7 @@ struct ComposerView: View {
     private func completionName(_ index: Int) -> String {
         switch resolvedMenu {
         case .none: ""
-        case .slash: "/" + slashMatches[index].command.name
+        case .slash, .skill: resolvedMenu.insertion(for: slashMatches[index].command)
         case .mention: "@" + fileMatches[index].path
         }
     }
@@ -366,13 +432,22 @@ struct ComposerView: View {
     private func completionDetail(_ index: Int) -> String {
         switch resolvedMenu {
         case .none, .mention: ""
-        case .slash: slashMatches[index].command.detail
+        case .slash, .skill: slashMatches[index].command.detail
+        }
+    }
+
+    private func completionSource(_ index: Int) -> String {
+        switch resolvedMenu {
+        case .none, .mention: ""
+        case .slash, .skill: slashMatches[index].command.kind.sourceLabel
         }
     }
 
     private func handle(_ key: ComposerInputKey) -> KeyPress.Result {
         let action = ComposerKeyRouter.route(
-            key, menuOpen: menuVisible, hasRows: completionCount > 0
+            key, menu: resolvedMenu, menuOpen: menuVisible, hasRows: completionCount > 0,
+            draftIsEmpty: draft.wrappedValue.isEmpty,
+            canPullBack: canPullBack
         )
         switch action {
         case .move(let delta):
@@ -383,6 +458,11 @@ struct ComposerView: View {
         case .pick:
             guard completionCount > 0 else { return .ignored }
             pick(min(selectedIndex, completionCount - 1))
+        case .pickAndSend:
+            guard completionCount > 0 else { return .ignored }
+            submit(pick(min(selectedIndex, completionCount - 1)))
+        case .pullBack:
+            pullBackQueued()
         case .dismissMenu:
             dismissMenu()
         case .clear:
@@ -390,50 +470,46 @@ struct ComposerView: View {
             pendingAttachments = 0
             draft.wrappedValue = ""
         case .send:
-            submit()
+            submit(draft.wrappedValue)
         case .insertNewline:
             draft.wrappedValue.append("\n")
         }
         return .handled
     }
 
-    private func pick(_ index: Int) {
-        guard let token = resolvedMenu.token else { return }
-        switch resolvedMenu {
-        case .none:
-            return
-        case .slash:
-            draft.wrappedValue = ComposerMenu.inserting(
-                "/" + slashMatches[index].command.name,
-                into: draft.wrappedValue,
-                token: token
-            )
-        case .mention:
-            draft.wrappedValue = ComposerMenu.inserting(
-                "@" + fileMatches[index].path,
-                into: draft.wrappedValue,
-                token: token
-            )
-        }
+    /// Puts the row in place of the token, moves the cursor after it, and returns the new draft.
+    @discardableResult
+    private func pick(_ index: Int) -> String {
+        let old = draft.wrappedValue
+        guard let token = resolvedMenu.token else { return old }
+        let new = ComposerMenu.inserting(completionName(index), into: old, token: token)
+        let tail = old.utf16.count - min(token.end, old.utf16.count)
+        draft.wrappedValue = new
+        selection = TextSelection(
+            insertionPoint: String.Index(utf16Offset: new.utf16.count - tail, in: new)
+        )
         selectedIndex = 0
         focus.wrappedValue = true
-    }
-
-    private func dismissMenuForCaretMove() -> KeyPress.Result {
-        dismissMenu()
-        return .ignored
+        return new
     }
 
     private func dismissMenu() {
-        if menuVisible { dismissedToken = resolvedMenu.token }
+        if menuVisible { dismissedTokenStart = resolvedMenu.token?.start }
     }
 
     private var showsStop: Bool { isRunning }
 
-    private func submit() {
-        let snapshot = draft.wrappedValue
-        guard !isSending, !isSubmitting, pendingAttachments == 0, sendDisabledReason == nil,
-              Composer.outgoing(snapshot) != nil else {
+    /// Up presses a key in the CLI, so it waits for any reason that blocks a send, such as an
+    /// open question where Up moves the choice.
+    private var canPullBack: Bool {
+        pullBack != nil && sendDisabledReason == nil && queued.contains { $0.state == .queued }
+    }
+
+    /// Takes the draft as a value, so a pick and its send in one key press use the same text.
+    private func submit(_ snapshot: String) {
+        // A send typed into the CLI box while C-u presses run would be cut or garbled.
+        guard !isSending, !isSubmitting, !isPullingBack, pendingAttachments == 0,
+              sendDisabledReason == nil, Composer.outgoing(snapshot) != nil else {
             return
         }
         attachmentGeneration += 1
@@ -448,6 +524,39 @@ struct ComposerView: View {
                 if isCurrentSession() { focus.wrappedValue = true }
             } catch {
                 sendError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            }
+        }
+    }
+
+    private func pullBackQueued() {
+        // Up and C-u pressed while a send types into the CLI box would cut or garble it.
+        guard let pullBack, sendDisabledReason == nil, !isPullingBack, !isSending, !isSubmitting else { return }
+        isPullingBack = true
+        pullBackError = nil
+        alreadySentTimer?.cancel()
+        showsAlreadySent = false
+        Task {
+            defer { isPullingBack = false }
+            do {
+                guard let text = try await pullBack() else {
+                    showsAlreadySent = true
+                    AccessibilityNotification.Announcement("Already sent").post()
+                    // Only the caption waits, so Send works again at once.
+                    alreadySentTimer = Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        // A cancelled timer belongs to an older pull-back and must not hide a newer caption.
+                        if !Task.isCancelled { showsAlreadySent = false }
+                    }
+                    return
+                }
+                // Keep anything typed while the CLI let go of the text.
+                let typed = draft.wrappedValue
+                let next = typed.isEmpty ? text : text + "\n" + typed
+                draft.wrappedValue = next
+                selection = TextSelection(insertionPoint: next.endIndex)
+                if isCurrentSession() { focus.wrappedValue = true }
+            } catch {
+                pullBackError = (error as? SwarmProfileError)?.message ?? String(describing: error)
             }
         }
     }

@@ -52,12 +52,42 @@ struct TranscriptRowBuilderTests {
             #"{"type":"worktree-state","worktreeSession":{"originalCwd":"/work/main","worktreePath":"/work/wt","worktreeName":"wt","worktreeBranch":"wt","sessionId":"s1","enteredExisting":true},"sessionId":"s1"}"#,
             #"{"type":"relocated","sessionId":"s1","relocatedCwd":"/work/wt"}"#,
             #"{"type":"agent-name","agentName":"council-claude","sessionId":"s1"}"#,
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"t1","sessionId":"s1","content":"add a test"}"#,
+            #"{"type":"queue-operation","operation":"dequeue","timestamp":"t2","sessionId":"s1"}"#,
         ].joined(separator: "\n").appending("\n").write(to: log, atomically: true, encoding: .utf8)
         let process = TranscriptToolProcess(binary: URL(fileURLWithPath: binary), format: "claude", log: log, follow: false)
         var records: [TranscriptRecord] = []
         for try await record in process.stream { records.append(record) }
-        #expect(records.count == 4)
+        #expect(records.count == 6)
+        #expect(records.suffix(2).allSatisfy {
+            if case .queueOperation = $0.event { true } else { false }
+        })
         #expect(TranscriptRowBuilder.rows(from: records).isEmpty)
+    }
+
+    @Test("A queued message the owner typed shows as a user row, a CLI notification shows as a notice, and the turn still ends")
+    func absorbedQueuedMessage() async throws {
+        let binary = try #require(ProcessInfo.processInfo.environment["SWARM_TRANSCRIPT_TOOL"])
+        let log = FileManager.default.temporaryDirectory
+            .appendingPathComponent("queued-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: log) }
+        try [
+            #"{"type":"user","uuid":"u1","sessionId":"s1","message":{"role":"user","content":"Fix the bug"}}"#,
+            #"{"type":"assistant","uuid":"a1","sessionId":"s1","message":{"role":"assistant","model":"m","content":[{"type":"text","text":"On it"}]}}"#,
+            #"{"type":"attachment","uuid":"q1","sessionId":"s1","attachment":{"type":"queued_command","prompt":"keep the old name","origin":{"kind":"human"}}}"#,
+            #"{"type":"attachment","uuid":"q2","sessionId":"s1","attachment":{"type":"queued_command","prompt":"<task-notification>done</task-notification>","origin":{"kind":"task-notification"}}}"#,
+            #"{"type":"assistant","uuid":"a2","sessionId":"s1","message":{"role":"assistant","model":"m","content":[{"type":"text","text":"Kept it"}]}}"#,
+            #"{"type":"system","subtype":"turn_duration","durationMs":1200,"uuid":"d1","sessionId":"s1"}"#,
+        ].joined(separator: "\n").appending("\n").write(to: log, atomically: true, encoding: .utf8)
+        let process = TranscriptToolProcess(binary: URL(fileURLWithPath: binary), format: "claude", log: log, follow: false)
+        var records: [TranscriptRecord] = []
+        for try await record in process.stream { records.append(record) }
+        let rows = TranscriptRowBuilder.rows(from: records).filter { !$0.isHiddenByDefault }
+
+        #expect(rows.map(\.kind) == [.user, .assistant, .user, .notice, .assistant, .result])
+        #expect(rows.map(\.text).dropFirst(2).first == "keep the old name")
+        #expect(ChairTurn.isActive(Array(rows.dropLast())))
+        #expect(!ChairTurn.isActive(rows))
     }
 
     @Test("Known tool output joins its call, while questions and errors remain distinct")
@@ -120,6 +150,36 @@ struct TranscriptRowBuilderTests {
             .systemMessage(kind: "system", text: "Ready", meta: Meta()),
         ])
         #expect(rows.map(\.isHiddenByDefault) == [true, true, true, false])
+    }
+
+    @Test("A background task notification shows its summary as a notice, not raw XML from You")
+    func taskNotification() {
+        let xml = "<task-notification>\n<task-id>b4</task-id>\n<status>completed</status>\n<summary>Background command \"Wait 20 seconds\" completed (exit code 0)</summary>\n</task-notification>"
+        let rows = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: "task_notification", text: xml, meta: Meta()),
+            .systemMessage(kind: "queued_command", text: "<task-notification>\n<status>failed</status>\n</task-notification>", meta: Meta()),
+            .systemMessage(kind: "task_notification", text: "<task-notification></task-notification>", meta: Meta()),
+        ])
+        #expect(rows.map(\.kind) == [.notice, .notice, .notice])
+        #expect(rows.map(\.text) == [
+            "Background command \"Wait 20 seconds\" completed (exit code 0)",
+            "Background task failed",
+            "Background task finished",
+        ])
+    }
+
+    @Test("A background task notification after a finished turn starts a running turn")
+    func taskNotificationStartsTurn() {
+        let meta = Meta(agentSessionID: "s")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run it in the background", meta: Meta(agentSessionID: "s", uuid: "u1")),
+            .turnEnded(durationMs: 1, reason: .completed, meta: meta),
+            .systemMessage(kind: "task_notification", text: " <task-notification><summary>done</summary></task-notification>", meta: meta),
+            .toolCall(toolCallID: "t1", name: "Bash", input: .object([:]), status: .pending, meta: meta),
+        ])
+        #expect(rows.map(\.kind).contains(.notice))
+        #expect(ChairTurn.isActive(rows))
+        #expect(!ChairTurn.isActive(Array(rows.prefix(2))))
     }
 
     @Test("Interleaved calls keep their own output and their call order")

@@ -112,18 +112,19 @@ pub fn argv(
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
-            let handler = |command: String| serde_json::json!([{"hooks": [{"type": "command", "command": command, "timeout": 3}]}]);
+            let handler = |command: String| serde_json::json!({"hooks": [{"type": "command", "command": command, "timeout": 3}]});
             let state = state_hook_command(provider.id())?;
             let mut hooks = serde_json::Map::new();
-            if agent_id == "orchestrator" {
-                hooks.insert(
-                    "SessionStart".into(),
-                    handler(chair_hook_command(provider.id())?),
-                );
-            }
             for event in CLAUDE_STATE_EVENTS {
-                hooks.insert(event.into(), handler(state.clone()));
+                hooks.insert(event.into(), serde_json::json!([handler(state.clone())]));
             }
+            // `/clear` opens a new log, so every Claude agent reports SessionStart state; the chair
+            // also records its new session id.
+            let mut start = vec![handler(state.clone())];
+            if agent_id == "orchestrator" {
+                start.insert(0, handler(chair_hook_command(provider.id())?));
+            }
+            hooks.insert("SessionStart".into(), start.into());
             args.extend([
                 "--settings".into(),
                 serde_json::json!({ "hooks": hooks }).to_string(),
@@ -1077,13 +1078,6 @@ mod tests {
                 .map(String::from)
                 .collect())
         );
-
-        let child_claude_args = argv("coder", "coder", &claude, "/home").unwrap();
-        assert!(
-            !child_claude_args
-                .iter()
-                .any(|arg| arg.contains("SessionStart"))
-        );
     }
 
     #[test]
@@ -1128,10 +1122,19 @@ mod tests {
                     "{agent} {event}"
                 );
             }
-            assert_eq!(
-                settings["hooks"]["SessionStart"].is_array(),
-                agent == "orchestrator"
-            );
+            let start: Vec<&str> = settings["hooks"]["SessionStart"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|group| group["hooks"][0]["command"].as_str().unwrap())
+                .collect();
+            let chair = chair_hook_command("claude").unwrap();
+            let expected = if agent == "orchestrator" {
+                vec![chair.as_str(), claude_command.as_str()]
+            } else {
+                vec![claude_command.as_str()]
+            };
+            assert_eq!(start, expected, "{agent} SessionStart");
         }
 
         let hook_args = |agent: &str| {

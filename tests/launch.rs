@@ -440,6 +440,50 @@ fn an_arrow_answer_sends_enter_only_once_the_cursor_moved() {
 }
 
 #[test]
+fn the_owner_presses_only_up_and_ctrl_u_in_an_agent_pane() {
+    let home = scratch("key");
+    let session = answer_session(&home, "true");
+    let app = [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ];
+    let keys = || std::fs::read_to_string(home.join("keys")).unwrap_or_default();
+
+    let mut in_pane = app.to_vec();
+    in_pane.push(("HERDR_PANE_ID", "w1:p2"));
+    let output = swarm(&home, &in_pane, &["key", "seat", "Up"]);
+    assert!(
+        stderr(&output).contains("only the owner presses keys"),
+        "{}",
+        stderr(&output)
+    );
+    // Escape and C-c stop the agent's turn.
+    for key in ["Escape", "C-c"] {
+        let output = swarm(&home, &app, &["key", "seat", key]);
+        assert!(
+            stderr(&output).contains("only Up and C-u"),
+            "{key}: {}",
+            stderr(&output)
+        );
+    }
+    assert_eq!(keys(), "");
+
+    for key in ["Up", "C-u"] {
+        let output = swarm(&home, &app, &["key", "seat", key]);
+        assert!(output.status.success(), "{key}: {}", stderr(&output));
+    }
+    assert_eq!(keys(), "Up\nC-u\n");
+
+    let output = swarm(&home, &app, &["key"]);
+    assert!(
+        stderr(&output).contains("| key <agent_id> <Up|C-u> |"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
 fn a_folder_trust_screen_that_nothing_closes_above_is_answered_only_in_the_pane() {
     let home = scratch("answer-trust");
     let session = answer_session(&home, "true");

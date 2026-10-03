@@ -7,6 +7,45 @@ public enum Composer {
         return text.isEmpty ? nil : text
     }
 
+    /// The text to type into a CLI, so the Enter after it can only submit. A typed ESC is the
+    /// Escape key and interrupts the turn, so control characters other than LF and TAB go, and a
+    /// CR is Enter, so CR and CRLF become LF. Claude sends nothing when it must remove invisible
+    /// characters, so a Claude chat gets Claude's own cleaning, which does both of those too.
+    /// A trailing `\` turns Enter into a newline, and a last word that starts with `@`, `$`, or
+    /// `/` or ends with `:` leaves a popup open that takes Enter, so each gets one space.
+    public static func submission(_ text: String, provider: String?) -> String {
+        // A pane started with no provider name (`swarm spawn -- <path>/claude`) may be Claude.
+        let cleaned = provider == "claude" || provider == nil
+            ? ClaudeInvisibleText.cleaned(text) : withoutControlCharacters(text)
+        guard cleaned.last?.isWhitespace == false,
+              let word = cleaned.split(whereSeparator: \.isWhitespace).last, let first = word.first,
+              word.hasSuffix("\\") || word.hasSuffix(":") || "@$/".contains(first)
+        else { return cleaned }
+        return cleaned + " "
+    }
+
+    private static func withoutControlCharacters(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        var afterCR = false
+        for scalar in text.unicodeScalars where !isControl(scalar) {
+            if scalar == "\n", afterCR {
+                afterCR = false
+                continue
+            }
+            afterCR = scalar == "\r"
+            scalars.append(afterCR ? "\n" : scalar)
+        }
+        return String(scalars)
+    }
+
+    /// C0 controls and DEL, but not TAB, LF, or CR, which becomes LF.
+    private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F, 0x7F: true
+        default: false
+        }
+    }
+
     /// Adds a path as its own token and leaves the caret ready for more text.
     public static func appending(path: String, to draft: String, prefix: String = "") -> String {
         let separator = draft.isEmpty || draft.last?.isWhitespace == true ? "" : " "

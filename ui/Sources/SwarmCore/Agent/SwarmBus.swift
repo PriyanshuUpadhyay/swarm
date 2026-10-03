@@ -353,6 +353,10 @@ public protocol SwarmBus: Sendable {
         _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
         in session: SwarmSessionID, adapter: String
     ) async throws
+    /// `swarm key <agent> <key>`, where swarm allows only `Up` and `C-u`.
+    func pressKey(
+        _ key: String, agent: SwarmAgentID, session: SwarmSessionID, adapter: String
+    ) async throws
     func close(
         _ agent: SwarmAgentID, in session: SwarmSessionID, adapter: String
     ) async throws
@@ -388,6 +392,12 @@ public extension SwarmBus {
 
     func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
         throw SwarmProfileError.unavailable("swarm chat links are not available")
+    }
+
+    func pressKey(
+        _ key: String, agent: SwarmAgentID, session: SwarmSessionID, adapter: String
+    ) async throws {
+        throw SwarmProfileError.unavailable("swarm keys are not available")
     }
 
     func agents(in session: SwarmSessionID) async throws -> [SwarmAgent] {
@@ -432,6 +442,13 @@ public extension SwarmBus {
     ) async throws {
         try await answer(
             prompt, choice: choice, to: agent, in: session.id,
+            adapter: try SwarmSessionInteraction.adapter(for: session)
+        )
+    }
+
+    func pressKey(_ key: String, agent: SwarmAgentID, session: SwarmSession) async throws {
+        try await pressKey(
+            key, agent: agent, session: session.id,
             adapter: try SwarmSessionInteraction.adapter(for: session)
         )
     }

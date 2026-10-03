@@ -199,6 +199,8 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
     case elicitationResult(toolCallID: String, answers: [Answer], meta: Meta)
     case hookResult(kind: String, hookEvent: String, hookName: String, toolCallID: String, exitCode: Int64?, meta: Meta)
     case permissionDecision(hookEvent: String, toolCallID: String, decision: String, meta: Meta)
+    /// A Claude queue record. `operation` is an open set; `content` and `reason` may be absent.
+    case queueOperation(operation: String, content: String?, reason: String?, meta: Meta)
     case page(start: UInt64, end: UInt64)
     case unknown(raw: String, meta: Meta? = nil)
 
@@ -223,6 +225,7 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
         case hookName = "hook_name"
         case exitCode = "exit_code"
         case decision
+        case operation
         case startOffset = "start_offset"
         case endOffset = "end_offset"
         case raw
@@ -329,6 +332,12 @@ public enum TranscriptEvent: Sendable, Hashable, Decodable {
             let id = (try? container.decodeIfPresent(String.self, forKey: .toolCallID)) ?? ""
             let decision = (try? container.decodeIfPresent(String.self, forKey: .decision)) ?? ""
             self = .permissionDecision(hookEvent: hookEvent, toolCallID: id, decision: decision, meta: meta)
+
+        case "queue_operation":
+            let operation = (try? container.decodeIfPresent(String.self, forKey: .operation)) ?? ""
+            let content = try? container.decodeIfPresent(String.self, forKey: .content)
+            let reason = try? container.decodeIfPresent(String.self, forKey: .reason)
+            self = .queueOperation(operation: operation, content: content, reason: reason, meta: meta)
 
         case "page":
             let start = (try? container.decodeIfPresent(UInt64.self, forKey: .startOffset)) ?? 0

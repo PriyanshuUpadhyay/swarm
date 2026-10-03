@@ -14,7 +14,14 @@ final class ChildColumnModel {
     private(set) var isLoadingOlder = false
     private(set) var historyError: String?
     private(set) var isSending = false
+    private(set) var queued: [ComposerQueuedRow] = []
+    private var sentMessages = ComposerSentMessages()
     var draft = ""
+
+    private var rows: [TranscriptRow] {
+        if case .rows(let rows, _) = snapshot { return rows }
+        return []
+    }
 
     /// Reads the child's log once a second while its column is on screen.
     func poll(log: String?, provider: String?) async {
@@ -26,6 +33,9 @@ final class ChildColumnModel {
                 snapshot = next
                 revision += 1
             }
+            sentMessages.confirm(by: rows)
+            let nextQueued = ComposerQueuedRow.queued(await transcript.queuedMessages) + sentMessages.rows
+            if queued != nextQueued { queued = nextQueued }
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -44,15 +54,37 @@ final class ChildColumnModel {
         hasOlder = await transcript.hasOlder
     }
 
-    func send(_ text: String, to agent: SwarmAgentID, in session: SwarmSession) async throws {
+    func send(
+        _ text: String, to agent: SwarmAgentID, in session: SwarmSession,
+        provider: String?, isRunning: Bool
+    ) async throws {
         isSending = true
         defer { isSending = false }
-        try await bus.type(text, to: agent, in: session)
+        let before = rows
+        let typed = Composer.submission(text, provider: provider)
+        try await bus.type(typed, to: agent, in: session)
+        sentMessages.record(typed, provider: provider, isRunning: isRunning, transcript: before)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
         if draft == text { draft = "" }
+    }
+
+    func update(isRunning: Bool) {
+        sentMessages.update(isRunning: isRunning)
+        queued = queued.filter { $0.state == .queued } + sentMessages.rows
     }
 
     func interrupt(_ agent: SwarmAgentID, in session: SwarmSession) async throws {
         try await bus.interrupt(agent, in: session)
+    }
+
+    /// Claude's queued messages back out of the child's CLI; nil when the CLI took them first.
+    func pullBack(_ agent: SwarmAgentID, in session: SwarmSession) async throws -> String? {
+        let bus = bus
+        let text = try await transcript.pullBack { key in
+            try await bus.pressKey(key, agent: agent, session: session)
+        }
+        queued.removeAll { $0.state == .queued }
+        return text
     }
 
     func answer(
@@ -122,6 +154,8 @@ struct ChildColumnView: View {
         .onChange(of: focusRequest, initial: true) {
             if selected { composerFocused = true }
         }
+        // Initial, because a column scrolled off screen misses the change while its model lives on.
+        .onChange(of: agent.status.isMidTurn, initial: true) { _, running in model.update(isRunning: running) }
     }
 
     private var composer: some View {
@@ -130,17 +164,31 @@ struct ChildColumnView: View {
             draft: Binding(get: { [model] in model.draft }, set: { [model] in model.draft = $0 }),
             isRunning: agent.status == .working,
             isSending: model.isSending,
-            sendDisabledReason: agent.alive == false ? "This agent has ended." : nil,
+            queued: model.queued,
+            pullBack: SwarmSessionInteraction.canPullBack(provider: agent.provider, adapter: session.adapter)
+                ? { [model, session, agent] in try await model.pullBack(agent.id, in: session) }
+                : nil,
+            sendDisabledReason: agent.alive == false
+                ? "This agent has ended."
+                : SwarmSessionInteraction.questionReason(status: agent.status, target: .agent),
             placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(
                 provider: agent.provider,
                 homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
+                configDirectory: agent.log.flatMap {
+                    ComposerCommandSource.configDirectory(fromLog: $0, provider: agent.provider)
+                },
                 projectDirectory: session.cwd
             ),
             mentionSource: ComposerMentionSource(root: session.cwd),
             scratchDirectory: AgentScratchDirectory.current(),
             focus: $composerFocused,
-            send: { [model, session, agent] in try await model.send($0, to: agent.id, in: session) },
+            send: { [model, session, agent] in
+                try await model.send(
+                    $0, to: agent.id, in: session,
+                    provider: agent.provider, isRunning: agent.status.isMidTurn
+                )
+            },
             interrupt: { [model, session, agent] in try await model.interrupt(agent.id, in: session) },
             onFocused: onFocused,
             isCurrentSession: { true }

@@ -205,6 +205,24 @@ public enum SwarmSessionInteraction {
             && text.contains { !$0.isWhitespace }
     }
 
+    /// Pull-back reads Claude's queue records and presses Up and C-u through the adapter's `key`
+    /// verb, which Herdr does not have.
+    // ponytail: the shipped adapters with `key`, by name; a custom adapter with `key` gets no
+    // pull-back until the CLI reports adapter verbs.
+    public static func canPullBack(provider: String?, adapter: String?) -> Bool {
+        provider == "claude" && ["tmux", "tmux-solo"].contains(adapter)
+    }
+
+    /// A waiting agent has a dialog open, where Enter means yes and a digit picks an option, so
+    /// typed text could approve a tool call. A child's question shows on its card above the
+    /// composer; the chair's shows only in its pane.
+    public static func questionReason(status: AgentStatus?, target: SwarmSessionInputTarget) -> String? {
+        guard status == .waiting else { return nil }
+        return target == .chair
+            ? "The agent is asking a question. Answer it first in its pane."
+            : "The agent is asking a question. Answer it first."
+    }
+
     public static func lastActivity(of session: SwarmSession) -> Int {
         session.lastMessageAt ?? session.createdAt
     }

@@ -92,7 +92,14 @@ public actor SwarmChairTranscript {
     private var reader: ToolTranscriptReader?
     public private(set) var currentModel: String?
     public private(set) var usage = ChatUsage()
+    /// Claude's queued messages in the current log; a clear's new log has its own queue.
+    public private(set) var queuedMessages: [String] = []
     private var rows: [TranscriptRow] = []
+    /// The path of the last log that was read. `log` also clears on a gap, so it cannot tell a new
+    /// log from the same one that came back.
+    private var lastLogPath: URL?
+    /// Rows of the logs before a `/clear`, each clear closed by its divider.
+    private var frozenRows: [TranscriptRow] = []
     private var rawEntries: [RawTranscriptEntry] = []
     public private(set) var hasOlder = false
 
@@ -155,8 +162,8 @@ public actor SwarmChairTranscript {
         }
         if path != log {
             log = path
-            currentModel = nil
             usage = ChatUsage()
+            queuedMessages = []
             reader = ToolTranscriptReader(binary: binary, format: format, log: path)
         }
         do {
@@ -186,15 +193,86 @@ public actor SwarmChairTranscript {
         return .rows(rows, raw: rawEntries)
     }
 
+    /// Claude's pull-back of its queued messages: `press("Up")`, then this log's queue records
+    /// until each owner message has its own, then `press("C-u")` until the CLI box is empty.
+    /// Returns the pulled text, or nil when the CLI took the messages first. With no record by
+    /// 1.5 s it presses nothing more and throws, because C-u could wipe text Up pulled. It never
+    /// presses Escape or C-c, because both stop the turn.
+    public func pullBack(press: @Sendable (String) async throws -> Void) async throws -> String? {
+        guard let reader else { return nil }
+        let deadline = ContinuousClock.now + .milliseconds(1500)
+        // The live reader, not the last poll: it holds messages sent after that poll.
+        let start = await reader.window()
+        let queue = QueuedMessages.replay(start.records)
+        guard let last = queue.last(where: QueuedMessages.isOwners) else { return nil }
+        // Up pops the whole queue, so it would take a notification or agent message that the
+        // agent still needs out of the queue.
+        guard queue.allSatisfy(QueuedMessages.isOwners) else {
+            throw SwarmProfileError.failed("The agent has its own message in the queue. Edit after it is delivered.")
+        }
+        let mark = start.indexOffset + start.records.count
+        try await press("Up")
+        var decision = QueuePullBack.waiting
+        while decision == .waiting {
+            let window = await reader.window()
+            decision = QueuePullBack.decide(
+                queue: queue, after: window.records.dropFirst(mark - window.indexOffset),
+                pastDeadline: ContinuousClock.now >= deadline
+            )
+            if decision == .waiting { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let pulled: String?
+        switch decision {
+        case .pulled(let owner, _):
+            pulled = owner.joined(separator: "\n")
+        case .unconfirmed:
+            throw SwarmProfileError.failed("Could not confirm the pull-back. Check the agent's input box.")
+        case .alreadySent, .waiting:
+            pulled = nil
+        }
+        for index in 0..<decision.clearPresses(last: last) {
+            if index > 0 { try await Task.sleep(for: .milliseconds(50)) }
+            try await press("C-u")
+        }
+        return pulled
+    }
+
     private func rebuild(from reader: ToolTranscriptReader) async {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
-        rows = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        let built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        if let path = log, path != lastLogPath {
+            // Claude writes bookkeeping lines first, so until a real record lands the new log
+            // cannot say whether it is a clear. Keep the old rows and decide on a later read.
+            let undecided = window.records.allSatisfy {
+                if case .ignored = $0.event { true } else { false }
+            }
+            if lastLogPath != nil, undecided { return }
+            if lastLogPath != nil, ConversationBoundary.isClear(window.records), !rows.isEmpty {
+                frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
+            } else {
+                frozenRows = []
+                // `/clear` keeps the model, but another log may come from another agent.
+                currentModel = nil
+            }
+            lastLogPath = path
+        }
+        rows = frozenRows + (frozenRows.isEmpty ? built : ConversationBoundary.withoutClearPreamble(built))
         rawEntries = TranscriptDebugData.entries(from: window.records, indexOffset: window.indexOffset)
         hasOlder = window.hasOlder
         usage = window.usage
+        queuedMessages = QueuedMessages.pending(in: window.records)
         if let model = ChatModelChoice.latest(in: window.records) { currentModel = model }
+    }
+
+    private static func clearDivider(logName: String) -> TranscriptRow {
+        let time = Date.now.formatted(date: .omitted, time: .shortened)
+        var row = TranscriptRow(
+            kind: .divider, text: "Context cleared · \(time)", eventID: "clear-\(logName)"
+        )
+        row.detail = time
+        return row
     }
 
     func discoveredLog(

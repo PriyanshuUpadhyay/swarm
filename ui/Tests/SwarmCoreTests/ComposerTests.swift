@@ -2,6 +2,62 @@ import Foundation
 import Testing
 @testable import SwarmCore
 
+private let CLAUDE = "claude"
+private let CODEX = "codex"
+private let AGY = "agy"
+
+/// Inputs and outputs of the cleaner (`fue`) in Claude Code 2.1.287, cut from the installed binary
+/// and run with node. Claude sends nothing when that cleaner changes the text.
+private let CLAUDE_CLEANER_VECTORS: [(String, String)] = [
+    ("Add a test for the empty case, then mail me@host.", "Add a test for the empty case, then mail me@host."),
+    ("caf\u{E9} na\u{EF}ve r\u{E9}sum\u{E9} \u{4E2D}\u{6587}", "caf\u{E9} na\u{EF}ve r\u{E9}sum\u{E9} \u{4E2D}\u{6587}"),
+    ("soft\u{AD}hyphen", "softhyphen"),
+    ("word\u{2060}joiner", "wordjoiner"),
+    ("h\u{2061}i\u{2062}j\u{2063}k\u{2064}l", "hijkl"),
+    ("a\u{80}b\u{90}c\u{9F}d", "abcd"),
+    ("a\u{85}b", "a\nb"),
+    ("a\u{2028}b\u{2029}c", "a\nb\nc"),
+    ("one\r\ntwo\rthree\nfour", "one\ntwo\nthree\nfour"),
+    ("a\u{B}b\u{C}c", "a\nb\nc"),
+    ("red\u{1B}[31m text", "red[31m text"),
+    ("a\u{0}b\u{8}c\u{1F}d\u{7F}e", "abcde"),
+    ("tab\there", "tab\there"),
+    ("a\u{34F}b", "ab"),
+    ("e\u{301}\u{34F}\u{302}x", "e\u{301}\u{34F}\u{302}x"),
+    ("\u{115F}\u{1160}x\u{3164}y\u{FFA0}z", "xyz"),
+    ("a\u{17B4}b \u{1780}\u{17B4}", "ab \u{1780}\u{17B4}"),
+    ("a\u{206A}b\u{206F}c", "abc"),
+    ("a\u{FFF0}b\u{FFFB}c", "abc"),
+    ("a\u{E0080}b\u{E0FFF}c", "abc"),
+    ("a\u{E0041}b\u{E007F}c", "abc"),
+    ("flag \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} ok", "flag \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} ok"),
+    ("\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} and \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F} and \u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}"),
+    ("\u{1F3F4}\u{E0075}\u{E0073}\u{E0074}\u{E0078}\u{E007F} texas", "\u{1F3F4} texas"),
+    ("a\u{61C}b", "ab"),
+    ("\u{645}\u{61C}\u{661}", "\u{645}\u{61C}\u{661}"),
+    ("abc\u{200E}def", "abcdef"),
+    ("\u{5E9}\u{5DC}\u{5D5}\u{5DD}\u{200E} abc", "\u{5E9}\u{5DC}\u{5D5}\u{5DD}\u{200E} abc"),
+    ("a\u{180B}b \u{1820}\u{180B}", "ab \u{1820}\u{180B}"),
+    ("a\u{FE0F}b \u{2764}\u{FE0F} ok", "ab \u{2764}\u{FE0F} ok"),
+    ("1\u{FE0F}\u{20E3} x\u{FE0E}", "1\u{FE0F}\u{20E3} x"),
+    ("\u{2200}\u{FE00} a\u{FE00}", "\u{2200}\u{FE00} a"),
+    ("a\u{200C}b", "ab"),
+    ("Auf\u{200C}lage", "Auflage"),
+    ("\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}", "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}"),
+    ("\u{915}\u{94D}\u{200D}\u{937} \u{915}\u{94D}\u{200C}\u{937}", "\u{915}\u{94D}\u{200D}\u{937} \u{915}\u{94D}\u{200C}\u{937}"),
+    ("hi \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} there", "hi \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} there"),
+    ("\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB} dev", "\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB} dev"),
+    ("a\u{200D}b \u{1F600}\u{200D}", "ab \u{1F600}"),
+    ("\u{E01}\u{200B}\u{E02} a\u{200B}b", "\u{E01}\u{200B}\u{E02} ab"),
+    ("a\u{202A}b\u{202E}c\u{2066}d\u{2069}e", "abcde"),
+    ("\u{FEFF}hello", "hello"),
+    ("\u{11013}\u{1107F}\u{11013} a\u{1107F}b", "\u{11013}\u{1107F}\u{11013} ab"),
+    ("\u{13000}\u{13430}\u{13001} a\u{13430}b", "\u{13000}\u{13430}\u{13001} ab"),
+    ("a\u{16FE4}b\u{1D173}c", "abc"),
+    ("\u{644}\u{200D}\u{627}", "\u{644}\u{200D}\u{627}"),
+    ("Fix\u{AD} the\u{200B} bug \u{1F600}\u{200D}\u{1F525} in\u{2028} file\u{90} \u{915}\u{94D}\u{200D}\u{937} done", "Fix the bug \u{1F600}\u{200D}\u{1F525} in\n file \u{915}\u{94D}\u{200D}\u{937} done"),
+]
+
 @Suite("Composer")
 struct ComposerTests {
     @Test("Drafts are separate for each chat and survive a new store")
@@ -21,16 +77,72 @@ struct ComposerTests {
         #expect(reopened.draft(for: "chat-two") == "second")
     }
 
-    @Test("A slash menu opens only at the start and mentions open at word starts")
+    @Test("Mentions open at word starts")
     func menuTokens() {
-        #expect(ComposerMenu.resolve(draft: "/rev", caret: 4) == .slash(
-            ComposerToken(start: 0, length: 4, query: "rev")
+        #expect(ComposerMenu.resolve(draft: "open @Sou", caret: 9, provider: CLAUDE) == .mention(
+            ComposerToken(start: 5, length: 4, query: "Sou", reachesDraftEnd: true)
         ))
-        #expect(ComposerMenu.resolve(draft: "do /rev", caret: 7) == .none)
-        #expect(ComposerMenu.resolve(draft: "open @Sou", caret: 9) == .mention(
-            ComposerToken(start: 5, length: 4, query: "Sou")
+        #expect(ComposerMenu.resolve(draft: "mail@host", caret: 9, provider: CLAUDE) == .none)
+    }
+
+    @Test("A slash opens at any word start, with built-ins only at the draft start")
+    func slashTokens() {
+        #expect(ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CLAUDE) == .slash(
+            ComposerToken(start: 11, length: 4, query: "rev", reachesDraftEnd: true), .skillsAndCommands
         ))
-        #expect(ComposerMenu.resolve(draft: "mail@host", caret: 9) == .none)
+        let wholeDraft = ComposerMenu.resolve(draft: "/cle", caret: 4, provider: CLAUDE)
+        #expect(wholeDraft == .slash(
+            ComposerToken(start: 0, length: 4, query: "cle", reachesDraftEnd: true), .all
+        ))
+        #expect(wholeDraft.isWholeDraft)
+        #expect(ComposerMenu.resolve(draft: "src/a/b", caret: 7, provider: CLAUDE) == .none)
+        #expect(ComposerMenu.resolve(draft: "(/rev", caret: 5, provider: CLAUDE) == .slash(
+            ComposerToken(start: 1, length: 4, query: "rev", reachesDraftEnd: true), .skillsAndCommands
+        ))
+        let middle = ComposerMenu.resolve(draft: "fix /rev now", caret: 8, provider: CLAUDE)
+        #expect(middle == .slash(ComposerToken(start: 4, length: 4, query: "rev"), .skillsAndCommands))
+        #expect(!middle.isWholeDraft)
+        #expect(!ComposerMenu.resolve(draft: "/cle now", caret: 4, provider: CLAUDE).isWholeDraft)
+    }
+
+    @Test("Codex opens a slash only at the draft start and a dollar skill anywhere")
+    func codexTokens() {
+        #expect(ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CODEX) == .none)
+        #expect(ComposerMenu.resolve(draft: "/rev", caret: 4, provider: CODEX) == .slash(
+            ComposerToken(start: 0, length: 4, query: "rev", reachesDraftEnd: true), .all
+        ))
+        #expect(ComposerMenu.resolve(draft: "use $tdd", caret: 8, provider: CODEX) == .skill(
+            ComposerToken(start: 4, length: 4, query: "tdd", reachesDraftEnd: true)
+        ))
+        #expect(ComposerMenu.resolve(draft: "use $tdd", caret: 8, provider: CLAUDE) == .none)
+        #expect(ComposerMenu.resolve(draft: "cost5$tdd", caret: 9, provider: CODEX) == .none)
+    }
+
+    @Test("A mid-draft menu offers no built-ins and a dollar menu offers only skills")
+    func menuScopes() {
+        let commands = [
+            ComposerCommand(name: "clear", detail: "", kind: .builtIn),
+            ComposerCommand(name: "ship", detail: "", kind: .command),
+            ComposerCommand(name: "tdd", detail: "", kind: .skill, path: "/skills/tdd/SKILL.md"),
+            ComposerCommand(
+                name: "ponytail:ponytail", detail: "", kind: .plugin("ponytail"),
+                path: "/plugins/ponytail/skills/ponytail/SKILL.md"
+            ),
+            ComposerCommand(
+                name: "ponytail:audit", detail: "", kind: .plugin("ponytail"),
+                path: "/plugins/ponytail/commands/audit.md"
+            ),
+        ]
+        let token = ComposerToken(start: 4, length: 1, query: "")
+        #expect(ComposerMenu.slash(token, .all).offered(commands) == commands)
+        #expect(ComposerMenu.slash(token, .skillsAndCommands).offered(commands).map(\.name)
+            == ["ship", "tdd", "ponytail:ponytail", "ponytail:audit"])
+        #expect(ComposerMenu.skill(token).offered(commands).map(\.name) == ["tdd", "ponytail:ponytail"])
+        #expect(ComposerMenu.skill(token).insertion(for: commands[2]) == "$tdd")
+        #expect(ComposerMenu.slash(token, .skillsAndCommands).insertion(for: commands[2]) == "/tdd")
+        #expect(ComposerMenu.slash(token, .all).showsWhenEmpty)
+        #expect(!ComposerMenu.slash(token, .skillsAndCommands).showsWhenEmpty)
+        #expect(!ComposerMenu.skill(token).showsWhenEmpty)
     }
 
     @Test("A pick replaces only its token")
@@ -41,32 +153,138 @@ struct ComposerTests {
         ) == "open @Sources/App.swift now")
     }
 
+    @Test("A pick at a cursor in the middle keeps the text after the token")
+    func insertionAtCursor() throws {
+        let draft = "fix /rev now"
+        let token = try #require(ComposerMenu.resolve(draft: draft, caret: 8, provider: CLAUDE).token)
+        #expect(ComposerMenu.inserting("/review", into: draft, token: token) == "fix /review now")
+    }
+
     @Test("Menu keys move, pick, dismiss, and preserve composer keys")
     func keyRouting() {
-        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: true) == .move(1))
-        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: true) == .pick)
-        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: true) == .pick)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: true) == .dismissMenu)
-        #expect(ComposerKeyRouter.route(.return, menuOpen: false, hasRows: false) == .send)
-        #expect(ComposerKeyRouter.route(.shiftReturn, menuOpen: false, hasRows: false) == .insertNewline)
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: false, hasRows: false) == .clear)
+        #expect(route(.down, menuOpen: true, hasRows: true) == .move(1))
+        #expect(route(.return, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.tab, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.escape, menuOpen: true, hasRows: true) == .dismissMenu)
+        #expect(route(.return, menuOpen: false, hasRows: false) == .send)
+        #expect(route(.shiftReturn, menuOpen: false, hasRows: false) == .insertNewline)
+        #expect(route(.escape, menuOpen: false, hasRows: false) == .clear)
         #expect(ComposerKeyRouter.movedSelection(current: 0, count: 3, delta: -1) == 2)
+    }
+
+    @Test("Return on a whole-draft command picks and sends, and mid-draft it only picks")
+    func returnPicks() {
+        let wholeDraft = ComposerMenu.resolve(draft: "/cle", caret: 4, provider: CLAUDE)
+        let midDraft = ComposerMenu.resolve(draft: "please run /rev", caret: 15, provider: CLAUDE)
+        #expect(route(.return, menu: wholeDraft, menuOpen: true, hasRows: true) == .pickAndSend)
+        #expect(route(.tab, menu: wholeDraft, menuOpen: true, hasRows: true) == .pick)
+        #expect(route(.return, menu: midDraft, menuOpen: true, hasRows: true) == .pick)
+    }
+
+    @Test("Up in an empty draft pulls back only when the chat can")
+    func upPullsBack() {
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: true, canPullBack: true)
+            == .pullBack)
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: false, canPullBack: true)
+            == .move(0))
+        #expect(route(.up, menuOpen: false, hasRows: false, draftIsEmpty: true, canPullBack: false)
+            == .move(0))
+        #expect(route(.up, menuOpen: true, hasRows: true, draftIsEmpty: true, canPullBack: true)
+            == .move(-1))
+    }
+
+    @Test("A plain sentence is typed unchanged")
+    func submissionKeepsPlainText() {
+        let sentence = "Add a test for the empty case, then mail me@host.\nThanks"
+        #expect(Composer.submission(sentence, provider: CLAUDE) == sentence)
+        #expect(Composer.submission(sentence, provider: CODEX) == sentence)
+    }
+
+    @Test("A Claude chat types what Claude's own cleaner leaves, so Claude never holds it back",
+          arguments: CLAUDE_CLEANER_VECTORS)
+    func submissionCleansLikeClaude(input: String, cleaned: String) {
+        #expect(Array(Composer.submission(input, provider: CLAUDE).unicodeScalars)
+            == Array(cleaned.unicodeScalars))
+    }
+
+    @Test("A Codex or AGY chat keeps invisible characters, because only Claude refuses them")
+    func submissionKeepsInvisibleCharactersOutsideClaude() {
+        let text = "soft\u{00AD}hyphen a\u{200C}b c\u{200B}d e\u{0085}f \u{1F3F4}\u{E0067}\u{E007F}"
+        #expect(Composer.submission(text, provider: CODEX) == text)
+        #expect(Composer.submission(text, provider: AGY) == text)
+    }
+
+    @Test("A pane with no provider name may be Claude, so it gets Claude's cleaning")
+    func submissionCleansLikeClaudeWithoutProvider() {
+        #expect(Composer.submission("a\u{200B}b", provider: nil) == "ab")
+    }
+
+    @Test("Control characters other than LF and TAB are removed, because an ESC interrupts the turn")
+    func submissionRemovesControlCharacters() {
+        #expect(Composer.submission("red\u{1B}[31m text", provider: CODEX) == "red[31m text")
+        #expect(Composer.submission("a\u{0}b\u{8}c\u{B}d\u{1F}e\u{7F}f", provider: CODEX) == "abcdef")
+        #expect(Composer.submission("tab\there\r\nnext", provider: AGY) == "tab\there\nnext")
+    }
+
+    @Test("CR and CRLF become LF, because a CR is Enter")
+    func submissionNormalizesLineEnds() {
+        #expect(Composer.submission("one\r\ntwo\rthree\nfour", provider: CODEX)
+            == "one\ntwo\nthree\nfour")
+    }
+
+    @Test("A trailing backslash or a last word that opens a popup gets one space")
+    func submissionClosesPopups() {
+        #expect(Composer.submission("join this\\", provider: CODEX) == "join this\\ ")
+        #expect(Composer.submission("look at @src/main.rs", provider: CLAUDE) == "look at @src/main.rs ")
+        #expect(Composer.submission("use $tdd", provider: CODEX) == "use $tdd ")
+        #expect(Composer.submission("/clear", provider: CLAUDE) == "/clear ")
+        #expect(Composer.submission("please run /review", provider: CODEX) == "please run /review ")
+        #expect(Composer.submission("ship it :tada:", provider: AGY) == "ship it :tada: ")
+        #expect(Composer.submission("Note:", provider: CLAUDE) == "Note: ")
+        #expect(Composer.submission("first line\nsee @README.md", provider: CLAUDE)
+            == "first line\nsee @README.md ")
+        #expect(Composer.submission("look at @src/main.rs\u{200B}", provider: CLAUDE)
+            == "look at @src/main.rs ")
+    }
+
+    @Test("A waiting agent blocks typing, and the chair's reason points to its pane")
+    func waitingAgentBlocksTyping() {
+        #expect(SwarmSessionInteraction.questionReason(status: .waiting, target: .agent)
+            == "The agent is asking a question. Answer it first.")
+        #expect(SwarmSessionInteraction.questionReason(status: .waiting, target: .chair)
+            == "The agent is asking a question. Answer it first in its pane.")
+        for status in [AgentStatus.working, .done, .failed, .ended] {
+            #expect(SwarmSessionInteraction.questionReason(status: status, target: .chair) == nil)
+        }
+        #expect(SwarmSessionInteraction.questionReason(status: nil, target: .chair) == nil)
     }
 
     @Test("An empty completion menu lets Return send")
     func emptyMenuKeys() {
-        #expect(ComposerKeyRouter.route(.return, menuOpen: true, hasRows: false) == .send)
-        #expect(ComposerKeyRouter.route(.tab, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.up, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.down, menuOpen: true, hasRows: false) == .move(0))
-        #expect(ComposerKeyRouter.route(.escape, menuOpen: true, hasRows: false) == .dismissMenu)
+        #expect(route(.return, menuOpen: true, hasRows: false) == .send)
+        #expect(route(.tab, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.up, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.down, menuOpen: true, hasRows: false) == .move(0))
+        #expect(route(.escape, menuOpen: true, hasRows: false) == .dismissMenu)
+    }
+
+    private func route(
+        _ key: ComposerInputKey, menu: ComposerMenu = .none, menuOpen: Bool, hasRows: Bool,
+        draftIsEmpty: Bool = false, canPullBack: Bool = false
+    ) -> ComposerKeyAction {
+        ComposerKeyRouter.route(
+            key, menu: menu, menuOpen: menuOpen, hasRows: hasRows,
+            draftIsEmpty: draftIsEmpty, canPullBack: canPullBack
+        )
     }
 
     @Test("Command matching is fuzzy and provider built-ins differ")
     func commandMatching() {
         let codex = ComposerCommandCatalog.builtIns(provider: "codex")
         let claude = ComposerCommandCatalog.builtIns(provider: "claude")
-        #expect(codex.contains { $0.name == "new" })
+        // Codex /new opens a worktree picker in a git repository, so one Return starts nothing.
+        #expect(!codex.contains { $0.name == "new" })
+        #expect(codex.contains { $0.name == "clear" })
         #expect(!claude.contains { $0.name == "new" })
         #expect(ComposerCommandCatalog.matches(codex, query: "rv").first?.command.name == "review")
     }
@@ -117,7 +335,8 @@ struct ComposerTests {
         #expect(claude.contains {
             $0.name == "explain" && $0.kind == .skill && $0.detail == "Project explain"
         })
-        #expect(claude.contains { $0.name == "shared" })
+        // ~/.agents/skills is a Codex and AGY folder, not a Claude Code one.
+        #expect(!claude.contains { $0.name == "shared" })
         let unknown = ComposerCommandCatalog.discover(from: ComposerCommandSource(
             provider: nil, homeDirectory: root.path
         ))
