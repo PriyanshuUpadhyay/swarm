@@ -123,7 +123,7 @@ struct TranscriptToolCard: View {
     }
 
     /// "Edit TranscriptView.swift, 12 added, 3 removed, exit 1, 8.6s, Failed": what the header shows.
-    private func accessibilityLabel(title: String, counts: (added: Int, removed: Int)?) -> String {
+    private func accessibilityLabel(title: String, counts: TranscriptToolActivity.DiffCounts?) -> String {
         let countParts = counts.map { ["\($0.added) added", "\($0.removed) removed"] } ?? []
         return (["\(activity.name) \(title)"] + countParts + resultParts
             + [TranscriptStatusGlyph.label(activity.state)]).joined(separator: ", ")

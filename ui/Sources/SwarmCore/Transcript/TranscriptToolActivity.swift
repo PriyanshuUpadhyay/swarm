@@ -10,7 +10,10 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public var name: String
     public var input: JSONElement
     public var output: String?
-    public var diffs: [TranscriptDiff]
+    /// Setting the diffs also sets `diffCounts`, so a card's body never sums the lines.
+    public var diffs: [TranscriptDiff] { didSet { diffCounts = Self.counts(of: diffs) } }
+    /// Added and removed lines across the call's diffs; nil when it has none.
+    public private(set) var diffCounts: DiffCounts?
     public var state: State
     public var command: String?
     public var path: String?
@@ -28,6 +31,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.input = input
         self.output = output
         self.diffs = diffs
+        diffCounts = Self.counts(of: diffs)
         self.state = state
         self.command = command
         self.path = path
@@ -76,11 +80,19 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return "\(name) · from line \(first)"
     }
 
-    /// Added and removed lines across the call's diffs; nil when it has none. O(total diff lines).
-    public var diffCounts: (added: Int, removed: Int)? {
+    public struct DiffCounts: Sendable, Hashable {
+        public var added: Int
+        public var removed: Int
+    }
+
+    /// O(total diff lines); runs when the row builder sets the diffs, not in a view's body.
+    private static func counts(of diffs: [TranscriptDiff]) -> DiffCounts? {
         guard !diffs.isEmpty else { return nil }
-        let lines = diffs.flatMap(\.hunks).flatMap(\.lines)
-        return (lines.count { $0.hasPrefix("+") }, lines.count { $0.hasPrefix("-") })
+        var counts = DiffCounts(added: 0, removed: 0)
+        for line in diffs.lazy.flatMap(\.hunks).flatMap(\.lines) {
+            if line.hasPrefix("+") { counts.added += 1 } else if line.hasPrefix("-") { counts.removed += 1 }
+        }
+        return counts
     }
 
     /// The exit status Claude Code writes on the first line of a failed command's result.
