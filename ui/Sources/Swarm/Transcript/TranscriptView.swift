@@ -47,6 +47,9 @@ struct TranscriptView<Composer: View>: View {
     @State private var isSearching = false
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
+    /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
+    @State private var pinned: Set<String> = []
+    @State private var openFolds: Set<String> = []
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -148,15 +151,14 @@ struct TranscriptView<Composer: View>: View {
                         }
                         rawSessionBlock.upsideDown()
                     } else {
-                        ForEach(visibleRows.reversed()) { transcriptRow in
-                            TranscriptRowView(
-                                row: transcriptRow, chair: chair,
-                                revealForSearch: currentMatchID == transcriptRow.eventID
-                            )
-                            .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
-                            .padding(DesignTokens.Spacing.xxs)
-                            .background(matchBackground(transcriptRow.eventID))
-                            .upsideDown()
+                        ForEach(foldedItems.reversed()) { item in
+                            switch item {
+                            case .row(let transcriptRow):
+                                rowView(transcriptRow).upsideDown()
+                            case .fold(let group):
+                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id)) { rowView($0) }
+                                    .upsideDown()
+                            }
                         }
                         let hidden = rows.filter(\.isHiddenByDefault).count
                         if hidden > 0 {
@@ -209,9 +211,50 @@ struct TranscriptView<Composer: View>: View {
         }
         .onChange(of: pendingScrollID) { _, id in
             guard let id else { return }
-            proxy.scrollTo(id, anchor: .center)
             pendingScrollID = nil
+            if let fold = closedFoldID(containing: id) {
+                // The child has no view while its fold is closed: scroll to the fold, open it, and
+                // scroll to the child once the open fold is drawn.
+                proxy.scrollTo(fold, anchor: .center)
+                openFolds.insert(fold)
+                Task { @MainActor in pendingScrollID = id }
+            } else {
+                proxy.scrollTo(id, anchor: .center)
+            }
         }
+        .onChange(of: revision, initial: true) {
+            pinned.formUnion(ToolRunFold.openTurnToolIDs(in: rows))
+        }
+    }
+
+    private func rowView(_ transcriptRow: TranscriptRow) -> some View {
+        TranscriptRowView(
+            row: transcriptRow, chair: chair,
+            revealForSearch: currentMatchID == transcriptRow.eventID
+        )
+        .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
+        .padding(DesignTokens.Spacing.xxs)
+        .background(matchBackground(transcriptRow.eventID))
+    }
+
+    private var foldedItems: [ToolRunFold.Item] {
+        ToolRunFold.items(in: visibleRows, pinned: pinned)
+    }
+
+    private func foldExpanded(_ id: String) -> Binding<Bool> {
+        Binding {
+            openFolds.contains(id)
+        } set: { open in
+            if open { openFolds.insert(id) } else { openFolds.remove(id) }
+        }
+    }
+
+    private func closedFoldID(containing id: String) -> String? {
+        for case .fold(let group) in foldedItems
+        where !openFolds.contains(group[0].eventID) && group.contains(where: { $0.eventID == id }) {
+            return group[0].eventID
+        }
+        return nil
     }
 
     private func startLoadingOlder(automatic: Bool = false) {
