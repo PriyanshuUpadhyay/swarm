@@ -20,6 +20,21 @@ struct TranscriptTextPreviewTests {
         #expect(preview.isTruncated)
     }
 
+    @Test func shellOutputFoldsAtFiftyLines() {
+        let fifty = (0..<50).map { "line \($0)" }.joined(separator: "\n")
+        #expect(!TranscriptTextPreview(fifty, lineLimit: 50).isTruncated)
+        let preview = TranscriptTextPreview(fifty + "\nline 50", lineLimit: 50)
+        #expect(preview.text == fifty)
+        #expect(preview.isTruncated)
+    }
+
+    @Test func toolOutputFoldsAtFiveLines() {
+        let preview = TranscriptTextPreview("one\ntwo\nthree\nfour\nfive\nsix", lineLimit: 5)
+        #expect(preview.text == "one\ntwo\nthree\nfour\nfive")
+        #expect(preview.isTruncated)
+        #expect(!TranscriptTextPreview("one\ntwo\nthree\nfour\nfive", lineLimit: 5).isTruncated)
+    }
+
     @Test func chunksKeepOrdinaryLinesTogether() {
         let chunks = TranscriptTextChunks("first\nsecond\nthird\n", limit: 10)
         #expect(chunks.pieces == ["first\n", "second\n", "third\n"])

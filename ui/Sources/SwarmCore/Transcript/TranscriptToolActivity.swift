@@ -34,6 +34,49 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         self.duration = duration
     }
 
+    /// The one-line title after the tool name: the call's description (or a Skill call's skill name),
+    /// else the command's first line, else the file name with the line range a Read asked for.
+    public var headerTitle: String {
+        let fields: [String: JSONElement] = if case .object(let value) = input { value } else { [:] }
+        for key in ["description", "Description", "toolSummary", "skill"] {
+            if case .string(let value) = fields[key] {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        if let command {
+            let line = command.trimmingCharacters(in: .whitespacesAndNewlines).prefix(while: { !$0.isNewline })
+            if !line.isEmpty { return String(line) }
+        }
+        guard let path else { return "" }
+        let name = (path as NSString).lastPathComponent
+        func number(_ key: String) -> Int64? {
+            if case .integer(let value) = fields[key] { value } else { nil }
+        }
+        switch (number("offset"), number("limit")) {
+        case (let offset, let limit?):
+            let first = offset ?? 1
+            return "\(name) · lines \(first)–\(first + limit - 1)"
+        case (let offset?, nil):
+            return "\(name) · from line \(offset)"
+        case (nil, nil):
+            return name
+        }
+    }
+
+    /// Added and removed lines across the call's diffs; nil when it has none.
+    public var diffCounts: (added: Int, removed: Int)? {
+        guard !diffs.isEmpty else { return nil }
+        let lines = diffs.flatMap(\.hunks).flatMap(\.lines)
+        return (lines.count { $0.hasPrefix("+") }, lines.count { $0.hasPrefix("-") })
+    }
+
+    /// The exit status Claude Code writes on the first line of a failed command's result.
+    public var exitCode: Int? {
+        guard command != nil, let output, output.hasPrefix("Exit code ") else { return nil }
+        return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+    }
+
     /// Seconds between two event timestamps (ISO 8601, with or without fractional seconds).
     static func duration(from start: String, to end: String) -> Double? {
         func date(_ text: String) -> Date? {

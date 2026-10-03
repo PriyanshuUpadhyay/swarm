@@ -5,10 +5,10 @@ public struct TranscriptTextPreview: Sendable, Equatable {
     public let text: String
     public let isTruncated: Bool
 
-    public init(_ source: String) {
+    public init(_ source: String, lineLimit: Int = 120) {
         let prefix = source.prefix(12_000)
         text = prefix.split(separator: "\n", omittingEmptySubsequences: false)
-            .prefix(120).joined(separator: "\n")
+            .prefix(lineLimit).joined(separator: "\n")
         isTruncated = prefix.endIndex != source.endIndex || text != String(prefix)
     }
 }

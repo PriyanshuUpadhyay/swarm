@@ -433,19 +433,23 @@ private struct TranscriptRowView: View {
                 .padding(.vertical, DesignTokens.Spacing.s)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
+            } else if let run = row.shell {
+                TranscriptShellRow(run: run, revealForSearch: revealForSearch)
+            } else if let command = row.command {
+                // The owner typed the command, so it sits in their bubble.
+                userBubble(TranscriptCommandChipView(chip: command))
             } else if row.kind == .user {
-                // A quiet tinted block, not a bubble.
-                rowBody
-                    .padding(DesignTokens.Spacing.m)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DesignTokens.userMessageFill, in: .rect(cornerRadius: DesignTokens.Radius.card))
+                userBubble(TranscriptMessageView(text: row.text))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("You")
             } else if row.kind == .assistant {
                 rowBody.padding(.vertical, DesignTokens.Spacing.xs)
             } else {
                 rowBody
             }
         }
-        .overlay(alignment: .topTrailing) {
+        // The user's bubble sits on the trailing edge, so its copy button goes in the free leading space.
+        .overlay(alignment: row.kind == .user ? .topLeading : .topTrailing) {
             // Shown on hover only, so the transcript stays calm; VoiceOver has it as an action.
             if isMessage, hovering || copying {
                 Button(copying ? "Copying…" : "Copy message", systemImage: "doc.on.doc", action: copy)
@@ -470,9 +474,12 @@ private struct TranscriptRowView: View {
 
     private var rowBody: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text(row.label(chair: chair))
-                .font(labelFont)
-                .foregroundStyle(.secondary)
+            // Agent text has no label: the user bubble already sets the two voices apart.
+            if row.kind != .assistant {
+                Text(row.label(chair: chair))
+                    .font(labelFont)
+                    .foregroundStyle(.secondary)
+            }
             switch row.kind {
             case .diff:
                 if let diff = row.diff { TranscriptDiffView(diff: diff, revealForSearch: revealForSearch) }
@@ -500,7 +507,7 @@ private struct TranscriptRowView: View {
                 }
             case .error:
                 Text(verbatim: row.text).foregroundStyle(.red)
-            case .user, .assistant:
+            case .assistant:
                 TranscriptMessageView(text: row.text)
             case .result where row.endsTurn:
                 Label(row.text == "aborted" ? "Turn interrupted" : "Turn finished",
@@ -509,6 +516,15 @@ private struct TranscriptRowView: View {
             default:
                 Text(verbatim: row.text)
             }
+        }
+    }
+
+    private func userBubble(_ content: some View) -> some View {
+        UserBubbleLayout {
+            content
+                .padding(.horizontal, DesignTokens.Spacing.m)
+                .padding(.vertical, DesignTokens.Spacing.s)
+                .background(DesignTokens.userMessageFill, in: .rect(cornerRadius: DesignTokens.Radius.panel))
         }
     }
 
@@ -531,6 +547,27 @@ private struct TranscriptRowView: View {
         default:
             .caption
         }
+    }
+}
+
+/// Fits the user's bubble to its text, at most `userBubbleMaxShare` of the column, on the trailing edge.
+private struct UserBubbleLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let bubble = subviews.first else { return .zero }
+        let size = bubble.sizeThatFits(bubbleProposal(width: proposal.width, bubble))
+        return CGSize(width: proposal.width ?? size.width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let bubble = subviews.first else { return }
+        bubble.place(at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing,
+                     proposal: bubbleProposal(width: bounds.width, bubble))
+    }
+
+    private func bubbleProposal(width: CGFloat?, _ bubble: LayoutSubview) -> ProposedViewSize {
+        let ideal = bubble.sizeThatFits(.unspecified).width
+        let limit = width.map { $0 * DesignTokens.userBubbleMaxShare } ?? ideal
+        return ProposedViewSize(width: min(ideal, limit), height: nil)
     }
 }
 

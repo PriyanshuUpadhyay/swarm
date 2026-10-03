@@ -80,7 +80,9 @@ enum DesignTokens {
 
     /// Quiet fills: a selected row, a user message, a match highlight.
     static let selectionFill = Color.primary.opacity(0.08)
-    static let userMessageFill = Color.primary.opacity(0.05)
+    static let userMessageFill = Color.primary.opacity(0.07)
+    /// The user's bubble is at most this share of the text column.
+    static let userBubbleMaxShare: CGFloat = 0.75
     static let matchFill = Color.yellow.opacity(0.14)
     static let currentMatchFill = Color.accentColor.opacity(0.28)
     static let endedPaneOpacity = 0.6
