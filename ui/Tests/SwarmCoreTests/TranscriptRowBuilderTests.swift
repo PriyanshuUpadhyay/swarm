@@ -388,6 +388,21 @@ struct TranscriptRowBuilderTests {
         #expect(twice.map(\.tool?.skillBody) == ["Base directory for this skill: /skills/flow\n\nBase directory for this skill: /skills/flow/more"])
     }
 
+    @Test("A bundled skill's injected body joins the Skill call that names it, and not another tool")
+    func bundledSkillBodyToTool() throws {
+        let meta = Meta(agentSessionID: "s")
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "skill-call", name: "Skill", input: .object(["skill": .string("simplify")]), status: .completed, meta: meta),
+            .systemMessage(kind: "injected", text: "Review target: the changes", meta: Meta(agentSessionID: "s", uuid: "body", parentUUID: "tool-result", sourceToolUseID: "skill-call")),
+            .toolCall(toolCallID: "bash-call", name: "Bash", input: .object([:]), status: .completed, meta: meta),
+            .systemMessage(kind: "injected", text: "Hook note", meta: Meta(agentSessionID: "s", uuid: "note", sourceToolUseID: "bash-call")),
+        ])
+        try #require(rows.map(\.kind) == [.toolUse, .toolUse, .system])
+        #expect(rows[0].tool?.skillBody == "Review target: the changes")
+        #expect(rows[1].tool?.skillBody == nil)
+        #expect(rows[2].isHiddenByDefault)
+    }
+
     @Test("A skill body with no command or call is a system row, never the owner's")
     func unlinkedSkillBody() throws {
         let rows = TranscriptRowBuilder.rows(from: [

@@ -138,6 +138,7 @@ public enum TranscriptRowBuilder {
             }
         }
         let calls = anchors { if case .toolCall(let id, _, _, _, let meta) = $0 { (id, meta) } else { nil } }
+        let skillCalls = anchors { if case .toolCall(let id, "Skill", _, _, let meta) = $0 { (id, meta) } else { nil } }
         let shellInputs = anchors { if case .systemMessage(TranscriptSystemKind.shellInput, _, let meta) = $0 { (meta.uuid, meta) } else { nil } }
         // A cut command record gets no chip, so it takes no children; they stay their own rows.
         let commands = anchors {
@@ -184,10 +185,11 @@ public enum TranscriptRowBuilder {
                 // A bundled skill writes its body without the "Base directory for this skill:" line, so
                 // the parser calls it injected; its parent link to a command still marks it a skill body.
                 // A reminder or a command caveat can name the command as parent too, and stays a hidden
-                // System row.
-                guard let command = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
+                // System row. The model's Skill call names its body by sourceToolUseID instead.
+                guard let target = match(meta.parentUUID, for: index, session: meta.sessionID, in: commands)
+                    ?? match(meta.sourceToolUseID, for: index, session: meta.sessionID, in: skillCalls)
                 else { continue }
-                attached[command, default: []].append(index)
+                attached[target, default: []].append(index)
             default:
                 continue
             }
@@ -245,7 +247,7 @@ public enum TranscriptRowBuilder {
                 switch kind {
                 case TranscriptSystemKind.shellOutput:
                     row = shellRow(ShellRecord.run(command: row.shell?.command, outputText: text), eventID: row.eventID)
-                case TranscriptSystemKind.skillBody where row.tool != nil:
+                case TranscriptSystemKind.skillBody where row.tool != nil, TranscriptSystemKind.injected where row.tool != nil:
                     let earlier = row.tool?.skillBody
                     row.tool?.skillBody = [earlier, text].compactMap { $0 }.joined(separator: "\n\n")
                 case TranscriptSystemKind.skillBody, TranscriptSystemKind.injected:

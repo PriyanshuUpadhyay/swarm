@@ -509,7 +509,10 @@ private struct TranscriptRowView: View {
             } else if row.endsTurn {
                 turnEnd
             } else if row.kind == .assistant {
+                // No visible label, so VoiceOver gets the speaker from the group, as "You" above.
                 rowBody.padding(.vertical, DesignTokens.Spacing.xs)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(row.label(chair: chair))
             } else {
                 rowBody
             }
