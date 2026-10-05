@@ -649,7 +649,9 @@ struct TranscriptDebugDataTests {
             .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-2")),
         ]
-        let rows = TranscriptRowBuilder.rows(from: tail, indexOffset: 40)
+        // The app's tail window starts at index 0 and only goes below 0 on Load earlier, so the
+        // window's older-entries flag, not the offset, says it starts mid-log.
+        let rows = TranscriptRowBuilder.rows(from: tail, indexOffset: 0, hasOlder: true)
         #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false, true])
         let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
         #expect(folds == [["c1:call", "ring-1:ring", "c2:call"]])
@@ -657,7 +659,7 @@ struct TranscriptDebugDataTests {
         let idleWindow = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
             .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
-        ], indexOffset: 40)
+        ], indexOffset: 0, hasOlder: true)
         #expect(idleWindow[0].startsTurn)
     }
 
