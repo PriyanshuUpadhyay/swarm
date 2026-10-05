@@ -171,4 +171,29 @@ struct TranscriptToolActivityTests {
         ])
         #expect(rows.map(\.tool?.state) == [.failed, .finished])
     }
+
+    @Test("Script failed fails only a command in Codex code-mode shape")
+    func scriptFailedNeedsCodeModeShape() {
+        let logFile = TranscriptToolActivity(name: "Read", input: .object([:]), output: "Script failed: lint skipped", state: .finished)
+        #expect(!logFile.reportsFailure)
+        let stdout = TranscriptToolActivity(
+            name: "Bash", input: .object([:]), output: "Script failed: lint skipped", state: .finished, command: "make lint"
+        )
+        #expect(!stdout.reportsFailure)
+    }
+
+    /// Codex exec_command without code mode (0.154 logs) writes a header, then `Output:`.
+    @Test("A Codex exec_command result reads Process exited with code N from its header only")
+    func codexProcessExit() {
+        func exec(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec_command", input: .object([:]), output: output, state: .finished, command: "false")
+        }
+        let header = "Chunk ID: b294b6\nWall time: 0.0000 seconds\nProcess exited with code "
+        let failed = exec(header + "1\nOriginal token count: 3\nOutput:\nboom\n")
+        #expect(failed.exitCode == 1)
+        #expect(failed.reportsFailure)
+        #expect(exec(header + "0\nOriginal token count: 3\nOutput:\nok\n").exitCode == nil)
+        let running = exec("Chunk ID: c1\nWall time: 1.0 seconds\nProcess running with session ID 7\nOutput:\nProcess exited with code 1\n")
+        #expect(running.exitCode == nil)
+    }
 }

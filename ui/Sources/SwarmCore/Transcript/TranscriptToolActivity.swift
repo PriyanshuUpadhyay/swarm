@@ -99,19 +99,31 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return counts
     }
 
-    /// The result says the step failed: a non-zero exit code, or Codex's `Script failed`.
+    /// The result says the step failed: a non-zero exit code, or a Codex code-mode command's
+    /// `Script failed` header. Another tool's text can start with those words, so only a command
+    /// in the `Script failed` … `Output:` shape counts.
     public var reportsFailure: Bool {
-        (exitCode ?? 0) != 0 || output?.hasPrefix("Script failed") == true
+        if (exitCode ?? 0) != 0 { return true }
+        guard command != nil, let output, output.hasPrefix("Script failed\n") else { return false }
+        return output.contains("\nOutput:\n")
     }
 
-    /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex code
-    /// mode writes `Script completed`, its wall time, `Output:`, and then each exec_command's JSON
-    /// result; the first `"exit_code":N` other than 0 there is the code. A key inside an escaped
-    /// string reads `\"exit_code\":`, so it does not match. O(output length).
+    /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex
+    /// exec_command without code mode writes a `Chunk ID:` header with `Process exited with code N`
+    /// before `Output:`. Codex code mode writes `Script completed`, its wall time, `Output:`, and
+    /// then each exec_command's JSON result; the first `"exit_code":N` other than 0 there is the
+    /// code. A key inside an escaped string reads `\"exit_code\":`, so it does not match. Codex
+    /// codes of 0 give nil, so a card shows no "exit 0". O(output length).
     static func exitCode(output: String?, command: String?) -> Int? {
         guard command != nil, let output else { return nil }
         if output.hasPrefix("Exit code ") {
             return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+        }
+        if output.hasPrefix("Chunk ID: ") {
+            let header = output.range(of: "\nOutput:\n").map { output[..<$0.lowerBound] } ?? output[...]
+            guard let key = header.range(of: "\nProcess exited with code ") else { return nil }
+            let code = Int(header[key.upperBound...].prefix { !$0.isNewline })
+            return code == 0 ? nil : code
         }
         guard output.hasPrefix("Script "), let start = output.range(of: "\nOutput:\n") else { return nil }
         var rest = output[start.upperBound...]
