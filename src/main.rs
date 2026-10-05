@@ -77,7 +77,7 @@ enum Proof {
 /// the box. So a waiting ring to a CLI whose box swarm can read waits for the box, and presses
 /// Enter again while the box still holds the ring. With `Proof::Later` it skips both waits and
 /// returns None once the ring is typed; a ring that a starting CLI loses is rung again after 60 s,
-/// like any unseen message.
+/// like any unseen message. A waiting ring also returns None when a store error hides its proof.
 fn ring_pane(
     connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
@@ -135,16 +135,25 @@ fn ring_pane(
                 adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
                 enters += 1;
             }
-        } else if let Some(delivery) = ring_proof(
-            connection,
-            session_id,
-            agent_id,
-            provider,
-            &rows,
-            screen.as_deref(),
-            rung_at,
-        ) {
-            return Ok(Some(delivery));
+        } else {
+            match ring_proof(
+                connection,
+                session_id,
+                agent_id,
+                provider,
+                &rows,
+                screen.as_deref(),
+                rung_at,
+            ) {
+                Ok(None) => {}
+                Ok(delivery) => return Ok(delivery),
+                // A store error proves nothing either way, so the ring keeps no result and a
+                // later sweep or listing pass settles it.
+                Err(error) => {
+                    eprintln!("swarm: ring proof not read: {error}");
+                    return Ok(None);
+                }
+            }
         }
         if std::time::Instant::now() + RING_POLL >= deadline {
             return Ok(Some(Delivery::Unconfirmed));
@@ -167,7 +176,8 @@ fn screen_of(
 
 /// What the store and the pane prove now about a ring typed at `rung_at`, if anything. The
 /// caller checks first that the input box no longer holds the ring. A `screen` of None, a failed
-/// read, proves nothing, so the pane is not taken as one with no reader.
+/// read, proves nothing, so the pane is not taken as one with no reader. A store error is
+/// returned, not read as no proof, so a late ring is not stored as unconfirmed because of it.
 fn ring_proof(
     connection: &rusqlite::Connection,
     session_id: &str,
@@ -176,30 +186,31 @@ fn ring_proof(
     rows: &str,
     screen: Option<&str>,
     rung_at: i64,
-) -> Option<Delivery> {
+) -> Result<Option<Delivery>, Box<dyn std::error::Error>> {
     if provider.is_none()
         && screen.is_some_and(|screen| swarm::screen::herdr_state(screen).is_none())
     {
-        return Some(Delivery::Unchecked);
+        return Ok(Some(Delivery::Unchecked));
     }
-    if swarm::store::turn_started(connection, session_id, agent_id, rung_at).unwrap_or(false) {
-        return Some(Delivery::Hook);
+    if swarm::store::turn_started(connection, session_id, agent_id, rung_at)? {
+        return Ok(Some(Delivery::Hook));
     }
     if let Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) =
         swarm::screen::read_pane(provider, screen.unwrap_or(rows), || Some(rows.to_string()))
     {
-        return Some(Delivery::Screen);
+        return Ok(Some(Delivery::Screen));
     }
-    swarm::store::seen_since(connection, session_id, agent_id, rung_at)
-        .unwrap_or(false)
-        .then_some(Delivery::Seen)
+    Ok(
+        swarm::store::seen_since(connection, session_id, agent_id, rung_at)?
+            .then_some(Delivery::Seen),
+    )
 }
 
 /// Ring `agent` for the messages `seqs`, stored as rung at `rung_at`, and store what the ring
-/// proved on them. The bell is a
-/// hint (R9), so a failure only warns, and a failed ring is unconfirmed. With `Proof::Later` a
-/// ring, typed or failed, stores nothing and returns None; `settle_rings` stores its proof, so
-/// the chair's own failed ring is still left to the sweep line.
+/// proved on them. The bell is a hint (R9), so a failure only warns, and a failed ring is
+/// unconfirmed. With `Proof::Later` a ring, typed or failed, stores nothing and returns None, and
+/// so does a ring whose proof read failed in the store; `settle_rings` stores its proof, so the
+/// chair's own failed ring is still left to the sweep line.
 #[allow(clippy::too_many_arguments)]
 fn ring_and_record(
     connection: &rusqlite::Connection,
@@ -1781,6 +1792,7 @@ fn settle_rings(
                     rung_at,
                 )
             })
+            .transpose()?
             .flatten();
         let late = now - rung_at > RING_TIMEOUT.as_secs() as i64;
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
@@ -3901,6 +3913,64 @@ mod tests {
             );
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    /// A store error while reading a ring's proof proves nothing either way. The waiting ring and
+    /// a late pass store no result, so the chair is not told that a delivered message was lost.
+    #[test]
+    fn a_store_error_in_the_proof_check_stores_no_ring_result() {
+        let (root, mut connection, session) = ring_session(
+            "proof-store-error",
+            Some("claude"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        let seq = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        let rung_at = unix_now().unwrap();
+        connection
+            .execute("UPDATE message SET rung_at = ?1, rings = 1", [rung_at])
+            .unwrap();
+        // A temp `agent` with no `state_source` shadows the real table, so the hook read fails
+        // and the ring's other agent reads still work.
+        connection
+            .execute_batch(
+                "CREATE TEMP TABLE agent AS SELECT * FROM main.agent;
+                 ALTER TABLE temp.agent DROP COLUMN state_source;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let delivery = ring_and_record(
+            &connection,
+            &root,
+            Ok(adapter.clone()),
+            &session,
+            CODER,
+            "%2",
+            &[seq],
+            rung_at,
+            Proof::Wait,
+        );
+        assert_eq!(delivery, None);
+        assert_eq!(delivery_of(&connection, &session, seq), None);
+
+        connection
+            .execute(
+                "UPDATE message SET rung_at = ?1",
+                [rung_at - RING_TIMEOUT.as_secs() as i64 - 1],
+            )
+            .unwrap();
+        assert!(settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).is_err());
+        assert_eq!(delivery_of(&connection, &session, seq), None);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// A ring whose Enter was lost sits in the input box. Swarm presses Enter again for each CLI
