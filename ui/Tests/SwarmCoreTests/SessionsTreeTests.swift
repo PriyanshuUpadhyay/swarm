@@ -27,6 +27,22 @@ struct SessionsTreeTests {
         #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(20)).isEmpty)
     }
 
+    @Test("Forgetting worktrees prevents an older in-flight listing from filling the cache")
+    func forgetWorktreesDuringListing() async throws {
+        let calls = SuspendedWorktreeListing()
+        let discovery = SwarmSessionDiscovery(worktreeLister: { await calls.list($0) })
+        let start = Date.now
+        let oldListing = Task { try await discovery.worktrees(for: "/repo-one", now: start) }
+        await calls.waitUntilStarted()
+        await discovery.forgetWorktrees(for: "/repo-one")
+        let fresh = try await discovery.worktrees(for: "/repo-one", now: start)
+        #expect(fresh.map(\.path) == ["/repo-one/new"])
+        await calls.resume()
+        #expect(try await oldListing.value.map(\.path) == ["/repo-one/old"])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start) == fresh)
+        #expect(await calls.count == 2)
+    }
+
     @Test("The tree reads many sessions with one agents call and keeps unknown sessions unknown")
     func treeReadsAgentsOnce() async throws {
         let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
@@ -611,5 +627,27 @@ private actor WorktreeListingCalls {
     func list(_ path: String) -> [WorktreeEntry] {
         paths.append(path)
         return entries ?? [WorktreeEntry(path: path + "/main", branch: "main")]
+    }
+}
+
+private actor SuspendedWorktreeListing {
+    var count = 0
+    private var pending: CheckedContinuation<[WorktreeEntry], Never>?
+
+    func list(_ path: String) async -> [WorktreeEntry] {
+        count += 1
+        if count == 1 {
+            return await withCheckedContinuation { pending = $0 }
+        }
+        return [WorktreeEntry(path: path + "/new", branch: "new")]
+    }
+
+    func waitUntilStarted() async {
+        while pending == nil { await Task.yield() }
+    }
+
+    func resume() {
+        pending?.resume(returning: [WorktreeEntry(path: "/repo-one/old", branch: "old")])
+        pending = nil
     }
 }

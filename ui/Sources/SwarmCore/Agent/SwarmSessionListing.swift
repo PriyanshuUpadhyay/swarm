@@ -282,6 +282,7 @@ public actor SwarmSessionDiscovery {
     private var titleMisses: [SwarmSessionID: Date] = [:]
     private var titleSearches: [SwarmSessionID: (provider: String?, chairID: SwarmChairID?, at: Date)] = [:]
     private var worktreeListings: [String: (entries: [WorktreeEntry], at: Date)] = [:]
+    private var worktreeGenerations: [String: UInt64] = [:]
     private let profiles: any SwarmProfileSource
     private let home: URL
     private let worktreeLister: @Sendable (String) async throws -> [WorktreeEntry]
@@ -350,14 +351,20 @@ public actor SwarmSessionDiscovery {
         await accountHomesReader.prefetchHomes()
     }
 
-    public func forgetWorktrees(for common: String) { worktreeListings.removeValue(forKey: common) }
+    public func forgetWorktrees(for common: String) {
+        worktreeGenerations[common, default: 0] += 1
+        worktreeListings.removeValue(forKey: common)
+    }
 
     func worktrees(for common: String, now: Date = .now) async throws -> [WorktreeEntry] {
         if let cached = worktreeListings[common], now.timeIntervalSince(cached.at) < 10 {
             return cached.entries
         }
+        let generation = worktreeGenerations[common, default: 0]
         let entries = try await worktreeLister(common)
-        worktreeListings[common] = (entries, now)
+        if generation == worktreeGenerations[common, default: 0] {
+            worktreeListings[common] = (entries, now)
+        }
         return entries
     }
 
