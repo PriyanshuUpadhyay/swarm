@@ -198,9 +198,7 @@ public enum StepRuns {
         // From the last step back, so the edge dropped in a cycle is the one that points to a later file.
         for step in steps.reversed() { _ = depth(step.id) }
         var result: [[String]] = []
-        // A listing can name one file twice while an agent renames it; the graph needs each id once.
-        var placed: Set<String> = []
-        for step in steps where placed.insert(step.id).inserted {
+        for step in steps {
             let value = layer[step.id] ?? 0
             while result.count <= value { result.append([]) }
             result[value].append(step.id)
@@ -223,9 +221,7 @@ public enum StepRuns {
     ) async throws -> StepRun? {
         let listing = try await WorkspaceFiles.list(in: workspace, path: folder.path)
         cutOff = cutOff || listing.truncated
-        let files = listing.entries
-            .filter { $0.kind == .file && $0.name.wholeMatch(of: /[0-9]{2}-.+\.md/) != nil }
-            .sorted { $0.name < $1.name }
+        let files = stepFiles(listing.entries)
         let paths = files.map { folder.path + "/" + $0.name }
         var previews = paths.map { try? WorkspaceFiles.read(in: workspace, path: $0) }
         if previews.contains(.text("")) {
@@ -267,6 +263,15 @@ public enum StepRuns {
             id: folder.path, skill: skill, name: folder.name, closed: closed, steps: steps,
             lastActivity: events.values.max() ?? files.map(\.modified).max()
         )
+    }
+
+    /// The step files of a run folder in name order, each name once: a listing can name one file
+    /// twice while an agent renames it, and the graph needs each step id once.
+    static func stepFiles(_ entries: [WorkspaceFileEntry]) -> [WorkspaceFileEntry] {
+        var seen: Set<String> = []
+        return entries
+            .filter { $0.kind == .file && $0.name.wholeMatch(of: /[0-9]{2}-.+\.md/) != nil && seen.insert($0.name).inserted }
+            .sorted { $0.name < $1.name }
     }
 
     private static func staleNeeds(
