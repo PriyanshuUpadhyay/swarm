@@ -10,6 +10,23 @@ struct SessionsTreeTests {
         WorktreeEntry(path: "/repo/wt/feature", branch: "feature"),
     ]
 
+    @Test("Worktree listings stay cached for ten seconds and refresh additions and removals")
+    func worktreeListingsExpire() async throws {
+        let calls = WorktreeListingCalls()
+        let discovery = SwarmSessionDiscovery(worktreeLister: { await calls.list($0) })
+        let start = Date.now
+        let first = try await discovery.worktrees(for: "/repo-one", now: start)
+        #expect(first.map(\.path) == ["/repo-one/main"])
+        await calls.set([WorktreeEntry(path: "/repo-one/new", branch: "new")])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(9.999)) == first)
+        #expect(await calls.paths == ["/repo-one"])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(10)).map(\.path) == ["/repo-one/new"])
+        _ = try await discovery.worktrees(for: "/repo-two", now: start.addingTimeInterval(10))
+        #expect(await calls.paths == ["/repo-one", "/repo-one", "/repo-two"])
+        await calls.set([])
+        #expect(try await discovery.worktrees(for: "/repo-one", now: start.addingTimeInterval(20)).isEmpty)
+    }
+
     @Test("The tree reads many sessions with one agents call and keeps unknown sessions unknown")
     func treeReadsAgentsOnce() async throws {
         let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
@@ -584,5 +601,15 @@ private actor TreeAgentCalls {
     func record(_ arguments: [String], environment: [String: String]) {
         self.arguments.append(arguments)
         sessionIDs.append(environment["SWARM_SESSION_ID"])
+    }
+}
+
+private actor WorktreeListingCalls {
+    var paths: [String] = []
+    var entries: [WorktreeEntry]?
+    func set(_ entries: [WorktreeEntry]) { self.entries = entries }
+    func list(_ path: String) -> [WorktreeEntry] {
+        paths.append(path)
+        return entries ?? [WorktreeEntry(path: path + "/main", branch: "main")]
     }
 }

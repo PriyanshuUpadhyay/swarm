@@ -340,7 +340,7 @@ extension SwarmSessionDiscovery {
                 guard case .repository(let common) = identity(for: session.cwd), listings[common] == nil else {
                     continue
                 }
-                listings[common] = try await Git.worktrees(of: common)
+                listings[common] = try await worktrees(for: common)
             }
         }
         do {
@@ -350,7 +350,7 @@ extension SwarmSessionDiscovery {
                 guard case .repository(let common) = identity(for: path), listings[common] == nil else {
                     continue
                 }
-                listings[common] = try await Git.worktrees(of: common)
+                listings[common] = try await worktrees(for: common)
             }
         }
         let titleTiming = SwarmPerformance.begin("TitleResolution")

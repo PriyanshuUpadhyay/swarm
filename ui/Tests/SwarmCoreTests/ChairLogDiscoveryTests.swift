@@ -5,6 +5,21 @@ import TranscriptTool
 
 @Suite("Chair log discovery")
 struct ChairLogDiscoveryTests {
+    @Test("Repeated account prefetches share one reader and keep its expiry")
+    func prefetchHomesReusesReader() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let profiles = ChangingProfiles(SwarmAccountList(provider: "codex", source: "fixture", accounts: [], auto: nil))
+        let discovery = SwarmSessionDiscovery(profiles: profiles, home: fixture.root)
+        await discovery.prefetchHomes()
+        await discovery.prefetchHomes()
+        #expect(profiles.calls == ["claude", "codex"])
+        let expiring = SwarmSessionDiscovery(profiles: profiles, home: fixture.root, accountHomesTTL: 0)
+        await expiring.prefetchHomes()
+        await expiring.prefetchHomes()
+        #expect(profiles.calls == ["claude", "codex", "claude", "codex", "claude", "codex"])
+    }
+
     @Test("Finds the nearest matching Codex home and retries until a log exists")
     func codex() async throws {
         let fixture = try Fixture()
@@ -105,6 +120,32 @@ struct ChairLogDiscoveryTests {
         }
     }
 
+    @Test("Sidebar discovery misses wait ten seconds; known-chair title misses keep thirty seconds")
+    func sidebarTitleMissExpires() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let profiles = FixtureProfiles(accountList: SwarmAccountList(
+            provider: "codex", source: "fixture", accounts: [account("test", home: home)], auto: "test"
+        ))
+        for chairID in [nil, UUID().uuidString] as [String?] {
+            let cwd = "/work/\(UUID().uuidString)"
+            let session = SwarmSession(
+                id: .init(UUID().uuidString), talkMode: "lane", adapter: "tmux-solo",
+                cwd: cwd, createdAt: 1_790_079_961, chairProvider: "codex",
+                chairID: chairID.map(SwarmChairID.init), chairLog: nil,
+                agents: 1, messages: 0, lastMessageAt: nil
+            )
+            let discovery = SwarmSessionDiscovery(profiles: profiles, home: fixture.root)
+            let start = Date.now
+            let expiry: TimeInterval = chairID == nil ? 10 : 30
+            #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: [:], now: start)[session.id] == nil)
+            _ = try fixture.codexLog(home: home, name: "late-\(chairID ?? UUID().uuidString)", cwd: cwd, at: "2026-09-22T12:26:05Z", prompt: "Late title")
+            #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: [:], now: start.addingTimeInterval(expiry - 0.001))[session.id] == nil)
+            #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: [:], now: start.addingTimeInterval(expiry))[session.id] == "Late title")
+        }
+    }
+
     @Test("A nearer log replaces the discovered transcript and title")
     func nearerLogReplacesCachedLog() async throws {
         let fixture = try Fixture()
@@ -136,7 +177,7 @@ struct ChairLogDiscoveryTests {
         let start = Date.now
         #expect(await transcript.discoveredLog(for: session, now: start)?.standardizedFileURL
             == firstLog.standardizedFileURL)
-        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents, now: start)[session.id]
             == "Chat A")
 
         let secondLog = try fixture.codexLog(
@@ -148,8 +189,20 @@ struct ChairLogDiscoveryTests {
             .standardizedFileURL == firstLog.standardizedFileURL)
         #expect(await transcript.discoveredLog(for: session, now: start.addingTimeInterval(10))?
             .standardizedFileURL == secondLog.standardizedFileURL)
-        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents, now: start.addingTimeInterval(9.999))[session.id]
+            == "Chat A")
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents, now: start.addingTimeInterval(10))[session.id]
             == "Chat B")
+        // A missing cached file and a changed bus log bypass the time limit.
+        try FileManager.default.removeItem(at: secondLog)
+        #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents, now: start.addingTimeInterval(10.1))[session.id]
+            == "Chat A")
+        var registered = session
+        registered.chairLog = try fixture.codexLog(
+            home: home, name: "registered", cwd: cwd, at: "2026-09-22T12:26:03Z", prompt: "Registered"
+        ).path
+        #expect(await discovery.resolvedTitles(sessions: [registered], agentsBySession: agents, now: start.addingTimeInterval(10.2))[session.id]
+            == "Registered")
     }
 
     @Test("Chooses the chair rollout instead of a later rollout in the same folder")
@@ -409,6 +462,8 @@ struct ChairLogDiscoveryTests {
 private final class ChangingProfiles: SwarmProfileSource, @unchecked Sendable {
     private let lock = NSLock()
     private var list: SwarmAccountList
+    private var recordedCalls: [String] = []
+    var calls: [String] { lock.withLock { recordedCalls } }
 
     init(_ list: SwarmAccountList) { self.list = list }
 
@@ -417,7 +472,7 @@ private final class ChangingProfiles: SwarmProfileSource, @unchecked Sendable {
     }
 
     func accounts(provider: String) async throws -> SwarmAccountList {
-        lock.withLock { list }
+        lock.withLock { recordedCalls.append(provider); return list }
     }
     func usage() async throws -> [SwarmUsageMeter] { [] }
 }
