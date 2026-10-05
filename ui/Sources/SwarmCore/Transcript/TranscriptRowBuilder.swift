@@ -490,9 +490,13 @@ public enum TranscriptRowBuilder {
 }
 
 public enum ChairTurn {
-    /// A turn runs from the last row that starts one until a turn-ended row follows it.
+    /// A turn runs from the last row that starts one until a turn-ended row follows it. The builder
+    /// keeps a ring mid-turn only inside an open turn, so a ring also shows a turn runs there, even
+    /// when the window starts below the turn's prompt.
     public static func isActive(_ rows: [TranscriptRow]) -> Bool {
-        guard let start = rows.lastIndex(where: { $0.kind == .user || $0.startsTurn }) else { return false }
+        guard let start = rows.lastIndex(where: {
+            $0.kind == .user || $0.startsTurn || $0.systemKind == TranscriptSystemKind.swarmRing
+        }) else { return false }
         return !rows[start...].contains(where: \.endsTurn)
     }
 }

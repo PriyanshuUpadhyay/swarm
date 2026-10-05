@@ -655,6 +655,9 @@ struct TranscriptDebugDataTests {
         #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false, true])
         let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
         #expect(folds == [["c1:call", "ring-1:ring", "c2:call"]])
+        // The owner's prompt is above the window, so the mid-turn ring is what shows the turn runs.
+        let running = TranscriptRowBuilder.rows(from: Array(tail.prefix(5)), indexOffset: 0, hasOlder: true)
+        #expect(ChairTurn.isActive(running))
 
         let idleWindow = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
