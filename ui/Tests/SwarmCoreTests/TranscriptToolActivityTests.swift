@@ -135,6 +135,9 @@ struct TranscriptToolActivityTests {
         #expect(TranscriptToolActivity.command(in: .string(two), name: "exec") == "swarm roles get council.claude\nswarm roles get council.gpt")
         let patch = #"text(await tools.apply_patch("*** Begin Patch\n*** End Patch"));"#
         #expect(TranscriptToolActivity.command(in: .string(patch), name: "exec") == patch)
+        // A script that also calls another tool names that call in order, so the header hides no step.
+        let mixed = #"await tools.apply_patch("*** Begin Patch\n*** End Patch"); text(await tools.exec_command({cmd:"ls"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(mixed), name: "exec") == "apply_patch(…)\nls")
         let cut = #"text(await tools.exec_command({cmd:"swarm inb"#
         #expect(TranscriptToolActivity.command(in: .string(cut), name: "exec") == cut)
         let row = TranscriptRowBuilder.rows(from: [

@@ -174,9 +174,10 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     }
 
     /// The `cmd` string of each `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` in a Codex
-    /// code-mode script, decoded as a JSON string and joined by newlines; nil when it has none.
+    /// code-mode script, decoded as a JSON string, with each other `tools.name(` call as `name(…)`,
+    /// in script order and joined by newlines; nil when it has no exec_command.
     static func execCommands(inScript script: String) -> String? {
-        var commands: [String] = []
+        var steps: [(at: String.Index, text: String)] = []
         var rest = script[...]
         while let call = rest.range(of: "exec_command({") {
             rest = rest[call.upperBound...]
@@ -185,9 +186,17 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             guard let key else { continue }
             let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
             guard value.first == "\"", let literal = stringLiteral(at: value) else { continue }
-            commands.append(literal)
+            steps.append((call.lowerBound, literal))
         }
-        return commands.isEmpty ? nil : commands.joined(separator: "\n")
+        guard !steps.isEmpty else { return nil }
+        rest = script[...]
+        while let call = rest.range(of: "tools.") {
+            rest = rest[call.upperBound...]
+            let name = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+            guard !name.isEmpty, name != "exec_command", rest.dropFirst(name.count).first == "(" else { continue }
+            steps.append((call.lowerBound, "\(name)(…)"))
+        }
+        return steps.sorted { $0.at < $1.at }.map(\.text).joined(separator: "\n")
     }
 
     /// The double-quoted literal that `text` starts with, decoded; nil when it does not close.
