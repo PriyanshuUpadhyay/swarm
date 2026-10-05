@@ -899,7 +899,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         "{command}"
     );
     assert!(
-        command.contains("'--sandbox' 'workspace-write'"),
+        command.contains(r#"'default_permissions="swarm-code"'"#),
         "{command}"
     );
 
