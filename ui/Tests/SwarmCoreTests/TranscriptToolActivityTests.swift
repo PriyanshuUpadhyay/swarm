@@ -145,8 +145,8 @@ struct TranscriptToolActivityTests {
         let prose = #"text(await tools.exec_command({cmd:"ls"})); text("see tools.read( first"); const note = 'tools.write('; const tip = `tools.view(`;"#
         #expect(TranscriptToolActivity.command(in: .string(prose), name: "exec") == "ls")
         // A cmd that is no double-quoted literal is still a step, so the header hides no command.
-        let built = #"const dir = "src"; await tools.exec_command({cmd: `ls ${dir}`}); await tools.exec_command({cmd: dir}); text(await tools.exec_command({cmd:"pwd"}));"#
-        #expect(TranscriptToolActivity.command(in: .string(built), name: "exec") == "exec_command(…)\nexec_command(…)\npwd")
+        let built = #"const dir = "src"; await tools.exec_command({cmd: `ls ${dir}`}); await tools.exec_command({cmd: dir}); await tools.exec_command({cmd:"rm -rf " + dir}); text(await tools.exec_command({cmd:"pwd"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(built), name: "exec") == "exec_command(…)\nexec_command(…)\nexec_command(…)\npwd")
         let cut = #"text(await tools.exec_command({cmd:"swarm inb"#
         #expect(TranscriptToolActivity.command(in: .string(cut), name: "exec") == cut)
         let row = TranscriptRowBuilder.rows(from: [

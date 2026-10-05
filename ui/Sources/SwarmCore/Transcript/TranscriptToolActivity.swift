@@ -175,8 +175,8 @@ public struct TranscriptToolActivity: Sendable, Hashable {
 
     /// Each `tools.name(` call outside a string literal of a Codex code-mode script, in script order
     /// and joined by newlines: an `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` as its cmd
-    /// decoded as a JSON string, any other call, and an exec_command whose cmd is no double-quoted
-    /// literal, as `name(…)`; nil when no exec_command has a cmd literal.
+    /// decoded as a JSON string, any other call, and an exec_command whose cmd is not one complete
+    /// double-quoted literal, as `name(…)`; nil when no exec_command has a cmd literal.
     static func execCommands(inScript script: String) -> String? {
         var steps: [String] = []
         var hasCommand = false
@@ -205,15 +205,18 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return hasCommand ? steps.joined(separator: "\n") : nil
     }
 
-    /// The decoded `"…"` value of a `{cmd:` or `{"cmd":` argument that `args` starts with.
+    /// The decoded `"…"` value of a `{cmd:` or `{"cmd":` argument that `args` starts with; nil when
+    /// the value is more than that one literal, such as `"rm -rf " + dir`.
     private static func cmdLiteral(_ args: Substring) -> (text: String, end: String.Index)? {
         let object = args.drop(while: \.isWhitespace)
         guard object.first == "{" else { return nil }
         let head = object.dropFirst().drop(while: \.isWhitespace)
         guard let key = ["cmd:", "\"cmd\":"].first(where: { head.hasPrefix($0) }) else { return nil }
         let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
-        guard value.first == "\"" else { return nil }
-        return stringLiteral(at: value)
+        guard value.first == "\"", let literal = stringLiteral(at: value),
+              let next = value[literal.end...].first(where: { !$0.isWhitespace }), next == "," || next == "}"
+        else { return nil }
+        return literal
     }
 
     /// The index after the JavaScript string literal that `text` starts with. A `'` or `"` literal
