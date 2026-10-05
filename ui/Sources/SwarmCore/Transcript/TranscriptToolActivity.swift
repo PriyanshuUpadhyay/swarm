@@ -9,13 +9,16 @@ public struct TranscriptToolActivity: Sendable, Hashable {
 
     public var name: String
     public var input: JSONElement
-    public var output: String?
+    /// Setting the output or the command also sets `exitCode`, so a card's body never scans the output.
+    public var output: String? { didSet { exitCode = Self.exitCode(output: output, command: command) } }
     /// Setting the diffs also sets `diffCounts`, so a card's body never sums the lines.
     public var diffs: [TranscriptDiff] { didSet { diffCounts = Self.counts(of: diffs) } }
     /// Added and removed lines across the call's diffs; nil when it has none.
     public private(set) var diffCounts: DiffCounts?
     public var state: State
-    public var command: String?
+    public var command: String? { didSet { exitCode = Self.exitCode(output: output, command: command) } }
+    /// A command's exit status from its result; nil when unknown. See `exitCode(output:command:)`.
+    public private(set) var exitCode: Int?
     public var path: String?
     /// Seconds from the call to its last result; nil when either time is missing.
     public var duration: Double?
@@ -34,6 +37,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         diffCounts = Self.counts(of: diffs)
         self.state = state
         self.command = command
+        exitCode = Self.exitCode(output: output, command: command)
         self.path = path
         self.duration = duration
     }
@@ -95,10 +99,27 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return counts
     }
 
-    /// The exit status Claude Code writes on the first line of a failed command's result.
-    public var exitCode: Int? {
-        guard command != nil, let output, output.hasPrefix("Exit code ") else { return nil }
-        return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+    /// The result says the step failed: a non-zero exit code, or Codex's `Script failed`.
+    public var reportsFailure: Bool {
+        (exitCode ?? 0) != 0 || output?.hasPrefix("Script failed") == true
+    }
+
+    /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex code
+    /// mode writes `Script completed`, its wall time, `Output:`, and then each exec_command's JSON
+    /// result; the first `"exit_code":N` other than 0 there is the code. A key inside an escaped
+    /// string reads `\"exit_code\":`, so it does not match. O(output length).
+    static func exitCode(output: String?, command: String?) -> Int? {
+        guard command != nil, let output else { return nil }
+        if output.hasPrefix("Exit code ") {
+            return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+        }
+        guard output.hasPrefix("Script "), let start = output.range(of: "\nOutput:\n") else { return nil }
+        var rest = output[start.upperBound...]
+        while let key = rest.range(of: "\"exit_code\":") {
+            rest = rest[key.upperBound...]
+            if let code = Int(rest.prefix { $0 == "-" || $0.isASCII && $0.isNumber }), code != 0 { return code }
+        }
+        return nil
     }
 
     /// Seconds between two event timestamps (ISO 8601, with or without fractional seconds).
@@ -127,7 +148,42 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         }
         if case .string(let value) = input,
            name.lowercased().contains("exec") || name.lowercased().contains("shell") {
-            return value
+            return execCommands(inScript: value) ?? value
+        }
+        return nil
+    }
+
+    /// The `cmd` string of each `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` in a Codex
+    /// code-mode script, decoded as a JSON string and joined by newlines; nil when it has none.
+    static func execCommands(inScript script: String) -> String? {
+        var commands: [String] = []
+        var rest = script[...]
+        while let call = rest.range(of: "exec_command({") {
+            rest = rest[call.upperBound...]
+            let head = rest.drop(while: \.isWhitespace)
+            let key = ["cmd:", "\"cmd\":"].first { head.hasPrefix($0) }
+            guard let key else { continue }
+            let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
+            guard value.first == "\"", let literal = stringLiteral(at: value) else { continue }
+            commands.append(literal)
+        }
+        return commands.isEmpty ? nil : commands.joined(separator: "\n")
+    }
+
+    /// The double-quoted literal that `text` starts with, decoded; nil when it does not close.
+    private static func stringLiteral(at text: Substring) -> String? {
+        var escaped = false
+        for index in text.indices.dropFirst() {
+            if escaped {
+                escaped = false
+            } else if text[index] == "\\" {
+                escaped = true
+            } else if text[index] == "\"" {
+                let literal = text[...index]
+                // A JavaScript-only escape such as \' is not JSON; keep the source text then.
+                return (try? JSONDecoder().decode(String.self, from: Data(literal.utf8)))
+                    ?? String(literal.dropFirst().dropLast())
+            }
         }
         return nil
     }

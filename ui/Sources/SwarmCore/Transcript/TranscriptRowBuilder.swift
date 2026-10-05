@@ -243,6 +243,8 @@ public enum TranscriptRowBuilder {
                     state: state, command: TranscriptToolActivity.command(in: input, name: name),
                     path: TranscriptToolActivity.path(in: input), duration: duration
                 )
+                // Codex marks every result completed, so the result text says whether it failed.
+                if state == .finished, row.tool?.reportsFailure == true { row.tool?.state = .failed }
             }
             for source in attached[index] ?? [] {
                 guard case .systemMessage(let kind, let text, _) = events[source] else { continue }

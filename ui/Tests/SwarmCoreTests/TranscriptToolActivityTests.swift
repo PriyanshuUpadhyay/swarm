@@ -122,4 +122,53 @@ struct TranscriptToolActivityTests {
         #expect(activity("Exit code 1", command: nil).exitCode == nil)
         #expect(activity(nil).exitCode == nil)
     }
+
+    @Test("A Codex exec script's command is each decoded exec_command cmd literal; a script with none stays raw")
+    func codexExecCommand() {
+        let inbox = #"text(await tools.exec_command({cmd:"swarm inbox","sandbox_permissions":"require_escalated","max_output_tokens":1000}));"#
+        #expect(TranscriptToolActivity.command(in: .string(inbox), name: "exec") == "swarm inbox")
+        let quotedKey = #"text(await tools.exec_command({"cmd":"swarm ack 7"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(quotedKey), name: "exec") == "swarm ack 7")
+        let heredoc = #"text(await tools.exec_command({cmd:"python3 - <<'PY'\nprint(\"hi\")\nPY"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(heredoc), name: "exec") == "python3 - <<'PY'\nprint(\"hi\")\nPY")
+        let two = "const r = await Promise.allSettled([\ntools.exec_command({cmd:\"swarm roles get council.claude\"}),\ntools.exec_command({cmd:\"swarm roles get council.gpt\"}),\n]);"
+        #expect(TranscriptToolActivity.command(in: .string(two), name: "exec") == "swarm roles get council.claude\nswarm roles get council.gpt")
+        let patch = #"text(await tools.apply_patch("*** Begin Patch\n*** End Patch"));"#
+        #expect(TranscriptToolActivity.command(in: .string(patch), name: "exec") == patch)
+        let cut = #"text(await tools.exec_command({cmd:"swarm inb"#
+        #expect(TranscriptToolActivity.command(in: .string(cut), name: "exec") == cut)
+        let row = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string(inbox), status: .pending, meta: Meta()),
+        ])
+        #expect(row.map(\.text) == ["exec · swarm inbox"])
+    }
+
+    @Test("A Codex exec fails on Script failed or a non-zero exit_code; exit 0 shows no code")
+    func codexExecFailure() {
+        func activity(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x")
+        }
+        let failed = activity("Script completed\nWall time 3.6 seconds\nOutput:\n{\"chunk_id\":\"a\",\"exit_code\":1,\"output\":\"Traceback\\n\"}")
+        #expect(failed.exitCode == 1)
+        #expect(failed.reportsFailure)
+        let ok = activity("Script completed\nWall time 3.1 seconds\nOutput:\n{\"exit_code\":0,\"output\":\"7 claude reply\\n\"}")
+        #expect(ok.exitCode == nil)
+        #expect(!ok.reportsFailure)
+        let second = activity("Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":0}\n{\"exit_code\":2}")
+        #expect(second.exitCode == 2)
+        let nested = activity("Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":0,\"output\":\"{\\\"exit_code\\\":1}\"}")
+        #expect(nested.exitCode == nil)
+        let script = activity("Script failed\nWall time 10.8 seconds\nOutput:\nScript error:\nexec_command failed")
+        #expect(script.exitCode == nil)
+        #expect(script.reportsFailure)
+        #expect(activity("Script completed\nOutput:\nexit_code: 1").exitCode == nil)
+
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: failed.output ?? "", meta: Meta()),
+            .toolCall(toolCallID: "c2", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: ok.output ?? "", meta: Meta()),
+        ])
+        #expect(rows.map(\.tool?.state) == [.failed, .finished])
+    }
 }
