@@ -2,6 +2,9 @@
 ALTER TABLE message ADD COLUMN delivery TEXT
     CHECK (delivery IN ('hook', 'screen', 'unconfirmed', 'unchecked'));
 
+-- An older build checked no ring, and its pane has moved on since, so no later pass can settle it.
+UPDATE message SET delivery = 'unchecked' WHERE rings > 0;
+
 -- A stall or lost-ring report reaches the chair once: the kind names the message it is about.
 CREATE UNIQUE INDEX message_report ON message (session_id, sender_id, kind)
     WHERE kind GLOB 'stall:*' OR kind GLOB 'unconfirmed:*';

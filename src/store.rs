@@ -742,6 +742,70 @@ pub fn stalls(
     Ok(found)
 }
 
+/// A ring that no caller settled: (recipient, rung_at, the messages it rang, the lowest of them
+/// that is unseen at its second ring).
+pub type Ring = (String, i64, Vec<i64>, Option<i64>);
+
+/// The rings with no result yet (ADR 0041): the listing's, which it types and leaves, and one whose
+/// caller ended in its wait. One ring rings all its messages in the same second.
+pub fn unsettled_rings(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Ring>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, rung_at, seq, rings >= 2 AND seen_at IS NULL FROM message
+         WHERE session_id = ?1 AND rings > 0 AND rung_at IS NOT NULL AND delivery IS NULL
+         ORDER BY recipient_id, rung_at, seq",
+    )?;
+    let rows = statement.query_map([session_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, bool>(3)?,
+        ))
+    })?;
+    let mut rings: Vec<Ring> = Vec::new();
+    for row in rows {
+        let (recipient, rung_at, seq, lost) = row?;
+        match rings.last_mut() {
+            Some(ring) if ring.0 == recipient && ring.1 == rung_at => {
+                ring.2.push(seq);
+                ring.3 = ring.3.or(lost.then_some(seq));
+            }
+            _ => rings.push((recipient, rung_at, vec![seq], lost.then_some(seq))),
+        }
+    }
+    Ok(rings)
+}
+
+/// Messages whose second ring proved nothing and that no `unconfirmed:<seq>` report names yet, as
+/// (recipient, seq), the lowest seq of each ring. A report that failed to send is found again. The
+/// chair is never the subject: a report about it would go to it.
+pub fn unreported_lost(
+    connection: &Connection,
+    session_id: &str,
+    chair: &str,
+) -> Result<Vec<(String, i64)>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, seq FROM (
+             SELECT recipient_id, MIN(seq) AS seq FROM message
+             WHERE session_id = ?1 AND recipient_id != ?2 AND rings >= 2
+               AND delivery = 'unconfirmed' AND seen_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = recipient_id)
+             GROUP BY recipient_id, rung_at
+         ) AS lost
+         WHERE NOT EXISTS (SELECT 1 FROM message
+                           WHERE session_id = ?1 AND sender_id = lost.recipient_id
+                             AND kind = 'unconfirmed:' || lost.seq)
+         ORDER BY recipient_id, seq",
+    )?;
+    let rows = statement.query_map((session_id, chair), |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
 /// turn start, because Claude's idle notice writes it on an idle pane.
 pub fn turn_started(
@@ -1870,6 +1934,45 @@ mod tests {
             ),
             (None, None, None, None)
         );
+    }
+
+    /// A ring from an older build was never checked, and its pane has moved on since, so the
+    /// migration stores it as unchecked. A later pass neither settles it nor reports it lost to
+    /// the chair (ADR 0041).
+    #[test]
+    fn a_version_four_ring_is_unchecked_and_never_reported_lost() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     VALUES ('{SESSION}', 0, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/0.txt',
+                             1700, 2),
+                            ('{SESSION}', 1, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/1.txt',
+                             NULL, 0);"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        assert!(unsettled_rings(&connection, SESSION).unwrap().is_empty());
+        assert!(
+            unreported_lost(&connection, SESSION, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
+        let delivery: Vec<Option<String>> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| message.delivery)
+            .collect();
+        assert_eq!(delivery, [Some("unchecked".to_string()), None]);
     }
 
     #[test]

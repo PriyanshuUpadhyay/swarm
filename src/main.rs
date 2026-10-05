@@ -52,11 +52,21 @@ impl Delivery {
     }
 }
 
-/// Type the ring into `agent`'s `pane` and wait for proof that it started a turn. A CLI that is
-/// still starting loses a ring typed before its input box is drawn, or reads the text and its
-/// Enter as one paste, so the Enter becomes a newline and the ring sits unsent in the box. So a
-/// ring to a CLI whose box swarm can read waits for the box, and presses Enter again while the
-/// box still holds the ring.
+/// Whether a ring waits for its proof (ADR 0041). The app kills `agents --json` at 20 s, so the
+/// listing types its rings and returns, and `settle_rings` in a later pass finds their proof.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Proof {
+    Wait,
+    Later,
+}
+
+/// Type the ring into `agent`'s `pane` and, with `Proof::Wait`, wait for proof that it started a
+/// turn. A CLI that is still starting loses a ring typed before its input box is drawn, or reads
+/// the text and its Enter as one paste, so the Enter becomes a newline and the ring sits unsent in
+/// the box. So a waiting ring to a CLI whose box swarm can read waits for the box, and presses
+/// Enter again while the box still holds the ring. With `Proof::Later` it skips both waits and
+/// returns None once the ring is typed; a ring that a starting CLI loses is rung again after 60 s,
+/// like any unseen message.
 fn ring_pane(
     connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
@@ -64,7 +74,8 @@ fn ring_pane(
     session_id: &str,
     agent_id: &str,
     pane: &str,
-) -> Result<Delivery, Box<dyn std::error::Error>> {
+    proof: Proof,
+) -> Result<Option<Delivery>, Box<dyn std::error::Error>> {
     let text = ring_text(root);
     let provider = swarm::store::provider_of(connection, session_id, agent_id)?;
     let provider = provider.as_deref();
@@ -81,7 +92,9 @@ fn ring_pane(
             .capture_within(&vars, std::time::Duration::from_secs(1))
             .unwrap_or_default()
     };
-    if let Some(provider) = provider.filter(|provider| swarm::screen::reads_composer(provider)) {
+    if proof == Proof::Wait
+        && let Some(provider) = provider.filter(|provider| swarm::screen::reads_composer(provider))
+    {
         let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
         // A question on screen, such as a folder trust prompt, also ends the wait.
         while std::time::Instant::now() < ready {
@@ -98,6 +111,9 @@ fn ring_pane(
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
     adapter.run("ring", &[("pane", pane), ("text", &text)])?;
+    if proof == Proof::Later {
+        return Ok(None);
+    }
     let mut enters = 0;
     loop {
         std::thread::sleep(RING_POLL);
@@ -105,33 +121,51 @@ fn ring_pane(
         let screen = adapter
             .screen(&vars, std::time::Duration::from_secs(1))
             .unwrap_or_else(|| rows.clone());
-        if provider.is_none() && swarm::screen::herdr_state(&screen).is_none() {
-            return Ok(Delivery::Unchecked);
-        }
         if provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text)) {
             if enters < RING_ENTER_RETRIES && adapter.key.is_some() {
                 adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
                 enters += 1;
             }
-        } else if swarm::store::turn_started(connection, session_id, agent_id, rung_at)
-            .unwrap_or(false)
-        {
-            return Ok(Delivery::Hook);
-        } else if let Some((
-            swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting,
-            _,
-        )) = swarm::screen::read_pane(provider, &screen, || Some(rows.clone()))
-        {
-            return Ok(Delivery::Screen);
+        } else if let Some(delivery) = ring_proof(
+            connection, session_id, agent_id, provider, &rows, &screen, rung_at,
+        ) {
+            return Ok(Some(delivery));
         }
         if std::time::Instant::now() + RING_POLL >= deadline {
-            return Ok(Delivery::Unconfirmed);
+            return Ok(Some(Delivery::Unconfirmed));
         }
     }
 }
 
+/// What the store and the pane prove now about a ring typed at `rung_at`, if anything. The
+/// caller checks first that the input box no longer holds the ring.
+fn ring_proof(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    agent_id: &str,
+    provider: Option<&str>,
+    rows: &str,
+    screen: &str,
+    rung_at: i64,
+) -> Option<Delivery> {
+    if provider.is_none() && swarm::screen::herdr_state(screen).is_none() {
+        return Some(Delivery::Unchecked);
+    }
+    if swarm::store::turn_started(connection, session_id, agent_id, rung_at).unwrap_or(false) {
+        return Some(Delivery::Hook);
+    }
+    match swarm::screen::read_pane(provider, screen, || Some(rows.to_string())) {
+        Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) => {
+            Some(Delivery::Screen)
+        }
+        _ => None,
+    }
+}
+
 /// Ring `agent` for the messages `seqs` and store what the ring proved on them. The bell is a
-/// hint (R9), so a failure only warns, and a failed ring is unconfirmed.
+/// hint (R9), so a failure only warns, and a failed ring is unconfirmed. With `Proof::Later` a
+/// typed ring stores nothing and returns None; `settle_rings` stores its proof.
+#[allow(clippy::too_many_arguments)]
 fn ring_and_record(
     connection: &rusqlite::Connection,
     root: &std::path::Path,
@@ -140,13 +174,14 @@ fn ring_and_record(
     agent: &str,
     pane: &str,
     seqs: &[i64],
-) -> Delivery {
+    proof: Proof,
+) -> Option<Delivery> {
     let delivery = adapter
-        .and_then(|adapter| ring_pane(connection, &adapter, root, session_id, agent, pane))
+        .and_then(|adapter| ring_pane(connection, &adapter, root, session_id, agent, pane, proof))
         .unwrap_or_else(|error| {
             eprintln!("swarm: ring failed: {error}");
-            Delivery::Unconfirmed
-        });
+            Some(Delivery::Unconfirmed)
+        })?;
     if delivery == Delivery::Unconfirmed {
         eprintln!(
             "swarm: {agent} started no turn within {} s; ring unconfirmed",
@@ -157,7 +192,7 @@ fn ring_and_record(
     {
         eprintln!("swarm: ring result not stored: {error}");
     }
-    delivery
+    Some(delivery)
 }
 
 fn init() -> Result<(), Box<dyn std::error::Error>> {
@@ -1047,6 +1082,32 @@ fn deliver(
     kind: &str,
     body: &str,
 ) -> Result<i64, Box<dyn std::error::Error>> {
+    deliver_with(
+        connection,
+        root,
+        adapter_name,
+        session_id,
+        sender,
+        recipient,
+        kind,
+        body,
+        Proof::Wait,
+    )
+}
+
+/// `deliver`, with the ring's proof wait chosen by the caller.
+#[allow(clippy::too_many_arguments)]
+fn deliver_with(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    sender: &str,
+    recipient: &str,
+    kind: &str,
+    body: &str,
+    proof: Proof,
+) -> Result<i64, Box<dyn std::error::Error>> {
     let agents = swarm::store::agents(connection, session_id)?;
     let agent = |id: &str| {
         agents
@@ -1077,6 +1138,7 @@ fn deliver(
             &recipient,
             &pane,
             &[seq],
+            proof,
         );
     }
     Ok(seq)
@@ -1115,6 +1177,7 @@ fn ack(
             agent_id,
             &pane,
             &seqs,
+            Proof::Wait,
         );
     }
     Ok(())
@@ -1447,7 +1510,8 @@ fn report_dead(
 }
 
 /// Ring `agent` again when its unseen messages are due for a second ring. When that ring starts
-/// no turn, returns the report line `unconfirmed <agent> <seq>`.
+/// no turn and `agent` is the chair, returns the report line `unconfirmed <agent> <seq>`; a
+/// child's lost message is reported by `settle_rings`.
 fn rering_if_due(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1455,13 +1519,15 @@ fn rering_if_due(
     session_id: &str,
     agent: &str,
     pane: &str,
+    proof: Proof,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
         return Ok(None);
     }
+    // NULL again: this ring has no result yet, and a ring the listing leaves is settled later.
     let rung: Vec<(i64, i64)> = connection
         .prepare(
-            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
+            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1, delivery = NULL
              WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM read_mark
                                WHERE read_mark.session_id = message.session_id
@@ -1479,38 +1545,40 @@ fn rering_if_due(
         agent,
         pane,
         &seqs,
+        proof,
     );
     eprintln!("swarm: re-ringed {agent}");
-    let last = rung
+    let lost = rung
         .iter()
         .filter(|(_, rings)| *rings >= 2)
         .map(|(seq, _)| *seq)
         .min();
-    let (Delivery::Unconfirmed, Some(seq)) = (delivery, last) else {
-        return Ok(None);
-    };
-    let body = format!("message {seq} to {agent} was not delivered: no turn started after 2 rings");
-    // A message about the chair would ring the pane that just lost two rings, so the chair's own
-    // lost message is only this line and stderr (ADR 0041).
-    if agent == swarm::store::orchestrator_of(connection, session_id)? {
-        eprintln!("swarm: {body}");
-    } else if !report(
-        connection,
-        root,
-        &adapter.name,
-        session_id,
-        agent,
-        &format!("unconfirmed:{seq}"),
-        &body,
-    ) {
-        return Ok(None);
+    match (delivery, lost) {
+        (Some(Delivery::Unconfirmed), Some(seq))
+            if agent == swarm::store::orchestrator_of(connection, session_id)? =>
+        {
+            Ok(Some(chair_lost(agent, seq)))
+        }
+        _ => Ok(None),
     }
-    Ok(Some(format!("unconfirmed {agent} {seq}")))
+}
+
+/// The body of the report that message `seq` to `agent` was lost.
+fn lost_body(agent: &str, seq: i64) -> String {
+    format!("message {seq} to {agent} was not delivered: no turn started after 2 rings")
+}
+
+/// A message about the chair would ring the pane that just lost two rings, so the chair's own lost
+/// message is only stderr and this line (ADR 0041).
+fn chair_lost(chair: &str, seq: i64) -> String {
+    eprintln!("swarm: {}", lost_body(chair, seq));
+    format!("unconfirmed {chair} {seq}")
 }
 
 /// Send `subject`'s report `kind` to the chair, once: the unique index `message_report` refuses a
 /// second one. Returns whether this call stored it. A failed send only warns, so the pass that
-/// found the report goes on.
+/// found the report goes on, and the next pass finds the report again.
+#[allow(clippy::too_many_arguments)]
 fn report(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1519,9 +1587,10 @@ fn report(
     subject: &str,
     kind: &str,
     body: &str,
+    proof: Proof,
 ) -> bool {
     let sent = swarm::store::orchestrator_of(connection, session_id).and_then(|chair| {
-        deliver(
+        deliver_with(
             connection,
             root,
             adapter_name,
@@ -1530,6 +1599,7 @@ fn report(
             &chair,
             kind,
             body,
+            proof,
         )
     });
     match sent {
@@ -1549,7 +1619,8 @@ fn report(
 }
 
 /// One sweep pass: re-ring unseen messages, the sweeper's own included, and report each child
-/// whose pane is gone. Returns one line per report, for the sweep's output.
+/// whose pane is gone, each lost message, and each stall. Returns one line per report, for the
+/// sweep's output.
 fn sweep_once(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1561,13 +1632,25 @@ fn sweep_once(
     // A child's ring to the chair can be lost too, and no other sweeper covers the chair.
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
         lines.extend(rering_if_due(
-            connection, root, adapter, session_id, agent_id, &pane,
+            connection,
+            root,
+            adapter,
+            session_id,
+            agent_id,
+            &pane,
+            Proof::Wait,
         )?);
     }
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
             lines.extend(rering_if_due(
-                connection, root, adapter, session_id, &child, &pane,
+                connection,
+                root,
+                adapter,
+                session_id,
+                &child,
+                &pane,
+                Proof::Wait,
             )?);
             continue;
         }
@@ -1575,7 +1658,87 @@ fn sweep_once(
         report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
         lines.push(format!("dead {child}"));
     }
-    lines.extend(report_stalls(connection, root, &adapter.name, session_id)?);
+    lines.extend(settle_rings(
+        connection,
+        root,
+        adapter,
+        session_id,
+        Proof::Wait,
+    )?);
+    lines.extend(report_stalls(
+        connection,
+        root,
+        &adapter.name,
+        session_id,
+        Proof::Wait,
+    )?);
+    Ok(lines)
+}
+
+/// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
+/// wait. Its proof is a hook or the screen now; with none, it is unconfirmed once its deadline has
+/// passed. Then send the chair `unconfirmed:<seq>` for each message whose second ring proved
+/// nothing and that no report names yet (ADR 0041). Returns one line for each lost message.
+fn settle_rings(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+    proof: Proof,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let chair = swarm::store::orchestrator_of(connection, session_id)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    let text = ring_text(root);
+    let mut lines = Vec::new();
+    for (agent, rung_at, seqs, lost) in swarm::store::unsettled_rings(connection, session_id)? {
+        let provider = swarm::store::provider_of(connection, session_id, &agent)?;
+        let provider = provider.as_deref();
+        let (rows, screen) = match swarm::store::pane_of(connection, session_id, &agent)? {
+            // A failed read proves nothing either way, so the ring waits for the next pass.
+            Some(pane) => {
+                let vars = [("pane", pane.as_str())];
+                let read = std::time::Duration::from_secs(1);
+                let Some(rows) = adapter.capture_within(&vars, read) else {
+                    continue;
+                };
+                let screen = adapter.screen(&vars, read).unwrap_or_else(|| rows.clone());
+                (rows, screen)
+            }
+            None => Default::default(),
+        };
+        let held = provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
+        let proven = (!held)
+            .then(|| {
+                ring_proof(
+                    connection, session_id, &agent, provider, &rows, &screen, rung_at,
+                )
+            })
+            .flatten();
+        let late = now - rung_at > RING_TIMEOUT.as_secs() as i64;
+        let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
+            continue;
+        };
+        swarm::store::set_delivery(connection, session_id, &seqs, delivery.as_str())?;
+        if let (Delivery::Unconfirmed, Some(seq), true) = (delivery, lost, agent == chair) {
+            lines.push(chair_lost(&agent, seq));
+        }
+    }
+    for (agent, seq) in swarm::store::unreported_lost(connection, session_id, &chair)? {
+        if report(
+            connection,
+            root,
+            &adapter.name,
+            session_id,
+            &agent,
+            &format!("unconfirmed:{seq}"),
+            &lost_body(&agent, seq),
+            proof,
+        ) {
+            lines.push(format!("unconfirmed {agent} {seq}"));
+        }
+    }
     Ok(lines)
 }
 
@@ -1586,6 +1749,7 @@ fn report_stalls(
     root: &std::path::Path,
     adapter_name: &str,
     session_id: &str,
+    proof: Proof,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut lines = Vec::new();
     for (agent, what, seq) in swarm::store::stalls(connection, session_id)? {
@@ -1602,6 +1766,7 @@ fn report_stalls(
             &agent,
             &kind,
             &body,
+            proof,
         ) {
             lines.push(format!("stall {agent} {what} {seq}"));
         }
@@ -1784,7 +1949,15 @@ fn list_agents(
             && prompt.is_none()
             && !matches!(state.as_deref(), Some("working" | "waiting"))
             && let Some(pane) = row.pane.as_deref()
-            && let Err(error) = rering_if_due(connection, root, adapter, session_id, &row.id, pane)
+            && let Err(error) = rering_if_due(
+                connection,
+                root,
+                adapter,
+                session_id,
+                &row.id,
+                pane,
+                Proof::Later,
+            )
         {
             eprintln!("swarm: {error}");
         }
@@ -1828,8 +2001,13 @@ fn list_agents(
             prompt,
         });
     }
-    // The app runs no `swarm sweep`, so its listing also reports stalls, after its state writes.
-    if let Err(error) = report_stalls(connection, root, &adapter.name, session_id) {
+    // The app runs no `swarm sweep`, so its listing also settles rings and reports lost messages
+    // and stalls, after its state writes. The app kills the listing at 20 s, so none of its rings
+    // waits for proof; the next pass settles them.
+    if let Err(error) = settle_rings(connection, root, adapter, session_id, Proof::Later) {
+        eprintln!("swarm: {error}");
+    }
+    if let Err(error) = report_stalls(connection, root, &adapter.name, session_id, Proof::Later) {
         eprintln!("swarm: {error}");
     }
     Ok(AgentListOutput {
@@ -2764,6 +2942,7 @@ mod tests {
             &session,
             CODER,
             ring_log.to_str().unwrap(),
+            Proof::Wait,
         )
         .unwrap();
         let rings: i64 = connection
@@ -2833,6 +3012,7 @@ mod tests {
             &session,
             CODER,
             screen.to_str().unwrap(),
+            Proof::Wait,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&log).unwrap(), "ring\nEnter\n");
@@ -3289,8 +3469,17 @@ mod tests {
             ),
         )
         .unwrap();
-        let delivery = ring_pane(&connection, &adapter, &dir, &session, CODER, "%2").unwrap();
-        assert_eq!(delivery, Delivery::Screen);
+        let delivery = ring_pane(
+            &connection,
+            &adapter,
+            &dir,
+            &session,
+            CODER,
+            "%2",
+            Proof::Wait,
+        )
+        .unwrap();
+        assert_eq!(delivery, Some(Delivery::Screen));
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\nread\nring\nread\nEnter\nread\n"
@@ -3575,6 +3764,52 @@ mod tests {
         );
     }
 
+    /// A report of a lost message that fails to send, here because the chair has no pane yet, is
+    /// sent by a later pass. Its message is past its last ring, so no ring would find it again.
+    #[test]
+    fn a_lost_message_report_that_failed_to_send_is_sent_by_a_later_pass() {
+        let (root, mut connection, session) = ring_session(
+            "lost-retry",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 2, delivery = 'unconfirmed'",
+                [],
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        assert!(
+            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        assert_eq!(
+            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap(),
+            [format!("unconfirmed {CODER} {ask}")]
+        );
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), format!("unconfirmed:{ask}"))]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// The kinds and senders of the messages to the chair.
     fn chair_mail(connection: &rusqlite::Connection, session: &str) -> Vec<(String, String)> {
         swarm::store::messages(connection, session, -1)
@@ -3583,6 +3818,63 @@ mod tests {
             .filter(|message| message.recipient == ORCHESTRATOR)
             .map(|message| (message.sender, message.kind))
             .collect()
+    }
+
+    /// The app kills `agents --json` at 20 s, so the listing types its re-ring and returns. A later
+    /// pass settles the ring from the store and the screen, and only then tells the chair that it
+    /// started no turn (ADR 0041, owner answer 2).
+    #[test]
+    fn the_listing_types_its_rering_and_a_later_pass_settles_it() {
+        let (root, mut connection, session) = ring_session(
+            "listing-rering",
+            Some("claude"),
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61, rings = 1",
+                [],
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        let started = std::time::Instant::now();
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        assert_eq!(delivery_of(&connection, &session, ask), None);
+        assert!(chair_mail(&connection, &session).is_empty());
+
+        // The ring's deadline passes with no turn started.
+        connection
+            .execute(
+                "UPDATE message SET rung_at = rung_at - ?1",
+                [RING_TIMEOUT.as_secs() + 1],
+            )
+            .unwrap();
+        let started = std::time::Instant::now();
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(started.elapsed() < RING_TIMEOUT - std::time::Duration::from_secs(2));
+        assert_eq!(
+            delivery_of(&connection, &session, ask).as_deref(),
+            Some("unconfirmed")
+        );
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), format!("unconfirmed:{ask}"))]
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// After the second ring of a message starts no turn, the chair gets one `unconfirmed`
