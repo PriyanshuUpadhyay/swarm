@@ -1350,3 +1350,42 @@ fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// Claude sends `PermissionRequest` and then `Notification permission_prompt` for one prompt. The
+/// owner gets one notice for the change to `waiting`, and the next change to `waiting` gets one more.
+#[test]
+fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
+    let home = scratch("notify-waiting");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let in_session = [("SWARM_SESSION_ID", session.as_str())];
+    assert!(
+        swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "")
+            .status
+            .success()
+    );
+    let sent_to = stand_in_notify(&home);
+    let as_coder = [
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "coder"),
+    ];
+    let hook = |payload: &str| {
+        let reported = swarm(&home, &as_coder, &["hook", "claude"], payload);
+        assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
+    };
+    let project = home.file_name().unwrap().to_string_lossy().into_owned();
+    let notice =
+        format!("swarm: coder needs you|{project}: waiting on a permission or a question\n");
+
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice);
+
+    hook(r#"{"hook_event_name":"Notification","notification_type":"permission_prompt"}"#);
+    assert_eq!(notices(&sent_to), notice);
+
+    hook(r#"{"hook_event_name":"PreToolUse"}"#);
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice.repeat(2));
+    std::fs::remove_dir_all(&home).unwrap();
+}

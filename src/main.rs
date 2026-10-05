@@ -384,6 +384,7 @@ fn read_within<R: std::io::Read + Send + 'static>(
 /// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
 /// the bus 1 s.
 fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let started = std::time::Instant::now();
     // A caller that is no swarm agent is done before its stdin is read.
     if env::var_os("SWARM_SESSION_ID").is_none() || env::var_os("SWARM_AGENT_ID").is_none() {
         return Ok(());
@@ -405,7 +406,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
-    swarm::store::set_state(
+    let old = swarm::store::set_state(
         &connection,
         &report.session,
         &report.agent,
@@ -413,7 +414,64 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "hook",
         detail.as_deref(),
         now,
-    )
+    )?;
+    if let Some((title, body)) = waiting_notice(
+        &connection,
+        &report.session,
+        &report.agent,
+        old.as_deref(),
+        state,
+    ) {
+        let adapter = swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?;
+        send_notice(&adapter, started + HOOK_NOTICE_BUDGET, &title, &body);
+    }
+    Ok(())
+}
+
+/// The hook's whole budget; a notice gets what the stdin read and the bus left of it.
+const HOOK_NOTICE_BUDGET: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// The owner's notice for one state write: a title and body when the agent's state changed to
+/// `waiting`, else None (ADR 0044). Any other state, or a new one, gives none.
+fn waiting_notice(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    agent: &str,
+    old: Option<&str>,
+    new: &str,
+) -> Option<(String, String)> {
+    if new != "waiting" || old == Some("waiting") {
+        return None;
+    }
+    let cwd = swarm::store::session_cwd(connection, session_id)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let project = std::path::Path::new(&cwd)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Some((
+        format!("swarm: {agent} needs you"),
+        format!("{project}: waiting on a permission or a question"),
+    ))
+}
+
+/// Shows one notice by the adapter's `notify` verb, which must end by `deadline`. At most once:
+/// a notice that fails or runs late is logged and never retried, because the owner gets no repeats.
+fn send_notice(
+    adapter: &swarm::adapter::Adapter,
+    deadline: std::time::Instant,
+    title: &str,
+    body: &str,
+) {
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(deadline),
+        ..adapter.clone()
+    };
+    if let Err(error) = adapter.run("notify", &[("title", title), ("body", body)]) {
+        eprintln!("swarm: {error}");
+    }
 }
 
 fn adapter_name() -> String {

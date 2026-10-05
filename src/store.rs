@@ -561,7 +561,8 @@ pub fn set_log(
 }
 
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
-/// states and sources.
+/// states and sources. Returns the state it replaced, read in the same immediate transaction, so
+/// two hooks that race cannot both see one change (a notice is sent once per change, ADR 0044).
 pub fn set_state(
     connection: &Connection,
     session_id: &str,
@@ -570,13 +571,40 @@ pub fn set_state(
     source: &str,
     detail: Option<&str>,
     now: i64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    connection.execute(
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let old: Option<String> = transaction
+        .query_row(
+            "SELECT state FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    transaction.execute(
         "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5, state_at = ?6
          WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, state, source, detail, now),
     )?;
-    Ok(())
+    transaction.commit()?;
+    Ok(old)
+}
+
+/// The folder a session was opened in, or None for an unknown session.
+pub fn session_cwd(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT cwd FROM session WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 /// The report a listing read for one agent: (state, state_source, state_at).
