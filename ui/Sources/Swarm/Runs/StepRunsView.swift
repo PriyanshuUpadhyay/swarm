@@ -41,6 +41,10 @@ struct StepRunsView: View {
             // A chosen closed run shows only while the Closed group is read.
             if chosen?.closed == true { showClosed = true }
         }
+        // The error and Retry appear in place, so VoiceOver hears them only if they are said, as SwitchModelSheet.
+        .onChange(of: error) { _, text in
+            if let text { AccessibilityNotification.Announcement(text).post() }
+        }
         .task(id: Request(directory: directory, isActive: isActive, showClosed: showClosed, retryID: retryID)) {
             guard isActive else { return }
             // Closed runs do not change, so they are read once when the group opens, not on every
