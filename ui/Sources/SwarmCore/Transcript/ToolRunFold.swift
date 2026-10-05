@@ -23,6 +23,28 @@ public enum ToolRunFold {
         }
     }
 
+    /// One item of the transcript's lazy list. An open fold's steps follow its fold line as items of
+    /// their own, so a long open fold builds only the steps on screen, as every other row does.
+    public enum Line: Hashable, Sendable, Identifiable {
+        case item(Item)
+        case step(TranscriptRow)
+
+        public var id: String {
+            switch self {
+            case .item(let item): item.id
+            case .step(let row): row.eventID
+            }
+        }
+    }
+
+    /// The list items in transcript order; `isExpanded` gets a fold's id and its rows.
+    public static func lines(_ items: [Item], isExpanded: (String, [TranscriptRow]) -> Bool) -> [Line] {
+        items.flatMap { item -> [Line] in
+            guard case .fold(let group) = item, isExpanded(item.id, group) else { return [.item(item)] }
+            return [.item(item)] + group.map(Line.step)
+        }
+    }
+
     public static func isStep(_ row: TranscriptRow) -> Bool {
         row.tool != nil
             || (row.systemKind == TranscriptSystemKind.swarmRing && !row.startsTurn)

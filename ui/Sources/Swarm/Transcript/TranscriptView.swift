@@ -50,10 +50,8 @@ struct TranscriptView<Composer: View>: View {
     /// The owner's open or closed choice for each fold id; a fold without one takes its default.
     /// In memory for this chat only (ADR 0047).
     @State private var foldOverrides: [String: Bool] = [:]
-    /// A find match inside a fold; its row queues a scroll to itself once it appears.
-    @State private var scrollOnAppearID: String?
-    /// A fold child that just appeared for find; the next update scrolls to it.
-    @State private var appearedMatchID: String?
+    /// A find match inside a fold; the update that opens the fold scrolls to it.
+    @State private var foldMatchID: String?
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -155,12 +153,18 @@ struct TranscriptView<Composer: View>: View {
                         }
                         rawSessionBlock.upsideDown()
                     } else {
-                        ForEach(foldedItems.reversed()) { item in
-                            switch item {
-                            case .row(let transcriptRow):
+                        ForEach(foldedLines.reversed()) { line in
+                            switch line {
+                            case .item(.row(let transcriptRow)):
                                 rowView(transcriptRow).upsideDown()
-                            case .fold(let group):
-                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id, rows: group)) { rowView($0) }
+                            case .item(.fold(let group)):
+                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(line.id, rows: group))
+                                    .upsideDown()
+                            case .step(let transcriptRow):
+                                // The list's spacing is m; an open fold keeps its steps xs apart.
+                                rowView(transcriptRow)
+                                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                                    .padding(.top, DesignTokens.Spacing.xs - DesignTokens.Spacing.m)
                                     .upsideDown()
                             }
                         }
@@ -210,7 +214,6 @@ struct TranscriptView<Composer: View>: View {
         }
         .onScrollPhaseChange { _, phase in
             userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if phase == .interacting { scrollOnAppearID = nil }
             if phase == .idle { loadedHistoryThisGesture = false }
             if phase == .interacting, nearOldest { startLoadingOlder(automatic: true) }
         }
@@ -218,24 +221,17 @@ struct TranscriptView<Composer: View>: View {
             guard let id else { return }
             pendingScrollID = nil
             if let fold = foldID(containing: id) {
-                // The lazy list knows only the fold's id, and a child's id exists only while its fold
-                // item is built and open. So scroll to the fold first, which builds the item, and open
-                // it. Building an open fold item builds all its children at once, so the child's
-                // onAppear then queues the scroll to itself; a Task could run before that build and
-                // find no view. A child that is already built does not appear again, so the second
-                // scrollTo reaches it now, and the owner's next scroll drops the queued id.
-                proxy.scrollTo(fold, anchor: .center)
-                proxy.scrollTo(id, anchor: .center)
-                scrollOnAppearID = id
+                // A closed fold's steps are not list items yet, so open it and scroll in the next
+                // update, when the list holds the step's id.
                 foldOverrides[fold] = true
+                foldMatchID = id
             } else {
-                scrollOnAppearID = nil
                 proxy.scrollTo(id, anchor: .center)
             }
         }
-        .onChange(of: appearedMatchID) { _, id in
+        .onChange(of: foldMatchID) { _, id in
             guard let id else { return }
-            appearedMatchID = nil
+            foldMatchID = nil
             proxy.scrollTo(id, anchor: .center)
         }
     }
@@ -249,15 +245,14 @@ struct TranscriptView<Composer: View>: View {
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
         .background(matchBackground(transcriptRow.eventID))
-        .onAppear {
-            guard scrollOnAppearID == transcriptRow.eventID else { return }
-            scrollOnAppearID = nil
-            appearedMatchID = transcriptRow.eventID
-        }
     }
 
     private var foldedItems: [ToolRunFold.Item] {
         ToolRunFold.items(in: visibleRows)
+    }
+
+    private var foldedLines: [ToolRunFold.Line] {
+        ToolRunFold.lines(foldedItems) { foldOverrides[$0] ?? ToolRunFold.defaultExpanded($1) }
     }
 
     private func foldExpanded(_ id: String, rows: [TranscriptRow]) -> Binding<Bool> {
@@ -265,8 +260,6 @@ struct TranscriptView<Composer: View>: View {
             foldOverrides[id] ?? ToolRunFold.defaultExpanded(rows)
         } set: { open in
             foldOverrides[id] = open
-            // A queued find scroll would jump back to its match when the fold opens again.
-            if !open { scrollOnAppearID = nil }
         }
     }
 
@@ -448,7 +441,6 @@ struct TranscriptView<Composer: View>: View {
     private func closeFind() {
         findPresented = false
         findFieldFocused = false
-        scrollOnAppearID = nil
         focus.wrappedValue = true
     }
 

@@ -79,6 +79,16 @@ struct ToolRunFoldTests {
         #expect(!ToolRunFold.defaultExpanded([tool("a"), tool("b")]))
     }
 
+    @Test("An open fold's steps are list lines of their own after the fold line, so the lazy list builds only those on screen")
+    func openFoldStepsAreLines() {
+        let rows = [prompt(), tool("read"), tool("make", state: .failed), reply("answer")]
+        let items = ToolRunFold.items(in: rows)
+        let open = ToolRunFold.lines(items) { _, group in ToolRunFold.defaultExpanded(group) }
+        #expect(open.map(\.id) == ["prompt", "fold:read", "read", "make", "answer"])
+        let closed = ToolRunFold.lines(items) { _, _ in false }
+        #expect(closed.map(\.id) == ["prompt", "fold:read", "answer"])
+    }
+
     @Test("Rings and thoughts alone do not fold, and a ring that starts a turn is prose")
     func ringsWithoutToolsStay() {
         #expect(foldedIDs([prompt(), ring("one"), ring("two"), thought("plan")]).isEmpty)
