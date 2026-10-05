@@ -40,6 +40,9 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var shell: TranscriptShellRun? = nil
     /// Set on `.system` rows whose `systemKind` is "command".
     public var command: TranscriptCommandChip? = nil
+    /// The `RawTranscriptEntry.id` of each event the row shows: its own, merged chunks, and joined
+    /// results, diffs, and records, in log order. Show Source reads them.
+    public var sourceIDs: [String] = []
     public var endsTurn = false
     /// A row that is not the user's but starts an agent turn, such as a background task's end.
     public var startsTurn = false
@@ -262,9 +265,12 @@ public enum TranscriptRowBuilder {
                     row.command?.output = TranscriptCommandChip.output(fromCommandOutput: text)
                 }
             }
+            let sources = [index] + (updates[index] ?? []) + (diffs[index] ?? []) + (attached[index] ?? [])
+            row.sourceIDs = sources.sorted().map { RawTranscriptEntry.id(index: $0 + indexOffset) }
             if let last = rows.last, last.kind == row.kind, lastSourceID == row.eventID,
                row.kind == .user || row.kind == .assistant || row.kind == .thought {
                 rows[rows.count - 1].text += row.text
+                rows[rows.count - 1].sourceIDs += row.sourceIDs
                 continue
             }
             lastSourceID = row.eventID

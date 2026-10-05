@@ -22,7 +22,9 @@ struct TranscriptRowBuilderTests {
             text: "world!", meta: Meta(agentSessionID: "s1", uuid: "turn-1", timestamp: "t2")
         )
         let rows = TranscriptRowBuilder.rows(from: [first, second])
-        #expect(rows == [TranscriptRow(kind: .assistant, text: "Hello world!", eventID: "turn-1")])
+        var merged = TranscriptRow(kind: .assistant, text: "Hello world!", eventID: "turn-1")
+        merged.sourceIDs = ["raw-0", "raw-1"]
+        #expect(rows == [merged])
     }
 
     @Test("A different UUID starts a new row")
@@ -645,5 +647,23 @@ struct TranscriptDebugDataTests {
         ])
         #expect(rows.map(\.eventID) == ["prompt", "c1:call", "ring:ring"])
         #expect(rows[1].tool?.output == "ok")
+    }
+
+    @Test("Each row names its own event and every joined or merged event as its sources, and Show Source finds them")
+    func rowSources() {
+        let records: [TranscriptRecord] = [
+            .init(event: .agentMessageChunk(text: "Hel", meta: Meta(uuid: "a1")), rawLine: "{}"),
+            .init(event: .agentMessageChunk(text: "lo", meta: Meta(uuid: "a1")), rawLine: "{}"),
+            .init(event: .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("ls")]), status: .pending, meta: Meta()), rawLine: "{}"),
+            .init(event: .ignored(kind: "usage", meta: Meta()), rawLine: "{}"),
+            .init(event: .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()), rawLine: "{}"),
+            .init(event: .systemMessage(kind: TranscriptSystemKind.shellInput, text: "<bash-input>pwd</bash-input>", meta: Meta(uuid: "in")), rawLine: "{}"),
+            .init(event: .systemMessage(kind: TranscriptSystemKind.shellOutput, text: "<bash-stdout>/w</bash-stdout>", meta: Meta(uuid: "out", parentUUID: "in")), rawLine: "{}"),
+        ]
+        let rows = TranscriptRowBuilder.rows(from: records, indexOffset: 10)
+        #expect(rows.map(\.sourceIDs) == [["raw-10", "raw-11"], ["raw-12", "raw-14"], ["raw-15", "raw-16"]])
+        let raw = TranscriptDebugData.entries(from: records, indexOffset: 10)
+        #expect(TranscriptSource.entries(for: rows[1], in: raw).map(\.index) == [12, 14])
+        #expect(TranscriptSource.entries(for: TranscriptRow(kind: .notice, text: "", eventID: "x"), in: raw).isEmpty)
     }
 }

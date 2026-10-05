@@ -138,6 +138,7 @@ final class SessionDetailModel {
                 rows += sessionRows.map { row in
                     var copy = row
                     copy.eventID = session.id.rawValue + ":" + row.eventID
+                    copy.sourceIDs = row.sourceIDs.map { session.id.rawValue + $0 }
                     return copy
                 }
                 raw += sessionRaw.map { entry in

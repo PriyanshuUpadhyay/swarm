@@ -6,9 +6,21 @@ public struct RawTranscriptEntry: Sendable, Hashable, Identifiable {
     public var rawLine: String
     public var rowKind: String
     public var sessionID: String = ""
-    public var id: String { "\(sessionID)raw-\(index)" }
+    public var id: String { Self.id(sessionID: sessionID, index: index) }
+    /// A row's `sourceIDs` use the same form, so Show Source finds its entries.
+    public static func id(sessionID: String = "", index: Int) -> String { "\(sessionID)raw-\(index)" }
     /// Pretty-printed on read, because a rebuild makes every entry and the raw view is usually closed.
     public var displayText: String { TranscriptDebugData.prettyJSON(rawLine) }
+}
+
+/// The raw entries behind one row, for Show Source.
+public enum TranscriptSource {
+    /// The entries whose id is one of the row's `sourceIDs`, in log order. O(entries).
+    public static func entries(for row: TranscriptRow, in raw: [RawTranscriptEntry]) -> [RawTranscriptEntry] {
+        guard !row.sourceIDs.isEmpty else { return [] }
+        let wanted = Set(row.sourceIDs)
+        return raw.filter { wanted.contains($0.id) }
+    }
 }
 
 public enum TranscriptDebugData {

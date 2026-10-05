@@ -252,7 +252,10 @@ public actor SwarmChairTranscript {
             }
             if lastLogPath != nil, undecided { return }
             if lastLogPath != nil, ConversationBoundary.isClear(window.records), !rows.isEmpty {
-                frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
+                // The new log numbers its raw entries from 0 again, so an old row's sources would
+                // point at new events.
+                frozenRows = rows.map { var row = $0; row.sourceIDs = []; return row }
+                    + [Self.clearDivider(logName: path.lastPathComponent)]
             } else {
                 frozenRows = []
                 // `/clear` keeps the model, but another log may come from another agent.
