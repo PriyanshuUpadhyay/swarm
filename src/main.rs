@@ -2849,6 +2849,18 @@ fn list_agents(
                 ),
             ) {
                 Ok(true) => {
+                    // The write compared the row with what this listing read, so `row.state`
+                    // is the state it replaced. Outside the batch deadline, at most 1 s.
+                    if let Some((title, body)) =
+                        waiting_notice(connection, session_id, &row.id, row.state.as_deref(), seen)
+                    {
+                        send_notice(
+                            adapter,
+                            std::time::Instant::now() + std::time::Duration::from_secs(1),
+                            &title,
+                            &body,
+                        );
+                    }
                     (row.state_at, row.state_source, row.state_detail) =
                         (Some(now), Some("screen".into()), detail);
                 }
@@ -3987,6 +3999,45 @@ mod tests {
         assert!(started.elapsed() > std::time::Duration::from_secs(1));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "rung");
         assert_eq!(listings[&session].agents.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// AGY has no waiting hook, so the screen check's change to `waiting` notifies the owner once,
+    /// and the next listing that still sees it waiting sends none.
+    #[test]
+    fn a_screen_change_to_waiting_sends_one_notice() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-listing-notice-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let sent_to = root.join("notices");
+        let sent_path = swarm::adapter::shell_line(&[sent_to.to_string_lossy().into_owned()]);
+        std::fs::write(root.join("adapters/fake.conf"),
+            format!("self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"blocked\"}}}}}}'\nnotify = printf '%s|%s\\n' \"$SWARM_TITLE\" \"$SWARM_BODY\" >> {sent_path}\n")
+        ).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("fake")).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+        let project = root.file_name().unwrap().to_string_lossy().into_owned();
+        let notice =
+            format!("swarm: {CODER} needs you|{project}: waiting on a permission or a question\n");
+
+        for _ in 0..2 {
+            let listings =
+                all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(2))
+                    .unwrap();
+            let coder = listings[&session]
+                .agents
+                .iter()
+                .find(|agent| agent.id == CODER);
+            assert_eq!(coder.unwrap().state.as_deref(), Some("waiting"));
+            assert_eq!(
+                std::fs::read_to_string(&sent_to).unwrap_or_default(),
+                notice
+            );
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
