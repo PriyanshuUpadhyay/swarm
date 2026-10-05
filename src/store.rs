@@ -826,17 +826,21 @@ pub fn turn_started(
     Ok(started)
 }
 
-/// Store what a ring proved on the messages it rang. The column's CHECK refuses an unknown value.
+/// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an
+/// unknown value. A message rung again since, or with a result already, keeps what it has, so a
+/// pass that read an older ring cannot settle a newer one.
 pub fn set_delivery(
     connection: &Connection,
     session_id: &str,
     seqs: &[i64],
+    rung_at: i64,
     delivery: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for seq in seqs {
         connection.execute(
-            "UPDATE message SET delivery = ?3 WHERE session_id = ?1 AND seq = ?2",
-            (session_id, seq, delivery),
+            "UPDATE message SET delivery = ?3
+             WHERE session_id = ?1 AND seq = ?2 AND rung_at = ?4 AND delivery IS NULL",
+            (session_id, seq, delivery, rung_at),
         )?;
     }
     Ok(())
@@ -916,27 +920,29 @@ pub fn rering_due(
 
 /// Mark `agent_id`'s unseen messages as rung once more, and return each one's seq and ring
 /// count. The result goes back to NULL, because this ring has none yet. A message rung within
-/// `age_secs`, or at its last ring, is left out, so a second pass that found the same re-ring due
-/// rings nothing.
+/// `age_secs` of `rung_at`, or at its last ring, is left out, so a second pass that found the same
+/// re-ring due rings nothing.
 pub fn rering(
     connection: &Connection,
     session_id: &str,
     agent_id: &str,
     age_secs: i64,
+    rung_at: i64,
 ) -> Result<Vec<(i64, i64)>, Box<dyn std::error::Error>> {
     let rung = connection
         .prepare(
-            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1, delivery = NULL
+            "UPDATE message SET rung_at = ?5, rings = rings + 1, delivery = NULL
              WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
-               AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3) AND rings < ?4
+               AND (rung_at IS NULL OR rung_at <= ?5 - ?3) AND rings < ?4
                AND NOT EXISTS (SELECT 1 FROM read_mark
                                WHERE read_mark.session_id = message.session_id
                                  AND message_seq = message.seq AND agent_id = ?2)
              RETURNING seq, rings",
         )?
-        .query_map((session_id, agent_id, age_secs, MAX_RINGS), |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
+        .query_map(
+            (session_id, agent_id, age_secs, MAX_RINGS, rung_at),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
         .collect::<Result<_, _>>()?;
     Ok(rung)
 }
@@ -1075,6 +1081,13 @@ mod tests {
             ))
             .unwrap();
         connection
+    }
+
+    fn unix_now() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
     }
 
     fn temp_root(name: &str) -> std::path::PathBuf {
@@ -1636,12 +1649,54 @@ mod tests {
         assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
         assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
 
-        assert_eq!(rering(&connection, SESSION, CODER, 60).unwrap(), [(ask, 2)]);
-        assert_eq!(rering(&connection, SESSION, CODER, 60).unwrap(), []);
+        let now = unix_now();
+        assert_eq!(
+            rering(&connection, SESSION, CODER, 60, now).unwrap(),
+            [(ask, 2)]
+        );
+        assert_eq!(rering(&connection, SESSION, CODER, 60, now).unwrap(), []);
         assert_eq!(
             messages(&connection, SESSION, -1).unwrap()[0].delivery,
             None
         );
+    }
+
+    /// A pass that settles a ring stores its result only on that ring, once. A ring that another
+    /// pass rang again since, or that has a result already, keeps what it has.
+    #[test]
+    fn a_ring_result_is_stored_only_on_the_ring_it_settles() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        let first_ring = unix_now() - 61;
+        connection
+            .execute(
+                "UPDATE message SET created_at = ?1, rung_at = ?1, rings = 1",
+                [first_ring],
+            )
+            .unwrap();
+        let delivery = |connection: &Connection| {
+            messages(connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .clone()
+        };
+
+        let second_ring = unix_now();
+        rering(&connection, SESSION, CODER, 60, second_ring).unwrap();
+        set_delivery(&connection, SESSION, &[ask], first_ring, "unconfirmed").unwrap();
+        assert_eq!(delivery(&connection), None);
+        set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap();
+        set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap();
+        assert_eq!(delivery(&connection).as_deref(), Some("screen"));
     }
 
     /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is
@@ -1662,18 +1717,22 @@ mod tests {
             )
         };
         let ask = send(&mut connection, "ask").unwrap();
+        let rung_at = unix_now();
+        connection
+            .execute("UPDATE message SET rung_at = ?1, rings = 1", [rung_at])
+            .unwrap();
         assert_eq!(
             messages(&connection, SESSION, -1).unwrap()[0].delivery,
             None
         );
-        set_delivery(&connection, SESSION, &[ask], "hook").unwrap();
+        assert!(set_delivery(&connection, SESSION, &[ask], rung_at, "maybe").is_err());
+        set_delivery(&connection, SESSION, &[ask], rung_at, "hook").unwrap();
         assert_eq!(
             messages(&connection, SESSION, -1).unwrap()[0]
                 .delivery
                 .as_deref(),
             Some("hook")
         );
-        assert!(set_delivery(&connection, SESSION, &[ask], "maybe").is_err());
         send(&mut connection, "stall:unacked:0").unwrap();
         assert!(send(&mut connection, "stall:unacked:0").is_err());
         send(&mut connection, "unconfirmed:0").unwrap();

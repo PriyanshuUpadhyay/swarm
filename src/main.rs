@@ -27,6 +27,13 @@ const RING_TIMEOUT: std::time::Duration =
 /// How often a ring reads the pane and the store for its proof.
 const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Now in unix seconds, the unit of `rung_at` and `state_at`.
+fn unix_now() -> Result<i64, std::time::SystemTimeError> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64)
+}
+
 /// What one ring proved (ADR 0041), stored on `message.delivery`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Delivery {
@@ -162,7 +169,8 @@ fn ring_proof(
     }
 }
 
-/// Ring `agent` for the messages `seqs` and store what the ring proved on them. The bell is a
+/// Ring `agent` for the messages `seqs`, stored as rung at `rung_at`, and store what the ring
+/// proved on them. The bell is a
 /// hint (R9), so a failure only warns, and a failed ring is unconfirmed. With `Proof::Later` a
 /// typed ring stores nothing and returns None; `settle_rings` stores its proof.
 #[allow(clippy::too_many_arguments)]
@@ -174,6 +182,7 @@ fn ring_and_record(
     agent: &str,
     pane: &str,
     seqs: &[i64],
+    rung_at: i64,
     proof: Proof,
 ) -> Option<Delivery> {
     let delivery = adapter
@@ -188,7 +197,8 @@ fn ring_and_record(
             RING_TIMEOUT.as_secs()
         );
     }
-    if let Err(error) = swarm::store::set_delivery(connection, session_id, seqs, delivery.as_str())
+    if let Err(error) =
+        swarm::store::set_delivery(connection, session_id, seqs, rung_at, delivery.as_str())
     {
         eprintln!("swarm: ring result not stored: {error}");
     }
@@ -1126,9 +1136,10 @@ fn deliver_with(
         connection, root, session_id, sender, &recipient, &kind, body,
     )?;
     if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+        let rung_at = unix_now()?;
         connection.execute(
-            "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
-            (session_id, seq),
+            "UPDATE message SET rung_at = ?3, rings = 1 WHERE session_id = ?1 AND seq = ?2",
+            (session_id, seq, rung_at),
         )?;
         ring_and_record(
             connection,
@@ -1138,6 +1149,7 @@ fn deliver_with(
             &recipient,
             &pane,
             &[seq],
+            rung_at,
             proof,
         );
     }
@@ -1156,9 +1168,10 @@ fn ack(
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)?
         && swarm::store::has_unrung_unread(connection, session_id, agent_id)?
     {
+        let rung_at = unix_now()?;
         let seqs: Vec<i64> = connection
             .prepare(
-                "UPDATE message SET rung_at = unixepoch(), rings = 1
+                "UPDATE message SET rung_at = ?3, rings = 1
                  WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
                    AND NOT EXISTS (
                        SELECT 1 FROM read_mark
@@ -1167,7 +1180,7 @@ fn ack(
                    )
                  RETURNING seq",
             )?
-            .query_map((session_id, agent_id), |row| row.get(0))?
+            .query_map((session_id, agent_id, rung_at), |row| row.get(0))?
             .collect::<Result<_, _>>()?;
         ring_and_record(
             connection,
@@ -1177,6 +1190,7 @@ fn ack(
             agent_id,
             &pane,
             &seqs,
+            rung_at,
             Proof::Wait,
         );
     }
@@ -1524,7 +1538,14 @@ fn rering_if_due(
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
         return Ok(None);
     }
-    let rung = swarm::store::rering(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)?;
+    let rung_at = unix_now()?;
+    let rung = swarm::store::rering(
+        connection,
+        session_id,
+        agent,
+        RERING_UNSEEN_AFTER_SECS,
+        rung_at,
+    )?;
     // Another pass rang them since `rering_due` read the store.
     if rung.is_empty() {
         return Ok(None);
@@ -1538,6 +1559,7 @@ fn rering_if_due(
         agent,
         pane,
         &seqs,
+        rung_at,
         proof,
     );
     eprintln!("swarm: re-ringed {agent}");
@@ -1716,7 +1738,7 @@ fn settle_rings(
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
             continue;
         };
-        swarm::store::set_delivery(connection, session_id, &seqs, delivery.as_str())?;
+        swarm::store::set_delivery(connection, session_id, &seqs, rung_at, delivery.as_str())?;
         if let (Delivery::Unconfirmed, Some(seq), true) = (delivery, lost, agent == chair) {
             lines.push(chair_lost(&agent, seq));
         }
