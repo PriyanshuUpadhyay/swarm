@@ -64,7 +64,10 @@ struct StepRunsView: View {
                     error = nil
                     if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: scan, includeClosed: showClosed) {
                         choose(nil)
-                        notice = "This run moved or was removed."
+                        let text = "This run moved or was removed."
+                        notice = text
+                        // The graph closes under VoiceOver's focus, so the reason is spoken too.
+                        AccessibilityNotification.Announcement(text).post()
                     }
                 } catch is CancellationError {
                     return
