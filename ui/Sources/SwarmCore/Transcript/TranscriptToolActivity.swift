@@ -174,10 +174,12 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     }
 
     /// The `cmd` string of each `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` in a Codex
-    /// code-mode script, decoded as a JSON string, with each other `tools.name(` call as `name(…)`,
+    /// code-mode script, decoded as a JSON string, with each other `tools.name(` call outside a cmd
+    /// literal as `name(…)`,
     /// in script order and joined by newlines; nil when it has no exec_command.
     static func execCommands(inScript script: String) -> String? {
         var steps: [(at: String.Index, text: String)] = []
+        var literals: [Range<String.Index>] = []
         var rest = script[...]
         while let call = rest.range(of: "exec_command({") {
             rest = rest[call.upperBound...]
@@ -186,21 +188,24 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             guard let key else { continue }
             let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
             guard value.first == "\"", let literal = stringLiteral(at: value) else { continue }
-            steps.append((call.lowerBound, literal))
+            steps.append((call.lowerBound, literal.text))
+            literals.append(value.startIndex..<literal.end)
         }
         guard !steps.isEmpty else { return nil }
         rest = script[...]
         while let call = rest.range(of: "tools.") {
             rest = rest[call.upperBound...]
             let name = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
-            guard !name.isEmpty, name != "exec_command", rest.dropFirst(name.count).first == "(" else { continue }
+            guard !name.isEmpty, name != "exec_command", rest.dropFirst(name.count).first == "(",
+                  !literals.contains(where: { $0.contains(call.lowerBound) }) else { continue }
             steps.append((call.lowerBound, "\(name)(…)"))
         }
         return steps.sorted { $0.at < $1.at }.map(\.text).joined(separator: "\n")
     }
 
-    /// The double-quoted literal that `text` starts with, decoded; nil when it does not close.
-    private static func stringLiteral(at text: Substring) -> String? {
+    /// The double-quoted literal that `text` starts with, decoded, and the index after its closing
+    /// quote; nil when it does not close.
+    private static func stringLiteral(at text: Substring) -> (text: String, end: String.Index)? {
         var escaped = false
         for index in text.indices.dropFirst() {
             if escaped {
@@ -210,8 +215,9 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             } else if text[index] == "\"" {
                 let literal = text[...index]
                 // A JavaScript-only escape such as \' is not JSON; keep the source text then.
-                return (try? JSONDecoder().decode(String.self, from: Data(literal.utf8)))
+                let decoded = (try? JSONDecoder().decode(String.self, from: Data(literal.utf8)))
                     ?? String(literal.dropFirst().dropLast())
+                return (decoded, literal.endIndex)
             }
         }
         return nil

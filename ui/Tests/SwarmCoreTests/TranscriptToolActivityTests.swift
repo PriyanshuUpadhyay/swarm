@@ -138,6 +138,9 @@ struct TranscriptToolActivityTests {
         // A script that also calls another tool names that call in order, so the header hides no step.
         let mixed = #"await tools.apply_patch("*** Begin Patch\n*** End Patch"); text(await tools.exec_command({cmd:"ls"}));"#
         #expect(TranscriptToolActivity.command(in: .string(mixed), name: "exec") == "apply_patch(…)\nls")
+        // A command that only mentions a tool call runs one command, so it names no other call.
+        let mention = #"text(await tools.exec_command({cmd:"rg 'tools.read(' src"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(mention), name: "exec") == "rg 'tools.read(' src")
         let cut = #"text(await tools.exec_command({cmd:"swarm inb"#
         #expect(TranscriptToolActivity.command(in: .string(cut), name: "exec") == cut)
         let row = TranscriptRowBuilder.rows(from: [
