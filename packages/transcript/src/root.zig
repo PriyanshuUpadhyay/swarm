@@ -602,10 +602,10 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
     try stringify.write(@tagName(event));
     switch (event) {
         inline else => |value| {
-            inline for (@typeInfo(@TypeOf(value)).@"struct".fields) |field| {
-                if (comptime !std.mem.eql(u8, field.name, "meta")) {
-                    try stringify.objectField(field.name);
-                    try stringify.write(@field(value, field.name));
+            inline for (comptime std.meta.fieldNames(@TypeOf(value))) |name| {
+                if (comptime !std.mem.eql(u8, name, "meta")) {
+                    try stringify.objectField(name);
+                    try stringify.write(@field(value, name));
                 }
             }
             try stringify.objectField("meta");
