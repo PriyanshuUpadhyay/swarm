@@ -200,13 +200,15 @@ fn run(
     std::thread::spawn(move || {
         let mut text = Vec::new();
         let _ = (&mut stderr).take(REASON_MAX).read_to_end(&mut text);
-        // A character that the cut splits is dropped, so the reason stays within 64 KiB.
-        if let Err(error) = std::str::from_utf8(&text)
-            && error.error_len().is_none()
-        {
-            text.truncate(error.valid_up_to());
+        // Each invalid byte decodes to a 3-byte U+FFFD, so the cut is made again on the text, at
+        // a character boundary, to keep the reason within 64 KiB.
+        let mut text = String::from_utf8_lossy(&text).into_owned();
+        let mut end = text.len().min(REASON_MAX as usize);
+        while !text.is_char_boundary(end) {
+            end -= 1;
         }
-        let _ = sender.send(String::from_utf8_lossy(&text).into_owned());
+        text.truncate(end);
+        let _ = sender.send(text);
         // The rest is read and dropped, so a rule that writes more does not die on a closed pipe.
         let _ = std::io::copy(&mut stderr, &mut std::io::sink());
     });
@@ -576,5 +578,10 @@ mod tests {
             panic!()
         };
         assert_eq!(reason.len(), 64 * 1024 - 1);
+        let script = r"head -c 65536 /dev/zero | LC_ALL=C tr '\0' '\377' >&2; exit 2";
+        let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("bytes", script, "")))) else {
+            panic!()
+        };
+        assert!(reason.len() <= 64 * 1024, "{}", reason.len());
     }
 }
