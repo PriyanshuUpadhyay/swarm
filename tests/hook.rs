@@ -1220,3 +1220,133 @@ fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// Lays a stand-in `notify` verb over the shipped tmux adapter. It appends one line per notice to
+/// `$HOME/notices`, so a test never shows a real notice. Call it after swarm has claimed its home.
+fn stand_in_notify(home: &Path) -> PathBuf {
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux.conf"),
+        "notify = printf '%s|%s\\n' \"$SWARM_TITLE\" \"$SWARM_BODY\" >> \"$HOME/notices\"\n",
+    )
+    .unwrap();
+    home.join("notices")
+}
+
+fn notices(file: &Path) -> String {
+    std::fs::read_to_string(file).unwrap_or_default()
+}
+
+/// A chair started by hand has no swarm env at all, and `swarm notify` still reaches the owner.
+#[test]
+fn swarm_notify_sends_one_notice_for_a_chair_started_by_hand() {
+    let home = scratch("notify-chair");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let sent_to = stand_in_notify(&home);
+
+    let sent = swarm(
+        &home,
+        &[],
+        &[
+            "notify",
+            "swarm: demo done",
+            "--body",
+            "it's \"done\" $HOME",
+        ],
+        "",
+    );
+
+    assert!(sent.status.success(), "{sent:?}");
+    assert_eq!(notices(&sent_to), "swarm: demo done|it's \"done\" $HOME\n");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[test]
+fn swarm_notify_refuses_a_worker() {
+    let home = scratch("notify-worker");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let sent_to = stand_in_notify(&home);
+
+    let refused = swarm(
+        &home,
+        &[("SWARM_AGENT_ID", "coder")],
+        &["notify", "swarm: blocked"],
+        "",
+    );
+
+    assert!(!refused.status.success(), "{refused:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&refused.stderr),
+        "swarm: only the chair notifies the owner; send it to the orchestrator with swarm send\n"
+    );
+    assert_eq!(notices(&sent_to), "");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[test]
+fn swarm_notify_names_the_missing_verb() {
+    let home = scratch("notify-no-verb");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    std::fs::write(
+        home.join(".swarm/adapters/bare.conf"),
+        "self = true\nspawn = true\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+
+    let failed = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "bare")],
+        &["notify", "swarm: demo done"],
+        "",
+    );
+
+    assert!(!failed.status.success(), "{failed:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&failed.stderr),
+        "swarm: adapter bare has no notify verb, so it cannot notify the owner\n"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// Each shipped adapter's `notify` verb gives osascript the title and body as argv, never as
+/// AppleScript source. A stand-in `osascript` first on PATH records its args, so no notice shows.
+#[test]
+fn each_shipped_notify_verb_passes_the_text_to_osascript_as_argv() {
+    let home = scratch("notify-osascript");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let osascript = bin.join("osascript");
+    std::fs::write(
+        &osascript,
+        "#!/bin/sh\nfor arg; do printf '<%s>' \"$arg\"; done >> \"$HOME/osascript\"\necho >> \"$HOME/osascript\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &osascript,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let title = "swarm: a\" & (do shell script \"touch pwned\") & \"";
+    let body = "body $HOME `id`";
+
+    for adapter in ["tmux", "tmux-solo", "herdr"] {
+        let sent = swarm(
+            &home,
+            &[("SWARM_ADAPTER", adapter), ("PATH", &path)],
+            &["notify", title, "--body", body],
+            "",
+        );
+        assert!(sent.status.success(), "{adapter}: {sent:?}");
+    }
+
+    let line = format!(
+        "<-e><on run argv><-e><display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"><-e><end run><{title}><{body}>\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("osascript")).unwrap(),
+        line.repeat(3)
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
