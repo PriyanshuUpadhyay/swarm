@@ -287,8 +287,10 @@ struct StepRunsTests {
 
     @Test("VoiceOver reads each node's state and each run's most urgent state in words, not only as a color")
     func spokenLabels() {
-        func node(_ id: String, _ state: StepState?, ready: Bool = false, stale: [String] = [], todo: StepTodo? = nil) -> StepNode {
-            StepNode(id: id, path: id, state: state, error: state == nil ? "Line 1 is not a status" : nil, needs: [],
+        func node(
+            _ id: String, _ state: StepState?, needs: [String] = [], ready: Bool = false, stale: [String] = [], todo: StepTodo? = nil
+        ) -> StepNode {
+            StepNode(id: id, path: id, state: state, error: state == nil ? "Line 1 is not a status" : nil, needs: needs,
                      needsAssumed: false, stale: stale, ready: ready, todo: todo, lastEvent: nil)
         }
         let waiting = node("03-contracts", .waiting(question: "Graph from Uses, table, or a file?"), todo: StepTodo(checked: 2, total: 4))
@@ -299,6 +301,8 @@ struct StepRunsTests {
         #expect(node("07-close", .open, ready: true).spokenLabel == "07 close, ready")
         #expect(node("06-review", .done(revision: "abc"), stale: ["05-build"]).spokenLabel == "06 review, done, stale: 05-build changed")
         #expect(node("02-local", nil).spokenLabel == "02 local, can't read: Line 1 is not a status")
+        // The edge layer is hidden from VoiceOver, so each node says what it needs.
+        #expect(node("05-build", .open, needs: ["04-impact", "02-design"]).spokenLabel == "05 build, open, needs 04 impact, 02 design")
 
         func run(_ steps: [StepNode]) -> StepRun {
             StepRun(id: "tmp/flow/2026-10-05-login", skill: "flow", name: "2026-10-05-login", closed: false, steps: steps, lastActivity: nil)

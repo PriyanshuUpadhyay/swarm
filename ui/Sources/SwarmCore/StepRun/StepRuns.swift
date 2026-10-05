@@ -54,7 +54,8 @@ public struct StepNode: Identifiable, Equatable, Sendable {
     }
 
     /// "03-contracts" reads as "03 contracts".
-    public var title: String { id.replacingOccurrences(of: "-", with: " ", options: [], range: id.range(of: "-")) }
+    public var title: String { Self.title(of: id) }
+    static func title(of id: String) -> String { id.replacingOccurrences(of: "-", with: " ", options: [], range: id.range(of: "-")) }
 
     /// What VoiceOver reads for the node, so the state is never only a color (02-design "Node states").
     public var spokenLabel: String {
@@ -71,6 +72,7 @@ public struct StepNode: Identifiable, Equatable, Sendable {
         case nil: say("can't read", error ?? "")
         }
         var parts = [title, spoken]
+        if !needs.isEmpty { parts.append("needs \(needs.map(Self.title(of:)).joined(separator: ", "))") }
         if !stale.isEmpty { parts.append("stale: \(stale.joined(separator: ", ")) changed") }
         if let todo { parts.append(String(AttributedString(localized: "\(todo.checked) of ^[\(todo.total) todo](inflect: true)").characters)) }
         return parts.joined(separator: ", ")
