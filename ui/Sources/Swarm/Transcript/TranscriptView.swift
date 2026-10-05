@@ -530,6 +530,7 @@ private struct TranscriptRowView: View {
         }
         .onHover { hovering = $0 }
         .contextMenu {
+            if isMessage { Button("Copy", action: copy) }
             Button("Show Source") { showingSource = true }
         }
         .accessibilityActions {
