@@ -56,7 +56,7 @@ struct StepRunsView: View {
                         scan.runs += closed.runs.filter(\.closed)
                         scan.cutOff = scan.cutOff || closed.cutOff
                         // Each tick reads the open folders again, so only the closed ones carry over.
-                        scan.unreadable += closed.unreadable.filter { $0.contains("/_closed") }
+                        scan.unreadable += closed.unreadable.filter { $0.split(separator: "/").contains("_closed") }
                     }
                     runs = scan.runs
                     scanNotice = scan.notice
