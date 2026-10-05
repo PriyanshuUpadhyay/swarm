@@ -117,6 +117,10 @@ pub fn decide(
     };
     let call = normalize(provider, event, &payload);
     let tool = call["tool"].as_str().unwrap_or_default();
+    // With no tool name no tools filter matches, so every tool-scoped rule would be skipped.
+    if tool.is_empty() {
+        return refuse(format!("the {provider:?} payload has no tool name"));
+    }
     let cwd = call["cwd"].as_str().map(std::path::PathBuf::from);
     let input = call.to_string() + "\n";
     for rule in list.rules.iter().filter(|rule| {
@@ -196,6 +200,12 @@ fn run(
     std::thread::spawn(move || {
         let mut text = Vec::new();
         let _ = (&mut stderr).take(REASON_MAX).read_to_end(&mut text);
+        // A character that the cut splits is dropped, so the reason stays within 64 KiB.
+        if let Err(error) = std::str::from_utf8(&text)
+            && error.error_len().is_none()
+        {
+            text.truncate(error.valid_up_to());
+        }
         let _ = sender.send(String::from_utf8_lossy(&text).into_owned());
         // The rest is read and dropped, so a rule that writes more does not die on a closed pipe.
         let _ = std::io::copy(&mut stderr, &mut std::io::sink());
@@ -357,6 +367,25 @@ mod tests {
                     .into()
             )
         );
+        for payload in ["{}", r#"{"tool_name":["Bash"]}"#, r#"{"tool_name":""}"#] {
+            let verdict = decide(
+                Some(&list("")),
+                "p",
+                Provider::Codex,
+                "PreToolUse",
+                payload,
+                "/h",
+                Instant::now() + DEADLINE,
+            );
+            assert_eq!(
+                verdict,
+                Verdict::Deny(
+                    "swarm guard: the Codex payload has no tool name, so the call is blocked"
+                        .into()
+                ),
+                "{payload}"
+            );
+        }
         let verdict = decide(
             Some(&list("")),
             "p",
@@ -541,5 +570,11 @@ mod tests {
             panic!()
         };
         assert_eq!(reason.len(), 64 * 1024);
+        // A character cut at the limit is dropped, not shown as U+FFFD.
+        let script = r"printf '%65535s' '' | tr ' ' a >&2; printf '\303\251' >&2; exit 2";
+        let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("wide", script, "")))) else {
+            panic!()
+        };
+        assert_eq!(reason.len(), 64 * 1024 - 1);
     }
 }
