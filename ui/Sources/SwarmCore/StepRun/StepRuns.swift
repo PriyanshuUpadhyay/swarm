@@ -122,7 +122,7 @@ public enum StepRuns {
     static let todoHead = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
     /// `<workspace>/tmp/<skill>/` holds the runs and `_closed/` the closed ones (the kit's run-folder.md).
     static let root = "tmp"
-    static let closedFolder = "_closed"
+    public static let closedFolder = "_closed"
 
     /// The runs under `<workspace>/tmp/<skill>/<run>/`, and `_closed/<run>/` when asked, newest first.
     /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A folder below it that cannot be
