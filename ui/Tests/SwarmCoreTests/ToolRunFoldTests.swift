@@ -89,6 +89,14 @@ struct ToolRunFoldTests {
         #expect(closed.map(\.id) == ["prompt", "fold:read", "answer"])
     }
 
+    @Test("Only a trailing fold with a failed step is the live fold that a failure opened")
+    func liveFailedFold() {
+        let failing = [prompt(), tool("read"), tool("make", state: .failed)]
+        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: failing)) == "fold:read")
+        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: failing + [reply("answer")])) == nil)
+        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: [prompt(), tool("read"), tool("grep")])) == nil)
+    }
+
     @Test("Rings and thoughts alone do not fold, and a ring that starts a turn is prose")
     func ringsWithoutToolsStay() {
         #expect(foldedIDs([prompt(), ring("one"), ring("two"), thought("plan")]).isEmpty)

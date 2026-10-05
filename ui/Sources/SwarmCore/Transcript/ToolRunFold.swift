@@ -81,6 +81,13 @@ public enum ToolRunFold {
         rows.contains { $0.tool?.state == .failed }
     }
 
+    /// The id of the trailing fold when a failed step opens it: the live run of a running turn,
+    /// so the view can say it opened. An earlier fold with a failure was opened before.
+    public static func liveFailedFoldID(in items: [Item]) -> String? {
+        guard let last = items.last, case .fold(let rows) = last, defaultExpanded(rows) else { return nil }
+        return last.id
+    }
+
     public struct NameCount: Hashable, Sendable {
         public var name: String
         public var count: Int
