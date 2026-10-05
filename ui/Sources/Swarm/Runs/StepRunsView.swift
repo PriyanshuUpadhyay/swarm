@@ -42,6 +42,9 @@ struct StepRunsView: View {
         .onChange(of: error) { _, text in
             if let text { AccessibilityNotification.Announcement(text).post() }
         }
+        .onChange(of: graphNotice) { _, text in
+            if let text { AccessibilityNotification.Announcement(text).post() }
+        }
         .task(id: Request(directory: directory, isActive: isActive, showClosed: showClosed, retryID: retryID)) {
             guard isActive else { return }
             // Closed runs do not change, so they are read once when the group opens, not on every
