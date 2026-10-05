@@ -321,6 +321,10 @@ struct StepRunsTests {
         // A run whose files cannot be read now is still there; the view keeps it and shows "Can't read".
         let locked = StepRunScan(unreadable: ["tmp/flow/2026-10-05-locked"])
         #expect(!StepRuns.isGone("tmp/flow/2026-10-05-locked", closed: false, from: locked, includeClosed: false))
+        // A skill folder that cannot be listed hides every run below it; they are not gone.
+        let lockedSkill = StepRunScan(unreadable: ["tmp/flow"])
+        #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: lockedSkill, includeClosed: false))
+        #expect(StepRuns.isGone("tmp/flow-other/r1", closed: false, from: lockedSkill, includeClosed: false))
     }
 
     private func write(_ folder: URL, _ files: [String: String]) throws {

@@ -176,9 +176,10 @@ public enum StepRuns {
     }
 
     /// Whether a chosen run left the scan. A closed run is only hidden while closed runs are not read,
-    /// and a run the scan cannot read is still there.
+    /// and a run the scan cannot read, or whose skill or `_closed` folder it cannot list, is still there.
     public static func isGone(_ id: String, closed: Bool, from scan: StepRunScan, includeClosed: Bool) -> Bool {
-        (includeClosed || !closed) && !scan.runs.contains { $0.id == id } && !scan.unreadable.contains(id)
+        (includeClosed || !closed) && !scan.runs.contains { $0.id == id }
+            && !scan.unreadable.contains { id == $0 || id.hasPrefix($0 + "/") }
     }
 
     /// Longest-path layers in file order: a step with no needs is layer 0, else one more than its
