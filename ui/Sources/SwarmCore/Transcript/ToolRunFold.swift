@@ -4,7 +4,9 @@ import Foundation
 /// any state, a ring that arrived mid-turn, a thought, or a row hidden by default; every other row is
 /// prose. A run folds when it holds 2 or more shown steps and at least 1 tool row. The turn state
 /// does not matter, so the trailing run of a running turn is a live fold: a new step changes the
-/// fold's text, not its height, and no group of rows on screen ever collapses (ADR 0028).
+/// fold's text, not its height, and no group of rows on screen ever collapses (ADR 0028). The one
+/// exception is a step that fails in a fold the owner has not toggled: the fold opens, because
+/// ADR 0047 puts a visible failure above a fixed height.
 public enum ToolRunFold {
     public enum Item: Hashable, Sendable, Identifiable {
         case row(TranscriptRow)
