@@ -44,6 +44,13 @@ When running rounds, put `round: N` on the first line of every ask and discard a
 In lane mode children cannot message each other. In relay mode you receive their child-to-child
 messages as kind `relay:<recipient>` and forward them yourself.
 
+## Owner
+
+Swarm notifies the owner when any agent waits on a permission or a question. When the run's work
+is done, or you need the owner for something else, run
+`swarm notify "swarm: <project> done" --body "<one line>"`. This is the only way to notify the
+owner, and only the orchestrator may run it.
+
 ## Health and cleanup
 
 ```sh
