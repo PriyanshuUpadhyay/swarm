@@ -99,13 +99,14 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return counts
     }
 
-    /// The result says the step failed: a non-zero exit code, or a Codex code-mode command's
-    /// `Script failed` header. Another tool's text can start with those words, so only a command
-    /// in the `Script failed` … `Output:` shape counts.
+    /// The result says the step failed: a non-zero exit code, a Codex code-mode command's
+    /// `Script failed` header, or an exec_command that the script caught as rejected
+    /// (`Promise.allSettled` prints `"status":"rejected"`). Another tool's text can hold those
+    /// words, so only a command in code-mode shape counts.
     public var reportsFailure: Bool {
         if (exitCode ?? 0) != 0 { return true }
-        guard command != nil, let output, output.hasPrefix("Script failed\n") else { return false }
-        return Self.codeModeOutput(output) != nil
+        guard command != nil, let output, let body = Self.codeModeOutput(output) else { return false }
+        return output.hasPrefix("Script failed\n") || body.contains("\"status\":\"rejected\"")
     }
 
     /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex

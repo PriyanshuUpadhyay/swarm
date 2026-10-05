@@ -165,6 +165,11 @@ struct TranscriptToolActivityTests {
         // Codex code mode starts with one of three headers; the `script` tool's own banner is not one.
         #expect(activity("Script running with cell ID 7\nWall time 31.0 seconds\nOutput:\n{\"exit_code\":3}").exitCode == 3)
         #expect(activity("Script started, output log file is 'typescript'.\nOutput:\n{\"exit_code\":2}").exitCode == nil)
+        // A script that catches a rejected exec_command (Promise.allSettled) still ran a command that failed.
+        let caught = activity("Script completed\nWall time 1 seconds\nOutput:\n[{\"status\":\"fulfilled\",\"value\":{\"exit_code\":0}},{\"status\":\"rejected\",\"reason\":\"exec_command failed: ProcessFailed\"}]")
+        #expect(caught.exitCode == nil)
+        #expect(caught.reportsFailure)
+        #expect(!activity("Script completed\nOutput:\n{\"output\":\"{\\\"status\\\":\\\"rejected\\\"}\"}").reportsFailure)
 
         let rows = TranscriptRowBuilder.rows(from: [
             .toolCall(toolCallID: "c1", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
