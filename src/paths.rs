@@ -2,6 +2,8 @@ const SWARM_DIR: &str = ".swarm";
 const SWARM_DB: &str = "swarm.db";
 /// The file that proves a `.swarm` folder is swarm's own (ADR 0036).
 const MARKER: &str = "swarm-home";
+/// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
+pub const GUARDS: &str = "guards.json";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
@@ -79,8 +81,11 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     if marker.is_file() {
         return Ok(());
     }
+    // The owner's rule list (ADR 0040) can arrive before swarm first runs, so it does not count.
     let empty = match std::fs::read_dir(root) {
-        Ok(mut entries) => entries.next().is_none(),
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .all(|entry| entry.file_name() == GUARDS),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => return Err(format!("swarm: cannot read {}: {error}", root.display()).into()),
     };

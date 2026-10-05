@@ -264,22 +264,49 @@ fn read_codex_config(path: &std::path::Path) -> Result<(String, toml_edit::Docum
 /// `config/src/fingerprint.rs` `version_for_toml`): the SHA-256 of the hook's identity as JSON with
 /// sorted keys. `tests` pins the values a real Codex 0.159.0 app-server reported.
 pub fn codex_hook_trust(command: &str) -> Vec<(String, String)> {
-    use sha2::Digest;
     CODEX_STATE_EVENTS
         .iter()
         .map(|event| {
             let label = codex_event_label(event);
-            // Keys in sorted order; with `preserve_order` the map keeps them so.
-            let identity = serde_json::json!({
-                "event_name": label,
-                "hooks": [{"async": false, "command": command, "timeout": 3, "type": "command"}],
-            });
-            let digest = sha2::Sha256::digest(identity.to_string().as_bytes());
-            let hash: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
             (
                 format!("/<session-flags>/config.toml:{label}:1:0"),
-                format!("sha256:{hash}"),
+                codex_hash(&label, command, 3),
             )
+        })
+        .collect()
+}
+
+/// The hash Codex trusts for one command hook with no matcher.
+fn codex_hash(label: &str, command: &str, timeout: u64) -> String {
+    use sha2::Digest;
+    // Keys in sorted order; with `preserve_order` the map keeps them so.
+    let identity = serde_json::json!({
+        "event_name": label,
+        "hooks": [{"async": false, "command": command, "timeout": timeout, "type": "command"}],
+    });
+    let digest = sha2::Sha256::digest(identity.to_string().as_bytes());
+    let hash: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("sha256:{hash}")
+}
+
+/// The Codex trust entry of each guard group in a Codex home's `hooks.json` text, keyed by the
+/// group's place as Codex counts it (`codex app-server` 0.159.0 `hooks/list`, 2026-10-05).
+pub fn codex_guard_trust(home: &std::path::Path, hooks: &str) -> Vec<(String, String)> {
+    let value: serde_json::Value = serde_json::from_str(hooks).unwrap_or_default();
+    let file = home.join("hooks.json");
+    crate::guard::EVENTS
+        .iter()
+        .filter_map(|event| {
+            let command = guard_command("codex", event);
+            let groups = value["hooks"][event].as_array()?;
+            let group = groups
+                .iter()
+                .position(|group| has_handler(group, &command))?;
+            let label = codex_event_label(event);
+            Some((
+                format!("{}:{label}:{group}:0", file.display()),
+                codex_hash(&label, &command, crate::guard::REGISTRATION_TIMEOUT),
+            ))
         })
         .collect()
 }
@@ -904,36 +931,43 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
     "Interrupt",
 ];
 
-/// The plan for AGY's global `hooks.json`, which has no per-process hook flag. The `swarm` group
-/// is added when missing, stays when it equals swarm's, and is a conflict otherwise. Every other
+/// The plan for AGY's global `hooks.json`, which has no per-process hook flag. The `swarm` group,
+/// and with `guard` the `swarm-guard` group, is added when missing, stays when it equals swarm's,
+/// and is a conflict otherwise. Every other
 /// group stays, and a file that is not a JSON object is refused. AGY sends no event name, so each
 /// handler names it.
-pub fn agy_hook_plan(path: &std::path::Path) -> Result<HookFilePlan, String> {
+pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<HookFilePlan, String> {
     let text = read_optional(path)?;
     let mut value = json_object(path, text.as_deref())?;
     let before = text.unwrap_or_default();
     let groups = value
         .as_object_mut()
         .expect("json_object returns an object");
-    let group = agy_group();
     let file = path.display().to_string();
     let mut conflicts = Vec::new();
-    let after = match groups.get("swarm") {
-        None => {
-            groups.insert("swarm".into(), group);
-            json_text(&value)
-        }
-        Some(found) if *found == group => before.clone(),
-        Some(found) => {
-            conflicts.push(HookConflict {
+    let mut added = false;
+    // The guard is a group of its own (ADR 0040), so a Mac that has swarm's state group keeps it.
+    let wanted = [("swarm", agy_group()), ("swarm-guard", agy_guard_group())];
+    for (name, group) in wanted.into_iter().take(if guard { 2 } else { 1 }) {
+        match groups.get(name) {
+            None => {
+                groups.insert(name.into(), group);
+                added = true;
+            }
+            Some(found) if *found == group => {}
+            Some(found) => conflicts.push(HookConflict {
                 file: file.clone(),
-                entry: "group \"swarm\"".into(),
+                entry: format!("group {name:?}"),
                 found: found.to_string(),
                 wanted: group.to_string(),
-                fix: format!("rename or delete the \"swarm\" group in {file}"),
-            });
-            before.clone()
+                fix: format!("rename or delete the {name:?} group in {file}"),
+            }),
         }
+    }
+    let after = if added && conflicts.is_empty() {
+        json_text(&value)
+    } else {
+        before.clone()
     };
     if after != before {
         refuse_read_only(path)?;
@@ -949,6 +983,89 @@ pub fn agy_hook_plan(path: &std::path::Path) -> Result<HookFilePlan, String> {
 /// Whether AGY's `hooks.json` holds swarm's group as `agy_hook_plan` adds it.
 pub fn agy_hooks_set(path: &std::path::Path) -> bool {
     read_json_object(path).is_ok_and(|(_, value)| value.get("swarm") == Some(&agy_group()))
+}
+
+/// Whether AGY's `hooks.json` holds the guard group as `agy_hook_plan` adds it.
+pub fn agy_guard_set(path: &std::path::Path) -> bool {
+    read_json_object(path)
+        .is_ok_and(|(_, value)| value.get("swarm-guard") == Some(&agy_guard_group()))
+}
+
+/// The command a guard registration runs. It is `swarm` on PATH, not a session's link, because
+/// a chair that the owner started by hand has no swarm session (ADR 0040).
+pub fn guard_command(provider: &str, event: &str) -> String {
+    format!("swarm guard {provider} {event}")
+}
+
+fn guard_handler(provider: &str, event: &str) -> serde_json::Value {
+    serde_json::json!({"type": "command", "command": guard_command(provider, event), "timeout": crate::guard::REGISTRATION_TIMEOUT})
+}
+
+fn has_handler(group: &serde_json::Value, command: &str) -> bool {
+    group["hooks"]
+        .as_array()
+        .is_some_and(|hooks| hooks.iter().any(|hook| hook["command"] == command))
+}
+
+fn agy_guard_group() -> serde_json::Value {
+    let events: serde_json::Map<_, _> = crate::guard::EVENTS
+        .iter()
+        .map(|event| {
+            let group =
+                serde_json::json!([{"matcher": "*", "hooks": [guard_handler("agy", event)]}]);
+            (event.to_string(), group)
+        })
+        .collect();
+    events.into()
+}
+
+/// The plan for the guard registration in a Claude `settings.json` or a Codex `hooks.json`, which
+/// share one shape. A group with no matcher is added to each guard event that has no handler
+/// running swarm's guard command; every other group stays as it is.
+pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFilePlan, String> {
+    let (before, mut value) = read_json_object(path)?;
+    let file = path.display().to_string();
+    let hooks = value
+        .as_object_mut()
+        .expect("json_object returns an object")
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(hooks) = hooks.as_object_mut() else {
+        return Err(format!("swarm: {file} has hooks that is not an object"));
+    };
+    let mut added = false;
+    for event in crate::guard::EVENTS {
+        let Some(groups) = hooks
+            .entry(event)
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+        else {
+            return Err(format!(
+                "swarm: {file} has hooks.{event} that is not a list"
+            ));
+        };
+        if !groups
+            .iter()
+            .any(|group| has_handler(group, &guard_command(provider, event)))
+        {
+            groups.push(serde_json::json!({"hooks": [guard_handler(provider, event)]}));
+            added = true;
+        }
+    }
+    let after = if added {
+        json_text(&value)
+    } else {
+        before.clone()
+    };
+    if after != before {
+        refuse_read_only(path)?;
+    }
+    Ok(HookFilePlan {
+        path: path.to_path_buf(),
+        before,
+        after,
+        conflicts: Vec::new(),
+    })
 }
 
 fn agy_group() -> serde_json::Value {
@@ -1375,7 +1492,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("swarm-agy-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let hooks = root.join("config/hooks.json");
-        assert!(set_up(agy_hook_plan(&hooks)).unwrap());
+        assert!(set_up(agy_hook_plan(&hooks, false)).unwrap());
         let created: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
         assert_eq!(created.as_object().unwrap().len(), 1);
@@ -1388,11 +1505,11 @@ mod tests {
             shared_hook_command("agy PostToolUse")
         );
         assert!(created["swarm"].get("PreToolUse").is_none());
-        assert!(!set_up(agy_hook_plan(&hooks)).unwrap());
+        assert!(!set_up(agy_hook_plan(&hooks, false)).unwrap());
 
         let herdr = r#"{"herdr": {"PreInvocation": [{"command": "herdr-state session", "timeout": 10, "type": "command"}]}}"#;
         std::fs::write(&hooks, herdr).unwrap();
-        assert!(set_up(agy_hook_plan(&hooks)).unwrap());
+        assert!(set_up(agy_hook_plan(&hooks, false)).unwrap());
         let merged: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&hooks).unwrap()).unwrap();
         let before: serde_json::Value = serde_json::from_str(herdr).unwrap();
@@ -1402,7 +1519,7 @@ mod tests {
         // The owner's own group named `swarm` is a conflict, not replaced (ADR 0036).
         let owners = r#"{"herdr": {}, "swarm": {"Stop": []}}"#;
         std::fs::write(&hooks, owners).unwrap();
-        let plan = agy_hook_plan(&hooks).unwrap();
+        let plan = agy_hook_plan(&hooks, false).unwrap();
         assert_eq!(plan.conflicts.len(), 1);
         assert_eq!(plan.conflicts[0].found, r#"{"Stop":[]}"#);
         assert_eq!(plan.after, owners);
@@ -1423,7 +1540,7 @@ mod tests {
         );
 
         std::fs::write(&hooks, "{ not json").unwrap();
-        assert!(agy_hook_plan(&hooks).is_err());
+        assert!(agy_hook_plan(&hooks, false).is_err());
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), "{ not json");
     }
 
@@ -1560,10 +1677,10 @@ mod tests {
         let (empty, missing) = (root.join("empty.json"), root.join("missing.json"));
         std::fs::write(&empty, "").unwrap();
         assert!(ensure_agy_trust(&empty, std::path::Path::new("/x")).is_err());
-        assert!(agy_hook_plan(&empty).is_err());
+        assert!(agy_hook_plan(&empty, false).is_err());
         assert_eq!(std::fs::read_to_string(&empty).unwrap(), "");
         assert!(ensure_agy_trust(&missing, std::path::Path::new("/x")).unwrap());
-        assert!(set_up(agy_hook_plan(&root.join("hooks.json"))).unwrap());
+        assert!(set_up(agy_hook_plan(&root.join("hooks.json"), false)).unwrap());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -1581,7 +1698,7 @@ mod tests {
         }
         assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
         assert!(codex_hook_plan(&root, &entries).is_err());
-        assert!(agy_hook_plan(&hooks).is_err());
+        assert!(agy_hook_plan(&hooks, false).is_err());
         assert!(ensure_agy_trust(&hooks, std::path::Path::new("/one")).is_err());
         for (file, text) in [(&config, "model = \"o4\"\n"), (&hooks, "{}\n")] {
             assert_eq!(std::fs::read_to_string(file).unwrap(), text);
@@ -1604,7 +1721,7 @@ mod tests {
         assert!(plan.apply().is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), owners);
         let hooks = root.join("hooks.json");
-        let plan = agy_hook_plan(&hooks).unwrap();
+        let plan = agy_hook_plan(&hooks, false).unwrap();
         std::fs::write(&hooks, "{\"other\": {}}\n").unwrap();
         assert!(plan.apply().is_err());
         assert_eq!(
@@ -1721,7 +1838,7 @@ mod tests {
         chflags("uchg");
         let (plan, agy) = (
             codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex")),
-            agy_hook_plan(&hooks),
+            agy_hook_plan(&hooks, false),
         );
         chflags("nouchg");
         assert!(plan.is_err());
@@ -1760,7 +1877,7 @@ mod tests {
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
         assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
         assert!(codex_hook_plan(&root, &entries).is_err());
-        assert!(agy_hook_plan(&root.join("hooks.json")).is_err());
+        assert!(agy_hook_plan(&root.join("hooks.json"), false).is_err());
         assert!(!gone.exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -2000,5 +2117,22 @@ mod tests {
             command_model(&command(&["agy", "--", "--model", "x"])),
             None
         );
+    }
+
+    #[test]
+    fn the_guard_plan_keeps_an_owner_handler_and_refuses_a_bad_shape() {
+        let root = std::env::temp_dir().join(format!("swarm-guard-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("settings.json");
+        // The owner's own timeout for swarm's command stays; nothing is added beside it.
+        let owned = r#"{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "swarm guard claude PreToolUse", "timeout": 30}]}]}}"#;
+        std::fs::write(&path, owned).unwrap();
+        let plan = guard_hooks_plan(&path, "claude").unwrap();
+        assert_eq!(plan.after, plan.before);
+        for bad in [r#"{"hooks": []}"#, r#"{"hooks": {"PreToolUse": {}}}"#] {
+            std::fs::write(&path, bad).unwrap();
+            assert!(guard_hooks_plan(&path, "claude").is_err(), "{bad}");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

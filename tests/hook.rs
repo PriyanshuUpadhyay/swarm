@@ -135,7 +135,7 @@ fn two_swarm_builds_share_one_hook_setup_and_keep_the_owners_hooks() {
     std::fs::create_dir_all(agy_hooks.parent().unwrap()).unwrap();
     std::fs::write(&codex_config, owners_codex).unwrap();
     std::fs::write(&agy_hooks, owners_agy).unwrap();
-    let all_set = serde_json::json!({"codex": true, "agy": true});
+    let all_set = serde_json::json!({"codex": true, "agy": true, "guard": true});
 
     let setup = hooks(&brew, &home, &["setup"]);
     assert!(setup.status.success(), "{setup:?}");
@@ -300,7 +300,7 @@ fn the_setup_plan_shows_each_change_and_writes_nothing() {
     let status = hooks(exe, &home, &["status", "--json"]);
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&status.stdout).unwrap(),
-        serde_json::json!({"codex": true, "agy": true})
+        serde_json::json!({"codex": true, "agy": true, "guard": true})
     );
     let done = hooks(exe, &home, &["setup", "--plan"]);
     assert_eq!(
@@ -398,5 +398,148 @@ fn a_broken_codex_home_is_a_conflict_and_nothing_is_written() {
     let setup = hooks(exe, &home, &["setup"]);
     assert!(!setup.status.success(), "{setup:?}");
     assert_eq!((hook_files(&home), std::fs::read(&broken).unwrap()), before);
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
+/// own hooks, trusts the Codex group where it lands, and each registered command answers its CLI
+/// (ADR 0040). Without a list, setup adds no guard.
+#[test]
+fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() {
+    let home = scratch("guard");
+    let exe = Path::new(env!("CARGO_BIN_EXE_swarm"));
+    let write = |file: &str, text: &str| {
+        let path = home.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    let owner_group = r#"{"matcher": "Bash", "hooks": [{"type": "command", "command": "owner-guard", "timeout": 3}]}"#;
+    write(
+        ".claude/settings.json",
+        &format!(r#"{{"hooks": {{"PreToolUse": [{owner_group}]}}}}"#),
+    );
+    write(
+        ".codex/hooks.json",
+        &format!(r#"{{"hooks": {{"PreToolUse": [{owner_group}]}}}}"#),
+    );
+    write(".codex/config.toml", "model = \"o3\"\n");
+    write(".codex-spare/config.toml", "");
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    std::os::unix::fs::symlink(
+        "../../settings.json",
+        home.join(".claude/.profiles/work/settings.json"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("../.codex/hooks.json", home.join(".codex-spare/hooks.json"))
+        .unwrap();
+
+    let plan = hooks(exe, &home, &["setup", "--plan"]);
+    assert!(!stdout(&plan).contains("swarm guard"), "{}", stdout(&plan));
+
+    write(
+        ".swarm/guards.json",
+        r#"{"rules": [{"name": "no-blocked", "event": "PreToolUse", "tools": ["Bash", "run_command"],
+            "command": ["/bin/sh", "-c", "grep -q blocked && { echo 'blocked by the rule' >&2; exit 2; }; exit 0"]}]}"#,
+    );
+    let applied = hooks(exe, &home, &["setup"]);
+    assert!(applied.status.success(), "{applied:?}");
+    let read = |file: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(home.join(file)).unwrap()).unwrap()
+    };
+    let guard = |provider: &str| serde_json::json!({"type": "command", "command": format!("swarm guard {provider} PreToolUse"), "timeout": 10});
+    let owner: serde_json::Value = serde_json::from_str(owner_group).unwrap();
+    for (file, provider) in [
+        (".claude/settings.json", "claude"),
+        (".codex/hooks.json", "codex"),
+    ] {
+        assert_eq!(
+            read(file)["hooks"]["PreToolUse"],
+            serde_json::json!([owner, {"hooks": [guard(provider)]}]),
+            "{file}"
+        );
+    }
+    assert!(home.join(".codex-spare/hooks.json").is_symlink());
+    assert_eq!(
+        read(".gemini/config/hooks.json")["swarm-guard"],
+        serde_json::json!({"PreToolUse": [{"matcher": "*", "hooks": [guard("agy")]}]})
+    );
+    // `codex app-server` 0.159.0 `hooks/list` on 2026-10-05 gave this key and hash for this
+    // hooks.json.
+    for codex_home in [".codex", ".codex-spare"] {
+        let config = std::fs::read_to_string(home.join(codex_home).join("config.toml")).unwrap();
+        let key = format!(
+            "{}/{codex_home}/hooks.json:pre_tool_use:1:0",
+            home.display()
+        );
+        assert!(
+            config.contains(&format!("[hooks.state.{key:?}]\ntrusted_hash = \"sha256:41310acd2af3e803e7ebfd8b6d36709e689a600a2c937f4266953a446bda5e84\"")),
+            "{config}"
+        );
+    }
+    let status = hooks(exe, &home, &["status", "--json"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["guard"], true, "{status}");
+    let again = hooks(exe, &home, &["setup", "--plan"]);
+    assert_eq!(
+        stdout(&again),
+        "swarm's hooks are already set up. No file changes.\n"
+    );
+
+    // Each registered command, with `swarm` on PATH being this build, answers in its CLI's form.
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(exe, bin.join("swarm")).unwrap();
+    let registered = |provider: &str| match provider {
+        "agy" => {
+            read(".gemini/config/hooks.json")["swarm-guard"]["PreToolUse"][0]["hooks"][0]["command"]
+                .clone()
+        }
+        "codex" => {
+            read(".codex/hooks.json")["hooks"]["PreToolUse"][1]["hooks"][0]["command"].clone()
+        }
+        _ => read(".claude/settings.json")["hooks"]["PreToolUse"][1]["hooks"][0]["command"].clone(),
+    };
+    let run = |provider: &str, payload: &str| {
+        let mut command = clean(Path::new("/bin/sh"), &home);
+        command
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .args(["-c", registered(provider).as_str().unwrap()]);
+        piped(command, payload)
+    };
+    let bash = |command: &str| {
+        format!(r#"{{"tool_name": "Bash", "tool_input": {{"command": "{command}"}}}}"#)
+    };
+    let agy = |command: &str| {
+        format!(
+            r#"{{"toolCall": {{"name": "run_command", "args": {{"CommandLine": "{command}"}}}}}}"#
+        )
+    };
+    for provider in ["claude", "codex"] {
+        let allowed = run(provider, &bash("ls"));
+        assert_eq!(
+            (allowed.status.code(), stdout(&allowed)),
+            (Some(0), String::new()),
+            "{provider}"
+        );
+    }
+    let denied = run("claude", &bash("echo blocked"));
+    assert_eq!(
+        stdout(&denied),
+        "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"blocked by the rule\"}}\n"
+    );
+    let denied = run("codex", &bash("echo blocked"));
+    assert_eq!(denied.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&denied.stderr),
+        "blocked by the rule\n"
+    );
+    assert_eq!(
+        stdout(&run("agy", &agy("ls"))),
+        "{\"decision\":\"allow\"}\n"
+    );
+    assert_eq!(
+        stdout(&run("agy", &agy("echo blocked"))),
+        "{\"decision\":\"deny\",\"reason\":\"blocked by the rule\"}\n"
+    );
     std::fs::remove_dir_all(&home).unwrap();
 }

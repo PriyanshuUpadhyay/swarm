@@ -632,25 +632,67 @@ fn codex_homes(
 /// Codex and AGY state hooks are set up, the plan of each change and conflict, and setting them up.
 /// The owner consents first, in the app or by running `setup` (ADR 0029). Setup writes no file
 /// while any entry conflicts with one the owner has, and `--digest` refuses a file that changed
-/// after the plan (ADR 0036). Claude needs no step, because `swarm launch` passes its hooks with
-/// `--settings`.
+/// after the plan (ADR 0036). Claude's state hooks need no step, because `swarm launch` passes
+/// them with `--settings`. With a rule list, setup also registers `swarm guard` in every Claude
+/// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040).
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let user_home = std::path::PathBuf::from(env_var("HOME")?);
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
     let homes = codex_homes(&user_home)?;
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
+    // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
+    // with no list never gets a hook that would block every call.
+    let guard = std::path::Path::new(&swarm::paths::home()?)
+        .join(".swarm")
+        .join(swarm::paths::GUARDS)
+        .exists();
+    let claude_settings = unique_targets(
+        std::iter::once(user_home.join(".claude/settings.json")).chain(
+            std::fs::read_dir(user_home.join(".claude/.profiles"))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path().join("settings.json"))
+                .filter(|path| path.exists()),
+        ),
+    );
+    let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
     // A file that swarm cannot read or edit is a conflict in the plan, not an error.
     let plan = || -> Vec<swarm::bus::HookFilePlan> {
         let unreadable = swarm::bus::HookFilePlan::unreadable;
-        let mut plans: Vec<_> = homes
+        let guard_plan = |path: &std::path::PathBuf, provider: &str| {
+            swarm::bus::guard_hooks_plan(path, provider)
+                .unwrap_or_else(|error| unreadable(path.clone(), error))
+        };
+        let mut plans: Vec<_> = Vec::new();
+        if guard {
+            plans.extend(
+                claude_settings
+                    .iter()
+                    .map(|path| guard_plan(path, "claude")),
+            );
+            plans.extend(codex_hooks.iter().map(|path| guard_plan(path, "codex")));
+        }
+        let codex_plans: Vec<_> = homes
             .iter()
             .map(|home| {
-                swarm::bus::codex_hook_plan(home, &codex)
+                let mut entries = codex.clone();
+                if guard {
+                    // Trust the guard group where the planned hooks.json puts it.
+                    let target = canonical(&home.join("hooks.json"));
+                    let hooks = plans
+                        .iter()
+                        .find(|plan| canonical(&plan.path) == target)
+                        .map_or("", |plan| plan.after.as_str());
+                    entries.extend(swarm::bus::codex_guard_trust(home, hooks));
+                }
+                swarm::bus::codex_hook_plan(home, &entries)
                     .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
             })
             .collect();
+        plans.extend(codex_plans);
         plans.push(
-            swarm::bus::agy_hook_plan(&agy_hooks)
+            swarm::bus::agy_hook_plan(&agy_hooks, guard)
                 .unwrap_or_else(|error| unreadable(agy_hooks.clone(), error)),
         );
         plans
@@ -660,6 +702,17 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ["status", "--json"] => print_json(&serde_json::json!({
             "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
             "agy": swarm::bus::agy_hooks_set(&agy_hooks),
+            // True with no rule list, else when every guard registration is in place.
+            "guard": !guard
+                || (claude_settings.iter().chain(&codex_hooks).all(|path| {
+                    let provider = if codex_hooks.contains(path) { "codex" } else { "claude" };
+                    swarm::bus::guard_hooks_plan(path, provider)
+                        .is_ok_and(|plan| plan.after == plan.before)
+                }) && homes.iter().all(|home| {
+                    let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
+                    let entries = swarm::bus::codex_guard_trust(home, &hooks);
+                    !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
+                }) && swarm::bus::agy_guard_set(&agy_hooks)),
         })),
         ["setup", "--plan"] => {
             print!("{}", hook_plan_text(&plan()));
@@ -691,6 +744,18 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => Err(USAGE.into()),
     }
+}
+
+/// A path as its link target, so two names of one file are one file.
+fn canonical(path: &std::path::Path) -> std::path::PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Each path whose link target no earlier path shares, because two plans of one file would each
+/// find it changed by the other at apply.
+fn unique_targets(paths: impl Iterator<Item = std::path::PathBuf>) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    paths.filter(|path| seen.insert(canonical(path))).collect()
 }
 
 /// Folder trust in each Codex home or Claude config a pane may read. With no account picked, one
@@ -2363,7 +2428,7 @@ fn guard(args: &[String]) -> (String, String, i32) {
     let deadline = std::time::Instant::now() + swarm::guard::DEADLINE;
     let verdict = match (swarm::paths::home(), env::var("HOME")) {
         (Ok(swarm_home), Ok(home)) => {
-            let path = format!("{swarm_home}/.swarm/guards.json");
+            let path = format!("{swarm_home}/.swarm/{}", swarm::paths::GUARDS);
             let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
             match (std::fs::read_to_string(&path), payload) {
                 (_, None) => swarm::guard::Verdict::Deny(
