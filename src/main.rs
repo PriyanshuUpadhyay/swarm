@@ -20,6 +20,9 @@ fn ring_text(root: &std::path::Path) -> String {
 const RING_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// How many more times a ring presses Enter while Claude's input box still holds it.
 const RING_ENTER_RETRIES: usize = 3;
+/// How long one ring may take in all, so a hung adapter verb cannot hold the caller for ever.
+const RING_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
 
 /// Type the ring into `pane`. A Claude that is still starting loses a ring typed before its input
 /// box is drawn, or reads the text and its Enter as one paste, so the Enter becomes a newline and
@@ -33,6 +36,12 @@ fn ring_pane(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let text = ring_text(root);
     let claude = provider == Some("claude");
+    // The ring's own deadline replaces a batch deadline, so a ring that starts within the batch
+    // still gets the time to send its text and Enter.
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(std::time::Instant::now() + RING_TIMEOUT),
+        ..adapter.clone()
+    };
     let read = || {
         adapter
             .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
@@ -90,7 +99,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1392,6 +1401,190 @@ fn set_chair_for_caller(
     swarm::store::set_chair(connection, session_id, chair)
 }
 
+#[derive(serde::Serialize)]
+struct AgentListOutput {
+    agents: Vec<swarm::bus::Agent>,
+    attachable: bool,
+}
+
+fn list_agents(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    session_id: &str,
+    adapter: &swarm::adapter::Adapter,
+) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
+    let rows = swarm::store::agents(connection, session_id)?;
+    let listing = match adapter.run("list", &[]) {
+        Ok(listing) => Some(listing),
+        Err(error) => {
+            adapter.check_deadline()?;
+            eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
+            None
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    let alive: Vec<Option<bool>> = rows
+        .iter()
+        .map(|row| {
+            row.pane.as_deref().and_then(|pane| {
+                listing
+                    .as_deref()
+                    .map(|list| swarm::adapter::listing_has_pane(list, pane))
+            })
+        })
+        .collect();
+    // The screen check (ADR 0021) reads each live pane once per listing, all at the same
+    // time, so six agents cost about one capture.
+    type ScreenRead = (
+        swarm::screen::ScreenState,
+        Option<String>,
+        Option<swarm::screen::Prompt>,
+    );
+    let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
+        let reads: Vec<_> = rows
+            .iter()
+            .zip(&alive)
+            .map(|(row, alive)| {
+                let target = match (alive, row.pane.as_deref()) {
+                    (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
+                    _ => None,
+                };
+                scope.spawn(move || {
+                    let (pane, provider) = target?;
+                    let output =
+                        adapter.screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                    let prompt = swarm::screen::whole_prompt(&output, || {
+                        adapter.capture_within(
+                            &[("pane", pane)],
+                            std::time::Duration::from_millis(300),
+                        )
+                    });
+                    let (state, detail) = swarm::screen::read_pane(provider, &output, || {
+                        adapter.capture_within(
+                            &[("pane", pane)],
+                            std::time::Duration::from_millis(300),
+                        )
+                    })?;
+                    Some((state, detail, prompt))
+                })
+            })
+            .collect();
+        reads
+            .into_iter()
+            .map(|read| read.join().ok().flatten())
+            .collect()
+    });
+    // All reads must finish in time; a due ring below can run past their deadline.
+    adapter.check_deadline()?;
+    let mut agents = Vec::new();
+    for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+        let (screen, detail, prompt) = match screen {
+            Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
+            None => (None, None, None),
+        };
+        let (state, write) = swarm::screen::resolve(
+            row.state.as_deref(),
+            row.state_at,
+            row.state_source.as_deref(),
+            screen,
+            now,
+        );
+        // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
+        // so the listing it polls rings a due message again once the pane shows it idle. A
+        // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
+        if screen == Some(swarm::screen::ScreenState::Idle)
+            && prompt.is_none()
+            && !matches!(state.as_deref(), Some("working" | "waiting"))
+            && let Some(pane) = row.pane.as_deref()
+            && let Err(error) = rering_if_due(connection, root, adapter, session_id, &row.id, pane)
+        {
+            eprintln!("swarm: {error}");
+        }
+        if let Some(seen) = write {
+            let detail = detail.filter(|_| seen == "failed");
+            match swarm::store::set_screen_state(
+                connection,
+                session_id,
+                &row.id,
+                seen,
+                detail.as_deref(),
+                now,
+                (
+                    row.state.as_deref(),
+                    row.state_source.as_deref(),
+                    row.state_at,
+                ),
+            ) {
+                Ok(true) => {
+                    (row.state_at, row.state_source, row.state_detail) =
+                        (Some(now), Some("screen".into()), detail);
+                }
+                // A newer hook report landed after this listing read the row; it stands,
+                // and the next listing shows it.
+                Ok(false) => {}
+                Err(error) => eprintln!("swarm: {error}"),
+            }
+        }
+        agents.push(swarm::bus::Agent {
+            id: row.id,
+            role: row.role,
+            pane: row.pane,
+            provider: row.provider,
+            created_at: row.created_at,
+            alive,
+            state,
+            state_at_s: row.state_at,
+            state_source: row.state_source,
+            state_detail: row.state_detail,
+            log: row.log.map(resolved_agent_log),
+            prompt,
+        });
+    }
+    Ok(AgentListOutput {
+        agents,
+        attachable: adapter.attach.is_some(),
+    })
+}
+
+fn all_agent_listings(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    budget: std::time::Duration,
+) -> Result<std::collections::BTreeMap<String, AgentListOutput>, Box<dyn std::error::Error>> {
+    let mut listings = std::collections::BTreeMap::new();
+    let deadline = std::time::Instant::now() + budget;
+    let sessions: Vec<_> = swarm::store::sessions(connection)?
+        .into_iter()
+        .filter(|session| {
+            session.agents > 0
+                && session
+                    .adapter
+                    .as_deref()
+                    .is_some_and(|name| !name.trim().is_empty())
+        })
+        .collect();
+    for (index, session) in sessions.iter().enumerate() {
+        let adapter = session.adapter.as_deref().expect("filtered adapter").trim();
+        let listing = swarm::adapter::load(root, adapter).and_then(|mut adapter| {
+            adapter.session_id = Some(session.id.clone());
+            let now = std::time::Instant::now();
+            adapter.deadline = Some(
+                now + deadline.saturating_duration_since(now) / (sessions.len() - index) as u32,
+            );
+            list_agents(connection, root, &session.id, &adapter)
+        });
+        match listing {
+            Ok(listing) => {
+                listings.insert(session.id.clone(), listing);
+            }
+            Err(error) => eprintln!("swarm: {}: {error}", session.id),
+        }
+    }
+    Ok(listings)
+}
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
@@ -1683,144 +1876,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         let session_id = session_id()?;
-        let rows = swarm::store::agents(&connection, &session_id)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
-        let listing = match adapter.run("list", &[]) {
-            Ok(listing) => Some(listing),
-            Err(error) => {
-                eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
-                None
-            }
-        };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
-        let alive: Vec<Option<bool>> = rows
-            .iter()
-            .map(|row| {
-                row.pane.as_deref().and_then(|pane| {
-                    listing
-                        .as_deref()
-                        .map(|list| swarm::adapter::listing_has_pane(list, pane))
-                })
-            })
-            .collect();
-        // The screen check (ADR 0021) reads each live pane once per listing, all at the same
-        // time, so six agents cost about one capture.
-        type ScreenRead = (
-            swarm::screen::ScreenState,
-            Option<String>,
-            Option<swarm::screen::Prompt>,
-        );
-        let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
-            let adapter = &adapter;
-            let reads: Vec<_> = rows
-                .iter()
-                .zip(&alive)
-                .map(|(row, alive)| {
-                    let target = match (alive, row.pane.as_deref()) {
-                        (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
-                        _ => None,
-                    };
-                    scope.spawn(move || {
-                        let (pane, provider) = target?;
-                        let output = adapter
-                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                        let prompt = swarm::screen::whole_prompt(&output, || {
-                            adapter.capture_within(
-                                &[("pane", pane)],
-                                std::time::Duration::from_millis(300),
-                            )
-                        });
-                        let (state, detail) = swarm::screen::read_pane(provider, &output, || {
-                            adapter.capture_within(
-                                &[("pane", pane)],
-                                std::time::Duration::from_millis(300),
-                            )
-                        })?;
-                        Some((state, detail, prompt))
-                    })
-                })
-                .collect();
-            reads
-                .into_iter()
-                .map(|read| read.join().ok().flatten())
-                .collect()
-        });
-        let mut agents = Vec::new();
-        for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
-            let (screen, detail, prompt) = match screen {
-                Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
-                None => (None, None, None),
-            };
-            let (state, write) = swarm::screen::resolve(
-                row.state.as_deref(),
-                row.state_at,
-                row.state_source.as_deref(),
-                screen,
-                now,
-            );
-            // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
-            // so the listing it polls rings a due message again once the pane shows it idle. A
-            // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
-            if screen == Some(swarm::screen::ScreenState::Idle)
-                && prompt.is_none()
-                && !matches!(state.as_deref(), Some("working" | "waiting"))
-                && let Some(pane) = row.pane.as_deref()
-                && let Err(error) =
-                    rering_if_due(&mut connection, &root, &adapter, &session_id, &row.id, pane)
-            {
-                eprintln!("swarm: {error}");
-            }
-            if let Some(seen) = write {
-                let detail = detail.filter(|_| seen == "failed");
-                match swarm::store::set_screen_state(
-                    &connection,
-                    &session_id,
-                    &row.id,
-                    seen,
-                    detail.as_deref(),
-                    now,
-                    (
-                        row.state.as_deref(),
-                        row.state_source.as_deref(),
-                        row.state_at,
-                    ),
-                ) {
-                    Ok(true) => {
-                        (row.state_at, row.state_source, row.state_detail) =
-                            (Some(now), Some("screen".into()), detail);
-                    }
-                    // A newer hook report landed after this listing read the row; it stands,
-                    // and the next listing shows it.
-                    Ok(false) => {}
-                    Err(error) => eprintln!("swarm: {error}"),
-                }
-            }
-            agents.push(swarm::bus::Agent {
-                id: row.id,
-                role: row.role,
-                pane: row.pane,
-                provider: row.provider,
-                created_at: row.created_at,
-                alive,
-                state,
-                state_at_s: row.state_at,
-                state_source: row.state_source,
-                state_detail: row.state_detail,
-                log: row.log.map(resolved_agent_log),
-                prompt,
-            });
-        }
-        #[derive(serde::Serialize)]
-        struct AgentListOutput {
-            agents: Vec<swarm::bus::Agent>,
-            attachable: bool,
-        }
-        return print_json(&AgentListOutput {
-            agents,
-            attachable: adapter.attach.is_some(),
-        });
+        return print_json(&list_agents(&mut connection, &root, &session_id, &adapter)?);
+    }
+    if let [cmd, json, all] = args
+        && cmd == "agents"
+        && json == "--json"
+        && all == "--all"
+    {
+        // SwarmCLIBus gives CapturedProcess 20 s; reserve 2 s for startup, DB work, and JSON.
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(18))?;
+        return print_json(&listings);
     }
     if let [cmd, rest @ ..] = args
         && cmd == "messages"
@@ -2319,6 +2386,200 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rering_finishes_after_the_session_deadline() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-ring-deadline-{}", uuid::Uuid::now_v7()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61", [])
+            .unwrap();
+        let mut adapter = swarm::adapter::parse("fake", "self = true\nspawn = true\nring = printf text >> \"$SWARM_PANE\"; sleep 0.3; printf enter >> \"$SWARM_PANE\"\nlist = true\nclose = true\ncapture = true\n").unwrap();
+        adapter.deadline = Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+        let ring_log = root.join("ring");
+        rering_if_due(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            CODER,
+            ring_log.to_str().unwrap(),
+        )
+        .unwrap();
+        let rings: i64 = connection
+            .query_row("SELECT rings FROM message", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rings, 1);
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "textenter");
+        assert!(adapter.check_deadline().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_hung_ring_ends_at_the_ring_timeout() {
+        let root = std::env::temp_dir().join(format!("swarm-hung-ring-{}", uuid::Uuid::now_v7()));
+        let adapter = swarm::adapter::parse(
+            "fake",
+            "self = true\nspawn = true\nlist = true\nclose = true\ncapture = true\nring = sleep 60\n",
+        )
+        .unwrap();
+        let started = std::time::Instant::now();
+        assert!(ring_pane(&adapter, &root, "%2", Some("codex")).is_err());
+        assert!(started.elapsed() < RING_TIMEOUT + std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn claude_rering_presses_enter_after_the_session_deadline() {
+        let root = std::env::temp_dir().join(format!("swarm-claude-ring-{}", uuid::Uuid::now_v7()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_provider(&connection, &session, CODER, "claude").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61", [])
+            .unwrap();
+        let screen = root.join("screen");
+        let log = root.join("log");
+        std::fs::write(&screen, "────\n❯ \n────\n").unwrap();
+        // The ring stays typed in the composer until a key clears it.
+        let mut adapter = swarm::adapter::parse(
+            "fake",
+            &format!(
+                "self = true\nspawn = true\nlist = true\nclose = true\n\
+                 capture = cat \"$SWARM_PANE\"\n\
+                 ring = echo ring >> '{log}'; printf '────\\n❯ %s\\n────\\n' \"$SWARM_TEXT\" > \"$SWARM_PANE\"\n\
+                 key = echo \"$SWARM_KEY\" >> '{log}'; printf '────\\n❯ \\n────\\n' > \"$SWARM_PANE\"\n",
+                log = log.display()
+            ),
+        )
+        .unwrap();
+        adapter.deadline = Some(std::time::Instant::now());
+        rering_if_due(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            CODER,
+            screen.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "ring\nEnter\n");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batch_keeps_a_listing_after_a_late_rering() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-listing-rering-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let ring_log = root.join("ring");
+        let ring_path = swarm::adapter::shell_line(&[ring_log.to_string_lossy().into_owned()]);
+        std::fs::write(root.join("adapters/fake.conf"),
+            format!("self = true\nspawn = true\nring = sleep 1.2; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
+        ).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("fake")).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - ?1",
+                [RERING_UNSEEN_AFTER_SECS + 1],
+            )
+            .unwrap();
+        let started = std::time::Instant::now();
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(1)).unwrap();
+        assert!(started.elapsed() > std::time::Duration::from_secs(1));
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "rung");
+        assert_eq!(listings[&session].agents.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batch_omits_slow_sessions_and_keeps_fast_sessions_within_budget() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-batch-deadline-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let mut ids = Vec::new();
+        for (index, (name, list, screen)) in [
+            ("slow-list", "sleep 3; printf pane", "true"),
+            ("slow-screen", "sleep 0.4; printf pane", "sleep 3"),
+            ("fast", "printf pane", "true"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            std::fs::write(root.join("adapters").join(format!("{name}.conf")), format!(
+                "self = true\nspawn = true\nring = true\nlist = {list}\nclose = true\ncapture = true\nscreen = {screen}\n"
+            )).unwrap();
+            let session =
+                swarm::store::create_session(&connection, "lane", &root, None, Some(name)).unwrap();
+            swarm::store::add_agent(&connection, &session, "coder", "code").unwrap();
+            swarm::store::set_pane(&connection, &session, "coder", "pane").unwrap();
+            // The hung sessions run first, so they cannot starve the healthy session behind them.
+            connection
+                .execute(
+                    "UPDATE session SET created_at = ?1 WHERE id = ?2",
+                    rusqlite::params![3 - index as i64, session],
+                )
+                .unwrap();
+            ids.push(session);
+        }
+        let started = std::time::Instant::now();
+        let listings = all_agent_listings(
+            &mut connection,
+            &root,
+            std::time::Duration::from_millis(1500),
+        )
+        .unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        assert!(!listings.contains_key(&ids[0]));
+        assert!(!listings.contains_key(&ids[1]));
+        assert_eq!(listings[&ids[2]].agents.len(), 1);
+        // The single-session list keeps its original unbounded list and bounded screen behavior.
+        let adapter = swarm::adapter::load(&root, "slow-list").unwrap();
+        assert!(list_agents(&mut connection, &root, &ids[0], &adapter).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";

@@ -1,18 +1,24 @@
 import SwiftUI
 import SwarmCore
 
-/// One agent status as a symbol and a color, so color is never the only signal.
+/// One agent status as a symbol (a spinner while working) and a color, so color is never the only
+/// signal.
 struct StatusGlyph: View {
     let status: AgentStatus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var spins: Bool { status == .working && !reduceMotion }
+
     var body: some View {
         Image(systemName: Self.symbol(status))
             .foregroundStyle(DesignTokens.color(status))
-            .symbolEffect(
-                .rotate, options: .repeat(.continuous).speed(0.3),
-                isActive: status == .working && !reduceMotion
-            )
+            // An AppKit spinner, because a repeating symbol effect re-renders the whole window on
+            // every frame. The hidden symbol keeps the size the caller's font gives.
+            .opacity(spins ? 0 : 1)
+            .overlay {
+                if spins { ProgressView().controlSize(.mini) }
+            }
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.title(status))
             .help(Self.title(status))
     }

@@ -280,15 +280,24 @@ public actor SwarmSessionDiscovery {
     private var titles: [SwarmSessionID: String] = [:]
     private var titleLogs: [SwarmSessionID: String] = [:]
     private var titleMisses: [SwarmSessionID: Date] = [:]
+    private var titleSearches: [SwarmSessionID: (provider: String?, chairID: SwarmChairID?, at: Date)] = [:]
+    private var worktreeListings: [String: (entries: [WorktreeEntry], at: Date)] = [:]
+    private var worktreeGenerations: [String: UInt64] = [:]
     private let profiles: any SwarmProfileSource
     private let home: URL
+    private let worktreeLister: @Sendable (String) async throws -> [WorktreeEntry]
+    private let accountHomesReader: SwarmChairTranscript
 
     public init(
         profiles: any SwarmProfileSource = SwarmCLIProfileSource(),
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        accountHomesTTL: TimeInterval = 60,
+        worktreeLister: @escaping @Sendable (String) async throws -> [WorktreeEntry] = Git.worktrees
     ) {
         self.profiles = profiles
         self.home = home
+        self.accountHomesReader = SwarmChairTranscript(profiles: profiles, home: home, accountHomesTTL: accountHomesTTL)
+        self.worktreeLister = worktreeLister
     }
 
     public func discover(
@@ -338,10 +347,30 @@ public actor SwarmSessionDiscovery {
         return identity
     }
 
+    public func prefetchHomes() async {
+        await accountHomesReader.prefetchHomes()
+    }
+
+    public func forgetWorktrees(for common: String) {
+        worktreeGenerations[common, default: 0] += 1
+        worktreeListings.removeValue(forKey: common)
+    }
+
+    func worktrees(for common: String, now: Date = .now) async throws -> [WorktreeEntry] {
+        if let cached = worktreeListings[common], now.timeIntervalSince(cached.at) < 10 {
+            return cached.entries
+        }
+        let generation = worktreeGenerations[common, default: 0]
+        let entries = try await worktreeLister(common)
+        if generation == worktreeGenerations[common, default: 0] {
+            worktreeListings[common] = (entries, now)
+        }
+        return entries
+    }
+
     func resolvedTitles(
-        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]
+        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], now: Date = .now
     ) async -> [SwarmSessionID: String] {
-        let now = Date()
         var homesByProvider: [String: [URL]] = [:]
 
         for session in sessions where session.archivedAt == nil {
@@ -356,6 +385,11 @@ public actor SwarmSessionDiscovery {
             let cachedLogMissing = titleLogs[session.id].map {
                 !FileManager.default.fileExists(atPath: $0)
             } ?? false
+            if discoversByTime, !busLogChanged, !cachedLogMissing,
+               let searched = titleSearches[session.id], searched.provider == provider,
+               searched.chairID == session.chairID, now.timeIntervalSince(searched.at) < 10 {
+                continue
+            }
             if !discoversByTime, !busLogChanged, !cachedLogMissing, titles[session.id] != nil {
                 continue
             }
@@ -377,6 +411,7 @@ public actor SwarmSessionDiscovery {
                     cwd: session.cwd, createdAt: session.createdAt,
                     homes: homesByProvider[provider] ?? []
                 )?.path
+                titleSearches[session.id] = (provider, session.chairID, now)
             }
             if titleLogs[session.id] != log {
                 titles[session.id] = nil

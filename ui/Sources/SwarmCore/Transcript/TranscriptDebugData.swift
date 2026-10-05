@@ -4,10 +4,11 @@ import TranscriptTool
 public struct RawTranscriptEntry: Sendable, Hashable, Identifiable {
     public var index: Int
     public var rawLine: String
-    public var displayText: String
     public var rowKind: String
     public var sessionID: String = ""
     public var id: String { "\(sessionID)raw-\(index)" }
+    /// Pretty-printed on read, because a rebuild makes every entry and the raw view is usually closed.
+    public var displayText: String { TranscriptDebugData.prettyJSON(rawLine) }
 }
 
 public enum TranscriptDebugData {
@@ -18,8 +19,7 @@ public enum TranscriptDebugData {
                 else if let row { row.kind.rawValue }
                 else { "no row" }
             return RawTranscriptEntry(
-                index: index + indexOffset, rawLine: record.rawLine,
-                displayText: prettyJSON(record.rawLine), rowKind: kind
+                index: index + indexOffset, rawLine: record.rawLine, rowKind: kind
             )
         }
     }
@@ -35,7 +35,7 @@ public enum TranscriptDebugData {
         return ([sessionJSON(session: session, agents: agents)] + records).joined(separator: "\n\n")
     }
 
-    private static func prettyJSON(_ line: String) -> String {
+    static func prettyJSON(_ line: String) -> String {
         guard let data = line.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
               let pretty = try? JSONSerialization.data(

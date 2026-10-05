@@ -95,6 +95,11 @@ public struct SwarmCLIBus: SwarmBus {
         try await listAgents(in: session, adapter: adapter)
     }
 
+    public func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]] {
+        let listings = try await read(["agents", "--json", "--all"], as: [String: SwarmAgentList].self)
+        return Dictionary(uniqueKeysWithValues: listings.map { (SwarmSessionID($0.key), $0.value.agents) })
+    }
+
     public func messages(
         in session: SwarmSessionID, after seq: Int, adapter: String
     ) async throws -> [SwarmMessage] {
