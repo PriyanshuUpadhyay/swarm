@@ -72,7 +72,7 @@ public struct StepNode: Identifiable, Equatable, Sendable {
         }
         var parts = [title, spoken]
         if !stale.isEmpty { parts.append("stale: \(stale.joined(separator: ", ")) changed") }
-        if let todo { parts.append("\(todo.checked) of \(todo.total) todos") }
+        if let todo { parts.append(String(AttributedString(localized: "\(todo.checked) of ^[\(todo.total) todo](inflect: true)").characters)) }
         return parts.joined(separator: ", ")
     }
 }

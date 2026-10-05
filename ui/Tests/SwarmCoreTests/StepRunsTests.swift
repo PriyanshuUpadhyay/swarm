@@ -293,6 +293,7 @@ struct StepRunsTests {
         }
         let waiting = node("03-contracts", .waiting(question: "Graph from Uses, table, or a file?"), todo: StepTodo(checked: 2, total: 4))
         #expect(waiting.spokenLabel == "03 contracts, waiting: Graph from Uses, table, or a file?, 2 of 4 todos")
+        #expect(node("01-frame", .open, todo: StepTodo(checked: 0, total: 1)).spokenLabel == "01 frame, open, 0 of 1 todo")
         #expect(node("04-impact", .active(agent: "worker-a")).spokenLabel == "04 impact, active: worker-a")
         #expect(node("07-close", .open).spokenLabel == "07 close, open")
         #expect(node("07-close", .open, ready: true).spokenLabel == "07 close, ready")
