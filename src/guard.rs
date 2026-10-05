@@ -200,6 +200,12 @@ fn run(
     std::thread::spawn(move || {
         let mut text = Vec::new();
         let _ = (&mut stderr).take(REASON_MAX).read_to_end(&mut text);
+        // A character the read cut in two is dropped, else it would decode to a U+FFFD.
+        if text.len() as u64 == REASON_MAX
+            && let Some(chunk) = text.utf8_chunks().last()
+        {
+            text.truncate(text.len() - chunk.invalid().len());
+        }
         // Each invalid byte decodes to a 3-byte U+FFFD, so the cut is made again on the text, at
         // a character boundary, to keep the reason within 64 KiB.
         let mut text = String::from_utf8_lossy(&text).into_owned();
@@ -574,6 +580,12 @@ mod tests {
             panic!()
         };
         assert_eq!(reason.len(), 64 * 1024 - 1);
+        // 3 of the 4 bytes of an emoji at the limit would decode to one U+FFFD of exactly 3.
+        let script = r"printf '%65533s' '' | tr ' ' a >&2; printf '\360\237\230\200' >&2; exit 2";
+        let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("emoji", script, "")))) else {
+            panic!()
+        };
+        assert_eq!(reason.len(), 64 * 1024 - 3);
         let script = r"head -c 65536 /dev/zero | LC_ALL=C tr '\0' '\377' >&2; exit 2";
         let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("bytes", script, "")))) else {
             panic!()
