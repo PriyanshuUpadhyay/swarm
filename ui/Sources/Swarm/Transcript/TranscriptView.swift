@@ -259,12 +259,12 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private var foldedLines: [ToolRunFold.Line] {
-        ToolRunFold.lines(foldedItems) { foldOverrides[$0] ?? ToolRunFold.defaultExpanded($1) }
+        ToolRunFold.lines(foldedItems) { ToolRunFold.isExpanded($1, overrides: foldOverrides) }
     }
 
     private func foldExpanded(_ id: String, rows: [TranscriptRow]) -> Binding<Bool> {
         Binding {
-            foldOverrides[id] ?? ToolRunFold.defaultExpanded(rows)
+            ToolRunFold.isExpanded(rows, overrides: foldOverrides)
         } set: { open in
             foldOverrides[id] = open
         }

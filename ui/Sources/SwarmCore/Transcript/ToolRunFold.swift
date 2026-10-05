@@ -76,6 +76,14 @@ public enum ToolRunFold {
         return items
     }
 
+    /// Whether a fold draws its steps: the owner's choice, stored under the fold's id at the time,
+    /// else `defaultExpanded`. Load earlier can prepend steps to the window's first fold and so move
+    /// its id to an earlier step, so a choice stored under any step's fold id counts, and the
+    /// earliest one is the newest. The id cannot be the last step's: the live fold gains steps. O(steps).
+    public static func isExpanded(_ rows: [TranscriptRow], overrides: [String: Bool]) -> Bool {
+        rows.lazy.compactMap { overrides["fold:" + $0.eventID] }.first ?? defaultExpanded(rows)
+    }
+
     /// A fold with a failed step opens by default, so folding never hides a failure.
     public static func defaultExpanded(_ rows: [TranscriptRow]) -> Bool {
         rows.contains { $0.tool?.state == .failed }

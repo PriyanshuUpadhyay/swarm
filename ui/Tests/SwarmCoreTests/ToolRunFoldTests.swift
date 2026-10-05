@@ -89,6 +89,27 @@ struct ToolRunFoldTests {
         #expect(closed.map(\.id) == ["prompt", "fold:read", "answer"])
     }
 
+    @Test("The owner's open or close stays when Load earlier prepends steps to the window's first fold, and when a step lands")
+    func choiceSurvivesPrepend() {
+        func fold(_ rows: [TranscriptRow]) -> (id: String, rows: [TranscriptRow]) {
+            for item in ToolRunFold.items(in: rows) { if case .fold(let group) = item { return (item.id, group) } }
+            return ("", [])
+        }
+        let window = fold([tool("grep"), tool("make"), reply("answer")])
+        var choices = [window.id: true]
+        let earlier = fold([prompt(), tool("read"), tool("grep"), tool("make"), reply("answer")])
+        #expect(earlier.id != window.id)
+        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices))
+        // A later choice is stored under the new id, which belongs to an earlier step, so it wins.
+        choices[earlier.id] = false
+        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices))
+        // The live fold's id stays as steps land, so its choice stays too.
+        let live = fold([prompt(), tool("read"), tool("grep"), tool("make"), tool("test")])
+        #expect(live.id == earlier.id)
+        // A fold with no choice opens only on a failed step.
+        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices))
+    }
+
     @Test("Only a trailing fold with a failed step is the live fold that a failure opened")
     func liveFailedFold() {
         let failing = [prompt(), tool("read"), tool("make", state: .failed)]
