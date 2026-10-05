@@ -208,7 +208,9 @@ fn ring_proof(
 /// proved on them. The bell is a hint (R9), so a failure only warns, and a failed ring is
 /// unconfirmed. With `Proof::Later` a ring, typed or failed, stores nothing and returns None, and
 /// so does a ring whose proof read failed in the store; `settle_rings` stores its proof, so the
-/// chair's own failed ring is still left to the sweep line.
+/// chair's own failed ring is still left to the sweep line. A result that this call did not store,
+/// because the write failed or another pass stored first, is None too, so only the pass that
+/// stores a ring's result reports it.
 #[allow(clippy::too_many_arguments)]
 fn ring_and_record(
     connection: &rusqlite::Connection,
@@ -233,12 +235,13 @@ fn ring_and_record(
             RING_TIMEOUT.as_secs()
         );
     }
-    if let Err(error) =
-        swarm::store::set_delivery(connection, session_id, seqs, rung_at, delivery.as_str())
-    {
-        eprintln!("swarm: ring result not stored: {error}");
+    match swarm::store::set_delivery(connection, session_id, seqs, rung_at, delivery.as_str()) {
+        Ok(stored) => stored.then_some(delivery),
+        Err(error) => {
+            eprintln!("swarm: ring result not stored: {error}");
+            None
+        }
     }
-    Some(delivery)
 }
 
 fn init() -> Result<(), Box<dyn std::error::Error>> {
@@ -4270,6 +4273,58 @@ mod tests {
         );
         assert!(pass.is_err());
         connection.execute_batch("DROP TABLE temp.agent").unwrap();
+        lines.extend(swept(&mut connection, &root, &adapter, &session));
+        assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} {summary}")]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A re-ring of the chair whose result write fails stores nothing, so it prints no line. The
+    /// later pass that stores the result prints the chair's line, so the line comes once.
+    #[test]
+    fn a_rering_whose_result_was_not_stored_leaves_the_lost_line_to_the_pass_that_stores_it() {
+        let (root, mut connection, session) = ring_session(
+            "rering-unstored",
+            Some("agy"),
+            "ring = false",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "agy").unwrap();
+        let summary = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER store_error BEFORE UPDATE OF delivery ON main.message
+                 WHEN NEW.delivery IS NOT NULL
+                 BEGIN SELECT RAISE(ABORT, 'store error'); END;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let mut lines = swept(&mut connection, &root, &adapter, &session);
+        connection
+            .execute_batch("DROP TRIGGER temp.store_error")
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - ?1",
+                [RING_TIMEOUT.as_secs() + 1],
+            )
+            .unwrap();
         lines.extend(swept(&mut connection, &root, &adapter, &session));
         assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} {summary}")]);
         std::fs::remove_dir_all(root).unwrap();
