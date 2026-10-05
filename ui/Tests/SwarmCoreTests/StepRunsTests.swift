@@ -134,6 +134,48 @@ struct StepRunsTests {
         #expect(try await scan.value.first?.steps.last?.state == .open)
     }
 
+    @Test("A CRLF step file reads as the kit reads it, with universal newlines")
+    func crlfStep() async throws {
+        let workspace = try fixture()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let run = workspace.appendingPathComponent("tmp/flow/2026-10-05-crlf")
+        // 903962a3eed6 is the kit's revision of "Uses:\n\nbody\n", the CRLF file's text below line 1.
+        try write(run, [
+            "01-frame.md": "Status: done x\r\nUses:\r\n\r\nbody\r\n",
+            "02-design.md": "Status: done y\r\nUses: 01-frame@903962a3eed6\r\n",
+        ])
+        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).first).steps
+        #expect(steps.map(\.state) == [.done(revision: "x"), .done(revision: "y")])
+        #expect(steps[1].needs == ["01-frame"])
+        #expect(steps[1].stale == [])
+    }
+
+    @Test("A need named twice on the Uses line is one need")
+    func repeatedNeed() async throws {
+        let workspace = try fixture()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        try write(workspace.appendingPathComponent("tmp/flow/2026-10-05-twice"), [
+            "01-frame.md": "Status: done x\nUses:\n",
+            "02-design.md": "Status: open\nUses: 01-frame, 01-frame@abc\n",
+        ])
+        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).first).steps
+        #expect(steps[1].needs == ["01-frame"])
+    }
+
+    @Test("A run with no events.log takes its newest step file time, so a just-started run sorts first")
+    func runWithNoLog() async throws {
+        let workspace = try fixture()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        try write(workspace.appendingPathComponent("tmp/flow/2026-10-05-started"), ["01-frame.md": "Status: open\nUses:\n"])
+        try write(workspace.appendingPathComponent("tmp/flow/2026-09-28-logged"), [
+            "01-frame.md": "Status: done x\nUses:\n",
+            "events.log": "2000-01-01T10:00:00\t01-frame\tdone x\n",
+        ])
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(runs.map(\.name) == ["2026-10-05-started", "2026-09-28-logged"])
+        #expect(runs.first?.lastActivity != nil)
+    }
+
     @Test("No tmp folder is no runs, not an error")
     func noTmp() async throws {
         let workspace = try fixture()
@@ -149,6 +191,37 @@ struct StepRunsTests {
         }
         let steps = [node("01-a", ["03-c"]), node("02-b", ["01-a", "09-gone"]), node("03-c", ["02-b"])]
         #expect(StepRuns.layers(steps) == [["01-a"], ["02-b"], ["03-c"]])
+    }
+
+    @Test("VoiceOver reads each node's state and each run's most urgent state in words, not only as a color")
+    func spokenLabels() {
+        func node(_ id: String, _ state: StepState?, ready: Bool = false, stale: [String] = [], todo: StepTodo? = nil) -> StepNode {
+            StepNode(id: id, path: id, state: state, error: state == nil ? "Line 1 is not a status" : nil, needs: [],
+                     needsAssumed: false, stale: stale, ready: ready, todo: todo, lastEvent: nil)
+        }
+        let waiting = node("03-contracts", .waiting(question: "Graph from Uses, table, or a file?"), todo: StepTodo(checked: 2, total: 4))
+        #expect(waiting.spokenLabel == "03 contracts, waiting: Graph from Uses, table, or a file?, 2 of 4 todos")
+        #expect(node("04-impact", .active(agent: "worker-a")).spokenLabel == "04 impact, active: worker-a")
+        #expect(node("07-close", .open).spokenLabel == "07 close, open")
+        #expect(node("07-close", .open, ready: true).spokenLabel == "07 close, ready")
+        #expect(node("06-review", .done(revision: "abc"), stale: ["05-build"]).spokenLabel == "06 review, done, stale: 05-build changed")
+        #expect(node("02-local", nil).spokenLabel == "02 local, can't read: Line 1 is not a status")
+
+        func run(_ steps: [StepNode]) -> StepRun {
+            StepRun(id: "tmp/flow/2026-10-05-login", skill: "flow", name: "2026-10-05-login", closed: false, steps: steps, lastActivity: nil)
+        }
+        let blocked = run([node("01-frame", .done(revision: "a")), node("02-design", .blocked(reason: "tests fail")), node("03-contracts", .open)])
+        #expect(blocked.spokenLabel == "flow run 2026-10-05-login, blocked, 1 of 3 done")
+        #expect(run([node("01-frame", .done(revision: "a")), waiting]).spokenLabel
+            == "flow run 2026-10-05-login, waiting: Graph from Uses, table, or a file?, 1 of 2 done")
+    }
+
+    @Test("A chosen closed run is not gone while the scan leaves closed runs out")
+    func chosenClosedRun() {
+        let closedID = "tmp/flow/_closed/2026-09-30-old"
+        #expect(!StepRuns.isGone(closedID, closed: true, from: [], includeClosed: false))
+        #expect(StepRuns.isGone(closedID, closed: true, from: [], includeClosed: true))
+        #expect(StepRuns.isGone("tmp/flow/2026-10-05-moved", closed: false, from: [], includeClosed: false))
     }
 
     private func write(_ folder: URL, _ files: [String: String]) throws {

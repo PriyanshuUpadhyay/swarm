@@ -52,6 +52,29 @@ public struct StepNode: Identifiable, Equatable, Sendable {
         case .open, .other: .open
         }
     }
+
+    /// "03-contracts" reads as "03 contracts".
+    public var title: String { id.replacingOccurrences(of: "-", with: " ", options: [], range: id.range(of: "-")) }
+
+    /// What VoiceOver reads for the node, so the state is never only a color (02-design "Node states").
+    public var spokenLabel: String {
+        func say(_ word: String, _ rest: String) -> String { rest.isEmpty ? word : "\(word): \(rest)" }
+        let spoken = switch state {
+        case .open: ready ? "ready" : "open"
+        case .active(let agent): say("active", agent)
+        case .waiting(let question): say("waiting", question)
+        case .blocked(let reason): say("blocked", reason)
+        case .unavailable(let tool): "needs \(tool)"
+        case .done: "done"
+        case .skipped(let reason): say("skipped", reason)
+        case .other(let word, let rest): say(word, rest)
+        case nil: say("can't read", error ?? "")
+        }
+        var parts = [title, spoken]
+        if !stale.isEmpty { parts.append("stale: \(stale.joined(separator: ", ")) changed") }
+        if let todo { parts.append("\(todo.checked) of \(todo.total) todos") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 public struct StepRun: Identifiable, Equatable, Sendable {
@@ -61,7 +84,7 @@ public struct StepRun: Identifiable, Equatable, Sendable {
     public let name: String
     public let closed: Bool
     public let steps: [StepNode]
-    /// The newest `events.log` time.
+    /// The newest `events.log` time, else the newest step file time.
     public let lastActivity: Date?
 
     public var urgency: StepUrgency { steps.map(\.urgency).max() ?? .done }
@@ -71,27 +94,37 @@ public struct StepRun: Identifiable, Equatable, Sendable {
     public var firstQuestion: String? {
         steps.lazy.compactMap { if case .waiting(let question) = $0.state { question } else { nil } }.first
     }
+
+    /// The list row's label: the most urgent state in words, so the glyph's color is never the only signal.
+    public var spokenLabel: String {
+        let state = firstQuestion.map { "waiting: \($0)" } ?? String(describing: urgency)
+        return "\(skill) run \(name), \(state), \(doneCount) of \(steps.count) done"
+    }
 }
 
 public enum StepRuns {
     static let todoHead = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
+    /// `<workspace>/tmp/<skill>/` holds the runs and `_closed/` the closed ones (the kit's run-folder.md).
+    static let root = "tmp"
+    static let closedFolder = "_closed"
 
     /// The runs under `<workspace>/tmp/<skill>/<run>/`, and `_closed/<run>/` when asked, newest first.
-    /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A run that cannot be listed drops out.
+    /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A run that cannot be listed drops
+    /// out, because the usual cause is a close that moved it to `_closed/` during the scan.
     public static func scan(workspace: String, includeClosed: Bool) async throws -> [StepRun] {
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspace + "/tmp", isDirectory: &isDirectory) else { return [] }
+        guard FileManager.default.fileExists(atPath: workspace + "/" + root, isDirectory: &isDirectory) else { return [] }
         var head: String??
         var runs: [StepRun] = []
-        for skill in try await WorkspaceFiles.list(in: workspace, path: "tmp").entries where skill.kind == .directory {
+        for skill in try await WorkspaceFiles.list(in: workspace, path: root).entries where skill.kind == .directory {
             guard let listing = try? await WorkspaceFiles.list(in: workspace, path: skill.path) else { continue }
-            var folders = listing.entries.filter { $0.kind == .directory && $0.name != "_closed" }
-            if includeClosed, listing.entries.contains(where: { $0.name == "_closed" && $0.kind == .directory }),
-               let closed = try? await WorkspaceFiles.list(in: workspace, path: skill.path + "/_closed") {
-                folders += closed.entries.filter { $0.kind == .directory }
+            var folders = listing.entries.filter { $0.kind == .directory && $0.name != closedFolder }.map { ($0, false) }
+            if includeClosed, listing.entries.contains(where: { $0.name == closedFolder && $0.kind == .directory }),
+               let closed = try? await WorkspaceFiles.list(in: workspace, path: skill.path + "/" + closedFolder) {
+                folders += closed.entries.filter { $0.kind == .directory }.map { ($0, true) }
             }
-            for folder in folders {
-                if let run = try? await read(workspace: workspace, skill: skill.name, folder: folder, head: &head) {
+            for (folder, closed) in folders {
+                if let run = try? await read(workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head) {
                     runs.append(run)
                 }
             }
@@ -99,6 +132,11 @@ public enum StepRuns {
         return runs.sorted {
             ($0.lastActivity ?? .distantPast, $0.name) > ($1.lastActivity ?? .distantPast, $1.name)
         }
+    }
+
+    /// Whether a chosen run left the scan. A closed run is only hidden while closed runs are not read.
+    public static func isGone(_ id: String, closed: Bool, from runs: [StepRun], includeClosed: Bool) -> Bool {
+        (includeClosed || !closed) && !runs.contains { $0.id == id }
     }
 
     /// Longest-path layers in file order: a step with no needs is layer 0, else one more than its
@@ -138,13 +176,13 @@ public enum StepRuns {
     }
 
     private static func read(
-        workspace: String, skill: String, folder: WorkspaceFileEntry, head: inout String??
+        workspace: String, skill: String, folder: WorkspaceFileEntry, closed: Bool, head: inout String??
     ) async throws -> StepRun? {
-        let names = try await WorkspaceFiles.list(in: workspace, path: folder.path).entries
+        let files = try await WorkspaceFiles.list(in: workspace, path: folder.path).entries
             .filter { $0.kind == .file && $0.name.wholeMatch(of: /[0-9]{2}-.+\.md/) != nil }
-            .map(\.name).sorted()
+            .sorted { $0.name < $1.name }
         var parsed: [(id: String, file: Parsed)] = []
-        for name in names {
+        for name in files.map(\.name) {
             let path = folder.path + "/" + name
             var preview = try? WorkspaceFiles.read(in: workspace, path: path)
             if preview == .text("") {
@@ -175,10 +213,9 @@ public enum StepRuns {
                 lastEvent: events[id]
             ))
         }
-        let closed = folder.path.hasPrefix("tmp/\(skill)/_closed/")
         return StepRun(
             id: folder.path, skill: skill, name: folder.name, closed: closed, steps: steps,
-            lastActivity: events.values.max()
+            lastActivity: events.values.max() ?? files.map(\.modified).max()
         )
     }
 
@@ -190,7 +227,7 @@ public enum StepRuns {
             guard let used = use.revision, !used.isEmpty, let need = byID[use.name], need.state != nil else { continue }
             if need.revisionIsHead {
                 if head == nil {
-                    let result = try? await Git.runRaw(["rev-parse", "HEAD"], in: workspace)
+                    let result = try? await Git.runRaw(["rev-parse", "HEAD"], in: workspace, timeout: .seconds(5))
                     head = .some(result.flatMap { $0.ok ? String(decoding: $0.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : nil })
                 }
                 // No HEAD answer is no judgment, not a stale mark.
@@ -204,10 +241,12 @@ public enum StepRuns {
 
     private static func parse(_ preview: WorkspaceFilePreview?) -> Parsed {
         var file = Parsed()
-        guard case .text(let text) = preview else {
+        guard case .text(let raw) = preview else {
             if case .notice(let notice) = preview { file.error = notice } else { file.error = "The file cannot be read" }
             return file
         }
+        // The kit reads with Python's universal newlines, and Swift sees "\r\n" as one Character, not "\n".
+        let text = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let rest = text.firstIndex(of: "\n").map { String(text[text.index(after: $0)...]) } ?? ""
         file.hash = Insecure.SHA1.hash(data: Data(rest.utf8)).map { String(format: "%02x", $0) }.joined().prefix(12).description
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -215,9 +254,11 @@ public enum StepRuns {
         if header.count > 1, header[1].hasPrefix("Uses:") {
             let value = header[1].dropFirst(5).trimmingCharacters(in: .whitespaces)
             file.usesNone = value == "none"
+            var seen: Set<Substring> = []
             file.uses = value.split(separator: ",").compactMap { entry in
                 let parts = entry.trimmingCharacters(in: .whitespaces).split(separator: "@", maxSplits: 1)
-                guard let name = parts.first, name != "none" else { return nil }
+                // A hand edit can name a need twice; the first one counts.
+                guard let name = parts.first, name != "none", seen.insert(name).inserted else { return nil }
                 return (String(name), parts.count > 1 ? String(parts[1]) : nil)
             }
         }
