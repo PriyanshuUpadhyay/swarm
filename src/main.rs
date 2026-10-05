@@ -198,7 +198,8 @@ fn ring_proof(
 /// Ring `agent` for the messages `seqs`, stored as rung at `rung_at`, and store what the ring
 /// proved on them. The bell is a
 /// hint (R9), so a failure only warns, and a failed ring is unconfirmed. With `Proof::Later` a
-/// typed ring stores nothing and returns None; `settle_rings` stores its proof.
+/// ring, typed or failed, stores nothing and returns None; `settle_rings` stores its proof, so
+/// the chair's own failed ring is still left to the sweep line.
 #[allow(clippy::too_many_arguments)]
 fn ring_and_record(
     connection: &rusqlite::Connection,
@@ -215,7 +216,7 @@ fn ring_and_record(
         .and_then(|adapter| ring_pane(connection, &adapter, root, session_id, agent, pane, proof))
         .unwrap_or_else(|error| {
             eprintln!("swarm: ring failed: {error}");
-            Some(Delivery::Unconfirmed)
+            (proof == Proof::Wait).then_some(Delivery::Unconfirmed)
         })?;
     if delivery == Delivery::Unconfirmed {
         eprintln!(
@@ -4074,6 +4075,54 @@ mod tests {
         assert_eq!(
             delivery_of(&connection, &session, summary).as_deref(),
             Some("unconfirmed")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A listing ring whose `ring` verb fails stores nothing, like any listing ring, so the
+    /// chair's own lost ring still reaches the `swarm sweep` line (ADR 0041).
+    #[test]
+    fn a_listing_ring_that_fails_leaves_the_chairs_lost_ring_to_the_sweep_line() {
+        let (root, mut connection, session) = ring_session(
+            "chair-ring-fails",
+            Some("claude"),
+            "ring = false\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        let summary = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1",
+                [],
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert_eq!(delivery_of(&connection, &session, summary), None);
+
+        // The failed ring's deadline passes.
+        connection
+            .execute(
+                "UPDATE message SET rung_at = rung_at - ?1",
+                [RING_TIMEOUT.as_secs() + 1],
+            )
+            .unwrap();
+        assert_eq!(
+            swept(&mut connection, &root, &adapter, &session),
+            [format!("unconfirmed {ORCHESTRATOR} {summary}")]
         );
         std::fs::remove_dir_all(root).unwrap();
     }
