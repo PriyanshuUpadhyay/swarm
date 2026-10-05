@@ -3416,6 +3416,58 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// A ring whose Enter was lost sits in the input box. Swarm presses Enter again for each CLI
+    /// whose box it can read, and the turn that starts proves the ring. AGY's box cannot be read,
+    /// so it gets no second Enter.
+    #[test]
+    fn a_lost_enter_is_pressed_again_for_each_cli_whose_input_box_swarm_reads() {
+        let claude_box = |text: &str| format!("────\n❯ {text}\n────\n");
+        let runs = [
+            ("claude", claude_box as fn(&str) -> String),
+            ("codex", |text: &str| format!("• Done.\n\n› {text}\n\n  ? for shortcuts\n")),
+            ("agy", |text: &str| format!("> {text}\n")),
+        ]
+        .map(|(provider, held)| {
+            std::thread::spawn(move || {
+                let (root, mut connection, session) = ring_session(
+                    "lost-enter",
+                    Some(provider),
+                    "ring = echo ring >> \"$SWARM_PANE.log\"; cp \"$SWARM_PANE.held\" \"$SWARM_PANE\"\n\
+                     key = echo \"$SWARM_KEY\" >> \"$SWARM_PANE.log\"; cp \"$SWARM_PANE.working\" \"$SWARM_PANE\"",
+                    &held(""),
+                );
+                std::fs::write(root.join("screen.held"), held(&ring_text(&root))).unwrap();
+                let working = match provider {
+                    "claude" => format!("✻ Thinking…\n{}", claude_box("")),
+                    _ => include_str!("../tests/fixtures/screens/codex-working.txt").to_string(),
+                };
+                std::fs::write(root.join("screen.working"), working).unwrap();
+                let seq = send_task(&root, &mut connection, &session);
+                let log = std::fs::read_to_string(root.join("screen.log")).unwrap();
+                let delivery = delivery_of(&connection, &session, seq);
+                std::fs::remove_dir_all(root).unwrap();
+                (provider, log, delivery)
+            })
+        });
+        let results: Vec<_> = runs.map(|run| run.join().unwrap()).into();
+        assert_eq!(
+            results,
+            [
+                (
+                    "claude",
+                    "ring\nEnter\n".to_string(),
+                    Some("screen".to_string())
+                ),
+                (
+                    "codex",
+                    "ring\nEnter\n".to_string(),
+                    Some("screen".to_string())
+                ),
+                ("agy", "ring\n".to_string(), Some("unconfirmed".to_string())),
+            ]
+        );
+    }
+
     #[test]
     fn sweep_rerings_its_own_chair_for_an_old_unseen_finish() {
         let root =
