@@ -1446,7 +1446,8 @@ fn report_dead(
     Ok(())
 }
 
-/// Ring `agent` again when its unseen messages are due for a second ring.
+/// Ring `agent` again when its unseen messages are due for a second ring. When that ring starts
+/// no turn, returns the report line `unconfirmed <agent> <seq>`.
 fn rering_if_due(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1454,22 +1455,23 @@ fn rering_if_due(
     session_id: &str,
     agent: &str,
     pane: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
-        return Ok(());
+        return Ok(None);
     }
-    let seqs: Vec<i64> = connection
+    let rung: Vec<(i64, i64)> = connection
         .prepare(
             "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
              WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM read_mark
                                WHERE read_mark.session_id = message.session_id
                                  AND message_seq = message.seq AND agent_id = ?2)
-             RETURNING seq",
+             RETURNING seq, rings",
         )?
-        .query_map((session_id, agent), |row| row.get(0))?
+        .query_map((session_id, agent), |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
-    ring_and_record(
+    let seqs: Vec<i64> = rung.iter().map(|(seq, _)| *seq).collect();
+    let delivery = ring_and_record(
         connection,
         root,
         Ok(adapter.clone()),
@@ -1479,32 +1481,101 @@ fn rering_if_due(
         &seqs,
     );
     eprintln!("swarm: re-ringed {agent}");
-    Ok(())
+    let last = rung
+        .iter()
+        .filter(|(_, rings)| *rings >= 2)
+        .map(|(seq, _)| *seq)
+        .min();
+    let (Delivery::Unconfirmed, Some(seq)) = (delivery, last) else {
+        return Ok(None);
+    };
+    let body = format!("message {seq} to {agent} was not delivered: no turn started after 2 rings");
+    // A message about the chair would ring the pane that just lost two rings, so the chair's own
+    // lost message is only this line and stderr (ADR 0041).
+    if agent == swarm::store::orchestrator_of(connection, session_id)? {
+        eprintln!("swarm: {body}");
+    } else if !report(
+        connection,
+        root,
+        &adapter.name,
+        session_id,
+        agent,
+        &format!("unconfirmed:{seq}"),
+        &body,
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(format!("unconfirmed {agent} {seq}")))
+}
+
+/// Send `subject`'s report `kind` to the chair, once: the unique index `message_report` refuses a
+/// second one. Returns whether this call stored it. A failed send only warns, so the pass that
+/// found the report goes on.
+fn report(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    subject: &str,
+    kind: &str,
+    body: &str,
+) -> bool {
+    let sent = swarm::store::orchestrator_of(connection, session_id).and_then(|chair| {
+        deliver(
+            connection,
+            root,
+            adapter_name,
+            session_id,
+            subject,
+            &chair,
+            kind,
+            body,
+        )
+    });
+    match sent {
+        Ok(_) => true,
+        Err(error) => {
+            let reported = matches!(
+                error.downcast_ref::<rusqlite::Error>(),
+                Some(rusqlite::Error::SqliteFailure(failure, _))
+                    if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+            );
+            if !reported {
+                eprintln!("swarm: report {kind} for {subject} not sent: {error}");
+            }
+            false
+        }
+    }
 }
 
 /// One sweep pass: re-ring unseen messages, the sweeper's own included, and report each child
-/// whose pane is gone.
+/// whose pane is gone. Returns one line per report, for the sweep's output.
 fn sweep_once(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
     adapter: &swarm::adapter::Adapter,
     session_id: &str,
     agent_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut lines = Vec::new();
     // A child's ring to the chair can be lost too, and no other sweeper covers the chair.
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
-        rering_if_due(connection, root, adapter, session_id, agent_id, &pane)?;
+        lines.extend(rering_if_due(
+            connection, root, adapter, session_id, agent_id, &pane,
+        )?);
     }
     for (child, pane) in swarm::store::live_children(connection, session_id, agent_id)? {
         if adapter.has_pane(&pane)? {
-            rering_if_due(connection, root, adapter, session_id, &child, &pane)?;
+            lines.extend(rering_if_due(
+                connection, root, adapter, session_id, &child, &pane,
+            )?);
             continue;
         }
         let note = format!("agent {child} died without a summary");
         report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
-        println!("dead {child}");
+        lines.push(format!("dead {child}"));
     }
-    Ok(())
+    Ok(lines)
 }
 
 /// Feed the agent's captured log to the summarizer shell command and return its output.
@@ -2507,7 +2578,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
             loop {
                 match sweep_once(&mut connection, &root, &adapter, &session_id, &agent_id) {
-                    Ok(()) => {}
+                    Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
                     Err(error) if every.is_some() => eprintln!("swarm: sweep skipped: {error}"),
                     Err(error) => return Err(error),
                 }
@@ -3279,8 +3350,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(4));
     }
 
-    /// A session whose coder pane is the file `<root>/screen`, which the fake adapter's `capture`
-    /// reads; `verbs` adds the `ring` verb and any other.
+    /// A session whose coder pane `%2` shows the file `<root>/screen`, which the fake adapter's
+    /// `capture` reads; `verbs` adds the `ring` verb and any other, with `{screen}` for that path.
     fn ring_session(
         name: &str,
         provider: Option<&str>,
@@ -3290,11 +3361,13 @@ mod tests {
         let root = std::env::temp_dir().join(format!("swarm-{name}-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         std::fs::write(root.join("screen"), screen).unwrap();
+        let verbs = verbs.replace("{screen}", &root.join("screen").display().to_string());
         std::fs::write(
             root.join("adapters/fake.conf"),
             format!(
-                "self = true\nspawn = true\nlist = true\nclose = true\n\
-                 capture = cat \"$SWARM_PANE\"\n{verbs}\n"
+                "self = true\nspawn = true\nlist = echo %1 %2\nclose = true\n\
+                 capture = cat '{}'\n{verbs}\n",
+                root.join("screen").display()
             ),
         )
         .unwrap();
@@ -3302,8 +3375,7 @@ mod tests {
         let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
         swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
         swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
-        let pane = root.join("screen");
-        swarm::store::set_pane(&connection, &session, CODER, pane.to_str().unwrap()).unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "%2").unwrap();
         if let Some(provider) = provider {
             swarm::store::set_provider(&connection, &session, CODER, provider).unwrap();
         }
@@ -3389,7 +3461,7 @@ mod tests {
         let (root, mut connection, session) = ring_session(
             "screen-proof",
             Some("agy"),
-            "ring = cp \"$SWARM_PANE.working\" \"$SWARM_PANE\"",
+            "ring = cp \"{screen}.working\" \"{screen}\"",
             include_str!("../tests/fixtures/screens/agy-idle.txt"),
         );
         std::fs::write(
@@ -3432,8 +3504,8 @@ mod tests {
                 let (root, mut connection, session) = ring_session(
                     "lost-enter",
                     Some(provider),
-                    "ring = echo ring >> \"$SWARM_PANE.log\"; cp \"$SWARM_PANE.held\" \"$SWARM_PANE\"\n\
-                     key = echo \"$SWARM_KEY\" >> \"$SWARM_PANE.log\"; cp \"$SWARM_PANE.working\" \"$SWARM_PANE\"",
+                    "ring = echo ring >> \"{screen}.log\"; cp \"{screen}.held\" \"{screen}\"\n\
+                     key = echo \"$SWARM_KEY\" >> \"{screen}.log\"; cp \"{screen}.working\" \"{screen}\"",
                     &held(""),
                 );
                 std::fs::write(root.join("screen.held"), held(&ring_text(&root))).unwrap();
@@ -3466,6 +3538,78 @@ mod tests {
                 ("agy", "ring\n".to_string(), Some("unconfirmed".to_string())),
             ]
         );
+    }
+
+    /// The kinds and senders of the messages to the chair.
+    fn chair_mail(connection: &rusqlite::Connection, session: &str) -> Vec<(String, String)> {
+        swarm::store::messages(connection, session, -1)
+            .unwrap()
+            .into_iter()
+            .filter(|message| message.recipient == ORCHESTRATOR)
+            .map(|message| (message.sender, message.kind))
+            .collect()
+    }
+
+    /// After the second ring of a message starts no turn, the chair gets one `unconfirmed`
+    /// message from the agent, not silence. A lost ring to the chair itself is only a sweep line,
+    /// because a message would ring the same lost pane a third time (ADR 0041).
+    #[test]
+    fn the_chair_hears_of_a_message_whose_second_ring_started_no_turn() {
+        let (root, mut connection, session) = ring_session(
+            "lost-ring",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        // The chair's pane shows no Herdr status, so its own ring is unchecked and quick.
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        send_task(&root, &mut connection, &session);
+        let backdate =
+            "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61";
+        connection.execute(backdate, []).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        let lines = sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        assert_eq!(lines, ["unconfirmed coder 0"]);
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), "unconfirmed:0".to_string())]
+        );
+        let body = std::fs::read_to_string(root.join(format!("runs/{session}/1.txt"))).unwrap();
+        assert_eq!(
+            body,
+            "message 0 to coder was not delivered: no turn started after 2 rings"
+        );
+        connection.execute(backdate, []).unwrap();
+        assert!(
+            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(chair_mail(&connection, &session).len(), 1);
+
+        // The chair's own lost message: a line, and no message to itself.
+        connection.execute("DELETE FROM message", []).unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%2").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("agy", "chair-id"))).unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61, rings = 1", [])
+            .unwrap();
+        swarm::store::clear_pane(&connection, &session, CODER).unwrap();
+        let lines = sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} 0")]);
+        assert_eq!(chair_mail(&connection, &session).len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
