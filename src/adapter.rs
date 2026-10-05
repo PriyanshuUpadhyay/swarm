@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Adapter {
     pub name: String,
     /// A multi-session read sets this so adapter scripts see that session's UI caller.
@@ -163,8 +163,7 @@ impl Adapter {
             })?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
-        // A ring must finish both send-text and Enter once it starts.
-        if let Some(deadline) = self.deadline.filter(|_| verb != "ring") {
+        if let Some(deadline) = self.deadline {
             self.check_deadline()?;
             return self
                 .read_bounded(

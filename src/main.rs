@@ -1282,7 +1282,13 @@ fn rering_if_due(
         (session_id, agent),
     )?;
     let provider = swarm::store::provider_of(connection, session_id, agent)?;
-    match ring_pane(adapter, root, pane, provider.as_deref()) {
+    // A ring that starts must finish its screen reads, text, and Enter, so a batch deadline
+    // does not bound it.
+    let adapter = swarm::adapter::Adapter {
+        deadline: None,
+        ..adapter.clone()
+    };
+    match ring_pane(&adapter, root, pane, provider.as_deref()) {
         Ok(()) => eprintln!("swarm: re-ringed {agent}"),
         Err(error) => eprintln!("swarm: re-ring failed for {agent}: {error}"),
     }
@@ -1533,10 +1539,10 @@ fn list_agents(
             prompt,
         });
     }
-    return Ok(AgentListOutput {
+    Ok(AgentListOutput {
         agents,
         attachable: adapter.attach.is_some(),
-    });
+    })
 }
 
 fn all_agent_listings(
@@ -1558,7 +1564,7 @@ fn all_agent_listings(
         .collect();
     for (index, session) in sessions.iter().enumerate() {
         let adapter = session.adapter.as_deref().expect("filtered adapter").trim();
-        let listing = swarm::adapter::load(&root, adapter).and_then(|mut adapter| {
+        let listing = swarm::adapter::load(root, adapter).and_then(|mut adapter| {
             adapter.session_id = Some(session.id.clone());
             let now = std::time::Instant::now();
             adapter.deadline = Some(
@@ -2417,6 +2423,56 @@ mod tests {
         assert_eq!(rings, 1);
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "textenter");
         assert!(adapter.check_deadline().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_rering_presses_enter_after_the_session_deadline() {
+        let root = std::env::temp_dir().join(format!("swarm-claude-ring-{}", uuid::Uuid::now_v7()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_provider(&connection, &session, CODER, "claude").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61", [])
+            .unwrap();
+        let screen = root.join("screen");
+        let log = root.join("log");
+        std::fs::write(&screen, "────\n❯ \n────\n").unwrap();
+        // The ring stays typed in the composer until a key clears it.
+        let mut adapter = swarm::adapter::parse(
+            "fake",
+            &format!(
+                "self = true\nspawn = true\nlist = true\nclose = true\n\
+                 capture = cat \"$SWARM_PANE\"\n\
+                 ring = echo ring >> '{log}'; printf '────\\n❯ %s\\n────\\n' \"$SWARM_TEXT\" > \"$SWARM_PANE\"\n\
+                 key = echo \"$SWARM_KEY\" >> '{log}'; printf '────\\n❯ \\n────\\n' > \"$SWARM_PANE\"\n",
+                log = log.display()
+            ),
+        )
+        .unwrap();
+        adapter.deadline = Some(std::time::Instant::now());
+        rering_if_due(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            CODER,
+            screen.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "ring\nEnter\n");
         std::fs::remove_dir_all(root).unwrap();
     }
 
