@@ -1575,6 +1575,37 @@ fn sweep_once(
         report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
         lines.push(format!("dead {child}"));
     }
+    lines.extend(report_stalls(connection, root, &adapter.name, session_id)?);
+    Ok(lines)
+}
+
+/// Send the chair one message for each stall of a child that no report names yet (ADR 0041),
+/// and return a line for each one sent.
+fn report_stalls(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut lines = Vec::new();
+    for (agent, what, seq) in swarm::store::stalls(connection, session_id)? {
+        let body = match what {
+            "unacked" => format!("{agent} is done but has not acked message {seq}"),
+            _ => format!("{agent} finished its turn after message {seq} and sent nothing back"),
+        };
+        let kind = format!("stall:{what}:{seq}");
+        if report(
+            connection,
+            root,
+            adapter_name,
+            session_id,
+            &agent,
+            &kind,
+            &body,
+        ) {
+            lines.push(format!("stall {agent} {what} {seq}"));
+        }
+    }
     Ok(lines)
 }
 
@@ -1796,6 +1827,10 @@ fn list_agents(
             log: row.log.map(resolved_agent_log),
             prompt,
         });
+    }
+    // The app runs no `swarm sweep`, so its listing also reports stalls, after its state writes.
+    if let Err(error) = report_stalls(connection, root, &adapter.name, session_id) {
+        eprintln!("swarm: {error}");
     }
     Ok(AgentListOutput {
         agents,
@@ -3609,6 +3644,57 @@ mod tests {
         let lines = sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
         assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} 0")]);
         assert_eq!(chair_mail(&connection, &session).len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// `swarm sweep` sends the chair one message for each stall kind of a child, and no second
+    /// one for the same stall (ADR 0041).
+    #[test]
+    fn sweep_reports_each_stall_to_the_chair_once() {
+        let (root, mut connection, session) = ring_session("stall", None, "ring = true", "");
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let ask = send_task(&root, &mut connection, &session);
+        // The ring started a turn half a minute ago; the coder read the task, then got done.
+        connection
+            .execute_batch(
+                "UPDATE message SET delivery = 'hook', rung_at = unixepoch() - 30,
+                                    seen_at = unixepoch() - 20",
+            )
+            .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let sweep = |connection: &mut rusqlite::Connection| {
+            sweep_once(connection, &root, &adapter, &session, ORCHESTRATOR).unwrap()
+        };
+
+        assert_eq!(
+            sweep(&mut connection),
+            [format!("stall coder unacked {ask}")]
+        );
+        assert!(sweep(&mut connection).is_empty());
+        swarm::store::ack(&connection, &session, ask, CODER).unwrap();
+        assert_eq!(
+            sweep(&mut connection),
+            [format!("stall coder silent {ask}")]
+        );
+        assert!(sweep(&mut connection).is_empty());
+        let kinds: Vec<String> = chair_mail(&connection, &session)
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                format!("stall:unacked:{ask}"),
+                format!("stall:silent:{ask}")
+            ]
+        );
+        let body = std::fs::read_to_string(root.join(format!("runs/{session}/1.txt"))).unwrap();
+        assert_eq!(body, "coder is done but has not acked message 0");
         std::fs::remove_dir_all(root).unwrap();
     }
 

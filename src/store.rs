@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
@@ -668,6 +668,78 @@ pub fn messages(
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// A stalled child, what stalled it (`unacked` or `silent`), and the message it is about.
+pub type Stall = (String, &'static str, i64);
+
+/// The stalls of a session's children that no report names yet, as (agent, what, seq) (ADR
+/// 0041). `unacked`: the child is done, and the oldest message it read but did not ack was read
+/// before it got done. `silent`: no such message, and the child got done after the last ring that
+/// proved a turn, and sent nothing since that ring but its own reports. The chair is never the
+/// subject: a message about the chair would go to the chair.
+pub fn stalls(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Stall>, Box<dyn std::error::Error>> {
+    let children: Vec<(String, i64)> = connection
+        .prepare(
+            "SELECT id, state_at FROM agent
+             WHERE session_id = ?1 AND pane_id IS NOT NULL AND state = 'done'
+               AND state_at IS NOT NULL AND role != 'orchestrator' AND id != 'orchestrator'
+             ORDER BY id",
+        )?
+        .query_map([session_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut found = Vec::new();
+    for (agent, done_at) in children {
+        let unacked: Option<(i64, i64)> = connection
+            .query_row(
+                "SELECT seq, seen_at FROM message
+                 WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM read_mark
+                                   WHERE read_mark.session_id = message.session_id
+                                     AND message_seq = message.seq AND agent_id = ?2)
+                 ORDER BY seq LIMIT 1",
+                (session_id, &agent),
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let stall = match unacked {
+            Some((seq, seen_at)) if seen_at < done_at => Some(("unacked", seq)),
+            _ => connection
+                .query_row(
+                    "SELECT seq FROM message AS inbound
+                     WHERE session_id = ?1 AND recipient_id = ?2
+                       AND delivery IN ('hook', 'screen') AND rung_at < ?3
+                       AND NOT EXISTS (SELECT 1 FROM message
+                                       WHERE session_id = ?1 AND sender_id = ?2
+                                         AND created_at >= inbound.rung_at
+                                         AND kind NOT GLOB 'stall:*'
+                                         AND kind NOT GLOB 'unconfirmed:*')
+                       AND seq = (SELECT MAX(seq) FROM message
+                                  WHERE session_id = ?1 AND recipient_id = ?2
+                                    AND delivery IN ('hook', 'screen'))",
+                    (session_id, &agent, done_at),
+                    |row| row.get(0),
+                )
+                .optional()?
+                .map(|seq| ("silent", seq)),
+        };
+        let Some((what, seq)) = stall else {
+            continue;
+        };
+        let reported: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM message
+                            WHERE session_id = ?1 AND sender_id = ?2 AND kind = ?3)",
+            (session_id, &agent, format!("stall:{what}:{seq}")),
+            |row| row.get(0),
+        )?;
+        if !reported {
+            found.push((agent, what, seq));
+        }
+    }
+    Ok(found)
 }
 
 /// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
@@ -1477,6 +1549,81 @@ mod tests {
         assert!(send(&mut connection, "unconfirmed:0").is_err());
         send(&mut connection, "note").unwrap();
         send(&mut connection, "note").unwrap();
+    }
+
+    /// A child at done with a message it read and did not ack is stalled; so is a child at done
+    /// that sent nothing after a ring that started its turn. A reported stall is not found again,
+    /// and the chair is never the subject (ADR 0041).
+    #[test]
+    fn finds_each_stall_once() {
+        let mut connection = seed(0);
+        let root = temp_root("stalls");
+        let run = |connection: &Connection, sql: &str| connection.execute_batch(sql).unwrap();
+        let send = |connection: &mut Connection, from: &str, to: &str, kind: &str| {
+            send_message(connection, &root, SESSION, from, to, kind, "body").unwrap()
+        };
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
+        let ask = send(&mut connection, ORCHESTRATOR, CODER, "ask");
+        run(
+            &connection,
+            "UPDATE message SET rung_at = unixepoch() - 30, rings = 1, delivery = 'hook'",
+        );
+        // Working, or done with no read message and a reply sent: no stall.
+        set_state(&connection, SESSION, CODER, "working", "hook", None, 0).unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Read, then done without an ack.
+        run(&connection, "UPDATE message SET seen_at = unixepoch() - 20");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        set_state(&connection, SESSION, CODER, "done", "hook", None, now).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), "unacked", ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:unacked:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Acked, and its own report is no reply: it finished silent.
+        ack(&connection, SESSION, ask, CODER).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), "silent", ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:silent:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // A reply after the ring is no stall; nor is the chair at done with unacked work.
+        run(&connection, "DELETE FROM message WHERE kind GLOB 'stall:*'");
+        send(&mut connection, CODER, ORCHESTRATOR, "summary");
+        run(
+            &connection,
+            "UPDATE message SET seen_at = unixepoch() - 20 WHERE sender_id = 'coder'",
+        );
+        set_state(
+            &connection,
+            SESSION,
+            ORCHESTRATOR,
+            "done",
+            "hook",
+            None,
+            now,
+        )
+        .unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
     }
 
     #[test]
