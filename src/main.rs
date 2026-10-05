@@ -16,6 +16,55 @@ fn ring_text(root: &std::path::Path) -> String {
     )
 }
 
+/// How long a ring waits for a starting Claude to draw its input box.
+const RING_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// How many more times a ring presses Enter while Claude's input box still holds it.
+const RING_ENTER_RETRIES: usize = 3;
+
+/// Type the ring into `pane`. A Claude that is still starting loses a ring typed before its input
+/// box is drawn, or reads the text and its Enter as one paste, so the Enter becomes a newline and
+/// the ring sits unsent in the box. So a ring to Claude waits for the box, and presses Enter again
+/// while the box still holds the ring.
+fn ring_pane(
+    adapter: &swarm::adapter::Adapter,
+    root: &std::path::Path,
+    pane: &str,
+    provider: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = ring_text(root);
+    let claude = provider == Some("claude");
+    let read = || {
+        adapter
+            .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .unwrap_or_default()
+    };
+    if claude {
+        let deadline = std::time::Instant::now() + RING_READY_TIMEOUT;
+        // A question on screen, such as a folder trust prompt, also ends the wait.
+        while std::time::Instant::now() < deadline {
+            let rows = read();
+            if swarm::screen::claude_composer(&rows).is_some()
+                || swarm::screen::prompt(&rows).is_some()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+    adapter.run("ring", &[("pane", pane), ("text", &text)])?;
+    if !claude {
+        return Ok(());
+    }
+    for _ in 0..RING_ENTER_RETRIES {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if !swarm::screen::claude_holds(&read(), &text) {
+            break;
+        }
+        adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
+    }
+    Ok(())
+}
+
 fn init() -> Result<(), Box<dyn std::error::Error>> {
     let runs_dir = swarm::paths::runs_dir()?;
 
@@ -832,7 +881,8 @@ fn deliver(
     };
     agent(sender)?;
     let (recipient, kind) = swarm::store::route(connection, session_id, sender, recipient, kind)?;
-    let pane = agent(&recipient)?
+    let recipient_row = agent(&recipient)?;
+    let pane = recipient_row
         .pane
         .clone()
         .ok_or_else(|| format!("swarm: {recipient} has no pane; nothing would ring it"))?;
@@ -845,7 +895,7 @@ fn deliver(
             (session_id, seq),
         )?;
         let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+            .and_then(|a| ring_pane(&a, root, &pane, recipient_row.provider.as_deref()));
         if let Err(error) = ring {
             eprintln!("swarm: ring failed: {error}");
         }
@@ -865,6 +915,7 @@ fn ack(
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)?
         && swarm::store::has_unrung_unread(connection, session_id, agent_id)?
     {
+        let provider = swarm::store::provider_of(connection, session_id, agent_id)?;
         connection.execute(
             "UPDATE message SET rung_at = unixepoch(), rings = 1
                  WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
@@ -876,7 +927,7 @@ fn ack(
             (session_id, agent_id),
         )?;
         let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| a.run("ring", &[("pane", &pane), ("text", &ring_text(root))]));
+            .and_then(|a| ring_pane(&a, root, &pane, provider.as_deref()));
         if let Err(error) = ring {
             eprintln!("swarm: ring failed: {error}");
         }
@@ -1230,8 +1281,9 @@ fn rering_if_due(
                              AND message_seq = message.seq AND agent_id = ?2)",
         (session_id, agent),
     )?;
-    match adapter.run("ring", &[("pane", pane), ("text", &ring_text(root))]) {
-        Ok(_) => eprintln!("swarm: re-ringed {agent}"),
+    let provider = swarm::store::provider_of(connection, session_id, agent)?;
+    match ring_pane(adapter, root, pane, provider.as_deref()) {
+        Ok(()) => eprintln!("swarm: re-ringed {agent}"),
         Err(error) => eprintln!("swarm: re-ring failed for {agent}: {error}"),
     }
     Ok(())
@@ -2602,6 +2654,41 @@ mod tests {
         );
         assert!(swarm::store::has_summary(&connection, &session, CODER).unwrap());
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
+    }
+
+    /// A fake Claude pane that draws its input box on the third read, keeps a ring unsent in the
+    /// box as a starting Claude does, and sends the box's text on Enter.
+    #[test]
+    fn a_ring_to_claude_waits_for_the_input_box_and_presses_enter_until_it_sends() {
+        let dir = std::env::temp_dir().join(format!("swarm-ring-pane-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let box_rows = |text: &str| format!("────\n❯ {text}\n────\n");
+        std::fs::write(dir.join("screen"), "$ claude\n").unwrap();
+        std::fs::write(dir.join("empty"), box_rows("")).unwrap();
+        let d = dir.display();
+        let adapter = swarm::adapter::parse(
+            "fake",
+            &format!(
+                "self = true\nspawn = true\nlist = true\nclose = true\n\
+                 capture = n=$(($(cat '{d}/reads' 2>/dev/null || echo 0) + 1)); echo $n > '{d}/reads'; \
+                 [ $n = 3 ] && cp '{d}/empty' '{d}/screen'; echo read >> '{d}/log'; cat '{d}/screen'\n\
+                 ring = echo ring >> '{d}/log'; printf '────\\n❯ %s\\n────\\n' \"$SWARM_TEXT\" > '{d}/screen'\n\
+                 key = echo \"$SWARM_KEY\" >> '{d}/log'; cp '{d}/empty' '{d}/screen'\n"
+            ),
+        )
+        .unwrap();
+        ring_pane(&adapter, &dir, "%2", Some("claude")).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("log")).unwrap(),
+            "read\nread\nread\nring\nread\nEnter\nread\n"
+        );
+
+        // Any other provider gets the plain ring: no read, no extra Enter.
+        std::fs::remove_file(dir.join("log")).unwrap();
+        ring_pane(&adapter, &dir, "%2", Some("codex")).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("log")).unwrap(), "ring\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

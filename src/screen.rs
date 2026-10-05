@@ -502,6 +502,32 @@ pub fn resolve(
     (state.filter(|_| !stale).map(str::to_string), None)
 }
 
+/// The text in Claude's input box, the `❯` rows right under the box's top rule, joined; an empty box
+/// shows only Claude's hint text. None until the box is drawn, as while the CLI starts. Claude draws the box
+/// while a turn runs too, so a drawn box is not an idle pane.
+pub fn claude_composer(rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let rule = |line: &str| line.trim_start().starts_with('─');
+    let top = (1..lines.len())
+        .rev()
+        .find(|&index| rule(lines[index - 1]) && lines[index].trim_start().starts_with('❯'))?;
+    let text: Vec<&str> = lines[top..]
+        .iter()
+        .take_while(|line| !rule(line))
+        .map(|line| line.trim())
+        .collect();
+    Some(text.join(" ").trim_start_matches('❯').trim().to_string())
+}
+
+/// True when Claude's input box still holds `text` unsent. The box wraps a long line, so the
+/// check ignores whitespace. A question on screen is never a held ring, so an Enter sent for it
+/// would answer the question.
+pub fn claude_holds(rows: &str, text: &str) -> bool {
+    let squash = |text: &str| text.split_whitespace().collect::<String>();
+    prompt(rows).is_none()
+        && claude_composer(rows).is_some_and(|composer| squash(&composer).contains(&squash(text)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +536,29 @@ mod tests {
         ($name:literal) => {
             include_str!(concat!("../tests/fixtures/screens/", $name, ".txt"))
         };
+    }
+
+    #[test]
+    fn claude_input_box_holds_only_an_unsent_ring() {
+        let ring = "swarm: new message. Run swarm inbox and read each body at \
+                    /Users/x/.swarm/<body_path>. Run swarm ack <seq> only after you finish that message.";
+        let unsent = fixture!("claude-ring-unsent");
+        assert!(claude_holds(unsent, ring));
+        // The box wraps a long ring onto a second row.
+        let wrapped = unsent.replace(" Run swarm ack <seq>", " Run swarm ack\n  <seq>");
+        assert!(claude_holds(&wrapped, ring));
+        // A sent ring stays in the history above an empty box, which shows only its hint.
+        assert_eq!(
+            claude_composer(fixture!("claude-idle")).as_deref(),
+            Some("Try \"fix typecheck errors\"")
+        );
+        assert!(!claude_holds(
+            &format!("❯ {ring}\n{}", fixture!("claude-idle")),
+            ring
+        ));
+        // A starting CLI has no box yet, and a question is never a held ring.
+        assert_eq!(claude_composer("$ claude --model haiku\n"), None);
+        assert!(!claude_holds(fixture!("claude-waiting"), ring));
     }
 
     #[test]
