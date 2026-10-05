@@ -10,7 +10,7 @@ struct StepRunsView: View {
     @State private var runs: [StepRun]?
     @State private var error: String?
     @State private var notice: String?
-    @State private var chosen: String?
+    @State private var chosen: ChosenRun?
     @State private var showClosed = false
     @State private var retryID = 0
 
@@ -23,23 +23,33 @@ struct StepRunsView: View {
 
     var body: some View {
         Group {
-            if let run = runs?.first(where: { $0.id == chosen }) {
-                StepRunGraph(directory: directory, run: run, open: open, back: { choose(nil) })
+            if let run = runs?.first(where: { $0.id == chosen?.id }) {
+                StepRunGraph(directory: directory, run: run, error: error, open: open, back: { choose(nil) })
             } else {
                 list
             }
         }
-        .onAppear { chosen = ChosenRun.byDirectory[directory] }
+        .onAppear {
+            chosen = ChosenRun.byDirectory[directory]
+            // A chosen closed run shows only while the Closed group is read.
+            if chosen?.closed == true { showClosed = true }
+        }
         .task(id: Request(directory: directory, isActive: isActive, showClosed: showClosed, retryID: retryID)) {
             guard isActive else { return }
+            // Closed runs do not change, so they are read once when the group opens, not on every
+            // tick (500 closed runs took about 4 s a scan). `ponytail:` a run closed while the group is
+            // open shows there after the next toggle.
+            var closed: [StepRun]?
             // The app has no file watcher; it polls live data, so a step change shows within 2 s.
             while !Task.isCancelled {
                 do {
-                    let value = try await StepRuns.scan(workspace: directory, includeClosed: showClosed)
+                    let readClosed = showClosed && closed == nil
+                    var value = try await StepRuns.scan(workspace: directory, includeClosed: readClosed)
                     try Task.checkCancellation()
+                    if readClosed { closed = value.filter(\.closed) } else { value += closed ?? [] }
                     runs = value
                     error = nil
-                    if let id = chosen, !value.contains(where: { $0.id == id }) {
+                    if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: value, includeClosed: showClosed) {
                         choose(nil)
                         notice = "This run moved or was removed."
                     }
@@ -53,16 +63,16 @@ struct StepRunsView: View {
         }
     }
 
-    private func choose(_ id: String?) {
-        chosen = id
-        ChosenRun.byDirectory[directory] = id
+    private func choose(_ run: ChosenRun?) {
+        chosen = run
+        ChosenRun.byDirectory[directory] = run
         notice = nil
     }
 
     @ViewBuilder
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Runs").font(.headline).padding(DesignTokens.Spacing.m)
+            Text("Runs").font(.headline).padding(DesignTokens.Spacing.m).accessibilityAddTraits(.isHeader)
             Divider()
             if let error {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
@@ -86,10 +96,11 @@ struct StepRunsView: View {
                         ForEach(Dictionary(grouping: open, by: \.skill).sorted { $0.key < $1.key }, id: \.key) { skill, runs in
                             Text(verbatim: skill.uppercased()).font(.caption).foregroundStyle(.secondary)
                                 .padding(.top, DesignTokens.Spacing.s)
-                            ForEach(runs) { run in StepRunRow(run: run) { choose(run.id) } }
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(runs) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
                         }
                         DisclosureGroup("Closed", isExpanded: $showClosed) {
-                            ForEach(runs.filter(\.closed)) { run in StepRunRow(run: run) { choose(run.id) } }
+                            ForEach(runs.filter(\.closed)) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
                         }
                         .foregroundStyle(.secondary)
                         .padding(.top, DesignTokens.Spacing.s)
@@ -105,8 +116,11 @@ struct StepRunsView: View {
 }
 
 /// The chosen run per workspace, kept while the app runs; the panels are rebuilt per workspace.
-@MainActor private enum ChosenRun {
-    static var byDirectory: [String: String] = [:]
+private struct ChosenRun {
+    let id: String
+    let closed: Bool
+    init(_ run: StepRun) { (id, closed) = (run.id, run.closed) }
+    @MainActor static var byDirectory: [String: ChosenRun] = [:]
 }
 
 private struct StepRunRow: View {
@@ -126,7 +140,7 @@ private struct StepRunRow: View {
         }
         .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs)
         .help(run.id)
-        .accessibilityLabel("\(run.skill) run \(run.name), \(summary)")
+        .accessibilityLabel(run.spokenLabel)
     }
 
     private var summary: String {
@@ -154,6 +168,7 @@ private struct UrgencyGlyph: View {
 private struct StepRunGraph: View {
     let directory: String
     let run: StepRun
+    let error: String?
     let open: (WorkspaceDocument) -> Void
     let back: () -> Void
 
@@ -179,7 +194,10 @@ private struct StepRunGraph: View {
                 Button("Runs", systemImage: "chevron.left", action: back).buttonStyle(.borderless)
                 Text(verbatim: run.skill).font(.caption).foregroundStyle(.secondary)
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
+                    .accessibilityAddTraits(.isHeader)
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
+                // The poll failed, so the graph below is the last good read.
+                if let error { Text(verbatim: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             }
             .padding(DesignTokens.Spacing.m)
             Divider()
@@ -268,7 +286,7 @@ private struct StepNodeView: View {
                 glyph.frame(width: DesignTokens.Size.glyphSlot)
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(verbatim: title).font(.callout.weight(.medium)).lineLimit(1)
+                        Text(verbatim: step.title).font(.callout.weight(.medium)).lineLimit(1)
                         Spacer(minLength: DesignTokens.Spacing.xs)
                         if let todo = step.todo {
                             Text(verbatim: "\(todo.checked)/\(todo.total)").font(.caption).monospacedDigit()
@@ -301,12 +319,10 @@ private struct StepNodeView: View {
         .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         .help(help)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityLabel(step.spokenLabel)
         .accessibilityAddTraits(.isButton)
     }
 
-    /// "03-contracts" reads as "03 contracts".
-    private var title: String { step.id.replacingOccurrences(of: "-", with: " ", options: [], range: step.id.range(of: "-")) }
     private var dimmed: Bool { step.state == .open && !step.ready }
 
     @ViewBuilder
@@ -342,13 +358,5 @@ private struct StepNodeView: View {
         case .skipped(let reason): "Skipped: \(reason)"
         default: step.path
         }
-    }
-
-    private var accessibilityText: String {
-        var parts = [title]
-        if let detail { parts.append(detail.text) } else if case .done = step.state { parts.append("done") }
-        if !step.stale.isEmpty { parts.append("stale") }
-        if let todo = step.todo { parts.append("\(todo.checked) of \(todo.total) todos") }
-        return parts.joined(separator: ", ")
     }
 }
