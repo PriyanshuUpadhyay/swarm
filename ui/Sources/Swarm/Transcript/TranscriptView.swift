@@ -243,7 +243,8 @@ struct TranscriptView<Composer: View>: View {
     private func rowView(_ transcriptRow: TranscriptRow) -> some View {
         TranscriptRowView(
             row: transcriptRow, chair: chair,
-            revealForSearch: currentMatchID == transcriptRow.eventID
+            revealForSearch: currentMatchID == transcriptRow.eventID,
+            sourceEntries: { TranscriptSource.entries(for: transcriptRow, in: rawEntries) }
         )
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
@@ -424,16 +425,11 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private func rawEntry(_ entry: RawTranscriptEntry) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text("[\(entry.index)] \(entry.rowKind)")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-            TranscriptBoundedTextView(text: entry.displayText)
-                .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
-        }
-        .id(entry.id)
-        .padding(DesignTokens.Spacing.s)
-        .background(matchBackground(entry.id))
+        TranscriptRawEntryBlock(entry: entry)
+            .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
+            .id(entry.id)
+            .padding(DesignTokens.Spacing.s)
+            .background(matchBackground(entry.id))
     }
 
     private func matchBackground(_ id: String) -> some ShapeStyle {
@@ -473,6 +469,9 @@ private struct TranscriptRowView: View {
     let row: TranscriptRow
     let chair: String?
     var revealForSearch = false
+    /// The raw entries behind the row; read only when Show Source opens.
+    let sourceEntries: () -> [RawTranscriptEntry]
+    @State private var showingSource = false
     @State private var copying = false
     @State private var detailExpanded = false
     @State private var hovering = false
@@ -490,6 +489,13 @@ private struct TranscriptRowView: View {
                 .padding(.vertical, DesignTokens.Spacing.s)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
+            } else if row.systemKind == TranscriptSystemKind.swarmRing {
+                // swarm typed it, not the owner, so it is a quiet line and not a "You" bubble.
+                Label("New swarm message", systemImage: "envelope")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("New swarm message")
+                    .accessibilityIdentifier("transcript-swarm-ring")
             } else if let run = row.shell {
                 TranscriptShellRow(run: run, revealForSearch: revealForSearch)
             } else if let command = row.command {
@@ -525,8 +531,15 @@ private struct TranscriptRowView: View {
             }
         }
         .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Show Source") { showingSource = true }
+        }
         .accessibilityActions {
             if isMessage { Button("Copy message", action: copy) }
+            Button("Show Source") { showingSource = true }
+        }
+        .popover(isPresented: $showingSource, arrowEdge: .leading) {
+            TranscriptSourceView(entries: sourceEntries())
         }
         .id(row.eventID)
         .onChange(of: revealForSearch, initial: true) { _, reveal in
@@ -646,5 +659,38 @@ private extension View {
     /// Flips vertically; applied to the list and again to each row, so rows read the right way up.
     func upsideDown() -> some View {
         scaleEffect(x: 1, y: -1, anchor: .center)
+    }
+}
+
+/// One raw event as RAW mode shows it: "[index] kind" and the pretty event JSON.
+private struct TranscriptRawEntryBlock: View {
+    let entry: RawTranscriptEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            Text(verbatim: "[\(entry.index)] \(entry.rowKind)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            TranscriptBoundedTextView(text: entry.displayText)
+        }
+    }
+}
+
+/// Show Source: the translated event JSON of each event behind one row (ADR 0047).
+private struct TranscriptSourceView: View {
+    let entries: [RawTranscriptEntry]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                Text(verbatim: entries.isEmpty ? "No source events are loaded for this row."
+                    : "Source, \(entries.count) event\(entries.count == 1 ? "" : "s")")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(entries) { TranscriptRawEntryBlock(entry: $0) }
+            }
+            .padding(DesignTokens.Spacing.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: DesignTokens.Size.profileSheet, height: DesignTokens.Size.sheet)
     }
 }
