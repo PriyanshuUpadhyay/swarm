@@ -71,12 +71,24 @@ public enum ToolRunFold {
         public var otherTools: [NameCount] = []
         public var rings = 0
         public var failed = 0
+        public var interrupted = 0
+        /// Tools with no result in a turn that completed.
+        public var unreported = 0
         /// A tool in the fold still waits for its result.
         public var isRunning = false
         /// The newest shown step's title, for a running fold.
         public var latestTitle = ""
         /// The sum of the tool durations; nil when any tool's duration is unknown.
         public var duration: Double?
+
+        /// The fold line's glyph: the worst step state, so a fold claims finished only when every
+        /// tool in it finished.
+        public var state: TranscriptToolActivity.State {
+            if failed > 0 { return .failed }
+            if isRunning { return .waiting }
+            if interrupted > 0 { return .interrupted }
+            return unreported > 0 ? .unreported : .finished
+        }
 
         /// "9 commands · 2 waits · Read ×2 · 4 rings"; a view draws the failures apart in their color.
         public var stepsText: String { counts(times: " ×").joined(separator: " · ") }
@@ -106,6 +118,8 @@ public enum ToolRunFold {
             let tools = otherTools.map { $0.count > 1 ? "\($0.name)\(times)\($0.count)" : $0.name }
             return [plural(commands, "command"), plural(waits, "wait")].compactMap { $0 }
                 + tools + [plural(rings, "ring")].compactMap { $0 }
+                + (interrupted > 0 ? ["\(interrupted) interrupted"] : [])
+                + (unreported > 0 ? ["\(unreported) no result"] : [])
         }
 
         private static func spoken(_ seconds: Double) -> String {
@@ -134,8 +148,13 @@ public enum ToolRunFold {
             } else {
                 summary.otherTools.append(NameCount(name: tool.name, count: 1))
             }
-            if tool.state == .failed { summary.failed += 1 }
-            if tool.state == .waiting { summary.isRunning = true }
+            switch tool.state {
+            case .failed: summary.failed += 1
+            case .waiting: summary.isRunning = true
+            case .interrupted: summary.interrupted += 1
+            case .unreported: summary.unreported += 1
+            case .finished: break
+            }
             total = total.flatMap { sum in tool.duration.map { sum + $0 } }
             let title = tool.headerTitle
             summary.latestTitle = title.isEmpty ? tool.name : title

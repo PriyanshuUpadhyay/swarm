@@ -18,7 +18,7 @@ struct TranscriptRunFoldRow<Child: View>: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: DesignTokens.Size.glyphSlot)
-                    TranscriptStatusGlyph(state: summary.failed > 0 ? .failed : summary.isRunning ? .waiting : .finished)
+                    TranscriptStatusGlyph(state: summary.state)
                     Text(verbatim: summary.stepsText).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
                     if summary.failed > 0 {
                         Text(verbatim: "· \(summary.failed) failed")

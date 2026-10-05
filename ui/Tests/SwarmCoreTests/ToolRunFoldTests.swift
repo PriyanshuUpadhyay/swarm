@@ -121,6 +121,20 @@ struct ToolRunFoldTests {
         #expect(summary.accessibilityLabel == "Steps: 1 command, 1 wait, running, now swarm inbox")
     }
 
+    @Test("A fold of interrupted or unreported tools says so and never draws finished")
+    func stoppedSummary() {
+        let stopped = ToolRunFold.summary(of: [
+            tool("a", state: .interrupted, duration: nil), tool("b", state: .unreported, duration: nil),
+        ])
+        #expect(stopped.state == .interrupted)
+        #expect(stopped.text == "Read ×2 · 1 interrupted · 1 no result")
+        #expect(stopped.accessibilityLabel == "Steps: Read 2, 1 interrupted, 1 no result")
+        #expect(ToolRunFold.summary(of: [tool("a"), tool("b", state: .unreported)]).state == .unreported)
+        #expect(ToolRunFold.summary(of: [tool("a", state: .interrupted), tool("b", state: .waiting)]).state == .waiting)
+        #expect(ToolRunFold.summary(of: [tool("a", state: .failed), tool("b", state: .waiting)]).state == .failed)
+        #expect(ToolRunFold.summary(of: [tool("a"), tool("b")]).state == .finished)
+    }
+
     /// ADR 0047's invariant I1 over every sequence of up to 6 rows of 8 row types (about 300,000):
     /// the folded items hold every row once, in order, and each fold is a whole run of steps
     /// with 2 or more shown steps and a tool.
