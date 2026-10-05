@@ -1716,7 +1716,8 @@ fn sweep_once(
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
 /// wait. Its proof is a hook or the screen now; with none, it is unconfirmed once its deadline has
 /// passed. Then send the chair `unconfirmed:<seq>` for each message whose last ring proved
-/// nothing and that no report names yet (ADR 0041). Returns one line for each lost message.
+/// nothing and that no report names yet (ADR 0041). Returns one line for each lost message. With
+/// `Proof::Later`, the listing's pass, the chair's own last ring stays for the sweep.
 fn settle_rings(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1731,6 +1732,11 @@ fn settle_rings(
     let text = ring_text(root);
     let mut lines = Vec::new();
     for (agent, rung_at, seqs, lost) in swarm::store::unsettled_rings(connection, session_id)? {
+        // The app drops the listing's stderr, so the chair's own last ring is left to `swarm
+        // sweep`, whose line can name it (ADR 0041).
+        if proof == Proof::Later && agent == chair && lost.is_some() {
+            continue;
+        }
         let provider = swarm::store::provider_of(connection, session_id, &agent)?;
         let provider = provider.as_deref();
         // A failed read proves nothing either way, so only the deadline can settle the ring.
@@ -3984,6 +3990,50 @@ mod tests {
         assert_eq!(
             chair_mail(&connection, &session),
             [(CODER.to_string(), format!("unconfirmed:{ask}"))]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The app drops the listing's stderr, so a listing leaves the chair's own lost ring to
+    /// `swarm sweep`, whose line names it (ADR 0041).
+    #[test]
+    fn a_listing_leaves_the_chairs_lost_ring_to_the_sweep_line() {
+        let (root, mut connection, session) = ring_session(
+            "chair-lost-listing",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("agy", "chair-id"))).unwrap();
+        let summary = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - ?1, rung_at = unixepoch() - ?1,
+                                    rings = ?2",
+                (RING_TIMEOUT.as_secs() + 1, swarm::store::MAX_RINGS),
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert_eq!(delivery_of(&connection, &session, summary), None);
+        assert_eq!(
+            swept(&mut connection, &root, &adapter, &session),
+            [format!("unconfirmed {ORCHESTRATOR} {summary}")]
+        );
+        assert_eq!(
+            delivery_of(&connection, &session, summary).as_deref(),
+            Some("unconfirmed")
         );
         std::fs::remove_dir_all(root).unwrap();
     }
