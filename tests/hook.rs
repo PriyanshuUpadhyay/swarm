@@ -75,6 +75,7 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     let in_session = [("SWARM_SESSION_ID", session.as_str())];
     let added = swarm(&home, &in_session, &["agent", "add", "coder", "coder"], "");
     assert!(added.status.success());
+    let sent_to = stand_in_notify(&home);
 
     let coder = coder_state(&home, &session);
     for field in ["state", "state_at_s", "state_source", "state_detail"] {
@@ -98,6 +99,7 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     assert_eq!(coder["state"], "waiting");
     assert_eq!(coder["state_source"], "hook");
     assert!(coder["state_at_s"].as_i64().unwrap() > 0);
+    assert_eq!(notices(&sent_to).lines().count(), 1);
 
     let broken = swarm(&home, &as_coder, &["hook", "claude"], "not json");
     assert!(broken.status.success());
