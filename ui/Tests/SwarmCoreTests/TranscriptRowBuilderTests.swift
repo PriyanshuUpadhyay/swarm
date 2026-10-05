@@ -705,4 +705,14 @@ struct TranscriptDebugDataTests {
         #expect(TranscriptSource.entries(for: rows[1], in: raw).map(\.index) == [12, 14])
         #expect(TranscriptSource.entries(for: TranscriptRow(kind: .notice, text: "", eventID: "x"), in: raw).isEmpty)
     }
+
+    @Test("Show Source's lookup is equal by source ids, so SwiftUI can skip a row a parent update did not change")
+    func sourceLookupEquality() {
+        let shown = TranscriptSource.Lookup(ids: ["raw-1"]) { [] }
+        let rebuilt = TranscriptSource.Lookup(ids: ["raw-1"]) { [RawTranscriptEntry(index: 1, rawLine: "{}", rowKind: "user")] }
+        let merged = TranscriptSource.Lookup(ids: ["raw-1", "raw-2"]) { [] }
+        #expect(shown == rebuilt)
+        #expect(shown != merged)
+        #expect(rebuilt.entries().map(\.index) == [1])
+    }
 }

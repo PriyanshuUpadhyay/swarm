@@ -21,6 +21,22 @@ public enum TranscriptSource {
         let wanted = Set(row.sourceIDs)
         return raw.filter { wanted.contains($0.id) }
     }
+
+    /// One row's Show Source lookup, run only when Show Source opens. Equal by `ids` alone, because
+    /// a bare closure compares unequal, so SwiftUI would run every row's body on each parent update.
+    public struct Lookup: Equatable {
+        public let ids: [String]
+        private let load: () -> [RawTranscriptEntry]
+
+        public init(ids: [String], load: @escaping () -> [RawTranscriptEntry]) {
+            self.ids = ids
+            self.load = load
+        }
+
+        public func entries() -> [RawTranscriptEntry] { load() }
+
+        public static func == (lhs: Lookup, rhs: Lookup) -> Bool { lhs.ids == rhs.ids }
+    }
 }
 
 public enum TranscriptDebugData {

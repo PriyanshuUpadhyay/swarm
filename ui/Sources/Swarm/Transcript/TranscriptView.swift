@@ -245,7 +245,9 @@ struct TranscriptView<Composer: View>: View {
         TranscriptRowView(
             row: transcriptRow, chair: chair,
             revealForSearch: currentMatchID == transcriptRow.eventID,
-            sourceEntries: { TranscriptSource.entries(for: transcriptRow, in: rawEntries) }
+            source: TranscriptSource.Lookup(ids: transcriptRow.sourceIDs) {
+                TranscriptSource.entries(for: transcriptRow, in: rawEntries)
+            }
         )
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
@@ -466,8 +468,7 @@ private struct TranscriptRowView: View {
     let row: TranscriptRow
     let chair: String?
     var revealForSearch = false
-    /// The raw entries behind the row; read only when Show Source opens.
-    let sourceEntries: () -> [RawTranscriptEntry]
+    let source: TranscriptSource.Lookup
     @State private var showingSource = false
     @State private var copying = false
     @State private var detailExpanded = false
@@ -536,7 +537,7 @@ private struct TranscriptRowView: View {
             Button("Show Source") { showingSource = true }
         }
         .popover(isPresented: $showingSource, arrowEdge: .leading) {
-            TranscriptSourceView(entries: sourceEntries())
+            TranscriptSourceView(entries: source.entries())
         }
         .id(row.eventID)
         .onChange(of: revealForSearch, initial: true) { _, reveal in
