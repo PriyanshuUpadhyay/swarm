@@ -11,6 +11,8 @@ struct StepRunsView: View {
     @State private var error: String?
     @State private var notice: String?
     @State private var scanNotice: String?
+    /// The closed runs in `runs` come from this task's read, so an empty Closed group means none.
+    @State private var closedRead = false
     @State private var chosen: ChosenRun?
     @State private var showClosed = false
     @State private var retryID = 0
@@ -41,6 +43,7 @@ struct StepRunsView: View {
             // tick (500 closed runs took about 4 s a scan). `ponytail:` a run closed while the group is
             // open shows there after the next toggle.
             var closed: StepRunScan?
+            closedRead = false
             // The app has no file watcher; it polls live data, so a step change shows within 2 s.
             while !Task.isCancelled {
                 do {
@@ -57,6 +60,7 @@ struct StepRunsView: View {
                     }
                     runs = scan.runs
                     scanNotice = scan.notice
+                    closedRead = closed != nil
                     error = nil
                     if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: scan.runs, includeClosed: showClosed) {
                         choose(nil)
@@ -112,7 +116,13 @@ struct StepRunsView: View {
                             ForEach(runs) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
                         }
                         DisclosureGroup("Closed", isExpanded: $showClosed) {
-                            ForEach(runs.filter(\.closed)) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
+                            let closed = runs.filter(\.closed)
+                            if !closedRead {
+                                DelayedProgress("Reading closed runs…")
+                            } else if closed.isEmpty {
+                                Text("None").font(.caption)
+                            }
+                            ForEach(closed) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
                         }
                         .foregroundStyle(.secondary)
                         .padding(.top, DesignTokens.Spacing.s)
