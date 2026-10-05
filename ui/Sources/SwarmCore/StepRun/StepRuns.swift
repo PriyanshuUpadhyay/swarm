@@ -107,7 +107,7 @@ public struct StepRunScan: Equatable, Sendable {
     public var runs: [StepRun] = []
     /// A listing reached the 2,000-entry limit (`WorkspaceFiles.list`), so runs or steps may be missing.
     public var cutOff = false
-    /// Folders that exist but cannot be listed, such as one with no read permission; their runs are missing.
+    /// Folders that exist but cannot be listed, or whose step files cannot be read; their runs are missing.
     public var unreadable: [String] = []
 
     public var notice: String? {
@@ -126,7 +126,7 @@ public enum StepRuns {
 
     /// The runs under `<workspace>/tmp/<skill>/<run>/`, and `_closed/<run>/` when asked, newest first.
     /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A folder below it that cannot be
-    /// listed is in `unreadable`, unless it is gone, because then a close moved it during the scan.
+    /// listed or read is in `unreadable`, unless it is gone, because then a close moved it during the scan.
     public static func scan(workspace: String, includeClosed: Bool) async throws -> StepRunScan {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace + "/" + root, isDirectory: &isDirectory) else { return StepRunScan() }
@@ -235,7 +235,12 @@ public enum StepRuns {
             }
         }
         let parsed = zip(files, previews).map { (id: String($0.name.dropLast(3)), file: parse($1)) }
-        guard parsed.contains(where: { $0.file.state != nil }) else { return nil }
+        guard parsed.contains(where: { $0.file.state != nil }) else {
+            // A folder with no status may not be a run, but one whose step file cannot be read may be,
+            // so the scan names it as it names a folder it cannot list.
+            if previews.contains(where: { if case .text = $0 { false } else { true } }) { throw CocoaError(.fileReadUnknown) }
+            return nil
+        }
 
         let events = events(try? WorkspaceFiles.read(in: workspace, path: folder.path + "/events.log"))
         let byID = Dictionary(parsed.map { ($0.id, $0.file) }, uniquingKeysWith: { first, _ in first })

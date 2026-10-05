@@ -242,6 +242,22 @@ struct StepRunsTests {
         #expect(scan.notice == "Can't read tmp/flow/2026-10-05-locked")
     }
 
+    @Test("A run folder whose step files cannot be read is named in the scan, not dropped without a sign")
+    func unreadableStepFile() async throws {
+        let workspace = try fixture()
+        let run = workspace.appendingPathComponent("tmp/flow/2026-10-05-locked")
+        try write(run, ["01-frame.md": "Status: open\nUses:\n"])
+        let frame = run.appendingPathComponent("01-frame.md")
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: frame.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: frame.path)
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        let scan = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(scan.runs.isEmpty)
+        #expect(scan.unreadable == ["tmp/flow/2026-10-05-locked"])
+    }
+
     @Test("No tmp folder is no runs, not an error")
     func noTmp() async throws {
         let workspace = try fixture()
