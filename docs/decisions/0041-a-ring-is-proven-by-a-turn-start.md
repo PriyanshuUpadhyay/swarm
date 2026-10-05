@@ -39,7 +39,7 @@ finds a hook, the screen, or a read, or marks it `unconfirmed` past its 30 s dea
 still holds the ring text, a waiting ring presses Enter again, for each provider whose composer it
 can read. After 2 unconfirmed rings the sender's chair gets `unconfirmed:<seq>`, from the same
 pass that stored the result; a report that fails to send is sent by a later pass. `swarm sweep` and the listing send `stall:unacked:<seq>`
-and `stall:silent:<seq>` once each, deduped by a unique index. The chair is never the subject of a
+and `stall:silent:<seq>` once each, deduped by a store trigger. The chair is never the subject of a
 message: a lost ring to the chair goes to stderr and a `swarm sweep` line only, so only the sweep
 settles the chair's last ring, and a later notify flow turns it into a user notice. Rejected: a wait in every ring, the listing included, because a
 lost re-ring or a report to an idle chair holds the listing past the app's 20 s kill, and the

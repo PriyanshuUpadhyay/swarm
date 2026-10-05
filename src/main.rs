@@ -1620,7 +1620,7 @@ fn chair_lost(chair: &str, seq: i64) -> String {
     format!("unconfirmed {chair} {seq}")
 }
 
-/// Send `subject`'s report `kind` to the chair, once: the unique index `message_report` refuses a
+/// Send `subject`'s report `kind` to the chair, once: the trigger `message_report` refuses a
 /// second one. Returns whether this call stored it. A failed send only warns, so the pass that
 /// found the report goes on, and the next pass finds the report again.
 #[allow(clippy::too_many_arguments)]
@@ -1653,7 +1653,7 @@ fn report(
             let reported = matches!(
                 error.downcast_ref::<rusqlite::Error>(),
                 Some(rusqlite::Error::SqliteFailure(failure, _))
-                    if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+                    if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
             );
             if !reported {
                 eprintln!("swarm: report {kind} for {subject} not sent: {error}");

@@ -2118,6 +2118,55 @@ mod tests {
         assert_eq!(delivery, [Some("unchecked".to_string()), None]);
     }
 
+    /// `swarm send` takes any kind, so an older database can hold two hand-sent messages of one
+    /// report kind. The migration keeps both, and only a new report of that kind is refused.
+    #[test]
+    fn a_version_four_database_with_two_hand_sent_report_kinds_migrates_and_keeps_both() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+                     VALUES ('{SESSION}', 0, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/0.txt'),
+                            ('{SESSION}', 1, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/1.txt');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let kept: Vec<(i64, String)> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| (message.seq, message.kind))
+            .collect();
+        assert_eq!(
+            kept,
+            [(0, "stall:x".to_string()), (1, "stall:x".to_string())]
+        );
+        let root = std::env::temp_dir().join(format!("swarm-store-{}", uuid::Uuid::now_v7()));
+        let resend = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            CODER,
+            ORCHESTRATOR,
+            "stall:x",
+            "again",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        // `report` in main.rs reads this code as a report already sent.
+        assert!(matches!(
+            resend.unwrap_err().downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
+        ));
+    }
+
     #[test]
     fn a_version_three_database_gains_a_chat_log_that_outlives_the_pane() {
         let mut connection = Connection::open_in_memory().unwrap();
