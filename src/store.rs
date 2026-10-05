@@ -743,7 +743,7 @@ pub fn stalls(
 }
 
 /// A ring that no caller settled: (recipient, rung_at, the messages it rang, the lowest of them
-/// that is unseen at its second ring).
+/// that is unseen at its last ring, `MAX_RINGS`).
 pub type Ring = (String, i64, Vec<i64>, Option<i64>);
 
 /// The rings with no result yet (ADR 0041): the listing's, which it types and leaves, and one whose
@@ -753,11 +753,11 @@ pub fn unsettled_rings(
     session_id: &str,
 ) -> Result<Vec<Ring>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
-        "SELECT recipient_id, rung_at, seq, rings >= 2 AND seen_at IS NULL FROM message
+        "SELECT recipient_id, rung_at, seq, rings >= ?2 AND seen_at IS NULL FROM message
          WHERE session_id = ?1 AND rings > 0 AND rung_at IS NOT NULL AND delivery IS NULL
          ORDER BY recipient_id, rung_at, seq",
     )?;
-    let rows = statement.query_map([session_id], |row| {
+    let rows = statement.query_map((session_id, MAX_RINGS), |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, i64>(1)?,
@@ -779,7 +779,7 @@ pub fn unsettled_rings(
     Ok(rings)
 }
 
-/// Messages whose second ring proved nothing and that no `unconfirmed:<seq>` report names yet, as
+/// Messages whose last ring, `MAX_RINGS`, proved nothing and that no `unconfirmed:<seq>` report names yet, as
 /// (recipient, seq), the lowest seq of each ring. A report that failed to send is found again. The
 /// chair is never the subject: a report about it would go to it.
 pub fn unreported_lost(
@@ -790,7 +790,7 @@ pub fn unreported_lost(
     let mut statement = connection.prepare(
         "SELECT recipient_id, seq FROM (
              SELECT recipient_id, MIN(seq) AS seq FROM message
-             WHERE session_id = ?1 AND recipient_id != ?2 AND rings >= 2
+             WHERE session_id = ?1 AND recipient_id != ?2 AND rings >= ?3
                AND delivery = 'unconfirmed' AND seen_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM read_mark
                                WHERE read_mark.session_id = message.session_id
@@ -802,7 +802,9 @@ pub fn unreported_lost(
                              AND kind = 'unconfirmed:' || lost.seq)
          ORDER BY recipient_id, seq",
     )?;
-    let rows = statement.query_map((session_id, chair), |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let rows = statement.query_map((session_id, chair, MAX_RINGS), |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -883,6 +885,10 @@ pub fn has_unrung_unread(
     Ok(found)
 }
 
+/// How many rings a message gets in all. After the last one proves nothing, the chair is told
+/// (ADR 0041).
+pub const MAX_RINGS: i64 = 2;
+
 pub fn rering_due(
     connection: &Connection,
     session_id: &str,
@@ -893,7 +899,7 @@ pub fn rering_due(
         "SELECT COUNT(*) > 0
              AND MIN(created_at) <= unixepoch() - ?3
              AND (MAX(rung_at) IS NULL OR MAX(rung_at) <= unixepoch() - ?3)
-             AND MAX(rings) < 2
+             AND MAX(rings) < ?4
          FROM message
          WHERE session_id = ?1 AND recipient_id = ?2
            AND seen_at IS NULL
@@ -902,7 +908,7 @@ pub fn rering_due(
                WHERE read_mark.session_id = message.session_id
                  AND message_seq = message.seq AND agent_id = ?2
            )",
-        (session_id, agent_id, age_secs),
+        (session_id, agent_id, age_secs, MAX_RINGS),
         |row| row.get(0),
     )?;
     Ok(due)

@@ -1509,8 +1509,8 @@ fn report_dead(
     Ok(())
 }
 
-/// Ring `agent` again when its unseen messages are due for a second ring. When that ring starts
-/// no turn and `agent` is the chair, returns the report line `unconfirmed <agent> <seq>`; a
+/// Ring `agent` again when its unseen messages are due for another ring. When their last ring
+/// starts no turn and `agent` is the chair, returns the report line `unconfirmed <agent> <seq>`; a
 /// child's lost message is reported by `settle_rings`.
 fn rering_if_due(
     connection: &mut rusqlite::Connection,
@@ -1550,7 +1550,7 @@ fn rering_if_due(
     eprintln!("swarm: re-ringed {agent}");
     let lost = rung
         .iter()
-        .filter(|(_, rings)| *rings >= 2)
+        .filter(|(_, rings)| *rings >= swarm::store::MAX_RINGS)
         .map(|(seq, _)| *seq)
         .min();
     match (delivery, lost) {
@@ -1565,7 +1565,10 @@ fn rering_if_due(
 
 /// The body of the report that message `seq` to `agent` was lost.
 fn lost_body(agent: &str, seq: i64) -> String {
-    format!("message {seq} to {agent} was not delivered: no turn started after 2 rings")
+    format!(
+        "message {seq} to {agent} was not delivered: no turn started after {} rings",
+        swarm::store::MAX_RINGS
+    )
 }
 
 /// A message about the chair would ring the pane that just lost two rings, so the chair's own lost
@@ -1677,7 +1680,7 @@ fn sweep_once(
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
 /// wait. Its proof is a hook or the screen now; with none, it is unconfirmed once its deadline has
-/// passed. Then send the chair `unconfirmed:<seq>` for each message whose second ring proved
+/// passed. Then send the chair `unconfirmed:<seq>` for each message whose last ring proved
 /// nothing and that no report names yet (ADR 0041). Returns one line for each lost message.
 fn settle_rings(
     connection: &mut rusqlite::Connection,
