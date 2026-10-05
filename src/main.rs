@@ -1574,6 +1574,12 @@ fn rering_if_due(
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
         return Ok(None);
     }
+    // Read before the ring: once the ring stores `unconfirmed`, no pass finds it again, so an
+    // error after it would drop the chair's line. Only a waiting ring has a result to report.
+    let chair = match proof {
+        Proof::Wait => Some(swarm::store::orchestrator_of(connection, session_id)?),
+        Proof::Later => None,
+    };
     let rung_at = unix_now()?;
     let rung = swarm::store::rering(
         connection,
@@ -1605,9 +1611,7 @@ fn rering_if_due(
         .map(|(seq, _)| *seq)
         .min();
     match (delivery, lost) {
-        (Some(Delivery::Unconfirmed), Some(seq))
-            if agent == swarm::store::orchestrator_of(connection, session_id)? =>
-        {
+        (Some(Delivery::Unconfirmed), Some(seq)) if chair.as_deref() == Some(agent) => {
             Ok(Some(chair_lost(agent, seq)))
         }
         _ => Ok(None),
@@ -1712,13 +1716,7 @@ fn sweep_once(
         report_dead(connection, root, &adapter.name, session_id, &child, &note)?;
         lines.push(format!("dead {child}"));
     }
-    lines.extend(settle_rings(
-        connection,
-        root,
-        adapter,
-        session_id,
-        Proof::Wait,
-    )?);
+    settle_rings(connection, root, adapter, session_id, Proof::Wait, lines)?;
     lines.extend(report_lost(
         connection,
         root,
@@ -1738,19 +1736,20 @@ fn sweep_once(
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
 /// wait. Its proof is a hook, the screen, or a read now; with none, it is unconfirmed once its deadline has
-/// passed (ADR 0041). Returns a line for the chair's own lost message. With `Proof::Later`, the
-/// listing's pass, the chair's own last ring stays for the sweep.
+/// passed (ADR 0041). Adds a line for the chair's own lost message to `lines` at once, so the line
+/// stays when a later ring fails. With `Proof::Later`, the listing's pass, the chair's own last ring
+/// stays for the sweep.
 fn settle_rings(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
     adapter: &swarm::adapter::Adapter,
     session_id: &str,
     proof: Proof,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    lines: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let chair = swarm::store::orchestrator_of(connection, session_id)?;
     let now = unix_now()?;
     let text = ring_text(root);
-    let mut lines = Vec::new();
     for (agent, rung_at, seqs, lost) in swarm::store::unsettled_rings(connection, session_id)? {
         // The app drops the listing's stderr, so the chair's own last ring is left to `swarm
         // sweep`, whose line can name it (ADR 0041).
@@ -1802,7 +1801,7 @@ fn settle_rings(
             lines.push(chair_lost(&agent, seq));
         }
     }
-    Ok(lines)
+    Ok(())
 }
 
 /// Send the chair `unconfirmed:<seq>` for each message whose last ring proved nothing and that no
@@ -2103,7 +2102,14 @@ fn list_agents(
     // waits for proof; the next pass settles them. A report rings the chair's stored pane, which a
     // restarted tmux or Herdr server can give to another pane, so it waits for a listing that
     // shows the chair's pane.
-    if let Err(error) = settle_rings(connection, root, adapter, session_id, Proof::Later) {
+    if let Err(error) = settle_rings(
+        connection,
+        root,
+        adapter,
+        session_id,
+        Proof::Later,
+        &mut Vec::new(),
+    ) {
         eprintln!("swarm: {error}");
     }
     if chair_listed {
@@ -3864,7 +3870,15 @@ mod tests {
             .unwrap();
         std::fs::remove_file(root.join("screen")).unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
-        settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+        settle_rings(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            Proof::Wait,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(
             delivery_of(&connection, &session, ask).as_deref(),
             Some("unconfirmed")
@@ -3905,7 +3919,15 @@ mod tests {
             connection.execute(update, []).unwrap();
             std::fs::remove_file(root.join("screen")).unwrap();
             let adapter = swarm::adapter::load(&root, "fake").unwrap();
-            settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+            settle_rings(
+                &mut connection,
+                &root,
+                &adapter,
+                &session,
+                Proof::Wait,
+                &mut Vec::new(),
+            )
+            .unwrap();
             assert_eq!(
                 delivery_of(&connection, &session, ask).as_deref(),
                 Some(proof)
@@ -3967,7 +3989,17 @@ mod tests {
                 [rung_at - RING_TIMEOUT.as_secs() as i64 - 1],
             )
             .unwrap();
-        assert!(settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).is_err());
+        assert!(
+            settle_rings(
+                &mut connection,
+                &root,
+                &adapter,
+                &session,
+                Proof::Wait,
+                &mut Vec::new()
+            )
+            .is_err()
+        );
         assert_eq!(delivery_of(&connection, &session, seq), None);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -4008,8 +4040,131 @@ mod tests {
             )
             .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
-        let lines = settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+        let mut lines = Vec::new();
+        settle_rings(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            Proof::Wait,
+            &mut lines,
+        )
+        .unwrap();
         assert!(lines.is_empty(), "{lines:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A store error on a later ring fails the sweep pass, but the chair's own lost-ring line that
+    /// the pass already stored is still printed: no later pass finds that ring again.
+    #[test]
+    fn a_failed_settle_still_prints_the_chairs_lost_ring_it_stored() {
+        let (root, mut connection, session) = ring_session(
+            "settle-error",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "agy").unwrap();
+        swarm::store::add_agent(&connection, &session, "reviewer", "reviewer").unwrap();
+        let summary = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            "reviewer",
+            "ask",
+            "review",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - ?1, rings = ?2",
+                (RING_TIMEOUT.as_secs() + 1, swarm::store::MAX_RINGS),
+            )
+            .unwrap();
+        // The reviewer's ring settles after the chair's, and its write fails.
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER store_error BEFORE UPDATE OF delivery ON main.message
+                 WHEN NEW.recipient_id = 'reviewer'
+                 BEGIN SELECT RAISE(ABORT, 'store error'); END;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let mut lines = Vec::new();
+        let pass = sweep_once(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            ORCHESTRATOR,
+            &mut lines,
+        );
+        assert!(pass.is_err());
+        assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} {summary}")]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A store error while the sweep re-rings the chair comes before the ring, so the ring is
+    /// left for the next pass, whose line names the chair's lost message.
+    #[test]
+    fn a_failed_chair_read_in_a_rering_leaves_the_lost_line_to_the_next_pass() {
+        let (root, mut connection, session) = ring_session(
+            "rering-error",
+            Some("agy"),
+            "ring = false",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let summary = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1",
+                [],
+            )
+            .unwrap();
+        // A temp `agent` with no `role` shadows the real table, so only the chair read fails.
+        connection
+            .execute_batch(
+                "CREATE TEMP TABLE agent AS SELECT * FROM main.agent;
+                 ALTER TABLE temp.agent DROP COLUMN role;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let mut lines = Vec::new();
+        let pass = sweep_once(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            ORCHESTRATOR,
+            &mut lines,
+        );
+        assert!(pass.is_err());
+        connection.execute_batch("DROP TABLE temp.agent").unwrap();
+        lines.extend(swept(&mut connection, &root, &adapter, &session));
+        assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} {summary}")]);
         std::fs::remove_dir_all(root).unwrap();
     }
 
