@@ -145,7 +145,7 @@ public enum PaletteItems {
     public static let actions: [AppKey] = [
         .newWorkspace, .newChat, .newProject, .nextWorkspace, .previousWorkspace, .nextTab, .previousTab,
         .zoom, .focusComposer, .toggleSidebar, .moveSidebar,
-    ] + (1...5).map(AppKey.sidebarView) + [.showChanges, .find, .stop]
+    ] + (1...6).map(AppKey.sidebarView) + [.showChanges, .find, .stop]
 
     /// Item ids carry their group, so a workspace and a chat with the same id stay apart.
     public static func build(

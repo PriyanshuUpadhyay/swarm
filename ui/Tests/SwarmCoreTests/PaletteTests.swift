@@ -4,7 +4,7 @@ import Testing
 @Suite("Command palette")
 struct PaletteTests {
     private let items = PaletteItems.build(
-        sidebarViews: ["Workspaces", "Files", "Changes", "PR", "Usage"],
+        sidebarViews: ["Workspaces", "Files", "Changes", "PR", "Usage", "Runs"],
         workspaces: [
             PaletteSource.Workspace(id: "/work/atlas", title: "atlas-api", detail: "main", status: .waiting, lastActivity: 300),
             PaletteSource.Workspace(id: "/work/docs", title: "docs-site", detail: "", status: nil, lastActivity: nil),
@@ -44,6 +44,7 @@ struct PaletteTests {
         #expect(newProject?.shortcut == "⇧⌘N")
         #expect(items.first { $0.id == "action:sidebarView(2)" }?.title == "Show Files")
         #expect(items.first { $0.id == "action:sidebarView(2)" }?.shortcut == "⌥⌘2")
+        #expect(items.first { $0.id == "action:sidebarView(6)" }?.title == "Show Runs")
         #expect(KeyChord(.right, [.option, .command]).displayText == "⌥⌘→")
         #expect(KeyChord(.down, [.control, .command]).displayText == "⌃⌘↓")
         #expect(!items.contains { $0.id == "action:search" })

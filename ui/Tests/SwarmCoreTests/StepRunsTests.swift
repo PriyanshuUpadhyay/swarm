@@ -61,6 +61,11 @@ struct StepRunsTests {
         try await commit(workspace, "next")
         let moved = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
         #expect(moved.first?.steps.first { $0.id == "06-review" }?.stale == ["05-build"], "a new commit makes the review stale")
+
+        // Each scan reads the files again, so a poll sees a new line 1 at once (done-when 4).
+        try write(run, ["07-close.md": "Status: active closer\nUses: 06-review@\(head.prefix(12))\n"])
+        let changed = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(changed.first?.steps.last?.state == .active(agent: "closer"))
     }
 
     @Test("An older folder with empty Uses lines still draws, with an assumed edge from the previous step")

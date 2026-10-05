@@ -25,6 +25,7 @@ struct KeyRoutingTests {
             (KeyChord("b", [.command, .shift]), .moveSidebar),
             (KeyChord("1", [.option, .command]), .sidebarView(1)),
             (KeyChord("5", [.option, .command]), .sidebarView(5)),
+            (KeyChord("6", [.option, .command]), .sidebarView(6)),
             (KeyChord("i", [.option, .command]), .showChanges),
             (KeyChord("k", .command), .search),
             (KeyChord("f", .command), .find),
@@ -36,7 +37,7 @@ struct KeyRoutingTests {
             #expect(AppKey.action(for: chord) == action)
             #expect(action.chord == chord)
         }
-        #expect(AppKey.action(for: KeyChord("6", [.option, .command])) == nil)
+        #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == nil)
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
     }
 
