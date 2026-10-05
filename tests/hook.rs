@@ -1389,3 +1389,31 @@ fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
     assert_eq!(notices(&sent_to), notice.repeat(2));
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// An agent that `swarm close` removed, or one the session never held, has no row to change, so
+/// its hook sends no notice however often it reports `waiting`.
+#[test]
+fn a_hook_for_an_agent_the_session_does_not_hold_sends_no_notice() {
+    let home = scratch("notify-ghost");
+    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
+        .trim()
+        .to_string();
+    let sent_to = stand_in_notify(&home);
+    let as_ghost = [
+        ("SWARM_SESSION_ID", session.as_str()),
+        ("SWARM_AGENT_ID", "ghost"),
+    ];
+
+    for _ in 0..2 {
+        let reported = swarm(
+            &home,
+            &as_ghost,
+            &["hook", "claude"],
+            r#"{"hook_event_name":"PermissionRequest"}"#,
+        );
+        assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
+    }
+
+    assert_eq!(notices(&sent_to), "");
+    std::fs::remove_dir_all(&home).unwrap();
+}

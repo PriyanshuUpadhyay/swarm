@@ -561,8 +561,10 @@ pub fn set_log(
 }
 
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
-/// states and sources. Returns the state it replaced, read in the same immediate transaction, so
-/// two hooks that race cannot both see one change (a notice is sent once per change, ADR 0044).
+/// states and sources. Returns `Some` with the state it replaced (None when the agent had no
+/// state yet), read in the same immediate transaction, so two hooks that race cannot both see one
+/// change (a notice is sent once per change, ADR 0044). Returns None and writes nothing when the
+/// session holds no such agent.
 pub fn set_state(
     connection: &Connection,
     session_id: &str,
@@ -571,25 +573,27 @@ pub fn set_state(
     source: &str,
     detail: Option<&str>,
     now: i64,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
+) -> Result<Option<Option<String>>, Box<dyn std::error::Error>> {
     use rusqlite::OptionalExtension;
     let transaction =
         rusqlite::Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
-    let old: Option<String> = transaction
+    let Some(old) = transaction
         .query_row(
             "SELECT state FROM agent WHERE session_id = ?1 AND id = ?2",
             (session_id, agent_id),
             |row| row.get(0),
         )
         .optional()?
-        .flatten();
+    else {
+        return Ok(None);
+    };
     transaction.execute(
         "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5, state_at = ?6
          WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, state, source, detail, now),
     )?;
     transaction.commit()?;
-    Ok(old)
+    Ok(Some(old))
 }
 
 /// The folder a session was opened in, or None for an unknown session.
@@ -2105,6 +2109,14 @@ mod tests {
         assert_eq!(coder.state.as_deref(), Some("failed"));
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
+        assert_eq!(
+            set_state(&connection, SESSION, ORCHESTRATOR, "done", "hook", None, 42).unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            set_state(&connection, SESSION, "ghost", "waiting", "hook", None, 42).unwrap(),
+            None
+        );
         assert!(set_state(&connection, SESSION, CODER, "asleep", "hook", None, 42).is_err());
         assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, 42).is_err());
     }
