@@ -133,7 +133,8 @@ struct ChairLogDiscoveryTests {
             home: home, name: "chat-a", cwd: cwd, at: "2026-09-22T12:26:05Z",
             prompt: "Chat A"
         )
-        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL
+        let start = Date.now
+        #expect(await transcript.discoveredLog(for: session, now: start)?.standardizedFileURL
             == firstLog.standardizedFileURL)
         #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
             == "Chat A")
@@ -142,8 +143,11 @@ struct ChairLogDiscoveryTests {
             home: home, name: "chat-b", cwd: cwd, at: "2026-09-22T12:26:02Z",
             prompt: "Chat B"
         )
-        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL
-            == secondLog.standardizedFileURL)
+        // With no chair id the search runs again at most every 10 s.
+        #expect(await transcript.discoveredLog(for: session, now: start.addingTimeInterval(9.999))?
+            .standardizedFileURL == firstLog.standardizedFileURL)
+        #expect(await transcript.discoveredLog(for: session, now: start.addingTimeInterval(10))?
+            .standardizedFileURL == secondLog.standardizedFileURL)
         #expect(await discovery.resolvedTitles(sessions: [session], agentsBySession: agents)[session.id]
             == "Chat B")
     }
