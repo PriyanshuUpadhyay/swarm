@@ -1150,3 +1150,44 @@ fn all_agent_listings_match_each_sessions_adapter_and_fields() {
     let actual: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(actual, serde_json::Value::Object(expected));
 }
+
+/// A sweep pass that fails after it reported a dead child still prints `dead <id>`. The report
+/// forgot the child's pane, so no later pass finds it dead again.
+#[test]
+fn a_failed_sweep_pass_still_prints_the_dead_child_it_reported() {
+    let home = scratch("sweep-dead-line");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    // The first listing shows only the chair and `second`; the next one fails.
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\n\
+         list = [ -e \"$HOME/listed\" ] && exit 1; touch \"$HOME/listed\"; printf 'chair p2\\n'\n\
+         close = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    for args in [
+        &["agent", "add", "orchestrator", "orchestrator"][..],
+        &["agent", "add", "first", "coder"],
+        &["agent", "add", "second", "coder"],
+    ] {
+        let output = swarm(&home, &chair(&session), args);
+        assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+    }
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_pane(&connection, &session, "first", "p1").unwrap();
+    swarm::store::set_pane(&connection, &session, "second", "p2").unwrap();
+
+    let sweep = swarm(&home, &chair(&session), &["sweep"]);
+    assert!(!sweep.status.success());
+    assert_eq!(String::from_utf8_lossy(&sweep.stdout), "dead first\n");
+}

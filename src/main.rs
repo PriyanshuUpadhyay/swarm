@@ -1619,16 +1619,16 @@ fn report(
 }
 
 /// One sweep pass: re-ring unseen messages, the sweeper's own included, and report each child
-/// whose pane is gone, each lost message, and each stall. Returns one line per report, for the
-/// sweep's output.
+/// whose pane is gone, each lost message, and each stall. Adds one line per report to `lines`, for
+/// the sweep's output. A report is sent at once, so its line stays even when a later step fails.
 fn sweep_once(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
     adapter: &swarm::adapter::Adapter,
     session_id: &str,
     agent_id: &str,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut lines = Vec::new();
+    lines: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // A child's ring to the chair can be lost too, and no other sweeper covers the chair.
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)? {
         lines.extend(rering_if_due(
@@ -1672,7 +1672,7 @@ fn sweep_once(
         session_id,
         Proof::Wait,
     )?);
-    Ok(lines)
+    Ok(())
 }
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
@@ -2790,8 +2790,18 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             };
             let adapter = swarm::adapter::load(&root, &adapter_name())?;
             loop {
-                match sweep_once(&mut connection, &root, &adapter, &session_id, &agent_id) {
-                    Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
+                let mut lines = Vec::new();
+                let pass = sweep_once(
+                    &mut connection,
+                    &root,
+                    &adapter,
+                    &session_id,
+                    &agent_id,
+                    &mut lines,
+                );
+                lines.iter().for_each(|line| println!("{line}"));
+                match pass {
+                    Ok(()) => {}
                     Err(error) if every.is_some() => eprintln!("swarm: sweep skipped: {error}"),
                     Err(error) => return Err(error),
                 }
@@ -3373,21 +3383,21 @@ mod tests {
             &format!("self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE:$SWARM_TEXT\" >> '{}'\nlist = echo %2\nclose = true\ncapture = true\n", ring_log.display()),
         )
         .unwrap();
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
+        swept(&mut connection, &root, &adapter, &session);
         let ring = format!("%2:{}\n", ring_text(&root));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring);
         connection
             .execute("UPDATE message SET rung_at = unixepoch() - 61", [])
             .unwrap();
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(2));
 
         swarm::store::inbox(&connection, &session, CODER).unwrap();
         connection
             .execute("UPDATE message SET rung_at = unixepoch() - 61", [])
             .unwrap();
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
         swarm::store::ack(&connection, &session, 1, CODER).unwrap();
         connection
             .execute(
@@ -3395,7 +3405,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
 
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), ring.repeat(2));
     }
@@ -3434,7 +3444,7 @@ mod tests {
         )
         .unwrap();
 
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
 
         assert_eq!(
             swarm::store::pane_of(&connection, &session, CODER).unwrap(),
@@ -3793,14 +3803,10 @@ mod tests {
             .unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
-        assert!(
-            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
         assert_eq!(
-            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap(),
+            swept(&mut connection, &root, &adapter, &session),
             [format!("unconfirmed {CODER} {ask}")]
         );
         assert_eq!(
@@ -3808,6 +3814,18 @@ mod tests {
             [(CODER.to_string(), format!("unconfirmed:{ask}"))]
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// One sweep pass by the chair that must succeed, and its lines.
+    fn swept(
+        connection: &mut rusqlite::Connection,
+        root: &std::path::Path,
+        adapter: &swarm::adapter::Adapter,
+        session: &str,
+    ) -> Vec<String> {
+        let mut lines = Vec::new();
+        sweep_once(connection, root, adapter, session, ORCHESTRATOR, &mut lines).unwrap();
+        lines
     }
 
     /// The kinds and senders of the messages to the chair.
@@ -3896,7 +3914,7 @@ mod tests {
         connection.execute(backdate, []).unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
-        let lines = sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        let lines = swept(&mut connection, &root, &adapter, &session);
         assert_eq!(lines, ["unconfirmed coder 0"]);
         assert_eq!(
             chair_mail(&connection, &session),
@@ -3908,11 +3926,7 @@ mod tests {
             "message 0 to coder was not delivered: no turn started after 2 rings"
         );
         connection.execute(backdate, []).unwrap();
-        assert!(
-            sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
         assert_eq!(chair_mail(&connection, &session).len(), 1);
 
         // The chair's own lost message: a line, and no message to itself.
@@ -3933,7 +3947,7 @@ mod tests {
             .execute("UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61, rings = 1", [])
             .unwrap();
         swarm::store::clear_pane(&connection, &session, CODER).unwrap();
-        let lines = sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        let lines = swept(&mut connection, &root, &adapter, &session);
         assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} 0")]);
         assert_eq!(chair_mail(&connection, &session).len(), 1);
         std::fs::remove_dir_all(root).unwrap();
@@ -3959,9 +3973,8 @@ mod tests {
             .as_secs() as i64;
         swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
-        let sweep = |connection: &mut rusqlite::Connection| {
-            sweep_once(connection, &root, &adapter, &session, ORCHESTRATOR).unwrap()
-        };
+        let sweep =
+            |connection: &mut rusqlite::Connection| swept(connection, &root, &adapter, &session);
 
         assert_eq!(
             sweep(&mut connection),
@@ -4027,7 +4040,7 @@ mod tests {
         )
         .unwrap();
 
-        sweep_once(&mut connection, &root, &adapter, &session, ORCHESTRATOR).unwrap();
+        swept(&mut connection, &root, &adapter, &session);
 
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "%1\n");
     }
