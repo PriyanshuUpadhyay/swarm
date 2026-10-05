@@ -360,9 +360,7 @@ private struct StepNodeView: View {
         .buttonStyle(.plain)
         .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         .help(help)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(step.spokenLabel)
-        .accessibilityAddTraits(.isButton)
     }
 
     private var dimmed: Bool { step.state == .open && !step.ready }
