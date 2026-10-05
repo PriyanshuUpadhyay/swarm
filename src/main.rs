@@ -1729,6 +1729,10 @@ fn sweep_once(
         lines.push(format!("dead {child}"));
     }
     settle_rings(connection, root, adapter, session_id, Proof::Wait, lines)?;
+    // A report rings the chair, so like the listing's it waits for a pass that reads the chair idle.
+    if !chair_idle(connection, adapter, session_id)? {
+        return Ok(());
+    }
     lines.extend(report_lost(
         connection,
         root,
@@ -1744,6 +1748,33 @@ fn sweep_once(
         Proof::Wait,
     )?);
     Ok(())
+}
+
+/// Whether the chair's pane reads idle with no question on it. A ring's Enter typed over a
+/// question, such as a permission prompt, would answer it.
+fn chair_idle(
+    connection: &rusqlite::Connection,
+    adapter: &swarm::adapter::Adapter,
+    session_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let chair = swarm::store::orchestrator_of(connection, session_id)?;
+    let Some(pane) = swarm::store::pane_of(connection, session_id, &chair)? else {
+        return Ok(false);
+    };
+    let provider = swarm::store::provider_of(connection, session_id, &chair)?;
+    let vars = [("pane", pane.as_str())];
+    let capture = || adapter.capture_within(&vars, std::time::Duration::from_secs(1));
+    let screen = match adapter.screen {
+        Some(_) => adapter.screen(&vars, std::time::Duration::from_secs(1)),
+        None => capture(),
+    };
+    Ok(screen.is_some_and(|screen| {
+        swarm::screen::whole_prompt(&screen, capture).is_none()
+            && matches!(
+                swarm::screen::read_pane(provider.as_deref(), &screen, capture),
+                Some((swarm::screen::ScreenState::Idle, _))
+            )
+    }))
 }
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
@@ -2036,10 +2067,7 @@ fn list_agents(
     adapter.check_deadline()?;
     // A session with no chair yet still lists; it has no one to report to.
     let chair = swarm::store::orchestrator_of(connection, session_id).ok();
-    let chair_listed = rows
-        .iter()
-        .zip(&alive)
-        .any(|(row, alive)| Some(&row.id) == chair.as_ref() && *alive == Some(true));
+    let mut chair_idle = false;
     let mut agents = Vec::new();
     for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
         let (screen, detail, prompt) = match screen {
@@ -2056,9 +2084,13 @@ fn list_agents(
         // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
         // so the listing it polls rings a due message again once the pane shows it idle. A
         // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
-        if screen == Some(swarm::screen::ScreenState::Idle)
+        let idle = screen == Some(swarm::screen::ScreenState::Idle)
             && prompt.is_none()
-            && !matches!(state.as_deref(), Some("working" | "waiting"))
+            && !matches!(state.as_deref(), Some("working" | "waiting"));
+        if Some(&row.id) == chair.as_ref() {
+            chair_idle = idle;
+        }
+        if idle
             && let Some(pane) = row.pane.as_deref()
             && let Err(error) = rering_if_due(
                 connection,
@@ -2115,8 +2147,9 @@ fn list_agents(
     // The app runs no `swarm sweep`, so its listing also settles rings and reports lost messages
     // and stalls, after its state writes. The app kills the listing at 20 s, so none of its rings
     // waits for proof; the next pass settles them. A report rings the chair's stored pane, which a
-    // restarted tmux or Herdr server can give to another pane, so it waits for a listing that
-    // shows the chair's pane.
+    // restarted tmux or Herdr server can give to another pane, and its Enter would answer a
+    // question on the chair's screen, so it waits for a listing that shows the chair's pane idle,
+    // the same check as the re-ring above.
     if let Err(error) = settle_rings(
         connection,
         root,
@@ -2127,7 +2160,7 @@ fn list_agents(
     ) {
         eprintln!("swarm: {error}");
     }
-    if chair_listed {
+    if chair_idle {
         if let Err(error) = report_lost(connection, root, &adapter.name, session_id, Proof::Later) {
             eprintln!("swarm: {error}");
         }
@@ -4294,8 +4327,8 @@ mod tests {
         );
     }
 
-    /// A report of a lost message that fails to send, here because the chair has no pane yet, is
-    /// sent by a later pass. Its message is past its last ring, so no ring would find it again.
+    /// A report of a lost message that a pass cannot send, here because the chair has no pane yet,
+    /// is sent by a later pass. Its message is past its last ring, so no ring would find it again.
     #[test]
     fn a_lost_message_report_that_failed_to_send_is_sent_by_a_later_pass() {
         let (root, mut connection, session) = ring_session(
@@ -4304,6 +4337,7 @@ mod tests {
             "ring = true",
             include_str!("../tests/fixtures/screens/agy-idle.txt"),
         );
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "agy").unwrap();
         let ask = swarm::store::send_message(
             &mut connection,
             &root,
@@ -4414,6 +4448,7 @@ mod tests {
             include_str!("../tests/fixtures/screens/claude-idle.txt"),
         );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
         let ask = swarm::store::send_message(
             &mut connection,
             &root,
@@ -4564,6 +4599,7 @@ mod tests {
             include_str!("../tests/fixtures/screens/claude-idle.txt"),
         );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
         let ask = swarm::store::send_message(
             &mut connection,
             &root,
@@ -4609,11 +4645,13 @@ mod tests {
             "ring = true",
             include_str!("../tests/fixtures/screens/agy-idle.txt"),
         );
-        // The chair's pane shows no Herdr status, so its own ring is unchecked and quick.
+        // The chair's screen reads idle, so a report may ring it.
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "agy").unwrap();
         send_task(&root, &mut connection, &session);
         let backdate =
-            "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61";
+            "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61
+             WHERE recipient_id = 'coder'";
         connection.execute(backdate, []).unwrap();
         let adapter = swarm::adapter::load(&root, "fake").unwrap();
 
@@ -4661,9 +4699,14 @@ mod tests {
     /// the chair's pane.
     #[test]
     fn a_listing_sends_no_report_while_the_chairs_pane_is_not_listed() {
-        let (root, mut connection, session) =
-            ring_session("stall-listing", None, "ring = true", "");
+        let (root, mut connection, session) = ring_session(
+            "stall-listing",
+            None,
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
         let ask = send_task(&root, &mut connection, &session);
         connection
             .execute_batch(
@@ -4687,12 +4730,67 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// A report rings the chair, and its Enter would answer a question on the chair's screen. So
+    /// the listing and the sweep send a report only while the chair's screen reads idle, and a
+    /// later pass sends it.
+    #[test]
+    fn a_report_waits_until_the_chairs_screen_reads_idle() {
+        let (root, mut connection, session) = ring_session(
+            "report-idle",
+            Some("claude"),
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-question.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute_batch(
+                "UPDATE message SET delivery = 'hook', rings = 1, rung_at = unixepoch() - 30,
+                                    seen_at = unixepoch() - 20",
+            )
+            .unwrap();
+        let now = unix_now().unwrap();
+        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
+        assert!(chair_mail(&connection, &session).is_empty());
+
+        std::fs::write(
+            root.join("screen"),
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        )
+        .unwrap();
+        assert_eq!(
+            swept(&mut connection, &root, &adapter, &session),
+            [format!("stall coder unacked {ask}")]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// `swarm sweep` sends the chair one message for each stall kind of a child, and no second
     /// one for the same stall (ADR 0041).
     #[test]
     fn sweep_reports_each_stall_to_the_chair_once() {
-        let (root, mut connection, session) = ring_session("stall", None, "ring = true", "");
+        let (root, mut connection, session) = ring_session(
+            "stall",
+            None,
+            "ring = true",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
         let ask = send_task(&root, &mut connection, &session);
         // The ring started a turn half a minute ago; the coder read the task, then got done.
         connection
