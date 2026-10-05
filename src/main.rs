@@ -1893,9 +1893,14 @@ fn report_stalls(
     let mut lines = Vec::new();
     for (agent, what, seq) in swarm::store::stalls(connection, session_id)? {
         let body = match what {
-            "unacked" => format!("{agent} is done but has not acked message {seq}"),
-            _ => format!("{agent} finished its turn after message {seq} and sent nothing back"),
+            swarm::store::StallKind::Unacked => {
+                format!("{agent} is done but has not acked message {seq}")
+            }
+            swarm::store::StallKind::Silent => {
+                format!("{agent} finished its turn after message {seq} and sent nothing back")
+            }
         };
+        let what = what.as_str();
         let kind = format!("stall:{what}:{seq}");
         if report(
             connection,

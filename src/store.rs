@@ -670,8 +670,25 @@ pub fn messages(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// A stalled child, what stalled it (`unacked` or `silent`), and the message it is about.
-pub type Stall = (String, &'static str, i64);
+/// What stalled a child (ADR 0041).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StallKind {
+    Unacked,
+    Silent,
+}
+
+impl StallKind {
+    /// The name in the report kind `stall:<name>:<seq>` and in the sweep line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StallKind::Unacked => "unacked",
+            StallKind::Silent => "silent",
+        }
+    }
+}
+
+/// A stalled child, what stalled it, and the message it is about.
+pub type Stall = (String, StallKind, i64);
 
 /// The stalls of a session's children that no report names yet, as (agent, what, seq) (ADR
 /// 0041). `unacked`: the child is done, and the oldest message it read but did not ack was read
@@ -706,7 +723,7 @@ pub fn stalls(
             )
             .optional()?;
         let stall = match unacked {
-            Some((seq, seen_at)) if seen_at < done_at => Some(("unacked", seq)),
+            Some((seq, seen_at)) if seen_at < done_at => Some((StallKind::Unacked, seq)),
             _ => connection
                 .query_row(
                     "SELECT seq FROM message AS inbound
@@ -724,7 +741,7 @@ pub fn stalls(
                     |row| row.get(0),
                 )
                 .optional()?
-                .map(|seq| ("silent", seq)),
+                .map(|seq| (StallKind::Silent, seq)),
         };
         let Some((what, seq)) = stall else {
             continue;
@@ -732,7 +749,7 @@ pub fn stalls(
         let reported: bool = connection.query_row(
             "SELECT EXISTS (SELECT 1 FROM message
                             WHERE session_id = ?1 AND sender_id = ?2 AND kind = ?3)",
-            (session_id, &agent, format!("stall:{what}:{seq}")),
+            (session_id, &agent, format!("stall:{}:{seq}", what.as_str())),
             |row| row.get(0),
         )?;
         if !reported {
@@ -1843,7 +1860,7 @@ mod tests {
         set_state(&connection, SESSION, CODER, "done", "hook", None, now).unwrap();
         assert_eq!(
             stalls(&connection, SESSION).unwrap(),
-            [(CODER.to_string(), "unacked", ask)]
+            [(CODER.to_string(), StallKind::Unacked, ask)]
         );
         send(
             &mut connection,
@@ -1857,7 +1874,7 @@ mod tests {
         ack(&connection, SESSION, ask, CODER).unwrap();
         assert_eq!(
             stalls(&connection, SESSION).unwrap(),
-            [(CODER.to_string(), "silent", ask)]
+            [(CODER.to_string(), StallKind::Silent, ask)]
         );
         send(
             &mut connection,
