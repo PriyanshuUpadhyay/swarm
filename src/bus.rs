@@ -1106,7 +1106,8 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
             groups.push(serde_json::json!({"hooks": [guard_handler(provider, event)]}));
             added = true;
         }
-        // A CLI that times the hook out first lets the call through (ADR 0040).
+        // A CLI that times the hook out before the runner answers lets the call through, and
+        // swarm cannot hash a Codex handler whose timeout the file does not state (ADR 0040).
         for handler in handlers.into_iter().filter(|handler| {
             handler["timeout"]
                 .as_u64()
@@ -1118,7 +1119,7 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
                 found: handler.to_string(),
                 wanted: guard_handler(provider, event).to_string(),
                 fix: format!(
-                    "set its timeout to {} or more in {file}, so the CLI waits for the answer",
+                    "set its timeout to {} or more in {file}, so the CLI waits for the runner's answer and swarm can check and trust the handler",
                     crate::guard::REGISTRATION_TIMEOUT
                 ),
             });

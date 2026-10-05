@@ -751,7 +751,8 @@ fn guard_status(
             && files().all(|(path, provider)| !swarm::bus::guard_registered(path, provider));
     }
     files().all(|(path, provider)| {
-        swarm::bus::guard_hooks_plan(path, provider).is_ok_and(|plan| plan.after == plan.before)
+        swarm::bus::guard_hooks_plan(path, provider)
+            .is_ok_and(|plan| plan.conflicts.is_empty() && plan.after == plan.before)
     }) && homes.iter().all(|home| {
         let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
         let entries = swarm::bus::codex_guard_trust(home, &hooks);

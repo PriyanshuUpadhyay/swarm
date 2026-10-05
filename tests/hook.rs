@@ -496,6 +496,17 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
         stdout(&again),
         "swarm's hooks are already set up. No file changes.\n"
     );
+    // A guard handler with too short a timeout is a conflict, and status says it is not set up.
+    let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
+    std::fs::write(
+        home.join(".claude/settings.json"),
+        settings.replace("\"timeout\": 10", "\"timeout\": 3"),
+    )
+    .unwrap();
+    let status = hooks(exe, &home, &["status", "--json"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["guard"], false, "{status}");
+    std::fs::write(home.join(".claude/settings.json"), settings).unwrap();
     // With the list gone, the registrations left behind would block every call, so status says so.
     let list = std::fs::read(home.join(".swarm/guards.json")).unwrap();
     std::fs::remove_file(home.join(".swarm/guards.json")).unwrap();
