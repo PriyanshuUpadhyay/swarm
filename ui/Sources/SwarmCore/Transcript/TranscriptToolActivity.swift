@@ -102,7 +102,8 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     /// The result says the step failed: a non-zero exit code, a Codex code-mode command's
     /// `Script failed` header, or an exec_command that the script caught as rejected
     /// (`Promise.allSettled` prints `"status":"rejected"`). Another tool's text can hold those
-    /// words, so only a command in code-mode shape counts.
+    /// words, so only a command in code-mode shape counts. O(output length) on each read; the row
+    /// builder reads it once per finished tool and keeps the answer in `state`, so no view reads it.
     public var reportsFailure: Bool {
         if (exitCode ?? 0) != 0 { return true }
         guard command != nil, let output, let body = Self.codeModeOutput(output) else { return false }
