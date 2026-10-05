@@ -3,6 +3,8 @@ pub struct Adapter {
     pub name: String,
     /// A multi-session read sets this so adapter scripts see that session's UI caller.
     pub session_id: Option<String>,
+    /// A batch session shares this deadline across all adapter reads.
+    pub deadline: Option<std::time::Instant>,
     pub caller: String,
     pub spawn: String,
     pub ring: String,
@@ -81,6 +83,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
     let adapter = Adapter {
         name: name.to_string(),
         session_id: None,
+        deadline: None,
         caller: take("self")?,
         spawn: take("spawn")?,
         ring: take("ring")?,
@@ -160,6 +163,17 @@ impl Adapter {
             })?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
+        if let Some(deadline) = self.deadline {
+            self.check_deadline()?;
+            return self
+                .read_bounded(
+                    line,
+                    vars,
+                    deadline.saturating_duration_since(std::time::Instant::now()),
+                )
+                .map(|text| text.trim().to_string())
+                .map_err(|error| format!("{verb} failed: {error}").into());
+        }
         let output = self.command(line, vars).output()?;
         if !output.status.success() {
             return Err(format!(
@@ -175,7 +189,7 @@ impl Adapter {
     /// longer than `timeout`. The listing calls it once per live agent, so a slow pane must not
     /// hold the listing up.
     pub fn screen(&self, vars: &[(&str, &str)], timeout: std::time::Duration) -> Option<String> {
-        self.read_bounded(self.screen.as_ref()?, vars, timeout)
+        self.read_bounded(self.screen.as_ref()?, vars, timeout).ok()
     }
 
     /// The `capture` verb's output under the same limit as `screen`.
@@ -184,7 +198,21 @@ impl Adapter {
         vars: &[(&str, &str)],
         timeout: std::time::Duration,
     ) -> Option<String> {
-        self.read_bounded(&self.capture, vars, timeout)
+        self.read_bounded(&self.capture, vars, timeout).ok()
+    }
+
+    pub fn check_deadline(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "adapter session timed out",
+            )
+            .into());
+        }
+        Ok(())
     }
 
     fn read_bounded(
@@ -192,18 +220,35 @@ impl Adapter {
         line: &str,
         vars: &[(&str, &str)],
         timeout: std::time::Duration,
-    ) -> Option<String> {
+    ) -> Result<String, Box<dyn std::error::Error>> {
         use std::os::unix::process::CommandExt;
+        self.check_deadline()?;
+        let started = std::time::Instant::now();
+        let deadline = self
+            .deadline
+            .map_or(started + timeout, |session| session.min(started + timeout));
         // Its own process group, so the deadline can also stop a grandchild that holds stdout.
         let mut child = self
             .command(line, vars)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(if self.deadline.is_some() {
+                std::process::Stdio::piped()
+            } else {
+                std::process::Stdio::null()
+            })
             .process_group(0)
-            .spawn()
-            .ok()?;
+            .spawn()?;
         let group = child.id() as i32;
-        let mut stdout = child.stdout.take()?;
+        let errors = child.stderr.take().map(|mut stderr| {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let mut text = String::new();
+                let _ = std::io::Read::read_to_string(&mut stderr, &mut text);
+                let _ = sender.send(text);
+            });
+            receiver
+        });
+        let mut stdout = child.stdout.take().expect("piped stdout");
         // The read runs apart from the deadline: a child that exits while a grandchild keeps the
         // pipe open would otherwise block read_to_string past it.
         let (sender, output) = std::sync::mpsc::channel();
@@ -212,7 +257,6 @@ impl Adapter {
             let read = std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text);
             let _ = sender.send(read);
         });
-        let deadline = std::time::Instant::now() + timeout;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break Some(status),
@@ -240,7 +284,27 @@ impl Adapter {
         kill_group(group);
         let _ = child.kill();
         let _ = child.wait();
-        text
+        self.check_deadline()?;
+        match status {
+            Some(status) if !status.success() => {
+                let detail = errors
+                    .and_then(|errors| {
+                        errors
+                            .recv_timeout(
+                                deadline.saturating_duration_since(std::time::Instant::now()),
+                            )
+                            .ok()
+                    })
+                    .unwrap_or_default();
+                Err(format!("adapter command failed: {}", detail.trim()).into())
+            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "adapter read timed out",
+            )
+            .into()),
+            _ => text.ok_or_else(|| "adapter output unavailable".into()),
+        }
     }
 
     pub fn attach(

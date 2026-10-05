@@ -1356,6 +1356,7 @@ fn list_agents(
     let listing = match adapter.run("list", &[]) {
         Ok(listing) => Some(listing),
         Err(error) => {
+            adapter.check_deadline()?;
             eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
             None
         }
@@ -1478,10 +1479,48 @@ fn list_agents(
             prompt,
         });
     }
+    adapter.check_deadline()?;
     return Ok(AgentListOutput {
         agents,
         attachable: adapter.attach.is_some(),
     });
+}
+
+fn all_agent_listings(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    budget: std::time::Duration,
+) -> Result<std::collections::BTreeMap<String, AgentListOutput>, Box<dyn std::error::Error>> {
+    let mut listings = std::collections::BTreeMap::new();
+    let deadline = std::time::Instant::now() + budget;
+    let sessions: Vec<_> = swarm::store::sessions(connection)?
+        .into_iter()
+        .filter(|session| {
+            session.agents > 0
+                && session
+                    .adapter
+                    .as_deref()
+                    .is_some_and(|name| !name.trim().is_empty())
+        })
+        .collect();
+    for (index, session) in sessions.iter().enumerate() {
+        let adapter = session.adapter.as_deref().expect("filtered adapter").trim();
+        let listing = swarm::adapter::load(&root, adapter).and_then(|mut adapter| {
+            adapter.session_id = Some(session.id.clone());
+            let now = std::time::Instant::now();
+            adapter.deadline = Some(
+                now + deadline.saturating_duration_since(now) / (sessions.len() - index) as u32,
+            );
+            list_agents(connection, root, &session.id, &adapter)
+        });
+        match listing {
+            Ok(listing) => {
+                listings.insert(session.id.clone(), listing);
+            }
+            Err(error) => eprintln!("swarm: {}: {error}", session.id),
+        }
+    }
+    Ok(listings)
 }
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -1783,30 +1822,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
         && all == "--all"
     {
-        let mut listings = std::collections::BTreeMap::new();
-        for session in swarm::store::sessions(&connection)? {
-            if session.agents == 0 {
-                continue;
-            }
-            let Some(adapter) = session
-                .adapter
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            else {
-                continue;
-            };
-            let listing = swarm::adapter::load(&root, adapter).and_then(|mut adapter| {
-                adapter.session_id = Some(session.id.clone());
-                list_agents(&mut connection, &root, &session.id, &adapter)
-            });
-            match listing {
-                Ok(listing) => {
-                    listings.insert(session.id, listing);
-                }
-                Err(error) => eprintln!("swarm: {}: {error}", session.id),
-            }
-        }
+        // SwarmCLIBus gives CapturedProcess 20 s; reserve 2 s for startup, DB work, and JSON.
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(18))?;
         return print_json(&listings);
     }
     if let [cmd, rest @ ..] = args
@@ -2306,6 +2324,54 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_omits_slow_sessions_and_keeps_fast_sessions_within_budget() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-batch-deadline-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let mut ids = Vec::new();
+        for (index, (name, list, screen)) in [
+            ("slow-list", "sleep 1; printf pane", "true"),
+            ("slow-screen", "printf pane", "sleep 1"),
+            ("fast", "printf pane", "true"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            std::fs::write(root.join("adapters").join(format!("{name}.conf")), format!(
+                "self = true\nspawn = true\nring = true\nlist = {list}\nclose = true\ncapture = true\nscreen = {screen}\n"
+            )).unwrap();
+            let session =
+                swarm::store::create_session(&connection, "lane", &root, None, Some(name)).unwrap();
+            swarm::store::add_agent(&connection, &session, "coder", "code").unwrap();
+            swarm::store::set_pane(&connection, &session, "coder", "pane").unwrap();
+            // The hung sessions run first, so they cannot starve the healthy session behind them.
+            connection
+                .execute(
+                    "UPDATE session SET created_at = ?1 WHERE id = ?2",
+                    rusqlite::params![3 - index as i64, session],
+                )
+                .unwrap();
+            ids.push(session);
+        }
+        let started = std::time::Instant::now();
+        let listings = all_agent_listings(
+            &mut connection,
+            &root,
+            std::time::Duration::from_millis(180),
+        )
+        .unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert!(!listings.contains_key(&ids[0]));
+        assert!(!listings.contains_key(&ids[1]));
+        assert_eq!(listings[&ids[2]].agents.len(), 1);
+        // The single-session list keeps its original unbounded list and bounded screen behavior.
+        let adapter = swarm::adapter::load(&root, "slow-list").unwrap();
+        assert!(list_agents(&mut connection, &root, &ids[0], &adapter).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     const ORCHESTRATOR: &str = "orchestrator";
     const CODER: &str = "coder";
