@@ -173,34 +173,68 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return nil
     }
 
-    /// The `cmd` string of each `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` in a Codex
-    /// code-mode script, decoded as a JSON string, with each other `tools.name(` call outside a cmd
-    /// literal as `name(…)`,
-    /// in script order and joined by newlines; nil when it has no exec_command.
+    /// Each `tools.name(` call outside a string literal of a Codex code-mode script, in script order
+    /// and joined by newlines: an `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` as its cmd
+    /// decoded as a JSON string, any other call, and an exec_command whose cmd is no double-quoted
+    /// literal, as `name(…)`; nil when no exec_command has a cmd literal.
     static func execCommands(inScript script: String) -> String? {
-        var steps: [(at: String.Index, text: String)] = []
-        var literals: [Range<String.Index>] = []
+        var steps: [String] = []
+        var hasCommand = false
         var rest = script[...]
-        while let call = rest.range(of: "exec_command({") {
-            rest = rest[call.upperBound...]
-            let head = rest.drop(while: \.isWhitespace)
-            let key = ["cmd:", "\"cmd\":"].first { head.hasPrefix($0) }
-            guard let key else { continue }
-            let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
-            guard value.first == "\"", let literal = stringLiteral(at: value) else { continue }
-            steps.append((call.lowerBound, literal.text))
-            literals.append(value.startIndex..<literal.end)
-        }
-        guard !steps.isEmpty else { return nil }
-        rest = script[...]
-        while let call = rest.range(of: "tools.") {
-            rest = rest[call.upperBound...]
+        while let first = rest.first {
+            if first == "\"" || first == "'" || first == "`" {
+                rest = rest[skipLiteral(rest)...]
+                continue
+            }
+            guard rest.hasPrefix("tools.") else {
+                rest = rest.dropFirst()
+                continue
+            }
+            rest = rest.dropFirst("tools.".count)
             let name = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
-            guard !name.isEmpty, name != "exec_command", rest.dropFirst(name.count).first == "(",
-                  !literals.contains(where: { $0.contains(call.lowerBound) }) else { continue }
-            steps.append((call.lowerBound, "\(name)(…)"))
+            guard !name.isEmpty, rest.dropFirst(name.count).first == "(" else { continue }
+            rest = rest.dropFirst(name.count + 1)
+            if name == "exec_command", let literal = cmdLiteral(rest) {
+                steps.append(literal.text)
+                hasCommand = true
+                rest = rest[literal.end...]
+            } else {
+                steps.append("\(name)(…)")
+            }
         }
-        return steps.sorted { $0.at < $1.at }.map(\.text).joined(separator: "\n")
+        return hasCommand ? steps.joined(separator: "\n") : nil
+    }
+
+    /// The decoded `"…"` value of a `{cmd:` or `{"cmd":` argument that `args` starts with.
+    private static func cmdLiteral(_ args: Substring) -> (text: String, end: String.Index)? {
+        let object = args.drop(while: \.isWhitespace)
+        guard object.first == "{" else { return nil }
+        let head = object.dropFirst().drop(while: \.isWhitespace)
+        guard let key = ["cmd:", "\"cmd\":"].first(where: { head.hasPrefix($0) }) else { return nil }
+        let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
+        guard value.first == "\"" else { return nil }
+        return stringLiteral(at: value)
+    }
+
+    /// The index after the JavaScript string literal that `text` starts with. A `'` or `"` literal
+    /// also ends at a line break, as in JavaScript, so a stray quote hides at most one line.
+    /// ponytail: a template's `${…}` is skipped as text; parse it when a call inside one must show.
+    private static func skipLiteral(_ text: Substring) -> String.Index {
+        let quote = text.first
+        var escaped = false
+        for index in text.indices.dropFirst() {
+            let char = text[index]
+            if escaped {
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else if char == quote {
+                return text.index(after: index)
+            } else if char.isNewline, quote != "`" {
+                return index
+            }
+        }
+        return text.endIndex
     }
 
     /// The double-quoted literal that `text` starts with, decoded, and the index after its closing
