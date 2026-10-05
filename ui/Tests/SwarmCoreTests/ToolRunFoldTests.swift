@@ -121,12 +121,21 @@ struct ToolRunFoldTests {
         #expect(!ToolRunFold.defaultExpanded([hidden("reminder"), thought("plan"), tool("read")]))
     }
 
-    @Test("Only a trailing fold with a failed step is the live fold that a failure opened")
-    func liveFailedFold() {
+    @Test("Only a new failure in the trailing fold is announced: not after Load earlier, not after the owner's choice")
+    func liveFailure() {
+        func failure(_ rows: [TranscriptRow], _ overrides: [String: Bool] = [:]) -> String? {
+            ToolRunFold.liveFailureID(in: ToolRunFold.items(in: rows), overrides: overrides)
+        }
         let failing = [prompt(), tool("read"), tool("make", state: .failed)]
-        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: failing)) == "fold:read")
-        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: failing + [reply("answer")])) == nil)
-        #expect(ToolRunFold.liveFailedFoldID(in: ToolRunFold.items(in: [prompt(), tool("read"), tool("grep")])) == nil)
+        #expect(failure(failing) == "make")
+        #expect(failure(failing + [reply("answer")]) == nil)
+        #expect(failure([prompt(), tool("read"), tool("grep")]) == nil)
+        // Load earlier moves the fold id to an earlier step, but the failure is the same one.
+        let prepended = [tool("older")] + failing.dropFirst()
+        #expect(failure(prepended) == "make")
+        // The owner closed the fold under its old id, so the fold stays closed and says nothing.
+        #expect(failure(prepended, ["fold:read": false]) == nil)
+        #expect(failure(failing + [tool("test", state: .failed)]) == "test")
     }
 
     @Test("Rings and thoughts alone do not fold, and a ring that starts a turn is prose")

@@ -230,8 +230,8 @@ struct TranscriptView<Composer: View>: View {
             }
         }
         // A failed step opens its live fold, which VoiceOver does not see by itself.
-        .onChange(of: ToolRunFold.liveFailedFoldID(in: foldedItems)) { _, id in
-            guard let id, isVisible, foldOverrides[id] == nil else { return }
+        .onChange(of: ToolRunFold.liveFailureID(in: foldedItems, overrides: foldOverrides)) { _, id in
+            guard id != nil, isVisible else { return }
             AccessibilityNotification.Announcement("A step failed, so its steps are shown").post()
         }
         .onChange(of: foldMatchID) { _, id in

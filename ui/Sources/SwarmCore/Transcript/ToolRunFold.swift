@@ -93,12 +93,15 @@ public enum ToolRunFold {
             || rows.prefix { $0.tool == nil }.count(where: { !$0.isHiddenByDefault }) >= 2
     }
 
-    /// The id of the trailing fold when a failed step opens it: the live run of a running turn,
-    /// so the view can say it opened. An earlier fold with a failure was opened before.
-    public static func liveFailedFoldID(in items: [Item]) -> String? {
-        guard let last = items.last, case .fold(let rows) = last, rows.contains(where: { $0.tool?.state == .failed })
+    /// The newest failed step of the trailing fold, the live run of a running turn, so the view can
+    /// say the failure opened the fold. An earlier fold with a failure was opened before. Nil when
+    /// the owner chose the fold's state under any step's fold id, as `isExpanded` reads it. It is the
+    /// step's id, not the fold's, because Load earlier moves the fold id and adds no failure.
+    public static func liveFailureID(in items: [Item], overrides: [String: Bool]) -> String? {
+        guard let last = items.last, case .fold(let rows) = last,
+              !rows.contains(where: { overrides["fold:" + $0.eventID] != nil })
         else { return nil }
-        return last.id
+        return rows.last { $0.tool?.state == .failed }?.eventID
     }
 
     public struct NameCount: Hashable, Sendable {
