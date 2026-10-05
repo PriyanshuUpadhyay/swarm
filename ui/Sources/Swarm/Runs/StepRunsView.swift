@@ -62,7 +62,7 @@ struct StepRunsView: View {
                     scanNotice = scan.notice
                     closedRead = closed != nil
                     error = nil
-                    if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: scan.runs, includeClosed: showClosed) {
+                    if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: scan, includeClosed: showClosed) {
                         choose(nil)
                         notice = "This run moved or was removed."
                     }

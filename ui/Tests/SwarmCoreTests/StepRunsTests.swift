@@ -312,12 +312,15 @@ struct StepRunsTests {
             == "flow run 2026-10-05-login, waiting: Graph from Uses, table, or a file?, 1 of 2 done")
     }
 
-    @Test("A chosen closed run is not gone while the scan leaves closed runs out")
+    @Test("A chosen run is not gone while the scan leaves closed runs out or cannot read it")
     func chosenClosedRun() {
         let closedID = "tmp/flow/_closed/2026-09-30-old"
-        #expect(!StepRuns.isGone(closedID, closed: true, from: [], includeClosed: false))
-        #expect(StepRuns.isGone(closedID, closed: true, from: [], includeClosed: true))
-        #expect(StepRuns.isGone("tmp/flow/2026-10-05-moved", closed: false, from: [], includeClosed: false))
+        #expect(!StepRuns.isGone(closedID, closed: true, from: StepRunScan(), includeClosed: false))
+        #expect(StepRuns.isGone(closedID, closed: true, from: StepRunScan(), includeClosed: true))
+        #expect(StepRuns.isGone("tmp/flow/2026-10-05-moved", closed: false, from: StepRunScan(), includeClosed: false))
+        // A run whose files cannot be read now is still there; the view keeps it and shows "Can't read".
+        let locked = StepRunScan(unreadable: ["tmp/flow/2026-10-05-locked"])
+        #expect(!StepRuns.isGone("tmp/flow/2026-10-05-locked", closed: false, from: locked, includeClosed: false))
     }
 
     private func write(_ folder: URL, _ files: [String: String]) throws {
