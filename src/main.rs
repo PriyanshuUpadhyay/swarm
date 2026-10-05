@@ -1752,8 +1752,9 @@ fn settle_rings(
         }
         let provider = swarm::store::provider_of(connection, session_id, &agent)?;
         let provider = provider.as_deref();
-        // A failed read proves nothing either way, so only the deadline can settle the ring.
-        let read = match swarm::store::pane_of(connection, session_id, &agent)? {
+        // A failed capture hides only the screen: the store's hook and read still prove the ring,
+        // and with neither only the deadline settles it.
+        let (rows, screen) = match swarm::store::pane_of(connection, session_id, &agent)? {
             Some(pane) => {
                 let vars = [("pane", pane.as_str())];
                 adapter
@@ -1762,27 +1763,25 @@ fn settle_rings(
                         let screen = screen_of(adapter, &vars, &rows);
                         (rows, screen)
                     })
+                    .unwrap_or_default()
             }
             // No pane is an empty screen: unchecked with no provider, else unconfirmed when late.
-            None => Some((String::new(), Some(String::new()))),
+            None => (String::new(), Some(String::new())),
         };
-        let proven = read.and_then(|(rows, screen)| {
-            let held =
-                provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
-            (!held)
-                .then(|| {
-                    ring_proof(
-                        connection,
-                        session_id,
-                        &agent,
-                        provider,
-                        &rows,
-                        screen.as_deref(),
-                        rung_at,
-                    )
-                })
-                .flatten()
-        });
+        let held = provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
+        let proven = (!held)
+            .then(|| {
+                ring_proof(
+                    connection,
+                    session_id,
+                    &agent,
+                    provider,
+                    &rows,
+                    screen.as_deref(),
+                    rung_at,
+                )
+            })
+            .flatten();
         let late = now - rung_at > RING_TIMEOUT.as_secs() as i64;
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
             continue;
@@ -3860,6 +3859,48 @@ mod tests {
             Some("unconfirmed")
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A failed capture hides only the screen. The store still holds a turn-start hook or a read
+    /// after the ring, so a late pass stores that proof, not unconfirmed (ADR 0041).
+    #[test]
+    fn a_failed_capture_still_finds_the_hook_or_the_read_in_the_store() {
+        let proofs = [
+            (
+                "hook",
+                "UPDATE agent SET state = 'working', state_source = 'hook', state_at = unixepoch()",
+            ),
+            ("seen", "UPDATE message SET seen_at = unixepoch()"),
+        ];
+        for (proof, update) in proofs {
+            let (root, mut connection, session) =
+                ring_session("capture-fails-proof", Some("claude"), "ring = true", "");
+            let ask = swarm::store::send_message(
+                &mut connection,
+                &root,
+                &session,
+                ORCHESTRATOR,
+                CODER,
+                "ask",
+                "task",
+            )
+            .unwrap();
+            connection
+                .execute(
+                    "UPDATE message SET rung_at = unixepoch() - ?1, rings = 1",
+                    [RING_TIMEOUT.as_secs() + 1],
+                )
+                .unwrap();
+            connection.execute(update, []).unwrap();
+            std::fs::remove_file(root.join("screen")).unwrap();
+            let adapter = swarm::adapter::load(&root, "fake").unwrap();
+            settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+            assert_eq!(
+                delivery_of(&connection, &session, ask).as_deref(),
+                Some(proof)
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// A ring whose Enter was lost sits in the input box. Swarm presses Enter again for each CLI
