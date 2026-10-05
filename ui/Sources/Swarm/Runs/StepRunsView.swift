@@ -216,7 +216,7 @@ private struct StepRunGraph: View {
         }
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Button("Runs", systemImage: "chevron.left", action: back).buttonStyle(.borderless)
+                Button("Runs", systemImage: "chevron.backward", action: back).buttonStyle(.borderless)
                 Text(verbatim: run.skill).font(.caption).foregroundStyle(.secondary)
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
