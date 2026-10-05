@@ -1,14 +1,16 @@
 import SwiftUI
 import SwarmCore
 
-/// A finished run of tools in an ended turn, folded into one line: chevron, status, "N tools", the
-/// tool names, and the total time. Open, it shows each tool row under the line.
+/// A run of steps between two prose rows, folded into one line (ADR 0047): chevron, status, the
+/// step counts, failures in the failed color, the newest step while one runs, and the total time.
+/// Open, it shows each step's own row under the line.
 struct TranscriptRunFoldRow<Child: View>: View {
     let rows: [TranscriptRow]
     @Binding var expanded: Bool
     @ViewBuilder let child: (TranscriptRow) -> Child
 
     var body: some View {
+        let summary = ToolRunFold.summary(of: rows)
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             Button { expanded.toggle() } label: {
                 HStack(spacing: DesignTokens.Spacing.s) {
@@ -16,14 +18,22 @@ struct TranscriptRunFoldRow<Child: View>: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: DesignTokens.Size.glyphSlot)
-                    TranscriptStatusGlyph(state: .finished)
-                    Text(verbatim: "\(rows.count) tools").fontWeight(.semibold).lineLimit(1).layoutPriority(1)
-                    Text(verbatim: ToolRunFold.summary(of: rows))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    TranscriptStatusGlyph(state: summary.failed > 0 ? .failed : summary.isRunning ? .waiting : .finished)
+                    Text(verbatim: summary.stepsText).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
+                    if summary.failed > 0 {
+                        Text(verbatim: "· \(summary.failed) failed")
+                            .foregroundStyle(DesignTokens.color(.failed))
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+                    if summary.isRunning, !summary.latestTitle.isEmpty {
+                        Text(verbatim: "· now: \(summary.latestTitle)")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                     Spacer(minLength: DesignTokens.Spacing.s)
-                    if let duration = ToolRunFold.totalDuration(of: rows) {
+                    if let duration = summary.duration {
                         Text(verbatim: TranscriptToolActivity.durationLabel(duration))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -33,9 +43,11 @@ struct TranscriptRunFoldRow<Child: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary.accessibilityLabel)
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            .accessibilityHint(expanded ? "Hides the tools" : "Shows the tools")
+            .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
+            .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("transcript-tool-run-fold")
             if expanded {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
@@ -44,11 +56,5 @@ struct TranscriptRunFoldRow<Child: View>: View {
                 .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
             }
         }
-    }
-
-    /// "5 tools, Read 2, Grep, Edit, finished".
-    private var accessibilityLabel: String {
-        let names = ToolRunFold.nameCounts(rows).map { $0.count > 1 ? "\($0.name) \($0.count)" : $0.name }
-        return (["\(rows.count) tools"] + names + ["finished"]).joined(separator: ", ")
     }
 }

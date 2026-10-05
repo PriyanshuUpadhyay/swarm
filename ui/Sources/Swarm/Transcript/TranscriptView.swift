@@ -47,9 +47,9 @@ struct TranscriptView<Composer: View>: View {
     @State private var isSearching = false
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
-    /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
-    @State private var pinned: Set<String> = []
-    @State private var openFolds: Set<String> = []
+    /// The owner's open or closed choice for each fold id; a fold without one takes its default.
+    /// In memory for this chat only (ADR 0047).
+    @State private var foldOverrides: [String: Bool] = [:]
     /// A find match inside a fold; its row queues a scroll to itself once it appears.
     @State private var scrollOnAppearID: String?
     /// A fold child that just appeared for find; the next update scrolls to it.
@@ -160,7 +160,7 @@ struct TranscriptView<Composer: View>: View {
                             case .row(let transcriptRow):
                                 rowView(transcriptRow).upsideDown()
                             case .fold(let group):
-                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id)) { rowView($0) }
+                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id, rows: group)) { rowView($0) }
                                     .upsideDown()
                             }
                         }
@@ -227,7 +227,7 @@ struct TranscriptView<Composer: View>: View {
                 proxy.scrollTo(fold, anchor: .center)
                 proxy.scrollTo(id, anchor: .center)
                 scrollOnAppearID = id
-                openFolds.insert(fold)
+                foldOverrides[fold] = true
             } else {
                 scrollOnAppearID = nil
                 proxy.scrollTo(id, anchor: .center)
@@ -237,9 +237,6 @@ struct TranscriptView<Composer: View>: View {
             guard let id else { return }
             appearedMatchID = nil
             proxy.scrollTo(id, anchor: .center)
-        }
-        .onChange(of: revision, initial: true) {
-            pinned.formUnion(ToolRunFold.openTurnToolIDs(in: rows))
         }
     }
 
@@ -259,20 +256,16 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private var foldedItems: [ToolRunFold.Item] {
-        ToolRunFold.items(in: visibleRows, pinned: pinned)
+        ToolRunFold.items(in: visibleRows)
     }
 
-    private func foldExpanded(_ id: String) -> Binding<Bool> {
+    private func foldExpanded(_ id: String, rows: [TranscriptRow]) -> Binding<Bool> {
         Binding {
-            openFolds.contains(id)
+            foldOverrides[id] ?? ToolRunFold.defaultExpanded(rows)
         } set: { open in
-            if open {
-                openFolds.insert(id)
-            } else {
-                openFolds.remove(id)
-                // A queued find scroll would jump back to its match when the fold opens again.
-                scrollOnAppearID = nil
-            }
+            foldOverrides[id] = open
+            // A queued find scroll would jump back to its match when the fold opens again.
+            if !open { scrollOnAppearID = nil }
         }
     }
 
