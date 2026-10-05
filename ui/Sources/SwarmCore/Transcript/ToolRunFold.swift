@@ -123,7 +123,8 @@ public enum ToolRunFold {
         public var unreported = 0
         /// A tool in the fold still waits for its result.
         public var isRunning = false
-        /// The newest shown step's title, for a running fold.
+        /// The newest waiting tool's title: the step the agent is on while the fold runs. A ring or a
+        /// finished tool after it does not replace it.
         public var latestTitle = ""
         /// The sum of the tool durations; nil when any tool's duration is unknown.
         public var duration: Double?
@@ -185,7 +186,6 @@ public enum ToolRunFold {
         for row in rows where !row.isHiddenByDefault {
             if row.systemKind == TranscriptSystemKind.swarmRing {
                 summary.rings += 1
-                summary.latestTitle = "swarm message"
             }
             guard let tool = row.tool else { continue }
             if tool.name == "sleep" {
@@ -199,14 +199,15 @@ public enum ToolRunFold {
             }
             switch tool.state {
             case .failed: summary.failed += 1
-            case .waiting: summary.isRunning = true
+            case .waiting:
+                summary.isRunning = true
+                let title = tool.headerTitle
+                summary.latestTitle = title.isEmpty ? tool.name : title
             case .interrupted: summary.interrupted += 1
             case .unreported: summary.unreported += 1
             case .finished: break
             }
             total = total.flatMap { sum in tool.duration.map { sum + $0 } }
-            let title = tool.headerTitle
-            summary.latestTitle = title.isEmpty ? tool.name : title
         }
         summary.duration = total
         return summary

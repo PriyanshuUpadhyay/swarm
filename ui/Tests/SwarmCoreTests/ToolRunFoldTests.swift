@@ -180,6 +180,15 @@ struct ToolRunFoldTests {
         #expect(summary.accessibilityLabel == "Steps: 1 command, 1 wait, running, now swarm inbox")
     }
 
+    @Test("A ring or a finished tool after the waiting tool does not replace the step the agent is on")
+    func runningSummaryNamesWaitingTool() {
+        let inbox = tool("inbox", name: "exec", state: .waiting, duration: nil, command: "swarm inbox")
+        let afterRing = ToolRunFold.summary(of: [inbox, ring("ring")])
+        #expect(afterRing.latestTitle == "swarm inbox")
+        #expect(afterRing.accessibilityLabel == "Steps: 1 command, 1 ring, running, now swarm inbox")
+        #expect(ToolRunFold.summary(of: [inbox, tool("read")]).latestTitle == "swarm inbox")
+    }
+
     @Test("A fold of interrupted or unreported tools says so and never draws finished")
     func stoppedSummary() {
         let stopped = ToolRunFold.summary(of: [

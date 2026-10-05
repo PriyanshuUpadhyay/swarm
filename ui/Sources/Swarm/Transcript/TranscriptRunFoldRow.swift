@@ -2,7 +2,7 @@ import SwiftUI
 import SwarmCore
 
 /// A run of steps between two prose rows, folded into one line (ADR 0047): chevron, status, the
-/// step counts, failures in the failed color, the newest step while one runs, and the total time.
+/// step counts, failures in the failed color, the waiting step while one runs, and the total time.
 /// Open, the transcript list draws each step's own row under the line (`ToolRunFold.lines`).
 struct TranscriptRunFoldRow: View {
     let rows: [TranscriptRow]
