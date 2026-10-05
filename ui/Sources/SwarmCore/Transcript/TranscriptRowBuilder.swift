@@ -35,7 +35,7 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var diff: TranscriptDiff? = nil
     public var tool: TranscriptToolActivity? = nil
     public var toolStatus: ToolStatus? = nil
-    /// The parser's `system_message` kind, for `.system` rows.
+    /// The parser's `system_message` kind, for `.system` rows and the `.user` row of a queued prompt.
     public var systemKind: String? = nil
     public var shell: TranscriptShellRun? = nil
     /// Set on `.system` rows whose `systemKind` is "command".
@@ -291,8 +291,10 @@ public enum TranscriptRowBuilder {
         }
         // A ring wakes an idle agent, so it starts a turn then; mid-turn the agent reads it later.
         // A window that starts later in the log (hasOlder) is mid-turn at its start unless its
-        // first turn boundary starts a turn.
-        let firstBoundary = rows.first { $0.kind == .user || $0.startsTurn || $0.endsTurn }
+        // first turn boundary starts a turn. A queued prompt is typed mid-turn, so it is no boundary.
+        let firstBoundary = rows.first {
+            ($0.kind == .user && $0.systemKind != TranscriptSystemKind.queuedPrompt) || $0.startsTurn || $0.endsTurn
+        }
         var turnOpen = hasOlder && (firstBoundary.map(\.endsTurn) ?? true)
         for index in rows.indices {
             if rows[index].systemKind == TranscriptSystemKind.swarmRing, !turnOpen { rows[index].startsTurn = true }
@@ -390,6 +392,7 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
         case .systemMessage(TranscriptSystemKind.queuedPrompt, let text, let meta):
             row = TranscriptRow(kind: .user, text: text, eventID: key(meta, "queued", index))
+            row.systemKind = TranscriptSystemKind.queuedPrompt
         case .systemMessage(_, let text, let meta)
             where text.drop(while: \.isWhitespace).hasPrefix("<task-notification>"):
             // Claude writes a background task's end as a user record or a queued command; show its

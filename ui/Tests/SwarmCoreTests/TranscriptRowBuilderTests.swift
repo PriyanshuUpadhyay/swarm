@@ -659,6 +659,16 @@ struct TranscriptDebugDataTests {
         let running = TranscriptRowBuilder.rows(from: Array(tail.prefix(5)), indexOffset: 0, hasOlder: true)
         #expect(ChairTurn.isActive(running))
 
+        // A prompt the owner queued mid-turn starts no turn, so the ring before it stays mid-turn.
+        let queued = TranscriptRowBuilder.rows(from: Array(tail.prefix(4)) + [
+            .systemMessage(kind: TranscriptSystemKind.queuedPrompt, text: "also check the docs", meta: Meta(uuid: "queued")),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: "ok", meta: Meta()),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+        ], indexOffset: 0, hasOlder: true)
+        #expect(queued.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+        let queuedFolds = ToolRunFold.items(in: queued).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+        #expect(queuedFolds == [["c1:call", "ring-1:ring", "c2:call"]])
+
         let idleWindow = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
             .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
