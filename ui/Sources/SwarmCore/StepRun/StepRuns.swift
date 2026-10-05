@@ -202,8 +202,8 @@ public enum StepRuns {
             let assumed = named.isEmpty && !file.usesNone && index > 0 && file.state != nil
             let needs = assumed ? [parsed[index - 1].id] : named
             var stale: [String] = []
-            if case .active = file.state { stale = try await staleNeeds(file, byID, workspace, &head) }
-            if case .done = file.state { stale = try await staleNeeds(file, byID, workspace, &head) }
+            if case .active = file.state { stale = try await staleNeeds(file, byID, closed, workspace, &head) }
+            if case .done = file.state { stale = try await staleNeeds(file, byID, closed, workspace, &head) }
             let ready = file.state == .open && needs.allSatisfy { need in
                 switch byID[need]?.state { case .done, .skipped: true; default: false }
             }
@@ -220,17 +220,23 @@ public enum StepRuns {
     }
 
     private static func staleNeeds(
-        _ file: Parsed, _ byID: [String: Parsed], _ workspace: String, _ head: inout String??
+        _ file: Parsed, _ byID: [String: Parsed], _ closed: Bool, _ workspace: String, _ head: inout String??
     ) async throws -> [String] {
         var stale: [String] = []
         for use in file.uses {
             guard let used = use.revision, !used.isEmpty, let need = byID[use.name], need.state != nil else { continue }
             if need.revisionIsHead {
+                // A closed run is judged at its close, by the commit its build's `done` line recorded;
+                // later commits are other work. This is the reader's rule, as the kit lists no closed runs.
+                if closed {
+                    if case .done(let recorded) = need.state, !recorded.hasPrefix(used) { stale.append(use.name) }
+                    continue
+                }
                 if head == nil {
                     let result = try? await Git.runRaw(["rev-parse", "HEAD"], in: workspace, timeout: .seconds(5))
                     head = .some(result.flatMap { $0.ok ? String(decoding: $0.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : nil })
                 }
-                // No HEAD answer is no judgment, not a stale mark.
+                // No HEAD answer is no judgment, not a stale mark. Flow keeps the first 12 characters.
                 if let current = head ?? nil, !current.hasPrefix(used) { stale.append(use.name) }
             } else if need.hash != used {
                 stale.append(use.name)

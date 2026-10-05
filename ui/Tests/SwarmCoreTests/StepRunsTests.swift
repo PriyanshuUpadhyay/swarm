@@ -68,6 +68,24 @@ struct StepRunsTests {
         #expect(changed.first?.steps.last?.state == .active(agent: "closer"))
     }
 
+    @Test("A closed run's review is judged against the commit its build recorded, so a later commit does not make it stale")
+    func closedRunAfterNextCommit() async throws {
+        let workspace = try await gitWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let built = try await Shell.check("git", ["rev-parse", "HEAD"], cwd: workspace.path).trimmed.prefix(12)
+        let steps = [
+            "05-build.md": "Status: done \(built)\nUses:\nRevision: HEAD\n",
+            "06-review.md": "Status: done 333333333333\nUses: 05-build@\(built)\n",
+        ]
+        try write(workspace.appendingPathComponent("tmp/flow/_closed/2026-10-01-shipped"), steps)
+        try write(workspace.appendingPathComponent("tmp/flow/2026-10-02-open"), steps)
+        try await commit(workspace, "next")
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: true)
+        func review(closed: Bool) -> StepNode? { runs.first { $0.closed == closed }?.steps.last }
+        #expect(review(closed: true)?.stale == [])
+        #expect(review(closed: false)?.stale == ["05-build"], "an open run still follows HEAD")
+    }
+
     @Test("An older folder with empty Uses lines still draws, with an assumed edge from the previous step")
     func oldFlowFolder() async throws {
         let workspace = try fixture()
