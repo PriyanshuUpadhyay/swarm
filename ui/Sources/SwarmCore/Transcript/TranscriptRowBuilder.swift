@@ -83,6 +83,8 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     /// The text find matches: the row's text plus what the row draws from joined records, such as a
     /// tool's output and diffs or a command's output and skill body. O(total length of that text).
     public var searchText: String {
+        // A ring draws only this line (TranscriptView); its text is one Show Source away.
+        if systemKind == TranscriptSystemKind.swarmRing { return "New swarm message" }
         let diff = tool?.diffs.map { ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n") }
             .joined(separator: "\n")
         return [text, detail, tool?.command, tool?.output, tool?.path, diff, tool?.skillBody,

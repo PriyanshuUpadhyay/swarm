@@ -624,6 +624,8 @@ struct TranscriptDebugDataTests {
         #expect(idle[0].startsTurn)
         #expect(!idle[0].isHiddenByDefault)
         #expect(ChairTurn.isActive(idle))
+        // Find matches what the row draws, so "inbox" has no hit on a ring line.
+        #expect(idle[0].searchText == "New swarm message")
 
         let rows = TranscriptRowBuilder.rows(from: [
             .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
