@@ -112,7 +112,7 @@ pub fn argv(
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
-            let handler = |command: String| serde_json::json!({"hooks": [{"type": "command", "command": command, "timeout": 3}]});
+            let handler = |command: String| serde_json::json!({"hooks": [{"type": "command", "command": command, "timeout": STATE_HOOK_TIMEOUT}]});
             let state = state_hook_command(provider.id())?;
             let mut hooks = serde_json::Map::new();
             for event in CLAUDE_STATE_EVENTS {
@@ -172,7 +172,7 @@ pub fn argv(
                 args.extend([
                     "-c".into(),
                     format!(
-                        "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout=3}}]}}]"
+                        "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout={STATE_HOOK_TIMEOUT}}}]}}]"
                     ),
                 ]);
             }
@@ -1083,6 +1083,7 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
         return Err(format!("swarm: {file} has hooks that is not an object"));
     };
     let mut added = false;
+    let mut conflicts = Vec::new();
     for event in crate::guard::EVENTS {
         let Some(groups) = hooks
             .entry(event)
@@ -1093,12 +1094,34 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
                 "swarm: {file} has hooks.{event} that is not a list"
             ));
         };
-        if !groups
+        let command = guard_command(provider, event);
+        let handlers: Vec<serde_json::Value> = groups
             .iter()
-            .any(|group| has_handler(group, &guard_command(provider, event)))
-        {
+            .filter_map(|group| group["hooks"].as_array())
+            .flatten()
+            .filter(|handler| handler["command"] == command.as_str())
+            .cloned()
+            .collect();
+        if handlers.is_empty() {
             groups.push(serde_json::json!({"hooks": [guard_handler(provider, event)]}));
             added = true;
+        }
+        // A CLI that times the hook out first lets the call through (ADR 0040).
+        for handler in handlers.into_iter().filter(|handler| {
+            handler["timeout"]
+                .as_u64()
+                .is_none_or(|timeout| timeout < crate::guard::REGISTRATION_TIMEOUT)
+        }) {
+            conflicts.push(HookConflict {
+                file: file.clone(),
+                entry: format!("hooks.{event} handler {command:?}"),
+                found: handler.to_string(),
+                wanted: guard_handler(provider, event).to_string(),
+                fix: format!(
+                    "set its timeout to {} or more in {file}, so the CLI waits for the answer",
+                    crate::guard::REGISTRATION_TIMEOUT
+                ),
+            });
         }
     }
     let after = if added {
@@ -1113,12 +1136,12 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
         path: path.to_path_buf(),
         before,
         after,
-        conflicts: Vec::new(),
+        conflicts,
     })
 }
 
 fn agy_group() -> serde_json::Value {
-    let handler = |event: &str| serde_json::json!({"type": "command", "command": shared_hook_command(&format!("agy {event}")), "timeout": 3});
+    let handler = |event: &str| serde_json::json!({"type": "command", "command": shared_hook_command(&format!("agy {event}")), "timeout": STATE_HOOK_TIMEOUT});
     // PostToolUse takes matcher groups; PreInvocation and Stop take a flat handler list.
     // Not PreToolUse: that is AGY's permission gate, which needs a `decision`, and the `{}` that
     // `swarm hook` prints makes AGY refuse every tool call in every AGY session.
@@ -2177,7 +2200,21 @@ mod tests {
         let owned = r#"{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "swarm guard claude PreToolUse", "timeout": 30}]}]}}"#;
         std::fs::write(&path, owned).unwrap();
         let plan = guard_hooks_plan(&path, "claude").unwrap();
-        assert_eq!(plan.after, plan.before);
+        assert_eq!((plan.after == plan.before, plan.conflicts.len()), (true, 0));
+        // A handler the CLI would time out before the runner answers is a conflict with its fix.
+        for short in [r#", "timeout": 3"#, ""] {
+            let text = format!(
+                r#"{{"hooks": {{"PreToolUse": [{{"hooks": [{{"type": "command", "command": "swarm guard claude PreToolUse"{short}}}]}}]}}}}"#
+            );
+            std::fs::write(&path, text).unwrap();
+            let plan = guard_hooks_plan(&path, "claude").unwrap();
+            assert_eq!(plan.conflicts.len(), 1, "{short}");
+            assert!(
+                plan.conflicts[0]
+                    .fix
+                    .starts_with("set its timeout to 10 or more")
+            );
+        }
         for bad in [r#"{"hooks": []}"#, r#"{"hooks": {"PreToolUse": {}}}"#] {
             std::fs::write(&path, bad).unwrap();
             assert!(guard_hooks_plan(&path, "claude").is_err(), "{bad}");

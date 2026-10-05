@@ -32,23 +32,10 @@ struct List {
 struct Rule {
     name: String,
     event: String,
-    #[serde(default)]
-    kind: Kind,
     /// Tool names, matched without case. None matches every tool.
     tools: Option<Vec<String>>,
     command: Vec<String>,
     timeout: Option<u64>,
-}
-
-#[derive(serde::Deserialize, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum Kind {
-    /// A guard that fails blocks the call.
-    #[default]
-    Guard,
-    /// A reminder never blocks: whatever it does, the call goes on. A crash can exit 2 as well
-    /// (`python3` with a missing script does), so a reminder's exit 2 is not a deny.
-    Reminder,
 }
 
 #[derive(Debug, PartialEq)]
@@ -141,11 +128,7 @@ pub fn decide(
     }) {
         let limit = Duration::from_secs(rule.timeout.unwrap_or(RULE_TIMEOUT))
             .min(deadline.saturating_duration_since(Instant::now()));
-        let outcome = run(&rule.command, home, cwd.as_deref(), &input, limit);
-        if rule.kind == Kind::Reminder {
-            continue;
-        }
-        let failure = match outcome {
+        let failure = match run(&rule.command, home, cwd.as_deref(), &input, limit) {
             Outcome::Allow => continue,
             Outcome::Deny(reason) if reason.is_empty() => {
                 return Verdict::Deny(format!("rule {} denied the call", rule.name));
@@ -208,13 +191,14 @@ fn run(
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let input = input.to_string();
     std::thread::spawn(move || stdin.write_all(input.as_bytes()));
-    let stderr = child.stderr.take().expect("stderr is piped");
+    let mut stderr = child.stderr.take().expect("stderr is piped");
     let (sender, reason) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut text = Vec::new();
-        let _ = stderr.take(REASON_MAX).read_to_end(&mut text);
-        let text = String::from_utf8_lossy(&text).into_owned();
-        let _ = sender.send(text);
+        let _ = (&mut stderr).take(REASON_MAX).read_to_end(&mut text);
+        let _ = sender.send(String::from_utf8_lossy(&text).into_owned());
+        // The rest is read and dropped, so a rule that writes more does not die on a closed pipe.
+        let _ = std::io::copy(&mut stderr, &mut std::io::sink());
     });
     let started = Instant::now();
     let status = loop {
@@ -336,18 +320,6 @@ mod tests {
             reason.starts_with("swarm guard: rule gone failed (/h/no-such-rule did not start"),
             "{reason}"
         );
-    }
-
-    #[test]
-    fn a_reminder_that_fails_lets_the_call_through() {
-        // python3 with a missing script exits 2, so a reminder's exit 2 is no deny either.
-        let rules = [
-            rule("r", "exit 1", r#", "kind": "reminder""#),
-            rule("t", "sleep 5", r#", "kind": "reminder", "timeout": 1"#),
-            rule("d", "echo crashed >&2; exit 2", r#", "kind": "reminder""#),
-        ]
-        .join(",");
-        assert_eq!(decide_claude(Some(&list(&rules))), Verdict::Allow);
     }
 
     #[test]
@@ -549,8 +521,22 @@ mod tests {
     }
 
     #[test]
+    fn a_rule_that_writes_much_to_stderr_still_allows_or_denies() {
+        // The shell writes 205 KB itself, so a closed pipe would kill it.
+        let loud = "i=0; while [ $i -lt 5000 ]; do echo 0123456789012345678901234567890123456789 >&2; i=$((i+1)); done";
+        assert_eq!(
+            decide_claude(Some(&list(&rule(
+                "quiet-ok",
+                &format!("{loud}; exit 0"),
+                ""
+            )))),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
     fn a_deny_reason_is_cut_at_64_kib() {
-        let script = "head -c 200000 /dev/zero \\| tr '\\\\0' x >&2; exit 2";
+        let script = "i=0; while [ $i -lt 5000 ]; do echo 0123456789012345678901234567890123456789 >&2; i=$((i+1)); done; exit 2";
         let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("loud", script, "")))) else {
             panic!()
         };

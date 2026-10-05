@@ -39,16 +39,17 @@ crashed. swarm already wrote AGY's hook group and the Codex trust hashes (ADR 00
 
 Chosen: swarm runs the rules and writes the registrations.
 
-- Rule list: `{"rules": [{name, event, kind, tools, command, timeout}]}`. `kind` is `guard` (the
-  default) or `reminder`. `tools` lists tool names, matched without case; absent means every tool.
+- Rule list: `{"rules": [{name, event, tools, command, timeout}]}`. Every rule is a guard.
+  `tools` lists tool names, matched without case; absent means every tool.
   `command` is an argv, with `~/` as HOME and no shell.
 - The list is `~/.swarm/guards.json` for every build and every SWARM_HOME, because the hooks
   that read it are global to each CLI; `SWARM_GUARDS` names another file for tests.
 - A rule reads `{provider, event, tool, input, cwd, session_id}` on stdin and runs in the session's
   folder. Exit 0 allows. Exit 2 denies, with stderr (at most 64 KiB) as the reason. Any other
-  exit, a timeout, or a program that does not start is a failure, and a guard then blocks the
-  call. A reminder never blocks, because a crash can exit 2 too (`python3` with a missing script
-  does). A missing or unparsable list blocks, and so does a rule whose event is not a guard event
+  exit, a timeout, or a program that does not start is a failure, and the call is blocked.
+  Reminder hooks stay in each CLI's own files, where a failure already lets the call through; a
+  reminder kind comes back only when a reminder moves into the runner. A missing or unparsable
+  list blocks, and so does a rule whose event is not a guard event
   or whose `tools` list is empty, because it could never match. A panic in the runner exits 2.
 - The runner has one 8 s deadline under the 10 s registration timeout, because a CLI that times a
   hook out lets the call through.
@@ -58,7 +59,8 @@ Chosen: swarm runs the rules and writes the registrations.
   0034), because a chair that the owner started by hand has no swarm session. Setup writes it only
   when the list exists: a group in each Claude `settings.json`, a group in each Codex home's
   `hooks.json` with its trust in `config.toml`, and an AGY group named `swarm-guard`. It keeps every
-  other group (ADR 0036).
+  other group (ADR 0036). A guard handler of the owner's with no timeout, or one under 10 s, is a
+  conflict with its fix, because the CLI would time it out before the runner answers.
 - A `.swarm` folder that holds only `guards.json` counts as empty for the home claim, because the
   owner's list can arrive before swarm first runs.
 

@@ -562,3 +562,28 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// `SWARM_GUARDS` names the rule list in place of `~/.swarm/guards.json`, for every build.
+#[test]
+fn swarm_guards_names_the_rule_list() {
+    let home = scratch("guards-env");
+    let list = home.join("elsewhere.json");
+    std::fs::write(
+        &list,
+        r#"{"rules": [{"name": "no", "event": "PreToolUse", "command": ["/bin/sh", "-c", "echo from elsewhere >&2; exit 2"]}]}"#,
+    )
+    .unwrap();
+    let payload = r#"{"tool_name": "Bash", "tool_input": {"command": "ls"}}"#;
+    let list_text = list.to_string_lossy();
+    let denied = swarm(
+        &home,
+        &[("SWARM_GUARDS", list_text.as_ref())],
+        &["guard", "codex", "PreToolUse"],
+        payload,
+    );
+    assert_eq!(denied.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&denied.stderr), "from elsewhere\n");
+    let missing = swarm(&home, &[], &["guard", "codex", "PreToolUse"], payload);
+    assert!(String::from_utf8_lossy(&missing.stderr).contains(".swarm/guards.json is missing"));
+    std::fs::remove_dir_all(&home).unwrap();
+}
