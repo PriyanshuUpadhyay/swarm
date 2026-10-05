@@ -702,6 +702,21 @@ struct TranscriptDebugDataTests {
         #expect(idleWindow[0].startsTurn)
     }
 
+    @Test("A Codex log with no turn-started records still starts a turn with a prompt at the log's start or after a turn ends")
+    func codexLogWithoutTurnStarts() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Fix the build", meta: Meta(uuid: "prompt")),
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("make"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+            .agentMessageChunk(text: "Done.", meta: Meta(uuid: "answer")),
+            .turnEnded(durationMs: 1000, reason: .aborted, meta: Meta(uuid: "end")),
+            .userMessageChunk(text: "Try again", meta: Meta(uuid: "retry")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring")),
+        ], marksTurnStarts: true)
+        #expect(rows.filter { $0.kind == .user }.map(\.arrivesMidTurn) == [false, false])
+        #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+    }
+
     @Test("A ring between a tool call and its result does not split them")
     func ringKeepsToolScope() {
         let rows = TranscriptRowBuilder.rows(from: [

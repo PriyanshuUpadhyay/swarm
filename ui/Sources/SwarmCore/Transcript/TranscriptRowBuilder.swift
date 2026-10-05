@@ -142,7 +142,8 @@ public enum TranscriptRowBuilder {
     /// `hasOlder` says the window starts after the log's first entry. `indexOffset` cannot say it:
     /// the reader's tail window starts at index 0 and only goes below 0 on Load earlier.
     /// `marksTurnStarts` says the log writes a turn-started record before each turn's prompt, as
-    /// Codex does; there a user message with none before it is a steer typed mid-turn.
+    /// Codex does; there a user message with none before it is a steer typed mid-turn, unless it
+    /// follows the log's start or a turn end, where no turn is open.
     public static func rows(
         from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0, hasOlder: Bool = false,
         marksTurnStarts: Bool = false
@@ -231,13 +232,16 @@ public enum TranscriptRowBuilder {
         var rows: [TranscriptRow] = []
         var usedIDs = Set<String>()
         var lastSourceID: String?
-        var promptExpected = false
+        // An older Codex CLI writes no turn-started records, so a prompt is also expected where no
+        // turn can be open: at the log's start and after a turn end.
+        var promptExpected = !hasOlder
         for (index, event) in events.enumerated() {
             if joined.contains(index) {
                 lastSourceID = nil
                 continue
             }
             if case .turnStarted = event { promptExpected = true }
+            if case .turnEnded = event { promptExpected = true }
             guard var row = row(from: event, index: index + indexOffset) else { continue }
             // The first user message or ring after a turn-started record starts that turn; a later
             // user message is a steer. A window that starts between the two takes the prompt for a
