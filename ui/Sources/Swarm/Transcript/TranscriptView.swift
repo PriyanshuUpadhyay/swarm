@@ -230,8 +230,8 @@ struct TranscriptView<Composer: View>: View {
             }
         }
         // A failed step opens its live fold, which VoiceOver does not see by itself.
-        .onChange(of: ToolRunFold.liveFailureID(in: foldedItems, overrides: foldOverrides)) { _, id in
-            guard id != nil, isVisible else { return }
+        .onChange(of: loadedLiveFailureID) { old, new in
+            guard ToolRunFold.isNewFailure(from: old, to: new), isVisible else { return }
             AccessibilityNotification.Announcement("A step failed, so its steps are shown").post()
         }
         .onChange(of: foldMatchID) { _, id in
@@ -252,6 +252,12 @@ struct TranscriptView<Composer: View>: View {
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
         .background(matchBackground(transcriptRow.eventID))
+    }
+
+    /// The live failure once a snapshot is loaded, and nil before, so the first load is a baseline.
+    private var loadedLiveFailureID: String?? {
+        guard case .rows = snapshot else { return nil }
+        return .some(ToolRunFold.liveFailureID(in: foldedItems, overrides: foldOverrides))
     }
 
     private var foldedItems: [ToolRunFold.Item] {

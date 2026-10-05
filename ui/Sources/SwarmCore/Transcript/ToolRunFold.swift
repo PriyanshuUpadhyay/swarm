@@ -104,6 +104,14 @@ public enum ToolRunFold {
         return rows.last { $0.tool?.state == .failed }?.eventID
     }
 
+    /// Whether a change of `liveFailureID` is a new failure to announce. An outer nil means no
+    /// snapshot is loaded yet, so the first loaded value is only the baseline: opening a chat whose
+    /// trailing fold failed before says nothing.
+    public static func isNewFailure(from old: String??, to new: String??) -> Bool {
+        guard case .some = old, case .some(.some) = new else { return false }
+        return old != new
+    }
+
     public struct NameCount: Hashable, Sendable {
         public var name: String
         public var count: Int

@@ -138,6 +138,16 @@ struct ToolRunFoldTests {
         #expect(failure(failing + [tool("test", state: .failed)]) == "test")
     }
 
+    @Test("Opening a chat whose last fold failed long ago says nothing; a failure after the load is announced")
+    func failureBaseline() {
+        // nil: no snapshot loaded yet. .some(nil): loaded, with no live failure.
+        #expect(!ToolRunFold.isNewFailure(from: nil, to: .some("make")))
+        #expect(ToolRunFold.isNewFailure(from: .some(nil), to: .some("make")))
+        #expect(ToolRunFold.isNewFailure(from: .some("make"), to: .some("test")))
+        #expect(!ToolRunFold.isNewFailure(from: .some("make"), to: .some(nil)))
+        #expect(!ToolRunFold.isNewFailure(from: .some("make"), to: nil))
+    }
+
     @Test("Rings and thoughts alone do not fold, and a ring that starts a turn is prose")
     func ringsWithoutToolsStay() {
         #expect(foldedIDs([prompt(), ring("one"), ring("two"), thought("plan")]).isEmpty)
