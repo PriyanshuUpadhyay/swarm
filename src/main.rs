@@ -118,9 +118,7 @@ fn ring_pane(
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }
-    let rung_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() as i64;
+    let rung_at = unix_now()?;
     adapter.run("ring", &[("pane", pane), ("text", &text)])?;
     if proof == Proof::Later {
         return Ok(None);
@@ -1750,9 +1748,7 @@ fn settle_rings(
     proof: Proof,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let chair = swarm::store::orchestrator_of(connection, session_id)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() as i64;
+    let now = unix_now()?;
     let text = ring_text(root);
     let mut lines = Vec::new();
     for (agent, rung_at, seqs, lost) in swarm::store::unsettled_rings(connection, session_id)? {
