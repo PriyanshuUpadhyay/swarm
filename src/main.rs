@@ -1989,6 +1989,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 body: std::fs::read_to_string(root.join(row.body_path)).ok(),
                 created_at: row.created_at,
                 read: row.read,
+                delivery: row.delivery,
             })
             .collect();
         return print_json(&swarm::bus::MessageList { messages });

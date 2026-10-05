@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002.sql"),
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
+    include_str!("../migrations/0005.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -82,6 +83,10 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 4 {
         tx.execute_batch(MIGRATIONS[3])?;
         tx.pragma_update(None, "user_version", 4)?;
+    }
+    if version < 5 {
+        tx.execute_batch(MIGRATIONS[4])?;
+        tx.pragma_update(None, "user_version", 5)?;
     }
 
     tx.commit()?;
@@ -625,6 +630,7 @@ pub struct MessageRow {
     pub body_path: String,
     pub created_at: i64,
     pub read: bool,
+    pub delivery: Option<String>,
 }
 
 pub fn messages(
@@ -636,7 +642,8 @@ pub fn messages(
         "SELECT message.seq, sender_id, recipient_id, kind, body_path, created_at,
                 EXISTS (SELECT 1 FROM read_mark
                         WHERE read_mark.session_id = message.session_id
-                          AND message_seq = message.seq AND agent_id = message.recipient_id)
+                          AND message_seq = message.seq AND agent_id = message.recipient_id),
+                delivery
          FROM message
          WHERE session_id = ?1 AND seq > ?2
          ORDER BY seq
@@ -651,9 +658,26 @@ pub fn messages(
             body_path: row.get(4)?,
             created_at: row.get(5)?,
             read: row.get(6)?,
+            delivery: row.get(7)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Store what a ring proved on the messages it rang. The column's CHECK refuses an unknown value.
+pub fn set_delivery(
+    connection: &Connection,
+    session_id: &str,
+    seqs: &[i64],
+    delivery: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for seq in seqs {
+        connection.execute(
+            "UPDATE message SET delivery = ?3 WHERE session_id = ?1 AND seq = ?2",
+            (session_id, seq, delivery),
+        )?;
+    }
+    Ok(())
 }
 
 pub fn has_rung_unread(
@@ -1393,6 +1417,44 @@ mod tests {
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
     }
 
+    /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is
+    /// stored once per sender and kind (ADR 0041).
+    #[test]
+    fn stores_a_ring_result_and_each_report_once() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery");
+        let send = |connection: &mut Connection, kind: &str| {
+            send_message(
+                connection,
+                &root,
+                SESSION,
+                CODER,
+                ORCHESTRATOR,
+                kind,
+                "body",
+            )
+        };
+        let ask = send(&mut connection, "ask").unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
+        set_delivery(&connection, SESSION, &[ask], "hook").unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .as_deref(),
+            Some("hook")
+        );
+        assert!(set_delivery(&connection, SESSION, &[ask], "maybe").is_err());
+        send(&mut connection, "stall:unacked:0").unwrap();
+        assert!(send(&mut connection, "stall:unacked:0").is_err());
+        send(&mut connection, "unconfirmed:0").unwrap();
+        assert!(send(&mut connection, "unconfirmed:0").is_err());
+        send(&mut connection, "note").unwrap();
+        send(&mut connection, "note").unwrap();
+    }
+
     #[test]
     fn finds_the_session_orchestrator() {
         let connection = seed(0);
@@ -1497,7 +1559,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -1524,7 +1586,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -1680,7 +1742,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 5")
+            .execute_batch("PRAGMA user_version = 6")
             .unwrap();
         assert!(open(&db).is_err());
     }
