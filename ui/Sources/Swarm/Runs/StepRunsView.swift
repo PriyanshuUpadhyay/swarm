@@ -167,11 +167,11 @@ private struct UrgencyGlyph: View {
     var body: some View {
         switch urgency {
         case .waiting: StatusGlyph(status: .waiting)
-        case .blocked: StatusGlyph(status: .failed)
+        case .blocked: StatusGlyph(status: .failed, title: "Blocked")
         case .stale: Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.orange)
             .accessibilityLabel("Stale").help("Stale")
         case .active: StatusGlyph(status: .working)
-        case .open: StatusGlyph(status: .ended)
+        case .open: StatusGlyph(status: .ended, title: "Open")
         case .done: StatusGlyph(status: .done)
         }
     }
@@ -340,10 +340,12 @@ private struct StepNodeView: View {
     @ViewBuilder
     private var glyph: some View {
         switch step.state {
-        case .open, .other: StatusGlyph(status: .ended)
+        case .open: StatusGlyph(status: .ended, title: step.ready ? "Ready" : "Open")
+        case .other(let word, _): StatusGlyph(status: .ended, title: word)
         case .active: StatusGlyph(status: .working)
         case .waiting: StatusGlyph(status: .waiting)
-        case .blocked, .unavailable: StatusGlyph(status: .failed)
+        case .blocked: StatusGlyph(status: .failed, title: "Blocked")
+        case .unavailable: StatusGlyph(status: .failed, title: "Unavailable")
         case .done: StatusGlyph(status: .done)
         case .skipped: Image(systemName: "minus.circle").foregroundStyle(.secondary)
         case nil: Image(systemName: "questionmark.square.dashed").foregroundStyle(.red)

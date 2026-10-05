@@ -5,6 +5,9 @@ import SwarmCore
 /// signal.
 struct StatusGlyph: View {
     let status: AgentStatus
+    /// The word for the tooltip and VoiceOver when the caller's state is not an agent status, such as
+    /// "Open" for a step drawn with the `.ended` ring.
+    var title: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var spins: Bool { status == .working && !reduceMotion }
@@ -19,8 +22,8 @@ struct StatusGlyph: View {
                 if spins { ProgressView().controlSize(.mini) }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.title(status))
-            .help(Self.title(status))
+            .accessibilityLabel(title ?? Self.title(status))
+            .help(title ?? Self.title(status))
     }
 
     static func symbol(_ status: AgentStatus) -> String {
