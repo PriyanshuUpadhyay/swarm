@@ -18,6 +18,7 @@ struct StatusGlyph: View {
             .overlay {
                 if spins { ProgressView().controlSize(.mini) }
             }
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.title(status))
             .help(Self.title(status))
     }
