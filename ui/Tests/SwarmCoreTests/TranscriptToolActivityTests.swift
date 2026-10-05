@@ -188,7 +188,7 @@ struct TranscriptToolActivityTests {
             .toolCallUpdate(toolCallID: "c1", status: .completed, content: failed.output ?? "", meta: Meta()),
             .toolCall(toolCallID: "c2", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
             .toolCallUpdate(toolCallID: "c2", status: .completed, content: ok.output ?? "", meta: Meta()),
-        ])
+        ], isCodex: true)
         #expect(rows.map(\.tool?.state) == [.failed, .finished])
     }
 

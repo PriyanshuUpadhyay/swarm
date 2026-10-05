@@ -144,22 +144,23 @@ public struct TranscriptCommandChip: Hashable, Sendable {
 public enum TranscriptRowBuilder {
     /// `hasOlder` says the window starts after the log's first entry. `indexOffset` cannot say it:
     /// the reader's tail window starts at index 0 and only goes below 0 on Load earlier.
-    /// `marksTurnStarts` says the log writes a turn-started record before each turn's prompt, as
-    /// Codex does; there a user message with none before it is a steer typed mid-turn, unless it
-    /// follows the log's start or a turn end, where no turn is open.
+    /// `isCodex` says the log is Codex's. Codex writes a turn-started record before each turn's
+    /// prompt, so a user message with none before it is a steer typed mid-turn, unless it follows
+    /// the log's start or a turn end, where no turn is open. Codex also marks every tool result
+    /// completed, so only there does the result text say whether the step failed.
     public static func rows(
         from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0, hasOlder: Bool = false,
-        marksTurnStarts: Bool = false
+        isCodex: Bool = false
     ) -> [TranscriptRow] {
         rows(
             from: records.map(\.event), indexOffset: indexOffset, hasOlder: hasOlder,
-            marksTurnStarts: marksTurnStarts
+            isCodex: isCodex
         )
     }
 
     public static func rows(
         from events: some Sequence<TranscriptEvent>, indexOffset: Int = 0, hasOlder: Bool = false,
-        marksTurnStarts: Bool = false
+        isCodex: Bool = false
     ) -> [TranscriptRow] {
         let events = Array(events)
         let scopes = scopes(for: events)
@@ -249,7 +250,7 @@ public enum TranscriptRowBuilder {
             // The first user message or ring after a turn-started record starts that turn; a later
             // user message is a steer. A window that starts between the two takes the prompt for a
             // steer, which is right: the turn is open.
-            if marksTurnStarts, row.kind == .user || row.systemKind == TranscriptSystemKind.swarmRing {
+            if isCodex, row.kind == .user || row.systemKind == TranscriptSystemKind.swarmRing {
                 if row.kind == .user, !promptExpected { row.arrivesMidTurn = true }
                 promptExpected = false
             }
@@ -284,8 +285,7 @@ public enum TranscriptRowBuilder {
                     state: state, command: TranscriptToolActivity.command(in: input, name: name),
                     path: TranscriptToolActivity.path(in: input), duration: duration
                 )
-                // Codex marks every result completed, so the result text says whether it failed.
-                if state == .finished, row.tool?.reportsFailure == true { row.tool?.state = .failed }
+                if isCodex, state == .finished, row.tool?.reportsFailure == true { row.tool?.state = .failed }
             }
             for source in attached[index] ?? [] {
                 guard case .systemMessage(let kind, let text, _) = events[source] else { continue }

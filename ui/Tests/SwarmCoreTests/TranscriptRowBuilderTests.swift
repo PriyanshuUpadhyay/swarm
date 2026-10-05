@@ -676,11 +676,11 @@ struct TranscriptDebugDataTests {
             (.userMessageChunk(text: "also check docs", meta: Meta(uuid: "steer")), true),
             (.systemMessage(kind: "queued_command", text: "<task-notification><summary>done</summary></task-notification>", meta: Meta(uuid: "task")), false),
         ]
-        for (input, marksTurnStarts) in midTurnInputs {
+        for (input, isCodex) in midTurnInputs {
             let events: [TranscriptEvent] = Array(tail.prefix(5)) + [
                 input, .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
             ]
-            let window = TranscriptRowBuilder.rows(from: events, indexOffset: 0, hasOlder: true, marksTurnStarts: marksTurnStarts)
+            let window = TranscriptRowBuilder.rows(from: events, indexOffset: 0, hasOlder: true, isCodex: isCodex)
             #expect(window.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
             let inputFolds = ToolRunFold.items(in: window).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
             #expect(inputFolds == [["c1:call", "ring-1:ring", "c2:call"]])
@@ -692,7 +692,7 @@ struct TranscriptDebugDataTests {
             .turnStarted(meta: Meta(uuid: "start")),
             .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-4")),
-        ], indexOffset: 0, hasOlder: true, marksTurnStarts: true)
+        ], indexOffset: 0, hasOlder: true, isCodex: true)
         #expect(codexPrompt.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
 
         let idleWindow = TranscriptRowBuilder.rows(from: [
@@ -712,9 +712,21 @@ struct TranscriptDebugDataTests {
             .turnEnded(durationMs: 1000, reason: .aborted, meta: Meta(uuid: "end")),
             .userMessageChunk(text: "Try again", meta: Meta(uuid: "retry")),
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring")),
-        ], marksTurnStarts: true)
+        ], isCodex: true)
         #expect(rows.filter { $0.kind == .user }.map(\.arrivesMidTurn) == [false, false])
         #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+    }
+
+    /// Claude Code and AGY mark a failed result failed, so a completed result stays finished there
+    /// even when the command printed text in Codex code-mode shape.
+    @Test("Only a Codex log reads a completed tool's result text as a failure")
+    func failureFromOutputOnlyInCodex() {
+        let events: [TranscriptEvent] = [
+            .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("cat run.log")]), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "Script failed\nWall time 1 seconds\nOutput:\nboom", meta: Meta()),
+        ]
+        #expect(TranscriptRowBuilder.rows(from: events).map(\.tool?.state) == [.finished])
+        #expect(TranscriptRowBuilder.rows(from: events, isCodex: true).map(\.tool?.state) == [.failed])
     }
 
     @Test("A ring between a tool call and its result does not split them")
