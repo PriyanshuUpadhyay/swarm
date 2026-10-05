@@ -2070,7 +2070,7 @@ fn list_agents(
     adapter.check_deadline()?;
     // A session with no chair yet still lists; it has no one to report to.
     let chair = swarm::store::orchestrator_of(connection, session_id).ok();
-    let mut chair_idle = false;
+    let mut chair_row_idle = false;
     let mut agents = Vec::new();
     for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
         let (screen, detail, prompt) = match screen {
@@ -2091,7 +2091,7 @@ fn list_agents(
             && prompt.is_none()
             && !matches!(state.as_deref(), Some("working" | "waiting"));
         if Some(&row.id) == chair.as_ref() {
-            chair_idle = idle;
+            chair_row_idle = idle;
         }
         if idle
             && let Some(pane) = row.pane.as_deref()
@@ -2152,7 +2152,8 @@ fn list_agents(
     // waits for proof; the next pass settles them. A report rings the chair's stored pane, which a
     // restarted tmux or Herdr server can give to another pane, and its Enter would answer a
     // question on the chair's screen, so it waits for a listing that shows the chair's pane idle,
-    // the same check as the re-ring above.
+    // the same check as the re-ring above. Rings and settling take seconds, so the chair's screen
+    // is read again right before the report.
     if let Err(error) = settle_rings(
         connection,
         root,
@@ -2163,7 +2164,12 @@ fn list_agents(
     ) {
         eprintln!("swarm: {error}");
     }
-    if chair_idle {
+    let chair_still_idle = chair_row_idle
+        && chair_idle(connection, adapter, session_id).unwrap_or_else(|error| {
+            eprintln!("swarm: {error}");
+            false
+        });
+    if chair_still_idle {
         if let Err(error) = report_lost(connection, root, &adapter.name, session_id, Proof::Later) {
             eprintln!("swarm: {error}");
         }
@@ -4830,6 +4836,75 @@ mod tests {
         assert_eq!(
             swept(&mut connection, &root, &adapter, &session),
             [format!("stall coder unacked {ask}")]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The listing reads the screens first, then rings and settles, which takes seconds. A
+    /// question that comes up on the chair's screen in that time stops the report, because the
+    /// listing reads the chair's screen again right before it.
+    #[test]
+    fn a_listing_reads_the_chairs_screen_again_before_a_report() {
+        // The coder's re-ring stands in for the gap: the fake ring puts a question on the screen
+        // that the chair's pane shows too.
+        let (root, mut connection, session) = ring_session(
+            "report-fresh-idle",
+            Some("claude"),
+            "ring = cp '{screen}.question' '{screen}'\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        std::fs::write(
+            root.join("screen.question"),
+            include_str!("../tests/fixtures/screens/claude-question.txt"),
+        )
+        .unwrap();
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        let follow_up = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "more",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET delivery = 'hook', rings = 1, rung_at = unixepoch() - 30,
+                                    seen_at = unixepoch() - 20
+                 WHERE seq = ?1",
+                [ask],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1
+                 WHERE seq = ?1",
+                [follow_up],
+            )
+            .unwrap();
+        let now = unix_now().unwrap();
+        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(
+            chair_mail(&connection, &session).is_empty(),
+            "{:?}",
+            chair_mail(&connection, &session)
         );
         std::fs::remove_dir_all(root).unwrap();
     }
