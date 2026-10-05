@@ -13,9 +13,8 @@ struct StepRunsView: View {
     @State private var scanNotice: String?
     /// The closed runs in `runs` come from this task's read, so an empty Closed group means none.
     @State private var closedRead = false
-    @State private var chosen: ChosenRun?
-    /// The chosen run's last read, kept while the scan cannot read it or left it out.
-    @State private var lastChosen: StepRun?
+    /// The chosen run's last read, so the graph keeps it while the scan cannot read it or left it out.
+    @State private var chosen: StepRun?
     @State private var showClosed = false
     @State private var retryID = 0
 
@@ -28,10 +27,8 @@ struct StepRunsView: View {
 
     var body: some View {
         Group {
-            if let run = runs?.first(where: { $0.id == chosen?.id }) {
-                StepRunGraph(directory: directory, run: run, error: error, notice: nil, open: open, back: { choose(nil) })
-            } else if let run = lastChosen, run.id == chosen?.id {
-                StepRunGraph(directory: directory, run: run, error: error, notice: scanNotice, open: open, back: { choose(nil) })
+            if let chosen {
+                StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open, back: { choose(nil) })
             } else {
                 list
             }
@@ -64,7 +61,7 @@ struct StepRunsView: View {
                         scan.addClosed(from: closed)
                     }
                     runs = scan.runs
-                    if let run = scan.runs.first(where: { $0.id == chosen?.id }) { lastChosen = run }
+                    if let run = scan.runs.first(where: { $0.id == chosen?.id }) { choose(run) }
                     scanNotice = scan.notice
                     closedRead = closed != nil
                     error = nil
@@ -85,7 +82,13 @@ struct StepRunsView: View {
         }
     }
 
-    private func choose(_ run: ChosenRun?) {
+    /// The scan notice when the graph shows the chosen run's last read, not this scan's read of it.
+    private var graphNotice: String? {
+        guard let chosen, let runs, !runs.contains(where: { $0.id == chosen.id }) else { return nil }
+        return scanNotice
+    }
+
+    private func choose(_ run: StepRun?) {
         chosen = run
         ChosenRun.byDirectory[directory] = run
         notice = nil
@@ -122,7 +125,7 @@ struct StepRunsView: View {
                             Text(verbatim: skill.uppercased()).font(.caption).foregroundStyle(.secondary)
                                 .padding(.top, DesignTokens.Spacing.s)
                                 .accessibilityAddTraits(.isHeader)
-                            ForEach(runs) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
+                            ForEach(runs) { run in StepRunRow(run: run) { choose(run) } }
                         }
                         DisclosureGroup("Closed", isExpanded: $showClosed) {
                             let closed = runs.filter(\.closed)
@@ -131,7 +134,7 @@ struct StepRunsView: View {
                             } else if closed.isEmpty {
                                 Text("None").font(.caption)
                             }
-                            ForEach(closed) { run in StepRunRow(run: run) { choose(ChosenRun(run)) } }
+                            ForEach(closed) { run in StepRunRow(run: run) { choose(run) } }
                         }
                         .foregroundStyle(.secondary)
                         .padding(.top, DesignTokens.Spacing.s)
@@ -146,12 +149,10 @@ struct StepRunsView: View {
     }
 }
 
-/// The chosen run per workspace, kept while the app runs; the panels are rebuilt per workspace.
-private struct ChosenRun {
-    let id: String
-    let closed: Bool
-    init(_ run: StepRun) { (id, closed) = (run.id, run.closed) }
-    @MainActor static var byDirectory: [String: ChosenRun] = [:]
+/// The chosen run's last read per workspace, kept while the app runs; the panels are rebuilt per
+/// workspace, so a restored choice the first scan cannot read still has its last read.
+private enum ChosenRun {
+    @MainActor static var byDirectory: [String: StepRun] = [:]
 }
 
 private struct StepRunRow: View {
