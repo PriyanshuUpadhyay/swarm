@@ -14,6 +14,8 @@ struct StepRunsView: View {
     /// The closed runs in `runs` come from this task's read, so an empty Closed group means none.
     @State private var closedRead = false
     @State private var chosen: ChosenRun?
+    /// The chosen run's last read, kept while the scan cannot read it or left it out.
+    @State private var lastChosen: StepRun?
     @State private var showClosed = false
     @State private var retryID = 0
 
@@ -27,7 +29,9 @@ struct StepRunsView: View {
     var body: some View {
         Group {
             if let run = runs?.first(where: { $0.id == chosen?.id }) {
-                StepRunGraph(directory: directory, run: run, error: error, open: open, back: { choose(nil) })
+                StepRunGraph(directory: directory, run: run, error: error, notice: nil, open: open, back: { choose(nil) })
+            } else if let run = lastChosen, run.id == chosen?.id {
+                StepRunGraph(directory: directory, run: run, error: error, notice: scanNotice, open: open, back: { choose(nil) })
             } else {
                 list
             }
@@ -59,6 +63,7 @@ struct StepRunsView: View {
                         scan.unreadable += closed.unreadable.filter { $0.split(separator: "/").contains { $0 == StepRuns.closedFolder } }
                     }
                     runs = scan.runs
+                    if let run = scan.runs.first(where: { $0.id == chosen?.id }) { lastChosen = run }
                     scanNotice = scan.notice
                     closedRead = closed != nil
                     error = nil
@@ -194,6 +199,8 @@ private struct StepRunGraph: View {
     let directory: String
     let run: StepRun
     let error: String?
+    /// Set when the scan cannot read this run now, so the graph is its last read.
+    let notice: String?
     let open: (WorkspaceDocument) -> Void
     let back: () -> Void
 
@@ -223,6 +230,7 @@ private struct StepRunGraph: View {
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
                 // The poll failed, so the graph below is the last good read.
                 if let error { Text(verbatim: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(DesignTokens.Spacing.m)
             Divider()
