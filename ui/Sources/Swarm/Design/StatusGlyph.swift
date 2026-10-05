@@ -7,14 +7,18 @@ struct StatusGlyph: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Image(systemName: Self.symbol(status))
-            .foregroundStyle(DesignTokens.color(status))
-            .symbolEffect(
-                .rotate, options: .repeat(.continuous).speed(0.3),
-                isActive: status == .working && !reduceMotion
-            )
-            .accessibilityLabel(Self.title(status))
-            .help(Self.title(status))
+        Group {
+            // An AppKit spinner, because a repeating symbol effect re-renders the whole window on
+            // every frame: 4.5 s of CPU per idle 30 s with 12 panes, against 0.04 s for this.
+            if status == .working && !reduceMotion {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: Self.symbol(status))
+                    .foregroundStyle(DesignTokens.color(status))
+            }
+        }
+        .accessibilityLabel(Self.title(status))
+        .help(Self.title(status))
     }
 
     static func symbol(_ status: AgentStatus) -> String {
