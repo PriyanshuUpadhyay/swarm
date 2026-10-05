@@ -36,3 +36,28 @@ Some inspected AGY results have `truncated_fields: ["content"]`; their full-log
 counterparts are longer. A future extractor must account for this before
 claiming a complete patch. These fixtures do not establish all provider versions
 or prove that an edit succeeded merely because its wrapper completed.
+
+## Chair runs (ADR 0047)
+
+`codex-chair-run.jsonl` keeps the record shapes of a saved Codex chair log
+(council test, 2026-09-29): `task_started`, assistant `message`, `clock`
+`sleep` `function_call` and its output, swarm rings as `role: user` messages
+mid-turn, `custom_tool_call` `exec` scripts with `exec_command({cmd:...})`, a
+`Promise.allSettled` script with two calls, a `tools.apply_patch` script, a
+`Script completed` output with `"exit_code":1`, a `Script failed` output, and
+`task_complete`. Ids, timestamps, the home path, script text, and output text
+were replaced or shortened; `internal_chat_message_metadata_passthrough` and
+token records were removed.
+
+`claude-chair-run.jsonl` keeps the shapes of a saved Claude Code 2.1.283 worker
+log (2026-09-27): a typed prompt, `Bash` and `Read` `tool_use` and
+`tool_result` records, a failed result (`is_error: true`, `Exit code 1`), the
+ring as a plain `type: user` string record with `origin.kind: human`, and a
+`turn_duration` record. Ids, paths, text, and unrelated metadata were replaced
+or removed.
+
+`agy-chair-run.jsonl` is synthetic, because no saved AGY log with a ring was
+found. It uses the `USER_INPUT` shape with the ring inside `<USER_REQUEST>` and
+the `PLANNER_RESPONSE` and `GENERIC` shapes of `agy-edit.jsonl`.
+
+`ChairRunFixtureTests` runs all three through the real Zig executable.
