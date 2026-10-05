@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod bus;
 pub mod config;
 pub mod diff;
+pub mod guard;
 pub mod herdr;
 pub mod host;
 pub mod paths;

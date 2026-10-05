@@ -99,7 +99,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -2351,8 +2351,57 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// `swarm guard <provider> <event>`: the rule list's verdict on one tool call, in the CLI's own
+/// reply format (ADR 0040). It never opens the store, so a busy bus cannot slow a tool call.
+fn guard(args: &[String]) -> (String, String, i32) {
+    let [provider, event] = args else {
+        return (String::new(), format!("{USAGE}\n"), 2);
+    };
+    let Some(provider) = Provider::parse(provider) else {
+        return (String::new(), format!("{USAGE}\n"), 2);
+    };
+    let deadline = std::time::Instant::now() + swarm::guard::DEADLINE;
+    let verdict = match (swarm::paths::home(), env::var("HOME")) {
+        (Ok(swarm_home), Ok(home)) => {
+            let path = format!("{swarm_home}/.swarm/guards.json");
+            let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
+            match (std::fs::read_to_string(&path), payload) {
+                (_, None) => swarm::guard::Verdict::Deny(
+                    "swarm guard: stdin did not close within 2 s, so the call is blocked".into(),
+                ),
+                (Err(error), _) if error.kind() != std::io::ErrorKind::NotFound => {
+                    swarm::guard::Verdict::Deny(format!(
+                        "swarm guard: cannot read {path}: {error}, so the call is blocked"
+                    ))
+                }
+                (list, Some(payload)) => swarm::guard::decide(
+                    list.ok().as_deref(),
+                    &path,
+                    provider,
+                    event,
+                    &payload,
+                    &home,
+                    deadline,
+                ),
+            }
+        }
+        _ => swarm::guard::Verdict::Deny(
+            "swarm guard: HOME is not set, so the call is blocked".into(),
+        ),
+    };
+    swarm::guard::render(provider, &verdict)
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [cmd, rest @ ..] = args.as_slice()
+        && cmd == "guard"
+    {
+        let (stdout, stderr, code) = guard(rest);
+        print!("{stdout}");
+        eprint!("{stderr}");
+        std::process::exit(code);
+    }
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "hook"
     {
