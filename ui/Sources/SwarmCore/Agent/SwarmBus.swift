@@ -331,6 +331,7 @@ public protocol SwarmBus: Sendable {
         in session: SwarmSessionID, directory: String
     ) async throws -> SwarmLaunch
     func agents(in session: SwarmSessionID, adapter: String) async throws -> [SwarmAgent]
+    func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]]
     func agentListing(
         in session: SwarmSessionID, adapter: String
     ) async throws -> SwarmAgentList
@@ -366,6 +367,10 @@ public protocol SwarmBus: Sendable {
 }
 
 public extension SwarmBus {
+    func agentsBySession() async throws -> [SwarmSessionID: [SwarmAgent]] {
+        throw SwarmProfileError.unavailable("swarm agent batches are not available")
+    }
+
     func agentListing(
         in session: SwarmSessionID, adapter: String
     ) async throws -> SwarmAgentList {

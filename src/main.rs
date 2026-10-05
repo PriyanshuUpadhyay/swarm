@@ -41,7 +41,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1340,6 +1340,150 @@ fn set_chair_for_caller(
     swarm::store::set_chair(connection, session_id, chair)
 }
 
+#[derive(serde::Serialize)]
+struct AgentListOutput {
+    agents: Vec<swarm::bus::Agent>,
+    attachable: bool,
+}
+
+fn list_agents(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    session_id: &str,
+    adapter: &swarm::adapter::Adapter,
+) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
+    let rows = swarm::store::agents(connection, session_id)?;
+    let listing = match adapter.run("list", &[]) {
+        Ok(listing) => Some(listing),
+        Err(error) => {
+            eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
+            None
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    let alive: Vec<Option<bool>> = rows
+        .iter()
+        .map(|row| {
+            row.pane.as_deref().and_then(|pane| {
+                listing
+                    .as_deref()
+                    .map(|list| swarm::adapter::listing_has_pane(list, pane))
+            })
+        })
+        .collect();
+    // The screen check (ADR 0021) reads each live pane once per listing, all at the same
+    // time, so six agents cost about one capture.
+    type ScreenRead = (
+        swarm::screen::ScreenState,
+        Option<String>,
+        Option<swarm::screen::Prompt>,
+    );
+    let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
+        let reads: Vec<_> = rows
+            .iter()
+            .zip(&alive)
+            .map(|(row, alive)| {
+                let target = match (alive, row.pane.as_deref()) {
+                    (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
+                    _ => None,
+                };
+                scope.spawn(move || {
+                    let (pane, provider) = target?;
+                    let output =
+                        adapter.screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
+                    let prompt = swarm::screen::whole_prompt(&output, || {
+                        adapter.capture_within(
+                            &[("pane", pane)],
+                            std::time::Duration::from_millis(300),
+                        )
+                    });
+                    let (state, detail) = swarm::screen::read_pane(provider, &output, || {
+                        adapter.capture_within(
+                            &[("pane", pane)],
+                            std::time::Duration::from_millis(300),
+                        )
+                    })?;
+                    Some((state, detail, prompt))
+                })
+            })
+            .collect();
+        reads
+            .into_iter()
+            .map(|read| read.join().ok().flatten())
+            .collect()
+    });
+    let mut agents = Vec::new();
+    for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
+        let (screen, detail, prompt) = match screen {
+            Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
+            None => (None, None, None),
+        };
+        let (state, write) = swarm::screen::resolve(
+            row.state.as_deref(),
+            row.state_at,
+            row.state_source.as_deref(),
+            screen,
+            now,
+        );
+        // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
+        // so the listing it polls rings a due message again once the pane shows it idle. A
+        // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
+        if screen == Some(swarm::screen::ScreenState::Idle)
+            && prompt.is_none()
+            && !matches!(state.as_deref(), Some("working" | "waiting"))
+            && let Some(pane) = row.pane.as_deref()
+            && let Err(error) = rering_if_due(connection, root, adapter, session_id, &row.id, pane)
+        {
+            eprintln!("swarm: {error}");
+        }
+        if let Some(seen) = write {
+            let detail = detail.filter(|_| seen == "failed");
+            match swarm::store::set_screen_state(
+                connection,
+                session_id,
+                &row.id,
+                seen,
+                detail.as_deref(),
+                now,
+                (
+                    row.state.as_deref(),
+                    row.state_source.as_deref(),
+                    row.state_at,
+                ),
+            ) {
+                Ok(true) => {
+                    (row.state_at, row.state_source, row.state_detail) =
+                        (Some(now), Some("screen".into()), detail);
+                }
+                // A newer hook report landed after this listing read the row; it stands,
+                // and the next listing shows it.
+                Ok(false) => {}
+                Err(error) => eprintln!("swarm: {error}"),
+            }
+        }
+        agents.push(swarm::bus::Agent {
+            id: row.id,
+            role: row.role,
+            pane: row.pane,
+            provider: row.provider,
+            created_at: row.created_at,
+            alive,
+            state,
+            state_at_s: row.state_at,
+            state_source: row.state_source,
+            state_detail: row.state_detail,
+            log: row.log.map(resolved_agent_log),
+            prompt,
+        });
+    }
+    return Ok(AgentListOutput {
+        agents,
+        attachable: adapter.attach.is_some(),
+    });
+}
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
@@ -1631,144 +1775,39 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         let session_id = session_id()?;
-        let rows = swarm::store::agents(&connection, &session_id)?;
         let adapter = swarm::adapter::load(&root, &adapter_name())?;
-        let listing = match adapter.run("list", &[]) {
-            Ok(listing) => Some(listing),
-            Err(error) => {
-                eprintln!("swarm: {}", error.to_string().replace(['\r', '\n'], " "));
-                None
+        return print_json(&list_agents(&mut connection, &root, &session_id, &adapter)?);
+    }
+    if let [cmd, json, all] = args
+        && cmd == "agents"
+        && json == "--json"
+        && all == "--all"
+    {
+        let mut listings = std::collections::BTreeMap::new();
+        for session in swarm::store::sessions(&connection)? {
+            if session.agents == 0 {
+                continue;
             }
-        };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
-        let alive: Vec<Option<bool>> = rows
-            .iter()
-            .map(|row| {
-                row.pane.as_deref().and_then(|pane| {
-                    listing
-                        .as_deref()
-                        .map(|list| swarm::adapter::listing_has_pane(list, pane))
-                })
-            })
-            .collect();
-        // The screen check (ADR 0021) reads each live pane once per listing, all at the same
-        // time, so six agents cost about one capture.
-        type ScreenRead = (
-            swarm::screen::ScreenState,
-            Option<String>,
-            Option<swarm::screen::Prompt>,
-        );
-        let screens: Vec<Option<ScreenRead>> = std::thread::scope(|scope| {
-            let adapter = &adapter;
-            let reads: Vec<_> = rows
-                .iter()
-                .zip(&alive)
-                .map(|(row, alive)| {
-                    let target = match (alive, row.pane.as_deref()) {
-                        (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
-                        _ => None,
-                    };
-                    scope.spawn(move || {
-                        let (pane, provider) = target?;
-                        let output = adapter
-                            .screen(&[("pane", pane)], std::time::Duration::from_millis(300))?;
-                        let prompt = swarm::screen::whole_prompt(&output, || {
-                            adapter.capture_within(
-                                &[("pane", pane)],
-                                std::time::Duration::from_millis(300),
-                            )
-                        });
-                        let (state, detail) = swarm::screen::read_pane(provider, &output, || {
-                            adapter.capture_within(
-                                &[("pane", pane)],
-                                std::time::Duration::from_millis(300),
-                            )
-                        })?;
-                        Some((state, detail, prompt))
-                    })
-                })
-                .collect();
-            reads
-                .into_iter()
-                .map(|read| read.join().ok().flatten())
-                .collect()
-        });
-        let mut agents = Vec::new();
-        for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
-            let (screen, detail, prompt) = match screen {
-                Some((screen, detail, prompt)) => (Some(screen), detail, prompt),
-                None => (None, None, None),
+            let Some(adapter) = session
+                .adapter
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
             };
-            let (state, write) = swarm::screen::resolve(
-                row.state.as_deref(),
-                row.state_at,
-                row.state_source.as_deref(),
-                screen,
-                now,
-            );
-            // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
-            // so the listing it polls rings a due message again once the pane shows it idle. A
-            // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
-            if screen == Some(swarm::screen::ScreenState::Idle)
-                && prompt.is_none()
-                && !matches!(state.as_deref(), Some("working" | "waiting"))
-                && let Some(pane) = row.pane.as_deref()
-                && let Err(error) =
-                    rering_if_due(&mut connection, &root, &adapter, &session_id, &row.id, pane)
-            {
-                eprintln!("swarm: {error}");
-            }
-            if let Some(seen) = write {
-                let detail = detail.filter(|_| seen == "failed");
-                match swarm::store::set_screen_state(
-                    &connection,
-                    &session_id,
-                    &row.id,
-                    seen,
-                    detail.as_deref(),
-                    now,
-                    (
-                        row.state.as_deref(),
-                        row.state_source.as_deref(),
-                        row.state_at,
-                    ),
-                ) {
-                    Ok(true) => {
-                        (row.state_at, row.state_source, row.state_detail) =
-                            (Some(now), Some("screen".into()), detail);
-                    }
-                    // A newer hook report landed after this listing read the row; it stands,
-                    // and the next listing shows it.
-                    Ok(false) => {}
-                    Err(error) => eprintln!("swarm: {error}"),
-                }
-            }
-            agents.push(swarm::bus::Agent {
-                id: row.id,
-                role: row.role,
-                pane: row.pane,
-                provider: row.provider,
-                created_at: row.created_at,
-                alive,
-                state,
-                state_at_s: row.state_at,
-                state_source: row.state_source,
-                state_detail: row.state_detail,
-                log: row.log.map(resolved_agent_log),
-                prompt,
+            let listing = swarm::adapter::load(&root, adapter).and_then(|mut adapter| {
+                adapter.session_id = Some(session.id.clone());
+                list_agents(&mut connection, &root, &session.id, &adapter)
             });
+            match listing {
+                Ok(listing) => {
+                    listings.insert(session.id, listing);
+                }
+                Err(error) => eprintln!("swarm: {}: {error}", session.id),
+            }
         }
-        #[derive(serde::Serialize)]
-        struct AgentListOutput {
-            agents: Vec<swarm::bus::Agent>,
-            attachable: bool,
-        }
-        return print_json(&AgentListOutput {
-            agents,
-            attachable: adapter.attach.is_some(),
-        });
+        return print_json(&listings);
     }
     if let [cmd, rest @ ..] = args
         && cmd == "messages"

@@ -992,3 +992,99 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         stderr(&stuck)
     );
 }
+
+#[test]
+fn all_agent_listings_match_each_sessions_adapter_and_fields() {
+    let home = scratch("all-agents");
+    let adapters = home.join(".swarm/adapters");
+    std::fs::create_dir_all(&adapters).unwrap();
+    for (name, list) in [
+        ("live", "printf live-pane"),
+        ("dead", "true"),
+        ("failed", "exit 1"),
+    ] {
+        std::fs::write(adapters.join(format!("{name}.conf")), format!(
+            "self = true\nspawn = true\nring = true\nlist = test -d \"$HOME/sessions/$SWARM_SESSION_ID\" && test \"$SWARM_ADAPTER\" = {name} && test \"$SWARM_AGENT_ID\" = orchestrator || exit 1; {list}\nclose = true\ncapture = true\nscreen = cat \"$HOME/screen\"\nattach = true\n"
+        )).unwrap();
+    }
+    std::fs::write(home.join("screen"), PERMISSION).unwrap();
+    let log = home.join("agent.jsonl");
+    std::fs::write(&log, "").unwrap();
+    let mut connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let mut expected = serde_json::Map::new();
+    for name in ["live", "dead", "failed"] {
+        let session =
+            swarm::store::create_session(&connection, "lane", &home, None, Some(name)).unwrap();
+        std::fs::create_dir_all(home.join("sessions").join(&session)).unwrap();
+        for (id, pane) in [
+            ("coder", format!("{name}-pane")),
+            ("unspawned", String::new()),
+        ] {
+            swarm::store::add_agent(&connection, &session, id, "code").unwrap();
+            if !pane.is_empty() {
+                swarm::store::set_pane(&connection, &session, id, &pane).unwrap();
+            }
+            swarm::store::set_provider(&connection, &session, id, "claude").unwrap();
+            swarm::store::set_log(&connection, &session, id, &log).unwrap();
+            swarm::store::set_state(
+                &connection,
+                &session,
+                id,
+                "failed",
+                "hook",
+                Some("fixture failure"),
+                now,
+            )
+            .unwrap();
+        }
+        let output = swarm(
+            &home,
+            &[
+                ("SWARM_ADAPTER", name),
+                ("SWARM_SESSION_ID", &session),
+                ("SWARM_AGENT_ID", "orchestrator"),
+            ],
+            &["agents", "--json"],
+        );
+        assert!(output.status.success(), "{}", stderr(&output));
+        let listing: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            listing["agents"][0]["alive"],
+            match name {
+                "live" => serde_json::json!(true),
+                "dead" => serde_json::json!(false),
+                _ => serde_json::Value::Null,
+            }
+        );
+        if name == "live" {
+            assert!(listing["agents"][0]["prompt"].is_object());
+        }
+        expected.insert(session, listing);
+    }
+    // Unknown adapters and old sessions without an adapter must not borrow the process adapter.
+    for adapter in [None, Some(" "), Some("missing"), Some("dead")] {
+        let session =
+            swarm::store::create_session(&connection, "lane", &home, None, adapter).unwrap();
+        swarm::store::add_agent(&connection, &session, "coder", "code").unwrap();
+        if adapter == Some("dead") {
+            swarm::store::archive_sessions(&mut connection, &[session]).unwrap();
+        }
+    }
+    swarm::store::create_session(&connection, "lane", &home, None, Some("live")).unwrap();
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "missing"),
+            ("SWARM_SESSION_ID", "wrong-session"),
+            ("SWARM_AGENT_ID", "wrong-agent"),
+        ],
+        &["agents", "--json", "--all"],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(actual, serde_json::Value::Object(expected));
+}

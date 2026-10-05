@@ -10,6 +10,62 @@ struct SessionsTreeTests {
         WorktreeEntry(path: "/repo/wt/feature", branch: "feature"),
     ]
 
+    @Test("The tree reads many sessions with one agents call and keeps unknown sessions unknown")
+    func treeReadsAgentsOnce() async throws {
+        let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
+        var sessions = (0..<50).map { session("batch-\($0)", cwd: "/outside") }
+        sessions[0].adapter = "herdr"
+        var unknown = session("no-adapter", cwd: "/outside")
+        unknown.adapter = nil
+        var empty = session("empty", cwd: "/outside")
+        empty.agents = 0
+        let archived = session("archived", cwd: "/outside", archivedAt: 50)
+        sessions += [unknown, empty, archived]
+        let listings = Dictionary(uniqueKeysWithValues: sessions.map {
+            ($0.id.rawValue, SwarmAgentList(agents: [agent]))
+        })
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let batch = String(decoding: try encoder.encode(listings), as: UTF8.self)
+        let single = String(decoding: try encoder.encode(SwarmAgentList(agents: [agent])), as: UTF8.self)
+        let calls = TreeAgentCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp") { _, arguments, _, environment, _, _ in
+            await calls.record(arguments, environment: environment)
+            return ShellResult(status: 0, stdout: arguments.contains("--all") ? batch : single, stderr: "")
+        }
+        let tree = try await SwarmSessionDiscovery().tree(sessions: sessions, bus: bus)
+        #expect(await calls.arguments == [["agents", "--json", "--all"]])
+        #expect(await calls.sessionIDs == [nil])
+        for item in sessions.prefix(50) {
+            #expect(tree.session(item.id)?.status == .working)
+            #expect(tree.session(item.id)?.isRunning == true)
+            #expect(tree.session(item.id)?.liveAgents == 1)
+        }
+        #expect(tree.session(unknown.id)?.status == nil)
+        #expect(tree.session(unknown.id)?.isRunning == nil)
+        #expect(tree.session(empty.id) == nil)
+        #expect(tree.session(archived.id) == nil)
+    }
+
+    @Test("An older swarm with no --all still lists each session's agents")
+    func treeFallsBackWithoutBatch() async throws {
+        let agent = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working")
+        let sessions = (0..<3).map { session("old-\($0)", cwd: "/outside") }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let single = String(decoding: try encoder.encode(SwarmAgentList(agents: [agent])), as: UTF8.self)
+        let calls = TreeAgentCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp") { _, arguments, _, environment, _, _ in
+            await calls.record(arguments, environment: environment)
+            return arguments.contains("--all")
+                ? ShellResult(status: 2, stdout: "", stderr: "unknown flag --all")
+                : ShellResult(status: 0, stdout: single, stderr: "")
+        }
+        let tree = try await SwarmSessionDiscovery().tree(sessions: sessions, bus: bus)
+        #expect(await calls.arguments.count == 4)
+        for item in sessions { #expect(tree.session(item.id)?.status == .working) }
+    }
+
     @Test("One repository keeps workspaces and exposes their chats")
     func repositoryAndWorktrees() {
         var older = session("11111111-a", cwd: "/repo/wt/main/src")
@@ -518,5 +574,15 @@ struct SessionsTreeTests {
 
     private func chat(_ session: SwarmProjectSession) -> ChatRow {
         ChatRow(session: session, workspace: "outside", workspacePath: "/outside")
+    }
+}
+
+private actor TreeAgentCalls {
+    var arguments: [[String]] = []
+    var sessionIDs: [String?] = []
+
+    func record(_ arguments: [String], environment: [String: String]) {
+        self.arguments.append(arguments)
+        sessionIDs.append(environment["SWARM_SESSION_ID"])
     }
 }

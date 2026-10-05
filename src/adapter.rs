@@ -1,6 +1,8 @@
 #[derive(Debug)]
 pub struct Adapter {
     pub name: String,
+    /// A multi-session read sets this so adapter scripts see that session's UI caller.
+    pub session_id: Option<String>,
     pub caller: String,
     pub spawn: String,
     pub ring: String,
@@ -78,6 +80,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
     };
     let adapter = Adapter {
         name: name.to_string(),
+        session_id: None,
         caller: take("self")?,
         spawn: take("spawn")?,
         ring: take("ring")?,
@@ -117,6 +120,12 @@ impl Adapter {
     fn command(&self, line: &str, vars: &[(&str, &str)]) -> std::process::Command {
         let mut command = std::process::Command::new("sh");
         command.arg("-c").arg(line);
+        if let Some(session_id) = &self.session_id {
+            command
+                .env("SWARM_SESSION_ID", session_id)
+                .env("SWARM_AGENT_ID", "orchestrator")
+                .env("SWARM_ADAPTER", &self.name);
+        }
         // A verb that calls swarm back runs this same binary, even from an app with a short PATH.
         if let Ok(exe) = std::env::current_exe() {
             command.env("SWARM_EXE", exe);

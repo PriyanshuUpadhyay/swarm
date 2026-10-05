@@ -324,9 +324,16 @@ extension SwarmSessionDiscovery {
         do {
             let timing = SwarmPerformance.begin("SessionDiscovery")
             defer { timing.end(count: agentsBySession.count) }
+            // A `swarm` older than this app has no `--all`, so a failed batch reads each session.
+            let listingsBySession = try? await bus.agentsBySession()
             for session in sessions where session.archivedAt == nil {
                 if session.agents == 0 {
                     agentsBySession[session.id] = []
+                } else if let listingsBySession {
+                    if (try? SwarmSessionInteraction.adapter(for: session)) != nil,
+                       let agents = listingsBySession[session.id] {
+                        agentsBySession[session.id] = agents
+                    }
                 } else if let agents = try? await bus.agents(in: session) {
                     agentsBySession[session.id] = agents
                 }
