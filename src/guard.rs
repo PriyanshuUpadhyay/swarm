@@ -203,11 +203,7 @@ fn run(
         // Each invalid byte decodes to a 3-byte U+FFFD, so the cut is made again on the text, at
         // a character boundary, to keep the reason within 64 KiB.
         let mut text = String::from_utf8_lossy(&text).into_owned();
-        let mut end = text.len().min(REASON_MAX as usize);
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        text.truncate(end);
+        text.truncate(text.floor_char_boundary(REASON_MAX as usize));
         let _ = sender.send(text);
         // The rest is read and dropped, so a rule that writes more does not die on a closed pipe.
         let _ = std::io::copy(&mut stderr, &mut std::io::sink());
@@ -582,6 +578,6 @@ mod tests {
         let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("bytes", script, "")))) else {
             panic!()
         };
-        assert!(reason.len() <= 64 * 1024, "{}", reason.len());
+        assert_eq!(reason.len(), 64 * 1024 - 1);
     }
 }
