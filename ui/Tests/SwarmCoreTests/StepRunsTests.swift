@@ -225,6 +225,23 @@ struct StepRunsTests {
         #expect(!small.cutOff && small.notice == nil)
     }
 
+    @Test("A run folder that still exists but cannot be listed is named in the scan, not dropped without a sign")
+    func unreadableRun() async throws {
+        let workspace = try fixture()
+        let locked = workspace.appendingPathComponent("tmp/flow/2026-10-05-locked")
+        try write(locked, ["01-frame.md": "Status: open\nUses:\n"])
+        try write(workspace.appendingPathComponent("tmp/flow/2026-10-05-fine"), ["01-frame.md": "Status: open\nUses:\n"])
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        let scan = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(scan.runs.map(\.name) == ["2026-10-05-fine"])
+        #expect(scan.unreadable == ["tmp/flow/2026-10-05-locked"])
+        #expect(scan.notice == "Can't read tmp/flow/2026-10-05-locked")
+    }
+
     @Test("No tmp folder is no runs, not an error")
     func noTmp() async throws {
         let workspace = try fixture()

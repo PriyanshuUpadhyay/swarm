@@ -107,9 +107,14 @@ public struct StepRunScan: Equatable, Sendable {
     public var runs: [StepRun] = []
     /// A listing reached the 2,000-entry limit (`WorkspaceFiles.list`), so runs or steps may be missing.
     public var cutOff = false
+    /// Folders that exist but cannot be listed, such as one with no read permission; their runs are missing.
+    public var unreadable: [String] = []
 
     public var notice: String? {
-        cutOff ? "List cut off: a folder holds over 2,000 entries, so some runs or steps may be missing." : nil
+        var lines: [String] = []
+        if cutOff { lines.append("List cut off: a folder holds over 2,000 entries, so some runs or steps may be missing.") }
+        if !unreadable.isEmpty { lines.append("Can't read \(unreadable.joined(separator: ", "))") }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 }
 
@@ -120,8 +125,8 @@ public enum StepRuns {
     static let closedFolder = "_closed"
 
     /// The runs under `<workspace>/tmp/<skill>/<run>/`, and `_closed/<run>/` when asked, newest first.
-    /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A run that cannot be listed drops
-    /// out, because the usual cause is a close that moved it to `_closed/` during the scan.
+    /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A folder below it that cannot be
+    /// listed is in `unreadable`, unless it is gone, because then a close moved it during the scan.
     public static func scan(workspace: String, includeClosed: Bool) async throws -> StepRunScan {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace + "/" + root, isDirectory: &isDirectory) else { return StepRunScan() }
@@ -129,20 +134,36 @@ public enum StepRuns {
         var scan = StepRunScan()
         let skills = try await WorkspaceFiles.list(in: workspace, path: root)
         scan.cutOff = skills.truncated
+        func failed(_ path: String) {
+            if FileManager.default.fileExists(atPath: workspace + "/" + path) { scan.unreadable.append(path) }
+        }
         for skill in skills.entries where skill.kind == .directory {
-            guard let listing = try? await WorkspaceFiles.list(in: workspace, path: skill.path) else { continue }
+            guard let listing = try? await WorkspaceFiles.list(in: workspace, path: skill.path) else {
+                failed(skill.path)
+                continue
+            }
             scan.cutOff = scan.cutOff || listing.truncated
             var folders = listing.entries.filter { $0.kind == .directory && $0.name != closedFolder }.map { ($0, false) }
-            if includeClosed, listing.entries.contains(where: { $0.name == closedFolder && $0.kind == .directory }),
-               let closed = try? await WorkspaceFiles.list(in: workspace, path: skill.path + "/" + closedFolder) {
-                folders += closed.entries.filter { $0.kind == .directory }.map { ($0, true) }
-                scan.cutOff = scan.cutOff || closed.truncated
+            if includeClosed, listing.entries.contains(where: { $0.name == closedFolder && $0.kind == .directory }) {
+                let path = skill.path + "/" + closedFolder
+                if let closed = try? await WorkspaceFiles.list(in: workspace, path: path) {
+                    folders += closed.entries.filter { $0.kind == .directory }.map { ($0, true) }
+                    scan.cutOff = scan.cutOff || closed.truncated
+                } else {
+                    failed(path)
+                }
             }
             for (folder, closed) in folders {
-                if let run = try? await read(
-                    workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head, cutOff: &scan.cutOff
-                ) {
-                    scan.runs.append(run)
+                do {
+                    if let run = try await read(
+                        workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head, cutOff: &scan.cutOff
+                    ) {
+                        scan.runs.append(run)
+                    }
+                } catch let error as CancellationError {
+                    throw error
+                } catch {
+                    failed(folder.path)
                 }
             }
         }
