@@ -125,16 +125,20 @@ fn ring_pane(
     loop {
         std::thread::sleep(RING_POLL);
         let rows = read();
-        let screen = adapter
-            .screen(&vars, std::time::Duration::from_secs(1))
-            .unwrap_or_else(|| rows.clone());
+        let screen = screen_of(&adapter, &vars, &rows);
         if provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text)) {
             if enters < RING_ENTER_RETRIES && adapter.key.is_some() {
                 adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
                 enters += 1;
             }
         } else if let Some(delivery) = ring_proof(
-            connection, session_id, agent_id, provider, &rows, &screen, rung_at,
+            connection,
+            session_id,
+            agent_id,
+            provider,
+            &rows,
+            screen.as_deref(),
+            rung_at,
         ) {
             return Ok(Some(delivery));
         }
@@ -144,24 +148,40 @@ fn ring_pane(
     }
 }
 
+/// The pane's screen for `ring_proof`: the `screen` verb's output, or the capture `rows` when the
+/// adapter has no `screen` verb. None when the `screen` verb failed.
+fn screen_of(
+    adapter: &swarm::adapter::Adapter,
+    vars: &[(&str, &str)],
+    rows: &str,
+) -> Option<String> {
+    match adapter.screen {
+        Some(_) => adapter.screen(vars, std::time::Duration::from_secs(1)),
+        None => Some(rows.to_string()),
+    }
+}
+
 /// What the store and the pane prove now about a ring typed at `rung_at`, if anything. The
-/// caller checks first that the input box no longer holds the ring.
+/// caller checks first that the input box no longer holds the ring. A `screen` of None, a failed
+/// read, proves nothing, so the pane is not taken as one with no reader.
 fn ring_proof(
     connection: &rusqlite::Connection,
     session_id: &str,
     agent_id: &str,
     provider: Option<&str>,
     rows: &str,
-    screen: &str,
+    screen: Option<&str>,
     rung_at: i64,
 ) -> Option<Delivery> {
-    if provider.is_none() && swarm::screen::herdr_state(screen).is_none() {
+    if provider.is_none()
+        && screen.is_some_and(|screen| swarm::screen::herdr_state(screen).is_none())
+    {
         return Some(Delivery::Unchecked);
     }
     if swarm::store::turn_started(connection, session_id, agent_id, rung_at).unwrap_or(false) {
         return Some(Delivery::Hook);
     }
-    match swarm::screen::read_pane(provider, screen, || Some(rows.to_string())) {
+    match swarm::screen::read_pane(provider, screen.unwrap_or(rows), || Some(rows.to_string())) {
         Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) => {
             Some(Delivery::Screen)
         }
@@ -1713,27 +1733,37 @@ fn settle_rings(
     for (agent, rung_at, seqs, lost) in swarm::store::unsettled_rings(connection, session_id)? {
         let provider = swarm::store::provider_of(connection, session_id, &agent)?;
         let provider = provider.as_deref();
-        let (rows, screen) = match swarm::store::pane_of(connection, session_id, &agent)? {
-            // A failed read proves nothing either way, so the ring waits for the next pass.
+        // A failed read proves nothing either way, so only the deadline can settle the ring.
+        let read = match swarm::store::pane_of(connection, session_id, &agent)? {
             Some(pane) => {
                 let vars = [("pane", pane.as_str())];
-                let read = std::time::Duration::from_secs(1);
-                let Some(rows) = adapter.capture_within(&vars, read) else {
-                    continue;
-                };
-                let screen = adapter.screen(&vars, read).unwrap_or_else(|| rows.clone());
-                (rows, screen)
+                adapter
+                    .capture_within(&vars, std::time::Duration::from_secs(1))
+                    .map(|rows| {
+                        let screen = screen_of(adapter, &vars, &rows);
+                        (rows, screen)
+                    })
             }
-            None => Default::default(),
+            // No pane is an empty screen: unchecked with no provider, else unconfirmed when late.
+            None => Some((String::new(), Some(String::new()))),
         };
-        let held = provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
-        let proven = (!held)
-            .then(|| {
-                ring_proof(
-                    connection, session_id, &agent, provider, &rows, &screen, rung_at,
-                )
-            })
-            .flatten();
+        let proven = read.and_then(|(rows, screen)| {
+            let held =
+                provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text));
+            (!held)
+                .then(|| {
+                    ring_proof(
+                        connection,
+                        session_id,
+                        &agent,
+                        provider,
+                        &rows,
+                        screen.as_deref(),
+                        rung_at,
+                    )
+                })
+                .flatten()
+        });
         let late = now - rung_at > RING_TIMEOUT.as_secs() as i64;
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
             continue;
@@ -3736,6 +3766,51 @@ mod tests {
         assert_eq!(
             delivery_of(&connection, &session, seq).as_deref(),
             Some("unchecked")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A failed read is no proof yet. A screen verb that fails does not make a pane with no
+    /// provider unchecked, and a capture that keeps failing still lets the deadline settle a ring.
+    #[test]
+    fn a_failed_read_proves_nothing_and_the_ring_still_meets_its_deadline() {
+        let (root, mut connection, session) = ring_session(
+            "screen-fails",
+            None,
+            "ring = true\nscreen = false",
+            "anything\n",
+        );
+        let seq = send_task(&root, &mut connection, &session);
+        assert_eq!(
+            delivery_of(&connection, &session, seq).as_deref(),
+            Some("unconfirmed")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+
+        let (root, mut connection, session) =
+            ring_session("capture-fails", Some("claude"), "ring = true", "");
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - ?1, rings = 1",
+                [RING_TIMEOUT.as_secs() + 1],
+            )
+            .unwrap();
+        std::fs::remove_file(root.join("screen")).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+        assert_eq!(
+            delivery_of(&connection, &session, ask).as_deref(),
+            Some("unconfirmed")
         );
         std::fs::remove_dir_all(root).unwrap();
     }
