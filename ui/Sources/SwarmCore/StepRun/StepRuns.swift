@@ -107,16 +107,25 @@ public struct StepRun: Identifiable, Equatable, Sendable {
 /// One scan of a workspace's step runs.
 public struct StepRunScan: Equatable, Sendable {
     public var runs: [StepRun] = []
-    /// A listing reached the 2,000-entry limit (`WorkspaceFiles.list`), so runs or steps may be missing.
-    public var cutOff = false
+    /// Folders whose listing reached the 2,000-entry limit (`WorkspaceFiles.list`), so runs or steps below them may be missing.
+    public var cut: [String] = []
     /// Folders that exist but cannot be listed, or whose step files cannot be read; their runs are missing.
     public var unreadable: [String] = []
 
     public var notice: String? {
         var lines: [String] = []
-        if cutOff { lines.append("List cut off: a folder holds over 2,000 entries, so some runs or steps may be missing.") }
+        if !cut.isEmpty { lines.append("List cut off at 2,000 entries in \(cut.joined(separator: ", ")), so some runs or steps may be missing.") }
         if !unreadable.isEmpty { lines.append("Can't read \(unreadable.joined(separator: ", "))") }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// Adds the closed part of an earlier scan that read the closed runs. This scan read the open
+    /// folders again, so only the closed runs and the `_closed` folders' cuts and read errors carry over.
+    public mutating func addClosed(from earlier: StepRunScan) {
+        func inClosed(_ path: String) -> Bool { path.split(separator: "/").contains { $0 == StepRuns.closedFolder } }
+        runs += earlier.runs.filter(\.closed)
+        cut += earlier.cut.filter(inClosed)
+        unreadable += earlier.unreadable.filter(inClosed)
     }
 }
 
@@ -135,7 +144,7 @@ public enum StepRuns {
         var head: String??
         var scan = StepRunScan()
         let skills = try await WorkspaceFiles.list(in: workspace, path: root)
-        scan.cutOff = skills.truncated
+        if skills.truncated { scan.cut.append(root) }
         func failed(_ path: String) {
             if FileManager.default.fileExists(atPath: workspace + "/" + path) { scan.unreadable.append(path) }
         }
@@ -144,13 +153,13 @@ public enum StepRuns {
                 failed(skill.path)
                 continue
             }
-            scan.cutOff = scan.cutOff || listing.truncated
+            if listing.truncated { scan.cut.append(skill.path) }
             var folders = listing.entries.filter { $0.kind == .directory && $0.name != closedFolder }.map { ($0, false) }
             if includeClosed, listing.entries.contains(where: { $0.name == closedFolder && $0.kind == .directory }) {
                 let path = skill.path + "/" + closedFolder
                 if let closed = try? await WorkspaceFiles.list(in: workspace, path: path) {
                     folders += closed.entries.filter { $0.kind == .directory }.map { ($0, true) }
-                    scan.cutOff = scan.cutOff || closed.truncated
+                    if closed.truncated { scan.cut.append(path) }
                 } else {
                     failed(path)
                 }
@@ -158,7 +167,7 @@ public enum StepRuns {
             for (folder, closed) in folders {
                 do {
                     if let run = try await read(
-                        workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head, cutOff: &scan.cutOff
+                        workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head, cut: &scan.cut
                     ) {
                         scan.runs.append(run)
                     }
@@ -176,11 +185,10 @@ public enum StepRuns {
     }
 
     /// Whether a chosen run left the scan. A closed run is only hidden while closed runs are not read,
-    /// and a run the scan cannot read, or whose skill or `_closed` folder it cannot list, is still there.
-    /// A cut-off scan may have left the run out, so nothing is gone then.
+    /// and a run under a folder the scan cannot read or list in full (`unreadable`, `cut`) is still there.
     public static func isGone(_ id: String, closed: Bool, from scan: StepRunScan, includeClosed: Bool) -> Bool {
-        !scan.cutOff && (includeClosed || !closed) && !scan.runs.contains { $0.id == id }
-            && !scan.unreadable.contains { id == $0 || id.hasPrefix($0 + "/") }
+        (includeClosed || !closed) && !scan.runs.contains { $0.id == id }
+            && !(scan.unreadable + scan.cut).contains { id == $0 || id.hasPrefix($0 + "/") }
     }
 
     /// Longest-path layers in file order: a step with no needs is layer 0, else one more than its
@@ -220,10 +228,10 @@ public enum StepRuns {
     }
 
     private static func read(
-        workspace: String, skill: String, folder: WorkspaceFileEntry, closed: Bool, head: inout String??, cutOff: inout Bool
+        workspace: String, skill: String, folder: WorkspaceFileEntry, closed: Bool, head: inout String??, cut: inout [String]
     ) async throws -> StepRun? {
         let listing = try await WorkspaceFiles.list(in: workspace, path: folder.path)
-        cutOff = cutOff || listing.truncated
+        if listing.truncated { cut.append(folder.path) }
         let files = stepFiles(listing.entries)
         let paths = files.map { folder.path + "/" + $0.name }
         var previews = paths.map { try? WorkspaceFiles.read(in: workspace, path: $0) }

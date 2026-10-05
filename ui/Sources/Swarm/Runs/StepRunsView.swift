@@ -61,10 +61,7 @@ struct StepRunsView: View {
                     if readClosed {
                         closed = scan
                     } else if let closed {
-                        scan.runs += closed.runs.filter(\.closed)
-                        scan.cutOff = scan.cutOff || closed.cutOff
-                        // Each tick reads the open folders again, so only the closed ones carry over.
-                        scan.unreadable += closed.unreadable.filter { $0.split(separator: "/").contains { $0 == StepRuns.closedFolder } }
+                        scan.addClosed(from: closed)
                     }
                     runs = scan.runs
                     if let run = scan.runs.first(where: { $0.id == chosen?.id }) { lastChosen = run }

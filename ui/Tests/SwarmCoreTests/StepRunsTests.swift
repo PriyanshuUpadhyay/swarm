@@ -207,7 +207,7 @@ struct StepRunsTests {
         #expect(runs.first?.lastActivity != nil)
     }
 
-    @Test("A run folder over the 2,000-entry listing limit marks the scan cut off, so the view can say runs may be missing")
+    @Test("A run folder over the 2,000-entry listing limit is named as cut, so the view can say runs may be missing")
     func cutOffListing() async throws {
         let workspace = try fixture()
         defer { try? FileManager.default.removeItem(at: workspace) }
@@ -216,13 +216,13 @@ struct StepRunsTests {
         for index in 1...2_000 { files["note-\(index).txt"] = "" }
         try write(run, files)
         let crowded = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
-        #expect(crowded.cutOff)
+        #expect(crowded.cut == ["tmp/flow/2026-10-05-crowded"])
         #expect(crowded.notice?.hasPrefix("List cut off") == true)
 
         try FileManager.default.removeItem(at: run)
         try write(run, ["01-frame.md": "Status: open\nUses:\n"])
         let small = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
-        #expect(!small.cutOff && small.notice == nil)
+        #expect(small.cut.isEmpty && small.notice == nil)
     }
 
     @Test("A run folder that still exists but cannot be listed is named in the scan, not dropped without a sign")
@@ -325,8 +325,32 @@ struct StepRunsTests {
         let lockedSkill = StepRunScan(unreadable: ["tmp/flow"])
         #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: lockedSkill, includeClosed: false))
         #expect(StepRuns.isGone("tmp/flow-other/r1", closed: false, from: lockedSkill, includeClosed: false))
-        // The 2,000-entry cut may leave the chosen run out of the scan.
-        #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cutOff: true), includeClosed: false))
+        // A cut listing that holds the chosen run may leave it out; a cut anywhere else cannot.
+        #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cut: ["tmp"]), includeClosed: false))
+        #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cut: ["tmp/flow"]), includeClosed: false))
+        #expect(!StepRuns.isGone(closedID, closed: true, from: StepRunScan(cut: ["tmp/flow/_closed"]), includeClosed: true))
+        #expect(StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cut: ["tmp/flow/_closed"]), includeClosed: false))
+        // A run folder's own cut drops steps, not runs.
+        #expect(StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cut: ["tmp/flow/2026-10-05-crowded"]), includeClosed: false))
+    }
+
+    @Test("A tick that reads only open folders keeps the closed part of the closed read, not its old open cuts or errors")
+    func addClosed() {
+        func run(_ id: String, closed: Bool) -> StepRun {
+            StepRun(id: id, skill: "flow", name: id, closed: closed, steps: [], lastActivity: nil)
+        }
+        let closedRead = StepRunScan(
+            runs: [run("tmp/flow/r1", closed: false), run("tmp/flow/_closed/old", closed: true)],
+            cut: ["tmp/flow/2026-10-05-crowded", "tmp/flow/_closed/big"],
+            unreadable: ["tmp/flow/2026-10-05-locked", "tmp/flow/_closed"]
+        )
+        var tick = StepRunScan(runs: [run("tmp/flow/r1", closed: false)])
+        tick.addClosed(from: closedRead)
+        #expect(tick.runs.map(\.id) == ["tmp/flow/r1", "tmp/flow/_closed/old"])
+        #expect(tick.cut == ["tmp/flow/_closed/big"])
+        #expect(tick.unreadable == ["tmp/flow/_closed"])
+        // The open folder's cut is gone, so a removed open run counts as gone.
+        #expect(StepRuns.isGone("tmp/flow/r2", closed: false, from: tick, includeClosed: true))
     }
 
     private func write(_ folder: URL, _ files: [String: String]) throws {
