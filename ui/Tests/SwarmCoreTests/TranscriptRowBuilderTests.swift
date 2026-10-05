@@ -608,4 +608,42 @@ struct TranscriptDebugDataTests {
         #expect(!ChairTurn.isActive([question, answer, ended]))
         #expect(ChairTurn.isActive([question, answer, ended, question]))
     }
+
+    private static let ring = "swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>."
+
+    @Test("A ring to an idle agent is a ring row that starts a turn; a ring mid-turn starts none")
+    func ringRows() {
+        let idle = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-1")),
+        ])
+        #expect(idle.map(\.kind) == [.system])
+        #expect(idle[0].systemKind == TranscriptSystemKind.swarmRing)
+        #expect(idle[0].eventID == "ring-1:ring")
+        #expect(idle[0].startsTurn)
+        #expect(!idle[0].isHiddenByDefault)
+        #expect(ChairTurn.isActive(idle))
+
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-2")),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
+        ])
+        #expect(rows.map(\.eventID) == ["prompt", "ring-2:ring", "end:result", "ring-3:ring"])
+        #expect(rows.map(\.startsTurn) == [false, false, false, true])
+        #expect(ChairTurn.isActive(rows))
+        #expect(!ChairTurn.isActive(Array(rows.prefix(3))))
+    }
+
+    @Test("A ring between a tool call and its result does not split them")
+    func ringKeepsToolScope() {
+        let rows = TranscriptRowBuilder.rows(from: [
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("ls"), status: .pending, meta: Meta()),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring")),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+        ])
+        #expect(rows.map(\.eventID) == ["prompt", "c1:call", "ring:ring"])
+        #expect(rows[1].tool?.output == "ok")
+    }
 }

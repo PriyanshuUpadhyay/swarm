@@ -13,6 +13,8 @@ public enum TranscriptSystemKind {
     public static let injected = "injected"
     public static let peerMessage = "peer_message"
     public static let queuedPrompt = "queued_prompt"
+    /// A ring that `swarm` typed into the agent's pane; not the owner's prompt.
+    public static let swarmRing = "swarm_ring"
 }
 
 /// The text rows a chat can draw from typed transcript events.
@@ -273,6 +275,13 @@ public enum TranscriptRowBuilder {
             usedIDs.insert(row.eventID)
             rows.append(row)
         }
+        // A ring wakes an idle agent, so it starts a turn then; mid-turn the agent reads it later.
+        var turnOpen = false
+        for index in rows.indices {
+            if rows[index].systemKind == TranscriptSystemKind.swarmRing, !turnOpen { rows[index].startsTurn = true }
+            if rows[index].kind == .user || rows[index].startsTurn { turnOpen = true }
+            if rows[index].endsTurn { turnOpen = false }
+        }
         return rows
     }
 
@@ -382,6 +391,9 @@ public enum TranscriptRowBuilder {
             )
         case .systemMessage(TranscriptSystemKind.shellOutput, let text, let meta):
             row = shellRow(ShellRecord.run(command: nil, outputText: text), eventID: key(meta, "shell", index))
+        case .systemMessage(TranscriptSystemKind.swarmRing, let text, let meta):
+            row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "ring", index))
+            row.systemKind = TranscriptSystemKind.swarmRing
         case .systemMessage(TranscriptSystemKind.interrupted, _, let meta):
             row = TranscriptRow(kind: .notice, text: "Interrupted", eventID: key(meta, "interrupted", index))
             row.endsTurn = true
