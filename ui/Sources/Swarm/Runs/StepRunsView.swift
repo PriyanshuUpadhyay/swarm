@@ -10,6 +10,7 @@ struct StepRunsView: View {
     @State private var runs: [StepRun]?
     @State private var error: String?
     @State private var notice: String?
+    @State private var scanNotice: String?
     @State private var chosen: ChosenRun?
     @State private var showClosed = false
     @State private var retryID = 0
@@ -39,17 +40,23 @@ struct StepRunsView: View {
             // Closed runs do not change, so they are read once when the group opens, not on every
             // tick (500 closed runs took about 4 s a scan). `ponytail:` a run closed while the group is
             // open shows there after the next toggle.
-            var closed: [StepRun]?
+            var closed: StepRunScan?
             // The app has no file watcher; it polls live data, so a step change shows within 2 s.
             while !Task.isCancelled {
                 do {
                     let readClosed = showClosed && closed == nil
-                    var value = try await StepRuns.scan(workspace: directory, includeClosed: readClosed)
+                    var scan = try await StepRuns.scan(workspace: directory, includeClosed: readClosed)
                     try Task.checkCancellation()
-                    if readClosed { closed = value.filter(\.closed) } else { value += closed ?? [] }
-                    runs = value
+                    if readClosed {
+                        closed = scan
+                    } else if let closed {
+                        scan.runs += closed.runs.filter(\.closed)
+                        scan.cutOff = scan.cutOff || closed.cutOff
+                    }
+                    runs = scan.runs
+                    scanNotice = scan.notice
                     error = nil
-                    if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: value, includeClosed: showClosed) {
+                    if let chosen, StepRuns.isGone(chosen.id, closed: chosen.closed, from: scan.runs, includeClosed: showClosed) {
                         choose(nil)
                         notice = "This run moved or was removed."
                     }
@@ -82,6 +89,9 @@ struct StepRunsView: View {
             }
             if let notice {
                 Text(notice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
+            }
+            if let scanNotice {
+                Text(verbatim: scanNotice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
             }
             if let runs {
                 let open = runs.filter { !$0.closed }

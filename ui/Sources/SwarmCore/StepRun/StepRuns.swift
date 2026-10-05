@@ -102,6 +102,17 @@ public struct StepRun: Identifiable, Equatable, Sendable {
     }
 }
 
+/// One scan of a workspace's step runs.
+public struct StepRunScan: Equatable, Sendable {
+    public var runs: [StepRun] = []
+    /// A listing reached the 2,000-entry limit (`WorkspaceFiles.list`), so runs or steps may be missing.
+    public var cutOff = false
+
+    public var notice: String? {
+        cutOff ? "List cut off: a folder holds over 2,000 entries, so some runs or steps may be missing." : nil
+    }
+}
+
 public enum StepRuns {
     static let todoHead = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
     /// `<workspace>/tmp/<skill>/` holds the runs and `_closed/` the closed ones (the kit's run-folder.md).
@@ -111,27 +122,34 @@ public enum StepRuns {
     /// The runs under `<workspace>/tmp/<skill>/<run>/`, and `_closed/<run>/` when asked, newest first.
     /// No `tmp/` is no runs; a `tmp/` that cannot be listed throws. A run that cannot be listed drops
     /// out, because the usual cause is a close that moved it to `_closed/` during the scan.
-    public static func scan(workspace: String, includeClosed: Bool) async throws -> [StepRun] {
+    public static func scan(workspace: String, includeClosed: Bool) async throws -> StepRunScan {
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspace + "/" + root, isDirectory: &isDirectory) else { return [] }
+        guard FileManager.default.fileExists(atPath: workspace + "/" + root, isDirectory: &isDirectory) else { return StepRunScan() }
         var head: String??
-        var runs: [StepRun] = []
-        for skill in try await WorkspaceFiles.list(in: workspace, path: root).entries where skill.kind == .directory {
+        var scan = StepRunScan()
+        let skills = try await WorkspaceFiles.list(in: workspace, path: root)
+        scan.cutOff = skills.truncated
+        for skill in skills.entries where skill.kind == .directory {
             guard let listing = try? await WorkspaceFiles.list(in: workspace, path: skill.path) else { continue }
+            scan.cutOff = scan.cutOff || listing.truncated
             var folders = listing.entries.filter { $0.kind == .directory && $0.name != closedFolder }.map { ($0, false) }
             if includeClosed, listing.entries.contains(where: { $0.name == closedFolder && $0.kind == .directory }),
                let closed = try? await WorkspaceFiles.list(in: workspace, path: skill.path + "/" + closedFolder) {
                 folders += closed.entries.filter { $0.kind == .directory }.map { ($0, true) }
+                scan.cutOff = scan.cutOff || closed.truncated
             }
             for (folder, closed) in folders {
-                if let run = try? await read(workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head) {
-                    runs.append(run)
+                if let run = try? await read(
+                    workspace: workspace, skill: skill.name, folder: folder, closed: closed, head: &head, cutOff: &scan.cutOff
+                ) {
+                    scan.runs.append(run)
                 }
             }
         }
-        return runs.sorted {
+        scan.runs.sort {
             ($0.lastActivity ?? .distantPast, $0.name) > ($1.lastActivity ?? .distantPast, $1.name)
         }
+        return scan
     }
 
     /// Whether a chosen run left the scan. A closed run is only hidden while closed runs are not read.
@@ -176,9 +194,11 @@ public enum StepRuns {
     }
 
     private static func read(
-        workspace: String, skill: String, folder: WorkspaceFileEntry, closed: Bool, head: inout String??
+        workspace: String, skill: String, folder: WorkspaceFileEntry, closed: Bool, head: inout String??, cutOff: inout Bool
     ) async throws -> StepRun? {
-        let files = try await WorkspaceFiles.list(in: workspace, path: folder.path).entries
+        let listing = try await WorkspaceFiles.list(in: workspace, path: folder.path)
+        cutOff = cutOff || listing.truncated
+        let files = listing.entries
             .filter { $0.kind == .file && $0.name.wholeMatch(of: /[0-9]{2}-.+\.md/) != nil }
             .sorted { $0.name < $1.name }
         let paths = files.map { folder.path + "/" + $0.name }

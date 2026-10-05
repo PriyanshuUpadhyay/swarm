@@ -28,7 +28,7 @@ struct StepRunsTests {
             "brief.md": "Not a step.\n",
             "events.log": "2026-10-05T17:13:36\t01-frame\ttake a\nnot a line\n2026-10-05T17:20:00\t04-impact\ttake worker-a\n",
         ])
-        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(runs.map(\.id) == ["tmp/flow/2026-10-05-login"])
         let steps = try #require(runs.first).steps
         #expect(steps.map(\.id) == ["01-frame", "02-design", "03-contracts", "04-impact", "05-build", "06-review", "07-close"])
@@ -59,12 +59,12 @@ struct StepRunsTests {
 
         try "next".write(to: workspace.appendingPathComponent("next.txt"), atomically: true, encoding: .utf8)
         try await commit(workspace, "next")
-        let moved = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        let moved = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(moved.first?.steps.first { $0.id == "06-review" }?.stale == ["05-build"], "a new commit makes the review stale")
 
         // Each scan reads the files again, so a poll sees a new line 1 at once (done-when 4).
         try write(run, ["07-close.md": "Status: active closer\nUses: 06-review@\(head.prefix(12))\n"])
-        let changed = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        let changed = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(changed.first?.steps.last?.state == .active(agent: "closer"))
     }
 
@@ -80,7 +80,7 @@ struct StepRunsTests {
         try write(workspace.appendingPathComponent("tmp/flow/_closed/2026-10-01-shipped"), steps)
         try write(workspace.appendingPathComponent("tmp/flow/2026-10-02-open"), steps)
         try await commit(workspace, "next")
-        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: true)
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: true).runs
         func review(closed: Bool) -> StepNode? { runs.first { $0.closed == closed }?.steps.last }
         #expect(review(closed: true)?.stale == [])
         #expect(review(closed: false)?.stale == ["05-build"], "an open run still follows HEAD")
@@ -95,7 +95,7 @@ struct StepRunsTests {
         try write(workspace.appendingPathComponent("tmp/flow/2026-10-05-placeholders"), files)
         let clock = ContinuousClock()
         let start = clock.now
-        _ = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        _ = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(clock.now - start < .seconds(1), "ten waits of 150 ms take 1.5 s")
     }
 
@@ -116,7 +116,7 @@ struct StepRunsTests {
         try write(workspace.appendingPathComponent("tmp/deliver"), [:])
         try "task".write(to: workspace.appendingPathComponent("tmp/deliver/2026-10-01-old.md"), atomically: true, encoding: .utf8)
 
-        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(runs.map(\.id) == ["tmp/flow/2026-10-01-old"], "a folder with no Status line is not a run")
         let steps = try #require(runs.first).steps
         #expect(steps.map(\.needs) == [[], ["01-frame"], ["02-design"], [], ["04-impact"]])
@@ -126,7 +126,7 @@ struct StepRunsTests {
         #expect(steps[3].ready == true)
         #expect(runs.first?.urgency == .active)
 
-        let all = try await StepRuns.scan(workspace: workspace.path, includeClosed: true)
+        let all = try await StepRuns.scan(workspace: workspace.path, includeClosed: true).runs
         #expect(all.map(\.id).sorted() == ["tmp/flow/2026-10-01-old", "tmp/flow/_closed/2026-09-30-closed"])
         #expect(all.first { $0.closed }?.name == "2026-09-30-closed")
     }
@@ -143,7 +143,7 @@ struct StepRunsTests {
             "04-report.md": "Status: thinking about it\nUses: 02-local, 03-web\n",
         ])
         try Data([0xff, 0xfe, 0x00]).write(to: run.appendingPathComponent("05-binary.md"))
-        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).first).steps
+        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs.first).steps
         #expect(steps.map(\.id) == ["01-question", "02-local", "03-web", "04-report", "05-binary"])
         #expect(steps[1].state == nil && steps[1].error == "Line 1 is not a status")
         #expect(steps[4].state == nil && steps[4].error != nil)
@@ -159,7 +159,7 @@ struct StepRunsTests {
         defer { try? FileManager.default.removeItem(at: workspace) }
         let run = workspace.appendingPathComponent("tmp/flow/2026-10-05-race")
         try write(run, ["01-frame.md": "Status: done x\nUses:\n", "02-design.md": ""])
-        let scan = Task { try await StepRuns.scan(workspace: workspace.path, includeClosed: false) }
+        let scan = Task { try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs }
         try await Task.sleep(for: .milliseconds(20))
         try write(run, ["02-design.md": "Status: open\nUses: 01-frame\n"])
         #expect(try await scan.value.first?.steps.last?.state == .open)
@@ -175,7 +175,7 @@ struct StepRunsTests {
             "01-frame.md": "Status: done x\r\nUses:\r\n\r\nbody\r\n",
             "02-design.md": "Status: done y\r\nUses: 01-frame@903962a3eed6\r\n",
         ])
-        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).first).steps
+        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs.first).steps
         #expect(steps.map(\.state) == [.done(revision: "x"), .done(revision: "y")])
         #expect(steps[1].needs == ["01-frame"])
         #expect(steps[1].stale == [])
@@ -189,7 +189,7 @@ struct StepRunsTests {
             "01-frame.md": "Status: done x\nUses:\n",
             "02-design.md": "Status: open\nUses: 01-frame, 01-frame@abc\n",
         ])
-        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).first).steps
+        let steps = try #require(try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs.first).steps
         #expect(steps[1].needs == ["01-frame"])
     }
 
@@ -202,16 +202,34 @@ struct StepRunsTests {
             "01-frame.md": "Status: done x\nUses:\n",
             "events.log": "2000-01-01T10:00:00\t01-frame\tdone x\n",
         ])
-        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        let runs = try await StepRuns.scan(workspace: workspace.path, includeClosed: false).runs
         #expect(runs.map(\.name) == ["2026-10-05-started", "2026-09-28-logged"])
         #expect(runs.first?.lastActivity != nil)
+    }
+
+    @Test("A run folder over the 2,000-entry listing limit marks the scan cut off, so the view can say runs may be missing")
+    func cutOffListing() async throws {
+        let workspace = try fixture()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let run = workspace.appendingPathComponent("tmp/flow/2026-10-05-crowded")
+        var files = ["01-frame.md": "Status: open\nUses:\n"]
+        for index in 1...2_000 { files["note-\(index).txt"] = "" }
+        try write(run, files)
+        let crowded = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(crowded.cutOff)
+        #expect(crowded.notice?.hasPrefix("List cut off") == true)
+
+        try FileManager.default.removeItem(at: run)
+        try write(run, ["01-frame.md": "Status: open\nUses:\n"])
+        let small = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(!small.cutOff && small.notice == nil)
     }
 
     @Test("No tmp folder is no runs, not an error")
     func noTmp() async throws {
         let workspace = try fixture()
         defer { try? FileManager.default.removeItem(at: workspace) }
-        #expect(try await StepRuns.scan(workspace: workspace.path, includeClosed: true).isEmpty)
+        #expect(try await StepRuns.scan(workspace: workspace.path, includeClosed: true).runs.isEmpty)
     }
 
     @Test("Layers drop an edge that closes a cycle and an edge to a missing step")
