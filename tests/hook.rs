@@ -432,6 +432,14 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
     .unwrap();
     std::os::unix::fs::symlink("../.codex/hooks.json", home.join(".codex-spare/hooks.json"))
         .unwrap();
+    // Two links to a hooks.json that does not exist yet are still one file.
+    write(".codex-fresh/config.toml", "");
+    write(".codex-fresh2/config.toml", "");
+    std::fs::create_dir_all(home.join("shared")).unwrap();
+    for fresh in [".codex-fresh", ".codex-fresh2"] {
+        std::os::unix::fs::symlink("../shared/hooks.json", home.join(fresh).join("hooks.json"))
+            .unwrap();
+    }
 
     let plan = hooks(exe, &home, &["setup", "--plan"]);
     assert!(!stdout(&plan).contains("swarm guard"), "{}", stdout(&plan));
@@ -460,6 +468,10 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
     }
     assert!(home.join(".codex-spare/hooks.json").is_symlink());
     assert_eq!(
+        read("shared/hooks.json")["hooks"]["PreToolUse"],
+        serde_json::json!([{"hooks": [guard("codex")]}])
+    );
+    assert_eq!(
         read(".gemini/config/hooks.json")["swarm-guard"],
         serde_json::json!({"PreToolUse": [{"matcher": "*", "hooks": [guard("agy")]}]})
     );
@@ -484,6 +496,13 @@ fn a_rule_list_registers_the_guard_on_every_cli_and_each_registration_answers() 
         stdout(&again),
         "swarm's hooks are already set up. No file changes.\n"
     );
+    // With the list gone, the registrations left behind would block every call, so status says so.
+    let list = std::fs::read(home.join(".swarm/guards.json")).unwrap();
+    std::fs::remove_file(home.join(".swarm/guards.json")).unwrap();
+    let status = hooks(exe, &home, &["status", "--json"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["guard"], false, "{status}");
+    std::fs::write(home.join(".swarm/guards.json"), list).unwrap();
 
     // Each registered command, with `swarm` on PATH being this build, answers in its CLI's form.
     let bin = home.join("bin");

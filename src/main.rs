@@ -642,10 +642,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
     // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
     // with no list never gets a hook that would block every call.
-    let guard = std::path::Path::new(&swarm::paths::home()?)
-        .join(".swarm")
-        .join(swarm::paths::GUARDS)
-        .exists();
+    let has_list = swarm::paths::guards_file()?.exists();
     let claude_settings = unique_targets(
         std::iter::once(user_home.join(".claude/settings.json")).chain(
             std::fs::read_dir(user_home.join(".claude/.profiles"))
@@ -665,7 +662,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|error| unreadable(path.clone(), error))
         };
         let mut plans: Vec<_> = Vec::new();
-        if guard {
+        if has_list {
             plans.extend(
                 claude_settings
                     .iter()
@@ -677,7 +674,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|home| {
                 let mut entries = codex.clone();
-                if guard {
+                if has_list {
                     // Trust the guard group where the planned hooks.json puts it.
                     let target = canonical(&home.join("hooks.json"));
                     let hooks = plans
@@ -692,7 +689,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         plans.extend(codex_plans);
         plans.push(
-            swarm::bus::agy_hook_plan(&agy_hooks, guard)
+            swarm::bus::agy_hook_plan(&agy_hooks, has_list)
                 .unwrap_or_else(|error| unreadable(agy_hooks.clone(), error)),
         );
         plans
@@ -702,17 +699,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ["status", "--json"] => print_json(&serde_json::json!({
             "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
             "agy": swarm::bus::agy_hooks_set(&agy_hooks),
-            // True with no rule list, else when every guard registration is in place.
-            "guard": !guard
-                || (claude_settings.iter().chain(&codex_hooks).all(|path| {
-                    let provider = if codex_hooks.contains(path) { "codex" } else { "claude" };
-                    swarm::bus::guard_hooks_plan(path, provider)
-                        .is_ok_and(|plan| plan.after == plan.before)
-                }) && homes.iter().all(|home| {
-                    let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
-                    let entries = swarm::bus::codex_guard_trust(home, &hooks);
-                    !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
-                }) && swarm::bus::agy_guard_set(&agy_hooks)),
+            "guard": guard_status(has_list, &claude_settings, &codex_hooks, &homes, &agy_hooks),
         })),
         ["setup", "--plan"] => {
             print!("{}", hook_plan_text(&plan()));
@@ -746,7 +733,34 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// A path as its link target, so two names of one file are one file.
+/// Whether the guard registrations match the rule list: each one in place while the list exists,
+/// and none left once it is gone, because a registration with no list blocks every call.
+fn guard_status(
+    has_list: bool,
+    claude_settings: &[std::path::PathBuf],
+    codex_hooks: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+    agy_hooks: &std::path::Path,
+) -> bool {
+    let files = || {
+        let claude = claude_settings.iter().map(|path| (path, "claude"));
+        claude.chain(codex_hooks.iter().map(|path| (path, "codex")))
+    };
+    if !has_list {
+        return !swarm::bus::agy_guard_present(agy_hooks)
+            && files().all(|(path, provider)| !swarm::bus::guard_registered(path, provider));
+    }
+    files().all(|(path, provider)| {
+        swarm::bus::guard_hooks_plan(path, provider).is_ok_and(|plan| plan.after == plan.before)
+    }) && homes.iter().all(|home| {
+        let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
+        let entries = swarm::bus::codex_guard_trust(home, &hooks);
+        !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
+    }) && swarm::bus::agy_guard_set(agy_hooks)
+}
+
+/// A path as its link target, so two names of one file are one file. Two plans of one missing
+/// file both write the same text, which `write_text` accepts.
 fn canonical(path: &std::path::Path) -> std::path::PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -2426,13 +2440,13 @@ fn guard(args: &[String]) -> (String, String, i32) {
         return (String::new(), format!("{USAGE}\n"), 2);
     };
     let deadline = std::time::Instant::now() + swarm::guard::DEADLINE;
-    let verdict = match (swarm::paths::home(), env::var("HOME")) {
-        (Ok(swarm_home), Ok(home)) => {
-            let path = format!("{swarm_home}/.swarm/{}", swarm::paths::GUARDS);
+    let verdict = match (swarm::paths::guards_file(), env::var("HOME")) {
+        (Ok(path), Ok(home)) => {
+            let path = path.to_string_lossy();
             let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
-            match (std::fs::read_to_string(&path), payload) {
+            match (std::fs::read_to_string(path.as_ref()), payload) {
                 (_, None) => swarm::guard::Verdict::Deny(
-                    "swarm guard: stdin did not close within 2 s, so the call is blocked".into(),
+                    "swarm guard: cannot read the hook payload on stdin within 2 s, so the call is blocked".into(),
                 ),
                 (Err(error), _) if error.kind() != std::io::ErrorKind::NotFound => {
                     swarm::guard::Verdict::Deny(format!(
@@ -2462,6 +2476,12 @@ fn main() {
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "guard"
     {
+        // A panic exits 101, which Claude and Codex read as "let the call through"; exit 2 blocks
+        // on every CLI.
+        std::panic::set_hook(Box::new(|info| {
+            eprintln!("swarm guard: {info}, so the call is blocked");
+            std::process::exit(2);
+        }));
         let (stdout, stderr, code) = guard(rest);
         print!("{stdout}");
         eprint!("{stderr}");

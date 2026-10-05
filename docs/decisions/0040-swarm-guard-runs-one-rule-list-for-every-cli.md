@@ -42,9 +42,14 @@ Chosen: swarm runs the rules and writes the registrations.
 - Rule list: `{"rules": [{name, event, kind, tools, command, timeout}]}`. `kind` is `guard` (the
   default) or `reminder`. `tools` lists tool names, matched without case; absent means every tool.
   `command` is an argv, with `~/` as HOME and no shell.
-- A rule reads `{provider, event, tool, input, cwd, session_id}` on stdin. Exit 0 allows. Exit 2
-  denies, with stderr as the reason. Any other exit, a timeout, or a program that does not start
-  is a failure: a guard blocks the call, a reminder is skipped. A missing or unparsable list blocks.
+- The list is `~/.swarm/guards.json` for every build and every SWARM_HOME, because the hooks
+  that read it are global to each CLI; `SWARM_GUARDS` names another file for tests.
+- A rule reads `{provider, event, tool, input, cwd, session_id}` on stdin and runs in the session's
+  folder. Exit 0 allows. Exit 2 denies, with stderr (at most 64 KiB) as the reason. Any other
+  exit, a timeout, or a program that does not start is a failure, and a guard then blocks the
+  call. A reminder never blocks, because a crash can exit 2 too (`python3` with a missing script
+  does). A missing or unparsable list blocks, and so does a rule whose event is not a guard event
+  or whose `tools` list is empty, because it could never match. A panic in the runner exits 2.
 - The runner has one 8 s deadline under the 10 s registration timeout, because a CLI that times a
   hook out lets the call through.
 - Replies: Claude gets `permissionDecision: deny` JSON, Codex gets exit 2 and stderr, AGY gets
@@ -66,6 +71,8 @@ Chosen: swarm runs the rules and writes the registrations.
   guard against that.
 - Bad: if `swarm` is missing from PATH, Claude and Codex let the call through and AGY refuses
   every tool.
+- Bad: removing the list while the registrations stay blocks every call. `hooks status` then
+  reports `guard: false`, and the owner removes the registrations by hand.
 - Bad: only PreToolUse is a guard event. Hooks on events AGY lacks (UserPromptSubmit,
   SessionStart) stay in each CLI's own files.
 - Bad: a Python rule adds a process start (about 40 ms) to each matched tool call.

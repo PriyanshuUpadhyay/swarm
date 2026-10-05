@@ -270,45 +270,73 @@ pub fn codex_hook_trust(command: &str) -> Vec<(String, String)> {
             let label = codex_event_label(event);
             (
                 format!("/<session-flags>/config.toml:{label}:1:0"),
-                codex_hash(&label, command, 3),
+                codex_hash(&label, None, command, STATE_HOOK_TIMEOUT, false),
             )
         })
         .collect()
 }
 
-/// The hash Codex trusts for one command hook with no matcher.
-fn codex_hash(label: &str, command: &str, timeout: u64) -> String {
+/// The timeout of each state hook that swarm passes or writes, in seconds.
+const STATE_HOOK_TIMEOUT: u64 = 3;
+
+/// The hash Codex trusts for one command hook: its handler and its group's matcher.
+fn codex_hash(
+    label: &str,
+    matcher: Option<&str>,
+    command: &str,
+    timeout: u64,
+    is_async: bool,
+) -> String {
     use sha2::Digest;
     // Keys in sorted order; with `preserve_order` the map keeps them so.
-    let identity = serde_json::json!({
+    let mut identity = serde_json::json!({
         "event_name": label,
-        "hooks": [{"async": false, "command": command, "timeout": timeout, "type": "command"}],
+        "hooks": [{"async": is_async, "command": command, "timeout": timeout, "type": "command"}],
     });
+    if let Some(matcher) = matcher {
+        identity["matcher"] = matcher.into();
+    }
     let digest = sha2::Sha256::digest(identity.to_string().as_bytes());
     let hash: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
     format!("sha256:{hash}")
 }
 
-/// The Codex trust entry of each guard group in a Codex home's `hooks.json` text, keyed by the
-/// group's place as Codex counts it (`codex app-server` 0.159.0 `hooks/list`, 2026-10-05).
+/// The Codex trust entry of each guard handler in a Codex home's `hooks.json` text, keyed by its
+/// group and handler place as Codex counts them (`codex app-server` 0.159.0 `hooks/list`,
+/// 2026-10-05). The hash follows the handler as the file holds it, so an owner's own timeout or
+/// matcher is trusted as it is. A handler with no timeout gets no entry, because Codex's default
+/// is not known here; Codex then asks for review.
 pub fn codex_guard_trust(home: &std::path::Path, hooks: &str) -> Vec<(String, String)> {
     let value: serde_json::Value = serde_json::from_str(hooks).unwrap_or_default();
     let file = home.join("hooks.json");
-    crate::guard::EVENTS
-        .iter()
-        .filter_map(|event| {
-            let command = guard_command("codex", event);
-            let groups = value["hooks"][event].as_array()?;
-            let group = groups
-                .iter()
-                .position(|group| has_handler(group, &command))?;
-            let label = codex_event_label(event);
-            Some((
-                format!("{}:{label}:{group}:0", file.display()),
-                codex_hash(&label, &command, crate::guard::REGISTRATION_TIMEOUT),
-            ))
-        })
-        .collect()
+    let mut entries = Vec::new();
+    for event in crate::guard::EVENTS {
+        let command = guard_command("codex", event);
+        let label = codex_event_label(event);
+        let groups = value["hooks"][event].as_array().into_iter().flatten();
+        for (group_index, group) in groups.enumerate() {
+            let handlers = group["hooks"].as_array().into_iter().flatten();
+            for (handler_index, handler) in handlers.enumerate() {
+                let Some(timeout) = handler["timeout"].as_u64() else {
+                    continue;
+                };
+                if handler["command"] != command.as_str() {
+                    continue;
+                }
+                entries.push((
+                    format!("{}:{label}:{group_index}:{handler_index}", file.display()),
+                    codex_hash(
+                        &label,
+                        group["matcher"].as_str(),
+                        &command,
+                        timeout,
+                        handler["async"].as_bool().unwrap_or(false),
+                    ),
+                ));
+            }
+        }
+    }
+    entries
 }
 
 /// Codex's snake_case name for a hook event, as its trust keys use it.
@@ -947,8 +975,11 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<HookFilePlan
     let mut conflicts = Vec::new();
     let mut added = false;
     // The guard is a group of its own (ADR 0040), so a Mac that has swarm's state group keeps it.
-    let wanted = [("swarm", agy_group()), ("swarm-guard", agy_guard_group())];
-    for (name, group) in wanted.into_iter().take(if guard { 2 } else { 1 }) {
+    let mut wanted = vec![("swarm", agy_group())];
+    if guard {
+        wanted.push(("swarm-guard", agy_guard_group()));
+    }
+    for (name, group) in wanted {
         match groups.get(name) {
             None => {
                 groups.insert(name.into(), group);
@@ -989,6 +1020,24 @@ pub fn agy_hooks_set(path: &std::path::Path) -> bool {
 pub fn agy_guard_set(path: &std::path::Path) -> bool {
     read_json_object(path)
         .is_ok_and(|(_, value)| value.get("swarm-guard") == Some(&agy_guard_group()))
+}
+
+/// Whether AGY's `hooks.json` has a `swarm-guard` group in any form.
+pub fn agy_guard_present(path: &std::path::Path) -> bool {
+    read_json_object(path).is_ok_and(|(_, value)| value.get("swarm-guard").is_some())
+}
+
+/// Whether a Claude `settings.json` or a Codex `hooks.json` runs swarm's guard command anywhere.
+pub fn guard_registered(path: &std::path::Path, provider: &str) -> bool {
+    read_json_object(path).is_ok_and(|(_, value)| {
+        crate::guard::EVENTS.iter().any(|event| {
+            value["hooks"][event].as_array().is_some_and(|groups| {
+                groups
+                    .iter()
+                    .any(|group| has_handler(group, &guard_command(provider, event)))
+            })
+        })
+    })
 }
 
 /// The command a guard registration runs. It is `swarm` on PATH, not a session's link, because
@@ -2134,5 +2183,25 @@ mod tests {
             assert!(guard_hooks_plan(&path, "claude").is_err(), "{bad}");
         }
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_guard_trust_follows_the_handler_as_the_file_holds_it() {
+        // `codex app-server` 0.159.0 `hooks/list` on 2026-10-05 gave this key and hash for this
+        // hooks.json: an owner group with a matcher, the guard second, with its own timeout.
+        let hooks = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+            {"type": "command", "command": "echo other", "timeout": 3},
+            {"type": "command", "command": "swarm guard codex PreToolUse", "timeout": 30}]}]}}"#;
+        let home = std::path::Path::new("/h/.codex");
+        assert_eq!(
+            codex_guard_trust(home, hooks),
+            [(
+                "/h/.codex/hooks.json:pre_tool_use:0:1".to_string(),
+                "sha256:3bca97397bb529c41561a72882fa330e8a68ca7d4fdee2101617c019f85d6faf"
+                    .to_string()
+            )]
+        );
+        let no_timeout = r#"{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "swarm guard codex PreToolUse"}]}]}}"#;
+        assert!(codex_guard_trust(home, no_timeout).is_empty());
     }
 }

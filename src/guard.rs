@@ -14,6 +14,12 @@ pub const REGISTRATION_TIMEOUT: u64 = 10;
 /// through.
 pub const DEADLINE: Duration = Duration::from_secs(8);
 const RULE_TIMEOUT: u64 = 3;
+/// How often the runner looks for a rule's exit; it bounds the delay each rule adds.
+const POLL: Duration = Duration::from_millis(5);
+/// A rule that leaves a process behind can hold stderr open, so the reason gets this long.
+const REASON_WAIT: Duration = Duration::from_millis(200);
+/// The most of a rule's stderr that becomes a deny reason.
+const REASON_MAX: u64 = 64 * 1024;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,7 +46,8 @@ enum Kind {
     /// A guard that fails blocks the call.
     #[default]
     Guard,
-    /// A reminder that fails lets the call through.
+    /// A reminder never blocks: whatever it does, the call goes on. A crash can exit 2 as well
+    /// (`python3` with a missing script does), so a reminder's exit 2 is not a deny.
     Reminder,
 }
 
@@ -78,7 +85,7 @@ pub fn normalize(
         "provider": provider,
         "event": event,
         "tool": tool.as_str().unwrap_or_default(),
-        "input": if input.is_object() { input.clone() } else { serde_json::json!({}) },
+        "input": input,
         "cwd": cwd,
         "session_id": session.as_str(),
     })
@@ -108,12 +115,22 @@ pub fn decide(
         Ok(list) => list,
         Err(error) => return refuse(format!("{path} is not a valid rule list: {error}")),
     };
+    // A rule that can never match would let every call through with no message.
+    if let Some(rule) = list.rules.iter().find(|rule| {
+        !EVENTS.contains(&rule.event.as_str()) || rule.tools.as_ref().is_some_and(Vec::is_empty)
+    }) {
+        return refuse(format!(
+            "{path} is not a valid rule list: rule {} needs an event in {EVENTS:?} and, when it has tools, at least one",
+            rule.name
+        ));
+    }
     let payload: serde_json::Value = match serde_json::from_str(payload) {
         Ok(value @ serde_json::Value::Object(_)) => value,
         _ => return refuse(format!("the {provider:?} payload is not a JSON object")),
     };
     let call = normalize(provider, event, &payload);
     let tool = call["tool"].as_str().unwrap_or_default();
+    let cwd = call["cwd"].as_str().map(std::path::PathBuf::from);
     let input = call.to_string() + "\n";
     for rule in list.rules.iter().filter(|rule| {
         rule.event == event
@@ -124,7 +141,11 @@ pub fn decide(
     }) {
         let limit = Duration::from_secs(rule.timeout.unwrap_or(RULE_TIMEOUT))
             .min(deadline.saturating_duration_since(Instant::now()));
-        let failure = match run(&rule.command, home, &input, limit) {
+        let outcome = run(&rule.command, home, cwd.as_deref(), &input, limit);
+        if rule.kind == Kind::Reminder {
+            continue;
+        }
+        let failure = match outcome {
             Outcome::Allow => continue,
             Outcome::Deny(reason) if reason.is_empty() => {
                 return Verdict::Deny(format!("rule {} denied the call", rule.name));
@@ -132,12 +153,10 @@ pub fn decide(
             Outcome::Deny(reason) => return Verdict::Deny(reason),
             Outcome::Failed(why) => why,
         };
-        if rule.kind == Kind::Guard {
-            return refuse(format!(
-                "rule {} failed ({failure}); fix it or remove it from {path}",
-                rule.name
-            ));
-        }
+        return refuse(format!(
+            "rule {} failed ({failure}); fix it or remove it from {path}",
+            rule.name
+        ));
     }
     Verdict::Allow
 }
@@ -148,17 +167,33 @@ enum Outcome {
     Failed(String),
 }
 
-/// Run one rule with the call on stdin. Exit 0 allows, exit 2 denies with stderr as the reason,
-/// and anything else is a failure.
-fn run(command: &[String], home: &str, input: &str, limit: Duration) -> Outcome {
+/// Run one rule with the call on stdin, in the session's folder when it exists. Exit 0 allows,
+/// exit 2 denies with stderr as the reason, and anything else is a failure.
+fn run(
+    command: &[String],
+    home: &str,
+    cwd: Option<&std::path::Path>,
+    input: &str,
+    limit: Duration,
+) -> Outcome {
+    let command: Vec<String> = command
+        .iter()
+        .map(|word| match word.strip_prefix("~/") {
+            Some(rest) => format!("{home}/{rest}"),
+            None => word.clone(),
+        })
+        .collect();
     let Some((program, args)) = command.split_first() else {
         return Outcome::Failed("its command is empty".into());
     };
-    let program = match program.strip_prefix("~/") {
-        Some(rest) => format!("{home}/{rest}"),
-        None => program.clone(),
-    };
-    let mut child = match std::process::Command::new(&program)
+    if limit.is_zero() {
+        return Outcome::Failed("no time left before the deadline".into());
+    }
+    let mut process = std::process::Command::new(program);
+    if let Some(cwd) = cwd.filter(|cwd| cwd.is_dir()) {
+        process.current_dir(cwd);
+    }
+    let mut child = match process
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
@@ -173,18 +208,19 @@ fn run(command: &[String], home: &str, input: &str, limit: Duration) -> Outcome 
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let input = input.to_string();
     std::thread::spawn(move || stdin.write_all(input.as_bytes()));
-    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
     let (sender, reason) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = stderr.read_to_string(&mut text);
+        let mut text = Vec::new();
+        let _ = stderr.take(REASON_MAX).read_to_end(&mut text);
+        let text = String::from_utf8_lossy(&text).into_owned();
         let _ = sender.send(text);
     });
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() < limit => std::thread::sleep(Duration::from_millis(5)),
+            Ok(None) if started.elapsed() < limit => std::thread::sleep(POLL),
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -196,9 +232,8 @@ fn run(command: &[String], home: &str, input: &str, limit: Duration) -> Outcome 
     match status.code() {
         Some(0) => Outcome::Allow,
         Some(2) => Outcome::Deny(
-            // A process the rule left behind can hold stderr open, so the reason gets 200 ms.
             reason
-                .recv_timeout(Duration::from_millis(200))
+                .recv_timeout(REASON_WAIT)
                 .unwrap_or_default()
                 .trim()
                 .to_string(),
@@ -305,9 +340,11 @@ mod tests {
 
     #[test]
     fn a_reminder_that_fails_lets_the_call_through() {
+        // python3 with a missing script exits 2, so a reminder's exit 2 is no deny either.
         let rules = [
             rule("r", "exit 1", r#", "kind": "reminder""#),
             rule("t", "sleep 5", r#", "kind": "reminder", "timeout": 1"#),
+            rule("d", "echo crashed >&2; exit 2", r#", "kind": "reminder""#),
         ]
         .join(",");
         assert_eq!(decide_claude(Some(&list(&rules))), Verdict::Allow);
@@ -367,7 +404,6 @@ mod tests {
     fn a_rule_runs_only_for_its_event_and_tools_and_the_first_deny_wins() {
         let rules = [
             rule("edits", "exit 2", r#", "tools": ["Edit"]"#),
-            r#"{"name": "later", "event": "PostToolUse", "command": ["/bin/false"]}"#.to_string(),
             rule("shell", "echo first >&2; exit 2", r#", "tools": ["bash"]"#),
             rule("never", "echo second >&2; exit 2", ""),
         ]
@@ -392,7 +428,11 @@ mod tests {
         let Verdict::Deny(reason) = verdict else {
             panic!()
         };
-        assert!(reason.contains("(no answer within 0."), "{reason}");
+        // A loaded machine can spend the 300 ms before the rule starts.
+        assert!(
+            reason.contains("(no answer within 0.") || reason.contains("(no time left"),
+            "{reason}"
+        );
     }
 
     #[test]
@@ -424,7 +464,7 @@ mod tests {
             (&empty["tool"], &empty["input"], &empty["session_id"]),
             (
                 &serde_json::json!(""),
-                &serde_json::json!({}),
+                &serde_json::Value::Null,
                 &serde_json::Value::Null
             )
         );
@@ -461,5 +501,59 @@ mod tests {
                 0
             )
         );
+    }
+
+    #[test]
+    fn a_rule_that_can_never_match_makes_the_list_invalid() {
+        for bad in [
+            r#"{"name": "later", "event": "PostToolUse", "command": ["/bin/true"]}"#,
+            r#"{"name": "typo", "event": "pretooluse", "command": ["/bin/true"]}"#,
+            r#"{"name": "none", "event": "PreToolUse", "tools": [], "command": ["/bin/true"]}"#,
+        ] {
+            let Verdict::Deny(reason) = decide_claude(Some(&list(bad))) else {
+                panic!("{bad}")
+            };
+            assert!(
+                reason.contains("is not a valid rule list: rule "),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_command_word_expands_home_and_the_rule_runs_in_the_session_folder() {
+        let home = std::env::temp_dir().join(format!("swarm-guard-home-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("rule.sh"), "pwd >&2; exit 2\n").unwrap();
+        let rules =
+            list(r#"{"name": "h", "event": "PreToolUse", "command": ["/bin/sh", "~/rule.sh"]}"#);
+        let payload = format!(
+            r#"{{"tool_name": "Bash", "tool_input": {{}}, "cwd": "{}"}}"#,
+            home.display()
+        );
+        let verdict = decide(
+            Some(&rules),
+            "p",
+            Provider::Claude,
+            "PreToolUse",
+            &payload,
+            &home.to_string_lossy(),
+            Instant::now() + DEADLINE,
+        );
+        let folder = std::fs::canonicalize(&home).unwrap();
+        assert_eq!(
+            verdict,
+            Verdict::Deny(folder.to_string_lossy().into_owned())
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn a_deny_reason_is_cut_at_64_kib() {
+        let script = "head -c 200000 /dev/zero \\| tr '\\\\0' x >&2; exit 2";
+        let Verdict::Deny(reason) = decide_claude(Some(&list(&rule("loud", script, "")))) else {
+            panic!()
+        };
+        assert_eq!(reason.len(), 64 * 1024);
     }
 }

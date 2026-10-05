@@ -83,9 +83,9 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     }
     // The owner's rule list (ADR 0040) can arrive before swarm first runs, so it does not count.
     let empty = match std::fs::read_dir(root) {
-        Ok(entries) => entries
-            .filter_map(Result::ok)
-            .all(|entry| entry.file_name() == GUARDS),
+        Ok(mut entries) => {
+            entries.all(|entry| entry.is_ok_and(|entry| entry.file_name() == GUARDS))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => return Err(format!("swarm: cannot read {}: {error}", root.display()).into()),
     };
@@ -110,6 +110,17 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
         Err(error) => return Err(error.into()),
     }
     Ok(())
+}
+
+/// The owner's guard rule list (ADR 0040): `SWARM_GUARDS` when set, else `~/.swarm/guards.json`
+/// for every build and every SWARM_HOME, because the hooks that read it are global to each CLI.
+pub fn guards_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    match std::env::var_os("SWARM_GUARDS") {
+        Some(path) => Ok(path.into()),
+        None => Ok(std::path::PathBuf::from(std::env::var("HOME")?)
+            .join(SWARM_DIR)
+            .join(GUARDS)),
+    }
 }
 
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
