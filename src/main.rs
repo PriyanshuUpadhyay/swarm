@@ -1561,7 +1561,7 @@ fn report_dead(
 
 /// Ring `agent` again when its unseen messages are due for another ring. When their last ring
 /// starts no turn and `agent` is the chair, returns the report line `unconfirmed <agent> <seq>`; a
-/// child's lost message is reported by `settle_rings`.
+/// child's lost message is reported by `report_lost`.
 fn rering_if_due(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,

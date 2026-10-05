@@ -743,7 +743,7 @@ pub fn stalls(
 }
 
 /// A ring that no caller settled: (recipient, rung_at, the messages it rang, the lowest of them
-/// that is unseen at its last ring, `MAX_RINGS`).
+/// that is unseen after `MAX_RINGS` rings).
 pub type Ring = (String, i64, Vec<i64>, Option<i64>);
 
 /// The rings with no result yet (ADR 0041): the listing's, which it types and leaves, and one whose
@@ -779,9 +779,10 @@ pub fn unsettled_rings(
     Ok(rings)
 }
 
-/// Messages whose last ring, `MAX_RINGS`, proved nothing and that no `unconfirmed:<seq>` report names yet, as
-/// (recipient, seq), the lowest seq of each ring. A report that failed to send is found again. The
-/// chair is never the subject: a report about it would go to it.
+/// Messages whose last ring, after `MAX_RINGS` rings, proved nothing and that no
+/// `unconfirmed:<seq>` report names yet, as (recipient, seq), the lowest seq of each ring. A
+/// report that failed to send is found again. The chair is never the subject: a report about it
+/// would go to it.
 pub fn unreported_lost(
     connection: &Connection,
     session_id: &str,
