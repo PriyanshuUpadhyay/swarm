@@ -28,7 +28,8 @@ struct StepRunsView: View {
     var body: some View {
         Group {
             if let chosen {
-                StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open, back: { choose(nil) })
+                StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open,
+                             retry: { retryID += 1 }, back: { choose(nil) })
             } else {
                 list
             }
@@ -207,6 +208,7 @@ private struct StepRunGraph: View {
     /// Set when the scan cannot read this run now, so the graph is its last read.
     let notice: String?
     let open: (WorkspaceDocument) -> Void
+    let retry: () -> Void
     let back: () -> Void
 
     private struct Edge: Identifiable {
@@ -233,8 +235,10 @@ private struct StepRunGraph: View {
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
-                // The poll failed, so the graph below is the last good read.
-                if let error { Text(verbatim: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if let error {
+                    Text(verbatim: "Showing the last read. \(error)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Button("Retry", action: retry).buttonStyle(.borderless).font(.caption)
+                }
                 if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(DesignTokens.Spacing.m)
