@@ -105,7 +105,7 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public var reportsFailure: Bool {
         if (exitCode ?? 0) != 0 { return true }
         guard command != nil, let output, output.hasPrefix("Script failed\n") else { return false }
-        return output.contains("\nOutput:\n")
+        return Self.codeModeOutput(output) != nil
     }
 
     /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex
@@ -125,13 +125,20 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             let code = Int(header[key.upperBound...].prefix { !$0.isNewline })
             return code == 0 ? nil : code
         }
-        guard output.hasPrefix("Script "), let start = output.range(of: "\nOutput:\n") else { return nil }
-        var rest = output[start.upperBound...]
+        guard var rest = codeModeOutput(output) else { return nil }
         while let key = rest.range(of: "\"exit_code\":") {
             rest = rest[key.upperBound...]
             if let code = Int(rest.prefix { $0 == "-" || $0.isASCII && $0.isNumber }), code != 0 { return code }
         }
         return nil
+    }
+
+    /// The text after `Output:` of a Codex code-mode result, whose header is `Script completed`,
+    /// `Script failed`, or `Script running with cell ID N`; nil for any other text.
+    static func codeModeOutput(_ output: String) -> Substring? {
+        let headers = ["Script completed\n", "Script failed\n", "Script running with cell ID "]
+        guard headers.contains(where: output.hasPrefix), let start = output.range(of: "\nOutput:\n") else { return nil }
+        return output[start.upperBound...]
     }
 
     /// Seconds between two event timestamps (ISO 8601, with or without fractional seconds).

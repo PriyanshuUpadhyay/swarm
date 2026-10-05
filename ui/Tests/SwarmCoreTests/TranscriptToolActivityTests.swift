@@ -162,6 +162,9 @@ struct TranscriptToolActivityTests {
         #expect(script.exitCode == nil)
         #expect(script.reportsFailure)
         #expect(activity("Script completed\nOutput:\nexit_code: 1").exitCode == nil)
+        // Codex code mode starts with one of three headers; the `script` tool's own banner is not one.
+        #expect(activity("Script running with cell ID 7\nWall time 31.0 seconds\nOutput:\n{\"exit_code\":3}").exitCode == 3)
+        #expect(activity("Script started, output log file is 'typescript'.\nOutput:\n{\"exit_code\":2}").exitCode == nil)
 
         let rows = TranscriptRowBuilder.rows(from: [
             .toolCall(toolCallID: "c1", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
