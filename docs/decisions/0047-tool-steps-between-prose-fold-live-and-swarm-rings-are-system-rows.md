@@ -6,6 +6,7 @@ related: ["0028", "0039"]
 informed-by:
   - "Owner request 2026-10-05: chat readability while keeping everything reviewable"
   - "Owner answers 2026-10-05 (accept all recommendations): Q1 A live fold of 2+ steps, a failed step opens its fold; Q2 A parser kind swarm_ring; Q3 A Show Source shows the translated event JSON; Q4 A fold state in memory per open chat; a failed Codex exec shows as failed"
+  - "Owner answer 2026-10-05 (review round 2): \"Lazy, I check the window\": an open fold's steps and the Show Source blocks draw lazily"
   - "Flow folder tmp/flow/2026-10-05-chat-readability (02-design, 03-contracts)"
   - "Codex chair log 2026-09-29 (council test): rings arrive mid-turn as user messages"
 ---
@@ -44,3 +45,5 @@ with failures turns back into many rows.
 - Good: a failed Codex exec is no longer drawn as finished.
 - Bad: one click more to see a single step in a run of 2.
 - Neutral: a fold's open state is gone when its chat is freed (ADR 0024, 0025).
+- Neutral: an open fold's steps are rows of the upside-down list (ADR 0028), so a long open fold
+  and Show Source build only what is on screen; the owner checks the window.
