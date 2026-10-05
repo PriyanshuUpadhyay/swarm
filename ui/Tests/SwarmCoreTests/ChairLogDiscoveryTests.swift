@@ -42,6 +42,7 @@ struct ChairLogDiscoveryTests {
         #expect(ChairLogDiscovery.path(
             provider: "codex", chairID: nil, cwd: cwd, createdAt: cutoff, homes: [first]
         )?.lastPathComponent == earlier.lastPathComponent)
+        _ = await reader.discoveredLog(for: session, now: .now.addingTimeInterval(10))
         guard case .rows(let rows, _) = await reader.poll(session: session) else {
             Issue.record("The reader did not retry after the log appeared")
             return
@@ -70,7 +71,38 @@ struct ChairLogDiscoveryTests {
             account("first", home: first), account("added", home: added)
         ], auto: "first"))
         let log = try fixture.codexLog(home: added, name: "late", cwd: cwd, at: "2026-09-22T12:26:05Z")
-        #expect(await transcript.discoveredLog(for: session)?.standardizedFileURL == log.standardizedFileURL)
+        #expect(await transcript.discoveredLog(for: session, now: .now.addingTimeInterval(10))?
+            .standardizedFileURL == log.standardizedFileURL)
+    }
+
+    @Test("A discovery miss waits ten seconds, with or without a chair id")
+    func discoveryMissExpires() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex")
+        let profiles = FixtureProfiles(accountList: SwarmAccountList(
+            provider: "codex", source: "fixture", accounts: [account("test", home: home)], auto: "test"
+        ))
+        for chairID in [nil, UUID().uuidString] as [String?] {
+            let cwd = "/work/\(UUID().uuidString)"
+            let session = SwarmSession(
+                id: .init(UUID().uuidString), talkMode: "lane", adapter: "tmux-solo",
+                cwd: cwd, createdAt: 1_790_079_961, chairProvider: "codex",
+                chairID: chairID.map(SwarmChairID.init), chairLog: nil,
+                agents: 1, messages: 0, lastMessageAt: nil
+            )
+            let transcript = SwarmChairTranscript(profiles: profiles, home: fixture.root)
+            let start = Date.now
+            #expect(await transcript.discoveredLog(for: session, now: start) == nil)
+            let log = try fixture.codexLog(
+                home: home, name: "late-\(chairID ?? UUID().uuidString)", cwd: cwd,
+                at: "2026-09-22T12:26:05Z"
+            )
+            #expect(await transcript.discoveredLog(for: session, now: start) == nil)
+            #expect(await transcript.discoveredLog(for: session, now: start.addingTimeInterval(9.999)) == nil)
+            #expect(await transcript.discoveredLog(for: session, now: start.addingTimeInterval(10))?
+                .standardizedFileURL == log.standardizedFileURL)
+        }
     }
 
     @Test("A nearer log replaces the discovered transcript and title")

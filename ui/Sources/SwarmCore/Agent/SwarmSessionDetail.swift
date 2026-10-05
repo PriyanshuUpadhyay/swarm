@@ -51,6 +51,7 @@ public actor SwarmChairTranscript {
     private var discoveredProvider: String?
     private var discoveredChairID: SwarmChairID?
     private var discoveredLog: URL?
+    private var discoveryMissAt: Date?
     /// Account homes per provider with the time they were read. They expire after
     /// `accountHomesTTL`, so the same reader finds a log in an account added later.
     private var homesByProvider: [String: (homes: [URL], at: Date)] = [:]
@@ -276,12 +277,17 @@ public actor SwarmChairTranscript {
     }
 
     func discoveredLog(
-        for session: SwarmSession, chairProvider: String? = nil
+        for session: SwarmSession, chairProvider: String? = nil, now: Date = .now
     ) async -> URL? {
         let provider = session.chairProvider ?? chairProvider
         guard session.chairLog.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true,
               let provider,
               provider == "claude" || provider == "codex" else { return nil }
+        if discoveredSession == session.id, discoveredProvider == provider,
+           discoveredChairID == session.chairID, discoveredLog == nil,
+           let discoveryMissAt, now.timeIntervalSince(discoveryMissAt) < 10 {
+            return nil
+        }
         let homes = await homes(provider: provider)
         if session.chairID == nil || discoveredSession != session.id
             || discoveredProvider != provider || discoveredChairID != session.chairID
@@ -294,6 +300,7 @@ public actor SwarmChairTranscript {
             discoveredSession = session.id
             discoveredProvider = provider
             discoveredChairID = session.chairID
+            discoveryMissAt = discoveredLog == nil ? now : nil
         }
         return discoveredLog
     }
