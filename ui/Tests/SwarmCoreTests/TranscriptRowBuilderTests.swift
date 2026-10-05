@@ -637,6 +637,30 @@ struct TranscriptDebugDataTests {
         #expect(!ChairTurn.isActive(Array(rows.prefix(3))))
     }
 
+    @Test("A window that starts mid-turn keeps its first ring mid-turn, so the run around it folds as one")
+    func windowStartsMidTurn() {
+        let tail: [TranscriptEvent] = [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("ls"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: "ok", meta: Meta()),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-1")),
+            .toolCall(toolCallID: "c2", name: "exec", input: .string("swarm inbox"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: "ok", meta: Meta()),
+            .agentMessageChunk(text: "Done.", meta: Meta(uuid: "answer")),
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-2")),
+        ]
+        let rows = TranscriptRowBuilder.rows(from: tail, indexOffset: 40)
+        #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false, true])
+        let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+        #expect(folds == [["c1:call", "ring-1:ring", "c2:call"]])
+
+        let idleWindow = TranscriptRowBuilder.rows(from: [
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+        ], indexOffset: 40)
+        #expect(idleWindow[0].startsTurn)
+    }
+
     @Test("A ring between a tool call and its result does not split them")
     func ringKeepsToolScope() {
         let rows = TranscriptRowBuilder.rows(from: [

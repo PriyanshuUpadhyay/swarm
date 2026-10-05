@@ -284,7 +284,10 @@ public enum TranscriptRowBuilder {
             rows.append(row)
         }
         // A ring wakes an idle agent, so it starts a turn then; mid-turn the agent reads it later.
-        var turnOpen = false
+        // A window that starts later in the log (indexOffset > 0) is mid-turn at its start unless
+        // its first turn boundary starts a turn.
+        let firstBoundary = rows.first { $0.kind == .user || $0.startsTurn || $0.endsTurn }
+        var turnOpen = indexOffset > 0 && (firstBoundary.map(\.endsTurn) ?? true)
         for index in rows.indices {
             if rows[index].systemKind == TranscriptSystemKind.swarmRing, !turnOpen { rows[index].startsTurn = true }
             if rows[index].kind == .user || rows[index].startsTurn { turnOpen = true }
