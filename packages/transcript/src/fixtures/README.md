@@ -58,6 +58,8 @@ or removed.
 
 `agy-chair-run.jsonl` is synthetic, because no saved AGY log with a ring was
 found. It uses the `USER_INPUT` shape with the ring inside `<USER_REQUEST>` and
-the `PLANNER_RESPONSE` and `GENERIC` shapes of `agy-edit.jsonl`.
+the `PLANNER_RESPONSE` and `GENERIC` shapes of `agy-edit.jsonl`. Its first ring arrives
+mid-turn; its second follows a final reply with no tool call, where the parser ends the turn, so
+that ring wakes an idle agent.
 
 `ChairRunFixtureTests` runs all three through the real Zig executable.

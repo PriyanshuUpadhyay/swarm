@@ -63,11 +63,16 @@ struct ChairRunFixtureTests {
         #expect(rows.compactMap(\.tool).map(\.exitCode) == [1, nil, nil])
     }
 
-    @Test("AGY: a ring inside the request wrapper is a ring row and folds with the tools")
+    @Test("AGY: a ring inside the request wrapper is a ring row, folds with the tools mid-turn, and starts a turn after a final reply")
     func agy() async throws {
         let rows = TranscriptRowBuilder.rows(from: try await records("agy"))
-        #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.eventID) == ["4:ring"])
-        #expect(shape(rows) == ["user", "assistant", "fold(1 command · view_file · 1 ring)", "assistant"])
+        let rings = rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }
+        #expect(rings.map(\.eventID) == ["4:ring", "8:ring"])
+        #expect(rings.map(\.startsTurn) == [false, true])
+        #expect(shape(rows) == [
+            "user", "assistant", "fold(1 command · view_file · 1 ring)", "assistant", "result",
+            "system", "toolUse", "assistant", "result",
+        ])
     }
 
     /// ADR 0047 I2 and I3: with hidden rows shown and every fold open, the rows name each event
