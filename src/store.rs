@@ -846,22 +846,24 @@ pub fn seen_since(
 
 /// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an
 /// unknown value. A message rung again since, or with a result already, keeps what it has, so a
-/// pass that read an older ring cannot settle a newer one.
+/// pass that read an older ring cannot settle a newer one. Returns whether this call stored the
+/// result on any of them, so the pass that lost a race to another reports nothing.
 pub fn set_delivery(
     connection: &Connection,
     session_id: &str,
     seqs: &[i64],
     rung_at: i64,
     delivery: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let mut stored = false;
     for seq in seqs {
-        connection.execute(
+        stored |= connection.execute(
             "UPDATE message SET delivery = ?3
              WHERE session_id = ?1 AND seq = ?2 AND rung_at = ?4 AND delivery IS NULL",
             (session_id, seq, delivery, rung_at),
-        )?;
+        )? > 0;
     }
-    Ok(())
+    Ok(stored)
 }
 
 pub fn has_rung_unread(
@@ -1710,10 +1712,10 @@ mod tests {
 
         let second_ring = unix_now();
         rering(&connection, SESSION, CODER, 60, second_ring).unwrap();
-        set_delivery(&connection, SESSION, &[ask], first_ring, "unconfirmed").unwrap();
+        assert!(!set_delivery(&connection, SESSION, &[ask], first_ring, "unconfirmed").unwrap());
         assert_eq!(delivery(&connection), None);
-        set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap();
-        set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap();
+        assert!(set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap());
+        assert!(!set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap());
         assert_eq!(delivery(&connection).as_deref(), Some("screen"));
     }
 

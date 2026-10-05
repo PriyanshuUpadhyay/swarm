@@ -1794,8 +1794,11 @@ fn settle_rings(
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
             continue;
         };
-        swarm::store::set_delivery(connection, session_id, &seqs, rung_at, delivery.as_str())?;
-        if let (Delivery::Unconfirmed, Some(seq), true) = (delivery, lost, agent == chair) {
+        let stored =
+            swarm::store::set_delivery(connection, session_id, &seqs, rung_at, delivery.as_str())?;
+        if let (true, Delivery::Unconfirmed, Some(seq), true) =
+            (stored, delivery, lost, agent == chair)
+        {
             lines.push(chair_lost(&agent, seq));
         }
     }
@@ -3966,6 +3969,47 @@ mod tests {
             .unwrap();
         assert!(settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).is_err());
         assert_eq!(delivery_of(&connection, &session, seq), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Two sweeps can read the same unsettled ring of the chair. Only the pass whose write stores
+    /// the result prints the chair's line, so the line comes once.
+    #[test]
+    fn a_pass_that_lost_the_race_to_settle_the_chairs_ring_prints_no_line() {
+        let (root, mut connection, session) = ring_session(
+            "settle-race",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "agy").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            CODER,
+            ORCHESTRATOR,
+            "summary",
+            "done",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - ?1, rings = ?2",
+                (RING_TIMEOUT.as_secs() + 1, swarm::store::MAX_RINGS),
+            )
+            .unwrap();
+        // The other pass stored its result first, so this pass's guarded write matches no row.
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER other_pass BEFORE UPDATE OF delivery ON main.message
+                 BEGIN SELECT RAISE(IGNORE); END;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        let lines = settle_rings(&mut connection, &root, &adapter, &session, Proof::Wait).unwrap();
+        assert!(lines.is_empty(), "{lines:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
