@@ -1171,23 +1171,35 @@ fn deliver_with(
     let seq = swarm::store::send_message(
         connection, root, session_id, sender, &recipient, &kind, body,
     )?;
-    if !swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+    // The message is stored now, so a failed ring mark only warns: the row stays unrung, a later
+    // re-ring rings it, and a caller such as `report` does not send it a second time.
+    let mark = || -> Result<Option<i64>, Box<dyn std::error::Error>> {
+        if swarm::store::has_rung_unread(connection, session_id, &recipient)? {
+            return Ok(None);
+        }
         let rung_at = unix_now()?;
         connection.execute(
             "UPDATE message SET rung_at = ?3, rings = 1 WHERE session_id = ?1 AND seq = ?2",
             (session_id, seq, rung_at),
         )?;
-        ring_and_record(
-            connection,
-            root,
-            swarm::adapter::load(root, adapter_name),
-            session_id,
-            &recipient,
-            &pane,
-            &[seq],
-            rung_at,
-            proof,
-        );
+        Ok(Some(rung_at))
+    };
+    match mark() {
+        Ok(Some(rung_at)) => {
+            ring_and_record(
+                connection,
+                root,
+                swarm::adapter::load(root, adapter_name),
+                session_id,
+                &recipient,
+                &pane,
+                &[seq],
+                rung_at,
+                proof,
+            );
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("swarm: message {seq} stored but not rung: {error}"),
     }
     Ok(seq)
 }
@@ -4321,6 +4333,50 @@ mod tests {
             chair_mail(&connection, &session),
             [(CODER.to_string(), format!("unconfirmed:{ask}"))]
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A report whose row is stored but whose ring mark fails is sent: the pass keeps its line,
+    /// a later pass does not send it twice, and the sweep's re-ring rings the unrung row.
+    #[test]
+    fn a_stored_report_whose_ring_mark_failed_is_sent_and_rung_later() {
+        let (root, mut connection, session) =
+            ring_session("report-unrung", None, "ring = true", "anything\n");
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER store_error BEFORE UPDATE OF rung_at ON main.message
+                 BEGIN SELECT RAISE(ABORT, 'store error'); END;",
+            )
+            .unwrap();
+        let send = |connection: &mut rusqlite::Connection| {
+            report(
+                connection,
+                &root,
+                "fake",
+                &session,
+                CODER,
+                "stall:silent:0",
+                "coder sent nothing back",
+                Proof::Wait,
+            )
+        };
+        assert!(send(&mut connection));
+        assert!(!send(&mut connection));
+        assert_eq!(chair_mail(&connection, &session).len(), 1);
+
+        connection
+            .execute_batch(
+                "DROP TRIGGER temp.store_error;
+                 UPDATE message SET created_at = unixepoch() - 61;",
+            )
+            .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        swept(&mut connection, &root, &adapter, &session);
+        let rings: i64 = connection
+            .query_row("SELECT rings FROM message", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rings, 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 
