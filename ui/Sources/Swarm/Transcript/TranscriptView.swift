@@ -489,10 +489,10 @@ private struct TranscriptRowView: View {
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
             } else if row.systemKind == TranscriptSystemKind.swarmRing {
                 // swarm typed it, not the owner, so it is a quiet line and not a "You" bubble.
-                Label("New swarm message", systemImage: "envelope")
+                Label(TranscriptRow.swarmRingLine, systemImage: "envelope")
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("New swarm message")
+                    .accessibilityLabel(TranscriptRow.swarmRingLine)
                     .accessibilityIdentifier("transcript-swarm-ring")
             } else if let run = row.shell {
                 TranscriptShellRow(run: run, revealForSearch: revealForSearch)
