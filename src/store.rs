@@ -914,6 +914,33 @@ pub fn rering_due(
     Ok(due)
 }
 
+/// Mark `agent_id`'s unseen messages as rung once more, and return each one's seq and ring
+/// count. The result goes back to NULL, because this ring has none yet. A message rung within
+/// `age_secs`, or at its last ring, is left out, so a second pass that found the same re-ring due
+/// rings nothing.
+pub fn rering(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    age_secs: i64,
+) -> Result<Vec<(i64, i64)>, Box<dyn std::error::Error>> {
+    let rung = connection
+        .prepare(
+            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1, delivery = NULL
+             WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+               AND (rung_at IS NULL OR rung_at <= unixepoch() - ?3) AND rings < ?4
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = ?2)
+             RETURNING seq, rings",
+        )?
+        .query_map((session_id, agent_id, age_secs, MAX_RINGS), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rung)
+}
+
 pub fn clear_pane(
     connection: &Connection,
     session_id: &str,
@@ -1581,6 +1608,40 @@ mod tests {
         ack(&connection, SESSION, 0, CODER).unwrap();
         assert!(!has_rung_unread(&connection, SESSION, CODER).unwrap());
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
+    }
+
+    /// A sweep and a listing can both find a re-ring due before either one rings. The second
+    /// update finds the messages rung a moment ago, so it rings nothing and the cap holds.
+    #[test]
+    fn two_passes_that_find_a_rering_due_ring_it_once() {
+        let mut connection = seed(0);
+        let root = temp_root("rering-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1, delivery = 'unconfirmed'",
+                [],
+            )
+            .unwrap();
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+
+        assert_eq!(rering(&connection, SESSION, CODER, 60).unwrap(), [(ask, 2)]);
+        assert_eq!(rering(&connection, SESSION, CODER, 60).unwrap(), []);
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
     }
 
     /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is

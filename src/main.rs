@@ -1524,18 +1524,11 @@ fn rering_if_due(
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
         return Ok(None);
     }
-    // NULL again: this ring has no result yet, and a ring the listing leaves is settled later.
-    let rung: Vec<(i64, i64)> = connection
-        .prepare(
-            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1, delivery = NULL
-             WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
-               AND NOT EXISTS (SELECT 1 FROM read_mark
-                               WHERE read_mark.session_id = message.session_id
-                                 AND message_seq = message.seq AND agent_id = ?2)
-             RETURNING seq, rings",
-        )?
-        .query_map((session_id, agent), |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<Result<_, _>>()?;
+    let rung = swarm::store::rering(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)?;
+    // Another pass rang them since `rering_due` read the store.
+    if rung.is_empty() {
+        return Ok(None);
+    }
     let seqs: Vec<i64> = rung.iter().map(|(seq, _)| *seq).collect();
     let delivery = ring_and_record(
         connection,
