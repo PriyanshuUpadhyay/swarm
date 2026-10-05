@@ -16,43 +16,77 @@ fn ring_text(root: &std::path::Path) -> String {
     )
 }
 
-/// How long a ring waits for a starting Claude to draw its input box.
+/// How long a ring waits for a starting CLI to draw its input box.
 const RING_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-/// How many more times a ring presses Enter while Claude's input box still holds it.
+/// How many more times a ring presses Enter while the input box still holds it.
 const RING_ENTER_RETRIES: usize = 3;
-/// How long one ring may take in all, so a hung adapter verb cannot hold the caller for ever.
+/// How long one ring may take in all, its proof wait included, so a hung adapter verb or a lost
+/// ring cannot hold the caller for ever.
 const RING_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
+/// How often a ring reads the pane and the store for its proof.
+const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// Type the ring into `pane`. A Claude that is still starting loses a ring typed before its input
-/// box is drawn, or reads the text and its Enter as one paste, so the Enter becomes a newline and
-/// the ring sits unsent in the box. So a ring to Claude waits for the box, and presses Enter again
-/// while the box still holds the ring.
+/// What one ring proved (ADR 0041), stored on `message.delivery`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Delivery {
+    /// The recipient's hook reported a turn after the ring.
+    Hook,
+    /// The recipient's screen showed a turn or a question after the ring. A busy CLI queues or
+    /// steers the ring and fires no turn-start hook (ADR 0038), so this is its only proof.
+    Screen,
+    /// No proof came before the ring's deadline.
+    Unconfirmed,
+    /// No proof can come: the pane's CLI is unknown and its screen is no Herdr status.
+    Unchecked,
+}
+
+impl Delivery {
+    fn as_str(self) -> &'static str {
+        match self {
+            Delivery::Hook => "hook",
+            Delivery::Screen => "screen",
+            Delivery::Unconfirmed => "unconfirmed",
+            Delivery::Unchecked => "unchecked",
+        }
+    }
+}
+
+/// Type the ring into `agent`'s `pane` and wait for proof that it started a turn. A CLI that is
+/// still starting loses a ring typed before its input box is drawn, or reads the text and its
+/// Enter as one paste, so the Enter becomes a newline and the ring sits unsent in the box. So a
+/// ring to a CLI whose box swarm can read waits for the box, and presses Enter again while the
+/// box still holds the ring.
 fn ring_pane(
+    connection: &rusqlite::Connection,
     adapter: &swarm::adapter::Adapter,
     root: &std::path::Path,
+    session_id: &str,
+    agent_id: &str,
     pane: &str,
-    provider: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Delivery, Box<dyn std::error::Error>> {
     let text = ring_text(root);
-    let claude = provider == Some("claude");
+    let provider = swarm::store::provider_of(connection, session_id, agent_id)?;
+    let provider = provider.as_deref();
     // The ring's own deadline replaces a batch deadline, so a ring that starts within the batch
-    // still gets the time to send its text and Enter.
+    // still gets the time to send its text and Enter, and to see its proof.
+    let deadline = std::time::Instant::now() + RING_TIMEOUT;
     let adapter = swarm::adapter::Adapter {
-        deadline: Some(std::time::Instant::now() + RING_TIMEOUT),
+        deadline: Some(deadline),
         ..adapter.clone()
     };
+    let vars = [("pane", pane)];
     let read = || {
         adapter
-            .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
+            .capture_within(&vars, std::time::Duration::from_secs(1))
             .unwrap_or_default()
     };
-    if claude {
-        let deadline = std::time::Instant::now() + RING_READY_TIMEOUT;
+    if let Some(provider) = provider.filter(|provider| swarm::screen::reads_composer(provider)) {
+        let ready = std::time::Instant::now() + RING_READY_TIMEOUT;
         // A question on screen, such as a folder trust prompt, also ends the wait.
-        while std::time::Instant::now() < deadline {
+        while std::time::Instant::now() < ready {
             let rows = read();
-            if swarm::screen::claude_composer(&rows).is_some()
+            if swarm::screen::composer(provider, &rows).is_some()
                 || swarm::screen::prompt(&rows).is_some()
             {
                 break;
@@ -60,18 +94,70 @@ fn ring_pane(
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }
+    let rung_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
     adapter.run("ring", &[("pane", pane), ("text", &text)])?;
-    if !claude {
-        return Ok(());
-    }
-    for _ in 0..RING_ENTER_RETRIES {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if !swarm::screen::claude_holds(&read(), &text) {
-            break;
+    let mut enters = 0;
+    loop {
+        std::thread::sleep(RING_POLL);
+        let rows = read();
+        let screen = adapter
+            .screen(&vars, std::time::Duration::from_secs(1))
+            .unwrap_or_else(|| rows.clone());
+        if provider.is_none() && swarm::screen::herdr_state(&screen).is_none() {
+            return Ok(Delivery::Unchecked);
         }
-        adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
+        if provider.is_some_and(|provider| swarm::screen::holds(provider, &rows, &text)) {
+            if enters < RING_ENTER_RETRIES && adapter.key.is_some() {
+                adapter.run("key", &[("pane", pane), ("key", "Enter")])?;
+                enters += 1;
+            }
+        } else if swarm::store::turn_started(connection, session_id, agent_id, rung_at)
+            .unwrap_or(false)
+        {
+            return Ok(Delivery::Hook);
+        } else if let Some((
+            swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting,
+            _,
+        )) = swarm::screen::read_pane(provider, &screen, || Some(rows.clone()))
+        {
+            return Ok(Delivery::Screen);
+        }
+        if std::time::Instant::now() + RING_POLL >= deadline {
+            return Ok(Delivery::Unconfirmed);
+        }
     }
-    Ok(())
+}
+
+/// Ring `agent` for the messages `seqs` and store what the ring proved on them. The bell is a
+/// hint (R9), so a failure only warns, and a failed ring is unconfirmed.
+fn ring_and_record(
+    connection: &rusqlite::Connection,
+    root: &std::path::Path,
+    adapter: Result<swarm::adapter::Adapter, Box<dyn std::error::Error>>,
+    session_id: &str,
+    agent: &str,
+    pane: &str,
+    seqs: &[i64],
+) -> Delivery {
+    let delivery = adapter
+        .and_then(|adapter| ring_pane(connection, &adapter, root, session_id, agent, pane))
+        .unwrap_or_else(|error| {
+            eprintln!("swarm: ring failed: {error}");
+            Delivery::Unconfirmed
+        });
+    if delivery == Delivery::Unconfirmed {
+        eprintln!(
+            "swarm: {agent} started no turn within {} s; ring unconfirmed",
+            RING_TIMEOUT.as_secs()
+        );
+    }
+    if let Err(error) = swarm::store::set_delivery(connection, session_id, seqs, delivery.as_str())
+    {
+        eprintln!("swarm: ring result not stored: {error}");
+    }
+    delivery
 }
 
 fn init() -> Result<(), Box<dyn std::error::Error>> {
@@ -983,11 +1069,15 @@ fn deliver(
             "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE session_id = ?1 AND seq = ?2",
             (session_id, seq),
         )?;
-        let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| ring_pane(&a, root, &pane, recipient_row.provider.as_deref()));
-        if let Err(error) = ring {
-            eprintln!("swarm: ring failed: {error}");
-        }
+        ring_and_record(
+            connection,
+            root,
+            swarm::adapter::load(root, adapter_name),
+            session_id,
+            &recipient,
+            &pane,
+            &[seq],
+        );
     }
     Ok(seq)
 }
@@ -1004,22 +1094,28 @@ fn ack(
     if let Some(pane) = swarm::store::pane_of(connection, session_id, agent_id)?
         && swarm::store::has_unrung_unread(connection, session_id, agent_id)?
     {
-        let provider = swarm::store::provider_of(connection, session_id, agent_id)?;
-        connection.execute(
-            "UPDATE message SET rung_at = unixepoch(), rings = 1
+        let seqs: Vec<i64> = connection
+            .prepare(
+                "UPDATE message SET rung_at = unixepoch(), rings = 1
                  WHERE session_id = ?1 AND recipient_id = ?2 AND rings = 0
                    AND NOT EXISTS (
                        SELECT 1 FROM read_mark
                        WHERE read_mark.session_id = message.session_id
                          AND message_seq = message.seq AND agent_id = ?2
-                   )",
-            (session_id, agent_id),
-        )?;
-        let ring = swarm::adapter::load(root, adapter_name)
-            .and_then(|a| ring_pane(&a, root, &pane, provider.as_deref()));
-        if let Err(error) = ring {
-            eprintln!("swarm: ring failed: {error}");
-        }
+                   )
+                 RETURNING seq",
+            )?
+            .query_map((session_id, agent_id), |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        ring_and_record(
+            connection,
+            root,
+            swarm::adapter::load(root, adapter_name),
+            session_id,
+            agent_id,
+            &pane,
+            &seqs,
+        );
     }
     Ok(())
 }
@@ -1362,19 +1458,27 @@ fn rering_if_due(
     if !swarm::store::rering_due(connection, session_id, agent, RERING_UNSEEN_AFTER_SECS)? {
         return Ok(());
     }
-    connection.execute(
-        "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
-         WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
-           AND NOT EXISTS (SELECT 1 FROM read_mark
-                           WHERE read_mark.session_id = message.session_id
-                             AND message_seq = message.seq AND agent_id = ?2)",
-        (session_id, agent),
-    )?;
-    let provider = swarm::store::provider_of(connection, session_id, agent)?;
-    match ring_pane(adapter, root, pane, provider.as_deref()) {
-        Ok(()) => eprintln!("swarm: re-ringed {agent}"),
-        Err(error) => eprintln!("swarm: re-ring failed for {agent}: {error}"),
-    }
+    let seqs: Vec<i64> = connection
+        .prepare(
+            "UPDATE message SET rung_at = unixepoch(), rings = rings + 1
+             WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = ?2)
+             RETURNING seq",
+        )?
+        .query_map((session_id, agent), |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    ring_and_record(
+        connection,
+        root,
+        Ok(adapter.clone()),
+        session_id,
+        agent,
+        pane,
+        &seqs,
+    );
+    eprintln!("swarm: re-ringed {agent}");
     Ok(())
 }
 
@@ -2567,15 +2671,16 @@ mod tests {
 
     #[test]
     fn a_hung_ring_ends_at_the_ring_timeout() {
-        let root = std::env::temp_dir().join(format!("swarm-hung-ring-{}", uuid::Uuid::now_v7()));
-        let adapter = swarm::adapter::parse(
-            "fake",
-            "self = true\nspawn = true\nlist = true\nclose = true\ncapture = true\nring = sleep 60\n",
-        )
-        .unwrap();
+        let (root, mut connection, session) =
+            ring_session("hung-ring", Some("codex"), "ring = sleep 60", "› \n");
         let started = std::time::Instant::now();
-        assert!(ring_pane(&adapter, &root, "%2", Some("codex")).is_err());
+        let seq = send_task(&root, &mut connection, &session);
         assert!(started.elapsed() < RING_TIMEOUT + std::time::Duration::from_secs(2));
+        assert_eq!(
+            delivery_of(&connection, &session, seq).as_deref(),
+            Some("unconfirmed")
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -3054,15 +3159,18 @@ mod tests {
     }
 
     /// A fake Claude pane that draws its input box on the third read, keeps a ring unsent in the
-    /// box as a starting Claude does, and sends the box's text on Enter.
+    /// box as a starting Claude does, and starts a turn on Enter.
     #[test]
     fn a_ring_to_claude_waits_for_the_input_box_and_presses_enter_until_it_sends() {
-        let dir = std::env::temp_dir().join(format!("swarm-ring-pane-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let (dir, connection, session) =
+            ring_session("ring-pane", Some("claude"), "", "$ claude\n");
         let box_rows = |text: &str| format!("────\n❯ {text}\n────\n");
-        std::fs::write(dir.join("screen"), "$ claude\n").unwrap();
         std::fs::write(dir.join("empty"), box_rows("")).unwrap();
+        std::fs::write(
+            dir.join("working"),
+            format!("✻ Thinking…\n{}", box_rows("")),
+        )
+        .unwrap();
         let d = dir.display();
         let adapter = swarm::adapter::parse(
             "fake",
@@ -3071,20 +3179,16 @@ mod tests {
                  capture = n=$(($(cat '{d}/reads' 2>/dev/null || echo 0) + 1)); echo $n > '{d}/reads'; \
                  [ $n = 3 ] && cp '{d}/empty' '{d}/screen'; echo read >> '{d}/log'; cat '{d}/screen'\n\
                  ring = echo ring >> '{d}/log'; printf '────\\n❯ %s\\n────\\n' \"$SWARM_TEXT\" > '{d}/screen'\n\
-                 key = echo \"$SWARM_KEY\" >> '{d}/log'; cp '{d}/empty' '{d}/screen'\n"
+                 key = echo \"$SWARM_KEY\" >> '{d}/log'; cp '{d}/working' '{d}/screen'\n"
             ),
         )
         .unwrap();
-        ring_pane(&adapter, &dir, "%2", Some("claude")).unwrap();
+        let delivery = ring_pane(&connection, &adapter, &dir, &session, CODER, "%2").unwrap();
+        assert_eq!(delivery, Delivery::Screen);
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
             "read\nread\nread\nring\nread\nEnter\nread\n"
         );
-
-        // Any other provider gets the plain ring: no read, no extra Enter.
-        std::fs::remove_file(dir.join("log")).unwrap();
-        ring_pane(&adapter, &dir, "%2", Some("codex")).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("log")).unwrap(), "ring\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3173,6 +3277,143 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), ring.repeat(4));
+    }
+
+    /// A session whose coder pane is the file `<root>/screen`, which the fake adapter's `capture`
+    /// reads; `verbs` adds the `ring` verb and any other.
+    fn ring_session(
+        name: &str,
+        provider: Option<&str>,
+        verbs: &str,
+        screen: &str,
+    ) -> (std::path::PathBuf, rusqlite::Connection, String) {
+        let root = std::env::temp_dir().join(format!("swarm-{name}-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        std::fs::write(root.join("screen"), screen).unwrap();
+        std::fs::write(
+            root.join("adapters/fake.conf"),
+            format!(
+                "self = true\nspawn = true\nlist = true\nclose = true\n\
+                 capture = cat \"$SWARM_PANE\"\n{verbs}\n"
+            ),
+        )
+        .unwrap();
+        let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "orchestrator").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        let pane = root.join("screen");
+        swarm::store::set_pane(&connection, &session, CODER, pane.to_str().unwrap()).unwrap();
+        if let Some(provider) = provider {
+            swarm::store::set_provider(&connection, &session, CODER, provider).unwrap();
+        }
+        (root, connection, session)
+    }
+
+    fn delivery_of(connection: &rusqlite::Connection, session: &str, seq: i64) -> Option<String> {
+        swarm::store::messages(connection, session, -1)
+            .unwrap()
+            .into_iter()
+            .find(|message| message.seq == seq)
+            .unwrap()
+            .delivery
+    }
+
+    fn send_task(
+        root: &std::path::Path,
+        connection: &mut rusqlite::Connection,
+        session: &str,
+    ) -> i64 {
+        deliver(
+            connection,
+            root,
+            "fake",
+            session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap()
+    }
+
+    /// A ring that starts no turn is stored as unconfirmed at its deadline, for each provider, and
+    /// the send still succeeds (ADR 0041).
+    #[test]
+    fn a_ring_that_starts_no_turn_is_unconfirmed_at_its_deadline() {
+        let runs = [
+            (
+                "claude",
+                include_str!("../tests/fixtures/screens/claude-idle.txt"),
+            ),
+            (
+                "codex",
+                include_str!("../tests/fixtures/screens/codex-idle.txt"),
+            ),
+            (
+                "agy",
+                include_str!("../tests/fixtures/screens/agy-idle.txt"),
+            ),
+        ]
+        .map(|(provider, screen)| {
+            std::thread::spawn(move || {
+                let (root, mut connection, session) = ring_session(
+                    "unconfirmed",
+                    Some(provider),
+                    "ring = true\nkey = true",
+                    screen,
+                );
+                let started = std::time::Instant::now();
+                let seq = send_task(&root, &mut connection, &session);
+                assert!(
+                    started.elapsed() >= RING_TIMEOUT - std::time::Duration::from_secs(1),
+                    "{provider}"
+                );
+                assert_eq!(
+                    delivery_of(&connection, &session, seq).as_deref(),
+                    Some("unconfirmed"),
+                    "{provider}"
+                );
+                std::fs::remove_dir_all(root).unwrap();
+            })
+        });
+        for run in runs {
+            run.join().unwrap();
+        }
+    }
+
+    /// A working screen after the ring proves it. A pane with no provider and no Herdr status
+    /// cannot prove a ring, so it is stored as unchecked with no wait.
+    #[test]
+    fn a_working_screen_proves_a_ring_and_a_pane_with_no_reader_is_unchecked() {
+        let (root, mut connection, session) = ring_session(
+            "screen-proof",
+            Some("agy"),
+            "ring = cp \"$SWARM_PANE.working\" \"$SWARM_PANE\"",
+            include_str!("../tests/fixtures/screens/agy-idle.txt"),
+        );
+        std::fs::write(
+            root.join("screen.working"),
+            include_str!("../tests/fixtures/screens/agy-working.txt"),
+        )
+        .unwrap();
+        let seq = send_task(&root, &mut connection, &session);
+        assert_eq!(
+            delivery_of(&connection, &session, seq).as_deref(),
+            Some("screen")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+
+        let (root, mut connection, session) =
+            ring_session("unchecked", None, "ring = true", "anything\n");
+        let started = std::time::Instant::now();
+        let seq = send_task(&root, &mut connection, &session);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(
+            delivery_of(&connection, &session, seq).as_deref(),
+            Some("unchecked")
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

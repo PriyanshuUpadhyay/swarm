@@ -499,13 +499,19 @@ pub fn pane_of(
     Ok(pane)
 }
 
+/// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
+/// `chair_provider`.
 pub fn provider_of(
     connection: &Connection,
     session_id: &str,
     agent_id: &str,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let provider: Option<String> = connection.query_row(
-        "SELECT provider FROM agent WHERE session_id = ?1 AND id = ?2",
+        "SELECT COALESCE(agent.provider,
+                         CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
+                              THEN session.chair_provider END)
+         FROM agent JOIN session ON session.id = agent.session_id
+         WHERE agent.session_id = ?1 AND agent.id = ?2",
         (session_id, agent_id),
         |r| r.get(0),
     )?;
@@ -662,6 +668,24 @@ pub fn messages(
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
+/// turn start, because Claude's idle notice writes it on an idle pane.
+pub fn turn_started(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let started: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM agent
+                        WHERE session_id = ?1 AND id = ?2 AND state_source = 'hook'
+                          AND state IN ('working', 'waiting') AND state_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(started)
 }
 
 /// Store what a ring proved on the messages it rang. The column's CHECK refuses an unknown value.
