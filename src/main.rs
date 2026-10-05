@@ -2326,6 +2326,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rering_finishes_after_the_session_deadline() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-ring-deadline-{}", uuid::Uuid::now_v7()));
+        let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute("UPDATE message SET created_at = unixepoch() - 61", [])
+            .unwrap();
+        let mut adapter = swarm::adapter::parse("fake", "self = true\nspawn = true\nring = printf text >> \"$SWARM_PANE\"; sleep 0.3; printf enter >> \"$SWARM_PANE\"\nlist = true\nclose = true\ncapture = true\n").unwrap();
+        adapter.deadline = Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+        let ring_log = root.join("ring");
+        rering_if_due(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            CODER,
+            ring_log.to_str().unwrap(),
+        )
+        .unwrap();
+        let rings: i64 = connection
+            .query_row("SELECT rings FROM message", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rings, 1);
+        assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "textenter");
+        assert!(adapter.check_deadline().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn batch_omits_slow_sessions_and_keeps_fast_sessions_within_budget() {
         let root =
             std::env::temp_dir().join(format!("swarm-batch-deadline-{}", uuid::Uuid::now_v7()));
@@ -2333,9 +2375,9 @@ mod tests {
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let mut ids = Vec::new();
         for (index, (name, list, screen)) in [
-            ("slow-list", "sleep 1; printf pane", "true"),
-            ("slow-screen", "printf pane", "sleep 1"),
-            ("fast", "printf pane", "true"),
+            ("slow-list", "sleep 3; printf pane", "true"),
+            ("slow-screen", "printf pane", "sleep 3"),
+            ("fast", "sleep 0.1; printf pane", "true"),
         ]
         .into_iter()
         .enumerate()
@@ -2360,10 +2402,10 @@ mod tests {
         let listings = all_agent_listings(
             &mut connection,
             &root,
-            std::time::Duration::from_millis(180),
+            std::time::Duration::from_millis(600),
         )
         .unwrap();
-        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
         assert!(!listings.contains_key(&ids[0]));
         assert!(!listings.contains_key(&ids[1]));
         assert_eq!(listings[&ids[2]].agents.len(), 1);

@@ -163,7 +163,8 @@ impl Adapter {
             })?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
-        if let Some(deadline) = self.deadline {
+        // A ring must finish both send-text and Enter once it starts.
+        if let Some(deadline) = self.deadline.filter(|_| verb != "ring") {
             self.check_deadline()?;
             return self
                 .read_bounded(
@@ -250,11 +251,12 @@ impl Adapter {
         });
         let mut stdout = child.stdout.take().expect("piped stdout");
         // The read runs apart from the deadline: a child that exits while a grandchild keeps the
-        // pipe open would otherwise block read_to_string past it.
+        // pipe open would otherwise block read_to_end past it.
         let (sender, output) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let mut text = String::new();
-            let read = std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text);
+            let mut bytes = Vec::new();
+            let read = std::io::Read::read_to_end(&mut stdout, &mut bytes)
+                .map(|_| String::from_utf8_lossy(&bytes).into_owned());
             let _ = sender.send(read);
         });
         let status = loop {
@@ -441,6 +443,16 @@ mod tests {
             adapter.run("capture", &[("pane", "%3")]).unwrap(),
             "text of %3"
         );
+    }
+
+    #[test]
+    fn bounded_list_decodes_non_utf8_like_unbounded_list() {
+        let mut adapter = parse("probe", FULL).unwrap();
+        adapter.list = "printf 'pane \\351'".into();
+        let expected = adapter.run("list", &[]).unwrap();
+        adapter.deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
+        assert_eq!(adapter.run("list", &[]).unwrap(), expected);
+        assert_eq!(expected, "pane \u{fffd}");
     }
 
     #[test]
