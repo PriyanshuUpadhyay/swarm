@@ -99,7 +99,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -632,25 +632,64 @@ fn codex_homes(
 /// Codex and AGY state hooks are set up, the plan of each change and conflict, and setting them up.
 /// The owner consents first, in the app or by running `setup` (ADR 0029). Setup writes no file
 /// while any entry conflicts with one the owner has, and `--digest` refuses a file that changed
-/// after the plan (ADR 0036). Claude needs no step, because `swarm launch` passes its hooks with
-/// `--settings`.
+/// after the plan (ADR 0036). Claude's state hooks need no step, because `swarm launch` passes
+/// them with `--settings`. With a rule list, setup also registers `swarm guard` in every Claude
+/// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040).
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let user_home = std::path::PathBuf::from(env_var("HOME")?);
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
     let homes = codex_homes(&user_home)?;
     let agy_hooks = user_home.join(".gemini/config/hooks.json");
+    // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
+    // with no list never gets a hook that would block every call.
+    let has_list = swarm::paths::guards_file()?.exists();
+    let claude_settings = unique_targets(
+        std::iter::once(user_home.join(".claude/settings.json")).chain(
+            std::fs::read_dir(user_home.join(".claude/.profiles"))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path().join("settings.json"))
+                .filter(|path| path.exists()),
+        ),
+    );
+    let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
     // A file that swarm cannot read or edit is a conflict in the plan, not an error.
     let plan = || -> Vec<swarm::bus::HookFilePlan> {
         let unreadable = swarm::bus::HookFilePlan::unreadable;
-        let mut plans: Vec<_> = homes
+        let guard_plan = |path: &std::path::PathBuf, provider: &str| {
+            swarm::bus::guard_hooks_plan(path, provider)
+                .unwrap_or_else(|error| unreadable(path.clone(), error))
+        };
+        let mut plans: Vec<_> = Vec::new();
+        if has_list {
+            plans.extend(
+                claude_settings
+                    .iter()
+                    .map(|path| guard_plan(path, "claude")),
+            );
+            plans.extend(codex_hooks.iter().map(|path| guard_plan(path, "codex")));
+        }
+        let codex_plans: Vec<_> = homes
             .iter()
             .map(|home| {
-                swarm::bus::codex_hook_plan(home, &codex)
+                let mut entries = codex.clone();
+                if has_list {
+                    // Trust the guard group where the planned hooks.json puts it.
+                    let target = canonical(&home.join("hooks.json"));
+                    let hooks = plans
+                        .iter()
+                        .find(|plan| canonical(&plan.path) == target)
+                        .map_or("", |plan| plan.after.as_str());
+                    entries.extend(swarm::bus::codex_guard_trust(home, hooks));
+                }
+                swarm::bus::codex_hook_plan(home, &entries)
                     .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
             })
             .collect();
+        plans.extend(codex_plans);
         plans.push(
-            swarm::bus::agy_hook_plan(&agy_hooks)
+            swarm::bus::agy_hook_plan(&agy_hooks, has_list)
                 .unwrap_or_else(|error| unreadable(agy_hooks.clone(), error)),
         );
         plans
@@ -660,6 +699,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ["status", "--json"] => print_json(&serde_json::json!({
             "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
             "agy": swarm::bus::agy_hooks_set(&agy_hooks),
+            "guard": guard_status(has_list, &claude_settings, &codex_hooks, &homes, &agy_hooks),
         })),
         ["setup", "--plan"] => {
             print!("{}", hook_plan_text(&plan()));
@@ -691,6 +731,46 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => Err(USAGE.into()),
     }
+}
+
+/// Whether the guard registrations match the rule list: each one in place while the list exists,
+/// and none left once it is gone, because a registration with no list blocks every call.
+fn guard_status(
+    has_list: bool,
+    claude_settings: &[std::path::PathBuf],
+    codex_hooks: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+    agy_hooks: &std::path::Path,
+) -> bool {
+    let files = || {
+        let claude = claude_settings.iter().map(|path| (path, "claude"));
+        claude.chain(codex_hooks.iter().map(|path| (path, "codex")))
+    };
+    if !has_list {
+        return !swarm::bus::agy_guard_present(agy_hooks)
+            && files().all(|(path, provider)| !swarm::bus::guard_registered(path, provider));
+    }
+    files().all(|(path, provider)| {
+        swarm::bus::guard_hooks_plan(path, provider)
+            .is_ok_and(|plan| plan.conflicts.is_empty() && plan.after == plan.before)
+    }) && homes.iter().all(|home| {
+        let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
+        let entries = swarm::bus::codex_guard_trust(home, &hooks);
+        !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
+    }) && swarm::bus::agy_guard_set(agy_hooks)
+}
+
+/// A path as its link target, so two names of one file are one file. Two plans of one missing
+/// file both write the same text, which `write_text` accepts.
+fn canonical(path: &std::path::Path) -> std::path::PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Each path whose link target no earlier path shares, because two plans of one file would each
+/// find it changed by the other at apply.
+fn unique_targets(paths: impl Iterator<Item = std::path::PathBuf>) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    paths.filter(|path| seen.insert(canonical(path))).collect()
 }
 
 /// Folder trust in each Codex home or Claude config a pane may read. With no account picked, one
@@ -2351,8 +2431,63 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// `swarm guard <provider> <event>`: the rule list's verdict on one tool call, in the CLI's own
+/// reply format (ADR 0040). It never opens the store, so a busy bus cannot slow a tool call.
+fn guard(args: &[String]) -> (String, String, i32) {
+    let [provider, event] = args else {
+        return (String::new(), format!("{USAGE}\n"), 2);
+    };
+    let Some(provider) = Provider::parse(provider) else {
+        return (String::new(), format!("{USAGE}\n"), 2);
+    };
+    let deadline = std::time::Instant::now() + swarm::guard::DEADLINE;
+    let verdict = match (swarm::paths::guards_file(), env::var("HOME")) {
+        (Ok(path), Ok(home)) => {
+            let path = path.to_string_lossy();
+            let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
+            match (std::fs::read_to_string(path.as_ref()), payload) {
+                (_, None) => swarm::guard::Verdict::Deny(
+                    "swarm guard: cannot read the hook payload on stdin within 2 s, so the call is blocked".into(),
+                ),
+                (Err(error), _) if error.kind() != std::io::ErrorKind::NotFound => {
+                    swarm::guard::Verdict::Deny(format!(
+                        "swarm guard: cannot read {path}: {error}, so the call is blocked"
+                    ))
+                }
+                (list, Some(payload)) => swarm::guard::decide(
+                    list.ok().as_deref(),
+                    &path,
+                    provider,
+                    event,
+                    &payload,
+                    &home,
+                    deadline,
+                ),
+            }
+        }
+        _ => swarm::guard::Verdict::Deny(
+            "swarm guard: HOME is not set, so the call is blocked".into(),
+        ),
+    };
+    swarm::guard::render(provider, &verdict)
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [cmd, rest @ ..] = args.as_slice()
+        && cmd == "guard"
+    {
+        // A panic exits 101, which Claude and Codex read as "let the call through"; exit 2 blocks
+        // on every CLI.
+        std::panic::set_hook(Box::new(|info| {
+            eprintln!("swarm guard: {info}, so the call is blocked");
+            std::process::exit(2);
+        }));
+        let (stdout, stderr, code) = guard(rest);
+        print!("{stdout}");
+        eprint!("{stderr}");
+        std::process::exit(code);
+    }
     if let [cmd, rest @ ..] = args.as_slice()
         && cmd == "hook"
     {
