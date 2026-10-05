@@ -259,6 +259,16 @@ struct StepRunsTests {
         #expect(StepRuns.layers(steps) == [["01-a"], ["02-b"], ["03-c"]])
     }
 
+    @Test("A step id listed twice is placed once, so the graph never sees a repeated id")
+    func layersRepeatedID() {
+        func node(_ id: String, _ needs: [String]) -> StepNode {
+            StepNode(id: id, path: id, state: .open, error: nil, needs: needs, needsAssumed: false,
+                     stale: [], ready: false, todo: nil, lastEvent: nil)
+        }
+        let steps = [node("01-frame", []), node("02-design", ["01-frame"]), node("02-design", ["01-frame"])]
+        #expect(StepRuns.layers(steps) == [["01-frame"], ["02-design"]])
+    }
+
     @Test("VoiceOver reads each node's state and each run's most urgent state in words, not only as a color")
     func spokenLabels() {
         func node(_ id: String, _ state: StepState?, ready: Bool = false, stale: [String] = [], todo: StepTodo? = nil) -> StepNode {

@@ -196,7 +196,9 @@ public enum StepRuns {
         // From the last step back, so the edge dropped in a cycle is the one that points to a later file.
         for step in steps.reversed() { _ = depth(step.id) }
         var result: [[String]] = []
-        for step in steps {
+        // A listing can name one file twice while an agent renames it; the graph needs each id once.
+        var placed: Set<String> = []
+        for step in steps where placed.insert(step.id).inserted {
             let value = layer[step.id] ?? 0
             while result.count <= value { result.append([]) }
             result[value].append(step.id)
