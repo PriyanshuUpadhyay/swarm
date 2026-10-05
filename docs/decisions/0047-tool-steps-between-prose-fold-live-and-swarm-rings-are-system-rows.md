@@ -31,7 +31,8 @@ showed as finished.
 Chosen: fold every run of 2+ steps (tool rows, mid-turn rings, thoughts, hidden rows) between
 prose, with at least 1 tool row, also while the turn runs; hidden rows do not count toward the 2.
 A fold is one line, so it changes text, not height, as steps land, and no visible group of rows
-ever collapses. A fold with a failed step opens by default and says
+ever collapses: a run that showed 2 or more rows before its first tool opens when it folds. A fold
+with a failed step opens by default and says
 "N failed". The Zig parser tags a ring as `system_message` kind `swarm_ring`; a ring starts a turn
 only when no turn is open. A non-zero exit code, including Codex `exit_code` and `Script failed`,
 makes a step failed. Each row has a Show Source action that shows the translated event JSON of

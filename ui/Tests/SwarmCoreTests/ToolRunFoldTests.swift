@@ -110,6 +110,17 @@ struct ToolRunFoldTests {
         #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices))
     }
 
+    @Test("A run that drew 2 rows before its first tool landed opens when it folds, so no rows on screen collapse")
+    func shownRunStaysOpen() throws {
+        #expect(foldedIDs([prompt(), ring("ring"), thought("plan")]).isEmpty)
+        let landed = ToolRunFold.items(in: [prompt(), ring("ring"), thought("plan"), tool("inbox")])
+        let fold = try #require(landed.compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
+        #expect(ToolRunFold.isExpanded(fold, overrides: [:]))
+        // One row before the first tool, or a hidden one, is no group on screen, so the fold closes.
+        #expect(!ToolRunFold.defaultExpanded([ring("ring"), tool("read"), tool("grep")]))
+        #expect(!ToolRunFold.defaultExpanded([hidden("reminder"), thought("plan"), tool("read")]))
+    }
+
     @Test("Only a trailing fold with a failed step is the live fold that a failure opened")
     func liveFailedFold() {
         let failing = [prompt(), tool("read"), tool("make", state: .failed)]

@@ -4,8 +4,9 @@ import Foundation
 /// any state, a ring that arrived mid-turn, a thought, or a row hidden by default; every other row is
 /// prose. A run folds when it holds 2 or more shown steps and at least 1 tool row. The turn state
 /// does not matter, so the trailing run of a running turn is a live fold: a new step changes the
-/// fold's text, not its height, and no group of rows on screen ever collapses (ADR 0028). The one
-/// exception is a step that fails in a fold the owner has not toggled: the fold opens, because
+/// fold's text, not its height, and no group of rows on screen ever collapses (ADR 0028): a run that
+/// drew 2 or more rows before its first tool landed opens when it folds. The one other change of
+/// height is a step that fails in a fold the owner has not toggled: the fold opens, because
 /// ADR 0047 puts a visible failure above a fixed height.
 public enum ToolRunFold {
     public enum Item: Hashable, Sendable, Identifiable {
@@ -84,15 +85,19 @@ public enum ToolRunFold {
         rows.lazy.compactMap { overrides["fold:" + $0.eventID] }.first ?? defaultExpanded(rows)
     }
 
-    /// A fold with a failed step opens by default, so folding never hides a failure.
+    /// A fold with a failed step opens by default, so folding never hides a failure. So does a fold
+    /// with 2 or more shown steps before its first tool, because they were rows on screen before the
+    /// tool landed.
     public static func defaultExpanded(_ rows: [TranscriptRow]) -> Bool {
         rows.contains { $0.tool?.state == .failed }
+            || rows.prefix { $0.tool == nil }.count(where: { !$0.isHiddenByDefault }) >= 2
     }
 
     /// The id of the trailing fold when a failed step opens it: the live run of a running turn,
     /// so the view can say it opened. An earlier fold with a failure was opened before.
     public static func liveFailedFoldID(in items: [Item]) -> String? {
-        guard let last = items.last, case .fold(let rows) = last, defaultExpanded(rows) else { return nil }
+        guard let last = items.last, case .fold(let rows) = last, rows.contains(where: { $0.tool?.state == .failed })
+        else { return nil }
         return last.id
     }
 
