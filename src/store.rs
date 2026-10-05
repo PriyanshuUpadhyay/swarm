@@ -846,8 +846,9 @@ pub fn seen_since(
 
 /// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an
 /// unknown value. A message rung again since, or with a result already, keeps what it has, so a
-/// pass that read an older ring cannot settle a newer one. Returns whether this call stored the
-/// result on any of them, so the pass that lost a race to another reports nothing.
+/// pass that read an older ring cannot settle a newer one. One statement writes all the messages,
+/// so of two passes that settle one ring, one stores the result on all of them and the other on
+/// none. Returns whether this call stored it, so the pass that lost the race reports nothing.
 pub fn set_delivery(
     connection: &Connection,
     session_id: &str,
@@ -855,15 +856,13 @@ pub fn set_delivery(
     rung_at: i64,
     delivery: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let mut stored = false;
-    for seq in seqs {
-        stored |= connection.execute(
-            "UPDATE message SET delivery = ?3
-             WHERE session_id = ?1 AND seq = ?2 AND rung_at = ?4 AND delivery IS NULL",
-            (session_id, seq, delivery, rung_at),
-        )? > 0;
-    }
-    Ok(stored)
+    let stored = connection.execute(
+        "UPDATE message SET delivery = ?3
+         WHERE session_id = ?1 AND seq IN (SELECT value FROM json_each(?2)) AND rung_at = ?4
+           AND delivery IS NULL",
+        (session_id, serde_json::to_string(seqs)?, delivery, rung_at),
+    )?;
+    Ok(stored > 0)
 }
 
 pub fn has_rung_unread(
@@ -1717,6 +1716,58 @@ mod tests {
         assert!(set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap());
         assert!(!set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap());
         assert_eq!(delivery(&connection).as_deref(), Some("screen"));
+    }
+
+    /// One ring's result is one write over every message it rang. Of two passes that settle a
+    /// ring at the same time, exactly one stores the result and reports it, and the ring keeps
+    /// one result.
+    #[test]
+    fn two_passes_settle_a_ring_of_many_messages_once() {
+        let db = temp_root("settle-ring").join("swarm.db");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let connection = open(&db).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 WITH RECURSIVE ring(seq) AS (SELECT 0 UNION ALL SELECT seq + 1 FROM ring
+                                              WHERE seq < 499)
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     SELECT '{SESSION}', seq, '{ORCHESTRATOR}', '{CODER}', 'ask',
+                            'runs/' || seq || '.txt', 1700, 1
+                     FROM ring;"
+            ))
+            .unwrap();
+        // The race is timing, so it runs several times.
+        for _ in 0..10 {
+            connection
+                .execute("UPDATE message SET delivery = NULL", [])
+                .unwrap();
+            let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let passes = ["hook", "unconfirmed"].map(|delivery| {
+                let (db, start) = (db.clone(), start.clone());
+                std::thread::spawn(move || {
+                    let connection = open(&db).unwrap();
+                    let seqs: Vec<i64> = (0..500).collect();
+                    start.wait();
+                    set_delivery(&connection, SESSION, &seqs, 1700, delivery).unwrap()
+                })
+            });
+            let stored = passes.map(|pass| pass.join().unwrap());
+            assert_eq!(stored.iter().filter(|stored| **stored).count(), 1);
+            let results: Vec<Option<String>> = connection
+                .prepare("SELECT DISTINCT delivery FROM message")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(results.len(), 1, "{results:?}");
+            assert!(results[0].is_some());
+        }
     }
 
     /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is
