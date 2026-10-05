@@ -350,6 +350,8 @@ public actor SwarmSessionDiscovery {
         await accountHomesReader.prefetchHomes()
     }
 
+    public func forgetWorktrees(for common: String) { worktreeListings.removeValue(forKey: common) }
+
     func worktrees(for common: String, now: Date = .now) async throws -> [WorktreeEntry] {
         if let cached = worktreeListings[common], now.timeIntervalSince(cached.at) < 10 {
             return cached.entries

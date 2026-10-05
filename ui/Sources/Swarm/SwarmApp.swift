@@ -358,6 +358,7 @@ final class SessionsTreeModel {
             named: name, in: repositoryDirectory,
             commonDirectory: common, under: parent.path
         )
+        await discovery.forgetWorktrees(for: common)
         try await projects.add(URL(fileURLWithPath: path))
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the

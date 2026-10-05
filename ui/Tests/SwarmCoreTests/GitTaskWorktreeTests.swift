@@ -24,10 +24,19 @@ struct GitTaskWorktreeTests {
             "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "feature",
         ], cwd: source.path)
 
+        let discovery = SwarmSessionDiscovery()
+        let bus = SwarmCLIBus(environment: [:], cwd: root.path) { _, _, _, _, _, _ in
+            ShellResult(status: 0, stdout: "{}", stderr: "")
+        }
+        _ = try await discovery.tree(sessions: [], projectPaths: [source.path], bus: bus)
         let taskPath = try await GitTaskWorktree.create(
             named: "Fix sidebar", in: source.path,
             commonDirectory: source.appendingPathComponent(".git").path, under: tasks.path
         )
+        let common = try #require(Git.repositoryPaths(in: source.path)).commonDirectory
+        await discovery.forgetWorktrees(for: common)
+        let refreshed = try await discovery.tree(sessions: [], projectPaths: [source.path, taskPath], bus: bus)
+        #expect(refreshed.projects.flatMap(\.workspaces).contains { $0.path == taskPath })
         let listed = try await Git.worktrees(of: source.path)
         let task = try #require(listed.first { $0.path == taskPath })
         #expect(task.branch?.hasPrefix("swarm/fix-sidebar-") == true)
