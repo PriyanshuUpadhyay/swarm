@@ -101,21 +101,27 @@ public struct TranscriptToolActivity: Sendable, Hashable {
 
     /// The result says the step failed: a non-zero exit code, a Codex code-mode command's
     /// `Script failed` header, or an exec_command that the script caught as rejected
-    /// (`Promise.allSettled` prints `"status":"rejected"`). Another tool's text can hold those
-    /// words, so only a command in code-mode shape counts. O(output length) on each read; the row
-    /// builder reads it once per finished tool and keeps the answer in `state`, so no view reads it.
+    /// (a printed `Promise.allSettled` entry with `"status":"rejected"`). Another tool's text can
+    /// hold those words, so only a command in code-mode shape counts. O(output length) on each read;
+    /// the row builder reads it once per finished tool and keeps the answer in `state`, so no view
+    /// reads it.
     public var reportsFailure: Bool {
         if (exitCode ?? 0) != 0 { return true }
-        guard command != nil, let output, let body = Self.codeModeOutput(output) else { return false }
-        return output.hasPrefix("Script failed\n") || body.contains("\"status\":\"rejected\"")
+        guard command != nil, let output, Self.codeModeOutput(output) != nil else { return false }
+        if output.hasPrefix("Script failed\n") { return true }
+        return Self.codeModeResults(output)?.contains { result in
+            guard case .array(let entries) = result else { return false }
+            return entries.contains { if case .object(let entry) = $0 { entry["status"] == .string("rejected") } else { false } }
+        } ?? false
     }
 
     /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex
     /// exec_command without code mode writes a `Chunk ID:` header with `Process exited with code N`
     /// before `Output:`. Codex code mode writes `Script completed`, its wall time, `Output:`, and
-    /// then each exec_command's JSON result; the first `"exit_code":N` other than 0 there is the
-    /// code. A key inside an escaped string reads `\"exit_code\":`, so it does not match. Codex
-    /// codes of 0 give nil, so a card shows no "exit 0". O(output length).
+    /// then what the script printed; the first `exit_code` other than 0 of a printed exec_command
+    /// result (an object, or an array entry or its `value`) is the code. Printed free text gives
+    /// nil, so a command's stdout cannot set it. Codex codes of 0 give nil, so a card shows no
+    /// "exit 0". O(output length).
     static func exitCode(output: String?, command: String?) -> Int? {
         guard command != nil, let output else { return nil }
         if output.hasPrefix("Exit code ") {
@@ -127,12 +133,29 @@ public struct TranscriptToolActivity: Sendable, Hashable {
             let code = Int(header[key.upperBound...].prefix { !$0.isNewline })
             return code == 0 ? nil : code
         }
-        guard var rest = codeModeOutput(output) else { return nil }
-        while let key = rest.range(of: "\"exit_code\":") {
-            rest = rest[key.upperBound...]
-            if let code = Int(rest.prefix { $0 == "-" || $0.isASCII && $0.isNumber }), code != 0 { return code }
+        guard let results = codeModeResults(output) else { return nil }
+        // Promise.all prints the results as an array; Promise.allSettled wraps each in `value`.
+        let records = results.flatMap { result -> [JSONElement] in
+            guard case .array(let entries) = result else { return [result] }
+            return entries.map { if case .object(let entry) = $0, let value = entry["value"] { value } else { $0 } }
+        }
+        for case .object(let record) in records {
+            if case .integer(let code) = record["exit_code"], code != 0 { return Int(code) }
         }
         return nil
+    }
+
+    /// The JSON values a Codex code-mode script printed after `Output:`, one per non-blank line;
+    /// nil when the header is missing or any line is not JSON, because then the script printed
+    /// free text such as a command's stdout.
+    static func codeModeResults(_ output: String) -> [JSONElement]? {
+        guard let body = codeModeOutput(output) else { return nil }
+        var results: [JSONElement] = []
+        for line in body.split(whereSeparator: \.isNewline) where !line.allSatisfy(\.isWhitespace) {
+            guard let result = try? JSONDecoder().decode(JSONElement.self, from: Data(line.utf8)) else { return nil }
+            results.append(result)
+        }
+        return results
     }
 
     /// The text after `Output:` of a Codex code-mode result, whose header is `Script completed`,

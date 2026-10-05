@@ -192,6 +192,21 @@ struct TranscriptToolActivityTests {
         #expect(rows.map(\.tool?.state) == [.failed, .finished])
     }
 
+    /// A script that prints a command's stdout as text, not its JSON result, shows no exit code.
+    @Test("A Codex code-mode exit_code or rejected status inside printed command text does not fail the step")
+    func codexPrintedTextIsNotAResult() {
+        func activity(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x")
+        }
+        let exitInText = activity("Script completed\nWall time 1 seconds\nOutput:\nserver log {\"exit_code\":1} retried\n")
+        #expect(exitInText.exitCode == nil)
+        #expect(!exitInText.reportsFailure)
+        let exitAfterText = activity("Script completed\nWall time 1 seconds\nOutput:\nbuild ok\n{\"exit_code\":1}\n")
+        #expect(exitAfterText.exitCode == nil)
+        let rejectedInText = activity("Script completed\nWall time 1 seconds\nOutput:\nqueue item [{\"status\":\"rejected\"}] skipped\n")
+        #expect(!rejectedInText.reportsFailure)
+    }
+
     @Test("Script failed fails only a command in Codex code-mode shape")
     func scriptFailedNeedsCodeModeShape() {
         let logFile = TranscriptToolActivity(name: "Read", input: .object([:]), output: "Script failed: lint skipped", state: .finished)
