@@ -20,6 +20,9 @@ fn ring_text(root: &std::path::Path) -> String {
 const RING_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// How many more times a ring presses Enter while Claude's input box still holds it.
 const RING_ENTER_RETRIES: usize = 3;
+/// How long one ring may take in all, so a hung adapter verb cannot hold the caller for ever.
+const RING_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
 
 /// Type the ring into `pane`. A Claude that is still starting loses a ring typed before its input
 /// box is drawn, or reads the text and its Enter as one paste, so the Enter becomes a newline and
@@ -33,6 +36,12 @@ fn ring_pane(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let text = ring_text(root);
     let claude = provider == Some("claude");
+    // The ring's own deadline replaces a batch deadline, so a ring that starts within the batch
+    // still gets the time to send its text and Enter.
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(std::time::Instant::now() + RING_TIMEOUT),
+        ..adapter.clone()
+    };
     let read = || {
         adapter
             .capture_within(&[("pane", pane)], std::time::Duration::from_secs(1))
@@ -1282,13 +1291,7 @@ fn rering_if_due(
         (session_id, agent),
     )?;
     let provider = swarm::store::provider_of(connection, session_id, agent)?;
-    // A ring that starts must finish its screen reads, text, and Enter, so a batch deadline
-    // does not bound it.
-    let adapter = swarm::adapter::Adapter {
-        deadline: None,
-        ..adapter.clone()
-    };
-    match ring_pane(&adapter, root, pane, provider.as_deref()) {
+    match ring_pane(adapter, root, pane, provider.as_deref()) {
         Ok(()) => eprintln!("swarm: re-ringed {agent}"),
         Err(error) => eprintln!("swarm: re-ring failed for {agent}: {error}"),
     }
@@ -2424,6 +2427,19 @@ mod tests {
         assert_eq!(std::fs::read_to_string(ring_log).unwrap(), "textenter");
         assert!(adapter.check_deadline().is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_hung_ring_ends_at_the_ring_timeout() {
+        let root = std::env::temp_dir().join(format!("swarm-hung-ring-{}", uuid::Uuid::now_v7()));
+        let adapter = swarm::adapter::parse(
+            "fake",
+            "self = true\nspawn = true\nlist = true\nclose = true\ncapture = true\nring = sleep 60\n",
+        )
+        .unwrap();
+        let started = std::time::Instant::now();
+        assert!(ring_pane(&adapter, &root, "%2", Some("codex")).is_err());
+        assert!(started.elapsed() < RING_TIMEOUT + std::time::Duration::from_secs(2));
     }
 
     #[test]
