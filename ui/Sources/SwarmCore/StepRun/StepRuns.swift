@@ -177,8 +177,9 @@ public enum StepRuns {
 
     /// Whether a chosen run left the scan. A closed run is only hidden while closed runs are not read,
     /// and a run the scan cannot read, or whose skill or `_closed` folder it cannot list, is still there.
+    /// A cut-off scan may have left the run out, so nothing is gone then.
     public static func isGone(_ id: String, closed: Bool, from scan: StepRunScan, includeClosed: Bool) -> Bool {
-        (includeClosed || !closed) && !scan.runs.contains { $0.id == id }
+        !scan.cutOff && (includeClosed || !closed) && !scan.runs.contains { $0.id == id }
             && !scan.unreadable.contains { id == $0 || id.hasPrefix($0 + "/") }
     }
 

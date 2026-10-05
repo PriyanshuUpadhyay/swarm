@@ -325,6 +325,8 @@ struct StepRunsTests {
         let lockedSkill = StepRunScan(unreadable: ["tmp/flow"])
         #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: lockedSkill, includeClosed: false))
         #expect(StepRuns.isGone("tmp/flow-other/r1", closed: false, from: lockedSkill, includeClosed: false))
+        // The 2,000-entry cut may leave the chosen run out of the scan.
+        #expect(!StepRuns.isGone("tmp/flow/r1", closed: false, from: StepRunScan(cutOff: true), includeClosed: false))
     }
 
     private func write(_ folder: URL, _ files: [String: String]) throws {
