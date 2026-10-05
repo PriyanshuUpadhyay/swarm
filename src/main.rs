@@ -1703,6 +1703,13 @@ fn sweep_once(
         session_id,
         Proof::Wait,
     )?);
+    lines.extend(report_lost(
+        connection,
+        root,
+        &adapter.name,
+        session_id,
+        Proof::Wait,
+    )?);
     lines.extend(report_stalls(
         connection,
         root,
@@ -1715,9 +1722,8 @@ fn sweep_once(
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
 /// wait. Its proof is a hook or the screen now; with none, it is unconfirmed once its deadline has
-/// passed. Then send the chair `unconfirmed:<seq>` for each message whose last ring proved
-/// nothing and that no report names yet (ADR 0041). Returns one line for each lost message. With
-/// `Proof::Later`, the listing's pass, the chair's own last ring stays for the sweep.
+/// passed (ADR 0041). Returns a line for the chair's own lost message. With `Proof::Later`, the
+/// listing's pass, the chair's own last ring stays for the sweep.
 fn settle_rings(
     connection: &mut rusqlite::Connection,
     root: &std::path::Path,
@@ -1779,11 +1785,25 @@ fn settle_rings(
             lines.push(chair_lost(&agent, seq));
         }
     }
+    Ok(lines)
+}
+
+/// Send the chair `unconfirmed:<seq>` for each message whose last ring proved nothing and that no
+/// report names yet (ADR 0041), and return a line for each one sent.
+fn report_lost(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    proof: Proof,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let chair = swarm::store::orchestrator_of(connection, session_id)?;
+    let mut lines = Vec::new();
     for (agent, seq) in swarm::store::unreported_lost(connection, session_id, &chair)? {
         if report(
             connection,
             root,
-            &adapter.name,
+            adapter_name,
             session_id,
             &agent,
             &format!("unconfirmed:{seq}"),
@@ -1983,6 +2003,12 @@ fn list_agents(
     });
     // All reads must finish in time; a due ring below can run past their deadline.
     adapter.check_deadline()?;
+    // A session with no chair yet still lists; it has no one to report to.
+    let chair = swarm::store::orchestrator_of(connection, session_id).ok();
+    let chair_listed = rows
+        .iter()
+        .zip(&alive)
+        .any(|(row, alive)| Some(&row.id) == chair.as_ref() && *alive == Some(true));
     let mut agents = Vec::new();
     for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
         let (screen, detail, prompt) = match screen {
@@ -2057,12 +2083,20 @@ fn list_agents(
     }
     // The app runs no `swarm sweep`, so its listing also settles rings and reports lost messages
     // and stalls, after its state writes. The app kills the listing at 20 s, so none of its rings
-    // waits for proof; the next pass settles them.
+    // waits for proof; the next pass settles them. A report rings the chair's stored pane, which a
+    // restarted tmux or Herdr server can give to another pane, so it waits for a listing that
+    // shows the chair's pane.
     if let Err(error) = settle_rings(connection, root, adapter, session_id, Proof::Later) {
         eprintln!("swarm: {error}");
     }
-    if let Err(error) = report_stalls(connection, root, &adapter.name, session_id, Proof::Later) {
-        eprintln!("swarm: {error}");
+    if chair_listed {
+        if let Err(error) = report_lost(connection, root, &adapter.name, session_id, Proof::Later) {
+            eprintln!("swarm: {error}");
+        }
+        if let Err(error) = report_stalls(connection, root, &adapter.name, session_id, Proof::Later)
+        {
+            eprintln!("swarm: {error}");
+        }
     }
     Ok(AgentListOutput {
         agents,
@@ -4093,6 +4127,37 @@ mod tests {
         let lines = swept(&mut connection, &root, &adapter, &session);
         assert_eq!(lines, [format!("unconfirmed {ORCHESTRATOR} 0")]);
         assert_eq!(chair_mail(&connection, &session).len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A listing reads every unarchived session, and a restarted tmux or Herdr server can give a
+    /// stored pane id to another pane. So the listing sends a report only while the adapter lists
+    /// the chair's pane.
+    #[test]
+    fn a_listing_sends_no_report_while_the_chairs_pane_is_not_listed() {
+        let (root, mut connection, session) =
+            ring_session("stall-listing", None, "ring = true", "");
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let ask = send_task(&root, &mut connection, &session);
+        connection
+            .execute_batch(
+                "UPDATE message SET delivery = 'hook', rung_at = unixepoch() - 30,
+                                    seen_at = unixepoch() - 20",
+            )
+            .unwrap();
+        let now = unix_now().unwrap();
+        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%9").unwrap();
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(chair_mail(&connection, &session).is_empty());
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), format!("stall:unacked:{ask}"))]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
