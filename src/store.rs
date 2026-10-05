@@ -494,6 +494,19 @@ pub fn pane_of(
     Ok(pane)
 }
 
+pub fn provider_of(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let provider: Option<String> = connection.query_row(
+        "SELECT provider FROM agent WHERE session_id = ?1 AND id = ?2",
+        (session_id, agent_id),
+        |r| r.get(0),
+    )?;
+    Ok(provider)
+}
+
 #[derive(Debug)]
 pub struct AgentRow {
     pub id: String,
