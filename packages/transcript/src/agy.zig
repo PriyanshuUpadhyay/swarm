@@ -76,7 +76,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                 text = std.mem.trim(u8, request, " \t\r\n");
             }
         }
-        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
+        if (root.isSwarmRing(text)) {
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "swarm_ring", .text = text } });
+        } else {
+            try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
+        }
         if (context.len != 0) {
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = context } });
         }
@@ -227,6 +231,18 @@ test "USER_INPUT becomes a user message" {
     try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
     try std.testing.expectEqualStrings("12", events[0].user_message_chunk.meta.uuid);
     try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
+}
+
+test "USER_INPUT swarm ring inside the request wrapper is a swarm_ring system message" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":14,"created_at":"t","content":"<USER_REQUEST>\nswarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>.\n</USER_REQUEST>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("swarm_ring", events[0].system_message.kind);
+    try std.testing.expectEqualStrings("14", events[0].system_message.meta.uuid);
 }
 
 test "USER_INPUT strips request wrapper after leading whitespace" {
