@@ -35,7 +35,8 @@ returns `hook` (a turn-start hook after the ring second), `screen` (a working or
 a short turn whose `done` overwrote its `working` still counts), `unconfirmed`, or `unchecked` (no
 proof can exist), and stores it on `message.delivery`. A listing
 ring, or a ring whose caller ended in its wait, keeps NULL until the next listing or sweep pass
-finds a hook, the screen, or a read, or marks it `unconfirmed` past its 30 s deadline. While the composer
+finds a hook, the screen, or a read, or marks it `unconfirmed` past its 30 s deadline; a pass with no time left
+to read the pane leaves it for the next pass. While the composer
 still holds the ring text, a waiting ring presses Enter again, for each provider whose composer it
 can read. After 2 unconfirmed rings the sender's chair gets `unconfirmed:<seq>`, from the same
 pass that stored the result; a report that fails to send is sent by a later pass. `swarm sweep` and the listing send `stall:unacked:<seq>`

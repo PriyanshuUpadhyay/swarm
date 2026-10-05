@@ -1789,7 +1789,10 @@ fn settle_rings(
             })
             .transpose()?
             .flatten();
-        let late = now - rung_at > RING_TIMEOUT.as_secs() as i64;
+        // A read that the batch deadline stopped is no evidence, so only the store's proof
+        // settles the ring in this pass, and a pass with time to read applies the deadline.
+        let late =
+            adapter.check_deadline().is_ok() && now - rung_at > RING_TIMEOUT.as_secs() as i64;
         let Some(delivery) = proven.or(late.then_some(Delivery::Unconfirmed)) else {
             continue;
         };
@@ -3882,6 +3885,65 @@ mod tests {
         assert_eq!(
             delivery_of(&connection, &session, ask).as_deref(),
             Some("unconfirmed")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A pass whose batch deadline is spent cannot read the pane. That is no evidence, so a late
+    /// ring with no proof in the store stays for a pass with time to read its screen.
+    #[test]
+    fn a_pass_out_of_time_leaves_a_late_ring_unsettled() {
+        let (root, mut connection, session) = ring_session(
+            "settle-no-time",
+            Some("agy"),
+            "ring = true",
+            include_str!("../tests/fixtures/screens/agy-working.txt"),
+        );
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET rung_at = unixepoch() - ?1, rings = 1",
+                [RING_TIMEOUT.as_secs() + 1],
+            )
+            .unwrap();
+        let adapter = swarm::adapter::Adapter {
+            deadline: Some(std::time::Instant::now()),
+            ..swarm::adapter::load(&root, "fake").unwrap()
+        };
+        settle_rings(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            Proof::Later,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(delivery_of(&connection, &session, ask), None);
+
+        // A pass with time reads the working screen that a busy CLI shows (ADR 0038).
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+        settle_rings(
+            &mut connection,
+            &root,
+            &adapter,
+            &session,
+            Proof::Later,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            delivery_of(&connection, &session, ask).as_deref(),
+            Some("screen")
         );
         std::fs::remove_dir_all(root).unwrap();
     }
