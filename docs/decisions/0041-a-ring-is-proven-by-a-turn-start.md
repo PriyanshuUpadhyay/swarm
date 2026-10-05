@@ -6,6 +6,7 @@ related: ["0007", "0021", "0038"]
 informed-by:
   - "Owner answers on 2026-10-05 (flow tmp/flow/2026-10-05-ring-proof, 03-contracts): Q1 (a) the proof wait runs inline in every ring, the app listing included; Q2 (a) a lost ring to the chair, or a chair idle with unacked work, goes to stderr and a `swarm sweep` line only"
   - "Owner answer 2 on 2026-10-05 (review-check range-8bdeec4-894bc09-01): lazy proof in the list, Q1 (b), because the app kills `swarm agents --json` at 20 s (ui SwarmCLIBus.swift:205)"
+  - "Owner answer 3 on 2026-10-05 (review-check range-8bdeec4-c203deb-01, REF u16): yes, add `seen`; a message read at or after its ring (`seen_at >= rung_at`) proves the ring started a turn, and the silent stall check counts it as a proven ring"
   - "src/main.rs ring_pane at main 8bdeec42: only a ring to Claude waits for its input box and presses Enter again"
   - "ADR 0038: a ring to a busy CLI is queued or steered, so it fires no turn-start hook"
 ---
@@ -30,9 +31,11 @@ Chosen: CLI rings wait inline, and the app's listing types its rings and leaves 
 next pass, because the app kills `swarm agents --json` at 20 s and a lost ring waits 30 s for its
 proof. `send`, `finish`, `ack`, and `sweep` wait, so `swarm send` can report the result. A ring
 returns `hook` (a turn-start hook after the ring second), `screen` (a working or waiting screen),
-`unconfirmed`, or `unchecked` (no proof can exist), and stores it on `message.delivery`. A listing
+`seen` (no hook or screen proof, but the agent read its messages at or after the ring second, so
+a short turn whose `done` overwrote its `working` still counts), `unconfirmed`, or `unchecked` (no
+proof can exist), and stores it on `message.delivery`. A listing
 ring, or a ring whose caller ended in its wait, keeps NULL until the next listing or sweep pass
-finds a hook or the screen, or marks it `unconfirmed` past its 30 s deadline. While the composer
+finds a hook, the screen, or a read, or marks it `unconfirmed` past its 30 s deadline. While the composer
 still holds the ring text, a waiting ring presses Enter again, for each provider whose composer it
 can read. After 2 unconfirmed rings the sender's chair gets `unconfirmed:<seq>`, from the same
 pass that stored the result; a report that fails to send is sent by a later pass. `swarm sweep` and the listing send `stall:unacked:<seq>`

@@ -711,7 +711,7 @@ pub fn stalls(
                 .query_row(
                     "SELECT seq FROM message AS inbound
                      WHERE session_id = ?1 AND recipient_id = ?2
-                       AND delivery IN ('hook', 'screen') AND rung_at < ?3
+                       AND delivery IN ('hook', 'screen', 'seen') AND rung_at < ?3
                        AND NOT EXISTS (SELECT 1 FROM message
                                        WHERE session_id = ?1 AND sender_id = ?2
                                          AND created_at >= inbound.rung_at
@@ -719,7 +719,7 @@ pub fn stalls(
                                          AND kind NOT GLOB 'unconfirmed:*')
                        AND seq = (SELECT MAX(seq) FROM message
                                   WHERE session_id = ?1 AND recipient_id = ?2
-                                    AND delivery IN ('hook', 'screen'))",
+                                    AND delivery IN ('hook', 'screen', 'seen'))",
                     (session_id, &agent, done_at),
                     |row| row.get(0),
                 )
@@ -824,6 +824,23 @@ pub fn turn_started(
         |row| row.get(0),
     )?;
     Ok(started)
+}
+
+/// Whether `agent_id` read its messages at or after `since` (unix seconds). `inbox` marks every
+/// unseen message of the agent at once, so a read after a ring also read the messages it rang.
+pub fn seen_since(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let seen: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM message
+                        WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(seen)
 }
 
 /// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an

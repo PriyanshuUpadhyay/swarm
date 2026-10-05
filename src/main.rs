@@ -42,6 +42,9 @@ enum Delivery {
     /// The recipient's screen showed a turn or a question after the ring. A busy CLI queues or
     /// steers the ring and fires no turn-start hook (ADR 0038), so this is its only proof.
     Screen,
+    /// The recipient read its messages after the ring, though no hook or screen shows a turn now:
+    /// a short turn can end between two listing passes, and its `done` hides its turn start.
+    Seen,
     /// No proof came before the ring's deadline.
     Unconfirmed,
     /// No proof can come: the pane's CLI is unknown and its screen is no Herdr status.
@@ -53,6 +56,7 @@ impl Delivery {
         match self {
             Delivery::Hook => "hook",
             Delivery::Screen => "screen",
+            Delivery::Seen => "seen",
             Delivery::Unconfirmed => "unconfirmed",
             Delivery::Unchecked => "unchecked",
         }
@@ -181,12 +185,14 @@ fn ring_proof(
     if swarm::store::turn_started(connection, session_id, agent_id, rung_at).unwrap_or(false) {
         return Some(Delivery::Hook);
     }
-    match swarm::screen::read_pane(provider, screen.unwrap_or(rows), || Some(rows.to_string())) {
-        Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) => {
-            Some(Delivery::Screen)
-        }
-        _ => None,
+    if let Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) =
+        swarm::screen::read_pane(provider, screen.unwrap_or(rows), || Some(rows.to_string()))
+    {
+        return Some(Delivery::Screen);
     }
+    swarm::store::seen_since(connection, session_id, agent_id, rung_at)
+        .unwrap_or(false)
+        .then_some(Delivery::Seen)
 }
 
 /// Ring `agent` for the messages `seqs`, stored as rung at `rung_at`, and store what the ring
@@ -1721,7 +1727,7 @@ fn sweep_once(
 }
 
 /// Settle each ring that no caller waited for: the listing's, and one whose caller ended in its
-/// wait. Its proof is a hook or the screen now; with none, it is unconfirmed once its deadline has
+/// wait. Its proof is a hook, the screen, or a read now; with none, it is unconfirmed once its deadline has
 /// passed (ADR 0041). Returns a line for the chair's own lost message. With `Proof::Later`, the
 /// listing's pass, the chair's own last ring stays for the sweep.
 fn settle_rings(
@@ -4068,6 +4074,53 @@ mod tests {
         assert_eq!(
             delivery_of(&connection, &session, summary).as_deref(),
             Some("unconfirmed")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A child that reads and acks its message and ends its turn between two listing passes leaves
+    /// its hook at done and its screen idle, so neither proves the ring. The read proves it: the
+    /// pass stores `seen`, sends no `unconfirmed` report, and counts the ring for the silent stall
+    /// (ADR 0041, owner answer 3).
+    #[test]
+    fn a_ring_whose_message_was_read_is_seen_though_its_turn_has_ended() {
+        let (root, mut connection, session) = ring_session(
+            "seen",
+            Some("claude"),
+            "ring = true\nscreen = cat '{screen}'",
+            include_str!("../tests/fixtures/screens/claude-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        let ask = swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - ?1, rung_at = unixepoch() - ?1,
+                                    rings = ?2, seen_at = unixepoch() - 5",
+                (RING_TIMEOUT.as_secs() + 1, swarm::store::MAX_RINGS),
+            )
+            .unwrap();
+        swarm::store::ack(&connection, &session, ask, CODER).unwrap();
+        let now = unix_now().unwrap();
+        swarm::store::set_state(&connection, &session, CODER, "done", "hook", None, now).unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert_eq!(
+            delivery_of(&connection, &session, ask).as_deref(),
+            Some("seen")
+        );
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), format!("stall:silent:{ask}"))]
         );
         std::fs::remove_dir_all(root).unwrap();
     }

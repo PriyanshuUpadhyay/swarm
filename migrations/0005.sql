@@ -1,6 +1,6 @@
 -- What the last ring of a message proved (ADR 0041); NULL until a ring ends.
 ALTER TABLE message ADD COLUMN delivery TEXT
-    CHECK (delivery IN ('hook', 'screen', 'unconfirmed', 'unchecked'));
+    CHECK (delivery IN ('hook', 'screen', 'seen', 'unconfirmed', 'unchecked'));
 
 -- An older build checked no ring, and its pane has moved on since, so no later pass can settle it.
 UPDATE message SET delivery = 'unchecked' WHERE rings > 0;
