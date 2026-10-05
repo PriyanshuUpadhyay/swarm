@@ -26,7 +26,7 @@ public actor ToolTranscriptReader: TranscriptReading {
     public static let messageLimit = 100
 
     private let binary: URL
-    private let format: String
+    let format: String
     private let log: URL
     private let limit: Int
 

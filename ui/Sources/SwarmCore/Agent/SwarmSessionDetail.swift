@@ -244,7 +244,8 @@ public actor SwarmChairTranscript {
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
         let built = TranscriptRowBuilder.rows(
-            from: window.records, indexOffset: window.indexOffset, hasOlder: window.hasOlder
+            from: window.records, indexOffset: window.indexOffset, hasOlder: window.hasOlder,
+            marksTurnStarts: reader.format == "codex"
         )
         if let path = log, path != lastLogPath {
             // Claude writes bookkeeping lines first, so until a real record lands the new log

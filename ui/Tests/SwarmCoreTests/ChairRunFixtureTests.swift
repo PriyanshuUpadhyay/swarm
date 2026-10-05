@@ -30,7 +30,7 @@ struct ChairRunFixtureTests {
 
     @Test("Codex: rings are ring rows, exec rows show their cmd, failures show, and tool runs fold between prose")
     func codex() async throws {
-        let rows = TranscriptRowBuilder.rows(from: try await records("codex"))
+        let rows = TranscriptRowBuilder.rows(from: try await records("codex"), marksTurnStarts: true)
         #expect(rows.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.eventID) == ["ring-1:ring", "ring-2:ring"])
         #expect(!rows.contains { $0.kind == .user && $0.text.hasPrefix("swarm: new message") })
         let exec = rows.compactMap(\.tool).filter { $0.name == "exec" }
@@ -76,7 +76,7 @@ struct ChairRunFixtureTests {
           arguments: ["codex", "claude", "agy"])
     func foldsHoldEverySource(format: String) async throws {
         let records = try await records(format)
-        let rows = TranscriptRowBuilder.rows(from: records)
+        let rows = TranscriptRowBuilder.rows(from: records, marksTurnStarts: format == "codex")
         let expanded = ToolRunFold.items(in: rows).flatMap { item -> [TranscriptRow] in
             switch item {
             case .row(let row): [row]

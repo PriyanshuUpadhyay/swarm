@@ -671,6 +671,30 @@ struct TranscriptDebugDataTests {
         let queuedFolds = ToolRunFold.items(in: queued).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
         #expect(queuedFolds == [["c1:call", "ring-1:ring", "c2:call"]])
 
+        // A Codex steer (Enter mid-turn) and a task notice Claude queued mid-turn start no turn either.
+        let midTurnInputs: [(TranscriptEvent, Bool)] = [
+            (.userMessageChunk(text: "also check docs", meta: Meta(uuid: "steer")), true),
+            (.systemMessage(kind: "queued_command", text: "<task-notification><summary>done</summary></task-notification>", meta: Meta(uuid: "task")), false),
+        ]
+        for (input, marksTurnStarts) in midTurnInputs {
+            let events: [TranscriptEvent] = Array(tail.prefix(5)) + [
+                input, .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            ]
+            let window = TranscriptRowBuilder.rows(from: events, indexOffset: 0, hasOlder: true, marksTurnStarts: marksTurnStarts)
+            #expect(window.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+            let inputFolds = ToolRunFold.items(in: window).compactMap { if case .fold(let group) = $0 { group.map(\.eventID) } else { nil } }
+            #expect(inputFolds == [["c1:call", "ring-1:ring", "c2:call"]])
+            #expect(ChairTurn.isActive(Array(window.dropLast())))
+        }
+        // In a Codex log the prompt follows its turn-started record, so it still starts a turn.
+        let codexPrompt = TranscriptRowBuilder.rows(from: [
+            .turnEnded(durationMs: 1000, reason: .completed, meta: Meta(uuid: "end")),
+            .turnStarted(meta: Meta(uuid: "start")),
+            .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
+            .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-4")),
+        ], indexOffset: 0, hasOlder: true, marksTurnStarts: true)
+        #expect(codexPrompt.filter { $0.systemKind == TranscriptSystemKind.swarmRing }.map(\.startsTurn) == [false])
+
         let idleWindow = TranscriptRowBuilder.rows(from: [
             .systemMessage(kind: TranscriptSystemKind.swarmRing, text: Self.ring, meta: Meta(uuid: "ring-3")),
             .userMessageChunk(text: "Run the council", meta: Meta(uuid: "prompt")),
