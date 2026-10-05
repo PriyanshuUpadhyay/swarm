@@ -181,17 +181,17 @@ public enum StepRuns {
         let files = try await WorkspaceFiles.list(in: workspace, path: folder.path).entries
             .filter { $0.kind == .file && $0.name.wholeMatch(of: /[0-9]{2}-.+\.md/) != nil }
             .sorted { $0.name < $1.name }
-        var parsed: [(id: String, file: Parsed)] = []
-        for name in files.map(\.name) {
-            let path = folder.path + "/" + name
-            var preview = try? WorkspaceFiles.read(in: workspace, path: path)
-            if preview == .text("") {
-                // An agent's write truncates first, so a tick can land on an empty file; read once more.
-                try await Task.sleep(for: .milliseconds(150))
-                preview = try? WorkspaceFiles.read(in: workspace, path: path)
+        let paths = files.map { folder.path + "/" + $0.name }
+        var previews = paths.map { try? WorkspaceFiles.read(in: workspace, path: $0) }
+        if previews.contains(.text("")) {
+            // An agent's write truncates first, so a tick can land on an empty file; one wait, then
+            // read the empty ones once more.
+            try await Task.sleep(for: .milliseconds(150))
+            for index in previews.indices where previews[index] == .text("") {
+                previews[index] = try? WorkspaceFiles.read(in: workspace, path: paths[index])
             }
-            parsed.append((String(name.dropLast(3)), parse(preview)))
         }
+        let parsed = zip(files, previews).map { (id: String($0.name.dropLast(3)), file: parse($1)) }
         guard parsed.contains(where: { $0.file.state != nil }) else { return nil }
 
         let events = events(try? WorkspaceFiles.read(in: workspace, path: folder.path + "/events.log"))

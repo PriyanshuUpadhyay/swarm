@@ -86,6 +86,19 @@ struct StepRunsTests {
         #expect(review(closed: false)?.stale == ["05-build"], "an open run still follows HEAD")
     }
 
+    @Test("Many empty step files cost one short wait per scan, not one wait each")
+    func manyEmptySteps() async throws {
+        let workspace = try fixture()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        var files = ["01-frame.md": "Status: open\nUses:\n"]
+        for index in 2...11 { files[String(format: "%02d-placeholder.md", index)] = "" }
+        try write(workspace.appendingPathComponent("tmp/flow/2026-10-05-placeholders"), files)
+        let clock = ContinuousClock()
+        let start = clock.now
+        _ = try await StepRuns.scan(workspace: workspace.path, includeClosed: false)
+        #expect(clock.now - start < .seconds(1), "ten waits of 150 ms take 1.5 s")
+    }
+
     @Test("An older folder with empty Uses lines still draws, with an assumed edge from the previous step")
     func oldFlowFolder() async throws {
         let workspace = try fixture()
