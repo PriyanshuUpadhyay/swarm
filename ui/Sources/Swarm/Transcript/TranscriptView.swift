@@ -674,7 +674,7 @@ private struct TranscriptSourceView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                 Text(entries.isEmpty ? AttributedString("No source events are loaded for this row.")
                     : AttributedString(localized: "Source, ^[\(entries.count) event](inflect: true)"))
                     .font(.caption).foregroundStyle(.secondary)
