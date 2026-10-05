@@ -683,8 +683,8 @@ private struct TranscriptSourceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                Text(verbatim: entries.isEmpty ? "No source events are loaded for this row."
-                    : "Source, \(entries.count) event\(entries.count == 1 ? "" : "s")")
+                Text(entries.isEmpty ? AttributedString("No source events are loaded for this row.")
+                    : AttributedString(localized: "Source, ^[\(entries.count) event](inflect: true)"))
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(entries) { TranscriptRawEntryBlock(entry: $0) }
             }

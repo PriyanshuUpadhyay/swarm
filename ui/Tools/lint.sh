@@ -32,4 +32,8 @@ if rg -n --glob '*.swift' --glob '!**/Design/**' \
     "$root/Sources/Swarm"; then
   failed=1
 fi
+# A count's plural comes from inflection, ^[\(n) word](inflect: true), not from appending "s".
+if rg -n --glob '*.swift' '== 1 \? "" : "s"' "$root/Sources"; then
+  failed=1
+fi
 exit "$failed"

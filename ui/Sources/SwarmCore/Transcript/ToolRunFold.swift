@@ -112,20 +112,22 @@ public enum ToolRunFold {
         }
 
         private func counts(times: String) -> [String] {
-            func plural(_ count: Int, _ word: String) -> String? {
-                count == 0 ? nil : "\(count) \(word)\(count == 1 ? "" : "s")"
+            // Each phrase is its own localized literal, so every locale inflects its own plural.
+            func phrase(_ count: Int, _ text: @autoclosure () -> AttributedString) -> String? {
+                count == 0 ? nil : String(text().characters)
             }
             let tools = otherTools.map { $0.count > 1 ? "\($0.name)\(times)\($0.count)" : $0.name }
-            return [plural(commands, "command"), plural(waits, "wait")].compactMap { $0 }
-                + tools + [plural(rings, "ring")].compactMap { $0 }
+            return [
+                phrase(commands, AttributedString(localized: "^[\(commands) command](inflect: true)")),
+                phrase(waits, AttributedString(localized: "^[\(waits) wait](inflect: true)")),
+            ].compactMap { $0 }
+                + tools + [phrase(rings, AttributedString(localized: "^[\(rings) ring](inflect: true)"))].compactMap { $0 }
                 + (interrupted > 0 ? ["\(interrupted) interrupted"] : [])
                 + (unreported > 0 ? ["\(unreported) no result"] : [])
         }
 
         private static func spoken(_ seconds: Double) -> String {
-            let whole = Int(seconds.rounded())
-            if whole < 60 { return "\(whole) second\(whole == 1 ? "" : "s")" }
-            return "\(whole / 60) minutes \(whole % 60) seconds"
+            Duration.seconds(Int(seconds.rounded())).formatted(.units(allowed: [.minutes, .seconds], width: .wide))
         }
     }
 

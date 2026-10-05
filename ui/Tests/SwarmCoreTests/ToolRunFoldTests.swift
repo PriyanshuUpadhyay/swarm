@@ -135,6 +135,15 @@ struct ToolRunFoldTests {
         #expect(ToolRunFold.summary(of: [tool("a"), tool("b")]).state == .finished)
     }
 
+    @Test("Counts and the spoken time take each word's singular or plural")
+    func plurals() {
+        let rows = [tool("w1", name: "sleep", duration: 60), tool("w2", name: "sleep", duration: 5)]
+        #expect(ToolRunFold.summary(of: rows).accessibilityLabel == "Steps: 2 waits, 1 minute, 5 seconds")
+        let single = [tool("c1", name: "exec", duration: 1, command: "ls"), tool("w1", name: "sleep", duration: 0), ring("r")]
+        #expect(ToolRunFold.summary(of: single).text == "1 command · 1 wait · 1 ring")
+        #expect(ToolRunFold.summary(of: single).accessibilityLabel == "Steps: 1 command, 1 wait, 1 ring, 1 second")
+    }
+
     /// ADR 0047's invariant I1 over every sequence of up to 6 rows of 8 row types (about 300,000):
     /// the folded items hold every row once, in order, and each fold is a whole run of steps
     /// with 2 or more shown steps and a tool.
