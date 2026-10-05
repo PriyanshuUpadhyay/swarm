@@ -41,11 +41,9 @@ struct TranscriptRunFoldRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(summary.accessibilityLabel)
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
-        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("transcript-tool-run-fold")
     }
 }
