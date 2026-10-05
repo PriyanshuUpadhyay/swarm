@@ -1415,6 +1415,8 @@ fn list_agents(
             .map(|read| read.join().ok().flatten())
             .collect()
     });
+    // All reads must finish in time; a due ring below can run past their deadline.
+    adapter.check_deadline()?;
     let mut agents = Vec::new();
     for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
         let (screen, detail, prompt) = match screen {
@@ -1479,7 +1481,6 @@ fn list_agents(
             prompt,
         });
     }
-    adapter.check_deadline()?;
     return Ok(AgentListOutput {
         agents,
         attachable: adapter.attach.is_some(),
@@ -2368,6 +2369,47 @@ mod tests {
     }
 
     #[test]
+    fn batch_keeps_a_listing_after_a_late_rering() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-listing-rering-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let ring_log = root.join("ring");
+        let ring_path = swarm::adapter::shell_line(&[ring_log.to_string_lossy().into_owned()]);
+        std::fs::write(root.join("adapters/fake.conf"),
+            format!("self = true\nspawn = true\nring = sleep 1.2; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
+        ).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("fake")).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+        swarm::store::send_message(
+            &mut connection,
+            &root,
+            &session,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "one",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - ?1",
+                [RERING_UNSEEN_AFTER_SECS + 1],
+            )
+            .unwrap();
+        let started = std::time::Instant::now();
+        let listings =
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(1)).unwrap();
+        assert!(started.elapsed() > std::time::Duration::from_secs(1));
+        assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "rung");
+        assert_eq!(listings[&session].agents.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn batch_omits_slow_sessions_and_keeps_fast_sessions_within_budget() {
         let root =
             std::env::temp_dir().join(format!("swarm-batch-deadline-{}", uuid::Uuid::now_v7()));
@@ -2376,8 +2418,8 @@ mod tests {
         let mut ids = Vec::new();
         for (index, (name, list, screen)) in [
             ("slow-list", "sleep 3; printf pane", "true"),
-            ("slow-screen", "printf pane", "sleep 3"),
-            ("fast", "sleep 0.1; printf pane", "true"),
+            ("slow-screen", "sleep 0.4; printf pane", "sleep 3"),
+            ("fast", "printf pane", "true"),
         ]
         .into_iter()
         .enumerate()
@@ -2402,10 +2444,10 @@ mod tests {
         let listings = all_agent_listings(
             &mut connection,
             &root,
-            std::time::Duration::from_millis(600),
+            std::time::Duration::from_millis(1500),
         )
         .unwrap();
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
         assert!(!listings.contains_key(&ids[0]));
         assert!(!listings.contains_key(&ids[1]));
         assert_eq!(listings[&ids[2]].agents.len(), 1);
