@@ -2030,6 +2030,15 @@ fn list_agents(
             })
         })
         .collect();
+    // A session with no chair yet still lists; it has no one to report to.
+    let chair = swarm::store::orchestrator_of(connection, session_id).ok();
+    // A chair that `session new` registered names its CLI only on the session, so its screen is
+    // read with the provider `provider_of` resolves. The row's own provider stays as listed.
+    let chair_provider = chair.as_ref().and_then(|chair| {
+        swarm::store::provider_of(connection, session_id, chair)
+            .ok()
+            .flatten()
+    });
     // The screen check (ADR 0021) reads each live pane once per listing, all at the same
     // time, so six agents cost about one capture.
     type ScreenRead = (
@@ -2042,8 +2051,13 @@ fn list_agents(
             .iter()
             .zip(&alive)
             .map(|(row, alive)| {
+                let provider = if Some(&row.id) == chair.as_ref() {
+                    chair_provider.as_deref()
+                } else {
+                    row.provider.as_deref()
+                };
                 let target = match (alive, row.pane.as_deref()) {
-                    (Some(true), Some(pane)) => Some((pane, row.provider.as_deref())),
+                    (Some(true), Some(pane)) => Some((pane, provider)),
                     _ => None,
                 };
                 scope.spawn(move || {
@@ -2073,8 +2087,6 @@ fn list_agents(
     });
     // All reads must finish in time; a due ring below can run past their deadline.
     adapter.check_deadline()?;
-    // A session with no chair yet still lists; it has no one to report to.
-    let chair = swarm::store::orchestrator_of(connection, session_id).ok();
     let mut chair_row_idle = false;
     let mut agents = Vec::new();
     for ((mut row, alive), screen) in rows.into_iter().zip(alive).zip(screens) {
@@ -4772,7 +4784,7 @@ mod tests {
             include_str!("../tests/fixtures/screens/claude-idle.txt"),
         );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
-        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("claude", "chair-id"))).unwrap();
         let ask = send_task(&root, &mut connection, &session);
         connection
             .execute_batch(
@@ -4798,7 +4810,8 @@ mod tests {
 
     /// A report rings the chair, and its Enter would answer a question on the chair's screen. So
     /// the listing and the sweep send a report only while the chair's screen reads idle, and a
-    /// later pass sends it.
+    /// later pass sends it. A chair that `session new` registered has no provider on its row, so
+    /// both read its screen with the session's chair provider.
     #[test]
     fn a_report_waits_until_the_chairs_screen_reads_idle() {
         let (root, mut connection, session) = ring_session(
@@ -4808,7 +4821,8 @@ mod tests {
             include_str!("../tests/fixtures/screens/claude-question.txt"),
         );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
-        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        // `session new` in a Claude pane names the chair only on the session, not on its row.
+        swarm::store::set_chair(&connection, &session, Some(("claude", "chair-id"))).unwrap();
         let ask = swarm::store::send_message(
             &mut connection,
             &root,
@@ -4833,14 +4847,25 @@ mod tests {
         assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
         assert!(chair_mail(&connection, &session).is_empty());
 
-        std::fs::write(
-            root.join("screen"),
-            include_str!("../tests/fixtures/screens/claude-idle.txt"),
-        )
-        .unwrap();
+        let show = |screen: &str| std::fs::write(root.join("screen"), screen).unwrap();
+        show(include_str!("../tests/fixtures/screens/claude-idle.txt"));
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert_eq!(
+            chair_mail(&connection, &session),
+            [(CODER.to_string(), format!("stall:unacked:{ask}"))]
+        );
+
+        swarm::store::ack(&connection, &session, ask, CODER).unwrap();
+        show(include_str!(
+            "../tests/fixtures/screens/claude-question.txt"
+        ));
+        list_agents(&mut connection, &root, &session, &adapter).unwrap();
+        assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
+        assert_eq!(chair_mail(&connection, &session).len(), 1);
+        show(include_str!("../tests/fixtures/screens/claude-idle.txt"));
         assert_eq!(
             swept(&mut connection, &root, &adapter, &session),
-            [format!("stall coder unacked {ask}")]
+            [format!("stall coder silent {ask}")]
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -4864,7 +4889,7 @@ mod tests {
         )
         .unwrap();
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
-        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("claude", "chair-id"))).unwrap();
         let ask = swarm::store::send_message(
             &mut connection,
             &root,
@@ -4925,7 +4950,7 @@ mod tests {
             include_str!("../tests/fixtures/screens/claude-idle.txt"),
         );
         swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
-        swarm::store::set_provider(&connection, &session, ORCHESTRATOR, "claude").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("claude", "chair-id"))).unwrap();
         let ask = send_task(&root, &mut connection, &session);
         // The ring started a turn half a minute ago; the coder read the task, then got done.
         connection
