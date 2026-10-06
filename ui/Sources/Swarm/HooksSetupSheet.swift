@@ -31,6 +31,9 @@ struct HooksSetupSheet: View {
         var wanted: String
         var apply: String
         var cancel: String
+        /// Apply removes the owner's config, so it is a destructive button that Return does not
+        /// press; Cancel keeps Escape.
+        var destructive = false
 
         static let hooks = Copy(
             question: "Let swarm set up its own hooks for Codex and AGY?",
@@ -51,7 +54,8 @@ struct HooksSetupSheet: View {
             blocked: "Swarm cannot remove these. They changed after swarm wrote them.",
             wanted: "Swarm wrote",
             apply: "Remove",
-            cancel: "Cancel"
+            cancel: "Cancel",
+            destructive: true
         )
     }
 
@@ -244,7 +248,7 @@ struct HooksSetupSheet: View {
             Button(copy.cancel, action: notNow)
                 .keyboardShortcut(.cancelAction)
                 .disabled(working)
-            Button {
+            Button(role: copy.destructive ? .destructive : nil) {
                 if let plan { apply(plan) }
             } label: {
                 // The label keeps its size and its name while the spinner shows.
@@ -253,7 +257,7 @@ struct HooksSetupSheet: View {
                     .overlay { if working { ProgressView().controlSize(.small) } }
             }
             .accessibilityLabel(copy.apply)
-            .keyboardShortcut(plan?.canApply == true ? .defaultAction : nil)
+            .keyboardShortcut(plan?.canApply == true && !copy.destructive ? .defaultAction : nil)
             .disabled(working || plan?.canApply != true)
         }
     }
