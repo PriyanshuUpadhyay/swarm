@@ -75,10 +75,20 @@ final class PathSwarmCheckTests {
         #expect(await check(older, branch: "unify-swarm") == nil)
     }
 
-    @Test("An unreadable PATH version is no drift", arguments: ["exit 1", "true", "sleep 5"])
+    @Test("An unreadable PATH version is no drift", arguments: ["exit 1", "true"])
     func unreadableIsNoDrift(script: String) async throws {
         let broken = try Self.standIn(in: folder, named: "broken-swarm", script: script)
         #expect(await check(broken) == nil)
+    }
+
+    @Test("A version line that comes after the 2 s limit is no drift, and the check does not wait for it")
+    func slowVersionIsNoDrift() async throws {
+        // Without the limit this prints an older line, so the check would name drift.
+        let slow = try Self.standIn(in: folder, named: "slow-swarm", script: "sleep 4; echo 'swarm 0.7.3 def5678 '")
+        let clock = ContinuousClock()
+        let start = clock.now
+        #expect(await check(slow) == nil)
+        #expect(clock.now - start < .seconds(3.5))
     }
 
     @Test("Only the login shell's PATH names the swarm, so a failed probe or a PATH without one is silent")
