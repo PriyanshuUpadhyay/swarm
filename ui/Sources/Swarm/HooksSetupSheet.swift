@@ -93,7 +93,9 @@ struct HooksSetupSheet: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             switch phase {
             case .ready(let plan) where plan.isSetUp:
-                Text("\(copy.unchanged) No file changes.")
+                Text(verbatim: plan.unchangedText(copy.unchanged))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
                     Button("Done", action: done).keyboardShortcut(.defaultAction)
@@ -126,6 +128,13 @@ struct HooksSetupSheet: View {
                 } else if !plan.files.isEmpty {
                     fileList(plan)
                 }
+                ForEach(plan.skippedLines, id: \.self) { line in
+                    Label(line, systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let failure {
                     Text(verbatim: failure)
                         .font(.caption)
@@ -157,7 +166,7 @@ struct HooksSetupSheet: View {
                 reloading = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
-                let summary = plan.isSetUp ? copy.unchanged : plan.summary
+                let summary = plan.isSetUp ? plan.unchangedText(copy.unchanged) : plan.summary
                 Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
@@ -285,7 +294,7 @@ struct HooksSetupSheet: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             ForEach(choice.groups, id: \.self) { group in
                 let checked = !choice.unchecked.contains(group)
-                Toggle(Self.title(group), isOn: Binding(
+                Toggle(SwarmHooksPlan.groupTitle(group), isOn: Binding(
                     get: { checked },
                     set: { on in
                         if on { choice.unchecked.remove(group) } else { choice.unchecked.insert(group) }
@@ -411,16 +420,7 @@ struct HooksSetupSheet: View {
     /// A `swarm setup` group's name before its file; a group this build does not know shows by
     /// its id (ADR 0043).
     private static func group(_ id: String?) -> String {
-        id.map { "\(title($0)) · " } ?? ""
-    }
-
-    private static func title(_ id: String) -> String {
-        switch id {
-        case "hooks": "Agent hooks"
-        case "trust": "Folder trust"
-        case "herdr": "Herdr"
-        default: id
-        }
+        id.map { "\(SwarmHooksPlan.groupTitle($0)) · " } ?? ""
     }
 
     private static func short(_ path: String) -> String {

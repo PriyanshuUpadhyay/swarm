@@ -290,6 +290,24 @@ struct SwarmSessionDetailTests {
         ])
     }
 
+    @Test("A plan with only skipped items names each with its reason, not 'already set up' (02-design)")
+    func skippedItemsShowTheirReasons() throws {
+        let json = #"""
+            {"digest":"d4","consent":"standing","files":[],"conflicts":[],
+             "skipped":[{"group":"trust","reason":"/tmp is too broad to trust"}]}
+            """#
+        let plan = try JSONDecoder().decode(SwarmHooksPlan.self, from: Data(json.utf8))
+        #expect(plan.skipped == [.init(group: "trust", reason: "/tmp is too broad to trust")])
+        #expect(plan.isSetUp)
+        #expect(plan.skippedLines == ["Folder trust: /tmp is too broad to trust"])
+        #expect(plan.unchangedText("Swarm is already set up.")
+            == "No file changes. Swarm left these as they are:\nFolder trust: /tmp is too broad to trust")
+        // A `hooks setup` plan or an undo has no skipped list.
+        let none = SwarmHooksPlan(digest: "d", files: [], conflicts: [])
+        #expect(none.skippedLines.isEmpty)
+        #expect(none.unchangedText("Swarm is already set up.") == "Swarm is already set up. No file changes.")
+    }
+
     @Test("A launch reports each trust write it made, so the app shows it (owner answer I1)")
     func launchReportsTrustWrites() async throws {
         // A diff line keeps its mark, so its context line ` model = …` is not the model (L-12).

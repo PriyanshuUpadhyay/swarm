@@ -191,21 +191,59 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         public var wantedLabel: String { kind == "changed" ? "Swarm wrote" : "Swarm needs" }
     }
 
+    /// An item `swarm setup` leaves as it is, such as a folder too broad to trust, with its reason.
+    public struct Skipped: Sendable, Hashable, Codable {
+        public var group: String
+        public var reason: String
+
+        public init(group: String, reason: String) {
+            self.group = group
+            self.reason = reason
+        }
+    }
+
     public var digest: String
     public var files: [File]
     public var conflicts: [Conflict]
     /// The launch consent a `swarm setup` plan sets; nil from `hooks setup` and an undo.
     public var consent: String?
+    /// Nil from `hooks setup` and an undo.
+    public var skipped: [Skipped]?
 
-    public init(digest: String, files: [File], conflicts: [Conflict], consent: String? = nil) {
+    public init(
+        digest: String, files: [File], conflicts: [Conflict], consent: String? = nil,
+        skipped: [Skipped]? = nil
+    ) {
         self.digest = digest
         self.files = files
         self.conflicts = conflicts
         self.consent = consent
+        self.skipped = skipped
     }
 
     /// Nothing to change and nothing in the way.
     public var isSetUp: Bool { files.isEmpty && conflicts.isEmpty }
+    /// Each skipped item as the sheet shows it, its group's name and its reason, so the owner
+    /// learns why a folder is not trusted (02-design).
+    public var skippedLines: [String] {
+        (skipped ?? []).map { "\(Self.groupTitle($0.group)): \($0.reason)" }
+    }
+    /// What the sheet says, and VoiceOver hears, for a plan with nothing to change. A skipped item
+    /// is not set up, so the text names each one instead of `unchanged`.
+    public func unchangedText(_ unchanged: String) -> String {
+        let lines = skippedLines
+        if lines.isEmpty { return "\(unchanged) No file changes." }
+        return (["No file changes. Swarm left these as they are:"] + lines).joined(separator: "\n")
+    }
+    /// A `swarm setup` group's name; a group this build does not know shows by its id (ADR 0043).
+    public static func groupTitle(_ id: String) -> String {
+        switch id {
+        case "hooks": "Agent hooks"
+        case "trust": "Folder trust"
+        case "herdr": "Herdr"
+        default: id
+        }
+    }
     /// Each `swarm setup` group with a file or a conflict, in plan order.
     public var groupIDs: [String] {
         var seen: [String] = []
