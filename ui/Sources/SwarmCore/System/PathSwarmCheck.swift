@@ -11,7 +11,7 @@ public struct PathSwarmDrift: Equatable, Sendable {
     public let pathLine: String
     public let helperLine: String
 
-    /// What a "Not Now" stores, so the same pair never asks again and a new release or path does.
+    /// What an answer stores, so the same pair never asks again and a new release or path does.
     public var key: String { [path, pathLine, helperLine].joined(separator: "|") }
 
     public var fixCommand: String {
@@ -20,6 +20,33 @@ public struct PathSwarmDrift: Equatable, Sendable {
             ? "brew uninstall priyanshuupadhyay/tap/swarm && \(reinstall)"
             : "Remove \(path), then run \(reinstall)"
     }
+}
+
+/// The one PATH swarm alert of an app run (ADR 0048). Every window asks at launch, but only the
+/// first ask runs the check, so restored windows or a new window show no second alert.
+@MainActor
+public final class PathSwarmNotice {
+    public static let shared = PathSwarmNotice()
+    private static let dismissedKey = "dismissedPathSwarms"
+    private let defaults: UserDefaults
+    private var asked = false
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    /// The drift for the first asking window to show; nil for every later ask of this run.
+    /// `check` gets the stored pairs.
+    public func ask(check: ([String]) async -> PathSwarmDrift?) async -> PathSwarmDrift? {
+        guard !asked else { return nil }
+        asked = true
+        return await check(dismissed)
+    }
+
+    /// Copy Command and Not Now both store the pair, so it never asks again.
+    public func answer(_ drift: PathSwarmDrift) {
+        defaults.set(dismissed + [drift.key], forKey: Self.dismissedKey)
+    }
+
+    private var dismissed: [String] { defaults.stringArray(forKey: Self.dismissedKey) ?? [] }
 }
 
 public enum PathSwarmCheck {

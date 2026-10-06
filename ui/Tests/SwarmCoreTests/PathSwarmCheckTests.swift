@@ -97,6 +97,28 @@ struct PathSwarmCheckTests {
         #expect(drift == nil)
     }
 
+    @Test("Only the first window of an app run checks, and either answer stores the pair")
+    @MainActor
+    func oneNoticePerRun() async throws {
+        let suite = "PathSwarmNoticeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let drift = PathSwarmDrift(
+            path: "/usr/local/bin/swarm", resolved: "/usr/local/bin/swarm",
+            pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"
+        )
+        var checks = 0
+        let notice = PathSwarmNotice(defaults: defaults)
+        #expect(await notice.ask { _ in checks += 1; return drift } == drift)
+        #expect(await notice.ask { _ in checks += 1; return drift } == nil)
+        #expect(checks == 1)
+        notice.answer(drift)
+        var dismissed: [String] = []
+        let nextRun = PathSwarmNotice(defaults: defaults)
+        #expect(await nextRun.ask { dismissed = $0; return nil } == nil)
+        #expect(dismissed == [drift.key])
+    }
+
     @Test("A Homebrew keg gets the brew command, any other file gets a remove step")
     func fixCommand() {
         let keg = PathSwarmDrift(

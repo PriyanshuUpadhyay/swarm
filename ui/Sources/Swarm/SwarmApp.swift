@@ -456,10 +456,9 @@ private struct SessionsWindow: View {
     /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
     /// setup sheet.
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
-    /// The PATH swarm that the launch check names, until its alert closes (ADR 0048).
+    /// The PATH swarm that the launch check names, until its alert closes. Only the first window
+    /// of an app run gets one (ADR 0048).
     @State private var pathSwarmDrift: PathSwarmDrift?
-    /// Each `PathSwarmDrift.key` the owner answered "Not Now" to.
-    private static let dismissedPathSwarmsKey = "dismissedPathSwarms"
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -592,9 +591,7 @@ private struct SessionsWindow: View {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
             guard !SwarmOpenScript.isActive else { return }
-            if let drift = await PathSwarmCheck.current(
-                dismissed: UserDefaults.standard.stringArray(forKey: Self.dismissedPathSwarmsKey) ?? []
-            ) {
+            if let drift = await PathSwarmNotice.shared.ask(check: { await PathSwarmCheck.current(dismissed: $0) }) {
                 // The setup sheet waits until this alert closes, so the two never show together.
                 pathSwarmDrift = drift
                 return
@@ -608,7 +605,12 @@ private struct SessionsWindow: View {
             "Terminal runs another swarm",
             isPresented: Binding(
                 get: { pathSwarmDrift != nil },
-                set: { if !$0 { pathSwarmDrift = nil; Task { await askForSetup() } } }
+                set: {
+                    guard !$0, let drift = pathSwarmDrift else { return }
+                    PathSwarmNotice.shared.answer(drift)
+                    pathSwarmDrift = nil
+                    Task { await askForSetup() }
+                }
             ),
             presenting: pathSwarmDrift
         ) { drift in
@@ -616,10 +618,7 @@ private struct SessionsWindow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(drift.fixCommand, forType: .string)
             }
-            Button("Not Now", role: .cancel) {
-                let dismissed = UserDefaults.standard.stringArray(forKey: Self.dismissedPathSwarmsKey) ?? []
-                UserDefaults.standard.set(dismissed + [drift.key], forKey: Self.dismissedPathSwarmsKey)
-            }
+            Button("Not Now", role: .cancel) {}
         } message: { drift in
             Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         }
