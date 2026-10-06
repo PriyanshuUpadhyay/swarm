@@ -1187,6 +1187,34 @@ impl SetupPlan {
     fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::FilePlan)> {
         self.groups.iter().copied().zip(&self.plans)
     }
+
+    /// The digest that apply checks. Every running CLI rewrites a trust file such as
+    /// `~/.claude.json`, so a trust plan's part is only each entry it adds and the value it
+    /// replaces, and a change to one of those still changes the digest (L-4). Every other part is
+    /// the file's whole text, as in `managed::digest`.
+    fn digest(&self) -> String {
+        use sha2::Digest;
+        let mut digest = sha2::Sha256::new();
+        for (group, plan) in self.grouped() {
+            let mut parts = vec![plan.path.to_string_lossy().into_owned()];
+            if group != "trust" || (plan.edits.is_empty() && plan.after != plan.before) {
+                parts.extend([plan.before.clone(), plan.after.clone()]);
+            }
+            for edit in plan.edits.iter().filter(|_| group == "trust") {
+                let before = edit.before.as_ref().map(serde_json::Value::to_string);
+                parts.extend([edit.id(), edit.wrote.to_string(), format!("{before:?}")]);
+            }
+            for part in parts {
+                digest.update(part.as_bytes());
+                digest.update([0]);
+            }
+        }
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
 }
 
 /// The plan that writes standing consent for launch folder trust into `~/.swarm/consent.json`.
@@ -1284,7 +1312,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
     if plan {
         let setup = SetupPlan::of(&dir, &groups)?;
-        let plan_digest = swarm::managed::digest(&setup.plans);
+        let plan_digest = setup.digest();
         if json {
             let group_of = |value: serde_json::Value, group: &str| {
                 let mut value = value;
@@ -1345,7 +1373,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         if let Some(digest) = digest
-            && swarm::managed::digest(plans) != digest
+            && setup.digest() != digest
         {
             return Err("swarm: a file changed after the plan; check the plan again".into());
         }

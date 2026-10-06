@@ -890,3 +890,53 @@ fn a_broken_codex_config_gets_no_trust_diff_only_the_reason() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A running Claude rewrites `~/.claude.json` at any moment, so the digest of a trust entry covers
+/// only the entry the plan adds and the value it replaces: a hand-run apply after another key
+/// changed still passes, and a change to the entry itself is refused (ADR 0043, L-4).
+#[test]
+fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
+    let home = scratch("setup-trust-digest");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let claude = home.join(".claude.json");
+    std::fs::write(&claude, "{\"numStartups\": 1}\n").unwrap();
+    let digest = |home: &Path| -> String {
+        let plan = setup(
+            home,
+            &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+        );
+        let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+        plan["digest"].as_str().unwrap().to_string()
+    };
+
+    let planned = digest(&home);
+    let pool = format!("{cwd}/.herdr/workers");
+    let mut value = serde_json::json!({"numStartups": 2});
+    value["projects"][&pool] = serde_json::json!({"hasTrustDialogAccepted": false});
+    std::fs::write(&claude, value.to_string()).unwrap();
+    let refused = setup(
+        &home,
+        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("a file changed after the plan"),
+        "{refused:?}"
+    );
+
+    let planned = digest(&home);
+    value["numStartups"] = 3.into();
+    value["tipsHistory"] = serde_json::json!({"x": 1});
+    std::fs::write(&claude, value.to_string()).unwrap();
+    let applied = setup(
+        &home,
+        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&claude).unwrap()).unwrap();
+    assert_eq!(written["projects"][&pool]["hasTrustDialogAccepted"], true);
+    assert_eq!(written["numStartups"], 3);
+    std::fs::remove_dir_all(&home).unwrap();
+}
