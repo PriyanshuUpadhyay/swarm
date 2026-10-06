@@ -1430,8 +1430,25 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(conflicts) = swarm::managed::conflicts_text(plans) {
             return Err(conflicts);
         }
+        // A running CLI may rewrite its trust file at any moment, such as `~/.claude.json`, and
+        // the digest covers only the trust entries, so each trust file is planned again and
+        // written as launch's `write_trust` does (L-4).
+        let trust_plan = |path: &std::path::Path| {
+            SetupPlan::of(&dir, &["trust"], answer, resume)
+                .map_err(|error| error.to_string())?
+                .plans
+                .into_iter()
+                .find(|plan| plan.path == path)
+                .ok_or_else(|| format!("swarm: {} changed after the plan", path.display()))
+        };
         for (group, plan) in setup.grouped() {
-            match swarm::managed::apply(&store, std::slice::from_ref(plan)) {
+            let written = if group == "trust" {
+                swarm::bus::write_trust(&store, || trust_plan(&plan.path))
+                    .map(|written| written.into_iter().map(|plan| plan.path).collect())
+            } else {
+                swarm::managed::apply(&store, std::slice::from_ref(plan))
+            };
+            match written {
                 Ok(changed) => {
                     for path in changed {
                         println!("swarm: {group}: wrote {}", path.display());
