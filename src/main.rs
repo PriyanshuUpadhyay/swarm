@@ -1367,7 +1367,8 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     // No --consent keeps the owner's answer, so the approve command a seat prints under `ask`
     // approves the folder and not standing consent; with no answer yet, setup offers standing.
-    let answer = consent.unwrap_or_else(|| trust_answer().unwrap_or(STANDING));
+    // An apply reads it under the trust lock, so an answer recorded while it waits is kept (L-4).
+    let answer = || consent.unwrap_or_else(|| trust_answer().unwrap_or(STANDING));
     let groups: Vec<&str> = match only {
         None => SETUP_GROUPS.to_vec(),
         Some(list) => list.split(',').collect(),
@@ -1383,6 +1384,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::fs::canonicalize(&dir)
         .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
     if plan {
+        let answer = answer();
         let setup = SetupPlan::of(&dir, &groups, answer, resume)?;
         let plan_digest = setup.digest();
         if json {
@@ -1447,7 +1449,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
         let setup =
-            SetupPlan::of(&dir, &groups, answer, resume).map_err(|error| error.to_string())?;
+            SetupPlan::of(&dir, &groups, answer(), resume).map_err(|error| error.to_string())?;
         let plans = &setup.plans;
         // A retry after a timeout finds nothing to do, and that is not a failure.
         if plans

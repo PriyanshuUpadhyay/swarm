@@ -1189,3 +1189,34 @@ fn setup_with_no_consent_flag_keeps_the_recorded_answer() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A bare `swarm setup` that waits on the trust lock reads the owner's answer once it holds the
+/// lock, so an `ask` that the app records while it waits is kept, not written over with standing
+/// (L-4).
+#[test]
+fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
+    let home = scratch("setup-lock-answer");
+    let repo = git_repo(&home, "app");
+    let consent = home.join(".swarm/consent.json");
+    let holder = std::fs::File::create(home.join(".swarm/trust.lock")).unwrap();
+    holder.lock().unwrap();
+    let waiting = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home)
+        .current_dir(&home)
+        .args(["setup", "--only", "trust", "--cwd"])
+        .arg(&repo)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The waiting setup has read the files it reads before the lock by now.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
+    drop(holder);
+    let applied = waiting.wait_with_output().unwrap();
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        std::fs::read_to_string(&consent).unwrap(),
+        "{\"trust\": \"ask\"}\n"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
