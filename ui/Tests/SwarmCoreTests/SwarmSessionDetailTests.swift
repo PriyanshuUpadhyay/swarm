@@ -290,6 +290,18 @@ struct SwarmSessionDetailTests {
         ])
     }
 
+    @Test("Not now with a group unchecked declines only that group, so the rest are asked again (02-design screen 1)")
+    func notNowDeclinesOnlyTheClearedGroups() {
+        var choice = SwarmSetupChoice(groups: ["hooks", "trust"])
+        // Every box checked: Not now declines the whole sheet.
+        #expect(choice.notNowDeclines == nil)
+        choice.unchecked = ["trust"]
+        #expect(choice.notNowDeclines == ["trust"])
+        // Hooks stay undeclined, so the next start asks for them again.
+        let pending = SwarmSetupStatus(hooks: false, trust: false, herdr: true)
+        #expect(pending.needsSheet(hooksDeclined: false, trustDeclined: true))
+    }
+
     @Test("A plan with only skipped items names each with its reason, not 'already set up' (02-design)")
     func skippedItemsShowTheirReasons() throws {
         let json = #"""

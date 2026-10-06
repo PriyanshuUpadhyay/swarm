@@ -91,7 +91,7 @@ struct ManagedChangesPage: View {
                         try await bus.revertManaged(ids: ids, digest: digest)
                         if hooks { hooksSetupDeclined = true }
                     },
-                    notNow: { sheet = nil },
+                    notNow: { _ in sheet = nil },
                     done: { sheet = nil },
                     copy: .undo
                 )
@@ -99,7 +99,7 @@ struct ManagedChangesPage: View {
                 HooksSetupSheet(
                     loadPlan: { _ in try await bus.hooksPlan() },
                     setUp: { digest, _ in try await bus.setUpHooks(digest: digest) },
-                    notNow: { sheet = nil },
+                    notNow: { _ in sheet = nil },
                     done: { sheet = nil }
                 )
             }

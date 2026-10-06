@@ -450,9 +450,11 @@ private struct SessionsWindow: View {
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
     /// the setup sheet opens once for folder trust (ADR 0029, 0043).
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
-    /// "Not now" on the setup sheet; the app menu can still open it (ADR 0043).
+    /// "Not now" on the setup sheet with every box checked; the app menu can still open it
+    /// (ADR 0043).
     @AppStorage("setupDeclined") private var setupDeclined = false
-    /// Folder trust left unchecked when the owner applied the rest of the setup sheet.
+    /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
+    /// setup sheet.
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
@@ -602,11 +604,10 @@ private struct SessionsWindow: View {
                 setUp: { digest, choice in
                     try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                     // A group left unchecked is that group's "Not now".
-                    if choice.unchecked.contains("hooks") { hooksSetupDeclined = true }
-                    if choice.unchecked.contains("trust") { trustSetupDeclined = true }
+                    decline(choice.unchecked)
                 },
-                notNow: {
-                    setupDeclined = true
+                notNow: { choice in
+                    if let groups = choice.notNowDeclines { decline(groups) } else { setupDeclined = true }
                     showingHooksSetup = false
                 },
                 done: { showingHooksSetup = false },
@@ -740,6 +741,13 @@ private struct SessionsWindow: View {
 
     private var sidebarMode: WorkspaceSidebarMode {
         WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
+    }
+
+    /// Sets each setup group's own decline flag. Herdr has none, because this build plans no
+    /// Herdr write (ADR 0043).
+    private func decline(_ groups: Set<String>) {
+        if groups.contains("hooks") { hooksSetupDeclined = true }
+        if groups.contains("trust") { trustSetupDeclined = true }
     }
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {

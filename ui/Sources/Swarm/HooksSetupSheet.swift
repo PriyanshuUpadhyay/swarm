@@ -17,7 +17,8 @@ extension Notification.Name {
 struct HooksSetupSheet: View {
     let loadPlan: (SwarmSetupChoice) async throws -> SwarmHooksPlan
     let setUp: (_ digest: String, SwarmSetupChoice) async throws -> Void
-    let notNow: () -> Void
+    /// Gets the owner's choice, so "Not now" can decline only the groups they cleared.
+    let notNow: (SwarmSetupChoice) -> Void
     let done: () -> Void
     var copy = Copy.hooks
 
@@ -110,7 +111,7 @@ struct HooksSetupSheet: View {
                     Spacer()
                     // A plan that keeps failing, such as on a broken config.toml, must not
                     // reopen the sheet at each launch.
-                    Button(copy.cancel, action: notNow).keyboardShortcut(.cancelAction)
+                    Button(copy.cancel) { notNow(choice) }.keyboardShortcut(.cancelAction)
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
                 }
             case .loading:
@@ -368,7 +369,7 @@ struct HooksSetupSheet: View {
             }
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
-            Button(copy.cancel, action: notNow)
+            Button(copy.cancel) { notNow(choice) }
                 .keyboardShortcut(.cancelAction)
                 .disabled(working)
             Button(role: copy.destructive ? .destructive : nil) {

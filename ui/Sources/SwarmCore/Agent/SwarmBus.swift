@@ -100,6 +100,11 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     /// The groups to apply.
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
+    /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
+    /// group is asked again at the next start. Nil when no box is cleared, which declines the
+    /// whole sheet (02-design screen 1).
+    public var notNowDeclines: Set<String>? { unchecked.isEmpty ? nil : unchecked }
+
     /// The `swarm setup` flags of this choice; none for every group with the recorded consent.
     public var arguments: [String] {
         var arguments: [String] = []
