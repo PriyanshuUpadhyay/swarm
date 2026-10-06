@@ -11,18 +11,21 @@ const TRUST_LOCK: &str = "trust.lock";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
-/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8.
+/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8. An empty
+/// one is an error, because as a relative path it would put `.swarm` in the current folder.
 pub fn home() -> Result<String, Box<dyn std::error::Error>> {
     match std::env::var("SWARM_HOME") {
         Err(std::env::VarError::NotPresent) => Ok(branch_home(
             &std::env::var("HOME")?,
             env!("SWARM_BUILD_BRANCH"),
         )),
+        Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
         explicit => Ok(explicit?),
     }
 }
 
-/// HOME for a `main` build or a build with no branch (`""`), else `HOME/<branch_folder>`.
+/// HOME for a release build (`""`, see `build.rs`), else `HOME/<branch_folder>`. A dev build from
+/// `main` is `HOME/.swarm-main` and one from a detached HEAD (`HEAD`) is `HOME/.swarm-head+<hash>`.
 pub fn branch_home(home: &str, branch: &str) -> String {
     match branch_folder(branch) {
         None => home.to_string(),
@@ -45,7 +48,7 @@ pub fn branch_home(home: &str, branch: &str) -> String {
 /// uppercase, or very long name relies on the hash, which keeps `feat/login` apart from
 /// `feat-login`. A folder name is at most 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
 pub fn branch_folder(branch: &str) -> Option<String> {
-    if matches!(branch, "" | "main") {
+    if branch.is_empty() {
         return None;
     }
     let safe = |byte: u8| {
@@ -159,9 +162,10 @@ mod tests {
     use super::{branch_folder, branch_home};
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
-    const VECTORS: [(&str, Option<&str>); 14] = [
-        ("main", None),
+    const VECTORS: [(&str, Option<&str>); 15] = [
+        ("main", Some(".swarm-main")),
         ("", None),
+        ("HEAD", Some(".swarm-head+4b9253d8ff1ee183")),
         ("unknown", Some(".swarm-unknown")),
         ("ui-polish", Some(".swarm-ui-polish")),
         ("feat/login", Some(".swarm-feat-login+407712bf7898fb7f")),
@@ -218,9 +222,13 @@ mod tests {
     }
 
     #[test]
-    fn main_and_no_branch_use_home_and_others_a_folder_in_it() {
-        assert_eq!(branch_home("/home-dir", "main"), "/home-dir");
+    fn a_release_build_uses_home_and_a_dev_build_a_folder_in_it() {
         assert_eq!(branch_home("/home-dir", ""), "/home-dir");
+        assert_eq!(branch_home("/home-dir", "main"), "/home-dir/.swarm-main");
+        assert_eq!(
+            branch_home("/home-dir", "HEAD"),
+            "/home-dir/.swarm-head+4b9253d8ff1ee183"
+        );
         assert_eq!(
             branch_home("/home-dir", "ui-polish"),
             "/home-dir/.swarm-ui-polish"

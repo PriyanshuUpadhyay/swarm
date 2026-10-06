@@ -14,27 +14,17 @@ for flag in "$@"; do
   esac
 done
 
-# The global swarm CLI and ~/.swarm change only on --install: a branch build must not swap the
-# CLI and migrate the real database as a side effect of building the app.
+zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
+# The app runs this swarm from Contents/Helpers; the cask links it onto PATH (ADR 0048).
+cargo build --manifest-path "$repo/Cargo.toml" --release --locked
+# The home changes only on --install: building the app must not migrate the real database. Even then
+# no swarm goes on PATH, because a cargo build there would shadow the cask's link (ADR 0048).
 if (( install )); then
-  commit="$(git -C "$repo" rev-parse --short HEAD)"
-  installed="$(swarm --version 2>/dev/null | awk '{print $3}' || true)"
-  if [[ "$installed" != "$commit" ]]; then
-    print "==> installing swarm offline (${installed:-none} -> $commit)"
-    if ! cargo install --path "$repo" --force --locked --offline; then
-      print "==> offline install failed; installing swarm online"
-      cargo install --path "$repo" --force --locked
-    fi
-  fi
-  swarm init
+  "$repo/target/release/swarm" init
   for adapter in herdr tmux tmux-solo; do
-    swarm adapter check "$adapter"
+    "$repo/target/release/swarm" adapter check "$adapter"
   done
 fi
-
-zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
-# The app runs this swarm only when none is on the login PATH, as on a Mac that got the app from a DMG.
-cargo build --manifest-path "$repo/Cargo.toml" --release --locked
 swift build --package-path "$root" --disable-sandbox -c release --product Swarm
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 app="$root/.build/release/Swarm.app"
@@ -51,10 +41,13 @@ version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
-# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. A detached HEAD is
-# "" (no branch). plutil takes the value as one argv string, so no quote in a branch name is parsed;
-# the read-back refuses a build whose plist says another branch.
-branch="$(git -C "$repo" symbolic-ref --short -q HEAD || true)"
+# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. It is the branch that
+# build.rs stamped into the helper, the last word of `swarm --version`: "" only for a release build
+# (SWARM_RELEASE_BUILD=1, set by release.yml), "HEAD" for a dev build on a detached HEAD. A branch
+# name holds no space. plutil takes the value as one argv string, so no quote in a branch name is
+# parsed; the read-back refuses a build whose plist says another branch.
+version_line="$("$repo/target/release/swarm" --version)"
+branch="${version_line#swarm * * }"
 plutil -insert SwarmBuildBranch -string "$branch" "$app/Contents/Info.plist"
 if [[ "$(plutil -extract SwarmBuildBranch raw -o - "$app/Contents/Info.plist")" != "$branch" ]]; then
   print -u2 "SwarmBuildBranch in Info.plist does not read back as '$branch'"
@@ -73,4 +66,10 @@ if (( install )); then
   fi
   cp -R "$app" "$destination"
   print "==> $destination"
+  if [[ -n "$branch" ]]; then
+    print "==> This dev build of '$branch' keeps its data in ${SWARM_HOME:-its .swarm-* folder in $HOME}, never ~/.swarm (ADR 0027)."
+  fi
+  # The same text as PathSwarmDrift.brewFix; a SwarmCore test keeps the two equal.
+  print "==> swarm is no longer put on PATH. The cask links it (ADR 0048):"
+  print "    brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
 fi

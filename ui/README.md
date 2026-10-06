@@ -111,10 +111,12 @@ Run `make build` to compile the Swift targets.
 Run `make test` to build the transcript tool and run tests.
 Run `make lint` to check the source boundaries.
 Run `make app` to build `.build/release/Swarm.app`.
-Run `make install` to put it in `~/Applications`, keep the old app, and install the `swarm` CLI
-from this checkout. `make app` never changes the installed CLI or `~/.swarm`.
+Run `make install` to put it in `~/Applications`, keep the old app, and run `swarm init` with this
+build. It puts no `swarm` on PATH, because the cask's link is the PATH `swarm` (ADR 0048).
+`make app` never changes `~/.swarm`.
 Run `make run` to build and launch the app.
 Run `make dmg` to package the app as `.build/release/Swarm-<version>.dmg`. The app carries its own
 `swarm` CLI in `Contents/Helpers` and uses it before the login PATH's `swarm`; `SWARM_BIN` wins.
-A build from a branch other than `main` keeps its data in `~/.swarm-<branch>` and passes that
-`SWARM_HOME` to every `swarm` it starts. An explicit `SWARM_HOME` in the app's environment wins.
+A release build (`SWARM_RELEASE_BUILD=1`, as release.yml builds it) shows one alert at launch when the login PATH's `swarm` is another build.
+Every other build, `main` too, keeps its data in `~/.swarm-<branch>` and passes that `SWARM_HOME`
+to every `swarm` it starts, so `make install` never migrates `~/.swarm` (ADR 0027, ADR 0048). An explicit `SWARM_HOME` in the app's environment wins.

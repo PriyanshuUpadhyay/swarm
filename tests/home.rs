@@ -28,6 +28,58 @@ fn explicit_swarm_home_works_without_a_usable_home() {
     }
 }
 
+/// An empty SWARM_HOME is an error, not the current folder, so a typo never makes a `./.swarm`.
+#[test]
+fn empty_swarm_home_is_an_error() {
+    let cwd = scratch("empty-cwd");
+    let home = scratch("empty-home");
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", "")
+        .current_dir(&cwd)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("SWARM_HOME is set but empty"),
+        "{output:?}"
+    );
+    assert!(!cwd.join(".swarm").exists());
+    std::fs::remove_dir_all(&cwd).unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A build without SWARM_RELEASE_BUILD=1 is a dev build, even from `main` or a detached HEAD, so
+/// it keeps its data in a branch folder and never migrates the release's `~/.swarm` (ADR 0027).
+#[test]
+fn a_dev_build_never_uses_home() {
+    let home = scratch("dev-home");
+    let version = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    let line = String::from_utf8(version.stdout).unwrap();
+    let branch = line.trim_end_matches('\n').split(' ').nth(3);
+    assert!(branch.is_some_and(|branch| !branch.is_empty()), "{line:?}");
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(!home.join(".swarm").exists());
+    let folders: Vec<_> = std::fs::read_dir(&home)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(folders.len(), 1, "{folders:?}");
+    assert!(folders[0].join(".swarm/swarm.db").is_file(), "{folders:?}");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 fn scratch(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("swarm-home-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

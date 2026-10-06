@@ -456,6 +456,9 @@ private struct SessionsWindow: View {
     /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
     /// setup sheet.
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
+    /// The PATH swarm that the launch check names, until its alert closes. Only the first window
+    /// of an app run gets one (ADR 0048).
+    @State private var pathSwarmDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -580,23 +583,44 @@ private struct SessionsWindow: View {
             await model.run()
         }
         .task {
-            // Asked once, on the owner's first run with swarm's hooks not set up. A Finder launch
-            // finds `swarm` only on the login shell's PATH.
+            // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
             await SwarmProfileCatalog.shared.prefetch()
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
-            guard !setupDeclined, !SwarmOpenScript.isActive,
-                  let status = try? await SwarmCLIBus().setupStatus(),
-                  status.needsSheet(
-                      hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
-                  ) else { return }
-            showingHooksSetup = true
+            guard !SwarmOpenScript.isActive else { return }
+            if let drift = await PathSwarmNotice.shared.ask(check: { await PathSwarmCheck.current(dismissed: $0) }) {
+                // The setup sheet waits until this alert closes, so the two never show together.
+                pathSwarmDrift = drift
+                return
+            }
+            await askForSetup()
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
             showingHooksSetup = true
+        }
+        .alert(
+            "Terminal runs another swarm",
+            isPresented: Binding(
+                get: { pathSwarmDrift != nil },
+                set: {
+                    guard !$0, let drift = pathSwarmDrift else { return }
+                    PathSwarmNotice.shared.answer(drift)
+                    pathSwarmDrift = nil
+                    Task { await askForSetup() }
+                }
+            ),
+            presenting: pathSwarmDrift
+        ) { drift in
+            Button("Copy Command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(drift.fixCommand, forType: .string)
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: { drift in
+            Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
@@ -741,6 +765,16 @@ private struct SessionsWindow: View {
 
     private var sidebarMode: WorkspaceSidebarMode {
         WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
+    }
+
+    /// Asked once, on the owner's first run with swarm's hooks not set up.
+    private func askForSetup() async {
+        guard !setupDeclined,
+              let status = try? await SwarmCLIBus().setupStatus(),
+              status.needsSheet(
+                  hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
+              ) else { return }
+        showingHooksSetup = true
     }
 
     /// Sets each setup group's own decline flag. Herdr has none, because this build plans no
