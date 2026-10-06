@@ -294,6 +294,7 @@ struct HooksSetupSheet: View {
                 ))
                 .toggleStyle(.checkbox)
                 .disabled(working || (checked && choice.checked.count == 1))
+                .help(checked && choice.checked.count == 1 ? "Keep one group to apply" : "")
                 if checked {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                         if group == "trust" { consentPicker }
