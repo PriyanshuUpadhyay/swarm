@@ -113,3 +113,27 @@ fn init_claims_an_empty_home_and_adopts_an_older_swarms_home() {
     assert_eq!(std::fs::read(older.join(".swarm/swarm.db")).unwrap(), db);
     std::fs::remove_dir_all(&older).unwrap();
 }
+
+/// Trust and setup edit files that every build on the Mac shares, so every build locks one
+/// `~/.swarm/trust.lock` (ADR 0043, C6). A branch build's lock there does not stop the `main`
+/// build from claiming `~/.swarm` as its home later.
+#[test]
+fn every_build_locks_one_trust_lock_and_main_still_claims_the_folder() {
+    let home = scratch("shared-lock");
+    let branch_home = home.join("branch");
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &branch_home)
+        .args(["hooks", "setup"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(home.join(".swarm/trust.lock").is_file());
+    assert!(!branch_home.join(".swarm/trust.lock").exists());
+
+    let output = swarm(&home, &["init"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(home.join(".swarm/swarm-home").is_file());
+    std::fs::remove_dir_all(&home).unwrap();
+}

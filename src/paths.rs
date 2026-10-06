@@ -4,6 +4,10 @@ const SWARM_DB: &str = "swarm.db";
 const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
+/// The owner's consent for launch folder trust (ADR 0043).
+const CONSENT: &str = "consent.json";
+/// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
+const TRUST_LOCK: &str = "trust.lock";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
@@ -81,11 +85,14 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     if marker.is_file() {
         return Ok(());
     }
-    // The owner's rule list (ADR 0040) can arrive before swarm first runs, so it does not count.
+    // The Mac-wide files (ADR 0040, 0043) can arrive before this build first runs: the owner's
+    // rule list, or a branch build's lock and consent. They do not count.
     let empty = match std::fs::read_dir(root) {
-        Ok(mut entries) => {
-            entries.all(|entry| entry.is_ok_and(|entry| entry.file_name() == GUARDS))
-        }
+        Ok(mut entries) => entries.all(|entry| {
+            entry.is_ok_and(|entry| {
+                [GUARDS, CONSENT, TRUST_LOCK].contains(&&*entry.file_name().to_string_lossy())
+            })
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => return Err(format!("swarm: cannot read {}: {error}", root.display()).into()),
     };
@@ -117,10 +124,26 @@ fn claim(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
 pub fn guards_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     match std::env::var_os("SWARM_GUARDS") {
         Some(path) => Ok(path.into()),
-        None => Ok(std::path::PathBuf::from(std::env::var("HOME")?)
-            .join(SWARM_DIR)
-            .join(GUARDS)),
+        None => Ok(mac_dir()?.join(GUARDS)),
     }
+}
+
+/// `~/.swarm` for every build and every SWARM_HOME, for what is global to the Mac.
+fn mac_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(std::path::PathBuf::from(std::env::var("HOME")?).join(SWARM_DIR))
+}
+
+/// The owner's launch trust consent, `~/.swarm/consent.json`, global like the trust files.
+pub fn consent_file() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(mac_dir()?.join(CONSENT))
+}
+
+/// `~/.swarm/trust.lock`, made with its folder, so two builds with two homes take one lock on the
+/// files they share (C6).
+pub fn trust_lock() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let dir = mac_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.join(TRUST_LOCK))
 }
 
 pub fn runs_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {

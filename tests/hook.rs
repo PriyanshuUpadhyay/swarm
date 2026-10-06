@@ -358,6 +358,7 @@ fn an_owners_entry_at_swarms_place_is_a_conflict_and_nothing_is_written() {
             path.display().to_string(),
             "{name}"
         );
+        assert_eq!(plan["conflicts"][0]["kind"], "taken", "{name}");
         assert!(
             plan["conflicts"][0]["fix"]
                 .as_str()
@@ -388,6 +389,7 @@ fn a_broken_codex_home_is_a_conflict_and_nothing_is_written() {
     let conflicts = plan["conflicts"].as_array().unwrap();
     assert_eq!(conflicts.len(), 1, "{plan}");
     assert_eq!(conflicts[0]["file"], broken.display().to_string());
+    assert_eq!(conflicts[0]["kind"], "unreadable");
     assert!(
         conflicts[0]["found"]
             .as_str()
@@ -596,5 +598,625 @@ fn swarm_guards_names_the_rule_list() {
     assert_eq!(String::from_utf8_lossy(&denied.stderr), "from elsewhere\n");
     let missing = swarm(&home, &[], &["guard", "codex", "PreToolUse"], payload);
     assert!(String::from_utf8_lossy(&missing.stderr).contains(".swarm/guards.json is missing"));
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+fn setup(home: &Path, args: &[&str]) -> Output {
+    let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
+    command.current_dir(home).arg("setup").args(args);
+    piped(command, "")
+}
+
+fn git_repo(home: &Path, name: &str) -> PathBuf {
+    let dir = home.join(name);
+    assert!(
+        Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .arg(&dir)
+            .status()
+            .unwrap()
+            .success()
+    );
+    dir
+}
+
+/// One `swarm setup` plan holds every pending write, each file with its group and its diff: the
+/// hooks, the consent file, and the trust entries a launch in `--cwd` would write, also in a file
+/// that the hooks change too. One digest applies them all, each trust entry is recorded, and a
+/// second apply with nothing pending passes (ADR 0043).
+#[test]
+fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
+    let home = scratch("setup-all");
+    // A space in the folder must survive the printed apply command.
+    let repo = git_repo(&home, "my app");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/config.toml"), "model = \"o3\"\n").unwrap();
+    let cwd = repo.to_string_lossy().into_owned();
+    let status = || -> serde_json::Value {
+        serde_json::from_slice(&setup(&home, &["status", "--json"]).stdout).unwrap()
+    };
+    assert_eq!(
+        status(),
+        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true})
+    );
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    // No answer yet, so the plan offers standing consent.
+    assert_eq!(plan["consent"], "standing");
+    assert_eq!(plan["conflicts"], serde_json::json!([]));
+    let files: Vec<(String, String)> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| {
+            let path = file["path"].as_str().unwrap();
+            let name = path.strip_prefix(&*home.to_string_lossy()).unwrap();
+            (
+                file["group"].as_str().unwrap().to_string(),
+                name.to_string(),
+            )
+        })
+        .collect();
+    let expected = [
+        ("hooks", "/.codex/config.toml"),
+        ("hooks", "/.gemini/config/hooks.json"),
+        ("trust", "/.swarm/consent.json"),
+        ("trust", "/.codex/config.toml"),
+        ("trust", "/.gemini/antigravity-cli/settings.json"),
+        ("trust", "/.claude.json"),
+    ]
+    .map(|(group, path)| (group.to_string(), path.to_string()));
+    assert_eq!(files, expected);
+    let diffs: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["diff"].as_str().unwrap())
+        .collect();
+    assert!(
+        diffs[2].contains("+  \"trust\": \"standing\""),
+        "{}",
+        diffs[2]
+    );
+    assert!(
+        diffs[3].contains(&format!("+[projects.\"{cwd}\"]")),
+        "{}",
+        diffs[3]
+    );
+    assert!(!diffs[3].contains("+[hooks.state"), "{}", diffs[3]);
+    assert!(
+        diffs[5].contains(&format!("{cwd}/.herdr/workers")),
+        "{}",
+        diffs[5]
+    );
+
+    let text = stdout(&setup(&home, &["--plan", "--cwd", &cwd]));
+    let digest = plan["digest"].as_str().unwrap();
+    assert!(
+        text.ends_with(&format!(
+            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}'` to apply.\n"
+        )),
+        "{text}"
+    );
+
+    let applied = setup(&home, &["--digest", digest, "--cwd", &cwd]);
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        status(),
+        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true})
+    );
+    let config = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
+    assert!(config.contains("[hooks.state.") && config.contains(&format!("[projects.\"{cwd}\"]")));
+    let list = swarm(&home, &[], &["managed", "list", "--json"], "");
+    let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+    let trust = list["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["writer"] == "launch.trust" && entry["recorded"] == true)
+        .count();
+    // The consent file, Codex, AGY, and Claude.
+    assert_eq!(trust, 4, "{list}");
+
+    let again = setup(&home, &["--digest", digest, "--cwd", &cwd]);
+    assert!(again.status.success(), "{again:?}");
+    assert!(stdout(&again).contains("already set up"), "{again:?}");
+
+    // `--only` plans one group; a folder that fails the trust check is skipped with its reason.
+    let only = setup(
+        &home,
+        &[
+            "--plan",
+            "--json",
+            "--only",
+            "trust",
+            "--cwd",
+            &*home.to_string_lossy(),
+        ],
+    );
+    let only: serde_json::Value = serde_json::from_slice(&only.stdout).unwrap();
+    assert_eq!(only["files"], serde_json::json!([]));
+    assert_eq!(only["skipped"][0]["group"], "trust");
+    assert!(
+        only["skipped"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("not in a git repository"),
+        "{only}"
+    );
+    let unknown = setup(&home, &["--plan", "--only", "sound"]);
+    assert!(!unknown.status.success());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// Herdr's own state hooks and an owner's hook sit next to swarm's in every hook file, and swarm's
+/// groups, which only swarm names, meet none of them: the plan has no conflict (ADR 0043 rule 1-2).
+#[test]
+fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
+    let home = scratch("herdr-side");
+    let write = |file: &str, text: &str| {
+        let path = home.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    let herdr =
+        r#"{"type": "command", "command": "~/.config/herdr/herdr-agent-state.sh", "timeout": 5}"#;
+    let owner = r#"{"type": "command", "command": "owner-check", "timeout": 3}"#;
+    let groups = format!(
+        r#"{{"hooks": {{"PreToolUse": [{{"hooks": [{herdr}]}}, {{"matcher": "Bash", "hooks": [{owner}]}}],
+            "Stop": [{{"hooks": [{herdr}]}}]}}}}"#
+    );
+    write(".claude/settings.json", &groups);
+    write(".codex/hooks.json", &groups);
+    write(".codex/config.toml", "model = \"o3\"\n");
+    write(
+        ".gemini/config/hooks.json",
+        &format!(
+            r#"{{"herdr": {{"Stop": [{herdr}]}}, "agent-harness": {{"PreToolUse": [{owner}]}}}}"#
+        ),
+    );
+    write(".swarm/guards.json", r#"{"rules": []}"#);
+
+    let plan = setup(&home, &["--plan", "--json"]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["conflicts"], serde_json::json!([]), "{plan}");
+    let applied = setup(
+        &home,
+        &[
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "hooks",
+        ],
+    );
+    assert!(
+        !applied.status.success(),
+        "the digest covers every group: {applied:?}"
+    );
+    let plan = setup(&home, &["--plan", "--json", "--only", "hooks"]);
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let applied = setup(
+        &home,
+        &[
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "hooks",
+        ],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    let agy: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(home.join(".gemini/config/hooks.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        agy["herdr"]["Stop"][0]["command"],
+        "~/.config/herdr/herdr-agent-state.sh"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A Codex project the owner set to another trust level is left as it is, and the plan says why
+/// the pane will ask (ADR 0043, C3).
+#[test]
+fn a_codex_folder_the_owner_left_untrusted_is_skipped_with_its_reason() {
+    let home = scratch("setup-untrusted");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    let config = format!("[projects.\"{cwd}\"]\ntrust_level = \"untrusted\"\n");
+    std::fs::write(home.join(".codex/config.toml"), &config).unwrap();
+
+    let plan = setup(
+        &home,
+        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let codex = home.join(".codex/config.toml");
+    assert!(
+        plan["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["path"] != codex.to_string_lossy().as_ref()),
+        "{plan}"
+    );
+    let skipped = &plan["skipped"];
+    assert_eq!(skipped.as_array().unwrap().len(), 1, "{plan}");
+    assert_eq!(skipped[0]["group"], "trust");
+    let reason = skipped[0]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("you marked this folder untrusted; the pane asks"),
+        "{reason}"
+    );
+    assert!(reason.contains(&*codex.to_string_lossy()), "{reason}");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A spare Claude profile whose config swarm cannot edit does not block setup: as a launch with no
+/// picked account does, setup names it under skipped and plans every other file.
+#[test]
+fn a_read_only_spare_claude_profile_is_skipped_and_the_rest_is_planned() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("setup-spare-claude");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let spare = home.join(".claude/.profiles/spare/.claude.json");
+    std::fs::create_dir_all(spare.parent().unwrap()).unwrap();
+    std::fs::write(&spare, "{}\n").unwrap();
+    std::fs::set_permissions(&spare, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["conflicts"], serde_json::json!([]), "{plan}");
+    let paths: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect();
+    let main = home.join(".claude.json");
+    assert!(paths.contains(&&*main.to_string_lossy()), "{paths:?}");
+    assert!(!paths.contains(&&*spare.to_string_lossy()), "{paths:?}");
+    let skipped = plan["skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1, "{plan}");
+    assert_eq!(skipped[0]["group"], "trust");
+    let reason = skipped[0]["reason"].as_str().unwrap();
+    assert!(reason.contains(&*spare.to_string_lossy()), "{reason}");
+
+    let applied = setup(
+        &home,
+        &["--digest", plan["digest"].as_str().unwrap(), "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    assert!(std::fs::read_to_string(&main).unwrap().contains(&cwd));
+    assert_eq!(std::fs::read_to_string(&spare).unwrap(), "{}\n");
+    std::fs::set_permissions(&spare, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// An apply plans the trust group once and each trust write plans again only its own file, so a
+/// write under the trust lock runs no second `git rev-parse` (L-1).
+#[test]
+fn an_apply_checks_the_folder_with_git_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("setup-one-git");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let (bin, log) = (home.join("bin"), home.join("git.log"));
+    std::fs::create_dir_all(&bin).unwrap();
+    let shim = bin.join("git");
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" >> '{}'\nexec /usr/bin/git \"$@\"\n",
+        log.display()
+    );
+    std::fs::write(&shim, script).unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let run = |args: &[&str]| {
+        let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home);
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        command
+            .env("PATH", path)
+            .current_dir(&home)
+            .arg("setup")
+            .args(args);
+        piped(command, "")
+    };
+
+    let plan = run(&["--plan", "--json", "--only", "trust", "--cwd", &cwd]);
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert!(plan["files"].as_array().unwrap().len() > 1, "{plan}");
+    std::fs::remove_file(&log).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = run(&["--digest", digest, "--only", "trust", "--cwd", &cwd]);
+    assert!(applied.status.success(), "{applied:?}");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A Codex config.toml that swarm cannot read is a hooks conflict, and the trust group plans
+/// nothing on it, so the owner sees no false diff; it names the conflict instead.
+#[test]
+fn a_broken_codex_config_gets_no_trust_diff_only_the_reason() {
+    let home = scratch("setup-broken-trust");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    let codex = home.join(".codex/config.toml");
+    std::fs::write(&codex, "model = \"gpt-5.5\"\nbroken = = \n").unwrap();
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert!(
+        plan["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["path"] != codex.to_string_lossy().as_ref()),
+        "{plan}"
+    );
+    let conflicts = plan["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 1, "{plan}");
+    assert_eq!(conflicts[0]["group"], "hooks");
+    let skipped = &plan["skipped"][0];
+    assert_eq!(skipped["group"], "trust", "{plan}");
+    let reason = skipped["reason"].as_str().unwrap();
+    assert!(
+        reason.contains(&*codex.to_string_lossy()) && reason.contains("not valid TOML"),
+        "{reason}"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A running Claude rewrites `~/.claude.json` at any moment, so the digest of a trust entry covers
+/// only the entry the plan adds and the value it replaces: a hand-run apply after another key
+/// changed still passes, and a change to the entry itself is refused (ADR 0043, L-4).
+#[test]
+fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
+    let home = scratch("setup-trust-digest");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let claude = home.join(".claude.json");
+    std::fs::write(&claude, "{\"numStartups\": 1}\n").unwrap();
+    let digest = |home: &Path| -> String {
+        let plan = setup(
+            home,
+            &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+        );
+        let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+        plan["digest"].as_str().unwrap().to_string()
+    };
+
+    let planned = digest(&home);
+    let pool = format!("{cwd}/.herdr/workers");
+    let mut value = serde_json::json!({"numStartups": 2});
+    value["projects"][&pool] = serde_json::json!({"hasTrustDialogAccepted": false});
+    std::fs::write(&claude, value.to_string()).unwrap();
+    let refused = setup(
+        &home,
+        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("a file changed after the plan"),
+        "{refused:?}"
+    );
+
+    let planned = digest(&home);
+    value["numStartups"] = 3.into();
+    value["tipsHistory"] = serde_json::json!({"x": 1});
+    std::fs::write(&claude, value.to_string()).unwrap();
+    let applied = setup(
+        &home,
+        &["--digest", &planned, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&claude).unwrap()).unwrap();
+    assert_eq!(written["projects"][&pool]["hasTrustDialogAccepted"], true);
+    assert_eq!(written["numStartups"], 3);
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// The launch consent is a managed edit: Managed Changes lists it, and its undo of a first answer
+/// records `ask`, which counts as set up, so the app does not ask again (ADR 0043, "asks once").
+/// `--consent ask` records the owner's ask answer (owner answer 2026-10-06).
+#[test]
+fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
+    let home = scratch("setup-consent");
+    let consent = home.join(".swarm/consent.json");
+    let status = || -> serde_json::Value {
+        serde_json::from_slice(&setup(&home, &["status", "--json"]).stdout).unwrap()
+    };
+    let apply = |extra: &[&str]| {
+        let mut args = vec!["--plan", "--json", "--only", "trust"];
+        args.extend(extra);
+        let plan: serde_json::Value = serde_json::from_slice(&setup(&home, &args).stdout).unwrap();
+        let mut args = vec![
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "trust",
+        ];
+        args.extend(extra);
+        let applied = setup(&home, &args);
+        assert!(applied.status.success(), "{applied:?}");
+        plan
+    };
+    let consent_entries = || -> Vec<serde_json::Value> {
+        let list = swarm(&home, &[], &["managed", "list", "--json"], "");
+        let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+        list["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["path"] == serde_json::json!(["trust"]))
+            .cloned()
+            .collect()
+    };
+
+    apply(&[]);
+    assert_eq!(status()["trust"], true);
+    let entries = consent_entries();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["writer"], "launch.trust");
+    assert_eq!(entries[0]["wrote"], "standing");
+    assert_eq!(entries[0]["state"], "present");
+
+    let id = entries[0]["id"].as_str().unwrap();
+    let plan = swarm(
+        &home,
+        &[],
+        &["managed", "revert", id, "--plan", "--json"],
+        "",
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    let reverted = swarm(
+        &home,
+        &[],
+        &["managed", "revert", id, "--digest", digest],
+        "",
+    );
+    assert!(reverted.status.success(), "{reverted:?}");
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&consent).unwrap()).unwrap();
+    assert_eq!(value["trust"], "ask", "{value}");
+    assert_eq!(status()["trust"], true);
+    assert_eq!(consent_entries()[0]["state"], "off");
+
+    std::fs::remove_file(&consent).unwrap();
+    let plan = apply(&["--consent", "ask"]);
+    assert!(
+        plan["files"][0]["diff"]
+            .as_str()
+            .unwrap()
+            .contains("+  \"trust\": \"ask\""),
+        "{plan}"
+    );
+    assert_eq!(status()["trust"], true);
+    let plan: serde_json::Value =
+        serde_json::from_slice(&setup(&home, &["--plan", "--json", "--only", "trust"]).stdout)
+            .unwrap();
+    assert_eq!(plan["consent"], "ask");
+    let bad = setup(&home, &["--plan", "--consent", "always"]);
+    assert!(!bad.status.success());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A child pane may read the setup plan, but not apply it: an apply writes the owner's consent
+/// and config, so a seat left on `ask` could turn on standing consent itself (SRV-2).
+#[test]
+fn a_child_agent_may_plan_setup_but_not_apply_it() {
+    let home = scratch("setup-child");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let child = [("SWARM_AGENT_ID", "coder"), ("SWARM_SESSION_ID", "s1")];
+    let status = swarm(&home, &child, &["setup", "status", "--json"], "");
+    assert!(status.status.success(), "{status:?}");
+    let plan = swarm(
+        &home,
+        &child,
+        &["setup", "--plan", "--json", "--cwd", &cwd],
+        "",
+    );
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    for args in [
+        vec!["setup", "--consent", "standing", "--cwd", &cwd],
+        vec!["setup", "--digest", digest, "--cwd", &cwd],
+    ] {
+        let applied = swarm(&home, &child, &args, "");
+        assert!(!applied.status.success(), "{applied:?}");
+        assert!(
+            String::from_utf8_lossy(&applied.stderr).contains("a child agent cannot"),
+            "{applied:?}"
+        );
+    }
+    assert!(!home.join(".swarm/consent.json").exists());
+    assert!(!home.join(".claude.json").exists());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// The approve command a seat launch prints under `ask` approves the folder and keeps the ask
+/// answer: with no `--consent`, setup plans the owner's recorded answer, and the plan reports the
+/// answer it sets, which the app's radio starts at.
+#[test]
+fn setup_with_no_consent_flag_keeps_the_recorded_answer() {
+    let home = scratch("setup-keeps-ask");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let consent = home.join(".swarm/consent.json");
+    std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
+    let plan = setup(
+        &home,
+        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["consent"], "ask");
+    let paths: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect();
+    assert!(
+        !paths.iter().any(|path| path.ends_with("consent.json")),
+        "{paths:?}"
+    );
+    assert!(
+        paths.iter().any(|path| path.ends_with(".claude.json")),
+        "{paths:?}"
+    );
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = setup(
+        &home,
+        &["--digest", digest, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        std::fs::read_to_string(&consent).unwrap(),
+        "{\"trust\": \"ask\"}\n"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// A bare `swarm setup` that waits on the trust lock reads the owner's answer once it holds the
+/// lock, so an `ask` that the app records while it waits is kept, not written over with standing
+/// (L-4).
+#[test]
+fn a_setup_waiting_on_the_trust_lock_keeps_an_answer_recorded_meanwhile() {
+    let home = scratch("setup-lock-answer");
+    let repo = git_repo(&home, "app");
+    let consent = home.join(".swarm/consent.json");
+    let holder = std::fs::File::create(home.join(".swarm/trust.lock")).unwrap();
+    holder.lock().unwrap();
+    let waiting = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home)
+        .current_dir(&home)
+        .args(["setup", "--only", "trust", "--cwd"])
+        .arg(&repo)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The waiting setup has read the files it reads before the lock by now.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
+    drop(holder);
+    let applied = waiting.wait_with_output().unwrap();
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        std::fs::read_to_string(&consent).unwrap(),
+        "{\"trust\": \"ask\"}\n"
+    );
     std::fs::remove_dir_all(&home).unwrap();
 }

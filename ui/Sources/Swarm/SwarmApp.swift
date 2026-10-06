@@ -75,6 +75,8 @@ final class SessionsTreeModel {
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
     /// log reports one.
     private(set) var launchedModels: [SwarmSessionID: String] = [:]
+    /// The folder trust each chair launch wrote, which its chat shows (owner answer I1).
+    private(set) var launchedTrust: [SwarmSessionID: [SwarmTrustWrite]] = [:]
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
@@ -207,6 +209,11 @@ final class SessionsTreeModel {
                 }
                 let launch = try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
                 launchedModels[session] = launch.model
+                launchedTrust[session] = launch.trustWrites
+                // Said here, as a failure is: the chat may not be the selected tab (UA-11).
+                if let said = launch.trustAnnouncement {
+                    AccessibilityNotification.Announcement(said).post()
+                }
                 pendingChats.update(id) { $0.state = .launched }
                 try await refresh()
             } catch {
@@ -440,8 +447,15 @@ private struct SessionsWindow: View {
     @State private var createSheet: CreateSheet?
     @State private var gitInitRequest: GitInitRequest?
     @State private var showingHooksSetup = false
-    /// "Not now" on the hooks question; the app menu can still open it (ADR 0029).
+    /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
+    /// the setup sheet opens once for folder trust (ADR 0029, 0043).
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
+    /// "Not now" on the setup sheet with every box checked; the app menu can still open it
+    /// (ADR 0043).
+    @AppStorage("setupDeclined") private var setupDeclined = false
+    /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
+    /// setup sheet.
+    @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -574,8 +588,11 @@ private struct SessionsWindow: View {
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
-            guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
-                  let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
+            guard !setupDeclined, !SwarmOpenScript.isActive,
+                  let status = try? await SwarmCLIBus().setupStatus(),
+                  status.needsSheet(
+                      hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
+                  ) else { return }
             showingHooksSetup = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
@@ -583,13 +600,18 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                loadPlan: { try await SwarmCLIBus().hooksPlan() },
-                setUp: { try await SwarmCLIBus().setUpHooks(digest: $0) },
-                notNow: {
-                    hooksSetupDeclined = true
+                loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                setUp: { digest, choice in
+                    try await SwarmCLIBus().setUp(digest: digest, choice: choice)
+                    // A group left unchecked is that group's "Not now".
+                    decline(choice.unchecked)
+                },
+                notNow: { choice in
+                    if let groups = choice.notNowDeclines { decline(groups) } else { setupDeclined = true }
                     showingHooksSetup = false
                 },
-                done: { showingHooksSetup = false }
+                done: { showingHooksSetup = false },
+                copy: .setup
             )
         }
         .onDisappear { panes.stopAll() }
@@ -719,6 +741,13 @@ private struct SessionsWindow: View {
 
     private var sidebarMode: WorkspaceSidebarMode {
         WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
+    }
+
+    /// Sets each setup group's own decline flag. Herdr has none, because this build plans no
+    /// Herdr write (ADR 0043).
+    private func decline(_ groups: Set<String>) {
+        if groups.contains("hooks") { hooksSetupDeclined = true }
+        if groups.contains("trust") { trustSetupDeclined = true }
     }
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
@@ -1014,6 +1043,7 @@ private struct SessionsWindow: View {
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
             launchedModel: model.launchedModels[row.id],
+            launchedTrust: model.launchedTrust[row.id] ?? [],
             panes: panes, commandSource: active ? model.commandSource : nil,
             onSwitchModel: { currentModel in
                 switchTarget = SwitchTarget(row: row, model: currentModel)
@@ -1334,14 +1364,29 @@ struct SwarmApp: App {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .commands {
-                CommandGroup(after: .appSettings) {
-                    Button("Set Up Agent Hooks…") {
-                        NotificationCenter.default.post(name: .showHooksSetup, object: nil)
-                    }
-                }
+                SetupCommands()
                 DebugCommands()
                 AppKeyCommands()
             }
+        // One window, not a sheet, because the list grows with each trusted folder. It opens only
+        // from the menu, never at launch and never restored from the last run, because each open
+        // reads every managed file.
+        Window("Managed Changes", id: "managed") { ManagedChangesPage() }
+            .defaultLaunchBehavior(.suppressed)
+            .restorationBehavior(.disabled)
+    }
+}
+
+private struct SetupCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            Button("Set Up Swarm…") {
+                NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+            }
+            Button("Managed Changes…") { openWindow(id: "managed") }
+        }
     }
 }
 

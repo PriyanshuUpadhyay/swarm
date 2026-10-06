@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
+    include_str!("../migrations/0006.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -58,7 +59,15 @@ pub fn made_by_swarm(path: &Path) -> bool {
 }
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
-    let tx = connection.transaction()?;
+    // A db at the newest version needs no write, so its open waits behind no writer.
+    let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version == MIGRATIONS.len() as i64 {
+        return Ok(());
+    }
+    // Immediate: a read that later upgrades to a write fails at once when another swarm migrated
+    // first; taking the write lock before the read waits on busy_timeout instead. The version is
+    // read again under the lock, because another swarm may have migrated since.
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version == 0 {
@@ -87,6 +96,10 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 5 {
         tx.execute_batch(MIGRATIONS[4])?;
         tx.pragma_update(None, "user_version", 5)?;
+    }
+    if version < 6 {
+        tx.execute_batch(MIGRATIONS[5])?;
+        tx.pragma_update(None, "user_version", 6)?;
     }
 
     tx.commit()?;
@@ -2008,7 +2021,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2035,7 +2048,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -2279,7 +2292,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 6")
+            .execute_batch("PRAGMA user_version = 7")
             .unwrap();
         assert!(open(&db).is_err());
     }
@@ -2354,5 +2367,47 @@ mod tests {
         assert_eq!(tables, ["bookmark"]);
         open(&root.join("new.db")).unwrap();
         assert!(made_by_swarm(&root.join("new.db")));
+    }
+
+    /// A second swarm that opens the db while the first migrates it waits and then finds it
+    /// migrated, not "database is locked", because migrate takes the write lock before it reads
+    /// the version.
+    #[test]
+    fn a_second_open_waits_for_a_migration_in_progress() {
+        let root = temp_root("migrate-race");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        open(&db)
+            .unwrap()
+            .execute_batch("DROP TABLE managed_edit; PRAGMA user_version = 5;")
+            .unwrap();
+        let first = Connection::open(&db).unwrap();
+        first.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        first.execute_batch(MIGRATIONS[5]).unwrap();
+        first.pragma_update(None, "user_version", 6).unwrap();
+        let committer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            first.execute_batch("COMMIT;").unwrap();
+        });
+        let second = open(&db);
+        committer.join().unwrap();
+        assert!(second.is_ok(), "{:?}", second.err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An open of a db at the newest version takes no write lock, so a polled read does not wait
+    /// behind a writer.
+    #[test]
+    fn an_open_of_a_current_db_does_not_wait_for_a_writer() {
+        let root = temp_root("migrate-current");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        drop(open(&db).unwrap());
+        let writer = Connection::open(&db).unwrap();
+        writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let reader = open(&db);
+        assert!(reader.is_ok(), "{:?}", reader.err());
+        writer.execute_batch("ROLLBACK;").unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

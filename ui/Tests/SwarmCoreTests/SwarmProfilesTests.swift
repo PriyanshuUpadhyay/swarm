@@ -180,20 +180,18 @@ struct SwarmProfilesTests {
         _ = try await source.accounts(provider: "codex")
     }
 
-    @Test("falls back to the app's bundled swarm only when nothing else names one")
+    @Test("runs the app's bundled swarm before a PATH swarm, unless SWARM_BIN names one")
     func fallsBackToBundledBinary() {
         let bundledSwarm = URL(fileURLWithPath: "/bin/sh")
         let missingBundle = URL(fileURLWithPath: "/nonexistent/Swarm.app/Contents/MacOS/swarm")
-        let notOnPath: (String) -> String? = { _ in nil }
 
-        #expect(SwarmCLIBus.appEnvironment([:], bundled: bundledSwarm, which: notOnPath)
-            == ["SWARM_BIN": "/bin/sh"])
-        #expect(SwarmCLIBus.appEnvironment([:], bundled: bundledSwarm, which: { "/opt/bin/\($0)" })
-            == [:])
-        #expect(SwarmCLIBus.appEnvironment(
-            ["SWARM_BIN": "/custom/swarm"], bundled: bundledSwarm, which: notOnPath
-        ) == ["SWARM_BIN": "/custom/swarm"])
-        #expect(SwarmCLIBus.appEnvironment([:], bundled: missingBundle, which: notOnPath) == [:])
+        // The PATH is not read: a bundle wins even where the login PATH has a swarm.
+        #expect(SwarmCLIBus.appEnvironment(["PATH": "/opt/homebrew/bin"], bundled: bundledSwarm)
+            == ["PATH": "/opt/homebrew/bin", "SWARM_BIN": "/bin/sh"])
+        #expect(SwarmCLIBus.appEnvironment(["SWARM_BIN": "/custom/swarm"], bundled: bundledSwarm)
+            == ["SWARM_BIN": "/custom/swarm"])
+        // No bundle sets no SWARM_BIN, so the bus runs `swarm` from the login PATH.
+        #expect(SwarmCLIBus.appEnvironment([:], bundled: missingBundle) == [:])
     }
 
     @Test("maps a missing swarm binary to unavailable")

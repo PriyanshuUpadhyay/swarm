@@ -2,7 +2,7 @@ import SwiftUI
 import SwarmCore
 
 extension Notification.Name {
-    /// The app menu's "Set Up Agent Hooks…" asks the window to show the sheet.
+    /// The app menu's "Set Up Swarm…" asks the window to show the sheet.
     static let showHooksSetup = Notification.Name("SwarmShowHooksSetup")
 }
 
@@ -10,12 +10,66 @@ extension Notification.Name {
 /// shows the plan first: each file's diff and each entry of the owner's that is in swarm's way.
 /// "Set up" is open only while no conflict stands, and it sends the plan's digest, so a file that
 /// changed after the owner looked is refused (ADR 0036). "Not now" writes nothing; the app menu
-/// offers the same sheet later.
+/// offers the same sheet later. The Managed Changes page asks its undo through the same steps with
+/// the `undo` copy (ADR 0042). On start and from the app menu it shows the whole `swarm setup`
+/// plan with the `setup` copy: each group with its checkbox and files, and the launch consent
+/// radio under folder trust (ADR 0043, 02-design screen 1).
 struct HooksSetupSheet: View {
-    let loadPlan: () async throws -> SwarmHooksPlan
-    let setUp: (_ digest: String) async throws -> Void
-    let notNow: () -> Void
+    let loadPlan: (SwarmSetupChoice) async throws -> SwarmHooksPlan
+    let setUp: (_ digest: String, SwarmSetupChoice) async throws -> Void
+    /// Gets the owner's choice, so "Not now" can decline only the groups they cleared.
+    let notNow: (SwarmSetupChoice) -> Void
     let done: () -> Void
+    var copy = Copy.hooks
+
+    /// The sheet's words, so one plan and consent flow serves hooks setup and an undo.
+    struct Copy {
+        var question: String
+        var body: String
+        var loading: String
+        /// What the sheet says, and VoiceOver hears, for a plan with nothing to change.
+        var unchanged: String
+        var blocked: String
+        var apply: String
+        var cancel: String
+        /// Apply removes the owner's config, so it is a destructive button that Return does not
+        /// press; Cancel keeps Escape.
+        var destructive = false
+        /// Each group gets a checkbox, and folder trust its consent radio.
+        var choosesGroups = false
+
+        static let hooks = Copy(
+            question: "Let swarm set up its own hooks for Codex and AGY?",
+            body: "Agents then report their chat and state to the app, so their columns show a chat and their questions. Swarm trusts only its own Codex hooks and adds its own AGY hooks; your other hooks stay as they are. Claude needs no step.",
+            loading: "Reading your Codex and AGY config…",
+            unchanged: "Swarm's hooks are already set up.",
+            blocked: "Swarm cannot set up its hooks. Your config has entries where swarm needs its own.",
+            apply: "Set up",
+            cancel: "Not now"
+        )
+
+        static let setup = Copy(
+            question: "Let swarm set up this Mac?",
+            body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start without a trust dialog. Clear a group to leave it as it is. You can undo each change in Swarm › Managed Changes.",
+            loading: "Reading your config…",
+            unchanged: "Swarm is already set up.",
+            blocked: "Swarm cannot set up. Your config has entries where swarm needs its own.",
+            apply: "Approve and apply",
+            cancel: "Not now",
+            choosesGroups: true
+        )
+
+        static let undo = Copy(
+            question: "Remove swarm's entries from these files?",
+            body: "Swarm removes only what it wrote. Your other entries stay.",
+            loading: "Reading the files…",
+            unchanged: "Swarm has nothing to remove.",
+            blocked: "Swarm cannot remove these yet. Each one below says what is in the way.",
+            apply: "Remove",
+            cancel: "Cancel",
+            destructive: true
+        )
+    }
 
     private enum Phase {
         case loading
@@ -27,16 +81,22 @@ struct HooksSetupSheet: View {
     /// Each change runs the plan again.
     @State private var planRun = 0
     @State private var working = false
+    /// A plan is on screen and the next one loads.
+    @State private var reloading = false
     @State private var failure: String?
     @State private var openFile: String?
     @State private var split = false
     @State private var diffFailed = false
+    /// The groups and the consent the owner picked; each change runs the plan again.
+    @State private var choice = SwarmSetupChoice()
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             switch phase {
             case .ready(let plan) where plan.isSetUp:
-                Text("Swarm's hooks are already set up. No file changes.")
+                Text(verbatim: plan.unchangedText(copy.unchanged))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
                     Button("Done", action: done).keyboardShortcut(.defaultAction)
@@ -51,20 +111,31 @@ struct HooksSetupSheet: View {
                     Spacer()
                     // A plan that keeps failing, such as on a broken config.toml, must not
                     // reopen the sheet at each launch.
-                    Button("Not now", action: notNow).keyboardShortcut(.cancelAction)
+                    Button(copy.cancel) { notNow(choice) }.keyboardShortcut(.cancelAction)
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
                 }
             case .loading:
                 question
                 HStack(spacing: DesignTokens.Spacing.s) {
                     ProgressView().controlSize(.small)
-                    Text("Reading your Codex and AGY config…").foregroundStyle(.secondary)
+                    Text(copy.loading).foregroundStyle(.secondary)
                 }
                 buttons(nil)
             case .ready(let plan):
                 question
                 if !plan.conflicts.isEmpty { conflictList(plan.conflicts) }
-                if !plan.files.isEmpty { fileList(plan) }
+                if copy.choosesGroups && plan.files.allSatisfy({ $0.group != nil }) {
+                    groupList(plan)
+                } else if !plan.files.isEmpty {
+                    fileList(plan)
+                }
+                ForEach(plan.skippedLines, id: \.self) { line in
+                    Label(line, systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let failure {
                     Text(verbatim: failure)
                         .font(.caption)
@@ -77,30 +148,47 @@ struct HooksSetupSheet: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.hooksSheet)
+        // A dismiss mid-write would hide its failure and reload the page before the write ends.
+        .interactiveDismissDisabled(working)
         .task(id: planRun) {
-            phase = .loading
+            // A plan on screen stays while the next one loads, so a checkbox or the radio keeps
+            // its place and its focus (UA-7). A click meanwhile starts a newer run, which wins.
+            if showsPlan { reloading = true } else { phase = .loading }
             do {
-                let plan = try await loadPlan()
-                openFile = plan.files.first?.path
-                diffFailed = false
+                let plan = try await loadPlan(choice)
+                try Task.checkCancellation()
+                // The first plan has every group, so it gives the checkboxes and the radio.
+                choice.take(plan)
+                // The open diff stays open while its file is still in the plan.
+                if !showsPlan || openFile.map({ id in !plan.files.contains { $0.id == id } }) == true {
+                    openFile = plan.files.first?.id
+                    diffFailed = false
+                }
+                reloading = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
-                Self.announce([failure, plan.summary].compactMap { $0 }.joined(separator: " "))
+                let summary = plan.isSetUp ? plan.unchangedText(copy.unchanged) : plan.summary
+                Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
             } catch {
+                reloading = false
                 phase = .failed(Self.message(error))
                 Self.announce(Self.message(error))
             }
         }
     }
 
+    private var showsPlan: Bool {
+        if case .ready = phase { true } else { false }
+    }
+
     private var question: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-            Text("Let swarm set up its own hooks for Codex and AGY?")
+            Text(copy.question)
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Agents then report their chat and state to the app, so their columns show a chat and their questions. Swarm trusts only its own Codex hooks and adds its own AGY hooks; your other hooks stay as they are. Claude needs no step.")
+            Text(copy.body)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -108,7 +196,7 @@ struct HooksSetupSheet: View {
     private func conflictList(_ conflicts: [SwarmHooksPlan.Conflict]) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             HStack(alignment: .firstTextBaseline) {
-                Label("Swarm cannot set up its hooks. Your config has entries where swarm needs its own.", systemImage: "exclamationmark.triangle.fill")
+                Label(copy.blocked, systemImage: "exclamationmark.triangle.fill")
                     .symbolRenderingMode(.multicolor)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
@@ -130,7 +218,7 @@ struct HooksSetupSheet: View {
                         .font(.callout.weight(.medium))
                     Group {
                         Text(verbatim: "Found: \(conflict.found)")
-                        Text(verbatim: "Swarm needs: \(conflict.wanted)")
+                        Text(verbatim: "\(conflict.wantedLabel): \(conflict.wanted)")
                     }
                     .lineLimit(3)
                     .truncationMode(.middle)
@@ -160,22 +248,97 @@ struct HooksSetupSheet: View {
                 .frame(width: DesignTokens.Size.segmentedPicker)
             }
             // One file open at a time keeps the sheet inside the window.
-            ForEach(plan.files) { file in
-                DisclosureGroup(isExpanded: Binding(
-                    get: { openFile == file.path },
-                    set: { open in
-                        openFile = open ? file.path : nil
-                        diffFailed = false
+            ForEach(plan.files) { file in fileRow(file, label: "\(Self.group(file.group))\(Self.short(file.path))") }
+        }
+    }
+
+    private func fileRow(_ file: SwarmHooksPlan.File, label: String) -> some View {
+        DisclosureGroup(isExpanded: Binding(
+            get: { openFile == file.id },
+            set: { open in
+                openFile = open ? file.id : nil
+                diffFailed = false
+            }
+        )) {
+            if openFile == file.id { diff(file) }
+        } label: {
+            Label("\(label) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
+                .font(.callout)
+                .help(file.path)
+        }
+    }
+
+    /// Each group with its checkbox and its files, and the consent radio under folder trust. The
+    /// list scrolls when it would push the buttons off a small screen (02-design).
+    private func groupList(_ plan: SwarmHooksPlan) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+            HStack {
+                Text("Swarm changes the files of each checked group. Nothing else changes.")
+                Spacer()
+                Picker("Diff layout", selection: $split) {
+                    Text("Unified").tag(false)
+                    Text("Split").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: DesignTokens.Size.segmentedPicker)
+            }
+            // A ScrollView is as tall as its rows up to the cap. ViewThatFits would build the
+            // rows twice, and with them each diff's web view.
+            ScrollView { groupRows(plan) }
+                .frame(maxHeight: DesignTokens.Size.setupGroupList)
+        }
+    }
+
+    /// The last checked group keeps its box, so the plan always has a group to apply.
+    private func groupRows(_ plan: SwarmHooksPlan) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+            ForEach(choice.groups, id: \.self) { group in
+                let checked = !choice.unchecked.contains(group)
+                Toggle(SwarmHooksPlan.groupTitle(group), isOn: Binding(
+                    get: { checked },
+                    set: { on in
+                        if on { choice.unchecked.remove(group) } else { choice.unchecked.insert(group) }
+                        checkAgain()
                     }
-                )) {
-                    if openFile == file.path { diff(file) }
-                } label: {
-                    Label("\(Self.short(file.path)) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
-                        .font(.callout)
-                        .help(file.path)
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(working || (checked && choice.checked.count == 1))
+                .help(checked && choice.checked.count == 1 ? "Keep one group to apply" : "")
+                if checked {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                        if group == "trust" { consentPicker }
+                        ForEach(plan.files.filter { $0.group == group }) { file in
+                            fileRow(file, label: Self.short(file.path))
+                        }
+                    }
+                    .padding(.leading, DesignTokens.Spacing.l)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var consentPicker: some View {
+        Picker("Launch consent", selection: Binding(
+            get: { choice.standing ?? true },
+            set: { standing in
+                choice.standing = standing
+                checkAgain()
+            }
+        )) {
+            // Each title wraps itself; the long one needs two lines at the sheet's width.
+            Text("Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
+                .fixedSize(horizontal: false, vertical: true)
+                .tag(true)
+            Text("Ask in the agent's column for each new folder")
+                .fixedSize(horizontal: false, vertical: true)
+                .tag(false)
+        }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
+        .disabled(working)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The diff viewer, or the plain diff text when the viewer cannot load, because the owner
@@ -200,22 +363,28 @@ struct HooksSetupSheet: View {
 
     private func buttons(_ plan: SwarmHooksPlan?) -> some View {
         HStack {
+            if reloading {
+                ProgressView().controlSize(.small)
+                Text(copy.loading).foregroundStyle(.secondary)
+            }
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
-            Button("Not now", action: notNow)
+            Button(copy.cancel) { notNow(choice) }
                 .keyboardShortcut(.cancelAction)
                 .disabled(working)
-            Button {
+            Button(role: copy.destructive ? .destructive : nil) {
                 if let plan { apply(plan) }
             } label: {
                 // The label keeps its size and its name while the spinner shows.
-                Text("Set up")
+                Text(copy.apply)
                     .opacity(working ? 0 : 1)
                     .overlay { if working { ProgressView().controlSize(.small) } }
             }
-            .accessibilityLabel("Set up")
-            .keyboardShortcut(plan?.canApply == true ? .defaultAction : nil)
-            .disabled(working || plan?.canApply != true)
+            .accessibilityLabel(copy.apply)
+            // A plan that is being replaced has a digest that no longer matches the sheet.
+            .keyboardShortcut(
+                plan?.canApply == true && !reloading && !copy.destructive ? .defaultAction : nil)
+            .disabled(working || reloading || plan?.canApply != true)
         }
     }
 
@@ -229,7 +398,7 @@ struct HooksSetupSheet: View {
         failure = nil
         Task {
             do {
-                try await setUp(plan.digest)
+                try await setUp(plan.digest, choice)
                 done()
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
@@ -247,6 +416,12 @@ struct HooksSetupSheet: View {
 
     private static func message(_ error: any Error) -> String {
         (error as? SwarmProfileError)?.message ?? String(describing: error)
+    }
+
+    /// A `swarm setup` group's name before its file; a group this build does not know shows by
+    /// its id (ADR 0043).
+    private static func group(_ id: String?) -> String {
+        id.map { "\(SwarmHooksPlan.groupTitle($0)) · " } ?? ""
     }
 
     private static func short(_ path: String) -> String {
