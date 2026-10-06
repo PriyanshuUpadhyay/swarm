@@ -50,8 +50,8 @@ struct TranscriptView<Composer: View>: View {
     /// The owner's open or closed choice for each fold id; a fold without one takes its default.
     /// In memory for this chat only (ADR 0047).
     @State private var foldOverrides: [String: Bool] = [:]
-    /// The default each fold drew with first, so Load earlier cannot change it (ADR 0047).
-    @State private var foldDefaults: [String: Bool] = [:]
+    /// The ids of the rows drawn as plain rows, so a fold that takes them in starts open (ADR 0047).
+    @State private var shownAsRows: Set<String> = []
     /// A find match inside a fold; the update that opens the fold scrolls to it.
     @State private var foldMatchID: String?
     @State private var composerHeight: CGFloat = 0
@@ -232,7 +232,7 @@ struct TranscriptView<Composer: View>: View {
             }
         }
         .onChange(of: foldedItems.map(\.id), initial: true) {
-            ToolRunFold.recordFirstDefaults(foldedItems, in: &foldDefaults)
+            ToolRunFold.recordPlainRows(foldedItems, in: &shownAsRows)
         }
         // A failed step opens its live fold, which VoiceOver does not see by itself.
         .onChange(of: loadedLiveFailureID) { old, new in
@@ -270,12 +270,12 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private var foldedLines: [ToolRunFold.Line] {
-        ToolRunFold.lines(foldedItems) { ToolRunFold.isExpanded($1, overrides: foldOverrides, defaults: foldDefaults) }
+        ToolRunFold.lines(foldedItems) { ToolRunFold.isExpanded($1, overrides: foldOverrides, shownAsRows: shownAsRows) }
     }
 
     private func foldExpanded(_ id: String, rows: [TranscriptRow]) -> Binding<Bool> {
         Binding {
-            ToolRunFold.isExpanded(rows, overrides: foldOverrides, defaults: foldDefaults)
+            ToolRunFold.isExpanded(rows, overrides: foldOverrides, shownAsRows: shownAsRows)
         } set: { open in
             foldOverrides[id] = open
         }

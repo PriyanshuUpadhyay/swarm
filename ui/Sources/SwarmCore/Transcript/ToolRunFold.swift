@@ -4,11 +4,13 @@ import Foundation
 /// any state, a ring that arrived mid-turn, a thought, or a row hidden by default; every other row is
 /// prose. A run folds when it holds 2 or more shown steps and at least 1 tool row. The turn state
 /// does not matter, so the trailing run of a running turn is a live fold: a new step changes the
-/// fold's text, not its height, and no group of rows on screen ever collapses (ADR 0028): a run that
-/// drew 2 or more rows before its first tool landed opens when it folds, and steps that Load earlier
-/// prepends keep the default a fold first drew with. The one other change of height is a step that
-/// fails in a fold the owner has not toggled: the fold opens, because ADR 0047 puts a visible
-/// failure above a fixed height.
+/// fold's text, not its height.
+///
+/// One rule sets whether a fold draws its steps, so no group of rows on screen ever collapses
+/// (ADR 0028): a fold never hides a group of rows the owner has already seen as rows. A fold starts
+/// open if 2 or more of its shown steps were drawn before as plain rows, not inside a fold;
+/// otherwise it starts closed, unless a step failed, because ADR 0047 puts a visible failure above a
+/// fixed height. The owner's choice always wins.
 public enum ToolRunFold {
     public enum Item: Hashable, Sendable, Identifiable {
         case row(TranscriptRow)
@@ -84,36 +86,22 @@ public enum ToolRunFold {
         return items
     }
 
-    /// Whether a fold draws its steps: the owner's choice, stored under the fold's id at the time,
-    /// else open on a failed step, else the default the fold drew with first (`defaults`, kept by
-    /// `recordFirstDefaults`), else `defaultExpanded`. Load earlier can prepend steps to the window's
-    /// first fold and so move its id to an earlier step, so a value stored under any step's fold id
+    /// Whether a fold draws its steps, by the rule above. `shownAsRows` holds the ids of the steps
+    /// drawn as plain rows, kept by `recordPlainRows`. Load earlier can prepend steps to the window's
+    /// first fold and so move its id to an earlier step, so a choice stored under any step's fold id
     /// counts, and the earliest choice is the newest. The id cannot be the last step's: the live fold
     /// gains steps. O(steps).
     public static func isExpanded(
-        _ rows: [TranscriptRow], overrides: [String: Bool], defaults: [String: Bool]
+        _ rows: [TranscriptRow], overrides: [String: Bool], shownAsRows: Set<String>
     ) -> Bool {
         rows.lazy.compactMap { overrides[foldID($0)] }.first
             ?? (rows.contains { $0.tool?.state == .failed }
-                || (rows.lazy.compactMap { defaults[foldID($0)] }.first ?? defaultExpanded(rows)))
+                || rows.count { !$0.isHiddenByDefault && shownAsRows.contains($0.eventID) } >= 2)
     }
 
-    /// Stores `defaultExpanded` under the id of each fold that has no stored default under any step's
-    /// fold id. Steps that Load earlier prepends were never on screen before a tool, so they must not
-    /// open or close a fold that already drew. O(rows).
-    public static func recordFirstDefaults(_ items: [Item], in defaults: inout [String: Bool]) {
-        for item in items {
-            guard case .fold(let rows) = item, !rows.contains(where: { defaults[foldID($0)] != nil }) else { continue }
-            defaults[item.id] = defaultExpanded(rows)
-        }
-    }
-
-    /// The default when a fold first draws. A fold with a failed step opens, so folding never hides a
-    /// failure. So does a fold with 2 or more shown steps before its first tool, because they were
-    /// rows on screen before the tool landed.
-    public static func defaultExpanded(_ rows: [TranscriptRow]) -> Bool {
-        rows.contains { $0.tool?.state == .failed }
-            || rows.prefix { $0.tool == nil }.count(where: { !$0.isHiddenByDefault }) >= 2
+    /// Adds the id of each item drawn as a plain row. O(items).
+    public static func recordPlainRows(_ items: [Item], in shownAsRows: inout Set<String>) {
+        for case .row(let row) in items { shownAsRows.insert(row.eventID) }
     }
 
     /// The newest failed step of the trailing fold, the live run of a running turn, so the view can

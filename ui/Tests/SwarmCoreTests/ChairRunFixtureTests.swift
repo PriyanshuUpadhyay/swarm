@@ -59,7 +59,7 @@ struct ChairRunFixtureTests {
         let fold = ToolRunFold.items(in: rows.filter { !$0.isHiddenByDefault }).compactMap {
             if case .fold(let group) = $0 { group } else { nil }
         }
-        #expect(fold.map(ToolRunFold.defaultExpanded) == [true])
+        #expect(fold.map { ToolRunFold.isExpanded($0, overrides: [:], shownAsRows: []) } == [true])
         #expect(rows.compactMap(\.tool).map(\.exitCode) == [1, nil, nil])
     }
 

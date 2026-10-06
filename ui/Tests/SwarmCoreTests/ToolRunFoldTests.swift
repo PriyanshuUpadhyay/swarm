@@ -75,15 +75,15 @@ struct ToolRunFoldTests {
         ]
         let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group } else { nil } }
         #expect(folds.map { $0.map(\.eventID) } == [["sleep", "ring", "plan", "py", "inbox"]])
-        #expect(ToolRunFold.defaultExpanded(folds[0]))
-        #expect(!ToolRunFold.defaultExpanded([tool("a"), tool("b")]))
+        #expect(ToolRunFold.isExpanded(folds[0], overrides: [:], shownAsRows: []))
+        #expect(!ToolRunFold.isExpanded([tool("a"), tool("b")], overrides: [:], shownAsRows: []))
     }
 
     @Test("An open fold's steps are list lines of their own after the fold line, so the lazy list builds only those on screen")
     func openFoldStepsAreLines() {
         let rows = [prompt(), tool("read"), tool("make", state: .failed), reply("answer")]
         let items = ToolRunFold.items(in: rows)
-        let open = ToolRunFold.lines(items) { _, group in ToolRunFold.defaultExpanded(group) }
+        let open = ToolRunFold.lines(items) { _, group in ToolRunFold.isExpanded(group, overrides: [:], shownAsRows: []) }
         #expect(open.map(\.id) == ["prompt", "fold:read", "read", "make", "answer"])
         let closed = ToolRunFold.lines(items) { _, _ in false }
         #expect(closed.map(\.id) == ["prompt", "fold:read", "answer"])
@@ -99,39 +99,51 @@ struct ToolRunFoldTests {
         var choices = [window.id: true]
         let earlier = fold([prompt(), tool("read"), tool("grep"), tool("make"), reply("answer")])
         #expect(earlier.id != window.id)
-        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices, defaults: [:]))
+        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices, shownAsRows: []))
         // A later choice is stored under the new id, which belongs to an earlier step, so it wins.
         choices[earlier.id] = false
-        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices, defaults: [:]))
+        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices, shownAsRows: []))
         // The live fold's id stays as steps land, so its choice stays too.
         let live = fold([prompt(), tool("read"), tool("grep"), tool("make"), tool("test")])
         #expect(live.id == earlier.id)
         // A fold with no choice opens only on a failed step.
-        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices, defaults: [:]))
+        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices, shownAsRows: []))
+    }
+
+    /// The ids drawn as plain rows while `rows` land one by one, as the view records them on each
+    /// change of fold ids.
+    private func shownWhileLanding(_ rows: [TranscriptRow]) -> Set<String> {
+        var shown: Set<String> = []
+        for count in rows.indices {
+            ToolRunFold.recordPlainRows(ToolRunFold.items(in: Array(rows[...count])), in: &shown)
+        }
+        return shown
+    }
+
+    private func firstFold(_ rows: [TranscriptRow]) throws -> [TranscriptRow] {
+        try #require(ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
     }
 
     @Test("A run that drew 2 rows before its first tool landed opens when it folds, so no rows on screen collapse")
     func shownRunStaysOpen() throws {
         #expect(foldedIDs([prompt(), ring("ring"), thought("plan")]).isEmpty)
-        let landed = ToolRunFold.items(in: [prompt(), ring("ring"), thought("plan"), tool("inbox")])
-        let fold = try #require(landed.compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
-        #expect(ToolRunFold.isExpanded(fold, overrides: [:], defaults: [:]))
+        func opens(_ rows: [TranscriptRow]) throws -> Bool {
+            ToolRunFold.isExpanded(try firstFold(rows), overrides: [:], shownAsRows: shownWhileLanding(rows))
+        }
+        #expect(try opens([prompt(), ring("ring"), thought("plan"), tool("inbox")]))
         // One row before the first tool, or a hidden one, is no group on screen, so the fold closes.
-        #expect(!ToolRunFold.defaultExpanded([ring("ring"), tool("read"), tool("grep")]))
-        #expect(!ToolRunFold.defaultExpanded([hidden("reminder"), thought("plan"), tool("read")]))
+        #expect(try !opens([ring("ring"), tool("read"), tool("grep")]))
+        #expect(try !opens([hidden("reminder"), thought("plan"), tool("read")]))
     }
 
-    /// The fold's rows after the view records first defaults for `window`, then for `window` with
-    /// `earlier` loaded before it, as the view does on each change of fold ids.
+    /// The first fold after `window` lands live and then Load earlier puts `earlier` before it at once.
     private func foldAfterLoadEarlier(
         window: [TranscriptRow], earlier: [TranscriptRow]
-    ) throws -> (rows: [TranscriptRow], defaults: [String: Bool]) {
-        var defaults: [String: Bool] = [:]
-        ToolRunFold.recordFirstDefaults(ToolRunFold.items(in: window), in: &defaults)
+    ) throws -> (rows: [TranscriptRow], shownAsRows: Set<String>) {
+        var shown = shownWhileLanding(window)
         let loaded = ToolRunFold.items(in: earlier + window)
-        ToolRunFold.recordFirstDefaults(loaded, in: &defaults)
-        let fold = try #require(loaded.compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
-        return (fold, defaults)
+        ToolRunFold.recordPlainRows(loaded, in: &shown)
+        return (try firstFold(earlier + window), shown)
     }
 
     @Test("Load earlier that prepends a tool step keeps an untouched open fold open")
@@ -141,7 +153,7 @@ struct ToolRunFoldTests {
             earlier: [prompt(), tool("older")]
         )
         #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan", "inbox"])
-        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], defaults: loaded.defaults))
+        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
     }
 
     @Test("Load earlier that prepends a ring and a thought keeps a closed fold closed; a later failure still opens it")
@@ -149,9 +161,23 @@ struct ToolRunFoldTests {
         let window = [tool("grep"), tool("make"), reply("answer")]
         let loaded = try foldAfterLoadEarlier(window: window, earlier: [prompt(), ring("ring"), thought("plan")])
         #expect(loaded.rows.map(\.eventID) == ["ring", "plan", "grep", "make"])
-        #expect(!ToolRunFold.isExpanded(loaded.rows, overrides: [:], defaults: loaded.defaults))
+        #expect(!ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
         let failed = loaded.rows + [tool("test", state: .failed)]
-        #expect(ToolRunFold.isExpanded(failed, overrides: [:], defaults: loaded.defaults))
+        #expect(ToolRunFold.isExpanded(failed, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("Load earlier that prepends a tool to a ring and a thought drawn as rows opens the new fold, so those rows stay")
+    func prependedToolKeepsShownRowsOpen() throws {
+        let loaded = try foldAfterLoadEarlier(
+            window: [ring("ring"), thought("plan"), reply("answer")], earlier: [prompt(), tool("older")]
+        )
+        #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan"])
+        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("A fold whose steps were never drawn as rows starts closed")
+    func unseenFoldStartsClosed() {
+        #expect(!ToolRunFold.isExpanded([ring("ring"), thought("plan"), tool("inbox")], overrides: [:], shownAsRows: []))
     }
 
     @Test("Only a new failure in the trailing fold is announced: not after Load earlier, not after the owner's choice")

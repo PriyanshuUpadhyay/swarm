@@ -30,10 +30,11 @@ showed as finished.
 
 Chosen: fold every run of 2+ steps (tool rows, mid-turn rings, thoughts, hidden rows) between
 prose, with at least 1 tool row, also while the turn runs; hidden rows do not count toward the 2.
-A fold is one line, so it changes text, not height, as steps land, and no visible group of rows
-ever collapses: a run that showed 2 or more rows before its first tool opens when it folds. A fold
-with a failed step opens by default and says
-"N failed". The Zig parser tags a ring as `system_message` kind `swarm_ring`; a ring starts a turn
+A fold is one line, so it changes text, not height, as steps land. One rule sets whether a fold
+draws its steps: a fold never hides a group of rows the owner has already seen as rows. A fold
+starts open if 2 or more of its shown steps were drawn before as plain rows, not inside a fold;
+otherwise it starts closed, unless a step failed. The owner's choice always wins. A fold with a
+failed step says "N failed". The Zig parser tags a ring as `system_message` kind `swarm_ring`; a ring starts a turn
 only when no turn is open. AGY writes no turn end, so the parser ends an AGY turn at a finished
 reply that calls no tool. A step is failed when its log marks the result failed. Codex marks
 every result completed, so only in a Codex log the result text decides: a non-zero exit code from
