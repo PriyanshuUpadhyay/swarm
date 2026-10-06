@@ -163,6 +163,24 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["hooks", "setup", "--digest", digest])
     }
 
+    /// `swarm managed list --json`: each item swarm wrote outside its home and its live state
+    /// (ADR 0042).
+    public func managedList() async throws -> SwarmManagedList {
+        try await read(["managed", "list", "--json"], as: SwarmManagedList.self)
+    }
+
+    /// `swarm managed revert <ids> --plan --json`: what removing these items would change and
+    /// what is in the way, in the shape of the hooks setup plan. It writes nothing.
+    public func managedRevertPlan(ids: [String]) async throws -> SwarmHooksPlan {
+        try await read(["managed", "revert"] + ids + ["--plan", "--json"], as: SwarmHooksPlan.self)
+    }
+
+    /// `swarm managed revert <ids> --digest`, which changes the owner's config; call it only on
+    /// the owner's consent to the plan with this digest.
+    public func revertManaged(ids: [String], digest: String) async throws {
+        _ = try await call(["managed", "revert"] + ids + ["--digest", digest])
+    }
+
     public func answer(
         _ prompt: SwarmPrompt, choice: Int, to agent: SwarmAgentID,
         in session: SwarmSessionID, adapter: String
