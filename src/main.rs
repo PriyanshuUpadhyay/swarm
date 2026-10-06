@@ -269,7 +269,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -963,8 +963,10 @@ impl HookFiles {
     }
 }
 
-/// `swarm managed list [--json]`: each item swarm wrote outside its home, recorded or found, with
-/// its live state (ADR 0042).
+/// `swarm managed list [--json] | revert (<id>... | --all) [--plan [--json] | --digest <digest>]`:
+/// each item swarm wrote outside its home, recorded or found, with its live state, and removing
+/// items that still equal what swarm wrote (ADR 0042). Running `revert` is the consent, as running
+/// `hooks setup` is; `--plan` shows the diff first and `--digest` applies only that plan.
 fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     let found = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?.items();
@@ -995,6 +997,53 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             print_json(&serde_json::json!({ "entries": entries }))
+        }
+        ["revert", rest @ ..] => {
+            let split = rest
+                .iter()
+                .position(|arg| matches!(*arg, "--plan" | "--digest"))
+                .unwrap_or(rest.len());
+            let (targets, flags) = rest.split_at(split);
+            let target = match targets {
+                ["--all"] => swarm::managed::Target::All,
+                [] => return Err(USAGE.into()),
+                ids if ids.iter().all(|id| !id.starts_with('-')) => {
+                    swarm::managed::Target::Ids(ids.iter().map(|id| id.to_string()).collect())
+                }
+                _ => return Err(USAGE.into()),
+            };
+            let plan = || swarm::managed::revert_plan(&store, &found, &target);
+            match flags {
+                ["--plan"] => {
+                    print!(
+                        "{}",
+                        swarm::managed::plan_text(
+                            &plan()?,
+                            &format!("swarm managed revert {}", targets.join(" ")),
+                            "Swarm has nothing to remove. No file changes."
+                        )
+                    );
+                    Ok(())
+                }
+                ["--plan", "--json"] => print_json(&swarm::managed::plan_json(&plan()?)),
+                [] | ["--digest", _] => {
+                    let lock = swarm::paths::root_dir()?.join("trust.lock");
+                    swarm::managed::with_lock(&lock, || {
+                        let plans = plan()?;
+                        if let ["--digest", digest] = flags
+                            && swarm::managed::digest(&plans) != *digest
+                        {
+                            return Err("swarm: a managed file changed after the plan; check the plan again".into());
+                        }
+                        for path in swarm::managed::revert(&store, &plans)? {
+                            println!("swarm: removed swarm's entries from {}", path.display());
+                        }
+                        Ok(())
+                    })?;
+                    Ok(())
+                }
+                _ => Err(USAGE.into()),
+            }
         }
         _ => Err(USAGE.into()),
     }
