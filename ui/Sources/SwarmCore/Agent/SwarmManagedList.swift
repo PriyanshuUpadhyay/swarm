@@ -29,6 +29,16 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         case changed(found: String, wrote: String)
         case gone
         case off
+
+        /// The state as the page shows it.
+        public var name: String {
+            switch self {
+            case .on: "On"
+            case .changed: "Changed by you"
+            case .gone: "Gone"
+            case .off: "Off"
+            }
+        }
     }
 
     public struct Row: Sendable, Hashable, Identifiable {
@@ -74,6 +84,10 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
 
         public var id: String { name }
         public var presentIDs: [String] { rows.flatMap(\.presentIDs) }
+        /// What VoiceOver reads for the group's header, such as "Guard group, 1 row".
+        public var spoken: String {
+            "\(name) group, " + String(AttributedString(localized: "^[\(rows.count) row](inflect: true)").characters)
+        }
     }
 
     public var entries: [Entry]
@@ -137,6 +151,28 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         return ["on", "changed by you", "gone", "off", "found"]
             .compactMap { key in counts[key].map { "\($0) \(key)" } }
             .joined(separator: " · ")
+    }
+
+    /// A line for each row whose state is not what it was in `old`, and for each row that is gone
+    /// from the list, such as "Agent hooks, ~/.codex/config.toml, Off", so VoiceOver hears the row
+    /// that an undo flipped.
+    public func changes(since old: SwarmManagedList) -> [String] {
+        func rows(_ list: SwarmManagedList) -> [(key: String, line: String, state: RowState)] {
+            list.groups.flatMap { group in
+                group.rows.map { row in
+                    (group.name + "\u{0}" + row.id,
+                     "\(group.name), \((row.file as NSString).abbreviatingWithTildeInPath)", row.state)
+                }
+            }
+        }
+        let now = rows(self)
+        let was = rows(old)
+        let wasState = Dictionary(was.map { ($0.key, $0.state) }, uniquingKeysWith: { first, _ in first })
+        let nowKeys = Set(now.map(\.key))
+        let flipped = now.compactMap { row in
+            wasState[row.key].flatMap { $0 == row.state ? nil : "\(row.line), \(row.state.name)" }
+        }
+        return flipped + was.filter { !nowKeys.contains($0.key) }.map { "\($0.line), Removed" }
     }
 
     private static func rows(_ entries: [Entry]) -> [Row] {

@@ -7,6 +7,9 @@ import SwarmCore
 /// logic; each write is the CLI behind that sheet (ADR 0036).
 struct ManagedChangesPage: View {
     @State private var list: SwarmManagedList?
+    /// `list`'s groups and summary, made once per load, not once per body pass.
+    @State private var groups: [SwarmManagedList.Group] = []
+    @State private var summary = ""
     @State private var error: String?
     @State private var isLoading = true
     @State private var sheet: Sheet?
@@ -33,6 +36,7 @@ struct ManagedChangesPage: View {
     }
 
     var body: some View {
+        let collapsed = self.collapsed
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             header
             if let error {
@@ -41,10 +45,18 @@ struct ManagedChangesPage: View {
                     Button("Retry") { Task { await load() } }
                 }
             }
-            if let list, !list.groups.isEmpty {
+            if !groups.isEmpty {
                 ScrollView {
+                    // Each header and row is its own child, so a long group builds only the rows
+                    // on screen.
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(list.groups) { group in groupSection(group) }
+                        ForEach(groups) { group in
+                            let isOpen = !collapsed.contains(group.name)
+                            groupHeader(group, isOpen: isOpen)
+                            if isOpen {
+                                ForEach(group.rows) { row in managedRow(row, in: group) }
+                            }
+                        }
                     }
                 }
             } else if isLoading {
@@ -91,6 +103,7 @@ struct ManagedChangesPage: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             HStack {
                 Text("Managed Changes").font(.largeTitle.bold())
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if isLoading && list != nil { DelayedProgress() }
                 Button { Task { await load() } } label: {
@@ -103,9 +116,9 @@ struct ManagedChangesPage: View {
             }
             Text("Swarm adds only its own entries and removes only what it wrote, after you see the diff.")
                 .foregroundStyle(.secondary)
-            if let list, !list.groups.isEmpty {
+            if let list, !groups.isEmpty {
                 HStack {
-                    Text(list.summary).font(.callout)
+                    Text(summary).font(.callout)
                     Spacer()
                     Button("Undo All…") { undo(list.presentIDs, in: list.entries) }
                         .disabled(list.presentIDs.isEmpty)
@@ -114,36 +127,32 @@ struct ManagedChangesPage: View {
         }
     }
 
-    private func groupSection(_ group: SwarmManagedList.Group) -> some View {
-        let isOpen = !collapsed.contains(group.name)
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button {
-                    withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(group.name) }
-                } label: {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        Image(systemName: "chevron.right")
-                            .rotationEffect(.degrees(isOpen ? 90 : 0))
-                            .frame(width: DesignTokens.Size.glyphSlot)
-                        Text(group.name).font(.subheadline.weight(.semibold))
-                        if let source = group.source {
-                            Text("· \(source)").font(.caption).foregroundStyle(.tertiary)
-                        }
+    /// A group's name that collapses it, as the sidebar's project header does.
+    private func groupHeader(_ group: SwarmManagedList.Group, isOpen: Bool) -> some View {
+        HStack {
+            Button {
+                withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(group.name) }
+            } label: {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Text(group.name).font(.subheadline.weight(.semibold))
+                    if let source = group.source {
+                        Text("· \(source)").font(.caption).foregroundStyle(.tertiary)
                     }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(group.name) group, \(group.rows.count) rows")
-                .accessibilityValue(isOpen ? "open" : "closed")
-                if !group.presentIDs.isEmpty {
-                    Button("Undo \(group.name)…") { undo(group.presentIDs, in: list?.entries ?? []) }
-                        .buttonStyle(.borderless)
-                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            if isOpen {
-                ForEach(group.rows) { row in managedRow(row, in: group) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(group.spoken)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(isOpen ? "expanded" : "collapsed")
+            if !group.presentIDs.isEmpty {
+                Button("Undo \(group.name)…") { undo(group.presentIDs, in: list?.entries ?? []) }
+                    .buttonStyle(.borderless)
             }
         }
     }
@@ -230,11 +239,21 @@ struct ManagedChangesPage: View {
         do {
             let loaded = try await bus.managedList()
             guard run == loads else { return }
+            let changes = list.map { loaded.changes(since: $0) } ?? []
             list = loaded
+            groups = loaded.groups
+            summary = loaded.summary
             error = nil
+            if !changes.isEmpty {
+                AccessibilityNotification.Announcement(changes.joined(separator: ". ")).post()
+            }
         } catch {
             guard run == loads else { return }
-            self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            let message = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            if message != self.error {
+                AccessibilityNotification.Announcement("Could not read managed changes. \(message)").post()
+            }
+            self.error = message
         }
         isLoading = false
     }

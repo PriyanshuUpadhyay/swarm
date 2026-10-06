@@ -41,6 +41,29 @@ struct SwarmManagedListTests {
         #expect(list.groups[1].presentIDs == ["g1"])
     }
 
+    @Test("A group's spoken name counts its rows with the right plural")
+    func spokenGroup() throws {
+        let list = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        #expect(list.groups[0].spoken == "Agent hooks group, 2 rows")
+        #expect(list.groups[2].spoken == "Found, not recorded group, 1 row")
+    }
+
+    @Test("A reload names each row whose state flipped, such as the rows an undo turned off")
+    func flips() throws {
+        let before = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        var after = before
+        after.entries = before.entries.compactMap { entry in
+            var entry = entry
+            if ["a1", "a2"].contains(entry.id) { entry.state = "off" }
+            return entry.id == "f1" ? nil : entry
+        }
+        #expect(after.changes(since: before) == [
+            "Agent hooks, /u/.codex/config.toml, Off",
+            "Found, not recorded, /u/.codex-old/config.toml, Removed",
+        ])
+        #expect(before.changes(since: before).isEmpty)
+    }
+
     @Test("An empty list has no groups and says so")
     func empty() throws {
         let list = try SwarmManagedList.decode(Data(#"{"entries":[]}"#.utf8))
