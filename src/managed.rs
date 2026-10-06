@@ -295,7 +295,15 @@ impl State {
 
 /// Read `edit`'s place in its file now. `off` says swarm set it back.
 pub fn state(edit: &Edit, off: bool) -> State {
-    match live(edit) {
+    match read_optional(&edit.file) {
+        Ok(text) => state_in(edit, off, text.as_deref()),
+        Err(error) => State::Changed(error.into()),
+    }
+}
+
+/// `state` in `text`, the file's text (None for a missing file).
+fn state_in(edit: &Edit, off: bool, text: Option<&str>) -> State {
+    match live(edit, text) {
         Ok(Some(value)) if value == edit.wrote => State::Present,
         Ok(value) if off && value == edit.before => State::Off,
         Ok(Some(value)) => State::Changed(value),
@@ -304,11 +312,11 @@ pub fn state(edit: &Edit, off: bool) -> State {
     }
 }
 
-/// The value at `edit`'s place, None when it is absent. An array item is either there or absent.
-/// A file that cannot be read or parsed, or a container that is not one, is an error, so swarm
+/// The value at `edit`'s place in `text`, None when it is absent. An array item is either there or
+/// absent. A file that cannot be parsed, or a container that is not one, is an error, so swarm
 /// never takes it for absent (R4).
-fn live(edit: &Edit) -> Result<Option<serde_json::Value>, String> {
-    let Some(text) = read_optional(&edit.file)? else {
+fn live(edit: &Edit, text: Option<&str>) -> Result<Option<serde_json::Value>, String> {
+    let Some(text) = text else {
         return Ok(None);
     };
     let (keys, last) = match edit.kind {
@@ -337,7 +345,7 @@ fn live(edit: &Edit) -> Result<Option<serde_json::Value>, String> {
         }
         return Ok(last.and_then(|last| table.get(last)).map(toml_json));
     }
-    let mut value = json_object(&edit.file, Some(&text))?;
+    let mut value = json_object(&edit.file, Some(text))?;
     // Only the array of a JsonArrayItem is an array; any other container is an object.
     for (index, key) in keys.iter().enumerate() {
         let array = last.is_none() && index + 1 == keys.len();
@@ -554,14 +562,17 @@ pub fn revert_plan(
         .collect())
 }
 
-/// The plan for one file that removes each present item of `items`.
+/// The plan for one file that removes each present item of `items`. Each item's state is read
+/// again in the text that the plan edits, so a value that changed after `list` read it is a
+/// conflict, not removed.
 fn removal(file: &std::path::Path, items: &[&Entry]) -> Result<FilePlan, String> {
-    let before = read_text(file)?;
+    let text = read_optional(file)?;
+    let before = text.clone().unwrap_or_default();
     let mut conflicts = Vec::new();
     let mut gone = Vec::new();
     for entry in items {
         let edit = &entry.edit;
-        match &entry.state {
+        match state_in(edit, entry.state == State::Off, text.as_deref()) {
             State::Present => gone.push(edit),
             State::Changed(found) => conflicts.push(Conflict {
                 file: file.display().to_string(),
@@ -1131,6 +1142,36 @@ mod tests {
             .query_row("SELECT off FROM managed_edit", [], |row| row.get(0))
             .unwrap();
         assert!(!off);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A value that changed after `list` read it as swarm's is a conflict in the text that the
+    /// revert edits, so the revert refuses it and never removes the new value.
+    #[test]
+    fn a_revert_refuses_a_value_that_changed_after_the_list_read() {
+        let dir = std::env::temp_dir().join(format!("swarm-managed-reread-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("config.toml");
+        let owners = "[hooks.state.\"stop\"]\ntrusted_hash = \"owner's\"\n";
+        std::fs::write(&file, owners).unwrap();
+        let edit = Edit::new(
+            Writer::HooksState,
+            &file,
+            Kind::TomlKey,
+            &["hooks", "state", "stop", "trusted_hash"],
+            "swarm's".into(),
+        );
+        let listed = Entry {
+            edit,
+            state: State::Present,
+            recorded: true,
+            at_s: Some(0),
+        };
+        let plan = removal(&file, &[&listed]).unwrap();
+        assert_eq!(plan.after, owners);
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].found, "\"owner's\"");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
