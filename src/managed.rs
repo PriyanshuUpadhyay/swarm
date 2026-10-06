@@ -276,7 +276,8 @@ pub enum State {
     Changed(serde_json::Value),
     /// It is absent, and swarm did not remove it.
     Gone,
-    /// It is absent, because swarm removed it.
+    /// It is as it was before the write (absent, or the value it replaced), because swarm set it
+    /// back.
     Off,
 }
 
@@ -292,12 +293,12 @@ impl State {
     }
 }
 
-/// Read `edit`'s place in its file now. `off` says swarm removed it.
+/// Read `edit`'s place in its file now. `off` says swarm set it back.
 pub fn state(edit: &Edit, off: bool) -> State {
     match live(edit) {
         Ok(Some(value)) if value == edit.wrote => State::Present,
+        Ok(value) if off && value == edit.before => State::Off,
         Ok(Some(value)) => State::Changed(value),
-        Ok(None) if off => State::Off,
         Ok(None) => State::Gone,
         Err(error) => State::Changed(error.into()),
     }
@@ -1083,7 +1084,7 @@ mod tests {
         revert(&store, &plans).unwrap();
         let back = std::fs::read_to_string(&file).unwrap();
         assert_eq!(back, owners);
-        assert_eq!(state(&edit, true), State::Changed(true.into()));
+        assert_eq!(state(&edit, true), State::Off);
 
         // A string where swarm wrote a bool is another value, not swarm's.
         std::fs::write(&file, quiet.replace("false", "\"false\"")).unwrap();
