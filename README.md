@@ -96,10 +96,12 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 4. **Approve the setup plan.** On first launch the app asks "Let swarm set up this Mac?" and
    shows each file it would change, under its group: the Codex and AGY hooks, so worker columns
    show their chat and state, and folder trust, so a seat in a git repo or a swarm scratch folder
-   starts with no trust dialog. Click **Approve and apply**. Until you approve folder trust, a seat
+   starts with no trust dialog. Clear a group's box to leave it as it is, and pick under folder
+   trust whether swarm trusts each folder that passes the safety check or asks in the agent's
+   column. Click **Approve and apply**. Until you approve folder trust, a seat
    in a new folder stops at its CLI's own trust question, and the chair's launch prints
    `trust-pending` with the diff. A chat's own folder counts as approved, because you picked it,
-   and the chat says so. You can do it later from **Swarm > Set Up Agent Hooks…**, or in a
+   and the chat says so. You can do it later from **Swarm > Set Up Swarm…**, or in a
    terminal with `swarm setup --plan` and the `swarm setup --digest …` it prints.
    **Swarm > Managed Changes…** lists each entry swarm added and removes one after you see the
    diff, as `swarm managed revert` does.

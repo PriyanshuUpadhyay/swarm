@@ -2,7 +2,7 @@ import SwiftUI
 import SwarmCore
 
 extension Notification.Name {
-    /// The app menu's "Set Up Agent Hooks…" asks the window to show the sheet.
+    /// The app menu's "Set Up Swarm…" asks the window to show the sheet.
     static let showHooksSetup = Notification.Name("SwarmShowHooksSetup")
 }
 
@@ -12,10 +12,11 @@ extension Notification.Name {
 /// changed after the owner looked is refused (ADR 0036). "Not now" writes nothing; the app menu
 /// offers the same sheet later. The Managed Changes page asks its undo through the same steps with
 /// the `undo` copy (ADR 0042). On start and from the app menu it shows the whole `swarm setup`
-/// plan with the `setup` copy, each file under its group (ADR 0043).
+/// plan with the `setup` copy: each group with its checkbox and files, and the launch consent
+/// radio under folder trust (ADR 0043, 02-design screen 1).
 struct HooksSetupSheet: View {
-    let loadPlan: () async throws -> SwarmHooksPlan
-    let setUp: (_ digest: String) async throws -> Void
+    let loadPlan: (SwarmSetupChoice) async throws -> SwarmHooksPlan
+    let setUp: (_ digest: String, SwarmSetupChoice) async throws -> Void
     let notNow: () -> Void
     let done: () -> Void
     var copy = Copy.hooks
@@ -33,6 +34,8 @@ struct HooksSetupSheet: View {
         /// Apply removes the owner's config, so it is a destructive button that Return does not
         /// press; Cancel keeps Escape.
         var destructive = false
+        /// Each group gets a checkbox, and folder trust its consent radio.
+        var choosesGroups = false
 
         static let hooks = Copy(
             question: "Let swarm set up its own hooks for Codex and AGY?",
@@ -46,12 +49,13 @@ struct HooksSetupSheet: View {
 
         static let setup = Copy(
             question: "Let swarm set up this Mac?",
-            body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start in a git repo or a swarm scratch folder without a trust dialog; until you approve it, a seat in a new folder asks in its column. You can undo each change in Swarm › Managed Changes.",
+            body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start without a trust dialog. Clear a group to leave it as it is. You can undo each change in Swarm › Managed Changes.",
             loading: "Reading your config…",
             unchanged: "Swarm is already set up.",
             blocked: "Swarm cannot set up. Your config has entries where swarm needs its own.",
             apply: "Approve and apply",
-            cancel: "Not now"
+            cancel: "Not now",
+            choosesGroups: true
         )
 
         static let undo = Copy(
@@ -80,6 +84,8 @@ struct HooksSetupSheet: View {
     @State private var openFile: String?
     @State private var split = false
     @State private var diffFailed = false
+    /// The groups and the consent the owner picked; each change runs the plan again.
+    @State private var choice = SwarmSetupChoice()
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
@@ -113,7 +119,11 @@ struct HooksSetupSheet: View {
             case .ready(let plan):
                 question
                 if !plan.conflicts.isEmpty { conflictList(plan.conflicts) }
-                if !plan.files.isEmpty { fileList(plan) }
+                if copy.choosesGroups && plan.files.allSatisfy({ $0.group != nil }) {
+                    groupList(plan)
+                } else if !plan.files.isEmpty {
+                    fileList(plan)
+                }
                 if let failure {
                     Text(verbatim: failure)
                         .font(.caption)
@@ -131,7 +141,12 @@ struct HooksSetupSheet: View {
         .task(id: planRun) {
             phase = .loading
             do {
-                let plan = try await loadPlan()
+                let plan = try await loadPlan(choice)
+                // The first plan has every group, so it gives the checkboxes; a group that shows
+                // up later gets one too, so no planned file goes unseen.
+                for group in plan.groupIDs where !choice.groups.contains(group) {
+                    choice.groups.append(group)
+                }
                 openFile = plan.files.first?.path
                 diffFailed = false
                 phase = .ready(plan)
@@ -212,22 +227,81 @@ struct HooksSetupSheet: View {
                 .frame(width: DesignTokens.Size.segmentedPicker)
             }
             // One file open at a time keeps the sheet inside the window.
-            ForEach(plan.files) { file in
-                DisclosureGroup(isExpanded: Binding(
-                    get: { openFile == file.path },
-                    set: { open in
-                        openFile = open ? file.path : nil
-                        diffFailed = false
+            ForEach(plan.files) { file in fileRow(file, label: "\(Self.group(file.group))\(Self.short(file.path))") }
+        }
+    }
+
+    private func fileRow(_ file: SwarmHooksPlan.File, label: String) -> some View {
+        DisclosureGroup(isExpanded: Binding(
+            get: { openFile == file.path },
+            set: { open in
+                openFile = open ? file.path : nil
+                diffFailed = false
+            }
+        )) {
+            if openFile == file.path { diff(file) }
+        } label: {
+            Label("\(label) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
+                .font(.callout)
+                .help(file.path)
+        }
+    }
+
+    /// Each group with its checkbox and its files, and the consent radio under folder trust. The
+    /// last checked group keeps its box, so the plan always has a group to apply.
+    private func groupList(_ plan: SwarmHooksPlan) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+            HStack {
+                Text("Swarm changes the files of each checked group. Nothing else changes.")
+                Spacer()
+                Picker("Diff layout", selection: $split) {
+                    Text("Unified").tag(false)
+                    Text("Split").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: DesignTokens.Size.segmentedPicker)
+            }
+            ForEach(choice.groups, id: \.self) { group in
+                let checked = !choice.unchecked.contains(group)
+                Toggle(Self.title(group), isOn: Binding(
+                    get: { checked },
+                    set: { on in
+                        if on { choice.unchecked.remove(group) } else { choice.unchecked.insert(group) }
+                        checkAgain()
                     }
-                )) {
-                    if openFile == file.path { diff(file) }
-                } label: {
-                    Label("\(Self.group(file.group))\(Self.short(file.path)) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
-                        .font(.callout)
-                        .help(file.path)
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(working || (checked && choice.checked.count == 1))
+                if checked {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                        if group == "trust" { consentPicker }
+                        ForEach(plan.files.filter { $0.group == group }) { file in
+                            fileRow(file, label: Self.short(file.path))
+                        }
+                    }
+                    .padding(.leading, DesignTokens.Spacing.l)
                 }
             }
         }
+    }
+
+    private var consentPicker: some View {
+        Picker("Launch consent", selection: Binding(
+            get: { choice.standing },
+            set: { standing in
+                choice.standing = standing
+                checkAgain()
+            }
+        )) {
+            Text("Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
+                .tag(true)
+            Text("Ask in the agent's column for each new folder").tag(false)
+        }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
+        .disabled(working)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The diff viewer, or the plain diff text when the viewer cannot load, because the owner
@@ -281,7 +355,7 @@ struct HooksSetupSheet: View {
         failure = nil
         Task {
             do {
-                try await setUp(plan.digest)
+                try await setUp(plan.digest, choice)
                 done()
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
@@ -304,12 +378,15 @@ struct HooksSetupSheet: View {
     /// A `swarm setup` group's name before its file; a group this build does not know shows by
     /// its id (ADR 0043).
     private static func group(_ id: String?) -> String {
+        id.map { "\(title($0)) · " } ?? ""
+    }
+
+    private static func title(_ id: String) -> String {
         switch id {
-        case nil: ""
-        case "hooks": "Agent hooks · "
-        case "trust": "Folder trust · "
-        case "herdr": "Herdr · "
-        case let other?: "\(other) · "
+        case "hooks": "Agent hooks"
+        case "trust": "Folder trust"
+        case "herdr": "Herdr"
+        default: id
         }
     }
 

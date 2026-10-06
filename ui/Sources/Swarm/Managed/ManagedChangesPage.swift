@@ -86,8 +86,8 @@ struct ManagedChangesPage: View {
             switch kind {
             case .undo(let ids, let hooks):
                 HooksSetupSheet(
-                    loadPlan: { try await bus.managedRevertPlan(ids: ids) },
-                    setUp: { digest in
+                    loadPlan: { _ in try await bus.managedRevertPlan(ids: ids) },
+                    setUp: { digest, _ in
                         try await bus.revertManaged(ids: ids, digest: digest)
                         if hooks { hooksSetupDeclined = true }
                     },
@@ -97,8 +97,8 @@ struct ManagedChangesPage: View {
                 )
             case .setUp:
                 HooksSetupSheet(
-                    loadPlan: { try await bus.hooksPlan() },
-                    setUp: { try await bus.setUpHooks(digest: $0) },
+                    loadPlan: { _ in try await bus.hooksPlan() },
+                    setUp: { digest, _ in try await bus.setUpHooks(digest: digest) },
                     notNow: { sheet = nil },
                     done: { sheet = nil }
                 )

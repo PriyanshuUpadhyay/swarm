@@ -71,10 +71,40 @@ public struct SwarmSetupStatus: Sendable, Hashable, Codable {
         self.herdr = herdr
     }
 
-    /// Whether the app asks on start. A hooks "Not now" covers only the hooks, so a Mac that
-    /// updates still sees the sheet once for folder trust (Q3).
-    public func needsSheet(hooksDeclined: Bool) -> Bool {
-        !trust || !herdr || (!hooks && !hooksDeclined)
+    /// Whether the app asks on start. A hooks "Not now", or a group the owner left unchecked when
+    /// they applied the rest, covers only that group, so a Mac that updates still sees the sheet
+    /// once for folder trust (Q3).
+    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool) -> Bool {
+        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined)
+    }
+}
+
+/// What the owner picked in the setup sheet: the groups to apply and the launch consent
+/// (02-design screen 1). A group left out is not planned, so the digest covers what the sheet
+/// shows.
+public struct SwarmSetupChoice: Sendable, Hashable {
+    /// Each group the full plan showed, in its order.
+    public var groups: [String]
+    /// The groups whose checkbox the owner cleared.
+    public var unchecked: Set<String>
+    /// The launch consent the trust group writes: standing, or ask in the agent's column.
+    public var standing: Bool
+
+    public init(groups: [String] = [], unchecked: Set<String> = [], standing: Bool = true) {
+        self.groups = groups
+        self.unchecked = unchecked
+        self.standing = standing
+    }
+
+    /// The groups to apply.
+    public var checked: [String] { groups.filter { !unchecked.contains($0) } }
+
+    /// The `swarm setup` flags of this choice; none for every group with standing consent.
+    public var arguments: [String] {
+        var arguments: [String] = []
+        if !unchecked.isEmpty { arguments += ["--only", checked.joined(separator: ",")] }
+        if !standing { arguments += ["--consent", "ask"] }
+        return arguments
     }
 }
 
@@ -126,14 +156,20 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         /// Open set: `taken`, `changed`, `order`, `unreadable`, and later ones; nil from an older
         /// CLI.
         public var kind: String?
+        /// The `swarm setup` group; nil from `hooks setup` and an undo.
+        public var group: String?
 
-        public init(file: String, entry: String, found: String, wanted: String, fix: String, kind: String? = nil) {
+        public init(
+            file: String, entry: String, found: String, wanted: String, fix: String,
+            kind: String? = nil, group: String? = nil
+        ) {
             self.kind = kind
             self.file = file
             self.entry = entry
             self.found = found
             self.wanted = wanted
             self.fix = fix
+            self.group = group
         }
 
         public var id: String { file + "\u{0}" + entry }
@@ -154,6 +190,15 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
 
     /// Nothing to change and nothing in the way.
     public var isSetUp: Bool { files.isEmpty && conflicts.isEmpty }
+    /// Each `swarm setup` group with a file or a conflict, in plan order.
+    public var groupIDs: [String] {
+        var seen: [String] = []
+        for group in files.compactMap(\.group) + conflicts.compactMap(\.group)
+        where !seen.contains(group) {
+            seen.append(group)
+        }
+        return seen
+    }
     /// Setup writes no file while any conflict stands.
     public var canApply: Bool { conflicts.isEmpty && !files.isEmpty }
     /// What VoiceOver hears when the plan loads.

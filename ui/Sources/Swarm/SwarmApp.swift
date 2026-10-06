@@ -448,6 +448,8 @@ private struct SessionsWindow: View {
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     /// "Not now" on the setup sheet; the app menu can still open it (ADR 0043).
     @AppStorage("setupDeclined") private var setupDeclined = false
+    /// Folder trust left unchecked when the owner applied the rest of the setup sheet.
+    @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -582,7 +584,9 @@ private struct SessionsWindow: View {
             }
             guard !setupDeclined, !SwarmOpenScript.isActive,
                   let status = try? await SwarmCLIBus().setupStatus(),
-                  status.needsSheet(hooksDeclined: hooksSetupDeclined) else { return }
+                  status.needsSheet(
+                      hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
+                  ) else { return }
             showingHooksSetup = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
@@ -590,8 +594,13 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                loadPlan: { try await SwarmCLIBus().setupPlan() },
-                setUp: { try await SwarmCLIBus().setUp(digest: $0) },
+                loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                setUp: { digest, choice in
+                    try await SwarmCLIBus().setUp(digest: digest, choice: choice)
+                    // A group left unchecked is that group's "Not now".
+                    if choice.unchecked.contains("hooks") { hooksSetupDeclined = true }
+                    if choice.unchecked.contains("trust") { trustSetupDeclined = true }
+                },
                 notNow: {
                     setupDeclined = true
                     showingHooksSetup = false
@@ -1361,7 +1370,7 @@ private struct SetupCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .appSettings) {
-            Button("Set Up Agent Hooks…") {
+            Button("Set Up Swarm…") {
                 NotificationCenter.default.post(name: .showHooksSetup, object: nil)
             }
             Button("Managed Changes…") { openWindow(id: "managed") }

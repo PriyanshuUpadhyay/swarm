@@ -245,18 +245,33 @@ struct SwarmSessionDetailTests {
         #expect(status == SwarmSetupStatus(hooks: true, trust: false, herdr: true))
         // A Mac that updates has no consent yet, so the sheet opens once even after a hooks
         // "Not now" (Q3).
-        #expect(status.needsSheet(hooksDeclined: true))
-        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: true))
-        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: false))
+        #expect(status.needsSheet(hooksDeclined: true, trustDeclined: false))
+        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: true, trustDeclined: false))
+        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: false, trustDeclined: false))
+        // A group the owner left unchecked when they applied the rest is not asked again.
+        #expect(!status.needsSheet(hooksDeclined: false, trustDeclined: true))
 
         let decoded = try await bus.setupPlan()
         #expect(decoded.files.map(\.group) == ["trust", nil])
         #expect(decoded.files.first?.added == 3)
+        #expect(decoded.groupIDs == ["trust"])
         try await bus.setUp(digest: decoded.digest)
+
+        // Each checkbox the owner clears leaves its group out, and the radio sets the consent,
+        // so the plan and its digest cover what the sheet shows (02-design screen 1).
+        var choice = SwarmSetupChoice(groups: ["hooks", "trust", "herdr"])
+        #expect(choice.arguments.isEmpty)
+        choice.unchecked = ["trust"]
+        choice.standing = false
+        #expect(choice.checked == ["hooks", "herdr"])
+        _ = try await bus.setupPlan(choice)
+        try await bus.setUp(digest: "d3", choice: choice)
         #expect(await calls.arguments == [
             ["setup", "status", "--json"],
             ["setup", "--plan", "--json"],
             ["setup", "--digest", "d2"],
+            ["setup", "--plan", "--json", "--only", "hooks,herdr", "--consent", "ask"],
+            ["setup", "--digest", "d3", "--only", "hooks,herdr", "--consent", "ask"],
         ])
     }
 

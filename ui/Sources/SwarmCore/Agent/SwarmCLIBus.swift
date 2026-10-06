@@ -169,16 +169,16 @@ public struct SwarmCLIBus: SwarmBus {
         try await read(["setup", "status", "--json"], as: SwarmSetupStatus.self)
     }
 
-    /// `swarm setup --plan --json`: every write swarm would make outside its home, each file with
-    /// its group. It writes nothing (ADR 0043).
-    public func setupPlan() async throws -> SwarmHooksPlan {
-        try await read(["setup", "--plan", "--json"], as: SwarmHooksPlan.self)
+    /// `swarm setup --plan --json`: every write swarm would make outside its home in the groups
+    /// of `choice`, each file with its group. It writes nothing (ADR 0043).
+    public func setupPlan(_ choice: SwarmSetupChoice = .init()) async throws -> SwarmHooksPlan {
+        try await read(["setup", "--plan", "--json"] + choice.arguments, as: SwarmHooksPlan.self)
     }
 
     /// `swarm setup --digest`, which writes the owner's config and the launch consent; call it
-    /// only on the owner's consent to the plan with this digest.
-    public func setUp(digest: String) async throws {
-        _ = try await call(["setup", "--digest", digest])
+    /// only on the owner's consent to the plan of `choice` with this digest.
+    public func setUp(digest: String, choice: SwarmSetupChoice = .init()) async throws {
+        _ = try await call(["setup", "--digest", digest] + choice.arguments)
     }
 
     /// `swarm managed list --json`: each item swarm wrote outside its home and its live state
