@@ -938,6 +938,8 @@ impl HookFiles {
         let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
         let mut items = Vec::new();
         for home in &self.homes {
+            // A hooks.json swarm cannot read finds no pre-record guard keys. That is safe: a
+            // found item is only listed and reverted while present, and recorded keys still list.
             let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
             let guard = swarm::bus::codex_guard_trust(home, &hooks);
             let keys = codex.iter().map(|entry| (entry, Writer::HooksState));
