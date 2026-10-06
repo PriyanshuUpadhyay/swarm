@@ -181,6 +181,13 @@ struct ManagedChangesPage: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+            } else if case .unreadable(let reason) = row.state {
+                Text(verbatim: "\(reason) · Swarm leaves it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
             } else if row.entries.first?.recorded == false {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
@@ -222,6 +229,10 @@ struct ManagedChangesPage: View {
         switch state {
         case .changed:
             Label("Changed by you", systemImage: "exclamationmark.triangle.fill")
+                .symbolRenderingMode(.multicolor)
+                .font(.callout)
+        case .unreadable:
+            Label("Cannot read", systemImage: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)
                 .font(.callout)
         case .gone:

@@ -301,8 +301,10 @@ pub fn digest(plans: &[FilePlan]) -> String {
 pub enum State {
     /// It equals what swarm wrote.
     Present,
-    /// Another value is there now, or the file cannot be read (the error, as a string).
+    /// Another value is there now.
     Changed(serde_json::Value),
+    /// The file cannot be read or parsed, or a container on the path is not one (the reason).
+    Unreadable(String),
     /// It is absent, and swarm did not remove it.
     Gone,
     /// It is as it was before the write (absent, or the value it replaced), because swarm set it
@@ -316,6 +318,7 @@ impl State {
         match self {
             Self::Present => "present",
             Self::Changed(_) => "changed",
+            Self::Unreadable(_) => "unreadable",
             Self::Gone => "gone",
             Self::Off => "off",
         }
@@ -326,7 +329,7 @@ impl State {
 pub fn state(edit: &Edit, off: bool) -> State {
     match read_optional(&edit.file) {
         Ok(text) => state_in(edit, off, text.as_deref()),
-        Err(error) => State::Changed(error.into()),
+        Err(error) => State::Unreadable(error),
     }
 }
 
@@ -337,7 +340,7 @@ fn state_in(edit: &Edit, off: bool, text: Option<&str>) -> State {
         Ok(value) if off && value == edit.before => State::Off,
         Ok(Some(value)) => State::Changed(value),
         Ok(None) => State::Gone,
-        Err(error) => State::Changed(error.into()),
+        Err(error) => State::Unreadable(error),
     }
 }
 
@@ -416,12 +419,13 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// The wire form. `found` is the live value only for `changed` (A3); `before` null and absent
-    /// mean the same: the place was absent (A5, J2).
+    /// The wire form. `found` is the live value only for `changed`, and `error` the reason only
+    /// for `unreadable` (A3); `before` null and absent mean the same: the place was absent (A5, J2).
     pub fn json(&self) -> serde_json::Value {
-        let found = match &self.state {
-            State::Changed(value) => value.clone(),
-            _ => serde_json::Value::Null,
+        let (found, error) = match &self.state {
+            State::Changed(value) => (value.clone(), None),
+            State::Unreadable(error) => (serde_json::Value::Null, Some(error)),
+            _ => (serde_json::Value::Null, None),
         };
         serde_json::json!({
             "id": self.edit.id(),
@@ -433,6 +437,7 @@ impl Entry {
             "before": self.edit.before,
             "state": self.state.name(),
             "found": found,
+            "error": error,
             "recorded": self.recorded,
             "at_s": self.at_s,
             "with": self.edit.with,
@@ -611,6 +616,16 @@ fn removal(file: &std::path::Path, items: &[&Entry]) -> Result<FilePlan, String>
                 fix: format!(
                     "swarm leaves it; delete {} from {} by hand, or set it back to swarm's value and run again",
                     describe(edit),
+                    file.display()
+                ),
+            }),
+            State::Unreadable(error) => conflicts.push(Conflict {
+                file: file.display().to_string(),
+                entry: describe(edit),
+                found: error,
+                wanted: edit.wrote.to_string(),
+                fix: format!(
+                    "swarm leaves it; make {} readable again and run again",
                     file.display()
                 ),
             }),
@@ -1134,8 +1149,9 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// An array where the path needs an object is a file swarm cannot read, not an absent item, so
-    /// a revert refuses it and the row stays on (R4).
+    /// An array where the path needs an object is a file swarm cannot read, not an absent item or
+    /// another value, so list says `unreadable` with the reason and a revert refuses it and the
+    /// row stays on (R4).
     #[test]
     fn an_array_in_the_middle_of_a_json_path_is_an_error_not_gone() {
         let dir = std::env::temp_dir().join(format!("swarm-managed-array-{}", std::process::id()));
@@ -1163,7 +1179,21 @@ mod tests {
         apply(&store, &[plan]).unwrap();
 
         std::fs::write(&file, r#"{"hooks": []}"#).unwrap();
-        assert!(matches!(state(&edit, false), State::Changed(_)));
+        let entry = Entry {
+            edit: edit.clone(),
+            state: state(&edit, false),
+            recorded: true,
+            at_s: None,
+        };
+        assert!(matches!(entry.state, State::Unreadable(_)));
+        assert_eq!(entry.json()["state"], "unreadable");
+        assert!(
+            entry.json()["error"]
+                .as_str()
+                .unwrap()
+                .contains("cannot read into")
+        );
+        assert!(entry.json()["found"].is_null());
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
         assert_eq!(plans[0].conflicts.len(), 1);
         assert!(revert(&store, &plans).is_err());

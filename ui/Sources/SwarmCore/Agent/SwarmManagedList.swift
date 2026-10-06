@@ -16,7 +16,9 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         public var wrote: JSONElement
         /// The live value, only for a `changed` item.
         public var found: JSONElement?
-        /// Open set: `present`, `changed`, `gone`, `off`, and later ones.
+        /// Why swarm cannot read the item, only for an `unreadable` item.
+        public var error: String?
+        /// Open set: `present`, `changed`, `unreadable`, `gone`, `off`, and later ones.
         public var state: String
         public var recorded: Bool
         public var atS: Int?
@@ -31,6 +33,8 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
     public enum RowState: Sendable, Hashable {
         case on
         case changed(found: String, wrote: String)
+        /// Swarm cannot read the file or the path in it, so it cannot tell what is there.
+        case unreadable(reason: String)
         case gone
         case off
 
@@ -39,6 +43,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
             switch self {
             case .on: "On"
             case .changed: "Changed by you"
+            case .unreadable: "Cannot read"
             case .gone: "Gone"
             case .off: "Off"
             }
@@ -73,6 +78,9 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         }
 
         public var state: RowState {
+            if let unreadable = entries.first(where: { $0.state == "unreadable" }) {
+                return .unreadable(reason: unreadable.error ?? "")
+            }
             if let changed = entries.first(where: { $0.state == "changed" }) {
                 return .changed(found: changed.found?.compactJSON ?? "", wrote: changed.wrote.compactJSON)
             }
@@ -148,6 +156,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
                     switch row.state {
                     case .on: key = "on"
                     case .changed: key = "changed by you"
+                    case .unreadable: key = "cannot read"
                     case .gone: key = "gone"
                     case .off: key = "off"
                     }
@@ -155,7 +164,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
                 counts[key, default: 0] += 1
             }
         }
-        return ["on", "changed by you", "gone", "off", "found"]
+        return ["on", "changed by you", "cannot read", "gone", "off", "found"]
             .compactMap { key in counts[key].map { "\($0) \(key)" } }
             .joined(separator: " · ")
     }

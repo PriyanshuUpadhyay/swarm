@@ -41,6 +41,28 @@ struct SwarmManagedListTests {
         #expect(list.groups[1].presentIDs == ["g1"])
     }
 
+    @Test("A file swarm cannot read is its own state with the reason, not changed by you")
+    func unreadable() throws {
+        let before = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        var list = before
+        list.entries = list.entries.map { entry in
+            var entry = entry
+            if entry.id == "g1" {
+                entry.state = "unreadable"
+                entry.error = "/u/.codex/hooks.json is not valid JSON"
+            }
+            return entry
+        }
+        let guardRow = list.groups[1].rows[2]
+        #expect(guardRow.state == .unreadable(reason: "/u/.codex/hooks.json is not valid JSON"))
+        #expect(guardRow.state.name == "Cannot read")
+        #expect(guardRow.presentIDs.isEmpty)
+        #expect(SwarmManagedList.summary(list.groups) == "1 on · 1 changed by you · 1 cannot read · 1 gone · 1 off · 1 found")
+        #expect(SwarmManagedList.changes(from: before.groups, to: list.groups) == [
+            "Guard, /u/.codex/hooks.json, Cannot read",
+        ])
+    }
+
     @Test("A group's spoken name counts its rows with the right plural")
     func spokenGroup() throws {
         let list = try SwarmManagedList.decode(Data(Self.listing.utf8))
