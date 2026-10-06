@@ -115,6 +115,8 @@ struct HooksSetupSheet: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.hooksSheet)
+        // A dismiss mid-write would hide its failure and reload the page before the write ends.
+        .interactiveDismissDisabled(working)
         .task(id: planRun) {
             phase = .loading
             do {
