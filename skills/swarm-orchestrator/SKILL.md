@@ -51,3 +51,8 @@ swarm close <id>
 
 Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
 stops with the session.
+
+The sweep also sends you a message in a child's name when its work is stuck. `unconfirmed:<seq>`:
+two rings of message `<seq>` started no turn; check the pane and send again. `stall:unacked:<seq>`:
+the child is done but did not ack `<seq>`. `stall:silent:<seq>`: the child finished after `<seq>`
+and sent nothing back. Ack each one like any other message.

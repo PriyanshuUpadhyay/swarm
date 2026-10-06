@@ -47,6 +47,9 @@ pub struct Message {
     pub body: Option<String>,
     pub created_at: i64,
     pub read: bool,
+    /// What the last ring proved: `hook`, `screen`, `seen`, `unconfirmed`, or `unchecked`; null until a
+    /// ring ends. More values may come (ADR 0041).
+    pub delivery: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

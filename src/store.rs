@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 pub fn open(path: &Path) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
     let mut connection = rusqlite::Connection::open(path)?;
@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002.sql"),
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
+    include_str!("../migrations/0005.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -82,6 +83,10 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 4 {
         tx.execute_batch(MIGRATIONS[3])?;
         tx.pragma_update(None, "user_version", 4)?;
+    }
+    if version < 5 {
+        tx.execute_batch(MIGRATIONS[4])?;
+        tx.pragma_update(None, "user_version", 5)?;
     }
 
     tx.commit()?;
@@ -494,13 +499,19 @@ pub fn pane_of(
     Ok(pane)
 }
 
+/// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
+/// `chair_provider`.
 pub fn provider_of(
     connection: &Connection,
     session_id: &str,
     agent_id: &str,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let provider: Option<String> = connection.query_row(
-        "SELECT provider FROM agent WHERE session_id = ?1 AND id = ?2",
+        "SELECT COALESCE(agent.provider,
+                         CASE WHEN agent.role = 'orchestrator' OR agent.id = 'orchestrator'
+                              THEN session.chair_provider END)
+         FROM agent JOIN session ON session.id = agent.session_id
+         WHERE agent.session_id = ?1 AND agent.id = ?2",
         (session_id, agent_id),
         |r| r.get(0),
     )?;
@@ -625,6 +636,7 @@ pub struct MessageRow {
     pub body_path: String,
     pub created_at: i64,
     pub read: bool,
+    pub delivery: Option<String>,
 }
 
 pub fn messages(
@@ -636,7 +648,8 @@ pub fn messages(
         "SELECT message.seq, sender_id, recipient_id, kind, body_path, created_at,
                 EXISTS (SELECT 1 FROM read_mark
                         WHERE read_mark.session_id = message.session_id
-                          AND message_seq = message.seq AND agent_id = message.recipient_id)
+                          AND message_seq = message.seq AND agent_id = message.recipient_id),
+                delivery
          FROM message
          WHERE session_id = ?1 AND seq > ?2
          ORDER BY seq
@@ -651,9 +664,222 @@ pub fn messages(
             body_path: row.get(4)?,
             created_at: row.get(5)?,
             read: row.get(6)?,
+            delivery: row.get(7)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// What stalled a child (ADR 0041).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StallKind {
+    Unacked,
+    Silent,
+}
+
+impl StallKind {
+    /// The name in the report kind `stall:<name>:<seq>` and in the sweep line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StallKind::Unacked => "unacked",
+            StallKind::Silent => "silent",
+        }
+    }
+}
+
+/// A stalled child, what stalled it, and the message it is about.
+pub type Stall = (String, StallKind, i64);
+
+/// The stalls of a session's children that no report names yet, as (agent, what, seq) (ADR
+/// 0041). `unacked`: the child is done, and the oldest message it read but did not ack was read
+/// before it got done. `silent`: no such message, and the child got done after the last ring that
+/// proved a turn, and sent nothing since that ring but its own reports. The chair is never the
+/// subject: a message about the chair would go to the chair.
+pub fn stalls(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Stall>, Box<dyn std::error::Error>> {
+    let children: Vec<(String, i64)> = connection
+        .prepare(
+            "SELECT id, state_at FROM agent
+             WHERE session_id = ?1 AND pane_id IS NOT NULL AND state = 'done'
+               AND state_at IS NOT NULL AND role != 'orchestrator' AND id != 'orchestrator'
+             ORDER BY id",
+        )?
+        .query_map([session_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut found = Vec::new();
+    for (agent, done_at) in children {
+        let unacked: Option<(i64, i64)> = connection
+            .query_row(
+                "SELECT seq, seen_at FROM message
+                 WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM read_mark
+                                   WHERE read_mark.session_id = message.session_id
+                                     AND message_seq = message.seq AND agent_id = ?2)
+                 ORDER BY seq LIMIT 1",
+                (session_id, &agent),
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let stall = match unacked {
+            Some((seq, seen_at)) if seen_at < done_at => Some((StallKind::Unacked, seq)),
+            _ => connection
+                .query_row(
+                    "SELECT seq FROM message AS inbound
+                     WHERE session_id = ?1 AND recipient_id = ?2
+                       AND delivery IN ('hook', 'screen', 'seen') AND rung_at < ?3
+                       AND NOT EXISTS (SELECT 1 FROM message
+                                       WHERE session_id = ?1 AND sender_id = ?2
+                                         AND created_at >= inbound.rung_at
+                                         AND kind NOT GLOB 'stall:*'
+                                         AND kind NOT GLOB 'unconfirmed:*')
+                       AND seq = (SELECT MAX(seq) FROM message
+                                  WHERE session_id = ?1 AND recipient_id = ?2
+                                    AND delivery IN ('hook', 'screen', 'seen'))",
+                    (session_id, &agent, done_at),
+                    |row| row.get(0),
+                )
+                .optional()?
+                .map(|seq| (StallKind::Silent, seq)),
+        };
+        let Some((what, seq)) = stall else {
+            continue;
+        };
+        let reported: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM message
+                            WHERE session_id = ?1 AND sender_id = ?2 AND kind = ?3)",
+            (session_id, &agent, format!("stall:{}:{seq}", what.as_str())),
+            |row| row.get(0),
+        )?;
+        if !reported {
+            found.push((agent, what, seq));
+        }
+    }
+    Ok(found)
+}
+
+/// A ring that no caller settled: (recipient, rung_at, the messages it rang, the lowest of them
+/// that is unseen after `MAX_RINGS` rings).
+pub type Ring = (String, i64, Vec<i64>, Option<i64>);
+
+/// The rings with no result yet (ADR 0041): the listing's, which it types and leaves, and one whose
+/// caller ended in its wait. One ring rings all its messages in the same second.
+pub fn unsettled_rings(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<Ring>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, rung_at, seq, rings >= ?2 AND seen_at IS NULL FROM message
+         WHERE session_id = ?1 AND rings > 0 AND rung_at IS NOT NULL AND delivery IS NULL
+         ORDER BY recipient_id, rung_at, seq",
+    )?;
+    let rows = statement.query_map((session_id, MAX_RINGS), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, bool>(3)?,
+        ))
+    })?;
+    let mut rings: Vec<Ring> = Vec::new();
+    for row in rows {
+        let (recipient, rung_at, seq, lost) = row?;
+        match rings.last_mut() {
+            Some(ring) if ring.0 == recipient && ring.1 == rung_at => {
+                ring.2.push(seq);
+                ring.3 = ring.3.or(lost.then_some(seq));
+            }
+            _ => rings.push((recipient, rung_at, vec![seq], lost.then_some(seq))),
+        }
+    }
+    Ok(rings)
+}
+
+/// Messages whose last ring, after `MAX_RINGS` rings, proved nothing and that no
+/// `unconfirmed:<seq>` report names yet, as (recipient, seq), the lowest seq of each ring. A
+/// report that failed to send is found again. The chair is never the subject: a report about it
+/// would go to it.
+pub fn unreported_lost(
+    connection: &Connection,
+    session_id: &str,
+    chair: &str,
+) -> Result<Vec<(String, i64)>, Box<dyn std::error::Error>> {
+    let mut statement = connection.prepare(
+        "SELECT recipient_id, seq FROM (
+             SELECT recipient_id, MIN(seq) AS seq FROM message
+             WHERE session_id = ?1 AND recipient_id != ?2 AND rings >= ?3
+               AND delivery = 'unconfirmed' AND seen_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = recipient_id)
+             GROUP BY recipient_id, rung_at
+         ) AS lost
+         WHERE NOT EXISTS (SELECT 1 FROM message
+                           WHERE session_id = ?1 AND sender_id = lost.recipient_id
+                             AND kind = 'unconfirmed:' || lost.seq)
+         ORDER BY recipient_id, seq",
+    )?;
+    let rows = statement.query_map((session_id, chair, MAX_RINGS), |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Whether a hook of `agent_id` reported a turn at or after `since` (unix seconds). `done` is no
+/// turn start, because Claude's idle notice writes it on an idle pane.
+pub fn turn_started(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let started: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM agent
+                        WHERE session_id = ?1 AND id = ?2 AND state_source = 'hook'
+                          AND state IN ('working', 'waiting') AND state_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(started)
+}
+
+/// Whether `agent_id` read its messages at or after `since` (unix seconds). `inbox` marks every
+/// unseen message of the agent at once, so a read after a ring also read the messages it rang.
+pub fn seen_since(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    since: i64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let seen: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM message
+                        WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at >= ?3)",
+        (session_id, agent_id, since),
+        |row| row.get(0),
+    )?;
+    Ok(seen)
+}
+
+/// Store what a ring proved on the messages it rang at `rung_at`. The column's CHECK refuses an
+/// unknown value. A message rung again since, or with a result already, keeps what it has, so a
+/// pass that read an older ring cannot settle a newer one. One statement writes all the messages,
+/// so of two passes that settle one ring, one stores the result on all of them and the other on
+/// none. Returns whether this call stored it, so the pass that lost the race reports nothing.
+pub fn set_delivery(
+    connection: &Connection,
+    session_id: &str,
+    seqs: &[i64],
+    rung_at: i64,
+    delivery: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let stored = connection.execute(
+        "UPDATE message SET delivery = ?3
+         WHERE session_id = ?1 AND seq IN (SELECT value FROM json_each(?2)) AND rung_at = ?4
+           AND delivery IS NULL",
+        (session_id, serde_json::to_string(seqs)?, delivery, rung_at),
+    )?;
+    Ok(stored > 0)
 }
 
 pub fn has_rung_unread(
@@ -699,6 +925,10 @@ pub fn has_unrung_unread(
     Ok(found)
 }
 
+/// How many rings a message gets in all. After the last one proves nothing, the chair is told
+/// (ADR 0041).
+pub const MAX_RINGS: i64 = 2;
+
 pub fn rering_due(
     connection: &Connection,
     session_id: &str,
@@ -709,7 +939,7 @@ pub fn rering_due(
         "SELECT COUNT(*) > 0
              AND MIN(created_at) <= unixepoch() - ?3
              AND (MAX(rung_at) IS NULL OR MAX(rung_at) <= unixepoch() - ?3)
-             AND MAX(rings) < 2
+             AND MAX(rings) < ?4
          FROM message
          WHERE session_id = ?1 AND recipient_id = ?2
            AND seen_at IS NULL
@@ -718,10 +948,39 @@ pub fn rering_due(
                WHERE read_mark.session_id = message.session_id
                  AND message_seq = message.seq AND agent_id = ?2
            )",
-        (session_id, agent_id, age_secs),
+        (session_id, agent_id, age_secs, MAX_RINGS),
         |row| row.get(0),
     )?;
     Ok(due)
+}
+
+/// Mark `agent_id`'s unseen messages as rung once more, and return each one's seq and ring
+/// count. The result goes back to NULL, because this ring has none yet. A message rung within
+/// `age_secs` of `rung_at`, or at its last ring, is left out, so a second pass that found the same
+/// re-ring due rings nothing.
+pub fn rering(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    age_secs: i64,
+    rung_at: i64,
+) -> Result<Vec<(i64, i64)>, Box<dyn std::error::Error>> {
+    let rung = connection
+        .prepare(
+            "UPDATE message SET rung_at = ?5, rings = rings + 1, delivery = NULL
+             WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+               AND (rung_at IS NULL OR rung_at <= ?5 - ?3) AND rings < ?4
+               AND NOT EXISTS (SELECT 1 FROM read_mark
+                               WHERE read_mark.session_id = message.session_id
+                                 AND message_seq = message.seq AND agent_id = ?2)
+             RETURNING seq, rings",
+        )?
+        .query_map(
+            (session_id, agent_id, age_secs, MAX_RINGS, rung_at),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+        .collect::<Result<_, _>>()?;
+    Ok(rung)
 }
 
 pub fn clear_pane(
@@ -858,6 +1117,13 @@ mod tests {
             ))
             .unwrap();
         connection
+    }
+
+    fn unix_now() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
     }
 
     fn temp_root(name: &str) -> std::path::PathBuf {
@@ -1393,6 +1659,251 @@ mod tests {
         assert!(!rering_due(&connection, SESSION, CODER, 60).unwrap());
     }
 
+    /// A sweep and a listing can both find a re-ring due before either one rings. The second
+    /// update finds the messages rung a moment ago, so it rings nothing and the cap holds.
+    #[test]
+    fn two_passes_that_find_a_rering_due_ring_it_once() {
+        let mut connection = seed(0);
+        let root = temp_root("rering-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        connection
+            .execute(
+                "UPDATE message SET created_at = unixepoch() - 61, rung_at = unixepoch() - 61,
+                                    rings = 1, delivery = 'unconfirmed'",
+                [],
+            )
+            .unwrap();
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
+
+        let now = unix_now();
+        assert_eq!(
+            rering(&connection, SESSION, CODER, 60, now).unwrap(),
+            [(ask, 2)]
+        );
+        assert_eq!(rering(&connection, SESSION, CODER, 60, now).unwrap(), []);
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
+    }
+
+    /// A pass that settles a ring stores its result only on that ring, once. A ring that another
+    /// pass rang again since, or that has a result already, keeps what it has.
+    #[test]
+    fn a_ring_result_is_stored_only_on_the_ring_it_settles() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery-race");
+        let ask = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            ORCHESTRATOR,
+            CODER,
+            "ask",
+            "task",
+        )
+        .unwrap();
+        let first_ring = unix_now() - 61;
+        connection
+            .execute(
+                "UPDATE message SET created_at = ?1, rung_at = ?1, rings = 1",
+                [first_ring],
+            )
+            .unwrap();
+        let delivery = |connection: &Connection| {
+            messages(connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .clone()
+        };
+
+        let second_ring = unix_now();
+        rering(&connection, SESSION, CODER, 60, second_ring).unwrap();
+        assert!(!set_delivery(&connection, SESSION, &[ask], first_ring, "unconfirmed").unwrap());
+        assert_eq!(delivery(&connection), None);
+        assert!(set_delivery(&connection, SESSION, &[ask], second_ring, "screen").unwrap());
+        assert!(!set_delivery(&connection, SESSION, &[ask], second_ring, "unconfirmed").unwrap());
+        assert_eq!(delivery(&connection).as_deref(), Some("screen"));
+    }
+
+    /// One ring's result is one write over every message it rang. Of two passes that settle a
+    /// ring at the same time, exactly one stores the result and reports it, and the ring keeps
+    /// one result.
+    #[test]
+    fn two_passes_settle_a_ring_of_many_messages_once() {
+        let db = temp_root("settle-ring").join("swarm.db");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let connection = open(&db).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 WITH RECURSIVE ring(seq) AS (SELECT 0 UNION ALL SELECT seq + 1 FROM ring
+                                              WHERE seq < 499)
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     SELECT '{SESSION}', seq, '{ORCHESTRATOR}', '{CODER}', 'ask',
+                            'runs/' || seq || '.txt', 1700, 1
+                     FROM ring;"
+            ))
+            .unwrap();
+        // The race is timing, so it runs several times.
+        for _ in 0..10 {
+            connection
+                .execute("UPDATE message SET delivery = NULL", [])
+                .unwrap();
+            let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let passes = ["hook", "unconfirmed"].map(|delivery| {
+                let (db, start) = (db.clone(), start.clone());
+                std::thread::spawn(move || {
+                    let connection = open(&db).unwrap();
+                    let seqs: Vec<i64> = (0..500).collect();
+                    start.wait();
+                    set_delivery(&connection, SESSION, &seqs, 1700, delivery).unwrap()
+                })
+            });
+            let stored = passes.map(|pass| pass.join().unwrap());
+            assert_eq!(stored.iter().filter(|stored| **stored).count(), 1);
+            let results: Vec<Option<String>> = connection
+                .prepare("SELECT DISTINCT delivery FROM message")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(results.len(), 1, "{results:?}");
+            assert!(results[0].is_some());
+        }
+    }
+
+    /// A ring's result is stored on the messages it rang, and a stall or lost-ring report is
+    /// stored once per sender and kind (ADR 0041).
+    #[test]
+    fn stores_a_ring_result_and_each_report_once() {
+        let mut connection = seed(0);
+        let root = temp_root("delivery");
+        let send = |connection: &mut Connection, kind: &str| {
+            send_message(
+                connection,
+                &root,
+                SESSION,
+                CODER,
+                ORCHESTRATOR,
+                kind,
+                "body",
+            )
+        };
+        let ask = send(&mut connection, "ask").unwrap();
+        let rung_at = unix_now();
+        connection
+            .execute("UPDATE message SET rung_at = ?1, rings = 1", [rung_at])
+            .unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0].delivery,
+            None
+        );
+        assert!(set_delivery(&connection, SESSION, &[ask], rung_at, "maybe").is_err());
+        set_delivery(&connection, SESSION, &[ask], rung_at, "hook").unwrap();
+        assert_eq!(
+            messages(&connection, SESSION, -1).unwrap()[0]
+                .delivery
+                .as_deref(),
+            Some("hook")
+        );
+        send(&mut connection, "stall:unacked:0").unwrap();
+        assert!(send(&mut connection, "stall:unacked:0").is_err());
+        send(&mut connection, "unconfirmed:0").unwrap();
+        assert!(send(&mut connection, "unconfirmed:0").is_err());
+        send(&mut connection, "note").unwrap();
+        send(&mut connection, "note").unwrap();
+    }
+
+    /// A child at done with a message it read and did not ack is stalled; so is a child at done
+    /// that sent nothing after a ring that started its turn. A reported stall is not found again,
+    /// and the chair is never the subject (ADR 0041).
+    #[test]
+    fn finds_each_stall_once() {
+        let mut connection = seed(0);
+        let root = temp_root("stalls");
+        let run = |connection: &Connection, sql: &str| connection.execute_batch(sql).unwrap();
+        let send = |connection: &mut Connection, from: &str, to: &str, kind: &str| {
+            send_message(connection, &root, SESSION, from, to, kind, "body").unwrap()
+        };
+        set_pane(&connection, SESSION, CODER, "%2").unwrap();
+        set_pane(&connection, SESSION, ORCHESTRATOR, "%1").unwrap();
+        let ask = send(&mut connection, ORCHESTRATOR, CODER, "ask");
+        run(
+            &connection,
+            "UPDATE message SET rung_at = unixepoch() - 30, rings = 1, delivery = 'hook'",
+        );
+        // Working, or done with no read message and a reply sent: no stall.
+        set_state(&connection, SESSION, CODER, "working", "hook", None, 0).unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Read, then done without an ack.
+        run(&connection, "UPDATE message SET seen_at = unixepoch() - 20");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        set_state(&connection, SESSION, CODER, "done", "hook", None, now).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), StallKind::Unacked, ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:unacked:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // Acked, and its own report is no reply: it finished silent.
+        ack(&connection, SESSION, ask, CODER).unwrap();
+        assert_eq!(
+            stalls(&connection, SESSION).unwrap(),
+            [(CODER.to_string(), StallKind::Silent, ask)]
+        );
+        send(
+            &mut connection,
+            CODER,
+            ORCHESTRATOR,
+            &format!("stall:silent:{ask}"),
+        );
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+
+        // A reply after the ring is no stall; nor is the chair at done with unacked work.
+        run(&connection, "DELETE FROM message WHERE kind GLOB 'stall:*'");
+        send(&mut connection, CODER, ORCHESTRATOR, "summary");
+        run(
+            &connection,
+            "UPDATE message SET seen_at = unixepoch() - 20 WHERE sender_id = 'coder'",
+        );
+        set_state(
+            &connection,
+            SESSION,
+            ORCHESTRATOR,
+            "done",
+            "hook",
+            None,
+            now,
+        )
+        .unwrap();
+        assert!(stalls(&connection, SESSION).unwrap().is_empty());
+    }
+
     #[test]
     fn finds_the_session_orchestrator() {
         let connection = seed(0);
@@ -1497,7 +2008,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -1524,7 +2035,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -1639,6 +2150,94 @@ mod tests {
         );
     }
 
+    /// A ring from an older build was never checked, and its pane has moved on since, so the
+    /// migration stores it as unchecked. A later pass neither settles it nor reports it lost to
+    /// the chair (ADR 0041).
+    #[test]
+    fn a_version_four_ring_is_unchecked_and_never_reported_lost() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path,
+                                      rung_at, rings)
+                     VALUES ('{SESSION}', 0, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/0.txt',
+                             1700, 2),
+                            ('{SESSION}', 1, '{ORCHESTRATOR}', '{CODER}', 'ask', 'runs/1.txt',
+                             NULL, 0);"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        assert!(unsettled_rings(&connection, SESSION).unwrap().is_empty());
+        assert!(
+            unreported_lost(&connection, SESSION, ORCHESTRATOR)
+                .unwrap()
+                .is_empty()
+        );
+        let delivery: Vec<Option<String>> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| message.delivery)
+            .collect();
+        assert_eq!(delivery, [Some("unchecked".to_string()), None]);
+    }
+
+    /// `swarm send` takes any kind, so an older database can hold two hand-sent messages of one
+    /// report kind. The migration keeps both, and only a new report of that kind is refused.
+    #[test]
+    fn a_version_four_database_with_two_hand_sent_report_kinds_migrates_and_keeps_both() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..4] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 4).unwrap();
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES ('{SESSION}', 'lane', '/test');
+                 INSERT INTO agent (id, session_id, role)
+                     VALUES ('{ORCHESTRATOR}', '{SESSION}', 'orchestrator'),
+                            ('{CODER}', '{SESSION}', 'coder');
+                 INSERT INTO message (session_id, seq, sender_id, recipient_id, kind, body_path)
+                     VALUES ('{SESSION}', 0, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/0.txt'),
+                            ('{SESSION}', 1, '{CODER}', '{ORCHESTRATOR}', 'stall:x', 'runs/1.txt');"
+            ))
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let kept: Vec<(i64, String)> = messages(&connection, SESSION, -1)
+            .unwrap()
+            .into_iter()
+            .map(|message| (message.seq, message.kind))
+            .collect();
+        assert_eq!(
+            kept,
+            [(0, "stall:x".to_string()), (1, "stall:x".to_string())]
+        );
+        let root = std::env::temp_dir().join(format!("swarm-store-{}", uuid::Uuid::now_v7()));
+        let resend = send_message(
+            &mut connection,
+            &root,
+            SESSION,
+            CODER,
+            ORCHESTRATOR,
+            "stall:x",
+            "again",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        // `report` in main.rs reads this code as a report already sent.
+        assert!(matches!(
+            resend.unwrap_err().downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
+        ));
+    }
+
     #[test]
     fn a_version_three_database_gains_a_chat_log_that_outlives_the_pane() {
         let mut connection = Connection::open_in_memory().unwrap();
@@ -1680,7 +2279,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 5")
+            .execute_batch("PRAGMA user_version = 6")
             .unwrap();
         assert!(open(&db).is_err());
     }

@@ -519,13 +519,42 @@ pub fn claude_composer(rows: &str) -> Option<String> {
     Some(text.join(" ").trim_start_matches('❯').trim().to_string())
 }
 
-/// True when Claude's input box still holds `text` unsent. The box wraps a long line, so the
-/// check ignores whitespace. A question on screen is never a held ring, so an Enter sent for it
-/// would answer the question.
-pub fn claude_holds(rows: &str, text: &str) -> bool {
+/// The text in Codex's composer: the last `›` row and the rows under it, joined. Codex draws the
+/// composer under every turn, so the last `›` row is the composer, not a sent message. None until
+/// it is drawn. The pattern comes from Codex's source, not a real capture (todo.md).
+pub fn codex_composer(rows: &str) -> Option<String> {
+    let lines: Vec<&str> = rows.trim_end().lines().collect();
+    let top = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('›'))?;
+    let text: Vec<&str> = lines[top..].iter().map(|line| line.trim()).collect();
+    Some(text.join(" ").trim_start_matches('›').trim().to_string())
+}
+
+/// Whether swarm can read the input box of `provider`'s CLI. AGY's idle prompt was never
+/// captured, so its box is never read.
+pub fn reads_composer(provider: &str) -> bool {
+    matches!(provider, "claude" | "codex")
+}
+
+/// The text in the input box of `provider`'s CLI, or None while it is not drawn or swarm cannot
+/// read that CLI's box.
+pub fn composer(provider: &str, rows: &str) -> Option<String> {
+    match provider {
+        "claude" => claude_composer(rows),
+        "codex" => codex_composer(rows),
+        _ => None,
+    }
+}
+
+/// True when the input box of `provider`'s CLI still holds `text` unsent. The box wraps a long
+/// line, so the check ignores whitespace. A question on screen is never a held ring, so an Enter
+/// sent for it would answer the question.
+pub fn holds(provider: &str, rows: &str, text: &str) -> bool {
     let squash = |text: &str| text.split_whitespace().collect::<String>();
     prompt(rows).is_none()
-        && claude_composer(rows).is_some_and(|composer| squash(&composer).contains(&squash(text)))
+        && composer(provider, rows)
+            .is_some_and(|composer| squash(&composer).contains(&squash(text)))
 }
 
 #[cfg(test)]
@@ -543,22 +572,23 @@ mod tests {
         let ring = "swarm: new message. Run swarm inbox and read each body at \
                     /Users/x/.swarm/<body_path>. Run swarm ack <seq> only after you finish that message.";
         let unsent = fixture!("claude-ring-unsent");
-        assert!(claude_holds(unsent, ring));
+        assert!(holds("claude", unsent, ring));
         // The box wraps a long ring onto a second row.
         let wrapped = unsent.replace(" Run swarm ack <seq>", " Run swarm ack\n  <seq>");
-        assert!(claude_holds(&wrapped, ring));
+        assert!(holds("claude", &wrapped, ring));
         // A sent ring stays in the history above an empty box, which shows only its hint.
         assert_eq!(
             claude_composer(fixture!("claude-idle")).as_deref(),
             Some("Try \"fix typecheck errors\"")
         );
-        assert!(!claude_holds(
+        assert!(!holds(
+            "claude",
             &format!("❯ {ring}\n{}", fixture!("claude-idle")),
             ring
         ));
         // A starting CLI has no box yet, and a question is never a held ring.
         assert_eq!(claude_composer("$ claude --model haiku\n"), None);
-        assert!(!claude_holds(fixture!("claude-waiting"), ring));
+        assert!(!holds("claude", fixture!("claude-waiting"), ring));
     }
 
     #[test]

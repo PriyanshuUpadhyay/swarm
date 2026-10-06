@@ -618,15 +618,17 @@ fn a_child_agent_can_neither_launch_nor_spawn() {
     assert!(!home.join("spawned").exists());
 }
 
-/// A chair and an AGY seat whose screen is `$HOME/screen`, with one unseen message to the seat
-/// whose first ring, appended to `$HOME/rings`, went out two minutes ago.
-fn lost_ring_session(home: &Path) -> (String, rusqlite::Connection) {
+/// A chair and a seat that runs `provider`, whose screen is `$HOME/screen`, with `ring` as the
+/// fake adapter's ring verb.
+fn seat_session(home: &Path, provider: &str, ring: &str) -> (String, rusqlite::Connection) {
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
-        "self = printf chair\nspawn = printf pane\nring = printf 'ring\\n' >> \"$HOME/rings\"\n\
-         list = printf 'pane chair\\n'\nclose = true\ncapture = cat \"$HOME/screen\"\n\
-         screen = cat \"$HOME/screen\"\n",
+        format!(
+            "self = printf chair\nspawn = printf pane\nring = {ring}\n\
+             list = printf 'pane chair\\n'\nclose = true\ncapture = cat \"$HOME/screen\"\n\
+             screen = cat \"$HOME/screen\"\n"
+        ),
     )
     .unwrap();
     let session = swarm(
@@ -639,26 +641,86 @@ fn lost_ring_session(home: &Path) -> (String, rusqlite::Connection) {
         .unwrap()
         .trim()
         .to_string();
-    let chair = [
-        ("SWARM_ADAPTER", "fake"),
-        ("SWARM_SESSION_ID", session.as_str()),
-        ("SWARM_AGENT_ID", "orchestrator"),
-    ];
     for args in [
         &["agent", "add", "orchestrator", "orchestrator"][..],
         &["spawn", "seat", "coder"],
     ] {
-        let output = swarm(home, &chair, args);
+        let output = swarm(home, &chair(&session), args);
         assert!(output.status.success(), "{args:?}: {}", stderr(&output));
     }
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
-    swarm::store::set_provider(&connection, &session, "seat", "agy").unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", provider).unwrap();
+    (session, connection)
+}
+
+fn chair(session: &str) -> [(&'static str, &str); 3] {
+    [
+        ("SWARM_ADAPTER", "fake"),
+        ("SWARM_SESSION_ID", session),
+        ("SWARM_AGENT_ID", "orchestrator"),
+    ]
+}
+
+/// `swarm send` waits for the seat's turn-start hook and stores it as the ring's proof, for each
+/// provider (ADR 0041). The screen stays idle, so only the hook can prove the ring.
+#[test]
+fn a_send_stores_the_turn_start_hook_as_the_ring_proof() {
+    for (provider, event, screen) in [
+        (
+            "claude",
+            "UserPromptSubmit",
+            include_str!("fixtures/screens/claude-idle.txt"),
+        ),
+        (
+            "codex",
+            "UserPromptSubmit",
+            include_str!("fixtures/screens/codex-idle.txt"),
+        ),
+        (
+            "agy",
+            "PreInvocation",
+            include_str!("fixtures/screens/agy-idle.txt"),
+        ),
+    ] {
+        let home = scratch(&format!("hook-proof-{provider}"));
+        std::fs::write(home.join("screen"), screen).unwrap();
+        // The seat's own hook, as its CLI runs it when the ring starts a turn.
+        let ring =
+            format!("SWARM_AGENT_ID=seat \"$SWARM_EXE\" hook {provider} {event} < /dev/null");
+        let (session, _connection) = seat_session(&home, provider, &ring);
+        let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+        assert!(sent.status.success(), "{provider}: {}", stderr(&sent));
+        let listed = swarm(&home, &chair(&session), &["messages", "--json"]);
+        let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+        assert_eq!(
+            listed["messages"][0]["delivery"],
+            "hook",
+            "{provider}: {}",
+            stderr(&sent)
+        );
+    }
+}
+
+/// A chair and an AGY seat whose screen is `$HOME/screen`, with one unseen message to the seat
+/// whose first ring, appended to `$HOME/rings`, went out two minutes ago. Each ring starts a turn,
+/// so the seat's screen shows it working and proves the ring.
+fn lost_ring_session(home: &Path) -> (String, rusqlite::Connection) {
+    std::fs::write(
+        home.join("working"),
+        include_str!("fixtures/screens/agy-working.txt"),
+    )
+    .unwrap();
+    let (session, connection) = seat_session(
+        home,
+        "agy",
+        "printf 'ring\\n' >> \"$HOME/rings\"; cp \"$HOME/working\" \"$HOME/screen\"",
+    );
     let mut send = Command::new(env!("CARGO_BIN_EXE_swarm"));
     send.env_clear()
         .env("HOME", home)
         .env("SWARM_HOME", home)
         .env("PATH", "/usr/bin:/bin")
-        .envs(chair)
+        .envs(chair(&session))
         .args(["send", "seat", "task"])
         .stdin(std::process::Stdio::piped());
     let mut child = send.spawn().unwrap();
@@ -1087,4 +1149,45 @@ fn all_agent_listings_match_each_sessions_adapter_and_fields() {
     assert!(output.status.success(), "{}", stderr(&output));
     let actual: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(actual, serde_json::Value::Object(expected));
+}
+
+/// A sweep pass that fails after it reported a dead child still prints `dead <id>`. The report
+/// forgot the child's pane, so no later pass finds it dead again.
+#[test]
+fn a_failed_sweep_pass_still_prints_the_dead_child_it_reported() {
+    let home = scratch("sweep-dead-line");
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    // The first listing shows only the chair and `second`; the next one fails.
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\n\
+         list = [ -e \"$HOME/listed\" ] && exit 1; touch \"$HOME/listed\"; printf 'chair p2\\n'\n\
+         close = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    for args in [
+        &["agent", "add", "orchestrator", "orchestrator"][..],
+        &["agent", "add", "first", "coder"],
+        &["agent", "add", "second", "coder"],
+    ] {
+        let output = swarm(&home, &chair(&session), args);
+        assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+    }
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_pane(&connection, &session, "first", "p1").unwrap();
+    swarm::store::set_pane(&connection, &session, "second", "p2").unwrap();
+
+    let sweep = swarm(&home, &chair(&session), &["sweep"]);
+    assert!(!sweep.status.success());
+    assert_eq!(String::from_utf8_lossy(&sweep.stdout), "dead first\n");
 }
