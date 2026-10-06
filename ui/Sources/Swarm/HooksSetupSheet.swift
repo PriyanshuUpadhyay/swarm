@@ -10,12 +10,50 @@ extension Notification.Name {
 /// shows the plan first: each file's diff and each entry of the owner's that is in swarm's way.
 /// "Set up" is open only while no conflict stands, and it sends the plan's digest, so a file that
 /// changed after the owner looked is refused (ADR 0036). "Not now" writes nothing; the app menu
-/// offers the same sheet later.
+/// offers the same sheet later. The Managed Changes page asks its undo through the same steps with
+/// the `undo` copy (ADR 0042).
 struct HooksSetupSheet: View {
     let loadPlan: () async throws -> SwarmHooksPlan
     let setUp: (_ digest: String) async throws -> Void
     let notNow: () -> Void
     let done: () -> Void
+    var copy = Copy.hooks
+
+    /// The sheet's words, so one plan and consent flow serves hooks setup and an undo.
+    struct Copy {
+        var question: String
+        var body: String
+        var loading: String
+        /// What the sheet says, and VoiceOver hears, for a plan with nothing to change.
+        var unchanged: String
+        var blocked: String
+        /// The label of a conflict's value from swarm.
+        var wanted: String
+        var apply: String
+        var cancel: String
+
+        static let hooks = Copy(
+            question: "Let swarm set up its own hooks for Codex and AGY?",
+            body: "Agents then report their chat and state to the app, so their columns show a chat and their questions. Swarm trusts only its own Codex hooks and adds its own AGY hooks; your other hooks stay as they are. Claude needs no step.",
+            loading: "Reading your Codex and AGY config…",
+            unchanged: "Swarm's hooks are already set up.",
+            blocked: "Swarm cannot set up its hooks. Your config has entries where swarm needs its own.",
+            wanted: "Swarm needs",
+            apply: "Set up",
+            cancel: "Not now"
+        )
+
+        static let undo = Copy(
+            question: "Remove swarm's entries from these files?",
+            body: "Swarm removes only what it wrote. Your other entries stay.",
+            loading: "Reading the files…",
+            unchanged: "Swarm has nothing to remove.",
+            blocked: "Swarm cannot remove these. They changed after swarm wrote them.",
+            wanted: "Swarm wrote",
+            apply: "Remove",
+            cancel: "Cancel"
+        )
+    }
 
     private enum Phase {
         case loading
@@ -36,7 +74,7 @@ struct HooksSetupSheet: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
             switch phase {
             case .ready(let plan) where plan.isSetUp:
-                Text("Swarm's hooks are already set up. No file changes.")
+                Text("\(copy.unchanged) No file changes.")
                 HStack {
                     Spacer()
                     Button("Done", action: done).keyboardShortcut(.defaultAction)
@@ -51,14 +89,14 @@ struct HooksSetupSheet: View {
                     Spacer()
                     // A plan that keeps failing, such as on a broken config.toml, must not
                     // reopen the sheet at each launch.
-                    Button("Not now", action: notNow).keyboardShortcut(.cancelAction)
+                    Button(copy.cancel, action: notNow).keyboardShortcut(.cancelAction)
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
                 }
             case .loading:
                 question
                 HStack(spacing: DesignTokens.Spacing.s) {
                     ProgressView().controlSize(.small)
-                    Text("Reading your Codex and AGY config…").foregroundStyle(.secondary)
+                    Text(copy.loading).foregroundStyle(.secondary)
                 }
                 buttons(nil)
             case .ready(let plan):
@@ -85,7 +123,8 @@ struct HooksSetupSheet: View {
                 diffFailed = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
-                Self.announce([failure, plan.summary].compactMap { $0 }.joined(separator: " "))
+                let summary = plan.isSetUp ? copy.unchanged : plan.summary
+                Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
             } catch {
@@ -97,10 +136,10 @@ struct HooksSetupSheet: View {
 
     private var question: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-            Text("Let swarm set up its own hooks for Codex and AGY?")
+            Text(copy.question)
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text("Agents then report their chat and state to the app, so their columns show a chat and their questions. Swarm trusts only its own Codex hooks and adds its own AGY hooks; your other hooks stay as they are. Claude needs no step.")
+            Text(copy.body)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -108,7 +147,7 @@ struct HooksSetupSheet: View {
     private func conflictList(_ conflicts: [SwarmHooksPlan.Conflict]) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             HStack(alignment: .firstTextBaseline) {
-                Label("Swarm cannot set up its hooks. Your config has entries where swarm needs its own.", systemImage: "exclamationmark.triangle.fill")
+                Label(copy.blocked, systemImage: "exclamationmark.triangle.fill")
                     .symbolRenderingMode(.multicolor)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
@@ -130,7 +169,7 @@ struct HooksSetupSheet: View {
                         .font(.callout.weight(.medium))
                     Group {
                         Text(verbatim: "Found: \(conflict.found)")
-                        Text(verbatim: "Swarm needs: \(conflict.wanted)")
+                        Text(verbatim: "\(copy.wanted): \(conflict.wanted)")
                     }
                     .lineLimit(3)
                     .truncationMode(.middle)
@@ -202,18 +241,18 @@ struct HooksSetupSheet: View {
         HStack {
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
-            Button("Not now", action: notNow)
+            Button(copy.cancel, action: notNow)
                 .keyboardShortcut(.cancelAction)
                 .disabled(working)
             Button {
                 if let plan { apply(plan) }
             } label: {
                 // The label keeps its size and its name while the spinner shows.
-                Text("Set up")
+                Text(copy.apply)
                     .opacity(working ? 0 : 1)
                     .overlay { if working { ProgressView().controlSize(.small) } }
             }
-            .accessibilityLabel("Set up")
+            .accessibilityLabel(copy.apply)
             .keyboardShortcut(plan?.canApply == true ? .defaultAction : nil)
             .disabled(working || plan?.canApply != true)
         }

@@ -1334,14 +1334,25 @@ struct SwarmApp: App {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .commands {
-                CommandGroup(after: .appSettings) {
-                    Button("Set Up Agent Hooks…") {
-                        NotificationCenter.default.post(name: .showHooksSetup, object: nil)
-                    }
-                }
+                SetupCommands()
                 DebugCommands()
                 AppKeyCommands()
             }
+        // One window, not a sheet, because the list grows with each trusted folder.
+        Window("Managed Changes", id: "managed") { ManagedChangesPage() }
+    }
+}
+
+private struct SetupCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            Button("Set Up Agent Hooks…") {
+                NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+            }
+            Button("Managed Changes…") { openWindow(id: "managed") }
+        }
     }
 }
 
