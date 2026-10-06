@@ -39,8 +39,8 @@ alone cannot find trust entries, because the CLIs write the same values themselv
 - Swarm never writes what it cannot record. When the store does not open, `hooks setup`, `managed`,
   and later the launch-trust writes fail before any write.
 - Revert removes an item only while it equals the value swarm wrote, and restores the value before
-  when there was one. Any other value is a conflict with file, entry, found, wanted, and fix, and
-  no file is written.
+  when there was one. Any other value is a conflict with kind (taken, changed, order, or
+  unreadable), file, entry, found, wanted, and fix, and no file is written.
 - An item with no record counts as swarm's only when it equals swarm's current build-neutral hook
   text (ADR 0034); `list` shows it as found, not recorded, and revert may remove it. Trust entries
   are never claimed without a record.
