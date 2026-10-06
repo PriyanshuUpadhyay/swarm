@@ -986,9 +986,9 @@ fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// The launch consent is a managed edit: Managed Changes lists it, and its undo puts consent back
-/// to no answer, which is `ask`. `--consent ask` records the owner's ask answer, which also
-/// counts as set up, so the app does not ask again (owner answer 2026-10-06).
+/// The launch consent is a managed edit: Managed Changes lists it, and its undo of a first answer
+/// records `ask`, which counts as set up, so the app does not ask again (ADR 0043, "asks once").
+/// `--consent ask` records the owner's ask answer (owner answer 2026-10-06).
 #[test]
 fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
     let home = scratch("setup-consent");
@@ -1049,9 +1049,11 @@ fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
     assert!(reverted.status.success(), "{reverted:?}");
     let value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&consent).unwrap()).unwrap();
-    assert_eq!(value.get("trust"), None, "{value}");
-    assert_eq!(status()["trust"], false);
+    assert_eq!(value["trust"], "ask", "{value}");
+    assert_eq!(status()["trust"], true);
+    assert_eq!(consent_entries()[0]["state"], "off");
 
+    std::fs::remove_file(&consent).unwrap();
     let plan = apply(&["--consent", "ask"]);
     assert!(
         plan["files"][0]["diff"]

@@ -1251,8 +1251,10 @@ fn read_consent(path: &std::path::Path) -> Result<(String, serde_json::Value), S
 }
 
 /// The plan that sets the launch consent in `~/.swarm/consent.json` to `answer`, as a managed
-/// edit, so Managed Changes lists it and its undo puts back the answer before, or none, which is
-/// `ask` (owner answer 2026-10-06). A file swarm cannot read is a conflict.
+/// edit, so Managed Changes lists it and its undo puts back the answer before. With none before,
+/// the undo records `ask`, so the owner stays answered and the app asks once (ADR 0043); a first
+/// `ask` itself undoes to none, because an edit that wrote its own before value never reads as
+/// set back. A file swarm cannot read is a conflict.
 fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::error::Error>> {
     use swarm::managed::{Edit, FilePlan, Kind, Writer};
     let path = swarm::paths::consent_file()?;
@@ -1272,7 +1274,9 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
         value[TRUST_KEY] = answer.into();
         plan.after = serde_json::to_string_pretty(&value)? + "\n";
         plan.edits.push(Edit {
-            before: found,
+            before: found
+                .or_else(|| Some(ASK.into()))
+                .filter(|before| *before != answer),
             ..Edit::new(
                 Writer::LaunchTrust,
                 &plan.path,
