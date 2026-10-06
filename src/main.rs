@@ -1474,8 +1474,9 @@ fn standing_consent() -> bool {
 struct LaunchTrust<'a> {
     store: &'a rusqlite::Connection,
     consent: TrustConsent,
-    /// The owner picked the account, so its file must take the entry (see `trust_each`).
-    picked: bool,
+    /// Each file must take the entry, as a picked account's or AGY's only one does (see
+    /// `trust_each`).
+    required: bool,
     /// The launch's folder, for the command that approves a pending entry.
     cwd: &'a std::path::Path,
 }
@@ -1515,7 +1516,7 @@ impl LaunchTrust<'_> {
         }
         let mut written = Vec::new();
         swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
-            trust_each(files, self.picked, |file| {
+            trust_each(files, self.required, |file| {
                 written.extend(swarm::bus::write_trust(self.store, || plan(file, dir))?);
                 Ok(())
             })
@@ -3221,7 +3222,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let launch_trust = LaunchTrust {
             store: &connection,
             consent,
-            picked: picked.is_some(),
+            required: picked.is_some(),
             cwd: &cwd,
         };
         match kind {
@@ -3237,8 +3238,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     launch_trust.run("codex", &target, &homes, swarm::bus::codex_trust_plan)?;
                 }
                 Ok(target) => {
+                    // AGY has no accounts, and its one settings file must take the entry.
+                    let agy = LaunchTrust {
+                        required: true,
+                        ..launch_trust
+                    };
                     let settings = vec![agy_settings(&user_home)];
-                    launch_trust.run("agy", &target, &settings, swarm::bus::agy_trust_plan)?;
+                    agy.run("agy", &target, &settings, swarm::bus::agy_trust_plan)?;
                 }
                 Err(reason) => eprintln!(
                     "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",

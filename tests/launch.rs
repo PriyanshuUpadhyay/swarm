@@ -1372,3 +1372,41 @@ fn a_chair_launch_trusts_its_picked_folder_and_shows_the_write() {
         .collect();
     assert_eq!(before, [serde_json::json!(false)]);
 }
+
+/// AGY has one settings file, and no account to fall back on, so a standing-consent launch that
+/// cannot write its trust entry stops, as before consent (03-contracts section 7).
+#[test]
+fn an_agy_trust_write_that_fails_stops_the_launch() {
+    let home = scratch("agy-fail");
+    let env = trust_session(&home);
+    tool(&home, "agy", "true");
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"agy.seat": ["agy-flash"]},
+            "runners": {"agy-flash": {"provider": "agy", "model": "flash"}}}"#,
+    )
+    .unwrap();
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
+    let settings = home.join(".gemini/antigravity-cli/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    std::fs::write(&settings, "[]\n").unwrap();
+    let repo = git_repo(&home, "app");
+    let env: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+
+    let cwd = repo.to_string_lossy().into_owned();
+    let output = swarm(
+        &home,
+        &env,
+        &["launch", "agy-seat", "agy.seat", "--cwd", &cwd],
+    );
+    assert!(!output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("not a JSON object"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(std::fs::read_to_string(&settings).unwrap(), "[]\n");
+}
