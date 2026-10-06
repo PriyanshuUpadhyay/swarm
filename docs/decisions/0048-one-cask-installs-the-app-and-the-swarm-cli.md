@@ -7,6 +7,7 @@ informed-by:
   - "Owner answers Q1-Q4 on 2026-10-06, flow tmp/flow/2026-10-06-unify-swarm (03-contracts.md): Q1 cask binary stanza; Q2 pointer formula now, removed next release; Q3 one alert per path-and-version pair; Q4 make install puts no cargo build on PATH, the check runs only in release builds"
   - "Incident: the 0.8.0 app ran /opt/homebrew/bin/swarm 0.7.3, which has no managed verb, and Managed Changes broke (tmp/flow/2026-10-06-unify-swarm/01-frame.md)"
   - "Homebrew source: cask/artifact/symlinked.rb (a formula that owns the path makes the cask skip its link), cmd/upgrade.rb (formulae upgrade before casks), cask/dsl/conflicts_with.rb (only :cask)"
+  - "Owner answer on 2026-10-06, review tmp/review-check/range-7122605-3bf9ba4-01 u22 L-12: branch home on main too"
 ---
 
 # 0048. One cask installs the app and the swarm CLI
@@ -48,3 +49,23 @@ upgrade one at a time.
   route and uses `cargo install --path .`.
 - Bad: a cask cannot refuse the old formula (`conflicts_with formula:` does not exist), so a
   machine that upgrades the cask alone keeps the old link until the launch alert names it.
+
+## Amendment 2026-10-06: only the release build uses ~/.swarm
+
+Deciders: [user]. Informed by the owner answer "Branch home on main too".
+
+`make install` on `main` or on a detached HEAD ran `swarm init` with ADR 0027's home rule, which
+gave those builds `~/.swarm`. A HEAD with a migration that the latest release lacks migrated the
+real database, and the cask's `swarm` on PATH then refused it ("database made by another swarm
+build"). So this amends ADR 0027's rule for `main` and for no branch. Only the build that
+release.yml ships uses `~/.swarm`: it sets `SWARM_RELEASE_BUILD=1`, and `build.rs` then stamps the
+branch `""`. Every other build is a dev build. A dev build from `main` uses `~/.swarm-main`, and one
+from a detached HEAD, or from a folder that git cannot read, stamps `HEAD` and uses
+`~/.swarm-head+4b9253d8ff1ee183`. `HEAD` is not a valid branch name, so that folder meets no
+branch. An explicit `SWARM_HOME` still wins. `Tools/build.sh` writes the helper's stamped branch
+into Info.plist, so the app and its helper agree. The app's PATH check still runs only when that
+branch is `""`.
+
+- Bad: `cargo install --path .` without `SWARM_RELEASE_BUILD=1` is a dev build, so a CLI-only
+  user who wants `~/.swarm` sets that variable or `SWARM_HOME=$HOME`.
+- Bad: a `main` build starts with an empty `~/.swarm-main`.

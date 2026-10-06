@@ -117,6 +117,6 @@ build. It puts no `swarm` on PATH, because the cask's link is the PATH `swarm` (
 Run `make run` to build and launch the app.
 Run `make dmg` to package the app as `.build/release/Swarm-<version>.dmg`. The app carries its own
 `swarm` CLI in `Contents/Helpers` and uses it before the login PATH's `swarm`; `SWARM_BIN` wins.
-A release build (no branch) shows one alert at launch when the login PATH's `swarm` is another build.
-A build from a branch other than `main` keeps its data in `~/.swarm-<branch>` and passes that
-`SWARM_HOME` to every `swarm` it starts. An explicit `SWARM_HOME` in the app's environment wins.
+A release build (`SWARM_RELEASE_BUILD=1`, as release.yml builds it) shows one alert at launch when the login PATH's `swarm` is another build.
+Every other build, `main` too, keeps its data in `~/.swarm-<branch>` and passes that `SWARM_HOME`
+to every `swarm` it starts, so `make install` never migrates `~/.swarm` (ADR 0027, ADR 0048). An explicit `SWARM_HOME` in the app's environment wins.

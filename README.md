@@ -64,8 +64,9 @@ brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask -
 The app warns at launch when Terminal's `swarm` is another build than its own, and names the same
 command. A `swarm` that brew did not install, such as `~/.cargo/bin/swarm`, you remove yourself.
 
-The CLI alone, on an older macOS or on Linux: `cargo install --path .` from a clone, then
-`swarm init`. It needs tmux.
+The CLI alone, on an older macOS or on Linux: `SWARM_RELEASE_BUILD=1 cargo install --path .` from
+a clone of a release tag, then `swarm init`. It needs tmux. Without `SWARM_RELEASE_BUILD=1` the
+build is a dev build, which keeps its data in a branch folder and not in `~/.swarm`.
 
 ### Swarm app without Homebrew
 
@@ -207,15 +208,17 @@ accepts input in Swarm. A closed connection can be reopened with Reconnect.
 
 ## Environment
 
-When `SWARM_HOME` is not set, a build from `main` (or from a detached HEAD) uses `HOME`, and a
-build from any other branch uses `~/.swarm-<branch>`, so a branch build never touches the real data
-(ADR 0027). A branch name with a character outside `[a-z0-9._-]`, one that starts with `.` or
+When `SWARM_HOME` is not set, only a release build uses `HOME`. release.yml marks it with
+`SWARM_RELEASE_BUILD=1`. Every other build is a dev build and uses `~/.swarm-<branch>`, `main` too
+(`~/.swarm-main`), so a dev build never touches the real data (ADR 0027, amended in ADR 0048). A
+dev build from a detached HEAD uses `~/.swarm-head+4b9253d8ff1ee183`. A branch name with a character outside `[a-z0-9._-]`, one that starts with `.` or
 `-`, or one over 200 bytes gets its letters made lowercase and its other unsafe bytes made `-`, is cut
 to 200 bytes, and gets a hash of the whole name added, so `feat/login` uses
 `~/.swarm-feat-login+407712bf7898fb7f` and never meets `feat-login`. An uppercase letter also takes
 the hash, because the default macOS disk ignores case, so `Feature` and `feature` get two folders. `branch_folder` in `src/paths.rs`
 states the exact rule.
-`swarm --version` prints the branch after the commit. An explicit `SWARM_HOME` always wins, and an empty one is an error. The data
+`swarm --version` prints the branch after the commit, nothing for a release build and `HEAD` for
+a detached one. An explicit `SWARM_HOME` always wins, and an empty one is an error. The data
 directory is always `$SWARM_HOME/.swarm`.
 
 Swarm writes there only when the folder is its own (ADR 0036). A missing or empty folder gets the
@@ -225,7 +228,7 @@ message names the folder and `SWARM_HOME`.
 
 | Variable | Meaning |
 |---|---|
-| `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME`, or `~/.swarm-<branch>` for a branch build. |
+| `SWARM_HOME` | Parent of the `.swarm/` data directory. Defaults to `$HOME` for a release build, or `~/.swarm-<branch>` for a dev build. |
 | `SWARM_ADAPTER` | Adapter file name under `.swarm/adapters/`. Defaults to `herdr` in a Herdr pane, else `tmux`. |
 | `AGENT_ROUTING_CONFIG` | The old routing file that the first read imports. A path that does not exist is an error. |
 | `SWARM_SESSION_ID` | Session the caller belongs to. `spawn` stamps it into each child pane. |
