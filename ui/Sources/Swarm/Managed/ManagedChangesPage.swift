@@ -180,7 +180,7 @@ struct ManagedChangesPage: View {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if row.state == .off, !row.writer.hasPrefix("hooks.") {
+            } else if row.state == .off, !row.isHooks {
                 Text("Swarm adds it again the next time it needs it, after you agree.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -194,7 +194,7 @@ struct ManagedChangesPage: View {
     /// A switch while the row can be turned off or, for hooks, on again; else its state.
     @ViewBuilder
     private func stateControl(_ row: SwarmManagedList.Row, label: String) -> some View {
-        if row.state == .on || (row.state == .off && row.writer.hasPrefix("hooks.")) {
+        if row.state == .on || (row.state == .off && row.isHooks) {
             Toggle(label, isOn: Binding(
                 get: { row.state == .on },
                 set: { on in
@@ -228,7 +228,7 @@ struct ManagedChangesPage: View {
 
     private func undo(_ ids: [String], in entries: [SwarmManagedList.Entry]) {
         guard !ids.isEmpty else { return }
-        let hooks = entries.contains { ids.contains($0.id) && $0.writer.hasPrefix("hooks.") }
+        let hooks = entries.contains { ids.contains($0.id) && $0.isHooks }
         sheet = .undo(ids: ids, hooks: hooks)
     }
 

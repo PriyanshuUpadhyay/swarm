@@ -64,6 +64,17 @@ struct SwarmManagedListTests {
         #expect(SwarmManagedList.changes(from: before.groups, to: before.groups).isEmpty)
     }
 
+    @Test("Only a hooks writer's items can be set up again")
+    func hooksWriter() throws {
+        let list = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        #expect(list.entries.allSatisfy { $0.isHooks })
+        #expect(list.groups.flatMap(\.rows).allSatisfy { $0.isHooks })
+        var trust = list.entries[0]
+        trust.writer = "launch.trust"
+        #expect(!trust.isHooks)
+        #expect(!SwarmManagedList.Row(writer: "launch.trust", file: trust.file, entries: [trust]).isHooks)
+    }
+
     @Test("An empty list has no groups and says so")
     func empty() throws {
         let list = try SwarmManagedList.decode(Data(#"{"entries":[]}"#.utf8))
