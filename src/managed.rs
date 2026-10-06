@@ -841,7 +841,7 @@ pub(crate) fn json_text(value: &serde_json::Value) -> String {
 }
 
 /// The end of the error of a write that found its file changed since the read.
-pub(crate) const CHANGED: &str = "changed while swarm edited it; run the command again";
+const CHANGED: &str = "changed while swarm edited it; run the command again";
 
 pub(crate) fn changed_error(path: &std::path::Path) -> String {
     format!("swarm: {} {CHANGED}", path.display())
@@ -862,7 +862,7 @@ pub(crate) fn retried<T>(mut edit: impl FnMut() -> Result<T, String>) -> Result<
 /// Where a write to `path` lands: the file at the end of its links, or `path` itself. A link, or a
 /// chain of links, to a missing file gets that file made, as a write through the link would, but
 /// never a missing folder. A chain longer than the system's 32 hops is refused.
-pub(crate) fn write_target(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+fn write_target(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
     if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
         return Ok(path.to_path_buf());
