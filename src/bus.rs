@@ -266,6 +266,8 @@ pub fn codex_trust_plan_on(
             .expect("a missing key becomes a table")
             .insert("trust_level", toml_edit::value("trusted"));
         edits.push(Edit {
+            // The containers the file lacked (`Edit.created`): the folder's table, and
+            // `projects` when it was missing too.
             created: 1 + u8::from(!had_projects),
             ..Edit::new(
                 Writer::LaunchTrust,
@@ -729,6 +731,8 @@ pub fn claude_trust_plan(
     let root = value
         .as_object_mut()
         .expect("read_json_object returns an object");
+    // The containers the file lacked (`Edit.created`): `projects` and the folder key, or only
+    // the folder key, or none.
     let created = match root.get("projects") {
         None => 2,
         Some(projects) => u8::from(projects.get(&key).is_none()),
