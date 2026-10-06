@@ -2,8 +2,8 @@ import Foundation
 
 /// The parent of the `.swarm` data directory that this app and every `swarm` it starts use.
 ///
-/// The same rule as the CLI's `paths::home` (ADR 0027). An explicit SWARM_HOME wins. Else a `main`
-/// build or a build with no branch (`""`) uses HOME, and any other branch uses `HOME/<folder>`.
+/// The same rule as the CLI's `paths::home` (ADR 0027). An explicit SWARM_HOME wins. Else a release
+/// build (`""`) uses HOME, and a dev build, `main` and a detached `HEAD` too, uses `HOME/<folder>`.
 public enum SwarmHome {
     public static func resolve(swarmHome: String?, home: () -> String, branch: String) -> String {
         if let swarmHome { return swarmHome }
@@ -14,7 +14,7 @@ public enum SwarmHome {
 
     /// Byte for byte the CLI's `paths::branch_folder`; see its comment for the rule.
     static func folder(branch: String) -> String? {
-        if branch == "" || branch == "main" { return nil }
+        if branch.isEmpty { return nil }
         let bytes = Array(branch.utf8)
         func safe(_ byte: UInt8) -> Bool {
             switch byte {

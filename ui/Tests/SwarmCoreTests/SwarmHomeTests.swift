@@ -5,8 +5,9 @@ import Testing
 struct SwarmHomeTests {
     /// Shared with the vectors in `src/paths.rs`; keep both lists the same.
     static let vectors: [(branch: String, folder: String?)] = [
-        ("main", nil),
+        ("main", ".swarm-main"),
         ("", nil),
+        ("HEAD", ".swarm-head+4b9253d8ff1ee183"),
         ("unknown", ".swarm-unknown"),
         ("ui-polish", ".swarm-ui-polish"),
         ("feat/login", ".swarm-feat-login+407712bf7898fb7f"),
@@ -43,10 +44,14 @@ struct SwarmHomeTests {
         #expect(Set(folders).count == folders.count)
     }
 
-    @Test("Main and no branch use HOME, others a folder in it")
+    @Test("A release build uses HOME, a dev build a folder in it")
     func homeOrFolder() {
-        #expect(SwarmHome.resolve(swarmHome: nil, home: { "/home-dir" }, branch: "main") == "/home-dir")
         #expect(SwarmHome.resolve(swarmHome: nil, home: { "/home-dir" }, branch: "") == "/home-dir")
+        #expect(SwarmHome.resolve(swarmHome: nil, home: { "/home-dir" }, branch: "main") == "/home-dir/.swarm-main")
+        #expect(
+            SwarmHome.resolve(swarmHome: nil, home: { "/home-dir" }, branch: "HEAD")
+                == "/home-dir/.swarm-head+4b9253d8ff1ee183"
+        )
         #expect(
             SwarmHome.resolve(swarmHome: nil, home: { "/home-dir" }, branch: "ui-polish")
                 == "/home-dir/.swarm-ui-polish"
