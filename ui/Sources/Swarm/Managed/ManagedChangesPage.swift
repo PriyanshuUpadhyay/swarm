@@ -248,6 +248,9 @@ struct ManagedChangesPage: View {
             if !changes.isEmpty {
                 AccessibilityNotification.Announcement(changes.joined(separator: ". ")).post()
             }
+        } catch is CancellationError {
+            // The window closed or a newer load replaced this one, so there is no error to show.
+            return
         } catch {
             guard run == loads else { return }
             let message = (error as? SwarmProfileError)?.message ?? String(describing: error)
