@@ -53,11 +53,12 @@ swarm init                               # creates ~/.swarm with the db, runs/, 
 ```
 
 Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had the old `swarm` formula,
-run this once. The formula is now an empty pointer, so its upgrade frees the PATH link, and the cask
-reinstall links `swarm` to the app:
+or a Swarm.app dragged from the DMG, run this once. The formula is now an empty pointer, so its
+upgrade frees the PATH link. The cask reinstall links `swarm` to the app, and `--force` lets it
+replace a dragged app:
 
 ```sh
-brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask priyanshuupadhyay/tap/swarm-app
+brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
 ```
 
 The app warns at launch when Terminal's `swarm` is another build than its own, and names the same

@@ -51,7 +51,7 @@ jobs:
             def caveats
               <<~EOS
                 swarm now ships inside Swarm.app. Run this once to link it onto PATH:
-                  brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask priyanshuupadhyay/tap/swarm-app
+                  brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app
               EOS
             end
           end

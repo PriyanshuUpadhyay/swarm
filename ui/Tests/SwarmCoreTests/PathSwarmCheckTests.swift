@@ -160,9 +160,11 @@ final class PathSwarmCheckTests {
             path: "/opt/homebrew/bin/swarm", resolved: "/opt/homebrew/Cellar/swarm/0.7.3/bin/swarm",
             pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"
         )
-        let brewFix = "brew update && brew upgrade priyanshuupadhyay/tap/swarm; "
-            + "brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
+        let brewFix = PathSwarmDrift.brewFix
         #expect(keg.fixCommand == brewFix)
+        // A Swarm.app dragged from the DMG is no cask, and only --force replaces it (Homebrew
+        // cask/artifact/moved.rb:141-145); --adopt keeps only the same bundle version.
+        #expect(brewFix.hasSuffix("; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"))
         let cargo = PathSwarmDrift(
             path: "/Users/owner/.cargo/bin/swarm", resolved: "/Users/owner/.cargo/bin/swarm",
             pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"

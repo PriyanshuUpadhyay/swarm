@@ -17,9 +17,11 @@ public struct PathSwarmDrift: Equatable, Sendable {
     /// One fix from every brew state, the same text as the README and the tap caveat. The formula
     /// upgrade turns an old keg into the empty pointer, which frees the PATH link, or fails alone
     /// when no formula is installed. The cask reinstall then installs, upgrades, or relinks
-    /// `swarm`, because a cask that found the old keg on the path skipped its link.
+    /// `swarm`, because a cask that found the old keg on the path skipped its link. `--force` lets
+    /// it replace a Swarm.app dragged from the DMG, which a plain install refuses as "already an
+    /// App"; `--adopt` would take only an app of the same bundle version.
     public static let brewFix = "brew update && brew upgrade priyanshuupadhyay/tap/swarm; "
-        + "brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
+        + "brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
 
     public var fixCommand: String {
         resolved.contains("/Cellar/swarm/") ? Self.brewFix : "Remove \(path), then run \(Self.brewFix)"
