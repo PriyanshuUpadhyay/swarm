@@ -35,8 +35,10 @@ ever collapses: a run that showed 2 or more rows before its first tool opens whe
 with a failed step opens by default and says
 "N failed". The Zig parser tags a ring as `system_message` kind `swarm_ring`; a ring starts a turn
 only when no turn is open. AGY writes no turn end, so the parser ends an AGY turn at a finished
-reply that calls no tool. A non-zero exit code, including Codex `exit_code` and `Script failed`,
-makes a step failed. Each row has a Show Source action that shows the translated event JSON of
+reply that calls no tool. A step is failed when its log marks the result failed. Codex marks
+every result completed, so only in a Codex log the result text decides: a non-zero exit code from
+the result header or a printed JSON result, `Script failed`, or a rejected `Promise.allSettled`
+entry makes a step failed. Each row has a Show Source action that shows the translated event JSON of
 each source event of the row. Fold open state lives in memory for each open chat. Rejected: 0039's
 fold, because a chat watched live never folds; a failed step that breaks the run, because a run
 with failures turns back into many rows.
