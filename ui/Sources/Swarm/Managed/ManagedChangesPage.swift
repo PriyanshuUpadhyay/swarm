@@ -193,6 +193,10 @@ struct ManagedChangesPage: View {
                 Text("Partly on: \(present) of \(total) entries. Turning it off removes the rest.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } else if case .unknown(let state) = row.state {
+                Text("This app does not know the state \"\(state)\". Update Swarm to change this row.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else if row.entries.first?.recorded == false {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
@@ -215,7 +219,13 @@ struct ManagedChangesPage: View {
         case .on, .partly: true
         default: false
         }
-        if on || (row.state == .off && row.isHooks) {
+        if case .unknown = row.state {
+            // The switch keeps what swarm knows, but this build cannot tell what Off or On does.
+            Toggle(label, isOn: .constant(!row.presentIDs.isEmpty))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(true)
+        } else if on || (row.state == .off && row.isHooks) {
             Toggle(label, isOn: Binding(
                 get: { on },
                 set: { on in
@@ -244,7 +254,7 @@ struct ManagedChangesPage: View {
             Label("Cannot read", systemImage: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)
                 .font(.callout)
-        case .gone, .partly:
+        case .gone, .partly, .unknown:
             Text(state.name).foregroundStyle(.secondary)
         case .on, .off:
             Text(state == .on ? "On" : "Off").foregroundStyle(.secondary)

@@ -37,6 +37,9 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         case changed(found: String, wrote: String)
         /// Swarm cannot read the file or the path in it, so it cannot tell what is there.
         case unreadable(reason: String)
+        /// An item has a state that a newer swarm sent and this build does not know, so the row
+        /// claims nothing about it.
+        case unknown(state: String)
         case gone
         case off
 
@@ -47,6 +50,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
             case .partly: "Partly on"
             case .changed: "Changed by you"
             case .unreadable: "Cannot read"
+            case .unknown(let state): state
             case .gone: "Gone"
             case .off: "Off"
             }
@@ -86,6 +90,10 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
             }
             if let changed = entries.first(where: { $0.state == "changed" }) {
                 return .changed(found: changed.found?.compactJSON ?? "", wrote: changed.wrote.compactJSON)
+            }
+            let known = ["present", "changed", "unreadable", "gone", "off"]
+            if let unknown = entries.first(where: { !known.contains($0.state) }) {
+                return .unknown(state: unknown.state)
             }
             let present = presentIDs.count
             if present == entries.count { return .on }
@@ -163,6 +171,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
                     case .partly: key = "partly on"
                     case .changed: key = "changed by you"
                     case .unreadable: key = "cannot read"
+                    case .unknown: key = "unknown"
                     case .gone: key = "gone"
                     case .off: key = "off"
                     }
@@ -170,7 +179,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
                 counts[key, default: 0] += 1
             }
         }
-        return ["on", "partly on", "changed by you", "cannot read", "gone", "off", "found"]
+        return ["on", "partly on", "changed by you", "cannot read", "unknown", "gone", "off", "found"]
             .compactMap { key in counts[key].map { "\($0) \(key)" } }
             .joined(separator: " · ")
     }

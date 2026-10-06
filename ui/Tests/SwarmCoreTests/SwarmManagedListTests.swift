@@ -78,6 +78,22 @@ struct SwarmManagedListTests {
         #expect(SwarmManagedList.summary(list.groups) == "1 on · 1 partly on · 1 changed by you · 1 gone · 1 off · 1 found")
     }
 
+    @Test("A state from a newer swarm shows by its own name, not as Gone")
+    func unknownState() throws {
+        var list = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        list.entries = list.entries.map { entry in
+            var entry = entry
+            if ["a2", "s1"].contains(entry.id) { entry.state = "locked" }
+            return entry
+        }
+        let hooks = list.groups[0].rows
+        #expect(hooks[0].state == .unknown(state: "locked"))
+        #expect(hooks[0].presentIDs == ["a1"])
+        #expect(hooks[1].state == .unknown(state: "locked"))
+        #expect(hooks[1].state.name == "locked")
+        #expect(SwarmManagedList.summary(list.groups) == "1 on · 1 changed by you · 2 unknown · 1 off · 1 found")
+    }
+
     @Test("An undo conflict labels swarm's value only for an item that changed, else what swarm needs")
     func conflictLabelsFollowTheCause() throws {
         let plan = try JSONDecoder().decode(SwarmHooksPlan.self, from: Data(#"""
