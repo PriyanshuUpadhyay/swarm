@@ -38,11 +38,18 @@ public final class PathSwarmNotice {
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     /// The drift for the first asking window to show; nil for every later ask of this run.
-    /// `check` gets the stored pairs.
+    /// `check` gets the stored pairs. A window closed during the check gets nil and leaves the
+    /// alert to the next window that asks.
     public func ask(check: ([String]) async -> PathSwarmDrift?) async -> PathSwarmDrift? {
         guard !asked else { return nil }
+        // Set before the await, so a second window that asks during the check runs no second one.
         asked = true
-        return await check(dismissed)
+        let drift = await check(dismissed)
+        guard !Task.isCancelled else {
+            asked = false
+            return nil
+        }
+        return drift
     }
 
     /// Copy Command and Not Now both store the pair, so it never asks again.

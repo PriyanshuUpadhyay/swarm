@@ -132,6 +132,28 @@ final class PathSwarmCheckTests {
         #expect(dismissed == [drift.key])
     }
 
+    @Test("A window closed during the check leaves the alert to the next window")
+    @MainActor
+    func cancelledAskLetsTheNextWindowAsk() async throws {
+        let suite = "PathSwarmNoticeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let drift = PathSwarmDrift(
+            path: "/usr/local/bin/swarm", resolved: "/usr/local/bin/swarm",
+            pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"
+        )
+        let notice = PathSwarmNotice(defaults: defaults)
+        let closedWindow = Task { @MainActor in
+            await notice.ask { _ in
+                try? await Task.sleep(for: .seconds(10))
+                return drift
+            }
+        }
+        closedWindow.cancel()
+        #expect(await closedWindow.value == nil)
+        #expect(await notice.ask { _ in drift } == drift)
+    }
+
     @Test("A Homebrew keg gets the brew command, any other file gets a remove step")
     func fixCommand() {
         let keg = PathSwarmDrift(
