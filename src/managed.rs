@@ -503,11 +503,7 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
             )
         };
         let parse = |text: &str| serde_json::from_str::<serde_json::Value>(text);
-        // managed_edit has no column for it, so a row takes it from the one writer that sets it:
-        // the Codex guard group (`bus::guard_group_edit`).
-        let last =
-            writer == "hooks.guard" && kind == "json_array_item" && file.ends_with("/hooks.json");
-        let edit = Edit {
+        let mut edit = Edit {
             writer: serde_json::from_value(writer.clone().into())
                 .map_err(|_| unknown("writer", &writer))?,
             file: file.into(),
@@ -521,8 +517,16 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
             },
             created,
             with,
-            last,
+            last: false,
         };
+        // managed_edit has no column for it, so a row takes it from what it wrote: only the Codex
+        // guard group (`bus::guard_group_edit`) sets it, and its handler names Codex. The file
+        // name cannot tell, because `place` keeps a linked `hooks.json` under its target's name.
+        edit.last = edit.writer == Writer::HooksGuard
+            && edit.kind == Kind::JsonArrayItem
+            && edit.path.last().is_some_and(|event| {
+                edit.wrote["hooks"][0]["command"] == crate::bus::guard_command("codex", event)
+            });
         let state = state(&edit, off);
         entries.push(Entry {
             edit,
@@ -1271,6 +1275,54 @@ mod tests {
         let plan = removal(&file, &[&entry]).unwrap();
         assert_eq!(plan.conflicts[0].kind, ConflictKind::Order);
         assert_eq!(plan.after, plan.before);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A stored Codex guard group must stay last also when a link gives its `hooks.json` another
+    /// name, because the row's own handler names Codex. A Claude guard group need not.
+    #[test]
+    fn a_stored_codex_guard_group_stays_last_under_any_file_name() {
+        let dir = std::env::temp_dir().join(format!("swarm-managed-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        let event = crate::guard::EVENTS[0];
+        let group = |provider: &str, file: &std::path::Path| {
+            let command = crate::bus::guard_command(provider, event);
+            let wrote = serde_json::json!({"hooks": [{"type": "command", "command": command}]});
+            let text = serde_json::json!({"hooks": {event: [wrote]}}).to_string();
+            std::fs::write(file, &text).unwrap();
+            let edit = Edit::new(
+                Writer::HooksGuard,
+                file,
+                Kind::JsonArrayItem,
+                &["hooks", event],
+                wrote,
+            );
+            FilePlan {
+                path: file.to_path_buf(),
+                before: text.clone(),
+                after: text,
+                conflicts: Vec::new(),
+                edits: vec![edit],
+            }
+        };
+        let codex_file = dir.join("codex-hooks.json");
+        let claude_file = dir.join("claude-settings.json");
+        apply(
+            &store,
+            &[group("codex", &codex_file), group("claude", &claude_file)],
+        )
+        .unwrap();
+
+        let entries = list(&store, &[]).unwrap();
+        let last = |file: &std::path::Path| {
+            let name = file.file_name().unwrap();
+            let entry = entries.iter().find(|entry| entry.edit.file.ends_with(name));
+            entry.unwrap().edit.last
+        };
+        assert!(last(&codex_file));
+        assert!(!last(&claude_file));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
