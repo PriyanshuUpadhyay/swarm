@@ -316,9 +316,13 @@ struct HooksSetupSheet: View {
                 checkAgain()
             }
         )) {
+            // Each title wraps itself; the long one needs two lines at the sheet's width.
             Text("Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
+                .fixedSize(horizontal: false, vertical: true)
                 .tag(true)
-            Text("Ask in the agent's column for each new folder").tag(false)
+            Text("Ask in the agent's column for each new folder")
+                .fixedSize(horizontal: false, vertical: true)
+                .tag(false)
         }
         .pickerStyle(.radioGroup)
         .labelsHidden()
