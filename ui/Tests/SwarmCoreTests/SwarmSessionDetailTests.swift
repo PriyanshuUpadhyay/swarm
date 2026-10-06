@@ -261,6 +261,17 @@ struct SwarmSessionDetailTests {
         #expect(hooksRow.id != trustRow.id)
         try await bus.setUp(digest: decoded.digest)
 
+        // The first plan, with no --consent, sets the owner's recorded answer, so the radio
+        // starts there; from then on the radio's answer is sent each time.
+        #expect(decoded.consent == "ask")
+        var first = SwarmSetupChoice()
+        first.take(decoded)
+        #expect(first.standing == false)
+        #expect(first.groups == ["trust"])
+        #expect(first.arguments == ["--consent", "ask"])
+        first.standing = true
+        #expect(first.arguments == ["--consent", "standing"])
+
         // Each checkbox the owner clears leaves its group out, and the radio sets the consent,
         // so the plan and its digest cover what the sheet shows (02-design screen 1).
         var choice = SwarmSetupChoice(groups: ["hooks", "trust", "herdr"])

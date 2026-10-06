@@ -142,11 +142,8 @@ struct HooksSetupSheet: View {
             phase = .loading
             do {
                 let plan = try await loadPlan(choice)
-                // The first plan has every group, so it gives the checkboxes; a group that shows
-                // up later gets one too, so no planned file goes unseen.
-                for group in plan.groupIDs where !choice.groups.contains(group) {
-                    choice.groups.append(group)
-                }
+                // The first plan has every group, so it gives the checkboxes and the radio.
+                choice.take(plan)
                 openFile = plan.files.first?.id
                 diffFailed = false
                 phase = .ready(plan)
@@ -288,7 +285,7 @@ struct HooksSetupSheet: View {
 
     private var consentPicker: some View {
         Picker("Launch consent", selection: Binding(
-            get: { choice.standing },
+            get: { choice.standing ?? true },
             set: { standing in
                 choice.standing = standing
                 checkAgain()

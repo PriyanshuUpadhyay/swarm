@@ -87,10 +87,11 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     public var groups: [String]
     /// The groups whose checkbox the owner cleared.
     public var unchecked: Set<String>
-    /// The launch consent the trust group writes: standing, or ask in the agent's column.
-    public var standing: Bool
+    /// The launch consent the trust group writes: standing, or ask in the agent's column; nil
+    /// until the first plan reports the owner's recorded answer.
+    public var standing: Bool?
 
-    public init(groups: [String] = [], unchecked: Set<String> = [], standing: Bool = true) {
+    public init(groups: [String] = [], unchecked: Set<String> = [], standing: Bool? = nil) {
         self.groups = groups
         self.unchecked = unchecked
         self.standing = standing
@@ -99,12 +100,23 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     /// The groups to apply.
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
-    /// The `swarm setup` flags of this choice; none for every group with standing consent.
+    /// The `swarm setup` flags of this choice; none for every group with the recorded consent.
     public var arguments: [String] {
         var arguments: [String] = []
         if !unchecked.isEmpty { arguments += ["--only", checked.joined(separator: ",")] }
-        if !standing { arguments += ["--consent", "ask"] }
+        if let standing { arguments += ["--consent", standing ? "standing" : "ask"] }
         return arguments
+    }
+
+    /// Takes what a plan shows: each new group gets a checkbox, so no planned file goes unseen,
+    /// and the radio starts at the answer the first plan sets, the owner's recorded one.
+    public mutating func take(_ plan: SwarmHooksPlan) {
+        for group in plan.groupIDs where !groups.contains(group) {
+            groups.append(group)
+        }
+        if standing == nil, let consent = plan.consent {
+            standing = consent == "standing"
+        }
     }
 }
 
@@ -182,11 +194,14 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     public var digest: String
     public var files: [File]
     public var conflicts: [Conflict]
+    /// The launch consent a `swarm setup` plan sets; nil from `hooks setup` and an undo.
+    public var consent: String?
 
-    public init(digest: String, files: [File], conflicts: [Conflict]) {
+    public init(digest: String, files: [File], conflicts: [Conflict], consent: String? = nil) {
         self.digest = digest
         self.files = files
         self.conflicts = conflicts
+        self.consent = consent
     }
 
     /// Nothing to change and nothing in the way.
