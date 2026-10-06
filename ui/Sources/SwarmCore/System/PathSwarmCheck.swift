@@ -14,11 +14,15 @@ public struct PathSwarmDrift: Equatable, Sendable {
     /// What an answer stores, so the same pair never asks again and a new release or path does.
     public var key: String { [path, pathLine, helperLine].joined(separator: "|") }
 
+    /// One fix from every brew state, the same text as the README and the tap caveat. The formula
+    /// upgrade turns an old keg into the empty pointer, which frees the PATH link, or fails alone
+    /// when no formula is installed. The cask reinstall then installs, upgrades, or relinks
+    /// `swarm`, because a cask that found the old keg on the path skipped its link.
+    public static let brewFix = "brew update && brew upgrade priyanshuupadhyay/tap/swarm; "
+        + "brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
+
     public var fixCommand: String {
-        let reinstall = "brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
-        return resolved.contains("/Cellar/swarm/")
-            ? "brew uninstall priyanshuupadhyay/tap/swarm && \(reinstall)"
-            : "Remove \(path), then run \(reinstall)"
+        resolved.contains("/Cellar/swarm/") ? Self.brewFix : "Remove \(path), then run \(Self.brewFix)"
     }
 }
 

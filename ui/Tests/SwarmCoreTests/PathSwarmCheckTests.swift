@@ -125,17 +125,23 @@ struct PathSwarmCheckTests {
             path: "/opt/homebrew/bin/swarm", resolved: "/opt/homebrew/Cellar/swarm/0.7.3/bin/swarm",
             pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"
         )
-        #expect(
-            keg.fixCommand
-                == "brew uninstall priyanshuupadhyay/tap/swarm && brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
-        )
+        let brewFix = "brew update && brew upgrade priyanshuupadhyay/tap/swarm; "
+            + "brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
+        #expect(keg.fixCommand == brewFix)
         let cargo = PathSwarmDrift(
             path: "/Users/owner/.cargo/bin/swarm", resolved: "/Users/owner/.cargo/bin/swarm",
             pathLine: "swarm 0.7.3", helperLine: "swarm 0.9.0"
         )
-        #expect(
-            cargo.fixCommand
-                == "Remove /Users/owner/.cargo/bin/swarm, then run brew reinstall --cask priyanshuupadhyay/tap/swarm-app"
-        )
+        #expect(cargo.fixCommand == "Remove /Users/owner/.cargo/bin/swarm, then run \(brewFix)")
+    }
+
+    @Test("The README and the tap caveat name the alert's brew command", arguments: [
+        "README.md", ".github/workflows/tap.yml",
+    ])
+    func sameBrewFixEverywhere(file: String) throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: repo.appendingPathComponent(file), encoding: .utf8)
+        #expect(text.contains(PathSwarmDrift.brewFix))
     }
 }

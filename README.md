@@ -52,9 +52,16 @@ brew install --cask priyanshuupadhyay/tap/swarm-app
 swarm init                               # creates ~/.swarm with the db, runs/, and adapters/
 ```
 
-Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you have the old `swarm` formula,
-run `brew upgrade` once: the formula is now an empty pointer, and its upgrade frees the PATH link
-for the cask. The app warns at launch when Terminal's `swarm` is another build than its own.
+Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you had the old `swarm` formula,
+run this once. The formula is now an empty pointer, so its upgrade frees the PATH link, and the cask
+reinstall links `swarm` to the app:
+
+```sh
+brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask priyanshuupadhyay/tap/swarm-app
+```
+
+The app warns at launch when Terminal's `swarm` is another build than its own, and names the same
+command. A `swarm` that brew did not install, such as `~/.cargo/bin/swarm`, you remove yourself.
 
 The CLI alone, on an older macOS or on Linux: `cargo install --path .` from a clone, then
 `swarm init`. It needs tmux.
