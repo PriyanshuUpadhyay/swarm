@@ -47,7 +47,9 @@ struct ManagedChangesPage: View {
                     } icon: {
                         Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
                     }
+                    // Each click is a full CLI read of every managed file, so one runs at a time.
                     Button("Retry") { Task { await load(retry: true) } }
+                        .disabled(isLoading)
                 }
             }
             if !groups.isEmpty {
