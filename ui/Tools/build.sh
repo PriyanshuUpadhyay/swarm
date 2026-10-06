@@ -63,4 +63,5 @@ if (( install )); then
   fi
   cp -R "$app" "$destination"
   print "==> $destination"
+  print "==> swarm is no longer put on PATH; brew install --cask priyanshuupadhyay/tap/swarm-app links it (ADR 0048)"
 fi
