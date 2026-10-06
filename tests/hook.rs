@@ -1025,3 +1025,38 @@ fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
     assert!(!bad.status.success());
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A child pane may read the setup plan, but not apply it: an apply writes the owner's consent
+/// and config, so a seat left on `ask` could turn on standing consent itself (SRV-2).
+#[test]
+fn a_child_agent_may_plan_setup_but_not_apply_it() {
+    let home = scratch("setup-child");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let child = [("SWARM_AGENT_ID", "coder"), ("SWARM_SESSION_ID", "s1")];
+    let status = swarm(&home, &child, &["setup", "status", "--json"], "");
+    assert!(status.status.success(), "{status:?}");
+    let plan = swarm(
+        &home,
+        &child,
+        &["setup", "--plan", "--json", "--cwd", &cwd],
+        "",
+    );
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    for args in [
+        vec!["setup", "--consent", "standing", "--cwd", &cwd],
+        vec!["setup", "--digest", digest, "--cwd", &cwd],
+    ] {
+        let applied = swarm(&home, &child, &args, "");
+        assert!(!applied.status.success(), "{applied:?}");
+        assert!(
+            String::from_utf8_lossy(&applied.stderr).contains("a child agent cannot"),
+            "{applied:?}"
+        );
+    }
+    assert!(!home.join(".swarm/consent.json").exists());
+    assert!(!home.join(".claude.json").exists());
+    std::fs::remove_dir_all(&home).unwrap();
+}

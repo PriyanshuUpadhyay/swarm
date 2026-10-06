@@ -1282,7 +1282,8 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 /// one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup` writes them,
 /// `trust`, the launch consent (`--consent`, standing by default) and the trust entries a launch
 /// in `--cwd` would write, and `herdr`. Running it, or applying
-/// the plan's digest, is the owner's consent, as for `hooks setup`.
+/// the plan's digest, is the owner's consent, as for `hooks setup`, so a child pane may plan but
+/// not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if args == ["status", "--json"] {
@@ -1387,6 +1388,12 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             )
         );
         return Ok(());
+    }
+    if let Some(reason) = swarm::bus::setup_refusal(
+        env::var("SWARM_AGENT_ID").ok().as_deref(),
+        env::var("HERDR_AGENT_PANE").ok().as_deref(),
+    ) {
+        return Err(reason.into());
     }
     // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;

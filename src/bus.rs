@@ -589,6 +589,16 @@ pub fn revert_refusal(
     )
 }
 
+/// Why a caller may not apply `swarm setup`, or None: the same child panes, because an apply
+/// writes the owner's launch consent, so a seat left on `ask` could give itself standing consent.
+pub fn setup_refusal(
+    swarm_agent: Option<&str>,
+    herdr_agent_pane: Option<&str>,
+) -> Option<&'static str> {
+    child_agent(swarm_agent, herdr_agent_pane)
+        .then_some("swarm: a child agent cannot apply swarm setup; ask the orchestrator")
+}
+
 fn child_agent(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> bool {
     swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1")
 }
