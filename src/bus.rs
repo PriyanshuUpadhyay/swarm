@@ -491,9 +491,23 @@ pub fn launch_refusal(
     swarm_agent: Option<&str>,
     herdr_agent_pane: Option<&str>,
 ) -> Option<&'static str> {
-    let child =
-        swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1");
-    child.then_some("swarm: a child agent cannot launch agents; ask the orchestrator")
+    child_agent(swarm_agent, herdr_agent_pane)
+        .then_some("swarm: a child agent cannot launch agents; ask the orchestrator")
+}
+
+/// Why a caller may not revert the owner's managed changes, or None: the same child panes that
+/// may not launch, because a revert removes the guard registration that blocks their own calls.
+pub fn revert_refusal(
+    swarm_agent: Option<&str>,
+    herdr_agent_pane: Option<&str>,
+) -> Option<&'static str> {
+    child_agent(swarm_agent, herdr_agent_pane).then_some(
+        "swarm: a child agent cannot revert the owner's managed changes; ask the orchestrator",
+    )
+}
+
+fn child_agent(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> bool {
+    swarm_agent.is_some_and(|agent| agent != "orchestrator") || herdr_agent_pane == Some("1")
 }
 
 /// Fable runs as a child only for review and council seats. The router refuses it too; this is

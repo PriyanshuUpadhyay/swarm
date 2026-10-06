@@ -1027,6 +1027,12 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ["--plan", "--json"] => print_json(&swarm::managed::plan_json(&plan()?)),
                 [] | ["--digest", _] => {
+                    if let Some(reason) = swarm::bus::revert_refusal(
+                        env::var("SWARM_AGENT_ID").ok().as_deref(),
+                        env::var("HERDR_AGENT_PANE").ok().as_deref(),
+                    ) {
+                        return Err(reason.into());
+                    }
                     let lock = swarm::paths::root_dir()?.join("trust.lock");
                     swarm::managed::with_lock(&lock, || {
                         let plans = plan()?;

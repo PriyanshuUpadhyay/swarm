@@ -463,3 +463,30 @@ fn an_item_under_a_linked_folder_made_by_the_write_has_one_id() {
     assert_eq!(plan.matches("+++ ").count(), 2, "{plan}");
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A child agent cannot revert the owner's managed changes, as it cannot launch agents: the
+/// guard registration that blocks its own calls is one of them.
+#[test]
+fn a_child_agent_cannot_revert_managed_changes() {
+    let home = scratch("revert-child");
+    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+    let codex = home.join(".codex/config.toml");
+    let set_up = std::fs::read_to_string(&codex).unwrap();
+
+    for (name, value) in [("SWARM_AGENT_ID", "coder"), ("HERDR_AGENT_PANE", "1")] {
+        let revert = Command::new(env!("CARGO_BIN_EXE_swarm"))
+            .env_clear()
+            .env("HOME", &home)
+            .env("SWARM_HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .env(name, value)
+            .current_dir(&home)
+            .args(["managed", "revert", "--all"])
+            .output()
+            .unwrap();
+        assert!(!revert.status.success(), "{revert:?}");
+        assert!(stderr(&revert).contains("child agent"), "{revert:?}");
+    }
+    assert_eq!(std::fs::read_to_string(&codex).unwrap(), set_up);
+    std::fs::remove_dir_all(&home).unwrap();
+}
