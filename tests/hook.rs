@@ -854,3 +854,38 @@ fn a_codex_folder_the_owner_left_untrusted_is_skipped_with_its_reason() {
     assert!(reason.contains(&*codex.to_string_lossy()), "{reason}");
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A Codex config.toml that swarm cannot read is a hooks conflict, and the trust group plans
+/// nothing on it, so the owner sees no false diff; it names the conflict instead.
+#[test]
+fn a_broken_codex_config_gets_no_trust_diff_only_the_reason() {
+    let home = scratch("setup-broken-trust");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    let codex = home.join(".codex/config.toml");
+    std::fs::write(&codex, "model = \"gpt-5.5\"\nbroken = = \n").unwrap();
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert!(
+        plan["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["path"] != codex.to_string_lossy().as_ref()),
+        "{plan}"
+    );
+    let conflicts = plan["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 1, "{plan}");
+    assert_eq!(conflicts[0]["group"], "hooks");
+    let skipped = &plan["skipped"][0];
+    assert_eq!(skipped["group"], "trust", "{plan}");
+    let reason = skipped["reason"].as_str().unwrap();
+    assert!(
+        reason.contains(&*codex.to_string_lossy()) && reason.contains("not valid TOML"),
+        "{reason}"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}

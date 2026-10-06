@@ -1127,12 +1127,18 @@ impl SetupPlan {
                 Ok(target) => {
                     for home in &files.homes {
                         let path = home.join("config.toml");
-                        let planned = setup
+                        let earlier = setup
                             .plans
                             .iter()
                             .rev()
-                            .find(|plan| canonical(&plan.path) == canonical(&path))
-                            .map(|plan| plan.after.clone());
+                            .find(|plan| canonical(&plan.path) == canonical(&path));
+                        // A file the earlier plan cannot edit has no planned text to build on.
+                        if let Some(conflict) = earlier.and_then(|plan| plan.conflicts.first()) {
+                            let reason = format!("{}: {}", path.display(), conflict.found);
+                            setup.skipped.push(("trust", reason));
+                            continue;
+                        }
+                        let planned = earlier.map(|plan| plan.after.clone());
                         let plan = match planned {
                             Some(text) => swarm::bus::codex_trust_plan_on(&path, text, &target),
                             None => swarm::bus::codex_trust_plan(home, &target),
