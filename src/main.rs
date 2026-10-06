@@ -878,7 +878,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
             // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
             let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-            let lock = swarm::paths::root_dir()?.join("trust.lock");
+            let lock = swarm::paths::trust_lock()?;
             swarm::managed::with_lock(&lock, || {
                 let plans = plan();
                 if let ["--digest", digest] = rest
@@ -1027,7 +1027,7 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     ) {
                         return Err(reason.into());
                     }
-                    let lock = swarm::paths::root_dir()?.join("trust.lock");
+                    let lock = swarm::paths::trust_lock()?;
                     swarm::managed::with_lock(&lock, || {
                         let plans = plan()?;
                         if let ["--digest", digest] = flags
@@ -2752,7 +2752,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         };
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
-        let lock = root.join("trust.lock");
+        let lock = swarm::paths::trust_lock()?;
         match kind {
             Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
                 Ok(target) if kind == Provider::Codex => {
