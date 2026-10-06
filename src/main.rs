@@ -26,6 +26,8 @@ const RING_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(if cfg!(test) { 5 } else { 30 });
 /// How often a ring reads the pane and the store for its proof.
 const RING_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+/// How long `swarm notify` waits for the adapter's `notify` verb.
+const NOTIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Now in unix seconds, the unit of `rung_at` and `state_at`.
 fn unix_now() -> Result<i64, std::time::SystemTimeError> {
@@ -269,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -382,6 +384,7 @@ fn read_within<R: std::io::Read + Send + 'static>(
 /// and the caller always gets `{}` and exit 0. Providers give a hook about 3 s: stdin gets 2 s,
 /// the bus 1 s.
 fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let started = std::time::Instant::now();
     // A caller that is no swarm agent is done before its stdin is read.
     if env::var_os("SWARM_SESSION_ID").is_none() || env::var_os("SWARM_AGENT_ID").is_none() {
         return Ok(());
@@ -403,7 +406,8 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
-    swarm::store::set_state(
+    // An agent the session does not hold has no row to change, so it gets no notice.
+    let Some(old) = swarm::store::set_state(
         &connection,
         &report.session,
         &report.agent,
@@ -411,7 +415,67 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "hook",
         detail.as_deref(),
         now,
-    )
+    )?
+    else {
+        return Ok(());
+    };
+    if let Some((title, body)) = waiting_notice(
+        &connection,
+        &report.session,
+        &report.agent,
+        old.as_deref(),
+        state,
+    ) {
+        let adapter = swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?;
+        send_notice(&adapter, started + HOOK_NOTICE_BUDGET, &title, &body);
+    }
+    Ok(())
+}
+
+/// The hook's whole budget; a notice gets what the stdin read and the bus left of it.
+const HOOK_NOTICE_BUDGET: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// The owner's notice for one state write: a title and body when the agent's state changed to
+/// `waiting`, else None (ADR 0044). Any other state, or a new one, gives none.
+fn waiting_notice(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    agent: &str,
+    old: Option<&str>,
+    new: &str,
+) -> Option<(String, String)> {
+    if new != "waiting" || old == Some("waiting") {
+        return None;
+    }
+    let cwd = swarm::store::session_cwd(connection, session_id)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let project = std::path::Path::new(&cwd)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Some((
+        format!("swarm: {agent} needs you"),
+        format!("{project}: waiting on a permission or a question"),
+    ))
+}
+
+/// Shows one notice by the adapter's `notify` verb, which must end by `deadline`. At most once:
+/// a notice that fails or runs late is logged and never retried, because the owner gets no repeats.
+fn send_notice(
+    adapter: &swarm::adapter::Adapter,
+    deadline: std::time::Instant,
+    title: &str,
+    body: &str,
+) {
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(deadline),
+        ..adapter.clone()
+    };
+    if let Err(error) = adapter.run("notify", &[("title", title), ("body", body)]) {
+        eprintln!("swarm: {error}");
+    }
 }
 
 fn adapter_name() -> String {
@@ -2789,6 +2853,18 @@ fn list_agents(
                 ),
             ) {
                 Ok(true) => {
+                    // The write compared the row with what this listing read, so `row.state`
+                    // is the state it replaced. Outside the batch deadline, at most 1 s.
+                    if let Some((title, body)) =
+                        waiting_notice(connection, session_id, &row.id, row.state.as_deref(), seen)
+                    {
+                        send_notice(
+                            adapter,
+                            std::time::Instant::now() + std::time::Duration::from_secs(1),
+                            &title,
+                            &body,
+                        );
+                    }
                     (row.state_at, row.state_source, row.state_detail) =
                         (Some(now), Some("screen".into()), detail);
                 }
@@ -2918,6 +2994,31 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         return print_json(&swarm::config::listing().map_err(|error| format!("swarm: {error}"))?);
+    }
+    if let [cmd, title, rest @ ..] = args
+        && cmd == "notify"
+    {
+        let body = match rest {
+            [] => "",
+            [flag, body] if flag == "--body" => body,
+            _ => return Err(USAGE.into()),
+        };
+        if title.trim().is_empty() {
+            return Err(USAGE.into());
+        }
+        // ADR 0044: a worker reports to the chair, and swarm itself notifies when it waits.
+        if swarm::host::is_worker(|name| env::var(name).ok()) {
+            return Err(
+                "swarm: only the chair notifies the owner; send it to the orchestrator with swarm send"
+                    .into(),
+            );
+        }
+        let adapter = swarm::adapter::Adapter {
+            deadline: Some(std::time::Instant::now() + NOTIFY_TIMEOUT),
+            ..swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?
+        };
+        adapter.run("notify", &[("title", title), ("body", body)])?;
+        return Ok(());
     }
     if let [cmd] = args
         && cmd == "herdr-split"
@@ -3902,6 +4003,45 @@ mod tests {
         assert!(started.elapsed() > std::time::Duration::from_secs(1));
         assert_eq!(std::fs::read_to_string(&ring_log).unwrap(), "rung");
         assert_eq!(listings[&session].agents.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// AGY has no waiting hook, so the screen check's change to `waiting` notifies the owner once,
+    /// and the next listing that still sees it waiting sends none.
+    #[test]
+    fn a_screen_change_to_waiting_sends_one_notice() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-listing-notice-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("adapters")).unwrap();
+        let sent_to = root.join("notices");
+        let sent_path = swarm::adapter::shell_line(&[sent_to.to_string_lossy().into_owned()]);
+        std::fs::write(root.join("adapters/fake.conf"),
+            format!("self = true\nspawn = true\nring = true\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"blocked\"}}}}}}'\nnotify = printf '%s|%s\\n' \"$SWARM_TITLE\" \"$SWARM_BODY\" >> {sent_path}\n")
+        ).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let session =
+            swarm::store::create_session(&connection, "lane", &root, None, Some("fake")).unwrap();
+        swarm::store::add_agent(&connection, &session, ORCHESTRATOR, "chair").unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "code").unwrap();
+        swarm::store::set_pane(&connection, &session, CODER, "pane").unwrap();
+        let project = root.file_name().unwrap().to_string_lossy().into_owned();
+        let notice =
+            format!("swarm: {CODER} needs you|{project}: waiting on a permission or a question\n");
+
+        for _ in 0..2 {
+            let listings =
+                all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(2))
+                    .unwrap();
+            let coder = listings[&session]
+                .agents
+                .iter()
+                .find(|agent| agent.id == CODER);
+            assert_eq!(coder.unwrap().state.as_deref(), Some("waiting"));
+            assert_eq!(
+                std::fs::read_to_string(&sent_to).unwrap_or_default(),
+                notice
+            );
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

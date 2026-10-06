@@ -13,6 +13,7 @@ This session is running inside Herdr. The top-level session is the orchestrator.
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md`.
+- When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
 const HERDR_WORKER_CONTEXT: &str = r#"[agent-host: herdr — worker]
@@ -32,6 +33,7 @@ This session is a chair that the Swarm app started. The top-level session is the
 - Native background subagents are allowed. Prefer a visible pane when the user must watch or answer the worker, when it runs on another provider, or when a skill asks for visible seats.
 - Do not use headless CLIs or detached processes.
 - For pane lifecycle detail, load `~/.claude/skills/swarm-orchestrator/SKILL.md` and skip its Session section.
+- When the run is done, notify the owner with `swarm notify "swarm: <project> done" --body "<one line>"`; swarm itself notifies when an agent waits on a permission or a question.
 - Workers are leaves: answer only, do not orchestrate, spawn descendants, or notify the user."#;
 
 const APP_WORKER_CONTEXT: &str = r#"[agent-host: swarm-app — worker]
@@ -223,6 +225,18 @@ mod tests {
         )
         .unwrap();
         assert!(seat.starts_with("[agent-host: herdr]\n"));
+    }
+
+    /// ADR 0044: the chair notifies the owner when its run is done; a worker never does.
+    #[test]
+    fn only_the_chair_contracts_name_swarm_notify() {
+        let line = "- When the run is done, notify the owner with `swarm notify";
+        for chair in [HERDR_CONTEXT, APP_CONTEXT] {
+            assert!(chair.contains(line), "{chair}");
+        }
+        for worker in [HERDR_WORKER_CONTEXT, APP_WORKER_CONTEXT] {
+            assert!(!worker.contains("swarm notify"), "{worker}");
+        }
     }
 
     const APP_CHAIR: [(&str, &str); 4] = [

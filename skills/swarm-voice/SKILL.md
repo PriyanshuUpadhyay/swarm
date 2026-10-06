@@ -23,5 +23,7 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
 
 - Do not run `spawn`, `close`, `sweep`, or `drain`; those belong to the orchestrator.
 - Do not ask questions in the pane; send them as a message.
+- Do not notify the owner. Swarm notifies when you wait on a permission; anything else goes to the
+  orchestrator. `swarm notify` refuses a child.
 - Answer from the message and what you already know unless the message asks you to inspect files.
 - If a `swarm` command fails with a sandbox error, run the same command once more before you report it.
