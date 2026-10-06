@@ -14,27 +14,17 @@ for flag in "$@"; do
   esac
 done
 
-# The global swarm CLI and ~/.swarm change only on --install: a branch build must not swap the
-# CLI and migrate the real database as a side effect of building the app.
+zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
+# The app runs this swarm from Contents/Helpers; the cask links it onto PATH (ADR 0048).
+cargo build --manifest-path "$repo/Cargo.toml" --release --locked
+# The home changes only on --install: building the app must not migrate the real database. Even then
+# no swarm goes on PATH, because a cargo build there would shadow the cask's link (ADR 0048).
 if (( install )); then
-  commit="$(git -C "$repo" rev-parse --short HEAD)"
-  installed="$(swarm --version 2>/dev/null | awk '{print $3}' || true)"
-  if [[ "$installed" != "$commit" ]]; then
-    print "==> installing swarm offline (${installed:-none} -> $commit)"
-    if ! cargo install --path "$repo" --force --locked --offline; then
-      print "==> offline install failed; installing swarm online"
-      cargo install --path "$repo" --force --locked
-    fi
-  fi
-  swarm init
+  "$repo/target/release/swarm" init
   for adapter in herdr tmux tmux-solo; do
-    swarm adapter check "$adapter"
+    "$repo/target/release/swarm" adapter check "$adapter"
   done
 fi
-
-zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
-# The app runs this swarm only when none is on the login PATH, as on a Mac that got the app from a DMG.
-cargo build --manifest-path "$repo/Cargo.toml" --release --locked
 swift build --package-path "$root" --disable-sandbox -c release --product Swarm
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 app="$root/.build/release/Swarm.app"

@@ -42,30 +42,29 @@ Swarm.app is a macOS chat window over the same sessions.
 
 ## Install
 
-The CLI with Homebrew (macOS). This also installs tmux:
+One Homebrew cask installs Swarm.app, links the `swarm` CLI inside the app onto PATH, and installs
+tmux, so the app and the CLI always come from one release. It needs macOS 26 (Tahoe) or newer:
 
 ```sh
 brew tap priyanshuupadhyay/tap
 brew trust --tap priyanshuupadhyay/tap   # Homebrew 6 or newer
-brew install priyanshuupadhyay/tap/swarm
+brew install --cask priyanshuupadhyay/tap/swarm-app
 swarm init                               # creates ~/.swarm with the db, runs/, and adapters/
 ```
 
-From a clone: `cargo install --path .`, then `swarm init`. Update with
-`brew upgrade priyanshuupadhyay/tap/swarm`.
+Update with `brew upgrade priyanshuupadhyay/tap/swarm-app`. If you have the old `swarm` formula,
+run `brew upgrade` once: the formula is now an empty pointer, and its upgrade frees the PATH link
+for the cask. The app warns at launch when Terminal's `swarm` is another build than its own.
 
-### Swarm app
+The CLI alone, on an older macOS or on Linux: `cargo install --path .` from a clone, then
+`swarm init`. It needs tmux.
 
-The app needs macOS 26 (Tahoe) or newer. The cask also installs the CLI and tmux:
+### Swarm app without Homebrew
 
-```sh
-brew install --cask priyanshuupadhyay/tap/swarm-app
-```
-
-Or download `Swarm-<version>.dmg` from the
+Download `Swarm-<version>.dmg` from the
 [latest release](https://github.com/PriyanshuUpadhyay/swarm/releases/latest), open it, and drag
-Swarm onto Applications. The app carries its own `swarm` CLI. It still needs tmux
-(`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
+Swarm onto Applications. The app carries its own `swarm` CLI but puts nothing on PATH. It still
+needs tmux (`brew install tmux`) and at least one agent CLI (`claude`, `codex`, or `agy`).
 
 The app is not notarized by Apple, so macOS blocks the first launch. Allow it once:
 
