@@ -259,7 +259,7 @@ struct HooksSetupSheet: View {
     }
 
     /// Each group with its checkbox and its files, and the consent radio under folder trust. The
-    /// last checked group keeps its box, so the plan always has a group to apply.
+    /// list scrolls when it would push the buttons off a small screen (02-design).
     private func groupList(_ plan: SwarmHooksPlan) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             HStack {
@@ -273,6 +273,16 @@ struct HooksSetupSheet: View {
                 .labelsHidden()
                 .frame(width: DesignTokens.Size.segmentedPicker)
             }
+            // A ScrollView is as tall as its rows up to the cap. ViewThatFits would build the
+            // rows twice, and with them each diff's web view.
+            ScrollView { groupRows(plan) }
+                .frame(maxHeight: DesignTokens.Size.setupGroupList)
+        }
+    }
+
+    /// The last checked group keeps its box, so the plan always has a group to apply.
+    private func groupRows(_ plan: SwarmHooksPlan) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
             ForEach(choice.groups, id: \.self) { group in
                 let checked = !choice.unchecked.contains(group)
                 Toggle(Self.title(group), isOn: Binding(
@@ -295,6 +305,7 @@ struct HooksSetupSheet: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var consentPicker: some View {

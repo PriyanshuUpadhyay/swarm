@@ -43,6 +43,8 @@ enum DesignTokens {
         static let hooksSheet: CGFloat = 680
         /// The hooks setup conflicts stop growing here and scroll.
         static let conflictList: CGFloat = 180
+        /// The setup sheet's group list scrolls past this, so its buttons stay on a 13-inch screen.
+        static let setupGroupList: CGFloat = 420
         /// The profile name column on the Agent profiles page.
         static let profileName: CGFloat = 150
         /// The health pill column, so every row's chain ends at the same place.
