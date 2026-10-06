@@ -269,7 +269,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -806,24 +806,16 @@ fn codex_homes(
 /// them with `--settings`. With a rule list, setup also registers `swarm guard` in every Claude
 /// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040).
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let user_home = std::path::PathBuf::from(env_var("HOME")?);
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
-    let homes = codex_homes(&user_home)?;
-    let agy_hooks = user_home.join(".gemini/config/hooks.json");
+    let HookFiles {
+        homes,
+        agy_hooks,
+        claude_settings,
+        codex_hooks,
+    } = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
     // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
     // with no list never gets a hook that would block every call.
     let has_list = swarm::paths::guards_file()?.exists();
-    let claude_settings = unique_targets(
-        std::iter::once(user_home.join(".claude/settings.json")).chain(
-            std::fs::read_dir(user_home.join(".claude/.profiles"))
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .map(|entry| entry.path().join("settings.json"))
-                .filter(|path| path.exists()),
-        ),
-    );
-    let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
     // A file that swarm cannot read or edit is a conflict in the plan, not an error.
     let plan = || -> Vec<swarm::managed::FilePlan> {
         let unreadable = swarm::managed::FilePlan::unreadable;
@@ -902,6 +894,107 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(())
             })?;
             Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+/// The files that `hooks setup` writes: each Codex home, AGY's `hooks.json`, and, for the guard,
+/// each Claude `settings.json` and Codex `hooks.json`, one name per file.
+struct HookFiles {
+    homes: Vec<std::path::PathBuf>,
+    agy_hooks: std::path::PathBuf,
+    claude_settings: Vec<std::path::PathBuf>,
+    codex_hooks: Vec<std::path::PathBuf>,
+}
+
+impl HookFiles {
+    fn of(user_home: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let homes = codex_homes(user_home)?;
+        let claude_settings = unique_targets(
+            std::iter::once(user_home.join(".claude/settings.json")).chain(
+                std::fs::read_dir(user_home.join(".claude/.profiles"))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path().join("settings.json"))
+                    .filter(|path| path.exists()),
+            ),
+        );
+        let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
+        Ok(Self {
+            agy_hooks: user_home.join(".gemini/config/hooks.json"),
+            homes,
+            claude_settings,
+            codex_hooks,
+        })
+    }
+
+    /// Every item that `hooks setup` adds, with swarm's current text, so `managed` finds one that
+    /// a build wrote before swarm kept a record (ADR 0042). The text names no build (ADR 0034), so
+    /// an item equal to it is swarm's. A Codex key's table is swarm's own key, so it is created.
+    fn items(&self) -> Vec<swarm::managed::Edit> {
+        use swarm::managed::{Edit, Writer};
+        let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
+        let mut items = Vec::new();
+        for home in &self.homes {
+            let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
+            let guard = swarm::bus::codex_guard_trust(home, &hooks);
+            let keys = codex.iter().map(|entry| (entry, Writer::HooksState));
+            for ((key, hash), writer) in
+                keys.chain(guard.iter().map(|entry| (entry, Writer::HooksGuard)))
+            {
+                items.push(Edit {
+                    created: 1,
+                    ..swarm::bus::codex_trust_edit(home, key, hash, writer)
+                });
+            }
+        }
+        let guarded = self.claude_settings.iter().map(|path| (path, "claude"));
+        for (path, provider) in guarded.chain(self.codex_hooks.iter().map(|path| (path, "codex"))) {
+            for event in swarm::guard::EVENTS {
+                items.push(swarm::bus::guard_group_edit(path, provider, event));
+            }
+        }
+        for name in ["swarm", "swarm-guard"] {
+            items.push(swarm::bus::agy_group_edit(&self.agy_hooks, name));
+        }
+        items
+    }
+}
+
+/// `swarm managed list [--json]`: each item swarm wrote outside its home, recorded or found, with
+/// its live state (ADR 0042).
+fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    let found = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?.items();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match args.as_slice() {
+        ["list", rest @ ..] if matches!(rest, [] | ["--json"]) => {
+            let entries: Vec<_> = swarm::managed::list(&store, &found)?
+                .iter()
+                .map(swarm::managed::Entry::json)
+                .collect();
+            if rest.is_empty() {
+                for entry in &entries {
+                    let path: Vec<_> = entry["path"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|part| part.as_str())
+                        .collect();
+                    println!(
+                        "{}  {}  {}  {}  {}",
+                        entry["id"].as_str().unwrap_or_default(),
+                        entry["state"].as_str().unwrap_or_default(),
+                        entry["writer"].as_str().unwrap_or_default(),
+                        entry["file"].as_str().unwrap_or_default(),
+                        path.join(".")
+                    );
+                }
+                return Ok(());
+            }
+            print_json(&serde_json::json!({ "entries": entries }))
         }
         _ => Err(USAGE.into()),
     }
@@ -2213,6 +2306,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().map(String::as_str) == Some("hooks") {
         return hooks(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("managed") {
+        return managed(&args[1..]);
     }
     if let [cmd, json] = args
         && cmd == "roles"
