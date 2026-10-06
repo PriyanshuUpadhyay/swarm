@@ -40,6 +40,17 @@ public enum PathSwarmCheck {
         return dismissed.contains(drift.key) ? nil : drift
     }
 
+    /// This app's check: the login PATH's `swarm` against `Contents/Helpers/swarm`, gated by the
+    /// branch that `Tools/build.sh` wrote into Info.plist. Call it after `LoginShellPath.ready()`.
+    public static func current(dismissed: [String]) async -> PathSwarmDrift? {
+        await drift(
+            branch: Bundle.main.object(forInfoDictionaryKey: "SwarmBuildBranch") as? String ?? "",
+            pathSwarm: Shell.which("swarm"),
+            helper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm").path,
+            dismissed: dismissed
+        )
+    }
+
     /// The full `swarm <version> <commit> <branch>` line, so one version from two commits differs.
     static func versionLine(_ executable: String) async -> String? {
         guard FileManager.default.isExecutableFile(atPath: executable),
