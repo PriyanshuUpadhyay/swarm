@@ -141,8 +141,7 @@ struct ManagedChangesPage: View {
                 withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(group.name) }
             } label: {
                 HStack(spacing: DesignTokens.Spacing.xs) {
-                    Image(systemName: "chevron.right")
-                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    Image(systemName: isOpen ? "chevron.down" : "chevron.forward")
                         .frame(width: DesignTokens.Size.glyphSlot)
                     Text(group.name).font(.subheadline.weight(.semibold))
                     if let source = group.source {
