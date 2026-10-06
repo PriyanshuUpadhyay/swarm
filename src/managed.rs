@@ -14,14 +14,15 @@ pub struct Conflict {
     pub fix: String,
 }
 
-/// What `swarm hooks setup` would do to one file: its text now, its text with each missing entry
-/// of swarm's added, and each conflict. An entry equal to swarm's stays as it is.
+/// What one writer would do to one file: its text now, its planned text, each conflict, and each
+/// item that the planned text adds. An entry equal to swarm's stays as it is.
 #[derive(Debug)]
 pub struct FilePlan {
     pub path: std::path::PathBuf,
     pub before: String,
     pub after: String,
     pub conflicts: Vec<Conflict>,
+    pub edits: Vec<Edit>,
 }
 
 impl FilePlan {
@@ -40,20 +41,202 @@ impl FilePlan {
             path,
             before: String::new(),
             after: String::new(),
+            edits: Vec::new(),
+        }
+    }
+}
+
+/// The three places swarm writes. Wire names are open: a later build may add one (A4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    /// A key in a TOML table; `path` is the tables, then the key.
+    TomlKey,
+    /// A key in a JSON object; `path` is the keys, the last one the item's own.
+    JsonKey,
+    /// One item of a JSON array; `path` is the keys to the array.
+    JsonArrayItem,
+}
+
+/// The swarm feature that wrote an item. Wire names are open: a later build may add one (A4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Writer {
+    #[serde(rename = "hooks.state")]
+    HooksState,
+    #[serde(rename = "hooks.guard")]
+    HooksGuard,
+    #[serde(rename = "launch.trust")]
+    LaunchTrust,
+    #[serde(rename = "herdr")]
+    Herdr,
+}
+
+/// One item that a writer adds to a file outside the swarm home.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Edit {
+    pub writer: Writer,
+    /// The write target, links followed, so two names of one file are one place.
+    pub file: std::path::PathBuf,
+    pub kind: Kind,
+    pub path: Vec<String>,
+    /// The value written, as JSON; a TOML value keeps its type (string, integer, float, bool).
+    pub wrote: serde_json::Value,
+    /// The value the write replaced; None when the place was absent.
+    pub before: Option<serde_json::Value>,
+    /// How many containers at the end of `path` (tables, objects, the array) the file lacked
+    /// before the write, so a revert removes them again once they are empty.
+    pub created: u8,
+    /// The id of an edit that is always reverted with this one.
+    pub with: Option<String>,
+}
+
+impl Edit {
+    /// A new item at `path` of `file`, with nothing before it.
+    pub fn new(
+        writer: Writer,
+        file: &std::path::Path,
+        kind: Kind,
+        path: &[&str],
+        wrote: serde_json::Value,
+    ) -> Self {
+        Self {
+            writer,
+            file: place(file),
+            kind,
+            path: path.iter().map(|part| part.to_string()).collect(),
+            wrote,
+            before: None,
+            created: 0,
+            with: None,
         }
     }
 
-    /// Write the planned text. Returns whether the file changed. The caller checks every file of
-    /// the plan first, because setup writes no file while any conflict stands.
-    pub fn apply(&self) -> Result<bool, String> {
-        if !self.conflicts.is_empty() {
-            return Err(format!("swarm: {} has a conflict", self.path.display()));
+    /// The first 12 hex digits of a hash of the place, so a found item and a recorded one of one
+    /// place share an id. An array item adds its value, because two items share one array.
+    pub fn id(&self) -> String {
+        use sha2::Digest;
+        let mut digest = sha2::Sha256::new();
+        digest.update(self.file.to_string_lossy().as_bytes());
+        digest.update([0]);
+        digest.update(wire(&self.kind).as_bytes());
+        for part in &self.path {
+            digest.update([0]);
+            digest.update(part.as_bytes());
         }
-        if self.after == self.before {
-            return Ok(false);
+        if self.kind == Kind::JsonArrayItem {
+            digest.update([0]);
+            digest.update(self.wrote.to_string().as_bytes());
         }
-        write_text(&self.path, &self.before, &self.after).map(|()| true)
+        digest.finalize()[..6]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
+}
+
+/// The file a write to `file` lands in, with its folder's links resolved too, so two names of one
+/// file, or of one missing file, are one place.
+fn place(file: &std::path::Path) -> std::path::PathBuf {
+    let target = write_target(file).unwrap_or_else(|_| file.to_path_buf());
+    match (target.parent(), target.file_name()) {
+        (Some(dir), Some(name)) => {
+            std::fs::canonicalize(dir).map_or(target.clone(), |dir| dir.join(name))
+        }
+        _ => target,
+    }
+}
+
+/// The wire name of a `Kind` or `Writer`.
+fn wire(value: &impl serde::Serialize) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(name)) => name,
+        _ => unreachable!("Kind and Writer serialize as strings"),
+    }
+}
+
+/// Write each planned file and record its edits, one transaction per file, so a row exists only
+/// for a file that was written. Refuses any conflict in any plan before any write. Returns each
+/// file that changed. The caller holds `trust.lock` from the plan to here and checks the digest.
+pub fn apply(
+    store: &rusqlite::Connection,
+    plans: &[FilePlan],
+) -> Result<Vec<std::path::PathBuf>, String> {
+    commit(store, plans, false)
+}
+
+/// `apply` for the plans of `revert_plan`: each edit's row is set off, not added.
+pub fn revert(
+    store: &rusqlite::Connection,
+    plans: &[FilePlan],
+) -> Result<Vec<std::path::PathBuf>, String> {
+    commit(store, plans, true)
+}
+
+fn commit(
+    store: &rusqlite::Connection,
+    plans: &[FilePlan],
+    off: bool,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    if let Some(conflicts) = conflicts_text(plans) {
+        return Err(conflicts);
+    }
+    let failed = |error: rusqlite::Error| format!("swarm: cannot record a managed edit: {error}");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    let mut changed = Vec::new();
+    for plan in plans {
+        let writes = plan.after != plan.before;
+        if !writes && plan.edits.is_empty() {
+            continue;
+        }
+        let tx =
+            rusqlite::Transaction::new_unchecked(store, rusqlite::TransactionBehavior::Immediate)
+                .map_err(failed)?;
+        for edit in &plan.edits {
+            if off {
+                tx.execute("UPDATE managed_edit SET off = 1 WHERE id = ?1", [edit.id()])
+            } else {
+                tx.execute(
+                    "INSERT INTO managed_edit
+                         (id, writer, file, kind, path, wrote, before, created, with_id, at_s, off)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)
+                     ON CONFLICT (id) DO UPDATE SET writer = excluded.writer,
+                         file = excluded.file, kind = excluded.kind, path = excluded.path,
+                         wrote = excluded.wrote, before = excluded.before,
+                         created = excluded.created, with_id = excluded.with_id,
+                         at_s = excluded.at_s, off = 0",
+                    rusqlite::params![
+                        edit.id(),
+                        wire(&edit.writer),
+                        edit.file.to_string_lossy(),
+                        wire(&edit.kind),
+                        serde_json::Value::from(edit.path.clone()).to_string(),
+                        edit.wrote.to_string(),
+                        edit.before.as_ref().map(serde_json::Value::to_string),
+                        edit.created,
+                        edit.with,
+                        now,
+                    ],
+                )
+            }
+            .map_err(failed)?;
+        }
+        if writes {
+            write_text(&plan.path, &plan.before, &plan.after)?;
+        }
+        tx.commit().map_err(|error| match writes {
+            true => format!(
+                "swarm: wrote {} but could not record it: {error}; swarm managed list shows it as found",
+                plan.path.display()
+            ),
+            false => failed(error),
+        })?;
+        if writes {
+            changed.push(plan.path.clone());
+        }
+    }
+    Ok(changed)
 }
 
 /// A digest of each planned file's path, text, and planned text, so apply refuses a file that

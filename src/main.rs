@@ -843,7 +843,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let codex_plans: Vec<_> = homes
             .iter()
             .map(|home| {
-                let mut entries = codex.clone();
+                let mut guard = Vec::new();
                 if has_list {
                     // Trust the guard group where the planned hooks.json puts it.
                     let target = canonical(&home.join("hooks.json"));
@@ -851,9 +851,9 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         .iter()
                         .find(|plan| canonical(&plan.path) == target)
                         .map_or("", |plan| plan.after.as_str());
-                    entries.extend(swarm::bus::codex_guard_trust(home, hooks));
+                    guard = swarm::bus::codex_guard_trust(home, hooks);
                 }
-                swarm::bus::codex_hook_plan(home, &entries)
+                swarm::bus::codex_hook_plan(home, &codex, &guard)
                     .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
             })
             .collect();
@@ -884,6 +884,8 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         ["setup", "--plan", "--json"] => print_json(&swarm::managed::plan_json(&plan())),
         ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
+            // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
+            let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
             let lock = swarm::paths::root_dir()?.join("trust.lock");
             swarm::managed::with_lock(&lock, || {
                 let plans = plan();
@@ -894,13 +896,8 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         "swarm: a hook file changed after the plan; check the plan again".into(),
                     );
                 }
-                if let Some(conflicts) = swarm::managed::conflicts_text(&plans) {
-                    return Err(conflicts);
-                }
-                for plan in &plans {
-                    if plan.apply()? {
-                        println!("swarm: set up swarm's hooks in {}", plan.path.display());
-                    }
+                for path in swarm::managed::apply(&store, &plans)? {
+                    println!("swarm: set up swarm's hooks in {}", path.display());
                 }
                 Ok(())
             })?;

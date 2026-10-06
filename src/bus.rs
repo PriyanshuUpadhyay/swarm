@@ -1,6 +1,6 @@
 use crate::managed::{
-    Conflict, FilePlan, json_object, json_text, read_json_object, read_optional, read_text,
-    refuse_read_only, retried, write_json, write_text,
+    Conflict, Edit, FilePlan, Kind, Writer, json_object, json_text, read_json_object,
+    read_optional, read_text, refuse_read_only, retried, write_json, write_text,
 };
 use crate::providers::Provider;
 
@@ -372,13 +372,15 @@ fn toml_table<'a>(
     parent.get_mut(key)?.as_table_like_mut()
 }
 
-/// The plan for a Codex home's `config.toml`. A missing trust entry is added; an entry with
-/// swarm's hash stays, in any TOML form or key spelling; any other entry at swarm's key is a
-/// conflict. The file is edited as TOML, so an entry is never added twice: a second table with
-/// the same name makes the whole file unreadable to Codex.
+/// The plan for a Codex home's `config.toml`, with the trust keys of swarm's `state` hooks and of
+/// its `guard` registration. A missing trust entry is added; an entry with swarm's hash stays, in
+/// any TOML form or key spelling; any other entry at swarm's key is a conflict. The file is edited
+/// as TOML, so an entry is never added twice: a second table with the same name makes the whole
+/// file unreadable to Codex.
 pub fn codex_hook_plan(
     home: &std::path::Path,
-    entries: &[(String, String)],
+    state: &[(String, String)],
+    guard: &[(String, String)],
 ) -> Result<FilePlan, String> {
     let path = home.join("config.toml");
     let (before, mut config) = read_codex_config(&path)?;
@@ -386,19 +388,32 @@ pub fn codex_hook_plan(
     let not_table = |name: &str| {
         format!("{file} has a {name} that is not a table; set swarm's trusted_hash by hand")
     };
+    // The tables the file lacks now, so a revert removes them again once they are empty.
+    let had_hooks = config.get("hooks").is_some();
+    let had_state = config
+        .get("hooks")
+        .and_then(|hooks| hooks.get("state"))
+        .is_some();
+    let created = 1 + u8::from(!had_hooks) + u8::from(!had_state);
     let hooks =
         toml_table(config.as_table_mut(), "hooks", true).ok_or_else(|| not_table("hooks"))?;
-    let state = toml_table(hooks, "state", true).ok_or_else(|| not_table("hooks.state"))?;
+    let table = toml_table(hooks, "state", true).ok_or_else(|| not_table("hooks.state"))?;
     let mut conflicts = Vec::new();
-    let mut added = false;
-    for (key, hash) in entries {
-        let found = match state.get(key) {
+    let mut edits = Vec::new();
+    let writers = state.iter().map(|entry| (entry, Writer::HooksState));
+    for ((key, hash), writer) in
+        writers.chain(guard.iter().map(|entry| (entry, Writer::HooksGuard)))
+    {
+        let found = match table.get(key) {
             Some(entry) => entry.get("trusted_hash").and_then(toml_edit::Item::as_str),
             None => {
-                toml_table(&mut *state, key, false)
+                toml_table(&mut *table, key, false)
                     .expect("a missing key becomes a table")
                     .insert("trusted_hash", toml_edit::value(hash.as_str()));
-                added = true;
+                edits.push(Edit {
+                    created,
+                    ..codex_trust_edit(home, key, hash, writer)
+                });
                 continue;
             }
         };
@@ -415,10 +430,10 @@ pub fn codex_hook_plan(
         }
     }
     // TOML output ends in a newline, so a file that only lacks one is kept as it is.
-    let after = if added {
-        config.to_string()
-    } else {
+    let after = if edits.is_empty() {
         before.clone()
+    } else {
+        config.to_string()
     };
     if after != before {
         refuse_read_only(&path)?;
@@ -428,7 +443,30 @@ pub fn codex_hook_plan(
         before,
         after,
         conflicts,
+        edits,
     })
+}
+
+/// The trust key `key` with `hash` in a Codex home's `config.toml`. A guard key goes with the
+/// guard group it trusts, so a revert of either removes both: Codex asks again for a group whose
+/// trust is gone, and a trust key left without its group trusts nothing.
+pub fn codex_trust_edit(home: &std::path::Path, key: &str, hash: &str, writer: Writer) -> Edit {
+    let mut edit = Edit::new(
+        writer,
+        &home.join("config.toml"),
+        Kind::TomlKey,
+        &["hooks", "state", key, "trusted_hash"],
+        hash.into(),
+    );
+    if writer == Writer::HooksGuard {
+        // A guard key is `<hooks.json>:<event label>:<group>:<handler>` (`codex_guard_trust`).
+        let label = key.rsplit(':').nth(2).unwrap_or_default();
+        edit.with = crate::guard::EVENTS
+            .iter()
+            .find(|event| codex_event_label(event) == label)
+            .map(|event| guard_group_edit(&home.join("hooks.json"), "codex", event).id());
+    }
+    edit
 }
 
 /// Whether a Codex home's `config.toml` trusts every entry.
@@ -702,19 +740,20 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<FilePlan, St
         .expect("json_object returns an object");
     let file = path.display().to_string();
     let mut conflicts = Vec::new();
-    let mut added = false;
+    let mut edits = Vec::new();
     // The guard is a group of its own (ADR 0040), so a Mac that has swarm's state group keeps it.
-    let mut wanted = vec![("swarm", agy_group())];
+    let mut wanted = vec![agy_group_edit(path, "swarm")];
     if guard {
-        wanted.push(("swarm-guard", agy_guard_group()));
+        wanted.push(agy_group_edit(path, "swarm-guard"));
     }
-    for (name, group) in wanted {
+    for edit in wanted {
+        let (name, group) = (edit.path[0].as_str(), &edit.wrote);
         match groups.get(name) {
             None => {
-                groups.insert(name.into(), group);
-                added = true;
+                groups.insert(name.into(), group.clone());
+                edits.push(edit);
             }
-            Some(found) if *found == group => {}
+            Some(found) if found == group => {}
             Some(found) => conflicts.push(Conflict {
                 file: file.clone(),
                 entry: format!("group {name:?}"),
@@ -724,10 +763,13 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<FilePlan, St
             }),
         }
     }
-    let after = if added && conflicts.is_empty() {
-        json_text(&value)
-    } else {
+    if !conflicts.is_empty() {
+        edits.clear();
+    }
+    let after = if edits.is_empty() {
         before.clone()
+    } else {
+        json_text(&value)
     };
     if after != before {
         refuse_read_only(path)?;
@@ -737,7 +779,17 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<FilePlan, St
         before,
         after,
         conflicts,
+        edits,
     })
+}
+
+/// The group `name` (`swarm` or `swarm-guard`) as `agy_hook_plan` adds it to AGY's `hooks.json`.
+pub fn agy_group_edit(path: &std::path::Path, name: &str) -> Edit {
+    let (writer, group) = match name {
+        "swarm" => (Writer::HooksState, agy_group()),
+        _ => (Writer::HooksGuard, agy_guard_group()),
+    };
+    Edit::new(writer, path, Kind::JsonKey, &[name], group)
 }
 
 /// Whether AGY's `hooks.json` holds swarm's group as `agy_hook_plan` adds it.
@@ -803,6 +855,7 @@ fn agy_guard_group() -> serde_json::Value {
 pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePlan, String> {
     let (before, mut value) = read_json_object(path)?;
     let file = path.display().to_string();
+    let had_hooks = value.get("hooks").is_some();
     let hooks = value
         .as_object_mut()
         .expect("json_object returns an object")
@@ -811,9 +864,10 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
     let Some(hooks) = hooks.as_object_mut() else {
         return Err(format!("swarm: {file} has hooks that is not an object"));
     };
-    let mut added = false;
+    let mut edits = Vec::new();
     let mut conflicts = Vec::new();
     for event in crate::guard::EVENTS {
+        let had_event = hooks.contains_key(event);
         let Some(groups) = hooks
             .entry(event)
             .or_insert_with(|| serde_json::json!([]))
@@ -832,8 +886,12 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
             .cloned()
             .collect();
         if handlers.is_empty() {
-            groups.push(serde_json::json!({"hooks": [guard_handler(provider, event)]}));
-            added = true;
+            let edit = guard_group_edit(path, provider, event);
+            groups.push(edit.wrote.clone());
+            edits.push(Edit {
+                created: u8::from(!had_hooks) + u8::from(!had_event),
+                ..edit
+            });
         }
         // A CLI that times the hook out before the runner answers lets the call through, and
         // swarm cannot hash a Codex handler whose timeout the file does not state (ADR 0040).
@@ -854,10 +912,10 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
             });
         }
     }
-    let after = if added {
-        json_text(&value)
-    } else {
+    let after = if edits.is_empty() {
         before.clone()
+    } else {
+        json_text(&value)
     };
     if after != before {
         refuse_read_only(path)?;
@@ -867,7 +925,21 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
         before,
         after,
         conflicts,
+        edits,
     })
+}
+
+/// The group that `guard_hooks_plan` adds to `event` in a Claude `settings.json` or a Codex
+/// `hooks.json`.
+pub fn guard_group_edit(path: &std::path::Path, provider: &str, event: &str) -> Edit {
+    let group = serde_json::json!({"hooks": [guard_handler(provider, event)]});
+    Edit::new(
+        Writer::HooksGuard,
+        path,
+        Kind::JsonArrayItem,
+        &["hooks", event],
+        group,
+    )
 }
 
 fn agy_group() -> serde_json::Value {
@@ -1160,12 +1232,14 @@ mod tests {
     }
 
     /// Setup for one file as `swarm hooks setup` does it: no write while the file has a conflict.
+    /// Apply `plan` through the module with a store of its own; whether the file changed.
     fn set_up(plan: Result<FilePlan, String>) -> Result<bool, String> {
-        let plan = plan?;
-        match plan.conflicts.is_empty() {
-            true => plan.apply(),
-            false => Err(format!("{:?}", plan.conflicts)),
-        }
+        apply(&[plan?]).map(|changed| !changed.is_empty())
+    }
+
+    fn apply(plans: &[FilePlan]) -> Result<Vec<std::path::PathBuf>, String> {
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        crate::managed::apply(&store, plans)
     }
 
     #[test]
@@ -1176,9 +1250,9 @@ mod tests {
         assert!(!codex_hooks_trusted(&home, &entries));
 
         // A fresh Mac has no Codex home at all.
-        assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
         assert!(codex_hooks_trusted(&home, &entries));
-        assert!(!set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(!set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
 
         // Another tool's group-0 entry stays. An older hash at swarm's key is a conflict that
         // names both hashes, and the file stays as it was (ADR 0036).
@@ -1187,9 +1261,9 @@ mod tests {
         let text = std::fs::read_to_string(&config).unwrap();
         let owners = format!("model = \"x\"\n{other}\n\n{text}");
         std::fs::write(&config, &owners).unwrap();
-        assert!(!set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(!set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
         let moved = codex_hook_trust("'/opt/swarm' hook codex");
-        let plan = codex_hook_plan(&home, &moved).unwrap();
+        let plan = codex_hook_plan(&home, &moved, &[]).unwrap();
         assert_eq!(plan.conflicts.len(), moved.len());
         assert_eq!(plan.conflicts[0].found, entries[0].1);
         assert_eq!(plan.conflicts[0].wanted, moved[0].1);
@@ -1199,7 +1273,7 @@ mod tests {
                 .contains(&config.display().to_string())
         );
         assert_eq!(plan.after, owners);
-        assert!(set_up(codex_hook_plan(&home, &moved)).is_err());
+        assert!(set_up(codex_hook_plan(&home, &moved, &[])).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), owners);
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -1209,7 +1283,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!("swarm-codex-comment-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
-        set_up(codex_hook_plan(&home, &entries)).unwrap();
+        set_up(codex_hook_plan(&home, &entries, &[])).unwrap();
         let config = home.join("config.toml");
         let plain = std::fs::read_to_string(&config).unwrap();
 
@@ -1226,7 +1300,7 @@ mod tests {
             .join("\n");
         std::fs::write(&config, &commented).unwrap();
         assert!(codex_hooks_trusted(&home, &entries));
-        assert!(!set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(!set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
 
         // An entry in another form or key spelling is found where it is, so its other hash is
         // one conflict and the missing entries are added once.
@@ -1246,7 +1320,7 @@ mod tests {
             values.replacen("[hooks.state.\"/", "[hooks.state.\"\\u002f", 1),
         ] {
             std::fs::write(&config, &form).unwrap();
-            let plan = codex_hook_plan(&home, &entries).unwrap();
+            let plan = codex_hook_plan(&home, &entries, &[]).unwrap();
             assert_eq!(plan.conflicts.len(), 1, "{form}");
             assert_eq!(plan.conflicts[0].found, "sha256:x", "{form}");
             let parsed: toml_edit::DocumentMut = plan.after.parse().unwrap();
@@ -1262,7 +1336,7 @@ mod tests {
         // An escape in a table that is not a hooks table does not block setup.
         let project = "[projects.\"\\u002ftmp/project\"]\ntrust_level = \"trusted\"\n";
         std::fs::write(&config, project).unwrap();
-        assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
         assert!(codex_hooks_trusted(&home, &entries));
         assert!(
             std::fs::read_to_string(&config)
@@ -1274,18 +1348,18 @@ mod tests {
         // stays as it was.
         let twice = format!("{escaped}{escaped}");
         std::fs::write(&config, &twice).unwrap();
-        assert!(codex_hook_plan(&home, &entries).is_err());
+        assert!(codex_hook_plan(&home, &entries, &[]).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), twice);
         // So is a file that is not UTF-8, which cannot be read as text.
         let latin1 = b"model = \"o3\"\n# caf\xe9\n".to_vec();
         std::fs::write(&config, &latin1).unwrap();
-        assert!(codex_hook_plan(&home, &entries).is_err());
+        assert!(codex_hook_plan(&home, &entries, &[]).is_err());
         assert_eq!(std::fs::read(&config).unwrap(), latin1);
 
         // A commented-out old entry is not an entry, so the missing ones are added.
         let old: String = plain.lines().map(|line| format!("# {line}\n")).collect();
         std::fs::write(&config, &old).unwrap();
-        assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
         assert!(codex_hooks_trusted(&home, &entries));
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -1326,7 +1400,7 @@ mod tests {
         assert_eq!(plan.conflicts.len(), 1);
         assert_eq!(plan.conflicts[0].found, r#"{"Stop":[]}"#);
         assert_eq!(plan.after, owners);
-        assert!(plan.apply().is_err());
+        assert!(apply(std::slice::from_ref(&plan)).is_err());
         assert!(set_up(Ok(plan)).is_err());
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), owners);
 
@@ -1336,6 +1410,7 @@ mod tests {
             before: owners.into(),
             after: after.into(),
             conflicts: Vec::new(),
+            edits: Vec::new(),
         };
         assert_ne!(
             crate::managed::digest(&[planned("{}")]),
@@ -1433,7 +1508,7 @@ mod tests {
                 .contains("[projects.\"/one\"]")
         );
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
-        assert!(set_up(codex_hook_plan(&home, &entries)).unwrap());
+        assert!(set_up(codex_hook_plan(&home, &entries, &[])).unwrap());
         assert!(linked());
         assert!(codex_hooks_trusted(&home, &entries));
 
@@ -1500,7 +1575,7 @@ mod tests {
             std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o444)).unwrap();
         }
         assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
-        assert!(codex_hook_plan(&root, &entries).is_err());
+        assert!(codex_hook_plan(&root, &entries, &[]).is_err());
         assert!(agy_hook_plan(&hooks, false).is_err());
         assert!(ensure_agy_trust(&hooks, std::path::Path::new("/one")).is_err());
         for (file, text) in [(&config, "model = \"o4\"\n"), (&hooks, "{}\n")] {
@@ -1518,15 +1593,16 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let config = root.join("config.toml");
         std::fs::write(&config, "model = \"o3\"\n").unwrap();
-        let plan = codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex")).unwrap();
+        let plan =
+            codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex"), &[]).unwrap();
         let owners = "model = \"o3\"\napproval_policy = \"never\"\n";
         std::fs::write(&config, owners).unwrap();
-        assert!(plan.apply().is_err());
+        assert!(apply(std::slice::from_ref(&plan)).is_err());
         assert_eq!(std::fs::read_to_string(&config).unwrap(), owners);
         let hooks = root.join("hooks.json");
         let plan = agy_hook_plan(&hooks, false).unwrap();
         std::fs::write(&hooks, "{\"other\": {}}\n").unwrap();
-        assert!(plan.apply().is_err());
+        assert!(apply(std::slice::from_ref(&plan)).is_err());
         assert_eq!(
             std::fs::read_to_string(&hooks).unwrap(),
             "{\"other\": {}}\n"
@@ -1577,11 +1653,12 @@ mod tests {
         std::os::unix::fs::symlink(home.join("config.toml"), spare.join("config.toml")).unwrap();
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
         let plans = [
-            codex_hook_plan(&home, &entries).unwrap(),
-            codex_hook_plan(&spare, &entries).unwrap(),
+            codex_hook_plan(&home, &entries, &[]).unwrap(),
+            codex_hook_plan(&spare, &entries, &[]).unwrap(),
         ];
-        assert_eq!(plans[0].apply(), Ok(true));
-        assert!(plans[1].apply().is_ok());
+        // Both plans have one write target, so their edits have one id and one row.
+        assert_eq!(plans[0].edits[0].id(), plans[1].edits[0].id());
+        assert_eq!(apply(&plans).unwrap().len(), 2);
         assert!(codex_hooks_trusted(&spare, &entries));
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -1599,7 +1676,8 @@ mod tests {
         assert!(
             set_up(codex_hook_plan(
                 &root,
-                &codex_hook_trust("'/bin/swarm' hook codex")
+                &codex_hook_trust("'/bin/swarm' hook codex"),
+                &[]
             ))
             .unwrap()
         );
@@ -1640,7 +1718,7 @@ mod tests {
         // Finder's Locked box: the mode stays 0644, but no one can write the file.
         chflags("uchg");
         let (plan, agy) = (
-            codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex")),
+            codex_hook_plan(&root, &codex_hook_trust("'/bin/swarm' hook codex"), &[]),
             agy_hook_plan(&hooks, false),
         );
         chflags("nouchg");
@@ -1659,7 +1737,7 @@ mod tests {
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).unwrap();
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
         let (plan, trust) = (
-            codex_hook_plan(&root, &entries),
+            codex_hook_plan(&root, &entries, &[]),
             ensure_codex_trust(&root, std::path::Path::new("/one")),
         );
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1679,7 +1757,7 @@ mod tests {
         std::os::unix::fs::symlink(gone.join("agy/hooks.json"), root.join("hooks.json")).unwrap();
         let entries = codex_hook_trust("'/bin/swarm' hook codex");
         assert!(ensure_codex_trust(&root, std::path::Path::new("/one")).is_err());
-        assert!(codex_hook_plan(&root, &entries).is_err());
+        assert!(codex_hook_plan(&root, &entries, &[]).is_err());
         assert!(agy_hook_plan(&root.join("hooks.json"), false).is_err());
         assert!(!gone.exists());
         std::fs::remove_dir_all(&root).unwrap();

@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003.sql"),
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
+    include_str!("../migrations/0006.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -87,6 +88,10 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 5 {
         tx.execute_batch(MIGRATIONS[4])?;
         tx.pragma_update(None, "user_version", 5)?;
+    }
+    if version < 6 {
+        tx.execute_batch(MIGRATIONS[5])?;
+        tx.pragma_update(None, "user_version", 6)?;
     }
 
     tx.commit()?;
@@ -2008,7 +2013,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2035,7 +2040,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -2279,7 +2284,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 6")
+            .execute_batch("PRAGMA user_version = 7")
             .unwrap();
         assert!(open(&db).is_err());
     }
