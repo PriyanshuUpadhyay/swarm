@@ -3,7 +3,7 @@ import Testing
 @testable import SwarmCore
 
 @Suite("PATH swarm check")
-struct PathSwarmCheckTests {
+final class PathSwarmCheckTests {
     let folder: URL
     let helper: String
 
@@ -13,6 +13,9 @@ struct PathSwarmCheckTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         helper = try Self.standIn(in: folder, named: "helper-swarm", script: "echo 'swarm 0.9.0 abc1234 '")
     }
+
+    // A class suite, so each test's folder goes away with it.
+    deinit { try? FileManager.default.removeItem(at: folder) }
 
     static func standIn(in folder: URL, named name: String, script: String) throws -> String {
         let path = folder.appendingPathComponent(name).path
