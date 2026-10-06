@@ -110,13 +110,19 @@ struct ToolRunFoldTests {
         #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices, shownAsRows: []))
     }
 
-    /// The ids drawn as plain rows while `rows` land one by one, as the view records them on each
-    /// change of fold ids.
-    private func shownWhileLanding(_ rows: [TranscriptRow]) -> Set<String> {
-        var shown: Set<String> = []
-        for count in rows.indices {
-            ToolRunFold.recordPlainRows(ToolRunFold.items(in: Array(rows[...count])), in: &shown)
+    /// Records the rows on screen for `rows`, as the view does on each change of list lines.
+    private func record(_ rows: [TranscriptRow], overrides: [String: Bool] = [:], in shown: inout Set<String>) {
+        let seen = shown
+        let lines = ToolRunFold.lines(ToolRunFold.items(in: rows)) {
+            ToolRunFold.isExpanded($1, overrides: overrides, shownAsRows: seen)
         }
+        ToolRunFold.recordShownRows(lines, in: &shown)
+    }
+
+    /// The ids drawn on screen while `rows` land one by one.
+    private func shownWhileLanding(_ rows: [TranscriptRow], overrides: [String: Bool] = [:]) -> Set<String> {
+        var shown: Set<String> = []
+        for count in rows.indices { record(Array(rows[...count]), overrides: overrides, in: &shown) }
         return shown
     }
 
@@ -141,8 +147,7 @@ struct ToolRunFoldTests {
         window: [TranscriptRow], earlier: [TranscriptRow]
     ) throws -> (rows: [TranscriptRow], shownAsRows: Set<String>) {
         var shown = shownWhileLanding(window)
-        let loaded = ToolRunFold.items(in: earlier + window)
-        ToolRunFold.recordPlainRows(loaded, in: &shown)
+        record(earlier + window, in: &shown)
         return (try firstFold(earlier + window), shown)
     }
 
@@ -173,6 +178,19 @@ struct ToolRunFoldTests {
         )
         #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan"])
         #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("Load earlier that makes the window's first ring open a turn keeps the rest of the owner-opened fold open")
+    func ringThatOpensTurnKeepsOpenedStepsOpen() throws {
+        let window = [ring("ring"), tool("read"), tool("grep"), tool("make"), reply("answer")]
+        let opened = [ToolRunFold.Item.fold(Array(window[...3])).id: true]
+        var shown = shownWhileLanding(window, overrides: opened)
+        // The rows before the window end a turn, so the ring now opens one and leaves the fold.
+        let loaded = [prompt(), reply("done"), turnEnd(), ring("ring", startsTurn: true)] + window.dropFirst()
+        record(loaded, overrides: opened, in: &shown)
+        let rest = try firstFold(loaded)
+        #expect(rest.map(\.eventID) == ["read", "grep", "make"])
+        #expect(ToolRunFold.isExpanded(rest, overrides: opened, shownAsRows: shown))
     }
 
     @Test("A fold whose steps were never drawn as rows starts closed")

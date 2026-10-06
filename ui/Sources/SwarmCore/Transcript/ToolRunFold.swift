@@ -8,8 +8,8 @@ import Foundation
 ///
 /// One rule sets whether a fold draws its steps, so no group of rows on screen ever collapses
 /// (ADR 0028): a fold never hides a group of rows the owner has already seen as rows. A fold starts
-/// open if 2 or more of its shown steps were drawn before as plain rows, not inside a fold;
-/// otherwise it starts closed, unless a step failed, because ADR 0047 puts a visible failure above a
+/// open if 2 or more of its shown steps were drawn before as rows, plain or as steps of an open
+/// fold; otherwise it starts closed, unless a step failed, because ADR 0047 puts a visible failure above a
 /// fixed height. The owner's choice always wins.
 public enum ToolRunFold {
     public enum Item: Hashable, Sendable, Identifiable {
@@ -87,7 +87,7 @@ public enum ToolRunFold {
     }
 
     /// Whether a fold draws its steps, by the rule above. `shownAsRows` holds the ids of the steps
-    /// drawn as plain rows, kept by `recordPlainRows`. Load earlier can prepend steps to the window's
+    /// drawn on screen, kept by `recordShownRows`. Load earlier can prepend steps to the window's
     /// first fold and so move its id to an earlier step, so a choice stored under any step's fold id
     /// counts, and the earliest choice is the newest. The id cannot be the last step's: the live fold
     /// gains steps. O(steps).
@@ -99,9 +99,15 @@ public enum ToolRunFold {
                 || rows.count { !$0.isHiddenByDefault && shownAsRows.contains($0.eventID) } >= 2)
     }
 
-    /// Adds the id of each item drawn as a plain row. O(items).
-    public static func recordPlainRows(_ items: [Item], in shownAsRows: inout Set<String>) {
-        for case .row(let row) in items { shownAsRows.insert(row.eventID) }
+    /// Adds the id of each row drawn on screen: a plain row or a step of an open fold, because Load
+    /// earlier can split an open fold into a part that has no choice of its own. O(lines).
+    public static func recordShownRows(_ lines: [Line], in shownAsRows: inout Set<String>) {
+        for line in lines {
+            switch line {
+            case .item(.row(let row)), .step(let row): shownAsRows.insert(row.eventID)
+            case .item(.fold): break
+            }
+        }
     }
 
     /// The newest failed step of the trailing fold, the live run of a running turn, so the view can
