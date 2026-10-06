@@ -265,6 +265,8 @@ struct SessionDetailView: View {
     let model: SessionDetailModel
     let agents: [SwarmAgent]
     let launchedModel: String?
+    /// The folder trust the chair's launch wrote, shown so it is never silent (owner answer I1).
+    let launchedTrust: [SwarmTrustWrite]
     let panes: AgentPaneStore
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
@@ -401,12 +403,31 @@ struct SessionDetailView: View {
         ) {
             composer
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !launchedTrust.isEmpty { trustNotice }
+        }
         // Scene-wide, so the menu finds the chat without it holding keyboard focus.
         .background {
             if isVisible {
                 Color.clear.focusedSceneValue(\.chatKeyActions, chatKeyActions)
             }
         }
+    }
+
+    /// One line per provider, as one element, so VoiceOver reads the whole notice.
+    private var trustNotice: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            ForEach(launchedTrust, id: \.self) { write in
+                Label(write.notice, systemImage: "checkmark.shield")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DesignTokens.Spacing.s)
+        .background(.bar)
+        .accessibilityElement(children: .combine)
     }
 
     private var paneKeys: [String] {

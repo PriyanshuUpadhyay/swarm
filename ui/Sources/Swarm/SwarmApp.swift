@@ -75,6 +75,8 @@ final class SessionsTreeModel {
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
     /// log reports one.
     private(set) var launchedModels: [SwarmSessionID: String] = [:]
+    /// The folder trust each chair launch wrote, which its chat shows (owner answer I1).
+    private(set) var launchedTrust: [SwarmSessionID: [SwarmTrustWrite]] = [:]
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
@@ -207,6 +209,7 @@ final class SessionsTreeModel {
                 }
                 let launch = try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
                 launchedModels[session] = launch.model
+                launchedTrust[session] = launch.trusted
                 pendingChats.update(id) { $0.state = .launched }
                 try await refresh()
             } catch {
@@ -440,8 +443,11 @@ private struct SessionsWindow: View {
     @State private var createSheet: CreateSheet?
     @State private var gitInitRequest: GitInitRequest?
     @State private var showingHooksSetup = false
-    /// "Not now" on the hooks question; the app menu can still open it (ADR 0029).
+    /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
+    /// the setup sheet opens once for folder trust (ADR 0029, 0043).
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
+    /// "Not now" on the setup sheet; the app menu can still open it (ADR 0043).
+    @AppStorage("setupDeclined") private var setupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
     @State private var workspaceName = ""
@@ -574,8 +580,9 @@ private struct SessionsWindow: View {
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
-            guard !hooksSetupDeclined, !SwarmOpenScript.isActive,
-                  let status = try? await SwarmCLIBus().hooksStatus(), !status.isSetUp else { return }
+            guard !setupDeclined, !SwarmOpenScript.isActive,
+                  let status = try? await SwarmCLIBus().setupStatus(),
+                  status.needsSheet(hooksDeclined: hooksSetupDeclined) else { return }
             showingHooksSetup = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
@@ -583,13 +590,14 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                loadPlan: { try await SwarmCLIBus().hooksPlan() },
-                setUp: { try await SwarmCLIBus().setUpHooks(digest: $0) },
+                loadPlan: { try await SwarmCLIBus().setupPlan() },
+                setUp: { try await SwarmCLIBus().setUp(digest: $0) },
                 notNow: {
-                    hooksSetupDeclined = true
+                    setupDeclined = true
                     showingHooksSetup = false
                 },
-                done: { showingHooksSetup = false }
+                done: { showingHooksSetup = false },
+                copy: .setup
             )
         }
         .onDisappear { panes.stopAll() }
@@ -1014,6 +1022,7 @@ private struct SessionsWindow: View {
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
             launchedModel: model.launchedModels[row.id],
+            launchedTrust: model.launchedTrust[row.id] ?? [],
             panes: panes, commandSource: active ? model.commandSource : nil,
             onSwitchModel: { currentModel in
                 switchTarget = SwitchTarget(row: row, model: currentModel)

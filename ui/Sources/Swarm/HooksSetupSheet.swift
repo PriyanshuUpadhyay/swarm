@@ -11,7 +11,8 @@ extension Notification.Name {
 /// "Set up" is open only while no conflict stands, and it sends the plan's digest, so a file that
 /// changed after the owner looked is refused (ADR 0036). "Not now" writes nothing; the app menu
 /// offers the same sheet later. The Managed Changes page asks its undo through the same steps with
-/// the `undo` copy (ADR 0042).
+/// the `undo` copy (ADR 0042). On start and from the app menu it shows the whole `swarm setup`
+/// plan with the `setup` copy, each file under its group (ADR 0043).
 struct HooksSetupSheet: View {
     let loadPlan: () async throws -> SwarmHooksPlan
     let setUp: (_ digest: String) async throws -> Void
@@ -40,6 +41,16 @@ struct HooksSetupSheet: View {
             unchanged: "Swarm's hooks are already set up.",
             blocked: "Swarm cannot set up its hooks. Your config has entries where swarm needs its own.",
             apply: "Set up",
+            cancel: "Not now"
+        )
+
+        static let setup = Copy(
+            question: "Let swarm set up this Mac?",
+            body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start in a git repo or a swarm scratch folder without a trust dialog; until you approve it, a seat in a new folder asks in its column. You can undo each change in Swarm › Managed Changes.",
+            loading: "Reading your config…",
+            unchanged: "Swarm is already set up.",
+            blocked: "Swarm cannot set up. Your config has entries where swarm needs its own.",
+            apply: "Approve and apply",
             cancel: "Not now"
         )
 
@@ -211,7 +222,7 @@ struct HooksSetupSheet: View {
                 )) {
                     if openFile == file.path { diff(file) }
                 } label: {
-                    Label("\(Self.short(file.path)) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
+                    Label("\(Self.group(file.group))\(Self.short(file.path)) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
                         .font(.callout)
                         .help(file.path)
                 }
@@ -288,6 +299,18 @@ struct HooksSetupSheet: View {
 
     private static func message(_ error: any Error) -> String {
         (error as? SwarmProfileError)?.message ?? String(describing: error)
+    }
+
+    /// A `swarm setup` group's name before its file; a group this build does not know shows by
+    /// its id (ADR 0043).
+    private static func group(_ id: String?) -> String {
+        switch id {
+        case nil: ""
+        case "hooks": "Agent hooks · "
+        case "trust": "Folder trust · "
+        case "herdr": "Herdr · "
+        case let other?: "\(other) · "
+        }
     }
 
     private static func short(_ path: String) -> String {

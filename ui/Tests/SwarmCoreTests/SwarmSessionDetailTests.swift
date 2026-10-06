@@ -189,7 +189,7 @@ struct SwarmSessionDetailTests {
         #expect(await calls.adapters == ["tmux-solo"])
     }
 
-    @Test("Hook status and plan decode the CLI's answers, and setup sends the plan's digest")
+    @Test("The hooks plan decodes the CLI's answer, and setup sends the plan's digest")
     func hooksStatusPlanAndSetup() async throws {
         let calls = CloseCalls()
         let plan = #"""
@@ -199,13 +199,8 @@ struct SwarmSessionDetailTests {
         let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
             _, arguments, _, environment, _, _ in
             _ = await calls.reply(arguments: arguments, environment: environment)
-            let stdout = arguments.contains("--plan") ? plan : #"{"codex":true,"agy":false}"#
-            return ShellResult(status: 0, stdout: stdout, stderr: "")
+            return ShellResult(status: 0, stdout: arguments.contains("--plan") ? plan : "", stderr: "")
         }
-        let status = try await bus.hooksStatus()
-        #expect(status == SwarmHooksStatus(codex: true, agy: false))
-        #expect(!status.isSetUp)
-
         let decoded = try await bus.hooksPlan()
         #expect(decoded.digest == "d1")
         #expect(decoded.files.map { [$0.added, $0.removed] } == [[2, 0]])
@@ -225,10 +220,70 @@ struct SwarmSessionDetailTests {
 
         try await bus.setUpHooks(digest: decoded.digest)
         #expect(await calls.arguments == [
-            ["hooks", "status", "--json"],
             ["hooks", "setup", "--plan", "--json"],
             ["hooks", "setup", "--digest", "d1"],
         ])
+    }
+
+    @Test("Setup status and plan come from swarm setup, and setup sends the plan's digest (ADR 0043)")
+    func setupStatusPlanAndApply() async throws {
+        let calls = CloseCalls()
+        let plan = #"""
+            {"digest":"d2","consent":"ask","files":[
+              {"group":"trust","path":"/h/.swarm/consent.json","diff":"--- /h/.swarm/consent.json\n+++ /h/.swarm/consent.json\n@@ -0,0 +1,3 @@\n+{\n+  \"trust\": \"standing\"\n+}\n"},
+              {"path":"/h/old.json","diff":""}],
+             "conflicts":[],"skipped":[]}
+            """#
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, environment, _, _ in
+            _ = await calls.reply(arguments: arguments, environment: environment)
+            let stdout = arguments.contains("--plan")
+                ? plan : #"{"hooks":true,"guard":false,"trust":false,"herdr":true}"#
+            return ShellResult(status: 0, stdout: stdout, stderr: "")
+        }
+        let status = try await bus.setupStatus()
+        #expect(status == SwarmSetupStatus(hooks: true, trust: false, herdr: true))
+        // A Mac that updates has no consent yet, so the sheet opens once even after a hooks
+        // "Not now" (Q3).
+        #expect(status.needsSheet(hooksDeclined: true))
+        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: true))
+        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: false))
+
+        let decoded = try await bus.setupPlan()
+        #expect(decoded.files.map(\.group) == ["trust", nil])
+        #expect(decoded.files.first?.added == 3)
+        try await bus.setUp(digest: decoded.digest)
+        #expect(await calls.arguments == [
+            ["setup", "status", "--json"],
+            ["setup", "--plan", "--json"],
+            ["setup", "--digest", "d2"],
+        ])
+    }
+
+    @Test("A launch reports each trust write it made, so the app shows it (owner answer I1)")
+    func launchReportsTrustWrites() async throws {
+        let stderr = """
+            --- /h/.claude.json
+            +++ /h/.claude.json
+            swarm: trusted /r one for claude in /h/.claude.json
+            trusted claude /r one
+            trusted codex /r one
+            model opus
+            """
+        let bus = SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, _, _, _, _, _ in ShellResult(status: 0, stdout: "w1:p1\n", stderr: stderr)
+        }
+        let launch = try await bus.launch(
+            .init("orchestrator"), role: "chair", provider: nil, model: nil, account: nil,
+            in: SwarmSessionID("s"), directory: "/r one"
+        )
+        #expect(launch.model == "opus")
+        #expect(launch.trusted == [
+            SwarmTrustWrite(provider: "claude", directory: "/r one"),
+            SwarmTrustWrite(provider: "codex", directory: "/r one"),
+        ])
+        #expect(launch.trusted.first?.notice
+            == "Swarm marked /r one as trusted for Claude, because you opened this chat there. Undo it in Swarm › Managed Changes.")
     }
 
     @Test("A child's chat reads the log its hooks reported and waits before one exists")

@@ -80,7 +80,11 @@ public struct SwarmCLIBus: SwarmBus {
         func reported(_ key: String) -> String? {
             lines.first { $0.hasPrefix(key + " ") }.map { String($0.dropFirst(key.count + 1)) }
         }
-        return SwarmLaunch(pane: pane, account: reported("account"), model: reported("model"))
+        let trusted = lines.filter { $0.hasPrefix("trusted ") }
+            .compactMap { SwarmTrustWrite(line: String($0.dropFirst("trusted ".count))) }
+        return SwarmLaunch(
+            pane: pane, account: reported("account"), model: reported("model"), trusted: trusted
+        )
     }
 
     public func agents(
@@ -145,11 +149,6 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["interrupt", agent.rawValue], in: session, adapter: adapter)
     }
 
-    /// `swarm hooks status --json`: whether swarm's own Codex and AGY hooks are set up (ADR 0029).
-    public func hooksStatus() async throws -> SwarmHooksStatus {
-        try await read(["hooks", "status", "--json"], as: SwarmHooksStatus.self)
-    }
-
     /// `swarm hooks setup --plan --json`: what setup would change and what is in its way. It
     /// writes nothing (ADR 0036).
     public func hooksPlan() async throws -> SwarmHooksPlan {
@@ -161,6 +160,23 @@ public struct SwarmCLIBus: SwarmBus {
     /// that changed after that plan.
     public func setUpHooks(digest: String) async throws {
         _ = try await call(["hooks", "setup", "--digest", digest])
+    }
+
+    /// `swarm setup status --json`: which setup groups have nothing pending (ADR 0043).
+    public func setupStatus() async throws -> SwarmSetupStatus {
+        try await read(["setup", "status", "--json"], as: SwarmSetupStatus.self)
+    }
+
+    /// `swarm setup --plan --json`: every write swarm would make outside its home, each file with
+    /// its group. It writes nothing (ADR 0043).
+    public func setupPlan() async throws -> SwarmHooksPlan {
+        try await read(["setup", "--plan", "--json"], as: SwarmHooksPlan.self)
+    }
+
+    /// `swarm setup --digest`, which writes the owner's config and the launch consent; call it
+    /// only on the owner's consent to the plan with this digest.
+    public func setUp(digest: String) async throws {
+        _ = try await call(["setup", "--digest", digest])
     }
 
     /// `swarm managed list --json`: each item swarm wrote outside its home and its live state

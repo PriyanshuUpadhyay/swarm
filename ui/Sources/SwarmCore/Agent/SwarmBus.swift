@@ -59,17 +59,23 @@ public struct SwarmPrompt: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
-/// Whether swarm's own hooks are set up for the providers that need a step (ADR 0029).
-public struct SwarmHooksStatus: Sendable, Hashable, Codable {
-    public var codex: Bool
-    public var agy: Bool
+/// `swarm setup status --json`: which setup groups have nothing pending (ADR 0043).
+public struct SwarmSetupStatus: Sendable, Hashable, Codable {
+    public var hooks: Bool
+    public var trust: Bool
+    public var herdr: Bool
 
-    public init(codex: Bool, agy: Bool) {
-        self.codex = codex
-        self.agy = agy
+    public init(hooks: Bool, trust: Bool, herdr: Bool) {
+        self.hooks = hooks
+        self.trust = trust
+        self.herdr = herdr
     }
 
-    public var isSetUp: Bool { codex && agy }
+    /// Whether the app asks on start. A hooks "Not now" covers only the hooks, so a Mac that
+    /// updates still sees the sheet once for folder trust (Q3).
+    public func needsSheet(hooksDeclined: Bool) -> Bool {
+        !trust || !herdr || (!hooks && !hooksDeclined)
+    }
 }
 
 /// `swarm hooks setup --plan --json`: each file that setup would change, with its unified diff,
@@ -79,10 +85,14 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     public struct File: Sendable, Hashable, Codable, Identifiable {
         public var path: String
         public var diff: String
+        /// The `swarm setup` group, such as `hooks` or `trust`; nil from `hooks setup`. The list
+        /// may grow, so the sheet shows a group it does not know by its name.
+        public var group: String?
 
-        public init(path: String, diff: String) {
+        public init(path: String, diff: String, group: String? = nil) {
             self.path = path
             self.diff = diff
+            self.group = group
         }
 
         public var id: String { path }
@@ -311,11 +321,39 @@ public struct SwarmLaunch: Sendable, Hashable {
     public var pane: String
     public var account: String?
     public var model: String?
+    /// Each folder trust entry the launch wrote, so the app shows it (ADR 0043, owner answer I1).
+    public var trusted: [SwarmTrustWrite]
 
-    public init(pane: String, account: String?, model: String? = nil) {
+    public init(pane: String, account: String?, model: String? = nil, trusted: [SwarmTrustWrite] = []) {
         self.pane = pane
         self.account = account
         self.model = model
+        self.trusted = trusted
+    }
+}
+
+/// A folder that `swarm launch` marked trusted for one provider, from its
+/// `trusted <provider> <dir>` line.
+public struct SwarmTrustWrite: Sendable, Hashable {
+    public var provider: String
+    public var directory: String
+
+    public init(provider: String, directory: String) {
+        self.provider = provider
+        self.directory = directory
+    }
+
+    /// `<provider> <dir>`; the dir may hold spaces.
+    init?(line: String) {
+        let parts = line.split(separator: " ", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        self.init(provider: String(parts[0]), directory: String(parts[1]))
+    }
+
+    /// What the chat says about the write, since a chair's folder pick was the consent.
+    public var notice: String {
+        let folder = (directory as NSString).abbreviatingWithTildeInPath
+        return "Swarm marked \(folder) as trusted for \(provider.capitalized), because you opened this chat there. Undo it in Swarm › Managed Changes."
     }
 }
 
