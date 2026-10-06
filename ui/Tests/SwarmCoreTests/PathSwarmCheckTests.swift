@@ -78,6 +78,16 @@ struct PathSwarmCheckTests {
         #expect(await check(broken) == nil)
     }
 
+    @Test("Only the login shell's PATH names the swarm, so a failed probe or a PATH without one is silent")
+    func loginPathOnly() throws {
+        let bin = folder.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let swarm = try Self.standIn(in: bin, named: "swarm", script: "echo 'swarm 0.7.3 def5678 '")
+        #expect(PathSwarmCheck.pathSwarm(loginPath: ["/nonexistent", bin.path]) == swarm)
+        #expect(PathSwarmCheck.pathSwarm(loginPath: []) == nil)
+        #expect(PathSwarmCheck.pathSwarm(loginPath: [folder.path]) == nil)
+    }
+
     @Test("A missing helper is no drift")
     func missingHelperIsNoDrift() async throws {
         let older = try Self.standIn(in: folder, named: "old-swarm", script: "echo 'swarm 0.7.3 def5678 '")

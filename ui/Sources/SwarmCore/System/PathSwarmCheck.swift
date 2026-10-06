@@ -45,10 +45,17 @@ public enum PathSwarmCheck {
     public static func current(dismissed: [String]) async -> PathSwarmDrift? {
         await drift(
             branch: Bundle.main.object(forInfoDictionaryKey: "SwarmBuildBranch") as? String ?? "",
-            pathSwarm: Shell.which("swarm"),
+            pathSwarm: pathSwarm(loginPath: LoginShellPath.discovered),
             helper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm").path,
             dismissed: dismissed
         )
+    }
+
+    /// The `swarm` that Terminal runs, from the login shell's PATH only. `Shell.which` would also
+    /// walk the launch PATH and guessed dirs, and name a stale copy that Terminal never runs.
+    static func pathSwarm(loginPath: [String]) -> String? {
+        loginPath.lazy.map { ($0 as NSString).appendingPathComponent("swarm") }
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// The full `swarm <version> <commit> <branch>` line, so one version from two commits differs.
