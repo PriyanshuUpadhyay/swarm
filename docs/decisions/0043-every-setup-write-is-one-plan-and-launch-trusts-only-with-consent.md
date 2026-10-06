@@ -5,6 +5,7 @@ deciders: [user]
 related: ["0008", "0029", "0036", "0040", "0042", "0045"]
 informed-by:
   - "Owner answers on 2026-10-05 (flow 2026-10-05-setup-plan-all, 03-contracts): Q1 (a) new swarm setup --plan, hooks setup kept as --only hooks; Q2 (c) one standing consent for launch trust, bounded by trust_target; Q3 (a) no consent file means ask and the setup sheet opens once; Q4 (a) Claude hasTrustDialogAccepted false is a pending change"
+  - "Owner answer I1 on 2026-10-06 (flow 2026-10-05-setup-plan-all, 03-contracts): use the recommendation, so a chair's folder pick is consent for that folder; show the trust prompt or the exact trust write, never answer silently"
   - "tmp/flow/2026-10-05-setup-plan-all/03-contracts.md (writers, collisions C1-C8, failure policy)"
 ---
 
@@ -42,9 +43,15 @@ question and no safety. Per folder would block the first seat in every new scrat
 - `~/.swarm/consent.json` holds `trust: standing | ask` for every build and every `SWARM_HOME`.
   An absent or unreadable file is `ask`. Writing it is itself a planned write in the `trust` group.
 - With `standing`, launch writes the trust entries for a folder that passes `trust_target`, with
-  no plan shown, and records them. With `ask`, launch writes nothing, prints
+  no plan shown, and records them. With `ask`, a seat's launch writes nothing, prints
   `trust-pending <provider> <dir>`, the diff, and the approve command, and the pane shows the
   CLI's own trust prompt, which the app relays (ADR 0029).
+- A chair launch (`orchestrator`) runs in the folder the owner picked in the app, so with `ask`
+  that pick is consent for that one folder: launch writes and records its trust entries, because
+  the app hides the chair's pane and nobody could answer a trust dialog there (owner answer I1,
+  2026-10-06). A launch prints a `trusted <provider> <dir>` line for each trust write it made and
+  a `trust-pending <provider> <dir>` line and the diff for each one it held back, so the app shows
+  the exact write or the CLI's own trust question and never answers silently.
 - A Mac that updates has no consent file, so it is `ask`, and the app's setup sheet opens once.
 - A Claude `hasTrustDialogAccepted: false` is a pending change: the plan shows the flip to `true`,
   and standing consent covers it, because Claude writes `false` itself for a folder it saw before
