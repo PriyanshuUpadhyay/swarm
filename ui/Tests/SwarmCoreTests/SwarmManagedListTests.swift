@@ -36,7 +36,7 @@ struct SwarmManagedListTests {
         #expect(guardRows[1].state == .changed(found: #""sha256:edited""#, wrote: #""sha256:3""#))
         #expect(guardRows[2].state == .on)
         #expect(list.groups[2].rows.map(\.ids) == [["f1"]])
-        #expect(list.summary == "2 on · 1 changed by you · 1 gone · 1 off · 1 found")
+        #expect(SwarmManagedList.summary(list.groups) == "2 on · 1 changed by you · 1 gone · 1 off · 1 found")
         #expect(list.presentIDs == ["a1", "a2", "g1", "f1"])
         #expect(list.groups[1].presentIDs == ["g1"])
     }
@@ -57,18 +57,18 @@ struct SwarmManagedListTests {
             if ["a1", "a2"].contains(entry.id) { entry.state = "off" }
             return entry.id == "f1" ? nil : entry
         }
-        #expect(after.changes(since: before) == [
+        #expect(SwarmManagedList.changes(from: before.groups, to: after.groups) == [
             "Agent hooks, /u/.codex/config.toml, Off",
             "Found, not recorded, /u/.codex-old/config.toml, Removed",
         ])
-        #expect(before.changes(since: before).isEmpty)
+        #expect(SwarmManagedList.changes(from: before.groups, to: before.groups).isEmpty)
     }
 
     @Test("An empty list has no groups and says so")
     func empty() throws {
         let list = try SwarmManagedList.decode(Data(#"{"entries":[]}"#.utf8))
         #expect(list.groups.isEmpty)
-        #expect(list.summary == "")
+        #expect(SwarmManagedList.summary(list.groups) == "")
     }
 
     @Test("The bus lists, plans a revert, and reverts with the plan's digest")

@@ -239,10 +239,11 @@ struct ManagedChangesPage: View {
         do {
             let loaded = try await bus.managedList()
             guard run == loads else { return }
-            let changes = list.map { loaded.changes(since: $0) } ?? []
+            let made = loaded.groups
+            let changes = list == nil ? [] : SwarmManagedList.changes(from: groups, to: made)
             list = loaded
-            groups = loaded.groups
-            summary = loaded.summary
+            groups = made
+            summary = SwarmManagedList.summary(made)
             error = nil
             if !changes.isEmpty {
                 AccessibilityNotification.Announcement(changes.joined(separator: ". ")).post()

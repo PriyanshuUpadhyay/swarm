@@ -129,8 +129,9 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
     /// Each present item, for Undo All.
     public var presentIDs: [String] { entries.filter { $0.state == "present" }.map(\.id) }
 
-    /// The counts of rows, such as "2 on · 1 changed by you · 1 found"; a zero count is left out.
-    public var summary: String {
+    /// The counts of `groups`' rows, such as "2 on · 1 changed by you · 1 found"; a zero count is
+    /// left out.
+    public static func summary(_ groups: [Group]) -> String {
         var counts: [String: Int] = [:]
         for group in groups {
             for row in group.rows {
@@ -153,19 +154,19 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
             .joined(separator: " · ")
     }
 
-    /// A line for each row whose state is not what it was in `old`, and for each row that is gone
-    /// from the list, such as "Agent hooks, ~/.codex/config.toml, Off", so VoiceOver hears the row
-    /// that an undo flipped.
-    public func changes(since old: SwarmManagedList) -> [String] {
-        func rows(_ list: SwarmManagedList) -> [(key: String, line: String, state: RowState)] {
-            list.groups.flatMap { group in
+    /// A line for each row of `new` whose state is not what it was in `old`, and for each row that
+    /// is gone, such as "Agent hooks, ~/.codex/config.toml, Off", so VoiceOver hears the row that an
+    /// undo flipped.
+    public static func changes(from old: [Group], to new: [Group]) -> [String] {
+        func rows(_ groups: [Group]) -> [(key: String, line: String, state: RowState)] {
+            groups.flatMap { group in
                 group.rows.map { row in
                     (group.name + "\u{0}" + row.id,
                      "\(group.name), \((row.file as NSString).abbreviatingWithTildeInPath)", row.state)
                 }
             }
         }
-        let now = rows(self)
+        let now = rows(new)
         let was = rows(old)
         let wasState = Dictionary(was.map { ($0.key, $0.state) }, uniquingKeysWith: { first, _ in first })
         let nowKeys = Set(now.map(\.key))
