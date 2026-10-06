@@ -1098,8 +1098,13 @@ const SETUP_GROUPS: [&str; 3] = ["hooks", "trust", "herdr"];
 struct SetupPlan {
     plans: Vec<swarm::managed::FilePlan>,
     groups: Vec<&'static str>,
+    /// For each trust plan, how to plan that one file again when it is written (L-4), so a write
+    /// under the trust lock reads no other file and runs no `git` (L-1).
+    replans: Vec<Option<Replan>>,
     skipped: Vec<(&'static str, String)>,
 }
+
+type Replan = Box<dyn Fn() -> Result<swarm::managed::FilePlan, String>>;
 
 impl SetupPlan {
     /// The plan of every pending write in `groups`. The trust group is the consent file set to
@@ -1118,6 +1123,7 @@ impl SetupPlan {
         let mut setup = Self {
             plans: Vec::new(),
             groups: Vec::new(),
+            replans: Vec::new(),
             skipped: Vec::new(),
         };
         if groups.contains(&"hooks") {
@@ -1127,7 +1133,11 @@ impl SetupPlan {
             }
         }
         if groups.contains(&"trust") {
-            setup.push("trust", consent_plan(consent)?);
+            let answer = consent.to_string();
+            setup.push_trust(
+                consent_plan(consent)?,
+                Box::new(move || consent_plan(&answer).map_err(|error| error.to_string())),
+            );
             match trust_target(cwd, &user_home) {
                 Err(reason) => setup.skipped.push(("trust", reason)),
                 Ok(target) => {
@@ -1148,9 +1158,10 @@ impl SetupPlan {
                         if let Some(conflict) = earlier.and_then(|plan| plan.conflicts.first()) {
                             return Err(conflict.found.clone());
                         }
+                        let home = path.parent().unwrap_or(path).to_path_buf();
                         let plan = match earlier.map(|plan| plan.after.clone()) {
                             Some(text) => swarm::bus::codex_trust_plan_on(path, text, &target)?,
-                            None => swarm::bus::codex_trust_plan(path.parent().unwrap(), &target)?,
+                            None => swarm::bus::codex_trust_plan(&home, &target)?,
                         };
                         if swarm::bus::codex_left_untrusted(&plan.before, &target) {
                             setup.skipped.push((
@@ -1161,13 +1172,21 @@ impl SetupPlan {
                                 ),
                             ));
                         }
-                        setup.push("trust", plan);
+                        // At write time the hooks are on disk, so the replan reads the file.
+                        let target = target.clone();
+                        setup.push_trust(
+                            plan,
+                            Box::new(move || swarm::bus::codex_trust_plan(&home, &target)),
+                        );
                         Ok(())
                     })?;
                     let settings = agy_settings(&user_home);
                     let plan = swarm::bus::agy_trust_plan(&settings, &target)
-                        .unwrap_or_else(|error| FilePlan::unreadable(settings, error));
-                    setup.push("trust", plan);
+                        .unwrap_or_else(|error| FilePlan::unreadable(settings.clone(), error));
+                    setup.push_trust(
+                        plan,
+                        Box::new(move || swarm::bus::agy_trust_plan(&settings, &target)),
+                    );
                     // A seat's Claude runs from the pool under cwd, or in cwd when it resumes.
                     let flags = if resume {
                         vec!["--resume".into()]
@@ -1176,7 +1195,12 @@ impl SetupPlan {
                     };
                     let (dir, _) = swarm::bus::claude_child("", cwd, &flags, &uuid::Uuid::nil());
                     skipped.extend(trust_each(&claude_configs(&user_home), false, |config| {
-                        setup.push("trust", swarm::bus::claude_trust_plan(config, &dir)?);
+                        let plan = swarm::bus::claude_trust_plan(config, &dir)?;
+                        let (config, dir) = (config.to_path_buf(), dir.clone());
+                        setup.push_trust(
+                            plan,
+                            Box::new(move || swarm::bus::claude_trust_plan(&config, &dir)),
+                        );
                         Ok(())
                     })?);
                     setup
@@ -1193,6 +1217,12 @@ impl SetupPlan {
     fn push(&mut self, group: &'static str, plan: swarm::managed::FilePlan) {
         self.groups.push(group);
         self.plans.push(plan);
+        self.replans.push(None);
+    }
+
+    fn push_trust(&mut self, plan: swarm::managed::FilePlan, replan: Replan) {
+        self.push("trust", plan);
+        *self.replans.last_mut().unwrap() = Some(replan);
     }
 
     /// Each plan with its group.
@@ -1438,20 +1468,11 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A running CLI may rewrite its trust file at any moment, such as `~/.claude.json`, and
         // the digest covers only the trust entries, so each trust file is planned again and
         // written as launch's `write_trust` does (L-4).
-        let trust_plan = |path: &std::path::Path| {
-            SetupPlan::of(&dir, &["trust"], answer, resume)
-                .map_err(|error| error.to_string())?
-                .plans
-                .into_iter()
-                .find(|plan| plan.path == path)
-                .ok_or_else(|| format!("swarm: {} changed after the plan", path.display()))
-        };
-        for (group, plan) in setup.grouped() {
-            let written = if group == "trust" {
-                swarm::bus::write_trust(&store, || trust_plan(&plan.path))
-                    .map(|written| written.into_iter().map(|plan| plan.path).collect())
-            } else {
-                swarm::managed::apply(&store, std::slice::from_ref(plan))
+        for ((group, plan), replan) in setup.grouped().zip(&setup.replans) {
+            let written = match replan {
+                Some(replan) => swarm::bus::write_trust(&store, replan)
+                    .map(|written| written.into_iter().map(|plan| plan.path).collect()),
+                None => swarm::managed::apply(&store, std::slice::from_ref(plan)),
             };
             match written {
                 Ok(changed) => {

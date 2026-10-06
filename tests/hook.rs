@@ -901,6 +901,46 @@ fn a_read_only_spare_claude_profile_is_skipped_and_the_rest_is_planned() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+/// An apply plans the trust group once and each trust write plans again only its own file, so a
+/// write under the trust lock runs no second `git rev-parse` (L-1).
+#[test]
+fn an_apply_checks_the_folder_with_git_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("setup-one-git");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let (bin, log) = (home.join("bin"), home.join("git.log"));
+    std::fs::create_dir_all(&bin).unwrap();
+    let shim = bin.join("git");
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" >> '{}'\nexec /usr/bin/git \"$@\"\n",
+        log.display()
+    );
+    std::fs::write(&shim, script).unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let run = |args: &[&str]| {
+        let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), &home);
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        command
+            .env("PATH", path)
+            .current_dir(&home)
+            .arg("setup")
+            .args(args);
+        piped(command, "")
+    };
+
+    let plan = run(&["--plan", "--json", "--only", "trust", "--cwd", &cwd]);
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert!(plan["files"].as_array().unwrap().len() > 1, "{plan}");
+    std::fs::remove_file(&log).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = run(&["--digest", digest, "--only", "trust", "--cwd", &cwd]);
+    assert!(applied.status.success(), "{applied:?}");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 /// A Codex config.toml that swarm cannot read is a hooks conflict, and the trust group plans
 /// nothing on it, so the owner sees no false diff; it names the conflict instead.
 #[test]
