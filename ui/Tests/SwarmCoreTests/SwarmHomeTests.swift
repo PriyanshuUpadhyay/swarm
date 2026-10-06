@@ -63,4 +63,10 @@ struct SwarmHomeTests {
         let home: () -> String = { Issue.record("HOME was read"); return "/home-dir" }
         #expect(SwarmHome.resolve(swarmHome: "/tmp/explicit", home: home, branch: branch) == "/tmp/explicit")
     }
+
+    @Test("An empty SWARM_HOME passes through, so the CLI refuses it as paths::home does")
+    func emptyPassesThrough() {
+        let home: () -> String = { Issue.record("HOME was read"); return "/home-dir" }
+        #expect(SwarmHome.resolve(swarmHome: "", home: home, branch: "ui-polish") == "")
+    }
 }

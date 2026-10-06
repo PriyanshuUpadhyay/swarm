@@ -4,6 +4,8 @@ import Foundation
 ///
 /// The same rule as the CLI's `paths::home` (ADR 0027). An explicit SWARM_HOME wins. Else a release
 /// build (`""`) uses HOME, and a dev build, `main` and a detached `HEAD` too, uses `HOME/<folder>`.
+/// An empty SWARM_HOME is kept, not read as unset: `paths::home` refuses it ("SWARM_HOME is set
+/// but empty"), so every `swarm` the app starts fails with that message instead of guessing a home.
 public enum SwarmHome {
     public static func resolve(swarmHome: String?, home: () -> String, branch: String) -> String {
         if let swarmHome { return swarmHome }
