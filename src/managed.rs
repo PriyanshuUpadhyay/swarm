@@ -863,10 +863,24 @@ fn json_at<'a>(
         .try_fold(value, |inner, key| inner.get_mut(key.as_str()))
 }
 
+/// How long a launch or setup waits for another swarm's trust lock. Every launch takes the one
+/// lock, and the holder may run git on a hung mount, so a wait with no end could stall every
+/// launch on the Mac (SRV-18). 10 s matches the guard hook's registration timeout.
+pub const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Run `change` while holding `lock`, so two launches cannot both read a settings file and the
 /// second write drop the first one's trust entry.
 pub fn with_lock<T>(
     lock: &std::path::Path,
+    change: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    with_lock_within(lock, LOCK_WAIT, change)
+}
+
+/// `with_lock` that gives up after `wait` with an error that names the lock.
+fn with_lock_within<T>(
+    lock: &std::path::Path,
+    wait: std::time::Duration,
     change: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     let file = std::fs::OpenOptions::new()
@@ -874,8 +888,24 @@ pub fn with_lock<T>(
         .append(true)
         .open(lock)
         .map_err(|error| format!("swarm: cannot open {}: {error}", lock.display()))?;
-    file.lock()
-        .map_err(|error| format!("swarm: cannot lock {}: {error}", lock.display()))?;
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(format!(
+                    "swarm: another swarm holds {} and did not let go in {wait:?}; try again when it ends",
+                    lock.display()
+                ));
+            }
+            Err(std::fs::TryLockError::Error(error)) => {
+                return Err(format!("swarm: cannot lock {}: {error}", lock.display()));
+            }
+        }
+    }
     change()
 }
 
@@ -1116,6 +1146,27 @@ pub fn plan_json(plans: &[FilePlan]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A launch whose trust lock another swarm holds fails after the wait and names the lock,
+    /// so a git stalled on a hung mount under the lock cannot stall every launch (SRV-18).
+    #[test]
+    fn a_held_trust_lock_fails_after_the_wait_and_names_the_lock() {
+        let dir = std::env::temp_dir().join(format!("swarm-lock-held-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock = dir.join("trust.lock");
+        let holder = std::fs::File::create(&lock).unwrap();
+        holder.lock().unwrap();
+        let wait = std::time::Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        let error = with_lock_within(&lock, wait, || Ok(())).unwrap_err();
+        assert!(started.elapsed() >= wait, "{:?}", started.elapsed());
+        assert!(error.contains(&lock.display().to_string()), "{error}");
+        assert!(error.contains("another swarm holds"), "{error}");
+        drop(holder);
+        assert_eq!(with_lock_within(&lock, wait, || Ok(7)), Ok(7));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     /// A TOML bool keeps its type: a writer that turns `ui.sound.enabled` from true to false, as
     /// the Herdr switch will, is present while the file says false, and a revert puts true back
