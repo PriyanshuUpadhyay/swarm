@@ -82,10 +82,11 @@ public struct SwarmCLIBus: SwarmBus {
         func reported(_ key: String) -> String? {
             lines.first { $0.hasPrefix(key + " ") }.map { String($0.dropFirst(key.count + 1)) }
         }
-        let trusted = lines.filter { $0.hasPrefix("trusted ") }
+        let trustWrites = lines.filter { $0.hasPrefix("trusted ") }
             .compactMap { SwarmTrustWrite(line: String($0.dropFirst("trusted ".count))) }
         return SwarmLaunch(
-            pane: pane, account: reported("account"), model: reported("model"), trusted: trusted
+            pane: pane, account: reported("account"), model: reported("model"),
+            trustWrites: trustWrites
         )
     }
 

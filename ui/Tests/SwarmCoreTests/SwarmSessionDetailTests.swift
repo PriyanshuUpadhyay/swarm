@@ -302,12 +302,19 @@ struct SwarmSessionDetailTests {
             in: SwarmSessionID("s"), directory: "/r one"
         )
         #expect(launch.model == "opus")
-        #expect(launch.trusted == [
+        #expect(launch.trustWrites == [
             SwarmTrustWrite(provider: "claude", directory: "/r one"),
             SwarmTrustWrite(provider: "codex", directory: "/r one"),
         ])
-        #expect(launch.trusted.first?.notice
-            == "Swarm marked /r one as trusted for Claude, because you opened this chat there. Undo it in Swarm › Managed Changes.")
+        // Standing consent prints the same line as a chair's folder pick, so the notice names
+        // no reason it cannot know.
+        #expect(launch.trustWrites.first?.notice
+            == "Swarm marked /r one as trusted for Claude. Undo it in Swarm › Managed Changes.")
+        #expect(SwarmTrustWrite(provider: "agy", directory: "/r").notice.contains("for AGY."))
+        // VoiceOver hears every write in one announcement (UA-11).
+        #expect(launch.trustAnnouncement
+            == "Swarm marked /r one as trusted for Claude. Swarm marked /r one as trusted for Codex. Undo it in Swarm › Managed Changes.")
+        #expect(SwarmLaunch(pane: "p", account: nil).trustAnnouncement == nil)
     }
 
     @Test("A child's chat reads the log its hooks reported and waits before one exists")

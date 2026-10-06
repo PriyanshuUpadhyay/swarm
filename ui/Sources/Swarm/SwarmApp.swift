@@ -209,7 +209,11 @@ final class SessionsTreeModel {
                 }
                 let launch = try await SwarmChatLauncher.launch(plan, in: session, bus: bus)
                 launchedModels[session] = launch.model
-                launchedTrust[session] = launch.trusted
+                launchedTrust[session] = launch.trustWrites
+                // Said here, as a failure is: the chat may not be the selected tab (UA-11).
+                if let said = launch.trustAnnouncement {
+                    AccessibilityNotification.Announcement(said).post()
+                }
                 pendingChats.update(id) { $0.state = .launched }
                 try await refresh()
             } catch {

@@ -368,13 +368,20 @@ public struct SwarmLaunch: Sendable, Hashable {
     public var account: String?
     public var model: String?
     /// Each folder trust entry the launch wrote, so the app shows it (ADR 0043, owner answer I1).
-    public var trusted: [SwarmTrustWrite]
+    public var trustWrites: [SwarmTrustWrite]
 
-    public init(pane: String, account: String?, model: String? = nil, trusted: [SwarmTrustWrite] = []) {
+    public init(pane: String, account: String?, model: String? = nil, trustWrites: [SwarmTrustWrite] = []) {
         self.pane = pane
         self.account = account
         self.model = model
-        self.trusted = trusted
+        self.trustWrites = trustWrites
+    }
+
+    /// What VoiceOver hears about the trust writes, in one announcement so none cuts off another;
+    /// nil when the launch wrote none.
+    public var trustAnnouncement: String? {
+        guard !trustWrites.isEmpty else { return nil }
+        return (trustWrites.map(\.sentence) + [SwarmTrustWrite.undo]).joined(separator: " ")
     }
 }
 
@@ -396,10 +403,16 @@ public struct SwarmTrustWrite: Sendable, Hashable {
         self.init(provider: String(parts[0]), directory: String(parts[1]))
     }
 
-    /// What the chat says about the write, since a chair's folder pick was the consent.
-    public var notice: String {
+    static let undo = "Undo it in Swarm › Managed Changes."
+
+    /// What the chat says about the write. The line is the same for standing consent and a
+    /// chair's folder pick, so it names no reason.
+    public var notice: String { sentence + " " + Self.undo }
+
+    var sentence: String {
         let folder = (directory as NSString).abbreviatingWithTildeInPath
-        return "Swarm marked \(folder) as trusted for \(provider.capitalized), because you opened this chat there. Undo it in Swarm › Managed Changes."
+        let name = provider == "agy" ? "AGY" : provider.capitalized
+        return "Swarm marked \(folder) as trusted for \(name)."
     }
 }
 
