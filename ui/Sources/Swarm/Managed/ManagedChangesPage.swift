@@ -42,7 +42,7 @@ struct ManagedChangesPage: View {
             if let error {
                 HStack {
                     Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
-                    Button("Retry") { Task { await load() } }
+                    Button("Retry") { Task { await load(retry: true) } }
                 }
             }
             if !groups.isEmpty {
@@ -232,7 +232,8 @@ struct ManagedChangesPage: View {
         sheet = .undo(ids: ids, hooks: hooks)
     }
 
-    private func load() async {
+    /// `retry`: the owner pressed Retry, so a failure is announced even when its text is the same.
+    private func load(retry: Bool = false) async {
         loads += 1
         let run = loads
         isLoading = true
@@ -240,13 +241,15 @@ struct ManagedChangesPage: View {
             let loaded = try await bus.managedList()
             guard run == loads else { return }
             let made = loaded.groups
-            let changes = list == nil ? [] : SwarmManagedList.changes(from: groups, to: made)
+            let spoken = SwarmManagedList.announcement(
+                from: list == nil ? nil : groups, to: made, afterError: error != nil
+            )
             list = loaded
             groups = made
             summary = SwarmManagedList.summary(made)
             error = nil
-            if !changes.isEmpty {
-                AccessibilityNotification.Announcement(changes.joined(separator: ". ")).post()
+            if let spoken {
+                AccessibilityNotification.Announcement(spoken).post()
             }
         } catch is CancellationError {
             // The window closed or a newer load replaced this one, so there is no error to show.
@@ -254,7 +257,7 @@ struct ManagedChangesPage: View {
         } catch {
             guard run == loads else { return }
             let message = (error as? SwarmProfileError)?.message ?? String(describing: error)
-            if message != self.error {
+            if retry || message != self.error {
                 AccessibilityNotification.Announcement("Could not read managed changes. \(message)").post()
             }
             self.error = message
