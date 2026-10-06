@@ -14,14 +14,20 @@ public enum ToolRunFold {
         /// The folded steps, in transcript order.
         case fold([TranscriptRow])
 
-        /// A fold's id is its first shown step's id with a "fold:" prefix, because an open fold also
-        /// draws that row with its own id. A hidden row is skipped, so Show hidden rows keeps the id.
+        /// A fold's id is its first shown step's `foldID`. A hidden row is skipped, so Show hidden
+        /// rows keeps the id.
         public var id: String {
             switch self {
             case .row(let row): row.eventID
-            case .fold(let rows): "fold:" + (rows.first { !$0.isHiddenByDefault } ?? rows[0]).eventID
+            case .fold(let rows): ToolRunFold.foldID(rows.first { !$0.isHiddenByDefault } ?? rows[0])
             }
         }
+    }
+
+    /// The id of a fold that starts at `step`: the step's id with a "fold:" prefix, because an open
+    /// fold also draws that row with its own id.
+    static func foldID(_ step: TranscriptRow) -> String {
+        "fold:" + step.eventID
     }
 
     /// One item of the transcript's lazy list. An open fold's steps follow its fold line as items of
@@ -82,7 +88,7 @@ public enum ToolRunFold {
     /// its id to an earlier step, so a choice stored under any step's fold id counts, and the
     /// earliest one is the newest. The id cannot be the last step's: the live fold gains steps. O(steps).
     public static func isExpanded(_ rows: [TranscriptRow], overrides: [String: Bool]) -> Bool {
-        rows.lazy.compactMap { overrides["fold:" + $0.eventID] }.first ?? defaultExpanded(rows)
+        rows.lazy.compactMap { overrides[foldID($0)] }.first ?? defaultExpanded(rows)
     }
 
     /// A fold with a failed step opens by default, so folding never hides a failure. So does a fold
@@ -99,7 +105,7 @@ public enum ToolRunFold {
     /// step's id, not the fold's, because Load earlier moves the fold id and adds no failure.
     public static func liveFailureID(in items: [Item], overrides: [String: Bool]) -> String? {
         guard let last = items.last, case .fold(let rows) = last,
-              !rows.contains(where: { overrides["fold:" + $0.eventID] != nil })
+              !rows.contains(where: { overrides[foldID($0)] != nil })
         else { return nil }
         return rows.last { $0.tool?.state == .failed }?.eventID
     }
