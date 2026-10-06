@@ -59,8 +59,14 @@ pub fn made_by_swarm(path: &Path) -> bool {
 }
 
 fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
+    // A db at the newest version needs no write, so its open waits behind no writer.
+    let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version == MIGRATIONS.len() as i64 {
+        return Ok(());
+    }
     // Immediate: a read that later upgrades to a write fails at once when another swarm migrated
-    // first; taking the write lock before the read waits on busy_timeout instead.
+    // first; taking the write lock before the read waits on busy_timeout instead. The version is
+    // read again under the lock, because another swarm may have migrated since.
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -2386,6 +2392,22 @@ mod tests {
         let second = open(&db);
         committer.join().unwrap();
         assert!(second.is_ok(), "{:?}", second.err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// An open of a db at the newest version takes no write lock, so a polled read does not wait
+    /// behind a writer.
+    #[test]
+    fn an_open_of_a_current_db_does_not_wait_for_a_writer() {
+        let root = temp_root("migrate-current");
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("swarm.db");
+        drop(open(&db).unwrap());
+        let writer = Connection::open(&db).unwrap();
+        writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let reader = open(&db);
+        assert!(reader.is_ok(), "{:?}", reader.err());
+        writer.execute_batch("ROLLBACK;").unwrap();
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
