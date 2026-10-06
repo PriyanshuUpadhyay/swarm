@@ -262,9 +262,14 @@ struct SwarmSessionDetailTests {
 
     @Test("A launch reports each trust write it made, so the app shows it (owner answer I1)")
     func launchReportsTrustWrites() async throws {
+        // A diff line keeps its mark, so its context line ` model = …` is not the model (L-12).
         let stderr = """
-            --- /h/.claude.json
-            +++ /h/.claude.json
+            --- /h/.codex/config.toml
+            +++ /h/.codex/config.toml
+            @@ -1 +1,3 @@
+             model = "gpt-5.5"
+             trusted x y
+            +[projects."/r one"]
             swarm: trusted /r one for claude in /h/.claude.json
             trusted claude /r one
             trusted codex /r one

@@ -1421,3 +1421,30 @@ fn a_claude_seat_in_a_folder_that_fails_the_trust_check_gets_no_entry() {
     assert!(recorded_trust(&home).is_empty(), "{err}");
     assert!(err.contains("not pre-trusting for claude"), "{err}");
 }
+
+/// The app reads a launch's stderr for bare `model`, `account`, and `trusted` lines. A chair's
+/// trust diff prints next to them, and each of its lines keeps its diff mark, so a context line
+/// such as ` model = "gpt-5.5"` is never a key line (L-12).
+#[test]
+fn a_chair_trust_diff_never_prints_a_bare_key_line() {
+    let home = scratch("chair-diff");
+    let env = trust_session(&home);
+    let repo = git_repo(&home, "picked");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/config.toml"), "model = \"gpt-5.5\"\n").unwrap();
+
+    let err = stderr(&launch_in(&home, &env, "orchestrator", "review.deep", &repo));
+    assert!(err.contains("\n model = \"gpt-5.5\"\n"), "{err}");
+    let keys: Vec<&str> = err
+        .lines()
+        .filter(|line| line.starts_with("model ") || line.starts_with("trusted "))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            format!("trusted codex {}", repo.display()).as_str(),
+            "model gpt-6-luna"
+        ],
+        "{err}"
+    );
+}

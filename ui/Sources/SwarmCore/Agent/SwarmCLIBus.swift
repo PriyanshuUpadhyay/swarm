@@ -75,8 +75,10 @@ public struct SwarmCLIBus: SwarmBus {
         guard let pane = firstLine(in: result.stdout) else {
             throw SwarmProfileError.failed("swarm returned no pane")
         }
+        // A key line starts at its first column. A trust diff prints in the same stream, and each
+        // of its lines starts with a diff mark (` `, `+`, `-`, `@`), so a context line such as
+        // ` model = "gpt-5.5"` is never read as a key (L-12).
         let lines = result.stderr.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         func reported(_ key: String) -> String? {
             lines.first { $0.hasPrefix(key + " ") }.map { String($0.dropFirst(key.count + 1)) }
         }
