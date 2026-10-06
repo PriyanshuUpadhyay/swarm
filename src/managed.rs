@@ -155,7 +155,7 @@ fn place(file: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// The wire name of a `Kind` or `Writer`.
-fn wire(value: &impl serde::Serialize) -> String {
+pub fn wire(value: &impl serde::Serialize) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(name)) => name,
         _ => unreachable!("Kind and Writer serialize as strings"),

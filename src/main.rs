@@ -973,29 +973,21 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["list", rest @ ..] if matches!(rest, [] | ["--json"]) => {
-            let entries: Vec<_> = swarm::managed::list(&store, &found)?
-                .iter()
-                .map(swarm::managed::Entry::json)
-                .collect();
+            let entries = swarm::managed::list(&store, &found)?;
             if rest.is_empty() {
                 for entry in &entries {
-                    let path: Vec<_> = entry["path"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|part| part.as_str())
-                        .collect();
                     println!(
                         "{}  {}  {}  {}  {}",
-                        entry["id"].as_str().unwrap_or_default(),
-                        entry["state"].as_str().unwrap_or_default(),
-                        entry["writer"].as_str().unwrap_or_default(),
-                        entry["file"].as_str().unwrap_or_default(),
-                        path.join(".")
+                        entry.edit.id(),
+                        entry.state.name(),
+                        swarm::managed::wire(&entry.edit.writer),
+                        entry.edit.file.display(),
+                        entry.edit.path.join(".")
                     );
                 }
                 return Ok(());
             }
+            let entries: Vec<_> = entries.iter().map(swarm::managed::Entry::json).collect();
             print_json(&serde_json::json!({ "entries": entries }))
         }
         ["revert", rest @ ..] => {
