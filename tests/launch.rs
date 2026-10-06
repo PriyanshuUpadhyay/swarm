@@ -1433,7 +1433,13 @@ fn a_chair_trust_diff_never_prints_a_bare_key_line() {
     std::fs::create_dir_all(home.join(".codex")).unwrap();
     std::fs::write(home.join(".codex/config.toml"), "model = \"gpt-5.5\"\n").unwrap();
 
-    let err = stderr(&launch_in(&home, &env, "orchestrator", "review.deep", &repo));
+    let err = stderr(&launch_in(
+        &home,
+        &env,
+        "orchestrator",
+        "review.deep",
+        &repo,
+    ));
     assert!(err.contains("\n model = \"gpt-5.5\"\n"), "{err}");
     let keys: Vec<&str> = err
         .lines()

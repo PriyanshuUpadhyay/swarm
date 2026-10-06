@@ -269,7 +269,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1102,10 +1102,14 @@ struct SetupPlan {
 }
 
 impl SetupPlan {
-    /// The plan of every pending write in `groups`. The trust group is the consent file, then the
-    /// entries a launch in `cwd` would write. A trust entry in a file that an earlier plan changes
-    /// is planned on that plan's text, so the two apply one after the other.
-    fn of(cwd: &std::path::Path, groups: &[&str]) -> Result<Self, Box<dyn std::error::Error>> {
+    /// The plan of every pending write in `groups`. The trust group is the consent file set to
+    /// `consent`, then the entries a launch in `cwd` would write. A trust entry in a file that an
+    /// earlier plan changes is planned on that plan's text, so the two apply one after the other.
+    fn of(
+        cwd: &std::path::Path,
+        groups: &[&str],
+        consent: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         use swarm::managed::FilePlan;
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
         let files = HookFiles::of(&user_home)?;
@@ -1121,7 +1125,7 @@ impl SetupPlan {
             }
         }
         if groups.contains(&"trust") {
-            setup.push("trust", consent_plan()?);
+            setup.push("trust", consent_plan(consent)?);
             match trust_target(cwd, &user_home) {
                 Err(reason) => setup.skipped.push(("trust", reason)),
                 Ok(target) => {
@@ -1217,52 +1221,67 @@ impl SetupPlan {
     }
 }
 
-/// The plan that writes standing consent for launch folder trust into `~/.swarm/consent.json`.
-/// It is swarm's own file, so it has no managed edit; a file swarm cannot read is a conflict.
-fn consent_plan() -> Result<swarm::managed::FilePlan, Box<dyn std::error::Error>> {
-    let path = swarm::paths::consent_file()?;
-    let before = match std::fs::read_to_string(&path) {
+/// The key of `~/.swarm/consent.json` that holds the owner's answer for launch folder trust, and
+/// its two answers (ADR 0043). Reader and writer share these, so a typo cannot read as `ask`.
+const TRUST_KEY: &str = "trust";
+const STANDING: &str = "standing";
+const ASK: &str = "ask";
+
+/// `~/.swarm/consent.json` as its text ("" for a missing file) and its object.
+fn read_consent(path: &std::path::Path) -> Result<(String, serde_json::Value), String> {
+    let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => {
-            return Ok(swarm::managed::FilePlan::unreadable(
-                path.clone(),
-                format!("swarm: cannot read {}: {error}", path.display()),
-            ));
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((String::new(), serde_json::json!({})));
         }
+        Err(error) => return Err(format!("swarm: cannot read {}: {error}", path.display())),
     };
-    let mut value = match before.as_str() {
-        "" => serde_json::json!({}),
-        text => match serde_json::from_str::<serde_json::Value>(text) {
-            Ok(value) if value.is_object() => value,
-            _ => {
-                return Ok(swarm::managed::FilePlan::unreadable(
-                    path.clone(),
-                    format!("swarm: {} is not a JSON object", path.display()),
-                ));
-            }
-        },
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) if value.is_object() => Ok((text, value)),
+        _ => Err(format!("swarm: {} is not a JSON object", path.display())),
+    }
+}
+
+/// The plan that sets the launch consent in `~/.swarm/consent.json` to `answer`, as a managed
+/// edit, so Managed Changes lists it and its undo puts back the answer before, or none, which is
+/// `ask` (owner answer 2026-10-06). A file swarm cannot read is a conflict.
+fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::error::Error>> {
+    use swarm::managed::{Edit, FilePlan, Kind, Writer};
+    let path = swarm::paths::consent_file()?;
+    let (before, mut value) = match read_consent(&path) {
+        Ok(read) => read,
+        Err(error) => return Ok(FilePlan::unreadable(path, error)),
     };
-    let after = if value["trust"] == "standing" {
-        before.clone()
-    } else {
-        value["trust"] = "standing".into();
-        value["by"] = format!("swarm {}", env!("CARGO_PKG_VERSION")).into();
-        serde_json::to_string_pretty(&value)? + "\n"
-    };
-    Ok(swarm::managed::FilePlan {
+    let found = value.get(TRUST_KEY).cloned();
+    let mut plan = FilePlan {
+        after: before.clone(),
         path,
         before,
-        after,
         conflicts: Vec::new(),
         edits: Vec::new(),
-    })
+    };
+    if found.as_ref().and_then(serde_json::Value::as_str) != Some(answer) {
+        value[TRUST_KEY] = answer.into();
+        plan.after = serde_json::to_string_pretty(&value)? + "\n";
+        plan.edits.push(Edit {
+            before: found,
+            ..Edit::new(
+                Writer::LaunchTrust,
+                &plan.path,
+                Kind::JsonKey,
+                &[TRUST_KEY],
+                answer.into(),
+            )
+        });
+    }
+    Ok(plan)
 }
 
 /// `swarm setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>]
-/// [--only <group>,...]`: every write swarm makes outside its home, in one plan with one digest
-/// (ADR 0043). The groups are `hooks`, as `hooks setup` writes them, `trust`, the launch consent
-/// and the trust entries a launch in `--cwd` would write, and `herdr`. Running it, or applying
+/// [--only <group>,...] [--consent <standing|ask>]`: every write swarm makes outside its home, in
+/// one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup` writes them,
+/// `trust`, the launch consent (`--consent`, standing by default) and the trust entries a launch
+/// in `--cwd` would write, and `herdr`. Running it, or applying
 /// the plan's digest, is the owner's consent, as for `hooks setup`.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1272,30 +1291,37 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return print_json(&serde_json::json!({
             "hooks": files.hooks_status(),
             "guard": files.guard_status(has_list),
-            "trust": standing_consent(),
+            // The owner answered, standing or ask, so the app does not ask again.
+            "trust": trust_answer().is_some(),
             "herdr": true,
         }));
     }
     let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
+    let mut consent = None;
     let mut rest = args.iter().copied();
     while let Some(arg) = rest.next() {
         match arg {
             "--plan" => plan = true,
             "--json" => json = true,
-            "--digest" | "--cwd" | "--only" => {
+            "--digest" | "--cwd" | "--only" | "--consent" => {
                 let value = Some(rest.next().ok_or(USAGE)?);
                 match arg {
                     "--digest" => digest = value,
                     "--cwd" => cwd = value,
+                    "--consent" => consent = value,
                     _ => only = value,
                 }
             }
             _ => return Err(USAGE.into()),
         }
     }
-    if (json && !plan) || (plan && digest.is_some()) {
+    if (json && !plan)
+        || (plan && digest.is_some())
+        || consent.is_some_and(|answer| ![STANDING, ASK].contains(&answer))
+    {
         return Err(USAGE.into());
     }
+    let answer = consent.unwrap_or(STANDING);
     let groups: Vec<&str> = match only {
         None => SETUP_GROUPS.to_vec(),
         Some(list) => list.split(',').collect(),
@@ -1311,7 +1337,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::fs::canonicalize(&dir)
         .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
     if plan {
-        let setup = SetupPlan::of(&dir, &groups)?;
+        let setup = SetupPlan::of(&dir, &groups, answer)?;
         let plan_digest = setup.digest();
         if json {
             let group_of = |value: serde_json::Value, group: &str| {
@@ -1321,7 +1347,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             };
             return print_json(&serde_json::json!({
                 "digest": plan_digest,
-                "consent": if standing_consent() { "standing" } else { "ask" },
+                "consent": if standing_consent() { STANDING } else { ASK },
                 "files": setup.grouped()
                     .filter(|(_, plan)| plan.after != plan.before)
                     .map(|(group, plan)| serde_json::json!({
@@ -1346,6 +1372,9 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(only) = only {
             apply += &format!(" --only {only}");
         }
+        if let Some(consent) = consent {
+            apply += &format!(" --consent {consent}");
+        }
         for (group, reason) in &setup.skipped {
             println!("skipped ({group}): {reason}");
         }
@@ -1362,7 +1391,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
-        let setup = SetupPlan::of(&dir, &groups).map_err(|error| error.to_string())?;
+        let setup = SetupPlan::of(&dir, &groups, answer).map_err(|error| error.to_string())?;
         let plans = &setup.plans;
         // A retry after a timeout finds nothing to do, and that is not a failure.
         if plans
@@ -1441,33 +1470,24 @@ enum TrustConsent {
     Ask,
 }
 
-/// The owner's standing consent for launch folder trust, from `~/.swarm/consent.json`. A missing
-/// file, a missing or unknown `trust`, or a file swarm cannot read is no consent (R4); an
-/// unreadable one is named.
-fn standing_consent() -> bool {
-    let Ok(path) = swarm::paths::consent_file() else {
-        return false;
-    };
-    match std::fs::read_to_string(&path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+/// The owner's answer for launch folder trust in `~/.swarm/consent.json`: `standing`, `ask`, or
+/// None for no answer. A file swarm cannot read is no answer (R4), and is named.
+fn trust_answer() -> Option<&'static str> {
+    let path = swarm::paths::consent_file().ok()?;
+    match read_consent(&path) {
+        Ok((_, value)) => [STANDING, ASK]
+            .into_iter()
+            .find(|answer| value[TRUST_KEY] == *answer),
         Err(error) => {
-            eprintln!(
-                "swarm: cannot read {}: {error}; folder trust has no consent",
-                path.display()
-            );
-            false
+            eprintln!("{error}; folder trust has no consent");
+            None
         }
-        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(value) => value["trust"] == "standing",
-            Err(error) => {
-                eprintln!(
-                    "swarm: cannot parse {}: {error}; folder trust has no consent",
-                    path.display()
-                );
-                false
-            }
-        },
     }
+}
+
+/// The owner's standing consent for launch folder trust. Anything else is no consent (R4).
+fn standing_consent() -> bool {
+    trust_answer() == Some(STANDING)
 }
 
 /// The trust entries one launch needs, and what it may do with them.

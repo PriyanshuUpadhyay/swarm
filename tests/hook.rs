@@ -717,7 +717,8 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
         .iter()
         .filter(|entry| entry["writer"] == "launch.trust" && entry["recorded"] == true)
         .count();
-    assert_eq!(trust, 3, "{list}");
+    // The consent file, Codex, AGY, and Claude.
+    assert_eq!(trust, 4, "{list}");
 
     let again = setup(&home, &["--digest", digest, "--cwd", &cwd]);
     assert!(again.status.success(), "{again:?}");
@@ -938,5 +939,89 @@ fn a_trust_digest_covers_only_the_entries_the_plan_writes() {
         serde_json::from_str(&std::fs::read_to_string(&claude).unwrap()).unwrap();
     assert_eq!(written["projects"][&pool]["hasTrustDialogAccepted"], true);
     assert_eq!(written["numStartups"], 3);
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// The launch consent is a managed edit: Managed Changes lists it, and its undo puts consent back
+/// to no answer, which is `ask`. `--consent ask` records the owner's ask answer, which also
+/// counts as set up, so the app does not ask again (owner answer 2026-10-06).
+#[test]
+fn launch_consent_is_a_managed_edit_that_reverts_to_ask() {
+    let home = scratch("setup-consent");
+    let consent = home.join(".swarm/consent.json");
+    let status = || -> serde_json::Value {
+        serde_json::from_slice(&setup(&home, &["status", "--json"]).stdout).unwrap()
+    };
+    let apply = |extra: &[&str]| {
+        let mut args = vec!["--plan", "--json", "--only", "trust"];
+        args.extend(extra);
+        let plan: serde_json::Value = serde_json::from_slice(&setup(&home, &args).stdout).unwrap();
+        let mut args = vec![
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "trust",
+        ];
+        args.extend(extra);
+        let applied = setup(&home, &args);
+        assert!(applied.status.success(), "{applied:?}");
+        plan
+    };
+    let consent_entries = || -> Vec<serde_json::Value> {
+        let list = swarm(&home, &[], &["managed", "list", "--json"], "");
+        let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+        list["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["path"] == serde_json::json!(["trust"]))
+            .cloned()
+            .collect()
+    };
+
+    apply(&[]);
+    assert_eq!(status()["trust"], true);
+    let entries = consent_entries();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["writer"], "launch.trust");
+    assert_eq!(entries[0]["wrote"], "standing");
+    assert_eq!(entries[0]["state"], "present");
+
+    let id = entries[0]["id"].as_str().unwrap();
+    let plan = swarm(
+        &home,
+        &[],
+        &["managed", "revert", id, "--plan", "--json"],
+        "",
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    let reverted = swarm(
+        &home,
+        &[],
+        &["managed", "revert", id, "--digest", digest],
+        "",
+    );
+    assert!(reverted.status.success(), "{reverted:?}");
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&consent).unwrap()).unwrap();
+    assert_eq!(value.get("trust"), None, "{value}");
+    assert_eq!(status()["trust"], false);
+
+    let plan = apply(&["--consent", "ask"]);
+    assert!(
+        plan["files"][0]["diff"]
+            .as_str()
+            .unwrap()
+            .contains("+  \"trust\": \"ask\""),
+        "{plan}"
+    );
+    assert_eq!(status()["trust"], true);
+    let plan: serde_json::Value =
+        serde_json::from_slice(&setup(&home, &["--plan", "--json", "--only", "trust"]).stdout)
+            .unwrap();
+    assert_eq!(plan["consent"], "ask");
+    let bad = setup(&home, &["--plan", "--consent", "always"]);
+    assert!(!bad.status.success());
     std::fs::remove_dir_all(&home).unwrap();
 }
