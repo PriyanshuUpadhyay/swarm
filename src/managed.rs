@@ -338,10 +338,12 @@ fn live(edit: &Edit) -> Result<Option<serde_json::Value>, String> {
         return Ok(last.and_then(|last| table.get(last)).map(toml_json));
     }
     let mut value = json_object(&edit.file, Some(&text))?;
-    for key in keys {
+    // Only the array of a JsonArrayItem is an array; any other container is an object.
+    for (index, key) in keys.iter().enumerate() {
+        let array = last.is_none() && index + 1 == keys.len();
         match value.get_mut(key.as_str()) {
             None => return Ok(None),
-            Some(inner) if inner.is_object() || inner.is_array() => value = inner.take(),
+            Some(inner) if inner.is_object() || (array && inner.is_array()) => value = inner.take(),
             Some(_) => return Err(not_container(key)),
         }
     }
@@ -1089,6 +1091,46 @@ mod tests {
         // A string where swarm wrote a bool is another value, not swarm's.
         std::fs::write(&file, quiet.replace("false", "\"false\"")).unwrap();
         assert_eq!(state(&edit, false), State::Changed("false".into()));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An array where the path needs an object is a file swarm cannot read, not an absent item, so
+    /// a revert refuses it and the row stays on (R4).
+    #[test]
+    fn an_array_in_the_middle_of_a_json_path_is_an_error_not_gone() {
+        let dir = std::env::temp_dir().join(format!("swarm-managed-array-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        let group = serde_json::json!({"matcher": "", "hooks": []});
+        let with_group = serde_json::json!({"hooks": {"PreToolUse": [group]}}).to_string();
+        std::fs::write(&file, &with_group).unwrap();
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        let edit = Edit::new(
+            Writer::HooksGuard,
+            &file,
+            Kind::JsonArrayItem,
+            &["hooks", "PreToolUse"],
+            group,
+        );
+        let plan = FilePlan {
+            path: file.clone(),
+            before: with_group.clone(),
+            after: with_group,
+            conflicts: Vec::new(),
+            edits: vec![edit.clone()],
+        };
+        apply(&store, &[plan]).unwrap();
+
+        std::fs::write(&file, r#"{"hooks": []}"#).unwrap();
+        assert!(matches!(state(&edit, false), State::Changed(_)));
+        let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
+        assert_eq!(plans[0].conflicts.len(), 1);
+        assert!(revert(&store, &plans).is_err());
+        let off: bool = store
+            .query_row("SELECT off FROM managed_edit", [], |row| row.get(0))
+            .unwrap();
+        assert!(!off);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
