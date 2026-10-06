@@ -1454,3 +1454,62 @@ fn a_chair_trust_diff_never_prints_a_bare_key_line() {
         "{err}"
     );
 }
+
+/// A resuming Claude seat runs in cwd itself (`claude_child`), so with no consent its launch
+/// reports cwd as pending, and the approve command it prints plans the Claude entry for that same
+/// folder; once applied, the next resumed launch has nothing pending.
+#[test]
+fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
+    let home = scratch("resume-ask");
+    let env = trust_session(&home);
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let launch = |seat: &str| {
+        let env: Vec<(&str, &str)> = env
+            .iter()
+            .map(|(name, value)| (*name, value.as_str()))
+            .collect();
+        let args = [
+            "launch", seat, "chair", "--cwd", &cwd, "--", "--resume", "abc",
+        ];
+        let output = swarm(&home, &env, &args);
+        assert!(output.status.success(), "{}", stderr(&output));
+        stderr(&output)
+    };
+
+    let err = launch("seat");
+    assert!(
+        err.lines()
+            .any(|line| line == format!("trust-pending claude {cwd}")),
+        "{err}"
+    );
+    let approve = format!("swarm setup --plan --cwd '{cwd}' --resume");
+    assert!(err.contains(&approve), "{err}");
+
+    let plan = swarm(
+        &home,
+        &[],
+        &[
+            "setup", "--plan", "--json", "--only", "trust", "--cwd", &cwd, "--resume",
+        ],
+    );
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = swarm(
+        &home,
+        &[],
+        &[
+            "setup", "--digest", digest, "--only", "trust", "--cwd", &cwd, "--resume",
+        ],
+    );
+    assert!(applied.status.success(), "{}", stderr(&applied));
+    assert!(trusted(&home.join(".claude.json"), &repo));
+    assert!(!trusted(
+        &home.join(".claude.json"),
+        &repo.join(".herdr/workers")
+    ));
+
+    let err = launch("seat-2");
+    assert!(!err.contains("trust-pending claude"), "{err}");
+}

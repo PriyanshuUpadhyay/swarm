@@ -269,7 +269,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1103,12 +1103,14 @@ struct SetupPlan {
 
 impl SetupPlan {
     /// The plan of every pending write in `groups`. The trust group is the consent file set to
-    /// `consent`, then the entries a launch in `cwd` would write. A trust entry in a file that an
-    /// earlier plan changes is planned on that plan's text, so the two apply one after the other.
+    /// `consent`, then the entries a launch in `cwd` would write, for a resuming seat when
+    /// `resume`. A trust entry in a file that an earlier plan changes is planned on that plan's
+    /// text, so the two apply one after the other.
     fn of(
         cwd: &std::path::Path,
         groups: &[&str],
         consent: &str,
+        resume: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         use swarm::managed::FilePlan;
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
@@ -1167,10 +1169,15 @@ impl SetupPlan {
                     let plan = swarm::bus::agy_trust_plan(&settings, &target)
                         .unwrap_or_else(|error| FilePlan::unreadable(settings, error));
                     setup.push("trust", plan);
-                    // A seat's Claude runs from the pool under cwd (`claude_child`).
-                    let pool = cwd.join(".herdr").join("workers");
+                    // A seat's Claude runs from the pool under cwd, or in cwd when it resumes.
+                    let flags = if resume {
+                        vec!["--resume".into()]
+                    } else {
+                        Vec::new()
+                    };
+                    let (dir, _) = swarm::bus::claude_child("", cwd, &flags, &uuid::Uuid::nil());
                     for config in claude_configs(&user_home) {
-                        let plan = swarm::bus::claude_trust_plan(&config, &pool)
+                        let plan = swarm::bus::claude_trust_plan(&config, &dir)
                             .unwrap_or_else(|error| FilePlan::unreadable(config, error));
                         setup.push("trust", plan);
                     }
@@ -1278,12 +1285,12 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 }
 
 /// `swarm setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>]
-/// [--only <group>,...] [--consent <standing|ask>]`: every write swarm makes outside its home, in
-/// one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup` writes them,
-/// `trust`, the launch consent (`--consent`, by default the recorded answer, else standing) and
-/// the trust entries a launch in `--cwd` would write, and `herdr`. Running it, or applying the
-/// plan's digest, is the owner's consent, as for `hooks setup`, so a child pane may plan but not
-/// apply.
+/// [--only <group>,...] [--consent <standing|ask>] [--resume]`: every write swarm makes outside
+/// its home, in one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup`
+/// writes them, `trust`, the launch consent (`--consent`, by default the recorded answer, else
+/// standing) and the trust entries a launch in `--cwd` would write, for a resuming seat with
+/// `--resume`, and `herdr`. Running it, or applying the plan's digest, is the owner's consent, as
+/// for `hooks setup`, so a child pane may plan but not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if args == ["status", "--json"] {
@@ -1298,12 +1305,13 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
     let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
-    let mut consent = None;
+    let (mut consent, mut resume) = (None, false);
     let mut rest = args.iter().copied();
     while let Some(arg) = rest.next() {
         match arg {
             "--plan" => plan = true,
             "--json" => json = true,
+            "--resume" => resume = true,
             "--digest" | "--cwd" | "--only" | "--consent" => {
                 let value = Some(rest.next().ok_or(USAGE)?);
                 match arg {
@@ -1340,7 +1348,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::fs::canonicalize(&dir)
         .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
     if plan {
-        let setup = SetupPlan::of(&dir, &groups, answer)?;
+        let setup = SetupPlan::of(&dir, &groups, answer, resume)?;
         let plan_digest = setup.digest();
         if json {
             let group_of = |value: serde_json::Value, group: &str| {
@@ -1378,6 +1386,9 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(consent) = consent {
             apply += &format!(" --consent {consent}");
         }
+        if resume {
+            apply += " --resume";
+        }
         for (group, reason) in &setup.skipped {
             println!("skipped ({group}): {reason}");
         }
@@ -1400,7 +1411,8 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
     let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
-        let setup = SetupPlan::of(&dir, &groups, answer).map_err(|error| error.to_string())?;
+        let setup =
+            SetupPlan::of(&dir, &groups, answer, resume).map_err(|error| error.to_string())?;
         let plans = &setup.plans;
         // A retry after a timeout finds nothing to do, and that is not a failure.
         if plans
@@ -1536,8 +1548,14 @@ impl LaunchTrust<'_> {
                 eprintln!(
                     "swarm: no consent for folder trust, so swarm wrote nothing; the pane asks instead."
                 );
+                // A Claude seat runs in cwd only when it resumes (`claude_child`).
+                let resume = if provider == "claude" && dir == self.cwd {
+                    " --resume"
+                } else {
+                    ""
+                };
                 eprintln!(
-                    "swarm: approve with `swarm setup --plan --cwd {}`, then the `swarm setup --digest …` it prints.",
+                    "swarm: approve with `swarm setup --plan --cwd {}{resume}`, then the `swarm setup --digest …` it prints.",
                     swarm::adapter::shell_line(&[self.cwd.to_string_lossy().into_owned()])
                 );
             }
