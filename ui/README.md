@@ -58,10 +58,12 @@ The picker reports each step. Cancel stops the switch before the new agent start
 agent may still finish its summary. After launch, cancellation is disabled until the operation
 finishes. The chats are linked only after the new agent receives the context.
 
-One sidebar switches between Workspaces, Files, Changes, PR, and Usage. ⇧⌘B or the toolbar menu
-moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘5 pick a view, and ⌥⌘I opens Changes.
+One sidebar switches between Workspaces, Files, Changes, PR, Usage, and Runs. ⇧⌘B or the toolbar menu
+moves it left or right; ⌘B hides or shows it, ⌥⌘1 to ⌥⌘6 pick a view, and ⌥⌘I opens Changes.
 Drag its inner edge to resize it. Its side, width, and selected view survive restarts. The composer usage line selects Usage.
 Reads run when a view opens or Refresh is pressed; they do not fetch or change Git.
+Runs lists the step runs that skills such as flow write under the workspace's `tmp/<skill>/`, and
+draws one run as a graph of its steps; it re-reads them every second while it shows.
 
 Agent panes sit in columns to the right of the chat. Drag a column's right edge to set the width
 of every column, or the line inside a two-pane column to split it; a double-click resets either.

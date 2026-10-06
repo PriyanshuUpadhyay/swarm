@@ -1221,6 +1221,7 @@ private struct WorkspacePanels: View {
     let hasChat: Bool
     let open: (WorkspaceDocument) -> Void
     @State private var visitedFiles = false
+    @State private var visitedRuns = false
     @State private var visitedDetails = false
     @State private var detailsMode = WorkspaceSidebarMode.changes
 
@@ -1229,6 +1230,10 @@ private struct WorkspacePanels: View {
             if visitedFiles || mode == .files {
                 WorkspaceFilesView(directory: directory, isActive: visible && mode == .files, open: open)
                     .retainedVisibility(mode == .files)
+            }
+            if visitedRuns || mode == .runs {
+                StepRunsView(directory: directory, isActive: visible && mode == .runs, open: open)
+                    .retainedVisibility(mode == .runs)
             }
             if visitedDetails || mode.isDetails {
                 WorkspaceDetails(
@@ -1240,6 +1245,7 @@ private struct WorkspacePanels: View {
         }
         .onChange(of: mode, initial: true) { _, mode in
             if mode == .files { visitedFiles = true }
+            if mode == .runs { visitedRuns = true }
             if mode.isDetails { visitedDetails = true; detailsMode = mode }
         }
     }

@@ -2,7 +2,7 @@ import SwiftUI
 import SwarmCore
 
 enum WorkspaceSidebarMode: String, CaseIterable {
-    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage"
+    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage", runs = "Runs"
 
     var isDetails: Bool { self == .changes || self == .pullRequest || self == .usage }
 
@@ -13,6 +13,7 @@ enum WorkspaceSidebarMode: String, CaseIterable {
         case .changes: "arrow.triangle.branch"
         case .pullRequest: "arrow.triangle.pull"
         case .usage: "chart.pie"
+        case .runs: "point.3.connected.trianglepath.dotted"
         }
     }
 }
