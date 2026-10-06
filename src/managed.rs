@@ -104,6 +104,9 @@ pub struct Edit {
     pub created: u8,
     /// The id of an edit that is always reverted with this one.
     pub with: Option<String>,
+    /// An array item that must stay the last item, so a revert refuses it while items follow it:
+    /// they would move. The writer sets it; it is not part of the id.
+    pub last: bool,
 }
 
 impl Edit {
@@ -124,6 +127,7 @@ impl Edit {
             before: None,
             created: 0,
             with: None,
+            last: false,
         }
     }
 
@@ -499,6 +503,10 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
             )
         };
         let parse = |text: &str| serde_json::from_str::<serde_json::Value>(text);
+        // managed_edit has no column for it, so a row takes it from the one writer that sets it:
+        // the Codex guard group (`bus::guard_group_edit`).
+        let last =
+            writer == "hooks.guard" && kind == "json_array_item" && file.ends_with("/hooks.json");
         let edit = Edit {
             writer: serde_json::from_value(writer.clone().into())
                 .map_err(|_| unknown("writer", &writer))?,
@@ -513,6 +521,7 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
             },
             created,
             with,
+            last,
         };
         let state = state(&edit, off);
         entries.push(Entry {
@@ -758,9 +767,8 @@ fn json_toml(value: &serde_json::Value) -> Option<toml_edit::Value> {
 }
 
 /// `before` with each JSON item of `gone` removed, or set back to the value it replaced, and each
-/// object or array the write made removed again once it is empty. An item of a Codex `hooks.json`
-/// array with another item after it is a conflict, because Codex keys hook trust by place, so the
-/// later groups would move and lose their trust.
+/// object or array the write made removed again once it is empty. An item that must stay last
+/// (`Edit::last`) with another item after it is a conflict.
 fn remove_json(
     file: &std::path::Path,
     before: &str,
@@ -797,10 +805,7 @@ fn remove_json(
                     .iter()
                     .position(|item| *item == edit.wrote)
                     .ok_or("an item that changed since it was read")?;
-                if index + 1 < items.len()
-                    && file.file_name().is_some_and(|name| name == "hooks.json")
-                    && edit.path.first().is_some_and(|key| key == "hooks")
-                {
+                if edit.last && index + 1 < items.len() {
                     conflicts.push(Conflict {
                         kind: ConflictKind::Order,
                         file: file.display().to_string(),
@@ -1220,6 +1225,52 @@ mod tests {
             .query_row("SELECT off FROM managed_edit", [], |row| row.get(0))
             .unwrap();
         assert!(!off);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Only an item that must stay last, as the Codex guard group, has an order conflict. Another
+    /// writer's array item in a file that is also named `hooks.json` goes with items after it.
+    #[test]
+    fn only_an_item_that_must_stay_last_has_an_order_conflict() {
+        let dir = std::env::temp_dir().join(format!("swarm-managed-last-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("hooks.json");
+        let swarms = serde_json::json!({"hooks": [{"command": "swarm"}]});
+        let owners = serde_json::json!({"hooks": [{"command": "owner"}]});
+        let text = serde_json::json!({"hooks": {"Stop": [swarms, owners]}}).to_string();
+        std::fs::write(&file, &text).unwrap();
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        let edit = Edit::new(
+            Writer::HooksState,
+            &file,
+            Kind::JsonArrayItem,
+            &["hooks", "Stop"],
+            swarms,
+        );
+        let plan = FilePlan {
+            path: file.clone(),
+            before: text.clone(),
+            after: text,
+            conflicts: Vec::new(),
+            edits: vec![edit.clone()],
+        };
+        apply(&store, &[plan]).unwrap();
+
+        let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
+        assert!(plans[0].conflicts.is_empty(), "{:?}", plans[0].conflicts);
+        let after: serde_json::Value = serde_json::from_str(&plans[0].after).unwrap();
+        assert_eq!(after["hooks"]["Stop"], serde_json::json!([owners]));
+
+        let entry = Entry {
+            edit: Edit { last: true, ..edit },
+            state: State::Present,
+            recorded: true,
+            at_s: None,
+        };
+        let plan = removal(&file, &[&entry]).unwrap();
+        assert_eq!(plan.conflicts[0].kind, ConflictKind::Order);
+        assert_eq!(plan.after, plan.before);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

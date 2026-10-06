@@ -947,16 +947,20 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
 }
 
 /// The group that `guard_hooks_plan` adds to `event` in a Claude `settings.json` or a Codex
-/// `hooks.json`.
+/// `hooks.json`. A Codex group must stay last, because Codex keys hook trust by place: groups
+/// after it would move when it goes and lose their trust.
 pub fn guard_group_edit(path: &std::path::Path, provider: &str, event: &str) -> Edit {
     let group = serde_json::json!({"hooks": [guard_handler(provider, event)]});
-    Edit::new(
-        Writer::HooksGuard,
-        path,
-        Kind::JsonArrayItem,
-        &["hooks", event],
-        group,
-    )
+    Edit {
+        last: provider == "codex",
+        ..Edit::new(
+            Writer::HooksGuard,
+            path,
+            Kind::JsonArrayItem,
+            &["hooks", event],
+            group,
+        )
+    }
 }
 
 fn agy_group() -> serde_json::Value {
