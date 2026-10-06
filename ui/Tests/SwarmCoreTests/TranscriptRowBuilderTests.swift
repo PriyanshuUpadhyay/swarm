@@ -729,6 +729,27 @@ struct TranscriptDebugDataTests {
         #expect(TranscriptRowBuilder.rows(from: events, isCodex: true).map(\.tool?.state) == [.failed])
     }
 
+    /// A Claude Bash that prints a Codex log keeps a finished card with no "exit 1".
+    @Test("Only a Codex log reads an exit code from a Codex result header")
+    func codexExitCodeOnlyInCodex() {
+        for output in [
+            "Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":1}",
+            "Chunk ID: b2\nWall time: 0.0 seconds\nProcess exited with code 1\nOutput:\nboom",
+        ] {
+            let events: [TranscriptEvent] = [
+                .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("cat run.log")]), status: .pending, meta: Meta()),
+                .toolCallUpdate(toolCallID: "c1", status: .completed, content: output, meta: Meta()),
+            ]
+            #expect(TranscriptRowBuilder.rows(from: events).map(\.tool?.exitCode) == [nil])
+            #expect(TranscriptRowBuilder.rows(from: events, isCodex: true).map(\.tool?.exitCode) == [1])
+        }
+        let claude = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "Bash", input: .object(["command": .string("false")]), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .failed, content: "Exit code 1", meta: Meta()),
+        ])
+        #expect(claude.map(\.tool?.exitCode) == [1])
+    }
+
     @Test("A ring between a tool call and its result does not split them")
     func ringKeepsToolScope() {
         let rows = TranscriptRowBuilder.rows(from: [

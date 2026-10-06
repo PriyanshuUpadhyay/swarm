@@ -8,16 +8,18 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     }
 
     public var name: String
+    /// The call is from a Codex log, the only log whose result text gives a Codex exit code.
+    public let isCodex: Bool
     public var input: JSONElement
     /// Setting the output or the command also sets `exitCode`, so a card's body never scans the output.
-    public var output: String? { didSet { exitCode = Self.exitCode(output: output, command: command) } }
+    public var output: String? { didSet { exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex) } }
     /// Setting the diffs also sets `diffCounts`, so a card's body never sums the lines.
     public var diffs: [TranscriptDiff] { didSet { diffCounts = Self.counts(of: diffs) } }
     /// Added and removed lines across the call's diffs; nil when it has none.
     public private(set) var diffCounts: DiffCounts?
     public var state: State
-    public var command: String? { didSet { exitCode = Self.exitCode(output: output, command: command) } }
-    /// A command's exit status from its result; nil when unknown. See `exitCode(output:command:)`.
+    public var command: String? { didSet { exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex) } }
+    /// A command's exit status from its result; nil when unknown. See `exitCode(output:command:isCodex:)`.
     public private(set) var exitCode: Int?
     public var path: String?
     /// Seconds from the call to its last result; nil when either time is missing.
@@ -28,16 +30,17 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public init(
         name: String, input: JSONElement, output: String? = nil,
         diffs: [TranscriptDiff] = [], state: State,
-        command: String? = nil, path: String? = nil, duration: Double? = nil
+        command: String? = nil, path: String? = nil, duration: Double? = nil, isCodex: Bool = false
     ) {
         self.name = name
+        self.isCodex = isCodex
         self.input = input
         self.output = output
         self.diffs = diffs
         diffCounts = Self.counts(of: diffs)
         self.state = state
         self.command = command
-        exitCode = Self.exitCode(output: output, command: command)
+        exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex)
         self.path = path
         self.duration = duration
     }
@@ -115,18 +118,20 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         } ?? false
     }
 
-    /// Claude Code writes `Exit code N` on the first line of a failed command's result. Codex
+    /// Claude Code writes `Exit code N` on the first line of a failed command's result. The Codex
+    /// shapes are read only when `isCodex`, so another provider's stdout cannot set the code. Codex
     /// exec_command without code mode writes a `Chunk ID:` header with `Process exited with code N`
     /// before `Output:`. Codex code mode writes `Script completed`, its wall time, `Output:`, and
     /// then what the script printed; the first `exit_code` other than 0 of a printed exec_command
     /// result (an object, or an array entry or its `value`) is the code. Printed free text gives
     /// nil, so a command's stdout cannot set it. Codex codes of 0 give nil, so a card shows no
     /// "exit 0". O(output length).
-    static func exitCode(output: String?, command: String?) -> Int? {
+    static func exitCode(output: String?, command: String?, isCodex: Bool) -> Int? {
         guard command != nil, let output else { return nil }
         if output.hasPrefix("Exit code ") {
             return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
         }
+        guard isCodex else { return nil }
         if output.hasPrefix("Chunk ID: ") {
             let header = output.range(of: "\nOutput:\n").map { output[..<$0.lowerBound] } ?? output[...]
             guard let key = header.range(of: "\nProcess exited with code ") else { return nil }

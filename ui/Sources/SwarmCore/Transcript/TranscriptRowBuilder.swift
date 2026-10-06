@@ -283,7 +283,7 @@ public enum TranscriptRowBuilder {
                 row.tool = TranscriptToolActivity(
                     name: name, input: input, output: output, diffs: relatedDiffs,
                     state: state, command: TranscriptToolActivity.command(in: input, name: name),
-                    path: TranscriptToolActivity.path(in: input), duration: duration
+                    path: TranscriptToolActivity.path(in: input), duration: duration, isCodex: isCodex
                 )
                 if isCodex, state == .finished, row.tool?.reportsFailure == true { row.tool?.state = .failed }
             }

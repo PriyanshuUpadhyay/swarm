@@ -158,7 +158,7 @@ struct TranscriptToolActivityTests {
     @Test("A Codex exec fails on Script failed or a non-zero exit_code; exit 0 shows no code")
     func codexExecFailure() {
         func activity(_ output: String) -> TranscriptToolActivity {
-            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x")
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x", isCodex: true)
         }
         let failed = activity("Script completed\nWall time 3.6 seconds\nOutput:\n{\"chunk_id\":\"a\",\"exit_code\":1,\"output\":\"Traceback\\n\"}")
         #expect(failed.exitCode == 1)
@@ -196,7 +196,7 @@ struct TranscriptToolActivityTests {
     @Test("A Codex code-mode exit_code or rejected status inside printed command text does not fail the step")
     func codexPrintedTextIsNotAResult() {
         func activity(_ output: String) -> TranscriptToolActivity {
-            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x")
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x", isCodex: true)
         }
         let exitInText = activity("Script completed\nWall time 1 seconds\nOutput:\nserver log {\"exit_code\":1} retried\n")
         #expect(exitInText.exitCode == nil)
@@ -221,7 +221,7 @@ struct TranscriptToolActivityTests {
     @Test("A Codex exec_command result reads Process exited with code N from its header only")
     func codexProcessExit() {
         func exec(_ output: String) -> TranscriptToolActivity {
-            TranscriptToolActivity(name: "exec_command", input: .object([:]), output: output, state: .finished, command: "false")
+            TranscriptToolActivity(name: "exec_command", input: .object([:]), output: output, state: .finished, command: "false", isCodex: true)
         }
         let header = "Chunk ID: b294b6\nWall time: 0.0000 seconds\nProcess exited with code "
         let failed = exec(header + "1\nOriginal token count: 3\nOutput:\nboom\n")
