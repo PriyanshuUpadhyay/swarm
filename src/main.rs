@@ -1184,8 +1184,8 @@ impl SetupPlan {
                 }
             }
         }
-        // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (ADR 0045)
-        // adds its plans here; this build has none, so the group is always set up.
+        // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (its ADR,
+        // PR #30) adds its plans here; this build has none, so the group is always set up.
         Ok(setup)
     }
 

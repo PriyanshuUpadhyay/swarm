@@ -1261,8 +1261,9 @@ fn recorded_trust(home: &Path) -> Vec<serde_json::Value> {
 }
 
 /// With no consent (ADR 0043), a seat's launch writes no trust entry. It prints the bare
-/// `trust-pending` line the app reads, the diff it would write, and the command that approves it,
-/// and the seat still starts, at its CLI's own trust prompt.
+/// `trust-pending` line the chair reads (the app reads only `trusted` lines), the diff it would
+/// write, and the command that approves it, and the seat still starts, at its CLI's own trust
+/// prompt.
 #[test]
 fn a_seat_launch_with_no_consent_writes_no_trust_and_prints_the_plan() {
     let home = scratch("ask");

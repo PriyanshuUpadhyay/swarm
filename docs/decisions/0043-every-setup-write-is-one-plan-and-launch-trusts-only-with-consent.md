@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-05
 deciders: [user]
-related: ["0008", "0029", "0036", "0040", "0042", "0045"]
+related: ["0008", "0029", "0036", "0040", "0042"]
 informed-by:
   - "Owner answers on 2026-10-05 (flow 2026-10-05-setup-plan-all, 03-contracts): Q1 (a) new swarm setup --plan, hooks setup kept as --only hooks; Q2 (c) one standing consent for launch trust, bounded by trust_target; Q3 (a) no consent file means ask and the setup sheet opens once; Q4 (a) Claude hasTrustDialogAccepted false is a pending change"
   - "Owner answer I1 on 2026-10-06 (flow 2026-10-05-setup-plan-all, 03-contracts): use the recommendation, so a chair's folder pick is consent for that folder; show the trust prompt or the exact trust write, never answer silently"
@@ -18,8 +18,8 @@ informed-by:
 `swarm launch` does not. It marks a folder trusted in `~/.claude.json` and each Claude profile,
 in each Codex `config.toml`, and in AGY's `trustedWorkspaces`, with no diff and no consent (the
 ADR 0008 note of 2026-09-30). Each of those files holds about 2000 such entries on the owner's
-Mac. The Herdr toast and sound switch (ADR 0045) is a third writer outside the home. A chair that
-opens seats with no owner present must not stop at a swarm dialog.
+Mac. The Herdr toast and sound switch (the swarm-notify ADR, PR #30) is a third writer outside
+the home. A chair that opens seats with no owner present must not stop at a swarm dialog.
 
 ## Considered Options
 
