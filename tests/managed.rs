@@ -228,13 +228,39 @@ fn managed_list_shows_each_hooks_setup_write_and_its_live_state() {
     );
     assert!(text.contains(&format!("  present  hooks.state  {codex}  hooks.state./<session-flags>/config.toml:interrupt:1:0.trusted_hash\n")), "{text}");
 
-    // A found item can be removed too; the owner's edited key is not swarm's, so it stays.
+    // A found item can be removed too; the owner's edited key is not swarm's, so it stays. Each
+    // removed item keeps a row that shows it off, so the app can offer On.
     let revert = swarm(&home, &["managed", "revert", "--all"]);
     assert!(revert.status.success(), "{revert:?}");
-    assert!(listing(&home).is_empty());
+    let ids = |entries: &[serde_json::Value]| {
+        let mut ids: Vec<_> = entries.iter().map(|entry| entry["id"].clone()).collect();
+        ids.sort_by_key(|id| id.to_string());
+        ids
+    };
+    let reverted = listing(&home);
+    assert_eq!(ids(&reverted), ids(&found));
+    assert!(
+        reverted
+            .iter()
+            .all(|entry| entry["recorded"] == true && entry["state"] == "off"),
+        "{reverted:?}"
+    );
     let config = std::fs::read_to_string(&codex).unwrap();
     assert_eq!(config.matches("trusted_hash").count(), 1, "{config}");
     assert!(config.contains("sha256:edited"), "{config}");
+
+    // On runs the owning writer's plan again: once the owner sets the edited key back,
+    // `hooks setup` writes each off item and its row shows it present.
+    std::fs::write(&codex, config.replace("sha256:edited", hash)).unwrap();
+    let setup = swarm(&home, &["hooks", "setup"]);
+    assert!(setup.status.success(), "{setup:?}");
+    let on = listing(&home);
+    assert!(
+        found.iter().all(|item| on
+            .iter()
+            .any(|entry| entry["id"] == item["id"] && entry["state"] == "present")),
+        "{on:?}"
+    );
     std::fs::remove_dir_all(&home).unwrap();
 }
 

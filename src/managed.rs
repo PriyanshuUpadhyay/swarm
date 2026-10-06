@@ -201,33 +201,39 @@ fn commit(
         let tx =
             rusqlite::Transaction::new_unchecked(store, rusqlite::TransactionBehavior::Immediate)
                 .map_err(failed)?;
+        // A revert keeps a row, also for a found item, so `list` shows it off and the app can
+        // offer On; a recorded row keeps its time of the last apply.
+        let upsert = match off {
+            true => "ON CONFLICT (id) DO UPDATE SET off = 1",
+            false => {
+                "ON CONFLICT (id) DO UPDATE SET writer = excluded.writer,
+                     file = excluded.file, kind = excluded.kind, path = excluded.path,
+                     wrote = excluded.wrote, before = excluded.before,
+                     created = excluded.created, with_id = excluded.with_id,
+                     at_s = excluded.at_s, off = 0"
+            }
+        };
         for edit in &plan.edits {
-            if off {
-                tx.execute("UPDATE managed_edit SET off = 1 WHERE id = ?1", [edit.id()])
-            } else {
-                tx.execute(
+            tx.execute(
+                &format!(
                     "INSERT INTO managed_edit
                          (id, writer, file, kind, path, wrote, before, created, with_id, at_s, off)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)
-                     ON CONFLICT (id) DO UPDATE SET writer = excluded.writer,
-                         file = excluded.file, kind = excluded.kind, path = excluded.path,
-                         wrote = excluded.wrote, before = excluded.before,
-                         created = excluded.created, with_id = excluded.with_id,
-                         at_s = excluded.at_s, off = 0",
-                    rusqlite::params![
-                        edit.id(),
-                        wire(&edit.writer),
-                        edit.file.to_string_lossy(),
-                        wire(&edit.kind),
-                        serde_json::Value::from(edit.path.clone()).to_string(),
-                        edit.wrote.to_string(),
-                        edit.before.as_ref().map(serde_json::Value::to_string),
-                        edit.created,
-                        edit.with,
-                        now,
-                    ],
-                )
-            }
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) {upsert}"
+                ),
+                rusqlite::params![
+                    edit.id(),
+                    wire(&edit.writer),
+                    edit.file.to_string_lossy(),
+                    wire(&edit.kind),
+                    serde_json::Value::from(edit.path.clone()).to_string(),
+                    edit.wrote.to_string(),
+                    edit.before.as_ref().map(serde_json::Value::to_string),
+                    edit.created,
+                    edit.with,
+                    now,
+                    off,
+                ],
+            )
             .map_err(failed)?;
         }
         if writes {
