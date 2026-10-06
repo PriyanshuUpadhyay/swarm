@@ -816,3 +816,41 @@ fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A Codex project the owner set to another trust level is left as it is, and the plan says why
+/// the pane will ask (ADR 0043, C3).
+#[test]
+fn a_codex_folder_the_owner_left_untrusted_is_skipped_with_its_reason() {
+    let home = scratch("setup-untrusted");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    let config = format!("[projects.\"{cwd}\"]\ntrust_level = \"untrusted\"\n");
+    std::fs::write(home.join(".codex/config.toml"), &config).unwrap();
+
+    let plan = setup(
+        &home,
+        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let codex = home.join(".codex/config.toml");
+    assert!(
+        plan["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["path"] != codex.to_string_lossy().as_ref()),
+        "{plan}"
+    );
+    let skipped = &plan["skipped"];
+    assert_eq!(skipped.as_array().unwrap().len(), 1, "{plan}");
+    assert_eq!(skipped[0]["group"], "trust");
+    let reason = skipped[0]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("you marked this folder untrusted; the pane asks"),
+        "{reason}"
+    );
+    assert!(reason.contains(&*codex.to_string_lossy()), "{reason}");
+    std::fs::remove_dir_all(&home).unwrap();
+}

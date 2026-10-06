@@ -284,6 +284,19 @@ pub fn codex_trust_plan_on(
     )
 }
 
+/// Whether `text`, a Codex `config.toml`, holds `dir` with no `trust_level = "trusted"`. Swarm
+/// leaves such a project as the owner set it, so Codex asks in the pane (C3).
+pub fn codex_left_untrusted(text: &str, dir: &std::path::Path) -> bool {
+    text.parse::<toml_edit::DocumentMut>().is_ok_and(|config| {
+        config
+            .get("projects")
+            .and_then(|projects| projects.get(&*dir.to_string_lossy()))
+            .is_some_and(|project| {
+                project.get("trust_level").and_then(toml_edit::Item::as_str) != Some("trusted")
+            })
+    })
+}
+
 /// A trust plan for `path`: `after` is the planned text, None when nothing changes.
 fn trust_plan(
     path: std::path::PathBuf,

@@ -1137,6 +1137,17 @@ impl SetupPlan {
                             Some(text) => swarm::bus::codex_trust_plan_on(&path, text, &target),
                             None => swarm::bus::codex_trust_plan(home, &target),
                         };
+                        if let Ok(plan) = &plan
+                            && swarm::bus::codex_left_untrusted(&plan.before, &target)
+                        {
+                            setup.skipped.push((
+                                "trust",
+                                format!(
+                                    "{}: you marked this folder untrusted; the pane asks",
+                                    path.display()
+                                ),
+                            ));
+                        }
                         setup.push(
                             "trust",
                             plan.unwrap_or_else(|error| FilePlan::unreadable(path, error)),
