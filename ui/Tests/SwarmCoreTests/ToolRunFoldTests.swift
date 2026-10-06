@@ -99,15 +99,15 @@ struct ToolRunFoldTests {
         var choices = [window.id: true]
         let earlier = fold([prompt(), tool("read"), tool("grep"), tool("make"), reply("answer")])
         #expect(earlier.id != window.id)
-        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices))
+        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices, defaults: [:]))
         // A later choice is stored under the new id, which belongs to an earlier step, so it wins.
         choices[earlier.id] = false
-        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices))
+        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices, defaults: [:]))
         // The live fold's id stays as steps land, so its choice stays too.
         let live = fold([prompt(), tool("read"), tool("grep"), tool("make"), tool("test")])
         #expect(live.id == earlier.id)
         // A fold with no choice opens only on a failed step.
-        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices))
+        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices, defaults: [:]))
     }
 
     @Test("A run that drew 2 rows before its first tool landed opens when it folds, so no rows on screen collapse")
@@ -115,10 +115,43 @@ struct ToolRunFoldTests {
         #expect(foldedIDs([prompt(), ring("ring"), thought("plan")]).isEmpty)
         let landed = ToolRunFold.items(in: [prompt(), ring("ring"), thought("plan"), tool("inbox")])
         let fold = try #require(landed.compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
-        #expect(ToolRunFold.isExpanded(fold, overrides: [:]))
+        #expect(ToolRunFold.isExpanded(fold, overrides: [:], defaults: [:]))
         // One row before the first tool, or a hidden one, is no group on screen, so the fold closes.
         #expect(!ToolRunFold.defaultExpanded([ring("ring"), tool("read"), tool("grep")]))
         #expect(!ToolRunFold.defaultExpanded([hidden("reminder"), thought("plan"), tool("read")]))
+    }
+
+    /// The fold's rows after the view records first defaults for `window`, then for `window` with
+    /// `earlier` loaded before it, as the view does on each change of fold ids.
+    private func foldAfterLoadEarlier(
+        window: [TranscriptRow], earlier: [TranscriptRow]
+    ) throws -> (rows: [TranscriptRow], defaults: [String: Bool]) {
+        var defaults: [String: Bool] = [:]
+        ToolRunFold.recordFirstDefaults(ToolRunFold.items(in: window), in: &defaults)
+        let loaded = ToolRunFold.items(in: earlier + window)
+        ToolRunFold.recordFirstDefaults(loaded, in: &defaults)
+        let fold = try #require(loaded.compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
+        return (fold, defaults)
+    }
+
+    @Test("Load earlier that prepends a tool step keeps an untouched open fold open")
+    func prependedToolKeepsOpenFold() throws {
+        let loaded = try foldAfterLoadEarlier(
+            window: [ring("ring"), thought("plan"), tool("inbox"), reply("answer")],
+            earlier: [prompt(), tool("older")]
+        )
+        #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan", "inbox"])
+        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], defaults: loaded.defaults))
+    }
+
+    @Test("Load earlier that prepends a ring and a thought keeps a closed fold closed; a later failure still opens it")
+    func prependedRingAndThoughtKeepClosedFold() throws {
+        let window = [tool("grep"), tool("make"), reply("answer")]
+        let loaded = try foldAfterLoadEarlier(window: window, earlier: [prompt(), ring("ring"), thought("plan")])
+        #expect(loaded.rows.map(\.eventID) == ["ring", "plan", "grep", "make"])
+        #expect(!ToolRunFold.isExpanded(loaded.rows, overrides: [:], defaults: loaded.defaults))
+        let failed = loaded.rows + [tool("test", state: .failed)]
+        #expect(ToolRunFold.isExpanded(failed, overrides: [:], defaults: loaded.defaults))
     }
 
     @Test("Only a new failure in the trailing fold is announced: not after Load earlier, not after the owner's choice")
