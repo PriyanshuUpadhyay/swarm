@@ -63,5 +63,7 @@ if (( install )); then
   fi
   cp -R "$app" "$destination"
   print "==> $destination"
-  print "==> swarm is no longer put on PATH; brew install --cask priyanshuupadhyay/tap/swarm-app links it (ADR 0048)"
+  # The same text as PathSwarmDrift.brewFix; a SwarmCore test keeps the two equal.
+  print "==> swarm is no longer put on PATH. The cask links it (ADR 0048):"
+  print "    brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
 fi

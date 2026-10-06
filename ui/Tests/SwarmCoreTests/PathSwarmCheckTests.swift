@@ -172,8 +172,8 @@ final class PathSwarmCheckTests {
         #expect(cargo.fixCommand == "Remove /Users/owner/.cargo/bin/swarm, then run \(brewFix)")
     }
 
-    @Test("The README and the tap caveat name the alert's brew command", arguments: [
-        "README.md", ".github/workflows/tap.yml",
+    @Test("The README, the tap caveat, and make install name the alert's brew command", arguments: [
+        "README.md", ".github/workflows/tap.yml", "ui/Tools/build.sh",
     ])
     func sameBrewFixEverywhere(file: String) throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
