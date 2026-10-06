@@ -516,3 +516,27 @@ fn a_child_agent_cannot_revert_managed_changes() {
     assert_eq!(std::fs::read_to_string(&codex).unwrap(), set_up);
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// A setup that fails at a later file names each file it already wrote, so the owner knows what
+/// changed; `managed list` shows those items too.
+#[test]
+fn a_partial_hooks_setup_names_the_files_it_already_wrote() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("partial");
+    // The write makes AGY's missing config folder, which a read-only parent refuses.
+    let agy_dir = home.join(".gemini");
+    std::fs::create_dir_all(&agy_dir).unwrap();
+    std::fs::set_permissions(&agy_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let setup = swarm(&home, &["hooks", "setup"]);
+    std::fs::set_permissions(&agy_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!setup.status.success(), "{setup:?}");
+    let error = stderr(&setup);
+    assert!(error.contains("cannot write"), "{error}");
+    let codex = home.join(".codex/config.toml");
+    assert!(
+        error.contains(&format!("already wrote {}", codex.display())),
+        "{error}"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}

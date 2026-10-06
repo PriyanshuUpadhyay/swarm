@@ -193,68 +193,87 @@ fn commit(
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
     let mut changed = Vec::new();
-    for plan in plans {
-        let writes = plan.after != plan.before;
-        if !writes && plan.edits.is_empty() {
-            continue;
-        }
-        let tx =
-            rusqlite::Transaction::new_unchecked(store, rusqlite::TransactionBehavior::Immediate)
-                .map_err(failed)?;
-        // A revert keeps a row, also for a found item, so `list` shows it off and the app can
-        // offer On; a recorded row keeps its time of the last apply.
-        let upsert = match off {
-            true => "ON CONFLICT (id) DO UPDATE SET off = 1",
-            false => {
-                "ON CONFLICT (id) DO UPDATE SET writer = excluded.writer,
+    let result = (|| {
+        for plan in plans {
+            let writes = plan.after != plan.before;
+            if !writes && plan.edits.is_empty() {
+                continue;
+            }
+            let tx = rusqlite::Transaction::new_unchecked(
+                store,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .map_err(failed)?;
+            // A revert keeps a row, also for a found item, so `list` shows it off and the app can
+            // offer On; a recorded row keeps its time of the last apply.
+            let upsert = match off {
+                true => "ON CONFLICT (id) DO UPDATE SET off = 1",
+                false => {
+                    "ON CONFLICT (id) DO UPDATE SET writer = excluded.writer,
                      file = excluded.file, kind = excluded.kind, path = excluded.path,
                      wrote = excluded.wrote, before = excluded.before,
                      created = excluded.created, with_id = excluded.with_id,
                      at_s = excluded.at_s, off = 0"
-            }
-        };
-        for edit in &plan.edits {
-            tx.execute(
-                &format!(
-                    "INSERT INTO managed_edit
+                }
+            };
+            for edit in &plan.edits {
+                tx.execute(
+                    &format!(
+                        "INSERT INTO managed_edit
                          (id, writer, file, kind, path, wrote, before, created, with_id, at_s, off)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) {upsert}"
+                    ),
+                    rusqlite::params![
+                        edit.id(),
+                        wire(&edit.writer),
+                        edit.file.to_string_lossy(),
+                        wire(&edit.kind),
+                        serde_json::Value::from(edit.path.clone()).to_string(),
+                        edit.wrote.to_string(),
+                        edit.before.as_ref().map(serde_json::Value::to_string),
+                        edit.created,
+                        edit.with,
+                        now,
+                        off,
+                    ],
+                )
+                .map_err(failed)?;
+            }
+            if writes {
+                write_text(&plan.path, &plan.before, &plan.after)?;
+            }
+            tx.commit().map_err(|error| match (writes, off) {
+                (true, false) => format!(
+                    "swarm: wrote {} but could not record it: {error}; swarm managed list shows it as found",
+                    plan.path.display()
                 ),
-                rusqlite::params![
-                    edit.id(),
-                    wire(&edit.writer),
-                    edit.file.to_string_lossy(),
-                    wire(&edit.kind),
-                    serde_json::Value::from(edit.path.clone()).to_string(),
-                    edit.wrote.to_string(),
-                    edit.before.as_ref().map(serde_json::Value::to_string),
-                    edit.created,
-                    edit.with,
-                    now,
-                    off,
-                ],
-            )
-            .map_err(failed)?;
+                (true, true) => format!(
+                    "swarm: set back {} but could not record it: {error}; swarm managed list shows its items as gone or changed",
+                    plan.path.display()
+                ),
+                (false, _) => failed(error),
+            })?;
+            if writes {
+                changed.push(plan.path.clone());
+            }
         }
-        if writes {
-            write_text(&plan.path, &plan.before, &plan.after)?;
+        Ok(())
+    })();
+    match result {
+        // A later file failed: the error names each file already written, as the owner saw
+        // each one printed before (L-12).
+        Err(error) if !changed.is_empty() => {
+            let files: Vec<_> = changed
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect();
+            Err(format!(
+                "{error}\nswarm: already wrote {}",
+                files.join(", ")
+            ))
         }
-        tx.commit().map_err(|error| match (writes, off) {
-            (true, false) => format!(
-                "swarm: wrote {} but could not record it: {error}; swarm managed list shows it as found",
-                plan.path.display()
-            ),
-            (true, true) => format!(
-                "swarm: set back {} but could not record it: {error}; swarm managed list shows its items as gone or changed",
-                plan.path.display()
-            ),
-            (false, _) => failed(error),
-        })?;
-        if writes {
-            changed.push(plan.path.clone());
-        }
+        result => result.map(|()| changed),
     }
-    Ok(changed)
 }
 
 /// A digest of each planned file's path, text, and planned text, so apply refuses a file that
