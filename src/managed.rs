@@ -7,11 +7,26 @@ use std::os::unix::fs::OpenOptionsExt;
 /// Swarm never writes over it: the owner removes it, or does without swarm's hooks.
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct Conflict {
+    pub kind: ConflictKind,
     pub file: String,
     pub entry: String,
     pub found: String,
     pub wanted: String,
     pub fix: String,
+}
+
+/// Why a conflict stops a plan, so the app words `wanted` for its cause. Wire names are open.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictKind {
+    /// The owner's entry is where setup needs swarm's; `wanted` is swarm's value.
+    Taken,
+    /// An item swarm wrote has another value now; `wanted` is what swarm wrote.
+    Changed,
+    /// Swarm's Codex group has a group after it, so removing it moves trust by place.
+    Order,
+    /// Swarm cannot read or edit the file or the path in it.
+    Unreadable,
 }
 
 /// What one writer would do to one file: its text now, its planned text, each conflict, and each
@@ -32,6 +47,7 @@ impl FilePlan {
         let file = path.display().to_string();
         Self {
             conflicts: vec![Conflict {
+                kind: ConflictKind::Unreadable,
                 file: file.clone(),
                 entry: "the whole file".into(),
                 found: error,
@@ -609,6 +625,7 @@ fn removal(file: &std::path::Path, items: &[&Entry]) -> Result<FilePlan, String>
         match state_in(edit, entry.state == State::Off, text.as_deref()) {
             State::Present => gone.push(edit),
             State::Changed(found) => conflicts.push(Conflict {
+                kind: ConflictKind::Changed,
                 file: file.display().to_string(),
                 entry: describe(edit),
                 found: found.to_string(),
@@ -620,10 +637,11 @@ fn removal(file: &std::path::Path, items: &[&Entry]) -> Result<FilePlan, String>
                 ),
             }),
             State::Unreadable(error) => conflicts.push(Conflict {
+                kind: ConflictKind::Unreadable,
                 file: file.display().to_string(),
                 entry: describe(edit),
                 found: error,
-                wanted: edit.wrote.to_string(),
+                wanted: "a file that swarm can read and edit".into(),
                 fix: format!(
                     "swarm leaves it; make {} readable again and run again",
                     file.display()
@@ -784,6 +802,7 @@ fn remove_json(
                     && edit.path.first().is_some_and(|key| key == "hooks")
                 {
                     conflicts.push(Conflict {
+                        kind: ConflictKind::Order,
                         file: file.display().to_string(),
                         entry: describe(edit),
                         found: format!("{} more group(s) after swarm's", items.len() - index - 1),

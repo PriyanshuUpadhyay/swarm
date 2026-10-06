@@ -358,6 +358,7 @@ fn an_owners_entry_at_swarms_place_is_a_conflict_and_nothing_is_written() {
             path.display().to_string(),
             "{name}"
         );
+        assert_eq!(plan["conflicts"][0]["kind"], "taken", "{name}");
         assert!(
             plan["conflicts"][0]["fix"]
                 .as_str()
@@ -388,6 +389,7 @@ fn a_broken_codex_home_is_a_conflict_and_nothing_is_written() {
     let conflicts = plan["conflicts"].as_array().unwrap();
     assert_eq!(conflicts.len(), 1, "{plan}");
     assert_eq!(conflicts[0]["file"], broken.display().to_string());
+    assert_eq!(conflicts[0]["kind"], "unreadable");
     assert!(
         conflicts[0]["found"]
             .as_str()

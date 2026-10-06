@@ -113,8 +113,12 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         public var found: String
         public var wanted: String
         public var fix: String
+        /// Open set: `taken`, `changed`, `order`, `unreadable`, and later ones; nil from an older
+        /// CLI.
+        public var kind: String?
 
-        public init(file: String, entry: String, found: String, wanted: String, fix: String) {
+        public init(file: String, entry: String, found: String, wanted: String, fix: String, kind: String? = nil) {
+            self.kind = kind
             self.file = file
             self.entry = entry
             self.found = found
@@ -123,6 +127,9 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         }
 
         public var id: String { file + "\u{0}" + entry }
+        /// The label of `wanted`: swarm's own value only for an item that changed after swarm
+        /// wrote it; for any other cause, `wanted` is what swarm needs.
+        public var wantedLabel: String { kind == "changed" ? "Swarm wrote" : "Swarm needs" }
     }
 
     public var digest: String

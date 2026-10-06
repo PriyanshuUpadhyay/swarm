@@ -374,6 +374,9 @@ fn a_revert_refuses_an_item_the_owner_changed_and_names_it() {
         assert!(text.contains(&part), "{part}\n{text}");
     }
     assert_eq!(std::fs::read_to_string(&codex).unwrap(), edited);
+    let changed = swarm(&home, &["managed", "revert", id, "--plan", "--json"]);
+    let changed: serde_json::Value = serde_json::from_slice(&changed.stdout).unwrap();
+    assert_eq!(changed["conflicts"][0]["kind"], "changed", "{changed}");
 
     // Nothing else of swarm's is touched by --all, and an unknown id is an error.
     let plan = swarm(&home, &["managed", "revert", "--all", "--plan", "--json"]);
@@ -435,6 +438,9 @@ fn a_guard_revert_takes_its_trust_key_and_keeps_the_owners_groups() {
         stderr(&blocked).contains("move swarm's group last"),
         "{blocked:?}"
     );
+    let order = swarm(&home, &["managed", "revert", id, "--plan", "--json"]);
+    let order: serde_json::Value = serde_json::from_slice(&order.stdout).unwrap();
+    assert_eq!(order["conflicts"][0]["kind"], "order", "{order}");
     std::fs::write(&codex_hooks, &hooks).unwrap();
 
     let revert = swarm(&home, &["managed", "revert", id]);

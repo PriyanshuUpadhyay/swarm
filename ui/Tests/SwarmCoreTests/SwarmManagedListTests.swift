@@ -63,6 +63,21 @@ struct SwarmManagedListTests {
         ])
     }
 
+    @Test("An undo conflict labels swarm's value only for an item that changed, else what swarm needs")
+    func conflictLabelsFollowTheCause() throws {
+        let plan = try JSONDecoder().decode(SwarmHooksPlan.self, from: Data(#"""
+            {"digest":"d","files":[],"conflicts":[
+              {"kind":"changed","file":"/u/c.toml","entry":"k","found":"\"x\"","wanted":"\"sha256:1\"","fix":"f"},
+              {"kind":"order","file":"/u/hooks.json","entry":"g","found":"1 more group(s) after swarm's","wanted":"swarm's group last","fix":"f"},
+              {"kind":"unreadable","file":"/u/s.json","entry":"the whole file","found":"denied","wanted":"a file that swarm can read and edit","fix":"f"},
+              {"kind":"taken","file":"/u/a.json","entry":"group \"swarm\"","found":"{}","wanted":"{}","fix":"f"},
+              {"file":"/u/old.json","entry":"e","found":"{}","wanted":"{}","fix":"f"}
+            ]}
+            """#.utf8))
+        #expect(plan.conflicts.map(\.wantedLabel)
+            == ["Swarm wrote", "Swarm needs", "Swarm needs", "Swarm needs", "Swarm needs"])
+    }
+
     @Test("A group's spoken name counts its rows with the right plural")
     func spokenGroup() throws {
         let list = try SwarmManagedList.decode(Data(Self.listing.utf8))

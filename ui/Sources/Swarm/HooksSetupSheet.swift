@@ -27,8 +27,6 @@ struct HooksSetupSheet: View {
         /// What the sheet says, and VoiceOver hears, for a plan with nothing to change.
         var unchanged: String
         var blocked: String
-        /// The label of a conflict's value from swarm.
-        var wanted: String
         var apply: String
         var cancel: String
         /// Apply removes the owner's config, so it is a destructive button that Return does not
@@ -41,7 +39,6 @@ struct HooksSetupSheet: View {
             loading: "Reading your Codex and AGY config…",
             unchanged: "Swarm's hooks are already set up.",
             blocked: "Swarm cannot set up its hooks. Your config has entries where swarm needs its own.",
-            wanted: "Swarm needs",
             apply: "Set up",
             cancel: "Not now"
         )
@@ -51,8 +48,7 @@ struct HooksSetupSheet: View {
             body: "Swarm removes only what it wrote. Your other entries stay.",
             loading: "Reading the files…",
             unchanged: "Swarm has nothing to remove.",
-            blocked: "Swarm cannot remove these. They changed after swarm wrote them.",
-            wanted: "Swarm wrote",
+            blocked: "Swarm cannot remove these yet. Each one below says what is in the way.",
             apply: "Remove",
             cancel: "Cancel",
             destructive: true
@@ -173,7 +169,7 @@ struct HooksSetupSheet: View {
                         .font(.callout.weight(.medium))
                     Group {
                         Text(verbatim: "Found: \(conflict.found)")
-                        Text(verbatim: "\(copy.wanted): \(conflict.wanted)")
+                        Text(verbatim: "\(conflict.wantedLabel): \(conflict.wanted)")
                     }
                     .lineLimit(3)
                     .truncationMode(.middle)

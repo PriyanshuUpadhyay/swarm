@@ -1,5 +1,5 @@
 use crate::managed::{
-    Conflict, Edit, FilePlan, Kind, Writer, json_object, json_text, read_json_object,
+    Conflict, ConflictKind, Edit, FilePlan, Kind, Writer, json_object, json_text, read_json_object,
     read_optional, read_text, refuse_read_only, retried, write_json, write_text,
 };
 use crate::providers::Provider;
@@ -419,6 +419,7 @@ pub fn codex_hook_plan(
         };
         if found != Some(hash.as_str()) {
             conflicts.push(Conflict {
+                kind: ConflictKind::Taken,
                 file: file.clone(),
                 entry: format!("[hooks.state.{key:?}]"),
                 found: found.unwrap_or("an entry with no trusted_hash").to_string(),
@@ -769,6 +770,7 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<FilePlan, St
             }
             Some(found) if found == group => {}
             Some(found) => conflicts.push(Conflict {
+                kind: ConflictKind::Taken,
                 file: file.clone(),
                 entry: format!("group {name:?}"),
                 found: found.to_string(),
@@ -915,6 +917,7 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePl
                 .is_none_or(|timeout| timeout < crate::guard::REGISTRATION_TIMEOUT)
         }) {
             conflicts.push(Conflict {
+                kind: ConflictKind::Taken,
                 file: file.clone(),
                 entry: format!("hooks.{event} handler {command:?}"),
                 found: handler.to_string(),
