@@ -189,10 +189,25 @@ pub fn oneOf(value: []const u8, choices: []const []const u8) bool {
     return false;
 }
 
+/// A ring that `swarm` types into an agent's pane: text with a non-blank line whose every
+/// non-blank line, trimmed, starts with the ring phrase. Several rings can land in one message.
+pub fn isSwarmRing(text: []const u8) bool {
+    var any = false;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+        if (!std.mem.startsWith(u8, trimmed, "swarm: new message. Run swarm inbox")) return false;
+        any = true;
+    }
+    return any;
+}
+
 fn claudeTextKind(rec: std.json.ObjectMap, text: []const u8) []const u8 {
     if (rec.get("isCompactSummary")) |flag| {
         if (flag == .bool and flag.bool) return "compact_summary";
     }
+    if (isSwarmRing(text)) return "swarm_ring";
     const trimmed = std.mem.trimStart(u8, text, " \t\r\n");
     if (oneOfPrefix(trimmed, &.{ "<command-name>", "<command-message>", "<command-args>" })) return "command";
     if (oneOfPrefix(trimmed, &.{ "<local-command-stdout>", "<local-command-stderr>" })) return "command_output";
@@ -354,7 +369,9 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
             // notifications stay system text.
             const origin = attachment.object.get("origin") orelse .null;
             const human = origin == .object and std.mem.eql(u8, str(origin.object, "kind"), "human");
-            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = if (human) "queued_prompt" else kind, .text = str(attachment.object, "prompt") } });
+            const prompt = str(attachment.object, "prompt");
+            const prompt_kind: []const u8 = if (isSwarmRing(prompt)) "swarm_ring" else if (human) "queued_prompt" else kind;
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = prompt_kind, .text = prompt } });
         } else if (std.mem.eql(u8, kind, "model")) {
             const identity = attachment.object.get("identity") orelse .null;
             const model = if (identity == .object) str(identity.object, "modelId") else "";
@@ -602,10 +619,10 @@ pub fn writeEventJson(writer: *std.Io.Writer, event: Event) std.Io.Writer.Error!
     try stringify.write(@tagName(event));
     switch (event) {
         inline else => |value| {
-            inline for (@typeInfo(@TypeOf(value)).@"struct".fields) |field| {
-                if (comptime !std.mem.eql(u8, field.name, "meta")) {
-                    try stringify.objectField(field.name);
-                    try stringify.write(@field(value, field.name));
+            inline for (comptime std.meta.fieldNames(@TypeOf(value))) |name| {
+                if (comptime !std.mem.eql(u8, name, "meta")) {
+                    try stringify.objectField(name);
+                    try stringify.write(@field(value, name));
                 }
             }
             try stringify.objectField("meta");
@@ -1274,6 +1291,31 @@ test "Claude queued command and fallback block become system messages" {
     try std.testing.expectEqualStrings("queued_prompt", typed[0].system_message.kind);
     try std.testing.expectEqualStrings("model_fallback", fallback[0].system_message.kind);
     try std.testing.expectEqualStrings("a -> b", fallback[0].system_message.text);
+}
+
+test "a swarm ring is every non-blank line starting with the ring phrase" {
+    try std.testing.expect(isSwarmRing("swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>."));
+    try std.testing.expect(isSwarmRing("  swarm: new message. Run swarm inbox, read each body\n\n swarm: new message. Run swarm inbox and read\n"));
+    try std.testing.expect(!isSwarmRing(""));
+    try std.testing.expect(!isSwarmRing(" \n\t"));
+    try std.testing.expect(!isSwarmRing("swarm: new message'. When it arrives: run swarm inbox"));
+    try std.testing.expect(!isSwarmRing("swarm: new message. Run swarm inbox and read\nthen fix the build"));
+    try std.testing.expect(!isSwarmRing("Please wait for swarm: new message. Run swarm inbox"));
+}
+
+test "Claude swarm ring is a swarm_ring system message, typed or queued" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const ring = "swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>. Run swarm ack <seq> only after you finish that message.";
+    const typed = try parseLine(arena, "{\"type\":\"user\",\"uuid\":\"u1\",\"message\":{\"role\":\"user\",\"content\":\"" ++ ring ++ "\"}}");
+    const queued = try parseLine(arena, "{\"type\":\"attachment\",\"attachment\":{\"type\":\"queued_command\",\"prompt\":\"" ++ ring ++ "\",\"origin\":{\"kind\":\"human\"}}}");
+    const near = try parseLine(arena, "{\"type\":\"user\",\"uuid\":\"u2\",\"message\":{\"role\":\"user\",\"content\":\"swarm: new message'. When it arrives: run swarm inbox\"}}");
+    try std.testing.expectEqualStrings("swarm_ring", typed[0].system_message.kind);
+    try std.testing.expectEqualStrings(ring, typed[0].system_message.text);
+    try std.testing.expectEqualStrings("u1", typed[0].system_message.meta.uuid);
+    try std.testing.expectEqualStrings("swarm_ring", queued[0].system_message.kind);
+    try std.testing.expectEqualStrings("swarm: new message'. When it arrives: run swarm inbox", near[0].user_message_chunk.text);
 }
 
 test "Claude queue operations keep operation, content, and reason" {

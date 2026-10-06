@@ -3,14 +3,21 @@ set -euo pipefail
 
 root="${0:A:h:h}"
 failed=0
-if rg -n --glob '*.swift' '^import (SwiftUI|AppKit|Cocoa|SwiftTerm)$' \
-    "$root/Sources/SwarmCore" "$root/Sources/TranscriptTool"; then
-  failed=1
-fi
-if rg -n --glob '*.swift' 'Process\(\)|CapturedProcess|Shell\.run' \
-    "$root/Sources/Swarm"; then
-  failed=1
-fi
+# rg exits 0 on a match, 1 on none, and 2 on an error (a missing path, a bad pattern); an error
+# fails lint, so a moved folder cannot turn a guard into a silent pass.
+check() {
+  local code=0
+  rg -n --glob '*.swift' "$@" || code=$?
+  case $code in
+    0) failed=1 ;;
+    1) ;;
+    *) print -u2 "lint: rg failed with exit $code"; exit 2 ;;
+  esac
+}
+check '^import (SwiftUI|AppKit|Cocoa|SwiftTerm)$' \
+    "$root/Sources/SwarmCore" "$root/Sources/TranscriptTool"
+check 'Process\(\)|CapturedProcess|Shell\.run' \
+    "$root/Sources/Swarm"
 # Each surface folder is one module: it names no app store and no other surface's entry view.
 stores='SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail'
 typeset -A surfaces=(
@@ -21,15 +28,13 @@ typeset -A surfaces=(
 for folder entry in ${(kv)surfaces}; do
   others=(${(v)surfaces:#$entry})
   others=(${others:#'^$'})
-  if rg -n --glob '*.swift' -e "$stores" -e "(${(j:|:)others})" "$root/Sources/Swarm/$folder"; then
-    failed=1
-  fi
+  check -e "$stores" -e "(${(j:|:)others})" "$root/Sources/Swarm/$folder"
 done
 # Views take spacing, radii, colors, and font sizes from Design/DesignTokens.swift; 0 is allowed.
-if rg -n --glob '*.swift' --glob '!**/Design/**' \
+check --glob '!**/Design/**' \
     -e '\.padding\((\.[a-zA-Z]+, )?[1-9]' -e 'spacing: [1-9]' -e 'cornerRadius: [1-9]' \
     -e 'lineWidth: [1-9]' -e 'Color\(red:' -e '\.system\(size:' -e 'opacity\(0\.' \
-    "$root/Sources/Swarm"; then
-  failed=1
-fi
+    "$root/Sources/Swarm"
+# A count's plural comes from inflection, ^[\(n) word](inflect: true), not from appending "s".
+check '== 1 \? "" : "s"' "$root/Sources"
 exit "$failed"

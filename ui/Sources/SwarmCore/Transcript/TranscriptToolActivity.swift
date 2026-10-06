@@ -8,14 +8,19 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     }
 
     public var name: String
+    /// The call is from a Codex log, the only log whose result text gives a Codex exit code.
+    public let isCodex: Bool
     public var input: JSONElement
-    public var output: String?
+    /// Setting the output or the command also sets `exitCode`, so a card's body never scans the output.
+    public var output: String? { didSet { exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex) } }
     /// Setting the diffs also sets `diffCounts`, so a card's body never sums the lines.
     public var diffs: [TranscriptDiff] { didSet { diffCounts = Self.counts(of: diffs) } }
     /// Added and removed lines across the call's diffs; nil when it has none.
     public private(set) var diffCounts: DiffCounts?
     public var state: State
-    public var command: String?
+    public var command: String? { didSet { exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex) } }
+    /// A command's exit status from its result; nil when unknown. See `exitCode(output:command:isCodex:)`.
+    public private(set) var exitCode: Int?
     public var path: String?
     /// Seconds from the call to its last result; nil when either time is missing.
     public var duration: Double?
@@ -25,15 +30,17 @@ public struct TranscriptToolActivity: Sendable, Hashable {
     public init(
         name: String, input: JSONElement, output: String? = nil,
         diffs: [TranscriptDiff] = [], state: State,
-        command: String? = nil, path: String? = nil, duration: Double? = nil
+        command: String? = nil, path: String? = nil, duration: Double? = nil, isCodex: Bool = false
     ) {
         self.name = name
+        self.isCodex = isCodex
         self.input = input
         self.output = output
         self.diffs = diffs
         diffCounts = Self.counts(of: diffs)
         self.state = state
         self.command = command
+        exitCode = Self.exitCode(output: output, command: command, isCodex: isCodex)
         self.path = path
         self.duration = duration
     }
@@ -95,10 +102,73 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         return counts
     }
 
-    /// The exit status Claude Code writes on the first line of a failed command's result.
-    public var exitCode: Int? {
-        guard command != nil, let output, output.hasPrefix("Exit code ") else { return nil }
-        return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+    /// The result says the step failed: a non-zero exit code, a Codex code-mode command's
+    /// `Script failed` header, or an exec_command that the script caught as rejected
+    /// (a printed `Promise.allSettled` entry with `"status":"rejected"`). Another tool's text can
+    /// hold those words, so only a command in code-mode shape counts. O(output length) on each read;
+    /// the row builder reads it once per finished tool and keeps the answer in `state`, so no view
+    /// reads it.
+    public var reportsFailure: Bool {
+        if (exitCode ?? 0) != 0 { return true }
+        guard command != nil, let output, Self.codeModeOutput(output) != nil else { return false }
+        if output.hasPrefix("Script failed\n") { return true }
+        return Self.codeModeResults(output)?.contains { result in
+            guard case .array(let entries) = result else { return false }
+            return entries.contains { if case .object(let entry) = $0 { entry["status"] == .string("rejected") } else { false } }
+        } ?? false
+    }
+
+    /// Claude Code writes `Exit code N` on the first line of a failed command's result. The Codex
+    /// shapes are read only when `isCodex`, so another provider's stdout cannot set the code. Codex
+    /// exec_command without code mode writes a `Chunk ID:` header with `Process exited with code N`
+    /// before `Output:`. Codex code mode writes `Script completed`, its wall time, `Output:`, and
+    /// then what the script printed; the first `exit_code` other than 0 of a printed exec_command
+    /// result (an object, or an array entry or its `value`) is the code. Printed free text gives
+    /// nil, so a command's stdout cannot set it. Codex codes of 0 give nil, so a card shows no
+    /// "exit 0". O(output length).
+    static func exitCode(output: String?, command: String?, isCodex: Bool) -> Int? {
+        guard command != nil, let output else { return nil }
+        if output.hasPrefix("Exit code ") {
+            return Int(output.dropFirst("Exit code ".count).prefix(while: { !$0.isNewline }))
+        }
+        guard isCodex else { return nil }
+        if output.hasPrefix("Chunk ID: ") {
+            let header = output.range(of: "\nOutput:\n").map { output[..<$0.lowerBound] } ?? output[...]
+            guard let key = header.range(of: "\nProcess exited with code ") else { return nil }
+            let code = Int(header[key.upperBound...].prefix { !$0.isNewline })
+            return code == 0 ? nil : code
+        }
+        guard let results = codeModeResults(output) else { return nil }
+        // Promise.all prints the results as an array; Promise.allSettled wraps each in `value`.
+        let records = results.flatMap { result -> [JSONElement] in
+            guard case .array(let entries) = result else { return [result] }
+            return entries.map { if case .object(let entry) = $0, let value = entry["value"] { value } else { $0 } }
+        }
+        for case .object(let record) in records {
+            if case .integer(let code) = record["exit_code"], code != 0 { return Int(code) }
+        }
+        return nil
+    }
+
+    /// The JSON values a Codex code-mode script printed after `Output:`, one per non-blank line;
+    /// nil when the header is missing or any line is not JSON, because then the script printed
+    /// free text such as a command's stdout.
+    static func codeModeResults(_ output: String) -> [JSONElement]? {
+        guard let body = codeModeOutput(output) else { return nil }
+        var results: [JSONElement] = []
+        for line in body.split(whereSeparator: \.isNewline) where !line.allSatisfy(\.isWhitespace) {
+            guard let result = try? JSONDecoder().decode(JSONElement.self, from: Data(line.utf8)) else { return nil }
+            results.append(result)
+        }
+        return results
+    }
+
+    /// The text after `Output:` of a Codex code-mode result, whose header is `Script completed`,
+    /// `Script failed`, or `Script running with cell ID N`; nil for any other text.
+    static func codeModeOutput(_ output: String) -> Substring? {
+        let headers = ["Script completed\n", "Script failed\n", "Script running with cell ID "]
+        guard headers.contains(where: output.hasPrefix), let start = output.range(of: "\nOutput:\n") else { return nil }
+        return output[start.upperBound...]
     }
 
     /// Seconds between two event timestamps (ISO 8601, with or without fractional seconds).
@@ -127,7 +197,94 @@ public struct TranscriptToolActivity: Sendable, Hashable {
         }
         if case .string(let value) = input,
            name.lowercased().contains("exec") || name.lowercased().contains("shell") {
-            return value
+            return execCommands(inScript: value) ?? value
+        }
+        return nil
+    }
+
+    /// Each `tools.name(` call outside a string literal of a Codex code-mode script, in script order
+    /// and joined by newlines: an `exec_command({cmd:"…"})` or `exec_command({"cmd":"…"})` as its cmd
+    /// decoded as a JSON string, any other call, and an exec_command whose cmd is not one complete
+    /// double-quoted literal, as `name(…)`; nil when no exec_command has a cmd literal.
+    static func execCommands(inScript script: String) -> String? {
+        var steps: [String] = []
+        var hasCommand = false
+        var rest = script[...]
+        while let first = rest.first {
+            if first == "\"" || first == "'" || first == "`" {
+                rest = rest[skipLiteral(rest)...]
+                continue
+            }
+            guard rest.hasPrefix("tools.") else {
+                rest = rest.dropFirst()
+                continue
+            }
+            rest = rest.dropFirst("tools.".count)
+            let name = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+            guard !name.isEmpty, rest.dropFirst(name.count).first == "(" else { continue }
+            rest = rest.dropFirst(name.count + 1)
+            if name == "exec_command", let literal = cmdLiteral(rest) {
+                steps.append(literal.text)
+                hasCommand = true
+                rest = rest[literal.end...]
+            } else {
+                steps.append("\(name)(…)")
+            }
+        }
+        return hasCommand ? steps.joined(separator: "\n") : nil
+    }
+
+    /// The decoded `"…"` value of a `{cmd:` or `{"cmd":` argument that `args` starts with; nil when
+    /// the value is more than that one literal, such as `"rm -rf " + dir`.
+    private static func cmdLiteral(_ args: Substring) -> (text: String, end: String.Index)? {
+        let object = args.drop(while: \.isWhitespace)
+        guard object.first == "{" else { return nil }
+        let head = object.dropFirst().drop(while: \.isWhitespace)
+        guard let key = ["cmd:", "\"cmd\":"].first(where: { head.hasPrefix($0) }) else { return nil }
+        let value = head.dropFirst(key.count).drop(while: \.isWhitespace)
+        guard value.first == "\"", let literal = stringLiteral(at: value),
+              let next = value[literal.end...].first(where: { !$0.isWhitespace }), next == "," || next == "}"
+        else { return nil }
+        return literal
+    }
+
+    /// The index after the JavaScript string literal that `text` starts with. A `'` or `"` literal
+    /// also ends at a line break, as in JavaScript, so a stray quote hides at most one line.
+    /// ponytail: a template's `${…}` is skipped as text; parse it when a call inside one must show.
+    private static func skipLiteral(_ text: Substring) -> String.Index {
+        let quote = text.first
+        var escaped = false
+        for index in text.indices.dropFirst() {
+            let char = text[index]
+            if escaped {
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else if char == quote {
+                return text.index(after: index)
+            } else if char.isNewline, quote != "`" {
+                return index
+            }
+        }
+        return text.endIndex
+    }
+
+    /// The double-quoted literal that `text` starts with, decoded, and the index after its closing
+    /// quote; nil when it does not close.
+    private static func stringLiteral(at text: Substring) -> (text: String, end: String.Index)? {
+        var escaped = false
+        for index in text.indices.dropFirst() {
+            if escaped {
+                escaped = false
+            } else if text[index] == "\\" {
+                escaped = true
+            } else if text[index] == "\"" {
+                let literal = text[...index]
+                // A JavaScript-only escape such as \' is not JSON; keep the source text then.
+                let decoded = (try? JSONDecoder().decode(String.self, from: Data(literal.utf8)))
+                    ?? String(literal.dropFirst().dropLast())
+                return (decoded, literal.endIndex)
+            }
         }
         return nil
     }

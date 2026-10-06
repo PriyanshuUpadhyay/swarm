@@ -11,15 +11,34 @@ struct ToolRunFoldTests {
 
     private func tool(
         _ id: String, name: String = "Read", state: TranscriptToolActivity.State = .finished,
-        duration: Double? = 1
+        duration: Double? = 1, command: String? = nil
     ) -> TranscriptRow {
         var row = TranscriptRow(kind: .toolUse, text: name, eventID: id)
-        row.tool = TranscriptToolActivity(name: name, input: .object([:]), state: state, duration: duration)
+        row.tool = TranscriptToolActivity(
+            name: name, input: .object([:]), state: state, command: command, duration: duration
+        )
         return row
     }
 
     private func reply(_ id: String) -> TranscriptRow {
         TranscriptRow(kind: .assistant, text: "I found the cause.", eventID: id)
+    }
+
+    private func ring(_ id: String, startsTurn: Bool = false) -> TranscriptRow {
+        var row = TranscriptRow(kind: .system, text: "swarm: new message. Run swarm inbox", eventID: id)
+        row.systemKind = TranscriptSystemKind.swarmRing
+        row.startsTurn = startsTurn
+        return row
+    }
+
+    private func thought(_ id: String) -> TranscriptRow {
+        TranscriptRow(kind: .thought, text: "plan", eventID: id)
+    }
+
+    private func hidden(_ id: String) -> TranscriptRow {
+        var row = TranscriptRow(kind: .system, text: "<system-reminder>", eventID: id)
+        row.systemKind = TranscriptSystemKind.injected
+        return row
     }
 
     private func turnEnd(_ id: String = "turn-end") -> TranscriptRow {
@@ -28,82 +47,301 @@ struct ToolRunFoldTests {
         return row
     }
 
-    private func foldedIDs(_ rows: [TranscriptRow], pinned: Set<String> = []) -> [[String]] {
-        ToolRunFold.items(in: rows, pinned: pinned).compactMap {
+    private func foldedIDs(_ rows: [TranscriptRow]) -> [[String]] {
+        ToolRunFold.items(in: rows).compactMap {
             if case .fold(let group) = $0 { group.map(\.eventID) } else { nil }
         }
     }
 
-    @Test("Three finished tools in an ended turn fold, and the fold's id differs from its first tool's")
-    func threeFinishedToolsFold() {
-        let rows = [prompt(), tool("read"), tool("grep"), tool("edit"), turnEnd()]
-        #expect(foldedIDs(rows) == [["read", "grep", "edit"]])
-        let items = ToolRunFold.items(in: rows, pinned: [])
-        #expect(items.map(\.id) == ["prompt", "fold:read", "turn-end"])
+    @Test("Two steps between prose fold, and the fold's id differs from its first step's")
+    func twoStepsFold() {
+        let rows = [prompt(), tool("read"), tool("grep"), reply("answer"), turnEnd()]
+        #expect(foldedIDs(rows) == [["read", "grep"]])
+        #expect(ToolRunFold.items(in: rows).map(\.id) == ["prompt", "fold:read", "answer", "turn-end"])
     }
 
-    @Test("Two finished tools stay as rows")
-    func twoToolsDoNotFold() {
-        let rows = [prompt(), tool("read"), tool("grep"), turnEnd()]
+    @Test("One tool alone between prose stays a plain row")
+    func singleToolStays() {
+        let rows = [prompt(), tool("read"), reply("answer")]
         #expect(foldedIDs(rows).isEmpty)
-        #expect(ToolRunFold.items(in: rows, pinned: []).count == rows.count)
+        #expect(ToolRunFold.items(in: rows).count == rows.count)
     }
 
-    @Test("A failed tool breaks a run and stays its own row")
-    func failedToolBreaksRun() {
+    @Test("Mid-turn rings, thoughts, and failed or waiting tools fold with the tools; a failed step opens its fold")
+    func stepsFoldTogether() {
         let rows = [
-            prompt(), tool("read"), tool("grep"), tool("build", name: "Bash", state: .failed),
-            tool("edit"), tool("test"), turnEnd(),
+            prompt(), tool("sleep", name: "sleep"), ring("ring"), thought("plan"),
+            tool("py", name: "exec", state: .failed, command: "python3 -"), tool("inbox", name: "exec", state: .waiting, command: "swarm inbox"),
         ]
-        #expect(foldedIDs(rows).isEmpty)
+        let folds = ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group } else { nil } }
+        #expect(folds.map { $0.map(\.eventID) } == [["sleep", "ring", "plan", "py", "inbox"]])
+        #expect(ToolRunFold.isExpanded(folds[0], overrides: [:], shownAsRows: []))
+        #expect(!ToolRunFold.isExpanded([tool("a"), tool("b")], overrides: [:], shownAsRows: []))
     }
 
-    @Test("Waiting, interrupted, and unreported tools break a run", arguments: [
-        TranscriptToolActivity.State.waiting, .interrupted, .unreported,
-    ])
-    func unfinishedToolBreaksRun(state: TranscriptToolActivity.State) {
-        let rows = [prompt(), tool("read"), tool("odd", state: state), tool("grep"), tool("edit"), turnEnd()]
-        #expect(foldedIDs(rows) == [])
+    @Test("An open fold's steps are list lines of their own after the fold line, so the lazy list builds only those on screen")
+    func openFoldStepsAreLines() {
+        let rows = [prompt(), tool("read"), tool("make", state: .failed), reply("answer")]
+        let items = ToolRunFold.items(in: rows)
+        let open = ToolRunFold.lines(items) { _, group in ToolRunFold.isExpanded(group, overrides: [:], shownAsRows: []) }
+        #expect(open.map(\.id) == ["prompt", "fold:read", "read", "make", "answer"])
+        let closed = ToolRunFold.lines(items) { _, _ in false }
+        #expect(closed.map(\.id) == ["prompt", "fold:read", "answer"])
     }
 
-    @Test("Agent text between tools breaks a run")
-    func textBreaksRun() {
-        let rows = [prompt(), tool("read"), tool("grep"), reply("reply"), tool("edit"), tool("test"), turnEnd()]
-        #expect(foldedIDs(rows).isEmpty)
+    @Test("The owner's open or close stays when Load earlier prepends steps to the window's first fold, and when a step lands")
+    func choiceSurvivesPrepend() {
+        func fold(_ rows: [TranscriptRow]) -> (id: String, rows: [TranscriptRow]) {
+            for item in ToolRunFold.items(in: rows) { if case .fold(let group) = item { return (item.id, group) } }
+            return ("", [])
+        }
+        let window = fold([tool("grep"), tool("make"), reply("answer")])
+        var choices = [window.id: true]
+        let earlier = fold([prompt(), tool("read"), tool("grep"), tool("make"), reply("answer")])
+        #expect(earlier.id != window.id)
+        #expect(ToolRunFold.isExpanded(earlier.rows, overrides: choices, shownAsRows: []))
+        // A later choice is stored under the new id, which belongs to an earlier step, so it wins.
+        choices[earlier.id] = false
+        #expect(!ToolRunFold.isExpanded(earlier.rows, overrides: choices, shownAsRows: []))
+        // The live fold's id stays as steps land, so its choice stays too.
+        let live = fold([prompt(), tool("read"), tool("grep"), tool("make"), tool("test")])
+        #expect(live.id == earlier.id)
+        // A fold with no choice opens only on a failed step.
+        #expect(ToolRunFold.isExpanded([tool("a"), tool("b", state: .failed)], overrides: choices, shownAsRows: []))
     }
 
-    @Test("A turn with no ending never folds, and its tools count as open")
-    func runningTurnNeverFolds() {
-        let rows = [prompt(), tool("read"), tool("grep"), tool("edit")]
-        #expect(foldedIDs(rows).isEmpty)
-        #expect(ToolRunFold.openTurnToolIDs(in: rows) == ["read", "grep", "edit"])
-        #expect(ToolRunFold.openTurnToolIDs(in: rows + [turnEnd()]).isEmpty)
+    /// Records the rows on screen for `rows`, as the view does on each change of list lines.
+    private func record(_ rows: [TranscriptRow], overrides: [String: Bool] = [:], in shown: inout Set<String>) {
+        let seen = shown
+        let lines = ToolRunFold.lines(ToolRunFold.items(in: rows)) {
+            ToolRunFold.isExpanded($1, overrides: overrides, shownAsRows: seen)
+        }
+        ToolRunFold.recordShownRows(lines, in: &shown)
     }
 
-    @Test("Only the ended turn folds when the next turn is still running")
-    func onlyEndedTurnFolds() {
+    /// The ids drawn on screen while `rows` land one by one.
+    private func shownWhileLanding(_ rows: [TranscriptRow], overrides: [String: Bool] = [:]) -> Set<String> {
+        var shown: Set<String> = []
+        for count in rows.indices { record(Array(rows[...count]), overrides: overrides, in: &shown) }
+        return shown
+    }
+
+    private func firstFold(_ rows: [TranscriptRow]) throws -> [TranscriptRow] {
+        try #require(ToolRunFold.items(in: rows).compactMap { if case .fold(let group) = $0 { group } else { nil } }.first)
+    }
+
+    @Test("A run that drew 2 rows before its first tool landed opens when it folds, so no rows on screen collapse")
+    func shownRunStaysOpen() throws {
+        #expect(foldedIDs([prompt(), ring("ring"), thought("plan")]).isEmpty)
+        func opens(_ rows: [TranscriptRow]) throws -> Bool {
+            ToolRunFold.isExpanded(try firstFold(rows), overrides: [:], shownAsRows: shownWhileLanding(rows))
+        }
+        #expect(try opens([prompt(), ring("ring"), thought("plan"), tool("inbox")]))
+        // One row before the first tool, or a hidden one, is no group on screen, so the fold closes.
+        #expect(try !opens([ring("ring"), tool("read"), tool("grep")]))
+        #expect(try !opens([hidden("reminder"), thought("plan"), tool("read")]))
+    }
+
+    /// The first fold after `window` lands live and then Load earlier puts `earlier` before it at once.
+    private func foldAfterLoadEarlier(
+        window: [TranscriptRow], earlier: [TranscriptRow]
+    ) throws -> (rows: [TranscriptRow], shownAsRows: Set<String>) {
+        var shown = shownWhileLanding(window)
+        record(earlier + window, in: &shown)
+        return (try firstFold(earlier + window), shown)
+    }
+
+    @Test("Load earlier that prepends a tool step keeps an untouched open fold open")
+    func prependedToolKeepsOpenFold() throws {
+        let loaded = try foldAfterLoadEarlier(
+            window: [ring("ring"), thought("plan"), tool("inbox"), reply("answer")],
+            earlier: [prompt(), tool("older")]
+        )
+        #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan", "inbox"])
+        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("Load earlier that prepends a ring and a thought keeps a closed fold closed; a later failure still opens it")
+    func prependedRingAndThoughtKeepClosedFold() throws {
+        let window = [tool("grep"), tool("make"), reply("answer")]
+        let loaded = try foldAfterLoadEarlier(window: window, earlier: [prompt(), ring("ring"), thought("plan")])
+        #expect(loaded.rows.map(\.eventID) == ["ring", "plan", "grep", "make"])
+        #expect(!ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
+        let failed = loaded.rows + [tool("test", state: .failed)]
+        #expect(ToolRunFold.isExpanded(failed, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("Load earlier that prepends a tool to a ring and a thought drawn as rows opens the new fold, so those rows stay")
+    func prependedToolKeepsShownRowsOpen() throws {
+        let loaded = try foldAfterLoadEarlier(
+            window: [ring("ring"), thought("plan"), reply("answer")], earlier: [prompt(), tool("older")]
+        )
+        #expect(loaded.rows.map(\.eventID) == ["older", "ring", "plan"])
+        #expect(ToolRunFold.isExpanded(loaded.rows, overrides: [:], shownAsRows: loaded.shownAsRows))
+    }
+
+    @Test("Load earlier that makes the window's first ring open a turn keeps the rest of the owner-opened fold open")
+    func ringThatOpensTurnKeepsOpenedStepsOpen() throws {
+        let window = [ring("ring"), tool("read"), tool("grep"), tool("make"), reply("answer")]
+        let opened = [ToolRunFold.Item.fold(Array(window[...3])).id: true]
+        var shown = shownWhileLanding(window, overrides: opened)
+        // The rows before the window end a turn, so the ring now opens one and leaves the fold.
+        let loaded = [prompt(), reply("done"), turnEnd(), ring("ring", startsTurn: true)] + window.dropFirst()
+        record(loaded, overrides: opened, in: &shown)
+        let rest = try firstFold(loaded)
+        #expect(rest.map(\.eventID) == ["read", "grep", "make"])
+        #expect(ToolRunFold.isExpanded(rest, overrides: opened, shownAsRows: shown))
+    }
+
+    @Test("A fold whose steps were never drawn as rows starts closed")
+    func unseenFoldStartsClosed() {
+        #expect(!ToolRunFold.isExpanded([ring("ring"), thought("plan"), tool("inbox")], overrides: [:], shownAsRows: []))
+    }
+
+    @Test("Only a new failure in the trailing fold is announced: not after Load earlier, not after the owner's choice")
+    func liveFailure() {
+        func failure(_ rows: [TranscriptRow], _ overrides: [String: Bool] = [:]) -> String? {
+            ToolRunFold.liveFailureID(in: ToolRunFold.items(in: rows), overrides: overrides)
+        }
+        let failing = [prompt(), tool("read"), tool("make", state: .failed)]
+        #expect(failure(failing) == "make")
+        #expect(failure(failing + [reply("answer")]) == nil)
+        #expect(failure([prompt(), tool("read"), tool("grep")]) == nil)
+        // Load earlier moves the fold id to an earlier step, but the failure is the same one.
+        let prepended = [tool("older")] + failing.dropFirst()
+        #expect(failure(prepended) == "make")
+        // The owner closed the fold under its old id, so the fold stays closed and says nothing.
+        #expect(failure(prepended, ["fold:read": false]) == nil)
+        #expect(failure(failing + [tool("test", state: .failed)]) == "test")
+    }
+
+    @Test("Opening a chat whose last fold failed long ago says nothing; a failure after the load is announced")
+    func failureBaseline() {
+        // nil: no snapshot loaded yet. .some(nil): loaded, with no live failure.
+        #expect(!ToolRunFold.isNewFailure(from: nil, to: .some("make")))
+        #expect(ToolRunFold.isNewFailure(from: .some(nil), to: .some("make")))
+        #expect(ToolRunFold.isNewFailure(from: .some("make"), to: .some("test")))
+        #expect(!ToolRunFold.isNewFailure(from: .some("make"), to: .some(nil)))
+        #expect(!ToolRunFold.isNewFailure(from: .some("make"), to: nil))
+    }
+
+    @Test("Rings and thoughts alone do not fold, and a ring that starts a turn is prose")
+    func ringsWithoutToolsStay() {
+        #expect(foldedIDs([prompt(), ring("one"), ring("two"), thought("plan")]).isEmpty)
+        #expect(foldedIDs([tool("read"), ring("start", startsTurn: true), tool("grep")]).isEmpty)
+    }
+
+    @Test("A hidden row does not count toward the two steps and does not change the fold's id")
+    func hiddenRowsDoNotCount() {
+        #expect(foldedIDs([prompt(), hidden("reminder"), tool("read"), reply("answer")]).isEmpty)
+        let shown = ToolRunFold.items(in: [prompt(), hidden("reminder"), tool("read"), tool("grep")])
+        let filtered = ToolRunFold.items(in: [prompt(), tool("read"), tool("grep")])
+        #expect(shown.map(\.id) == filtered.map(\.id))
+        #expect(shown.map(\.id) == ["prompt", "fold:read"])
+    }
+
+    @Test("A running turn's closed live fold is the last line, so Jump to latest scrolls to the fold")
+    func closedLiveFoldIsLastLine() {
+        let items = ToolRunFold.items(in: [prompt(), tool("read"), tool("grep", state: .waiting)])
+        #expect(ToolRunFold.lines(items) { _, _ in false }.last?.id == "fold:read")
+    }
+
+    @Test("The summary counts commands, waits, other tools by name, rings, and failures, and sums tool time")
+    func summary() {
         let rows = [
-            prompt("first"), tool("read"), tool("grep"), tool("edit"), turnEnd(),
-            prompt("second"), tool("read-2"), tool("grep-2"), tool("edit-2"),
+            tool("c1", name: "exec", duration: 3, command: "swarm inbox"),
+            tool("c2", name: "Bash", state: .failed, duration: 2, command: "false"),
+            tool("w1", name: "sleep", duration: 15), ring("r1"), ring("r2"),
+            tool("read", duration: 0.5), tool("read-2", duration: 0.5), tool("grep", name: "Grep", duration: 1),
+            hidden("reminder"),
         ]
-        #expect(foldedIDs(rows) == [["read", "grep", "edit"]])
-        #expect(ToolRunFold.openTurnToolIDs(in: rows) == ["read-2", "grep-2", "edit-2"])
+        let summary = ToolRunFold.summary(of: rows)
+        #expect(summary.text == "2 commands · 1 wait · Read ×2 · Grep · 2 rings · 1 failed")
+        #expect(summary.duration == 22)
+        #expect(!summary.isRunning)
+        #expect(summary.accessibilityLabel == "Steps: 2 commands, 1 wait, Read 2, Grep, 2 rings, 1 failed, 22 seconds")
+        #expect(ToolRunFold.summary(of: rows + [tool("bash", name: "Bash", duration: nil, command: "ls")]).duration == nil)
     }
 
-    @Test("A pinned tool keeps its run from folding")
-    func pinnedToolPreventsFold() {
-        let rows = [prompt(), tool("read"), tool("grep"), tool("edit"), turnEnd()]
-        #expect(foldedIDs(rows, pinned: ["grep"]).isEmpty)
+    @Test("A running fold names its newest step")
+    func runningSummary() {
+        let rows = [tool("w1", name: "sleep", duration: 9), tool("inbox", name: "exec", state: .waiting, duration: nil, command: "swarm inbox")]
+        let summary = ToolRunFold.summary(of: rows)
+        #expect(summary.isRunning)
+        #expect(summary.latestTitle == "swarm inbox")
+        #expect(summary.text == "1 command · 1 wait")
+        #expect(summary.accessibilityLabel == "Steps: 1 command, 1 wait, running, now swarm inbox")
     }
 
-    @Test("The summary counts tool names in first-seen order and sums the durations")
-    func summaryAndDuration() {
-        let rows = [
-            tool("read", duration: 2), tool("grep", name: "Grep", duration: 0.5),
-            tool("read-again", duration: 1.5), tool("edit", name: "Edit", duration: 4),
+    @Test("A ring or a finished tool after the waiting tool does not replace the step the agent is on")
+    func runningSummaryNamesWaitingTool() {
+        let inbox = tool("inbox", name: "exec", state: .waiting, duration: nil, command: "swarm inbox")
+        let afterRing = ToolRunFold.summary(of: [inbox, ring("ring")])
+        #expect(afterRing.latestTitle == "swarm inbox")
+        #expect(afterRing.accessibilityLabel == "Steps: 1 command, 1 ring, running, now swarm inbox")
+        #expect(ToolRunFold.summary(of: [inbox, tool("read")]).latestTitle == "swarm inbox")
+    }
+
+    @Test("A fold of interrupted or unreported tools says so and never draws finished")
+    func stoppedSummary() {
+        let stopped = ToolRunFold.summary(of: [
+            tool("a", state: .interrupted, duration: nil), tool("b", state: .unreported, duration: nil),
+        ])
+        #expect(stopped.state == .interrupted)
+        #expect(stopped.text == "Read ×2 · 1 interrupted · 1 no result")
+        #expect(stopped.accessibilityLabel == "Steps: Read 2, 1 interrupted, 1 no result")
+        #expect(ToolRunFold.summary(of: [tool("a"), tool("b", state: .unreported)]).state == .unreported)
+        #expect(ToolRunFold.summary(of: [tool("a", state: .interrupted), tool("b", state: .waiting)]).state == .waiting)
+        #expect(ToolRunFold.summary(of: [tool("a", state: .failed), tool("b", state: .waiting)]).state == .failed)
+        #expect(ToolRunFold.summary(of: [tool("a"), tool("b")]).state == .finished)
+    }
+
+    @Test("Counts and the spoken time take each word's singular or plural")
+    func plurals() {
+        let rows = [tool("w1", name: "sleep", duration: 60), tool("w2", name: "sleep", duration: 5)]
+        #expect(ToolRunFold.summary(of: rows).accessibilityLabel == "Steps: 2 waits, 1 minute, 5 seconds")
+        let single = [tool("c1", name: "exec", duration: 1, command: "ls"), tool("w1", name: "sleep", duration: 0), ring("r")]
+        #expect(ToolRunFold.summary(of: single).text == "1 command · 1 wait · 1 ring")
+        #expect(ToolRunFold.summary(of: single).accessibilityLabel == "Steps: 1 command, 1 wait, 1 ring, 1 second")
+    }
+
+    /// ADR 0047's invariant I1 over every sequence of up to 6 rows of 8 row types (about 300,000):
+    /// the folded items hold every row once, in order, and each fold is a whole run of steps
+    /// with 2 or more shown steps and a tool.
+    @Test("Folding never drops, repeats, or reorders a row")
+    func foldIsLossless() {
+        let makers: [(String) -> TranscriptRow] = [
+            reply, { tool($0) }, { tool($0, state: .failed) }, { tool($0, state: .waiting) },
+            { ring($0) }, { ring($0, startsTurn: true) }, thought, hidden,
         ]
-        #expect(ToolRunFold.summary(of: rows) == "Read ×2 · Grep · Edit")
-        #expect(ToolRunFold.totalDuration(of: rows) == 8)
-        #expect(ToolRunFold.totalDuration(of: rows + [tool("bash", name: "Bash", duration: nil)]) == nil)
+        var failures = 0
+        for length in 0...6 {
+            var digits = Array(repeating: 0, count: length)
+            while true {
+                let rows = digits.enumerated().map { makers[$0.element]("r\($0.offset)") }
+                let items = ToolRunFold.items(in: rows)
+                let flat = items.flatMap { item -> [TranscriptRow] in
+                    switch item {
+                    case .row(let row): [row]
+                    case .fold(let group): group
+                    }
+                }
+                var valid = flat.map(\.eventID) == rows.map(\.eventID)
+                for (position, item) in items.enumerated() {
+                    guard case .fold(let group) = item else { continue }
+                    valid = valid && group.allSatisfy(ToolRunFold.isStep)
+                        && group.filter { !$0.isHiddenByDefault }.count >= 2
+                        && group.contains { $0.tool != nil }
+                    for neighbor in [position - 1, position + 1] where items.indices.contains(neighbor) {
+                        if case .row(let row) = items[neighbor] { valid = valid && !ToolRunFold.isStep(row) } else { valid = false }
+                    }
+                }
+                if !valid { failures += 1 }
+                guard let next = digits.lastIndex(where: { $0 < makers.count - 1 }) else { break }
+                digits[next] += 1
+                for later in (next + 1)..<length { digits[later] = 0 }
+            }
+        }
+        #expect(failures == 0)
     }
 }

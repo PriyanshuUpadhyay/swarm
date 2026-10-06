@@ -122,4 +122,113 @@ struct TranscriptToolActivityTests {
         #expect(activity("Exit code 1", command: nil).exitCode == nil)
         #expect(activity(nil).exitCode == nil)
     }
+
+    @Test("A Codex exec script's command is each decoded exec_command cmd literal; a script with none stays raw")
+    func codexExecCommand() {
+        let inbox = #"text(await tools.exec_command({cmd:"swarm inbox","sandbox_permissions":"require_escalated","max_output_tokens":1000}));"#
+        #expect(TranscriptToolActivity.command(in: .string(inbox), name: "exec") == "swarm inbox")
+        let quotedKey = #"text(await tools.exec_command({"cmd":"swarm ack 7"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(quotedKey), name: "exec") == "swarm ack 7")
+        let heredoc = #"text(await tools.exec_command({cmd:"python3 - <<'PY'\nprint(\"hi\")\nPY"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(heredoc), name: "exec") == "python3 - <<'PY'\nprint(\"hi\")\nPY")
+        let two = "const r = await Promise.allSettled([\ntools.exec_command({cmd:\"swarm roles get council.claude\"}),\ntools.exec_command({cmd:\"swarm roles get council.gpt\"}),\n]);"
+        #expect(TranscriptToolActivity.command(in: .string(two), name: "exec") == "swarm roles get council.claude\nswarm roles get council.gpt")
+        let patch = #"text(await tools.apply_patch("*** Begin Patch\n*** End Patch"));"#
+        #expect(TranscriptToolActivity.command(in: .string(patch), name: "exec") == patch)
+        // A script that also calls another tool names that call in order, so the header hides no step.
+        let mixed = #"await tools.apply_patch("*** Begin Patch\n*** End Patch"); text(await tools.exec_command({cmd:"ls"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(mixed), name: "exec") == "apply_patch(…)\nls")
+        // A command that only mentions a tool call runs one command, so it names no other call.
+        let mention = #"text(await tools.exec_command({cmd:"rg 'tools.read(' src"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(mention), name: "exec") == "rg 'tools.read(' src")
+        // No string literal holds a call, whatever its quote, so text that names a tool adds no line.
+        let prose = #"text(await tools.exec_command({cmd:"ls"})); text("see tools.read( first"); const note = 'tools.write('; const tip = `tools.view(`;"#
+        #expect(TranscriptToolActivity.command(in: .string(prose), name: "exec") == "ls")
+        // A cmd that is no double-quoted literal is still a step, so the header hides no command.
+        let built = #"const dir = "src"; await tools.exec_command({cmd: `ls ${dir}`}); await tools.exec_command({cmd: dir}); await tools.exec_command({cmd:"rm -rf " + dir}); text(await tools.exec_command({cmd:"pwd"}));"#
+        #expect(TranscriptToolActivity.command(in: .string(built), name: "exec") == "exec_command(…)\nexec_command(…)\nexec_command(…)\npwd")
+        let cut = #"text(await tools.exec_command({cmd:"swarm inb"#
+        #expect(TranscriptToolActivity.command(in: .string(cut), name: "exec") == cut)
+        let row = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string(inbox), status: .pending, meta: Meta()),
+        ])
+        #expect(row.map(\.text) == ["exec · swarm inbox"])
+    }
+
+    @Test("A Codex exec fails on Script failed or a non-zero exit_code; exit 0 shows no code")
+    func codexExecFailure() {
+        func activity(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x", isCodex: true)
+        }
+        let failed = activity("Script completed\nWall time 3.6 seconds\nOutput:\n{\"chunk_id\":\"a\",\"exit_code\":1,\"output\":\"Traceback\\n\"}")
+        #expect(failed.exitCode == 1)
+        #expect(failed.reportsFailure)
+        let ok = activity("Script completed\nWall time 3.1 seconds\nOutput:\n{\"exit_code\":0,\"output\":\"7 claude reply\\n\"}")
+        #expect(ok.exitCode == nil)
+        #expect(!ok.reportsFailure)
+        let second = activity("Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":0}\n{\"exit_code\":2}")
+        #expect(second.exitCode == 2)
+        let nested = activity("Script completed\nWall time 1 seconds\nOutput:\n{\"exit_code\":0,\"output\":\"{\\\"exit_code\\\":1}\"}")
+        #expect(nested.exitCode == nil)
+        let script = activity("Script failed\nWall time 10.8 seconds\nOutput:\nScript error:\nexec_command failed")
+        #expect(script.exitCode == nil)
+        #expect(script.reportsFailure)
+        #expect(activity("Script completed\nOutput:\nexit_code: 1").exitCode == nil)
+        // Codex code mode starts with one of three headers; the `script` tool's own banner is not one.
+        #expect(activity("Script running with cell ID 7\nWall time 31.0 seconds\nOutput:\n{\"exit_code\":3}").exitCode == 3)
+        #expect(activity("Script started, output log file is 'typescript'.\nOutput:\n{\"exit_code\":2}").exitCode == nil)
+        // A script that catches a rejected exec_command (Promise.allSettled) still ran a command that failed.
+        let caught = activity("Script completed\nWall time 1 seconds\nOutput:\n[{\"status\":\"fulfilled\",\"value\":{\"exit_code\":0}},{\"status\":\"rejected\",\"reason\":\"exec_command failed: ProcessFailed\"}]")
+        #expect(caught.exitCode == nil)
+        #expect(caught.reportsFailure)
+        #expect(!activity("Script completed\nOutput:\n{\"output\":\"{\\\"status\\\":\\\"rejected\\\"}\"}").reportsFailure)
+
+        let rows = TranscriptRowBuilder.rows(from: [
+            .toolCall(toolCallID: "c1", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c1", status: .completed, content: failed.output ?? "", meta: Meta()),
+            .toolCall(toolCallID: "c2", name: "exec", input: .string("x"), status: .pending, meta: Meta()),
+            .toolCallUpdate(toolCallID: "c2", status: .completed, content: ok.output ?? "", meta: Meta()),
+        ], isCodex: true)
+        #expect(rows.map(\.tool?.state) == [.failed, .finished])
+    }
+
+    /// A script that prints a command's stdout as text, not its JSON result, shows no exit code.
+    @Test("A Codex code-mode exit_code or rejected status inside printed command text does not fail the step")
+    func codexPrintedTextIsNotAResult() {
+        func activity(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec", input: .string("x"), output: output, state: .finished, command: "x", isCodex: true)
+        }
+        let exitInText = activity("Script completed\nWall time 1 seconds\nOutput:\nserver log {\"exit_code\":1} retried\n")
+        #expect(exitInText.exitCode == nil)
+        #expect(!exitInText.reportsFailure)
+        let exitAfterText = activity("Script completed\nWall time 1 seconds\nOutput:\nbuild ok\n{\"exit_code\":1}\n")
+        #expect(exitAfterText.exitCode == nil)
+        let rejectedInText = activity("Script completed\nWall time 1 seconds\nOutput:\nqueue item [{\"status\":\"rejected\"}] skipped\n")
+        #expect(!rejectedInText.reportsFailure)
+    }
+
+    @Test("Script failed fails only a command in Codex code-mode shape")
+    func scriptFailedNeedsCodeModeShape() {
+        let logFile = TranscriptToolActivity(name: "Read", input: .object([:]), output: "Script failed: lint skipped", state: .finished)
+        #expect(!logFile.reportsFailure)
+        let stdout = TranscriptToolActivity(
+            name: "Bash", input: .object([:]), output: "Script failed: lint skipped", state: .finished, command: "make lint"
+        )
+        #expect(!stdout.reportsFailure)
+    }
+
+    /// Codex exec_command without code mode (0.154 logs) writes a header, then `Output:`.
+    @Test("A Codex exec_command result reads Process exited with code N from its header only")
+    func codexProcessExit() {
+        func exec(_ output: String) -> TranscriptToolActivity {
+            TranscriptToolActivity(name: "exec_command", input: .object([:]), output: output, state: .finished, command: "false", isCodex: true)
+        }
+        let header = "Chunk ID: b294b6\nWall time: 0.0000 seconds\nProcess exited with code "
+        let failed = exec(header + "1\nOriginal token count: 3\nOutput:\nboom\n")
+        #expect(failed.exitCode == 1)
+        #expect(failed.reportsFailure)
+        #expect(exec(header + "0\nOriginal token count: 3\nOutput:\nok\n").exitCode == nil)
+        let running = exec("Chunk ID: c1\nWall time: 1.0 seconds\nProcess running with session ID 7\nOutput:\nProcess exited with code 1\n")
+        #expect(running.exitCode == nil)
+    }
 }

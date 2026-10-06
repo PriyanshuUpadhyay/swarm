@@ -1,54 +1,49 @@
 import SwiftUI
 import SwarmCore
 
-/// A finished run of tools in an ended turn, folded into one line: chevron, status, "N tools", the
-/// tool names, and the total time. Open, it shows each tool row under the line.
-struct TranscriptRunFoldRow<Child: View>: View {
+/// A run of steps between two prose rows, folded into one line (ADR 0047): chevron, status, the
+/// step counts, failures in the failed color, the waiting step while one runs, and the total time.
+/// Open, the transcript list draws each step's own row under the line (`ToolRunFold.lines`).
+struct TranscriptRunFoldRow: View {
     let rows: [TranscriptRow]
     @Binding var expanded: Bool
-    @ViewBuilder let child: (TranscriptRow) -> Child
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Button { expanded.toggle() } label: {
-                HStack(spacing: DesignTokens.Spacing.s) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.forward")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: DesignTokens.Size.glyphSlot)
-                    TranscriptStatusGlyph(state: .finished)
-                    Text(verbatim: "\(rows.count) tools").fontWeight(.semibold).lineLimit(1).layoutPriority(1)
-                    Text(verbatim: ToolRunFold.summary(of: rows))
+        let summary = ToolRunFold.summary(of: rows)
+        Button { expanded.toggle() } label: {
+            HStack(spacing: DesignTokens.Spacing.s) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: DesignTokens.Size.glyphSlot)
+                TranscriptStatusGlyph(state: summary.state)
+                Text(verbatim: summary.stepsText).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
+                if summary.failed > 0 {
+                    Text(verbatim: "· \(summary.failed) failed")
+                        .foregroundStyle(DesignTokens.color(.failed))
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                if summary.isRunning, !summary.latestTitle.isEmpty {
+                    Text(verbatim: "· now: \(summary.latestTitle)")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Spacer(minLength: DesignTokens.Spacing.s)
-                    if let duration = ToolRunFold.totalDuration(of: rows) {
-                        Text(verbatim: TranscriptToolActivity.durationLabel(duration))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
                 }
-                .padding(.vertical, DesignTokens.Spacing.xs)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            .accessibilityHint(expanded ? "Hides the tools" : "Shows the tools")
-            .accessibilityIdentifier("transcript-tool-run-fold")
-            if expanded {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                    ForEach(rows) { row in child(row) }
+                Spacer(minLength: DesignTokens.Spacing.s)
+                if let duration = summary.duration {
+                    Text(verbatim: TranscriptToolActivity.durationLabel(duration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
             }
+            .padding(.vertical, DesignTokens.Spacing.xs)
+            .contentShape(Rectangle())
         }
-    }
-
-    /// "5 tools, Read 2, Grep, Edit, finished".
-    private var accessibilityLabel: String {
-        let names = ToolRunFold.nameCounts(rows).map { $0.count > 1 ? "\($0.name) \($0.count)" : $0.name }
-        return (["\(rows.count) tools"] + names + ["finished"]).joined(separator: ", ")
+        .buttonStyle(.plain)
+        .accessibilityLabel(summary.accessibilityLabel)
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
+        .accessibilityIdentifier("transcript-tool-run-fold")
     }
 }

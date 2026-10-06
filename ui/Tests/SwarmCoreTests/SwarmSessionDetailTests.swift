@@ -426,6 +426,9 @@ struct SwarmSessionDetailTests {
         #expect(visible[1].text.hasPrefix("Context cleared · "))
         #expect(visible[1].eventID == "clear-second.jsonl")
         #expect(visible[2].text == "Start fresh")
+        // The new log numbers raw entries from 0 again, so a frozen row has no sources to show.
+        #expect(visible[0].sourceIDs.isEmpty)
+        #expect(visible[2].sourceIDs == ["raw-4"])
         #expect(!rows.contains { $0.text.contains("<command-name>/clear") })
         #expect(!rows.contains { $0.text.contains("<local-command-") })
     }

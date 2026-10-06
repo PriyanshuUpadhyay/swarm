@@ -47,13 +47,13 @@ struct TranscriptView<Composer: View>: View {
     @State private var isSearching = false
     @State private var findMatchID: String?
     @State private var pendingScrollID: String?
-    /// Tool rows shown while their turn ran; they never fold by themselves once the turn ends.
-    @State private var pinned: Set<String> = []
-    @State private var openFolds: Set<String> = []
-    /// A find match inside a fold; its row queues a scroll to itself once it appears.
-    @State private var scrollOnAppearID: String?
-    /// A fold child that just appeared for find; the next update scrolls to it.
-    @State private var appearedMatchID: String?
+    /// The owner's open or closed choice for each fold id; a fold without one takes its default.
+    /// In memory for this chat only (ADR 0047).
+    @State private var foldOverrides: [String: Bool] = [:]
+    /// The ids of the rows drawn on screen, so a fold that takes them in starts open (ADR 0047).
+    @State private var shownAsRows: Set<String> = []
+    /// A find match inside a fold; the update that opens the fold scrolls to it.
+    @State private var foldMatchID: String?
     @State private var composerHeight: CGFloat = 0
     /// The text and the composer use 90% of the chat page, centered.
     @State private var textWidth: CGFloat = 0
@@ -155,12 +155,18 @@ struct TranscriptView<Composer: View>: View {
                         }
                         rawSessionBlock.upsideDown()
                     } else {
-                        ForEach(foldedItems.reversed()) { item in
-                            switch item {
-                            case .row(let transcriptRow):
+                        ForEach(foldedLines.reversed()) { line in
+                            switch line {
+                            case .item(.row(let transcriptRow)):
                                 rowView(transcriptRow).upsideDown()
-                            case .fold(let group):
-                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(item.id)) { rowView($0) }
+                            case .item(.fold(let group)):
+                                TranscriptRunFoldRow(rows: group, expanded: foldExpanded(line.id, rows: group))
+                                    .upsideDown()
+                            case .step(let transcriptRow):
+                                // The list's spacing is m; an open fold keeps its steps xs apart.
+                                rowView(transcriptRow)
+                                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                                    .padding(.top, DesignTokens.Spacing.xs - DesignTokens.Spacing.m)
                                     .upsideDown()
                             }
                         }
@@ -210,7 +216,6 @@ struct TranscriptView<Composer: View>: View {
         }
         .onScrollPhaseChange { _, phase in
             userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if phase == .interacting { scrollOnAppearID = nil }
             if phase == .idle { loadedHistoryThisGesture = false }
             if phase == .interacting, nearOldest { startLoadingOlder(automatic: true) }
         }
@@ -218,61 +223,61 @@ struct TranscriptView<Composer: View>: View {
             guard let id else { return }
             pendingScrollID = nil
             if let fold = foldID(containing: id) {
-                // The lazy list knows only the fold's id, and a child's id exists only while its fold
-                // item is built and open. So scroll to the fold first, which builds the item, and open
-                // it. Building an open fold item builds all its children at once, so the child's
-                // onAppear then queues the scroll to itself; a Task could run before that build and
-                // find no view. A child that is already built does not appear again, so the second
-                // scrollTo reaches it now, and the owner's next scroll drops the queued id.
-                proxy.scrollTo(fold, anchor: .center)
-                proxy.scrollTo(id, anchor: .center)
-                scrollOnAppearID = id
-                openFolds.insert(fold)
+                // A closed fold's steps are not list items yet, so open it and scroll in the next
+                // update, when the list holds the step's id.
+                foldOverrides[fold] = true
+                foldMatchID = id
             } else {
-                scrollOnAppearID = nil
                 proxy.scrollTo(id, anchor: .center)
             }
         }
-        .onChange(of: appearedMatchID) { _, id in
-            guard let id else { return }
-            appearedMatchID = nil
-            proxy.scrollTo(id, anchor: .center)
+        .onChange(of: foldedLines.map(\.id), initial: true) {
+            ToolRunFold.recordShownRows(foldedLines, in: &shownAsRows)
         }
-        .onChange(of: revision, initial: true) {
-            pinned.formUnion(ToolRunFold.openTurnToolIDs(in: rows))
+        // A failed step opens its live fold, which VoiceOver does not see by itself.
+        .onChange(of: loadedLiveFailureID) { old, new in
+            guard ToolRunFold.isNewFailure(from: old, to: new), isVisible else { return }
+            AccessibilityNotification.Announcement("A step failed, so its steps are shown").post()
+        }
+        .onChange(of: foldMatchID) { _, id in
+            guard let id else { return }
+            foldMatchID = nil
+            proxy.scrollTo(id, anchor: .center)
         }
     }
 
     private func rowView(_ transcriptRow: TranscriptRow) -> some View {
         TranscriptRowView(
             row: transcriptRow, chair: chair,
-            revealForSearch: currentMatchID == transcriptRow.eventID
+            revealForSearch: currentMatchID == transcriptRow.eventID,
+            source: TranscriptSource.Lookup(ids: transcriptRow.sourceIDs) {
+                TranscriptSource.entries(for: transcriptRow, in: rawEntries)
+            }
         )
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
         .padding(DesignTokens.Spacing.xxs)
         .background(matchBackground(transcriptRow.eventID))
-        .onAppear {
-            guard scrollOnAppearID == transcriptRow.eventID else { return }
-            scrollOnAppearID = nil
-            appearedMatchID = transcriptRow.eventID
-        }
+    }
+
+    /// The live failure once a snapshot is loaded, and nil before, so the first load is a baseline.
+    private var loadedLiveFailureID: String?? {
+        guard case .rows = snapshot else { return nil }
+        return .some(ToolRunFold.liveFailureID(in: foldedItems, overrides: foldOverrides))
     }
 
     private var foldedItems: [ToolRunFold.Item] {
-        ToolRunFold.items(in: visibleRows, pinned: pinned)
+        ToolRunFold.items(in: visibleRows)
     }
 
-    private func foldExpanded(_ id: String) -> Binding<Bool> {
+    private var foldedLines: [ToolRunFold.Line] {
+        ToolRunFold.lines(foldedItems) { ToolRunFold.isExpanded($1, overrides: foldOverrides, shownAsRows: shownAsRows) }
+    }
+
+    private func foldExpanded(_ id: String, rows: [TranscriptRow]) -> Binding<Bool> {
         Binding {
-            openFolds.contains(id)
+            ToolRunFold.isExpanded(rows, overrides: foldOverrides, shownAsRows: shownAsRows)
         } set: { open in
-            if open {
-                openFolds.insert(id)
-            } else {
-                openFolds.remove(id)
-                // A queued find scroll would jump back to its match when the fold opens again.
-                scrollOnAppearID = nil
-            }
+            foldOverrides[id] = open
         }
     }
 
@@ -415,8 +420,10 @@ struct TranscriptView<Composer: View>: View {
         return "\(findIndex + 1) of \(findMatches.count)"
     }
 
+    /// The newest list line. A running turn's last step sits in a closed live fold and is no line,
+    /// so this is the fold's id, not the step's.
     private var lastVisibleID: String? {
-        showRawData ? rawEntries.last?.id : visibleRows.last?.eventID
+        showRawData ? rawEntries.last?.id : foldedLines.last?.id
     }
 
     private var rawSessionBlock: some View {
@@ -431,16 +438,11 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private func rawEntry(_ entry: RawTranscriptEntry) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text("[\(entry.index)] \(entry.rowKind)")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-            TranscriptBoundedTextView(text: entry.displayText)
-                .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
-        }
-        .id(entry.id)
-        .padding(DesignTokens.Spacing.s)
-        .background(matchBackground(entry.id))
+        TranscriptRawEntryBlock(entry: entry)
+            .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
+            .id(entry.id)
+            .padding(DesignTokens.Spacing.s)
+            .background(matchBackground(entry.id))
     }
 
     private func matchBackground(_ id: String) -> some ShapeStyle {
@@ -459,7 +461,6 @@ struct TranscriptView<Composer: View>: View {
     private func closeFind() {
         findPresented = false
         findFieldFocused = false
-        scrollOnAppearID = nil
         focus.wrappedValue = true
     }
 
@@ -480,6 +481,8 @@ private struct TranscriptRowView: View {
     let row: TranscriptRow
     let chair: String?
     var revealForSearch = false
+    let source: TranscriptSource.Lookup
+    @State private var showingSource = false
     @State private var copying = false
     @State private var detailExpanded = false
     @State private var hovering = false
@@ -497,6 +500,13 @@ private struct TranscriptRowView: View {
                 .padding(.vertical, DesignTokens.Spacing.s)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
+            } else if row.systemKind == TranscriptSystemKind.swarmRing {
+                // swarm typed it, not the owner, so it is a quiet line and not a "You" bubble.
+                Label(TranscriptRow.swarmRingLine, systemImage: "envelope")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(TranscriptRow.swarmRingLine)
+                    .accessibilityIdentifier("transcript-swarm-ring")
             } else if let run = row.shell {
                 TranscriptShellRow(run: run, revealForSearch: revealForSearch)
             } else if let command = row.command {
@@ -532,8 +542,16 @@ private struct TranscriptRowView: View {
             }
         }
         .onHover { hovering = $0 }
+        .contextMenu {
+            if isMessage { Button("Copy", action: copy) }
+            Button("Show Source") { showingSource = true }
+        }
         .accessibilityActions {
             if isMessage { Button("Copy message", action: copy) }
+            Button("Show Source") { showingSource = true }
+        }
+        .popover(isPresented: $showingSource, arrowEdge: .leading) {
+            TranscriptSourceView(entries: source.entries())
         }
         .id(row.eventID)
         .onChange(of: revealForSearch, initial: true) { _, reveal in
@@ -653,5 +671,38 @@ private extension View {
     /// Flips vertically; applied to the list and again to each row, so rows read the right way up.
     func upsideDown() -> some View {
         scaleEffect(x: 1, y: -1, anchor: .center)
+    }
+}
+
+/// One raw event as RAW mode shows it: "[index] kind" and the pretty event JSON.
+private struct TranscriptRawEntryBlock: View {
+    let entry: RawTranscriptEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            Text(verbatim: "[\(entry.index)] \(entry.rowKind)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            TranscriptBoundedTextView(text: entry.displayText)
+        }
+    }
+}
+
+/// Show Source: the translated event JSON of each event behind one row (ADR 0047).
+private struct TranscriptSourceView: View {
+    let entries: [RawTranscriptEntry]
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                Text(entries.isEmpty ? AttributedString("No source events are loaded for this row.")
+                    : AttributedString(localized: "Source, ^[\(entries.count) event](inflect: true)"))
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(entries) { TranscriptRawEntryBlock(entry: $0) }
+            }
+            .padding(DesignTokens.Spacing.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: DesignTokens.Size.profileSheet, height: DesignTokens.Size.sheet)
     }
 }

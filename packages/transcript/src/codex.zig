@@ -195,6 +195,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                 }
                 if (is_tagged_context) {
                     try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = text.string } });
+                } else if (root.isSwarmRing(text.string)) {
+                    try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "swarm_ring", .text = text.string } });
                 } else {
                     try events.append(arena, .{ .user_message_chunk = chunk });
                 }
@@ -748,4 +750,17 @@ test "Codex context uses last total and does not add cached input twice" {
         \\{"type":"event_msg","payload":{"type":"token_count","info":null}}
     );
     try std.testing.expect(missing[0] == .ignored);
+}
+
+test "Codex swarm ring is a swarm_ring system message, a near miss stays a user chunk" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"response_item","timestamp":"t","payload":{"type":"message","id":"m2","role":"user","content":[{"type":"input_text","text":"swarm: new message. Run swarm inbox, read each body at /home/owner/.swarm/<body_path>, then swarm ack <seq>."},{"type":"input_text","text":"swarm: new message'. When it arrives: run swarm inbox"}]}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(2, events.len);
+    try std.testing.expectEqualStrings("swarm_ring", events[0].system_message.kind);
+    try std.testing.expectEqualStrings("m2", events[0].system_message.meta.uuid);
+    try std.testing.expectEqualStrings("swarm: new message'. When it arrives: run swarm inbox", events[1].user_message_chunk.text);
 }

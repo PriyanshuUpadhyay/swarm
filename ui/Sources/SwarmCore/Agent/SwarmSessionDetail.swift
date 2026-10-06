@@ -243,7 +243,10 @@ public actor SwarmChairTranscript {
         let window = await reader.window()
         let timing = SwarmPerformance.begin("TranscriptRows")
         defer { timing.end(count: rows.count) }
-        let built = TranscriptRowBuilder.rows(from: window.records, indexOffset: window.indexOffset)
+        let built = TranscriptRowBuilder.rows(
+            from: window.records, indexOffset: window.indexOffset, hasOlder: window.hasOlder,
+            isCodex: reader.format == "codex"
+        )
         if let path = log, path != lastLogPath {
             // Claude writes bookkeeping lines first, so until a real record lands the new log
             // cannot say whether it is a clear. Keep the old rows and decide on a later read.
@@ -252,7 +255,10 @@ public actor SwarmChairTranscript {
             }
             if lastLogPath != nil, undecided { return }
             if lastLogPath != nil, ConversationBoundary.isClear(window.records), !rows.isEmpty {
-                frozenRows = rows + [Self.clearDivider(logName: path.lastPathComponent)]
+                // The new log numbers its raw entries from 0 again, so an old row's sources would
+                // point at new events.
+                frozenRows = rows.map { var row = $0; row.sourceIDs = []; return row }
+                    + [Self.clearDivider(logName: path.lastPathComponent)]
             } else {
                 frozenRows = []
                 // `/clear` keeps the model, but another log may come from another agent.

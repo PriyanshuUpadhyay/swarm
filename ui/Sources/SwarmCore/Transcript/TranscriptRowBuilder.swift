@@ -13,6 +13,8 @@ public enum TranscriptSystemKind {
     public static let injected = "injected"
     public static let peerMessage = "peer_message"
     public static let queuedPrompt = "queued_prompt"
+    /// A ring that `swarm` typed into the agent's pane; not the owner's prompt.
+    public static let swarmRing = "swarm_ring"
 }
 
 /// The text rows a chat can draw from typed transcript events.
@@ -25,6 +27,9 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
         case divider
     }
 
+    /// The one line a ring row draws and find matches, so the two cannot drift apart.
+    public static let swarmRingLine = "New swarm message"
+
     public var kind: Kind
     public var text: String
     public var eventID: String
@@ -33,15 +38,25 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     public var diff: TranscriptDiff? = nil
     public var tool: TranscriptToolActivity? = nil
     public var toolStatus: ToolStatus? = nil
-    /// The parser's `system_message` kind, for `.system` rows.
+    /// The parser's `system_message` kind, for `.system` rows and the `.user` row of a queued prompt.
     public var systemKind: String? = nil
     public var shell: TranscriptShellRun? = nil
     /// Set on `.system` rows whose `systemKind` is "command".
     public var command: TranscriptCommandChip? = nil
+    /// The `RawTranscriptEntry.id` of each event the row shows: its own, merged chunks, and joined
+    /// results, diffs, and records, in log order. Show Source reads them.
+    public var sourceIDs: [String] = []
     public var endsTurn = false
     /// A row that is not the user's but starts an agent turn, such as a background task's end.
     public var startsTurn = false
+    /// Input that reaches the agent while a turn runs: a queued prompt, a Codex steer, or a task
+    /// notice Claude queued. It shows a turn runs but neither starts nor ends one.
+    public var arrivesMidTurn = false
     public var id: String { eventID }
+
+    /// The one rule for what starts an agent turn: the owner's prompt or a row marked `startsTurn`,
+    /// never input that arrives mid-turn.
+    public var opensTurn: Bool { !arrivesMidTurn && (kind == .user || startsTurn) }
 
     public init(kind: Kind, text: String, eventID: String) {
         self.kind = kind
@@ -78,6 +93,8 @@ public struct TranscriptRow: Sendable, Hashable, Identifiable {
     /// The text find matches: the row's text plus what the row draws from joined records, such as a
     /// tool's output and diffs or a command's output and skill body. O(total length of that text).
     public var searchText: String {
+        // A ring draws only this line (TranscriptView); its text is one Show Source away.
+        if systemKind == TranscriptSystemKind.swarmRing { return Self.swarmRingLine }
         let diff = tool?.diffs.map { ([$0.path] + $0.hunks.flatMap(\.lines)).joined(separator: "\n") }
             .joined(separator: "\n")
         return [text, detail, tool?.command, tool?.output, tool?.path, diff, tool?.skillBody,
@@ -125,11 +142,26 @@ public struct TranscriptCommandChip: Hashable, Sendable {
 }
 
 public enum TranscriptRowBuilder {
-    public static func rows(from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0) -> [TranscriptRow] {
-        rows(from: records.map(\.event), indexOffset: indexOffset)
+    /// `hasOlder` says the window starts after the log's first entry. `indexOffset` cannot say it:
+    /// the reader's tail window starts at index 0 and only goes below 0 on Load earlier.
+    /// `isCodex` says the log is Codex's. Codex writes a turn-started record before each turn's
+    /// prompt, so a user message with none before it is a steer typed mid-turn, unless it follows
+    /// the log's start or a turn end, where no turn is open. Codex also marks every tool result
+    /// completed, so only there does the result text say whether the step failed.
+    public static func rows(
+        from records: some Sequence<TranscriptRecord>, indexOffset: Int = 0, hasOlder: Bool = false,
+        isCodex: Bool = false
+    ) -> [TranscriptRow] {
+        rows(
+            from: records.map(\.event), indexOffset: indexOffset, hasOlder: hasOlder,
+            isCodex: isCodex
+        )
     }
 
-    public static func rows(from events: some Sequence<TranscriptEvent>, indexOffset: Int = 0) -> [TranscriptRow] {
+    public static func rows(
+        from events: some Sequence<TranscriptEvent>, indexOffset: Int = 0, hasOlder: Bool = false,
+        isCodex: Bool = false
+    ) -> [TranscriptRow] {
         let events = Array(events)
         let scopes = scopes(for: events)
         func anchors(_ pick: (TranscriptEvent) -> (id: String, meta: Meta)?) -> [Anchor] {
@@ -204,12 +236,24 @@ public enum TranscriptRowBuilder {
         var rows: [TranscriptRow] = []
         var usedIDs = Set<String>()
         var lastSourceID: String?
+        // An older Codex CLI writes no turn-started records, so a prompt is also expected where no
+        // turn can be open: at the log's start and after a turn end.
+        var promptExpected = !hasOlder
         for (index, event) in events.enumerated() {
             if joined.contains(index) {
                 lastSourceID = nil
                 continue
             }
+            if case .turnStarted = event { promptExpected = true }
+            if case .turnEnded = event { promptExpected = true }
             guard var row = row(from: event, index: index + indexOffset) else { continue }
+            // The first user message or ring after a turn-started record starts that turn; a later
+            // user message is a steer. A window that starts between the two takes the prompt for a
+            // steer, which is right: the turn is open.
+            if isCodex, row.kind == .user || row.systemKind == TranscriptSystemKind.swarmRing {
+                if row.kind == .user, !promptExpected { row.arrivesMidTurn = true }
+                promptExpected = false
+            }
             if case .toolCall(_, let name, let input, let status, let callMeta) = event {
                 let relatedUpdates = (updates[index] ?? []).sorted()
                 let lastUpdate = relatedUpdates.last.map { events[$0] }
@@ -239,8 +283,9 @@ public enum TranscriptRowBuilder {
                 row.tool = TranscriptToolActivity(
                     name: name, input: input, output: output, diffs: relatedDiffs,
                     state: state, command: TranscriptToolActivity.command(in: input, name: name),
-                    path: TranscriptToolActivity.path(in: input), duration: duration
+                    path: TranscriptToolActivity.path(in: input), duration: duration, isCodex: isCodex
                 )
+                if isCodex, state == .finished, row.tool?.reportsFailure == true { row.tool?.state = .failed }
             }
             for source in attached[index] ?? [] {
                 guard case .systemMessage(let kind, let text, _) = events[source] else { continue }
@@ -258,9 +303,12 @@ public enum TranscriptRowBuilder {
                     row.command?.output = TranscriptCommandChip.output(fromCommandOutput: text)
                 }
             }
+            let sources = [index] + (updates[index] ?? []) + (diffs[index] ?? []) + (attached[index] ?? [])
+            row.sourceIDs = sources.sorted().map { RawTranscriptEntry.id(index: $0 + indexOffset) }
             if let last = rows.last, last.kind == row.kind, lastSourceID == row.eventID,
                row.kind == .user || row.kind == .assistant || row.kind == .thought {
                 rows[rows.count - 1].text += row.text
+                rows[rows.count - 1].sourceIDs += row.sourceIDs
                 continue
             }
             lastSourceID = row.eventID
@@ -272,6 +320,16 @@ public enum TranscriptRowBuilder {
             }
             usedIDs.insert(row.eventID)
             rows.append(row)
+        }
+        // A ring wakes an idle agent, so it starts a turn then; mid-turn the agent reads it later.
+        // A window that starts later in the log (hasOlder) is mid-turn at its start unless its
+        // first turn boundary starts a turn. Input that arrives mid-turn is no boundary.
+        let firstBoundary = rows.first { $0.opensTurn || $0.endsTurn }
+        var turnOpen = hasOlder && (firstBoundary.map(\.endsTurn) ?? true)
+        for index in rows.indices {
+            if rows[index].systemKind == TranscriptSystemKind.swarmRing, !turnOpen { rows[index].startsTurn = true }
+            if rows[index].opensTurn { turnOpen = true }
+            if rows[index].endsTurn { turnOpen = false }
         }
         return rows
     }
@@ -364,14 +422,17 @@ public enum TranscriptRowBuilder {
             row = TranscriptRow(kind: .error, text: message, eventID: key(meta, "error", index))
         case .systemMessage(TranscriptSystemKind.queuedPrompt, let text, let meta):
             row = TranscriptRow(kind: .user, text: text, eventID: key(meta, "queued", index))
-        case .systemMessage(_, let text, let meta)
+            row.systemKind = TranscriptSystemKind.queuedPrompt
+            row.arrivesMidTurn = true
+        case .systemMessage(let kind, let text, let meta)
             where text.drop(while: \.isWhitespace).hasPrefix("<task-notification>"):
-            // Claude writes a background task's end as a user record or a queued command; show its
-            // summary line, not the XML.
+            // Claude writes a background task's end as a user record, which wakes an idle agent, or
+            // as a queued command absorbed mid-turn; show its summary line, not the XML.
             row = TranscriptRow(
                 kind: .notice, text: taskNotificationSummary(text), eventID: key(meta, "task", index)
             )
-            row.startsTurn = true
+            row.arrivesMidTurn = kind == "queued_command"
+            row.startsTurn = !row.arrivesMidTurn
         case .systemMessage(TranscriptSystemKind.peerMessage, let text, let meta):
             row = TranscriptRow(kind: .notice, text: peerMessageText(text), eventID: key(meta, "peer", index))
             row.startsTurn = true
@@ -382,6 +443,9 @@ public enum TranscriptRowBuilder {
             )
         case .systemMessage(TranscriptSystemKind.shellOutput, let text, let meta):
             row = shellRow(ShellRecord.run(command: nil, outputText: text), eventID: key(meta, "shell", index))
+        case .systemMessage(TranscriptSystemKind.swarmRing, let text, let meta):
+            row = TranscriptRow(kind: .system, text: text, eventID: key(meta, "ring", index))
+            row.systemKind = TranscriptSystemKind.swarmRing
         case .systemMessage(TranscriptSystemKind.interrupted, _, let meta):
             row = TranscriptRow(kind: .notice, text: "Interrupted", eventID: key(meta, "interrupted", index))
             row.endsTurn = true
@@ -461,9 +525,13 @@ public enum TranscriptRowBuilder {
 }
 
 public enum ChairTurn {
-    /// A turn runs from the last row that starts one until a turn-ended row follows it.
+    /// A turn runs from the last row that starts one until a turn-ended row follows it. Input that
+    /// arrives mid-turn shows a turn runs, and so does a ring: the builder keeps a ring mid-turn only
+    /// inside an open turn. Both count even when the window starts below the turn's prompt.
     public static func isActive(_ rows: [TranscriptRow]) -> Bool {
-        guard let start = rows.lastIndex(where: { $0.kind == .user || $0.startsTurn }) else { return false }
+        guard let start = rows.lastIndex(where: {
+            $0.opensTurn || $0.arrivesMidTurn || $0.systemKind == TranscriptSystemKind.swarmRing
+        }) else { return false }
         return !rows[start...].contains(where: \.endsTurn)
     }
 }

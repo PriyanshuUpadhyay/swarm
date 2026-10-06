@@ -76,7 +76,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                 text = std.mem.trim(u8, request, " \t\r\n");
             }
         }
-        try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
+        if (root.isSwarmRing(text)) {
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "swarm_ring", .text = text } });
+        } else {
+            try events.append(arena, .{ .user_message_chunk = .{ .meta = meta, .text = text } });
+        }
         if (context.len != 0) {
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "context", .text = context } });
         }
@@ -85,6 +89,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
 
     if (std.mem.eql(u8, record_type, "PLANNER_RESPONSE")) {
         var has_unknown = false;
+        var replied = false;
+        var has_tool_call = false;
         if (rec.get("thinking")) |thinking| {
             if (thinking == .string) {
                 if (thinking.string.len != 0) {
@@ -98,6 +104,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             if (content == .string) {
                 if (content.string.len != 0) {
                     try events.append(arena, .{ .agent_message_chunk = .{ .meta = meta, .text = content.string } });
+                    replied = true;
                 }
             } else if (content != .null) {
                 has_unknown = true;
@@ -140,6 +147,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
                             .status = .pending,
                         },
                     });
+                    has_tool_call = true;
                 }
             } else if (tool_calls != .null) {
                 has_unknown = true;
@@ -149,6 +157,10 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
             try events.append(arena, try root.unknownEvent(arena, meta, line));
         } else if (events.items.len == 0) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "PLANNER_RESPONSE" } });
+        } else if (replied and !has_tool_call and std.mem.eql(u8, status_value.string, "DONE")) {
+            // AGY writes no turn end; a finished reply that calls no tool hands control back, as in
+            // any agent loop. A reply with no text (thinking only) is not taken as an end.
+            try events.append(arena, .{ .turn_ended = .{ .meta = meta, .duration_ms = null, .reason = .completed } });
         }
         return events.items;
     }
@@ -227,6 +239,18 @@ test "USER_INPUT becomes a user message" {
     try std.testing.expectEqualStrings("hello", events[0].user_message_chunk.text);
     try std.testing.expectEqualStrings("12", events[0].user_message_chunk.meta.uuid);
     try std.testing.expectEqualStrings("", events[0].user_message_chunk.meta.session_id);
+}
+
+test "USER_INPUT swarm ring inside the request wrapper is a swarm_ring system message" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":14,"created_at":"t","content":"<USER_REQUEST>\nswarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>.\n</USER_REQUEST>"}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("swarm_ring", events[0].system_message.kind);
+    try std.testing.expectEqualStrings("14", events[0].system_message.meta.uuid);
 }
 
 test "USER_INPUT strips request wrapper after leading whitespace" {
@@ -397,6 +421,27 @@ test "tool input deeper than the event writer limit becomes unknown" {
     const events = try parseLine(arena_state.allocator(), input.written());
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings(input.written(), events[0].unknown.raw);
+}
+
+test "a final planner reply with no tool call ends the turn" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const reply =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":7,"created_at":"t","thinking":"check","content":"The reviewer approved."}
+    ;
+    const reply_events = try parseLine(arena_state.allocator(), reply);
+    try std.testing.expectEqual(3, reply_events.len);
+    try std.testing.expectEqualStrings("The reviewer approved.", reply_events[1].agent_message_chunk.text);
+    try std.testing.expectEqual(.completed, reply_events[2].turn_ended.reason);
+    try std.testing.expect(reply_events[2].turn_ended.duration_ms == null);
+    try std.testing.expectEqualStrings("7", reply_events[2].turn_ended.meta.uuid);
+
+    const thinking_only =
+        \\{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":8,"created_at":"t","thinking":"plan","tool_calls":[]}
+    ;
+    const thinking_events = try parseLine(arena_state.allocator(), thinking_only);
+    try std.testing.expectEqual(1, thinking_events.len);
+    try std.testing.expectEqualStrings("plan", thinking_events[0].agent_thought_chunk.text);
 }
 
 test "RUNNING generic is pending and checkpoint is compaction" {
