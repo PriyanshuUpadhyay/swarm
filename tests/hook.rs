@@ -600,3 +600,219 @@ fn swarm_guards_names_the_rule_list() {
     assert!(String::from_utf8_lossy(&missing.stderr).contains(".swarm/guards.json is missing"));
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+fn setup(home: &Path, args: &[&str]) -> Output {
+    let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
+    command.current_dir(home).arg("setup").args(args);
+    piped(command, "")
+}
+
+fn git_repo(home: &Path, name: &str) -> PathBuf {
+    let dir = home.join(name);
+    assert!(
+        Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .arg(&dir)
+            .status()
+            .unwrap()
+            .success()
+    );
+    dir
+}
+
+/// One `swarm setup` plan holds every pending write, each file with its group and its diff: the
+/// hooks, the consent file, and the trust entries a launch in `--cwd` would write, also in a file
+/// that the hooks change too. One digest applies them all, each trust entry is recorded, and a
+/// second apply with nothing pending passes (ADR 0043).
+#[test]
+fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
+    let home = scratch("setup-all");
+    let repo = git_repo(&home, "app");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/config.toml"), "model = \"o3\"\n").unwrap();
+    let cwd = repo.to_string_lossy().into_owned();
+    let status = || -> serde_json::Value {
+        serde_json::from_slice(&setup(&home, &["status", "--json"]).stdout).unwrap()
+    };
+    assert_eq!(
+        status(),
+        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true})
+    );
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["consent"], "ask");
+    assert_eq!(plan["conflicts"], serde_json::json!([]));
+    let files: Vec<(String, String)> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| {
+            let path = file["path"].as_str().unwrap();
+            let name = path.strip_prefix(&*home.to_string_lossy()).unwrap();
+            (
+                file["group"].as_str().unwrap().to_string(),
+                name.to_string(),
+            )
+        })
+        .collect();
+    let expected = [
+        ("hooks", "/.codex/config.toml"),
+        ("hooks", "/.gemini/config/hooks.json"),
+        ("trust", "/.swarm/consent.json"),
+        ("trust", "/.codex/config.toml"),
+        ("trust", "/.gemini/antigravity-cli/settings.json"),
+        ("trust", "/.claude.json"),
+    ]
+    .map(|(group, path)| (group.to_string(), path.to_string()));
+    assert_eq!(files, expected);
+    let diffs: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["diff"].as_str().unwrap())
+        .collect();
+    assert!(
+        diffs[2].contains("+  \"trust\": \"standing\""),
+        "{}",
+        diffs[2]
+    );
+    assert!(
+        diffs[3].contains(&format!("+[projects.\"{cwd}\"]")),
+        "{}",
+        diffs[3]
+    );
+    assert!(!diffs[3].contains("+[hooks.state"), "{}", diffs[3]);
+    assert!(
+        diffs[5].contains(&format!("{cwd}/.herdr/workers")),
+        "{}",
+        diffs[5]
+    );
+
+    let text = stdout(&setup(&home, &["--plan", "--cwd", &cwd]));
+    let digest = plan["digest"].as_str().unwrap();
+    assert!(
+        text.ends_with(&format!(
+            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd {cwd}` to apply.\n"
+        )),
+        "{text}"
+    );
+
+    let applied = setup(&home, &["--digest", digest, "--cwd", &cwd]);
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        status(),
+        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true})
+    );
+    let config = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
+    assert!(config.contains("[hooks.state.") && config.contains(&format!("[projects.\"{cwd}\"]")));
+    let list = swarm(&home, &[], &["managed", "list", "--json"], "");
+    let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+    let trust = list["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["writer"] == "launch.trust" && entry["recorded"] == true)
+        .count();
+    assert_eq!(trust, 3, "{list}");
+
+    let again = setup(&home, &["--digest", digest, "--cwd", &cwd]);
+    assert!(again.status.success(), "{again:?}");
+    assert!(stdout(&again).contains("already set up"), "{again:?}");
+
+    // `--only` plans one group; a folder that fails the trust check is skipped with its reason.
+    let only = setup(
+        &home,
+        &[
+            "--plan",
+            "--json",
+            "--only",
+            "trust",
+            "--cwd",
+            &*home.to_string_lossy(),
+        ],
+    );
+    let only: serde_json::Value = serde_json::from_slice(&only.stdout).unwrap();
+    assert_eq!(only["files"], serde_json::json!([]));
+    assert_eq!(only["skipped"][0]["group"], "trust");
+    assert!(
+        only["skipped"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("not in a git repository"),
+        "{only}"
+    );
+    let unknown = setup(&home, &["--plan", "--only", "sound"]);
+    assert!(!unknown.status.success());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// Herdr's own state hooks and an owner's hook sit next to swarm's in every hook file, and swarm's
+/// groups, which only swarm names, meet none of them: the plan has no conflict (ADR 0043 rule 1-2).
+#[test]
+fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
+    let home = scratch("herdr-side");
+    let write = |file: &str, text: &str| {
+        let path = home.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    let herdr =
+        r#"{"type": "command", "command": "~/.config/herdr/herdr-agent-state.sh", "timeout": 5}"#;
+    let owner = r#"{"type": "command", "command": "owner-check", "timeout": 3}"#;
+    let groups = format!(
+        r#"{{"hooks": {{"PreToolUse": [{{"hooks": [{herdr}]}}, {{"matcher": "Bash", "hooks": [{owner}]}}],
+            "Stop": [{{"hooks": [{herdr}]}}]}}}}"#
+    );
+    write(".claude/settings.json", &groups);
+    write(".codex/hooks.json", &groups);
+    write(".codex/config.toml", "model = \"o3\"\n");
+    write(
+        ".gemini/config/hooks.json",
+        &format!(
+            r#"{{"herdr": {{"Stop": [{herdr}]}}, "agent-harness": {{"PreToolUse": [{owner}]}}}}"#
+        ),
+    );
+    write(".swarm/guards.json", r#"{"rules": []}"#);
+
+    let plan = setup(&home, &["--plan", "--json"]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["conflicts"], serde_json::json!([]), "{plan}");
+    let applied = setup(
+        &home,
+        &[
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "hooks",
+        ],
+    );
+    assert!(
+        !applied.status.success(),
+        "the digest covers every group: {applied:?}"
+    );
+    let plan = setup(&home, &["--plan", "--json", "--only", "hooks"]);
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let applied = setup(
+        &home,
+        &[
+            "--digest",
+            plan["digest"].as_str().unwrap(),
+            "--only",
+            "hooks",
+        ],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    let agy: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(home.join(".gemini/config/hooks.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        agy["herdr"]["Stop"][0]["command"],
+        "~/.config/herdr/herdr-agent-state.sh"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}

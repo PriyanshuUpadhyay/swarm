@@ -269,7 +269,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -804,64 +804,21 @@ fn codex_homes(
 /// while any entry conflicts with one the owner has, and `--digest` refuses a file that changed
 /// after the plan (ADR 0036). Claude's state hooks need no step, because `swarm launch` passes
 /// them with `--settings`. With a rule list, setup also registers `swarm guard` in every Claude
-/// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040).
+/// settings file, Codex `hooks.json` and its trust, and AGY's `hooks.json` (ADR 0040). It is
+/// `swarm setup --only hooks` with its own text and JSON, kept for the brew CLI (ADR 0043).
 fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
-    let HookFiles {
-        homes,
-        agy_hooks,
-        claude_settings,
-        codex_hooks,
-    } = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
     // The guard registrations go in only when the owner keeps a rule list (ADR 0040), so a Mac
     // with no list never gets a hook that would block every call.
     let has_list = swarm::paths::guards_file()?.exists();
-    // A file that swarm cannot read or edit is a conflict in the plan, not an error.
-    let plan = || -> Vec<swarm::managed::FilePlan> {
-        let unreadable = swarm::managed::FilePlan::unreadable;
-        let guard_plan = |path: &std::path::PathBuf, provider: &str| {
-            swarm::bus::guard_hooks_plan(path, provider)
-                .unwrap_or_else(|error| unreadable(path.clone(), error))
-        };
-        let mut plans: Vec<_> = Vec::new();
-        if has_list {
-            plans.extend(
-                claude_settings
-                    .iter()
-                    .map(|path| guard_plan(path, "claude")),
-            );
-            plans.extend(codex_hooks.iter().map(|path| guard_plan(path, "codex")));
-        }
-        let codex_plans: Vec<_> = homes
-            .iter()
-            .map(|home| {
-                let mut guard = Vec::new();
-                if has_list {
-                    // Trust the guard group where the planned hooks.json puts it.
-                    let target = canonical(&home.join("hooks.json"));
-                    let hooks = plans
-                        .iter()
-                        .find(|plan| canonical(&plan.path) == target)
-                        .map_or("", |plan| plan.after.as_str());
-                    guard = swarm::bus::codex_guard_trust(home, hooks);
-                }
-                swarm::bus::codex_hook_plan(home, &codex, &guard)
-                    .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
-            })
-            .collect();
-        plans.extend(codex_plans);
-        plans.push(
-            swarm::bus::agy_hook_plan(&agy_hooks, has_list)
-                .unwrap_or_else(|error| unreadable(agy_hooks.clone(), error)),
-        );
-        plans
-    };
+    let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
+    let plan = || hook_plans(&files, has_list);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["status", "--json"] => print_json(&serde_json::json!({
-            "codex": homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
-            "agy": swarm::bus::agy_hooks_set(&agy_hooks),
-            "guard": guard_status(has_list, &claude_settings, &codex_hooks, &homes, &agy_hooks),
+            "codex": files.homes.iter().all(|home| swarm::bus::codex_hooks_trusted(home, &codex)),
+            "agy": swarm::bus::agy_hooks_set(&files.agy_hooks),
+            "guard": files.guard_status(has_list),
         })),
         ["setup", "--plan"] => {
             print!(
@@ -1049,31 +1006,352 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// Whether the guard registrations match the rule list: each one in place while the list exists,
-/// and none left once it is gone, because a registration with no list blocks every call.
-fn guard_status(
-    has_list: bool,
-    claude_settings: &[std::path::PathBuf],
-    codex_hooks: &[std::path::PathBuf],
-    homes: &[std::path::PathBuf],
-    agy_hooks: &std::path::Path,
-) -> bool {
-    let files = || {
-        let claude = claude_settings.iter().map(|path| (path, "claude"));
-        claude.chain(codex_hooks.iter().map(|path| (path, "codex")))
-    };
-    if !has_list {
-        return !swarm::bus::agy_guard_present(agy_hooks)
-            && files().all(|(path, provider)| !swarm::bus::guard_registered(path, provider));
+impl HookFiles {
+    /// Whether the guard registrations match the rule list: each one in place while the list
+    /// exists, and none left once it is gone, because a registration with no list blocks every
+    /// call.
+    fn guard_status(&self, has_list: bool) -> bool {
+        let files = || {
+            let claude = self.claude_settings.iter().map(|path| (path, "claude"));
+            claude.chain(self.codex_hooks.iter().map(|path| (path, "codex")))
+        };
+        if !has_list {
+            return !swarm::bus::agy_guard_present(&self.agy_hooks)
+                && files().all(|(path, provider)| !swarm::bus::guard_registered(path, provider));
+        }
+        files().all(|(path, provider)| {
+            swarm::bus::guard_hooks_plan(path, provider)
+                .is_ok_and(|plan| plan.conflicts.is_empty() && plan.after == plan.before)
+        }) && self.homes.iter().all(|home| {
+            let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
+            let entries = swarm::bus::codex_guard_trust(home, &hooks);
+            !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
+        }) && swarm::bus::agy_guard_set(&self.agy_hooks)
     }
-    files().all(|(path, provider)| {
+
+    /// Whether swarm's own Codex and AGY state hooks are set up.
+    fn hooks_status(&self) -> bool {
+        let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
+        self.homes
+            .iter()
+            .all(|home| swarm::bus::codex_hooks_trusted(home, &codex))
+            && swarm::bus::agy_hooks_set(&self.agy_hooks)
+    }
+}
+
+/// The plan of every file `hooks setup` writes. A file that swarm cannot read or edit is a
+/// conflict in the plan, not an error.
+fn hook_plans(files: &HookFiles, has_list: bool) -> Vec<swarm::managed::FilePlan> {
+    let codex = swarm::bus::codex_hook_trust(&swarm::bus::shared_hook_command("codex"));
+    let unreadable = swarm::managed::FilePlan::unreadable;
+    let guard_plan = |path: &std::path::PathBuf, provider: &str| {
         swarm::bus::guard_hooks_plan(path, provider)
-            .is_ok_and(|plan| plan.conflicts.is_empty() && plan.after == plan.before)
-    }) && homes.iter().all(|home| {
-        let hooks = std::fs::read_to_string(home.join("hooks.json")).unwrap_or_default();
-        let entries = swarm::bus::codex_guard_trust(home, &hooks);
-        !entries.is_empty() && swarm::bus::codex_hooks_trusted(home, &entries)
-    }) && swarm::bus::agy_guard_set(agy_hooks)
+            .unwrap_or_else(|error| unreadable(path.clone(), error))
+    };
+    let mut plans: Vec<_> = Vec::new();
+    if has_list {
+        plans.extend(
+            files
+                .claude_settings
+                .iter()
+                .map(|path| guard_plan(path, "claude")),
+        );
+        plans.extend(
+            files
+                .codex_hooks
+                .iter()
+                .map(|path| guard_plan(path, "codex")),
+        );
+    }
+    let codex_plans: Vec<_> = files
+        .homes
+        .iter()
+        .map(|home| {
+            let mut guard = Vec::new();
+            if has_list {
+                // Trust the guard group where the planned hooks.json puts it.
+                let target = canonical(&home.join("hooks.json"));
+                let hooks = plans
+                    .iter()
+                    .find(|plan| canonical(&plan.path) == target)
+                    .map_or("", |plan| plan.after.as_str());
+                guard = swarm::bus::codex_guard_trust(home, hooks);
+            }
+            swarm::bus::codex_hook_plan(home, &codex, &guard)
+                .unwrap_or_else(|error| unreadable(home.join("config.toml"), error))
+        })
+        .collect();
+    plans.extend(codex_plans);
+    plans.push(
+        swarm::bus::agy_hook_plan(&files.agy_hooks, has_list)
+            .unwrap_or_else(|error| unreadable(files.agy_hooks.clone(), error)),
+    );
+    plans
+}
+
+/// The groups of `swarm setup`, in plan order (ADR 0043). The list may grow, so the app shows a
+/// group it does not know by its name.
+const SETUP_GROUPS: [&str; 3] = ["hooks", "trust", "herdr"];
+
+/// One `swarm setup` plan: each file's plan in apply order, the group of each, and each group
+/// part that was left out with its reason.
+struct SetupPlan {
+    plans: Vec<swarm::managed::FilePlan>,
+    groups: Vec<&'static str>,
+    skipped: Vec<(&'static str, String)>,
+}
+
+impl SetupPlan {
+    /// The plan of every pending write in `groups`. The trust group is the consent file, then the
+    /// entries a launch in `cwd` would write. A trust entry in a file that an earlier plan changes
+    /// is planned on that plan's text, so the two apply one after the other.
+    fn of(cwd: &std::path::Path, groups: &[&str]) -> Result<Self, Box<dyn std::error::Error>> {
+        use swarm::managed::FilePlan;
+        let user_home = std::path::PathBuf::from(env_var("HOME")?);
+        let files = HookFiles::of(&user_home)?;
+        let mut setup = Self {
+            plans: Vec::new(),
+            groups: Vec::new(),
+            skipped: Vec::new(),
+        };
+        if groups.contains(&"hooks") {
+            let has_list = swarm::paths::guards_file()?.exists();
+            for plan in hook_plans(&files, has_list) {
+                setup.push("hooks", plan);
+            }
+        }
+        if groups.contains(&"trust") {
+            setup.push("trust", consent_plan()?);
+            match trust_target(cwd, &user_home) {
+                Err(reason) => setup.skipped.push(("trust", reason)),
+                Ok(target) => {
+                    for home in &files.homes {
+                        let path = home.join("config.toml");
+                        let planned = setup
+                            .plans
+                            .iter()
+                            .rev()
+                            .find(|plan| canonical(&plan.path) == canonical(&path))
+                            .map(|plan| plan.after.clone());
+                        let plan = match planned {
+                            Some(text) => swarm::bus::codex_trust_plan_on(&path, text, &target),
+                            None => swarm::bus::codex_trust_plan(home, &target),
+                        };
+                        setup.push(
+                            "trust",
+                            plan.unwrap_or_else(|error| FilePlan::unreadable(path, error)),
+                        );
+                    }
+                    let settings = agy_settings(&user_home);
+                    let plan = swarm::bus::agy_trust_plan(&settings, &target)
+                        .unwrap_or_else(|error| FilePlan::unreadable(settings, error));
+                    setup.push("trust", plan);
+                    // A seat's Claude runs from the pool under cwd (`claude_child`).
+                    let pool = cwd.join(".herdr").join("workers");
+                    for config in claude_configs(&user_home) {
+                        let plan = swarm::bus::claude_trust_plan(&config, &pool)
+                            .unwrap_or_else(|error| FilePlan::unreadable(config, error));
+                        setup.push("trust", plan);
+                    }
+                }
+            }
+        }
+        // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (ADR 0045)
+        // adds its plans here; this build has none, so the group is always set up.
+        Ok(setup)
+    }
+
+    fn push(&mut self, group: &'static str, plan: swarm::managed::FilePlan) {
+        self.groups.push(group);
+        self.plans.push(plan);
+    }
+
+    /// Each plan with its group.
+    fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::FilePlan)> {
+        self.groups.iter().copied().zip(&self.plans)
+    }
+}
+
+/// The plan that writes standing consent for launch folder trust into `~/.swarm/consent.json`.
+/// It is swarm's own file, so it has no managed edit; a file swarm cannot read is a conflict.
+fn consent_plan() -> Result<swarm::managed::FilePlan, Box<dyn std::error::Error>> {
+    let path = swarm::paths::consent_file()?;
+    let before = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            return Ok(swarm::managed::FilePlan::unreadable(
+                path.clone(),
+                format!("swarm: cannot read {}: {error}", path.display()),
+            ));
+        }
+    };
+    let mut value = match before.as_str() {
+        "" => serde_json::json!({}),
+        text => match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) if value.is_object() => value,
+            _ => {
+                return Ok(swarm::managed::FilePlan::unreadable(
+                    path.clone(),
+                    format!("swarm: {} is not a JSON object", path.display()),
+                ));
+            }
+        },
+    };
+    let after = if value["trust"] == "standing" {
+        before.clone()
+    } else {
+        value["trust"] = "standing".into();
+        value["by"] = format!("swarm {}", env!("CARGO_PKG_VERSION")).into();
+        serde_json::to_string_pretty(&value)? + "\n"
+    };
+    Ok(swarm::managed::FilePlan {
+        path,
+        before,
+        after,
+        conflicts: Vec::new(),
+        edits: Vec::new(),
+    })
+}
+
+/// `swarm setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>]
+/// [--only <group>,...]`: every write swarm makes outside its home, in one plan with one digest
+/// (ADR 0043). The groups are `hooks`, as `hooks setup` writes them, `trust`, the launch consent
+/// and the trust entries a launch in `--cwd` would write, and `herdr`. Running it, or applying
+/// the plan's digest, is the owner's consent, as for `hooks setup`.
+fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if args == ["status", "--json"] {
+        let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
+        let has_list = swarm::paths::guards_file()?.exists();
+        return print_json(&serde_json::json!({
+            "hooks": files.hooks_status(),
+            "guard": files.guard_status(has_list),
+            "trust": standing_consent(),
+            "herdr": true,
+        }));
+    }
+    let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
+    let mut rest = args.iter().copied();
+    while let Some(arg) = rest.next() {
+        match arg {
+            "--plan" => plan = true,
+            "--json" => json = true,
+            "--digest" | "--cwd" | "--only" => {
+                let value = Some(rest.next().ok_or(USAGE)?);
+                match arg {
+                    "--digest" => digest = value,
+                    "--cwd" => cwd = value,
+                    _ => only = value,
+                }
+            }
+            _ => return Err(USAGE.into()),
+        }
+    }
+    if (json && !plan) || (plan && digest.is_some()) {
+        return Err(USAGE.into());
+    }
+    let groups: Vec<&str> = match only {
+        None => SETUP_GROUPS.to_vec(),
+        Some(list) => list.split(',').collect(),
+    };
+    if let Some(unknown) = groups.iter().find(|group| !SETUP_GROUPS.contains(group)) {
+        return Err(format!(
+            "swarm: unknown setup group {unknown}; groups: {}",
+            SETUP_GROUPS.join(", ")
+        )
+        .into());
+    }
+    let dir = cwd.map_or_else(env::current_dir, |dir| Ok(dir.into()))?;
+    let dir = std::fs::canonicalize(&dir)
+        .map_err(|error| format!("swarm: bad --cwd {}: {error}", dir.display()))?;
+    if plan {
+        let setup = SetupPlan::of(&dir, &groups)?;
+        let plan_digest = swarm::managed::digest(&setup.plans);
+        if json {
+            let group_of = |value: serde_json::Value, group: &str| {
+                let mut value = value;
+                value["group"] = group.into();
+                value
+            };
+            return print_json(&serde_json::json!({
+                "digest": plan_digest,
+                "consent": if standing_consent() { "standing" } else { "ask" },
+                "files": setup.grouped()
+                    .filter(|(_, plan)| plan.after != plan.before)
+                    .map(|(group, plan)| serde_json::json!({
+                        "group": group,
+                        "path": plan.path.to_string_lossy(),
+                        "diff": swarm::managed::diff(plan),
+                    }))
+                    .collect::<Vec<_>>(),
+                "conflicts": setup.grouped()
+                    .flat_map(|(group, plan)| plan.conflicts.iter().map(move |conflict| (group, conflict)))
+                    .map(|(group, conflict)| group_of(serde_json::json!(conflict), group))
+                    .collect::<Vec<_>>(),
+                "skipped": setup.skipped.iter()
+                    .map(|(group, reason)| serde_json::json!({"group": group, "reason": reason}))
+                    .collect::<Vec<_>>(),
+            }));
+        }
+        let mut apply = format!("swarm setup --digest {plan_digest}");
+        if let Some(cwd) = cwd {
+            apply += &format!(" --cwd {cwd}");
+        }
+        if let Some(only) = only {
+            apply += &format!(" --only {only}");
+        }
+        for (group, reason) in &setup.skipped {
+            println!("skipped ({group}): {reason}");
+        }
+        print!(
+            "{}",
+            swarm::managed::plan_text(
+                &setup.plans,
+                &apply,
+                "Swarm is already set up. No file changes."
+            )
+        );
+        return Ok(());
+    }
+    // Swarm makes no write that it cannot record (ADR 0042), so the store opens first.
+    let store = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+    swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
+        let setup = SetupPlan::of(&dir, &groups).map_err(|error| error.to_string())?;
+        let plans = &setup.plans;
+        // A retry after a timeout finds nothing to do, and that is not a failure.
+        if plans
+            .iter()
+            .all(|plan| plan.after == plan.before && plan.conflicts.is_empty())
+        {
+            println!("swarm: already set up. No file changes.");
+            return Ok(());
+        }
+        if let Some(digest) = digest
+            && swarm::managed::digest(plans) != digest
+        {
+            return Err("swarm: a file changed after the plan; check the plan again".into());
+        }
+        if let Some(conflicts) = swarm::managed::conflicts_text(plans) {
+            return Err(conflicts);
+        }
+        for (group, plan) in setup.grouped() {
+            match swarm::managed::apply(&store, std::slice::from_ref(plan)) {
+                Ok(changed) => {
+                    for path in changed {
+                        println!("swarm: {group}: wrote {}", path.display());
+                    }
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "{error}\nswarm: stopped; each file named above is written and recorded, see `swarm managed list`"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// A path as its link target, so two names of one file are one file. Two plans of one missing
@@ -2483,6 +2761,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().map(String::as_str) == Some("init") {
         return init();
+    }
+    if args.first().map(String::as_str) == Some("setup") {
+        return setup(&args[1..]);
     }
     if args.first().map(String::as_str) == Some("hooks") {
         return hooks(&args[1..]);

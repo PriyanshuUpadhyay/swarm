@@ -235,7 +235,23 @@ pub fn command_model(command: &[String]) -> Option<&str> {
 /// (ADR 0036, C3); a second table for it would make the file unreadable.
 pub fn codex_trust_plan(home: &std::path::Path, dir: &std::path::Path) -> Result<FilePlan, String> {
     let path = home.join("config.toml");
-    let (before, mut config) = read_codex_config(&path)?;
+    codex_trust_plan_on(&path, read_text(&path)?, dir)
+}
+
+/// `codex_trust_plan` on `before`, the text another plan of the same setup leaves in `path`, so
+/// the two plans apply one after the other.
+pub fn codex_trust_plan_on(
+    path: &std::path::Path,
+    before: String,
+    dir: &std::path::Path,
+) -> Result<FilePlan, String> {
+    let path = path.to_path_buf();
+    let mut config: toml_edit::DocumentMut = before.parse().map_err(|error| {
+        format!(
+            "{} is not valid TOML, so swarm does not edit it: {error}",
+            path.display()
+        )
+    })?;
     let dir = dir.to_string_lossy();
     let had_projects = config.get("projects").is_some();
     let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
