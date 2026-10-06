@@ -6,6 +6,7 @@ related: ["0008", "0029", "0036", "0040", "0042", "0045"]
 informed-by:
   - "Owner answers on 2026-10-05 (flow 2026-10-05-setup-plan-all, 03-contracts): Q1 (a) new swarm setup --plan, hooks setup kept as --only hooks; Q2 (c) one standing consent for launch trust, bounded by trust_target; Q3 (a) no consent file means ask and the setup sheet opens once; Q4 (a) Claude hasTrustDialogAccepted false is a pending change"
   - "Owner answer I1 on 2026-10-06 (flow 2026-10-05-setup-plan-all, 03-contracts): use the recommendation, so a chair's folder pick is consent for that folder; show the trust prompt or the exact trust write, never answer silently"
+  - "Owner answers on 2026-10-06 (flow 2026-10-05-setup-plan-all, review fix round 1): the setup sheet gets the full design now, group checkboxes and the ask or standing radio, with consent.json written as a managed edit; the seat banner is accepted as missing, because the app relays the CLI's own trust prompt"
   - "tmp/flow/2026-10-05-setup-plan-all/03-contracts.md (writers, collisions C1-C8, failure policy)"
 ---
 
@@ -41,7 +42,13 @@ question and no safety. Per folder would block the first seat in every new scrat
   each conflict; `swarm setup --digest <d>` applies. Every write goes through the managed-edits
   module (ADR 0042) and is recorded.
 - `~/.swarm/consent.json` holds `trust: standing | ask` for every build and every `SWARM_HOME`.
-  An absent or unreadable file is `ask`. Writing it is itself a planned write in the `trust` group.
+  An absent or unreadable file is `ask`. Writing it is itself a planned write in the `trust` group
+  (`--consent standing | ask`, standing by default), made as a managed edit, so Managed Changes
+  lists it and its undo puts back the answer before, or none, which is `ask`. `setup status`
+  counts either answer as set up, so the app asks once.
+- The app's setup sheet shows each group with a checkbox, which plans again with `--only`, so the
+  digest covers only what is shown, and folder trust with the ask or standing radio. A group left
+  unchecked on apply is not asked again.
 - With `standing`, launch writes the trust entries for a folder that passes `trust_target`, with
   no plan shown, and records them. With `ask`, a seat's launch writes nothing, prints
   `trust-pending <provider> <dir>`, the diff, and the approve command, and the pane shows the
