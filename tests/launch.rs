@@ -1275,7 +1275,7 @@ fn recorded_trust(home: &Path) -> Vec<serde_json::Value> {
 fn a_seat_launch_with_no_consent_writes_no_trust_and_prints_the_plan() {
     let home = scratch("ask");
     let env = trust_session(&home);
-    let repo = git_repo(&home, "app");
+    let repo = git_repo(&home, "my app");
     let config = home.join(".codex/config.toml");
     std::fs::create_dir_all(home.join(".codex")).unwrap();
     std::fs::write(&config, "model = \"gpt\"\n").unwrap();
@@ -1297,7 +1297,7 @@ fn a_seat_launch_with_no_consent_writes_no_trust_and_prints_the_plan() {
     );
     assert!(err.contains("+trust_level = \"trusted\""), "{err}");
     assert!(
-        err.contains(&format!("swarm setup --plan --cwd {}", repo.display())),
+        err.contains(&format!("swarm setup --plan --cwd '{}'", repo.display())),
         "{err}"
     );
     assert!(recorded_trust(&home).is_empty());

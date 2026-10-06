@@ -1313,7 +1313,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut apply = format!("swarm setup --digest {plan_digest}");
         if let Some(cwd) = cwd {
-            apply += &format!(" --cwd {cwd}");
+            apply += &format!(" --cwd {}", swarm::adapter::shell_line(&[cwd.into()]));
         }
         if let Some(only) = only {
             apply += &format!(" --only {only}");
@@ -1480,7 +1480,7 @@ impl LaunchTrust<'_> {
                 );
                 eprintln!(
                     "swarm: approve with `swarm setup --plan --cwd {}`, then the `swarm setup --digest …` it prints.",
-                    self.cwd.display()
+                    swarm::adapter::shell_line(&[self.cwd.to_string_lossy().into_owned()])
                 );
             }
             return Ok(());

@@ -628,7 +628,8 @@ fn git_repo(home: &Path, name: &str) -> PathBuf {
 #[test]
 fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let home = scratch("setup-all");
-    let repo = git_repo(&home, "app");
+    // A space in the folder must survive the printed apply command.
+    let repo = git_repo(&home, "my app");
     std::fs::create_dir_all(home.join(".codex")).unwrap();
     std::fs::write(home.join(".codex/config.toml"), "model = \"o3\"\n").unwrap();
     let cwd = repo.to_string_lossy().into_owned();
@@ -695,7 +696,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let digest = plan["digest"].as_str().unwrap();
     assert!(
         text.ends_with(&format!(
-            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd {cwd}` to apply.\n"
+            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}'` to apply.\n"
         )),
         "{text}"
     );
