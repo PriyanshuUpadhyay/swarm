@@ -415,8 +415,10 @@ struct TranscriptView<Composer: View>: View {
         return "\(findIndex + 1) of \(findMatches.count)"
     }
 
+    /// The newest list line. A running turn's last step sits in a closed live fold and is no line,
+    /// so this is the fold's id, not the step's.
     private var lastVisibleID: String? {
-        showRawData ? rawEntries.last?.id : visibleRows.last?.eventID
+        showRawData ? rawEntries.last?.id : foldedLines.last?.id
     }
 
     private var rawSessionBlock: some View {

@@ -163,6 +163,12 @@ struct ToolRunFoldTests {
         #expect(shown.map(\.id) == ["prompt", "fold:read"])
     }
 
+    @Test("A running turn's closed live fold is the last line, so Jump to latest scrolls to the fold")
+    func closedLiveFoldIsLastLine() {
+        let items = ToolRunFold.items(in: [prompt(), tool("read"), tool("grep", state: .waiting)])
+        #expect(ToolRunFold.lines(items) { _, _ in false }.last?.id == "fold:read")
+    }
+
     @Test("The summary counts commands, waits, other tools by name, rings, and failures, and sums tool time")
     func summary() {
         let rows = [
