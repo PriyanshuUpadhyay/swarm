@@ -43,9 +43,9 @@ question and no safety. Per folder would block the first seat in every new scrat
   module (ADR 0042) and is recorded.
 - `~/.swarm/consent.json` holds `trust: standing | ask` for every build and every `SWARM_HOME`.
   An absent or unreadable file is `ask`. Writing it is itself a planned write in the `trust` group
-  (`--consent standing | ask`, standing by default), made as a managed edit, so Managed Changes
-  lists it and its undo puts back the answer before, or none, which is `ask`. `setup status`
-  counts either answer as set up, so the app asks once.
+  (`--consent standing | ask`, by default the recorded answer, else standing), made as a managed
+  edit, so Managed Changes lists it and its undo puts back the answer before, or none, which is
+  `ask`. `setup status` counts either answer as set up, so the app asks once.
 - The app's setup sheet shows each group with a checkbox, which plans again with `--only`, so the
   digest covers only what is shown, and folder trust with the ask or standing radio. A group left
   unchecked on apply is not asked again.

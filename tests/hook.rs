@@ -644,7 +644,8 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
     assert!(plan.status.success(), "{plan:?}");
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
-    assert_eq!(plan["consent"], "ask");
+    // No answer yet, so the plan offers standing consent.
+    assert_eq!(plan["consent"], "standing");
     assert_eq!(plan["conflicts"], serde_json::json!([]));
     let files: Vec<(String, String)> = plan["files"]
         .as_array()
@@ -1058,5 +1059,48 @@ fn a_child_agent_may_plan_setup_but_not_apply_it() {
     }
     assert!(!home.join(".swarm/consent.json").exists());
     assert!(!home.join(".claude.json").exists());
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// The approve command a seat launch prints under `ask` approves the folder and keeps the ask
+/// answer: with no `--consent`, setup plans the owner's recorded answer, and the plan reports the
+/// answer it sets, which the app's radio starts at.
+#[test]
+fn setup_with_no_consent_flag_keeps_the_recorded_answer() {
+    let home = scratch("setup-keeps-ask");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let consent = home.join(".swarm/consent.json");
+    std::fs::write(&consent, "{\"trust\": \"ask\"}\n").unwrap();
+    let plan = setup(
+        &home,
+        &["--plan", "--json", "--only", "trust", "--cwd", &cwd],
+    );
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["consent"], "ask");
+    let paths: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect();
+    assert!(
+        !paths.iter().any(|path| path.ends_with("consent.json")),
+        "{paths:?}"
+    );
+    assert!(
+        paths.iter().any(|path| path.ends_with(".claude.json")),
+        "{paths:?}"
+    );
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = setup(
+        &home,
+        &["--digest", digest, "--only", "trust", "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(
+        std::fs::read_to_string(&consent).unwrap(),
+        "{\"trust\": \"ask\"}\n"
+    );
     std::fs::remove_dir_all(&home).unwrap();
 }

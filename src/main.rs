@@ -1280,10 +1280,10 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 /// `swarm setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>]
 /// [--only <group>,...] [--consent <standing|ask>]`: every write swarm makes outside its home, in
 /// one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup` writes them,
-/// `trust`, the launch consent (`--consent`, standing by default) and the trust entries a launch
-/// in `--cwd` would write, and `herdr`. Running it, or applying
-/// the plan's digest, is the owner's consent, as for `hooks setup`, so a child pane may plan but
-/// not apply.
+/// `trust`, the launch consent (`--consent`, by default the recorded answer, else standing) and
+/// the trust entries a launch in `--cwd` would write, and `herdr`. Running it, or applying the
+/// plan's digest, is the owner's consent, as for `hooks setup`, so a child pane may plan but not
+/// apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if args == ["status", "--json"] {
@@ -1322,7 +1322,9 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err(USAGE.into());
     }
-    let answer = consent.unwrap_or(STANDING);
+    // No --consent keeps the owner's answer, so the approve command a seat prints under `ask`
+    // approves the folder and not standing consent; with no answer yet, setup offers standing.
+    let answer = consent.unwrap_or_else(|| trust_answer().unwrap_or(STANDING));
     let groups: Vec<&str> = match only {
         None => SETUP_GROUPS.to_vec(),
         Some(list) => list.split(',').collect(),
@@ -1348,7 +1350,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             };
             return print_json(&serde_json::json!({
                 "digest": plan_digest,
-                "consent": if standing_consent() { STANDING } else { ASK },
+                "consent": answer,
                 "files": setup.grouped()
                     .filter(|(_, plan)| plan.after != plan.before)
                     .map(|(group, plan)| serde_json::json!({
