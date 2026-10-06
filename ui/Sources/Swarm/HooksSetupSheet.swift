@@ -147,7 +147,7 @@ struct HooksSetupSheet: View {
                 for group in plan.groupIDs where !choice.groups.contains(group) {
                     choice.groups.append(group)
                 }
-                openFile = plan.files.first?.path
+                openFile = plan.files.first?.id
                 diffFailed = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
@@ -233,13 +233,13 @@ struct HooksSetupSheet: View {
 
     private func fileRow(_ file: SwarmHooksPlan.File, label: String) -> some View {
         DisclosureGroup(isExpanded: Binding(
-            get: { openFile == file.path },
+            get: { openFile == file.id },
             set: { open in
-                openFile = open ? file.path : nil
+                openFile = open ? file.id : nil
                 diffFailed = false
             }
         )) {
-            if openFile == file.path { diff(file) }
+            if openFile == file.id { diff(file) }
         } label: {
             Label("\(label) · +\(file.added) −\(file.removed)", systemImage: "doc.text")
                 .font(.callout)

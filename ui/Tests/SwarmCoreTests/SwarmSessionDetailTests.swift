@@ -255,6 +255,10 @@ struct SwarmSessionDetailTests {
         #expect(decoded.files.map(\.group) == ["trust", nil])
         #expect(decoded.files.first?.added == 3)
         #expect(decoded.groupIDs == ["trust"])
+        // Hooks and trust can both change one file; each row keeps its own id (AP-6).
+        let hooksRow = SwarmHooksPlan.File(path: "/h/.codex/config.toml", diff: "", group: "hooks")
+        let trustRow = SwarmHooksPlan.File(path: "/h/.codex/config.toml", diff: "", group: "trust")
+        #expect(hooksRow.id != trustRow.id)
         try await bus.setUp(digest: decoded.digest)
 
         // Each checkbox the owner clears leaves its group out, and the radio sets the consent,

@@ -125,7 +125,8 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
             self.group = group
         }
 
-        public var id: String { path }
+        /// Group and path, because hooks and trust can both change one file in one plan.
+        public var id: String { (group ?? "") + "\u{0}" + path }
         public var added: Int { count("+") }
 
         /// The diff with the `diff --git` line that the app's diff viewer needs to draw it as a
