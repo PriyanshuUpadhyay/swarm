@@ -1208,7 +1208,7 @@ impl SetupPlan {
         let mut digest = sha2::Sha256::new();
         for (group, plan) in self.grouped() {
             let mut parts = vec![plan.path.to_string_lossy().into_owned()];
-            if group != "trust" || (plan.edits.is_empty() && plan.after != plan.before) {
+            if group != "trust" {
                 parts.extend([plan.before.clone(), plan.after.clone()]);
             }
             for edit in plan.edits.iter().filter(|_| group == "trust") {
