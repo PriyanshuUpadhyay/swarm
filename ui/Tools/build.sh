@@ -41,10 +41,13 @@ version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SwarmBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   "$app/Contents/Info.plist"
-# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. A detached HEAD is
-# "" (no branch). plutil takes the value as one argv string, so no quote in a branch name is parsed;
-# the read-back refuses a build whose plist says another branch.
-branch="$(git -C "$repo" symbolic-ref --short -q HEAD || true)"
+# The app picks its swarm home from this branch; see SwarmHome and ADR 0027. It is the branch that
+# build.rs stamped into the helper, the last word of `swarm --version`: "" only for a release build
+# (SWARM_RELEASE_BUILD=1, set by release.yml), "HEAD" for a dev build on a detached HEAD. A branch
+# name holds no space. plutil takes the value as one argv string, so no quote in a branch name is
+# parsed; the read-back refuses a build whose plist says another branch.
+version_line="$("$repo/target/release/swarm" --version)"
+branch="${version_line#swarm * * }"
 plutil -insert SwarmBuildBranch -string "$branch" "$app/Contents/Info.plist"
 if [[ "$(plutil -extract SwarmBuildBranch raw -o - "$app/Contents/Info.plist")" != "$branch" ]]; then
   print -u2 "SwarmBuildBranch in Info.plist does not read back as '$branch'"
@@ -63,6 +66,9 @@ if (( install )); then
   fi
   cp -R "$app" "$destination"
   print "==> $destination"
+  if [[ -n "$branch" ]]; then
+    print "==> This dev build of '$branch' keeps its data in ${SWARM_HOME:-its .swarm-* folder in $HOME}, never ~/.swarm (ADR 0027)."
+  fi
   # The same text as PathSwarmDrift.brewFix; a SwarmCore test keeps the two equal.
   print "==> swarm is no longer put on PATH. The cask links it (ADR 0048):"
   print "    brew update && brew upgrade priyanshuupadhyay/tap/swarm; brew reinstall --cask --force priyanshuupadhyay/tap/swarm-app"
