@@ -233,12 +233,16 @@ fn commit(
         if writes {
             write_text(&plan.path, &plan.before, &plan.after)?;
         }
-        tx.commit().map_err(|error| match writes {
-            true => format!(
+        tx.commit().map_err(|error| match (writes, off) {
+            (true, false) => format!(
                 "swarm: wrote {} but could not record it: {error}; swarm managed list shows it as found",
                 plan.path.display()
             ),
-            false => failed(error),
+            (true, true) => format!(
+                "swarm: set back {} but could not record it: {error}; swarm managed list shows its items as gone or changed",
+                plan.path.display()
+            ),
+            (false, _) => failed(error),
         })?;
         if writes {
             changed.push(plan.path.clone());
