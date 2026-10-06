@@ -1,7 +1,7 @@
 //! Stamps the commit and branch this binary was built from into it. The commit lets a machine say
-//! whether the bus it runs is the bus the repository states: `swarm --version` prints it, and
-//! `ui/Tools/build.sh` refuses to assemble the app when the installed binary answers with another
-//! commit. The branch picks the default swarm home (ADR 0027, `paths::resolve_home`).
+//! whether the bus it runs is the bus the repository states: `swarm --version` prints it, and the
+//! app's PATH swarm check compares that line with its own helper's (ADR 0048). The branch picks the
+//! default swarm home (ADR 0027, `paths::branch_home`).
 fn git(args: &[&str]) -> Option<String> {
     std::process::Command::new("git")
         .args(args)
