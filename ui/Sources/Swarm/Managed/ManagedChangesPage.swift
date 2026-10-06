@@ -41,7 +41,12 @@ struct ManagedChangesPage: View {
             header
             if let error {
                 HStack {
-                    Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
+                    // Red only on the symbol: red body text is near 3.5:1 on white, below 4.5:1.
+                    Label {
+                        Text(verbatim: error).textSelection(.enabled)
+                    } icon: {
+                        Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+                    }
                     Button("Retry") { Task { await load(retry: true) } }
                 }
             }
