@@ -131,10 +131,9 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "orchestrator"),
     ];
+    // Consent covers only a folder that passes the trust check, such as a git repo.
     let launch = |seat: &str, repo: &str, account: Option<&str>| {
-        let cwd = home.join(repo);
-        std::fs::create_dir_all(&cwd).unwrap();
-        let cwd = cwd.to_string_lossy().into_owned();
+        let cwd = git_repo(&home, repo).to_string_lossy().into_owned();
         let mut args = vec!["launch", seat, "review.deep", "--cwd", &cwd];
         if let Some(account) = account {
             args.extend(["--account", account]);
@@ -172,8 +171,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
              else touch \"$HOME/picked\"; echo '{{\"name\":\"a\"}}'; fi ;; *) echo '{list}' ;; esac"
         ),
     );
-    let cwd = home.join("auto");
-    std::fs::create_dir_all(&cwd).unwrap();
+    let cwd = git_repo(&home, "auto");
     let output = swarm(
         &home,
         &env,
@@ -208,7 +206,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         ("link-herdr", ".herdr", target.clone()),
         ("link-workers", ".herdr/workers", target.join("workers")),
     ] {
-        let cwd = home.join(repo);
+        let cwd = git_repo(&home, repo);
         std::fs::create_dir_all(cwd.join(link).parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&points_to, cwd.join(link)).unwrap();
         let cwd = cwd.to_string_lossy().into_owned();
@@ -265,13 +263,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         assert!(output.status.success(), "{}", stderr(&output));
         stderr(&output)
     };
-    let git_repo = |name: &str| {
-        let dir = home.join(name);
-        let init = Command::new("git").arg("init").arg("-q").arg(&dir).status();
-        assert!(init.unwrap().success());
-        dir
-    };
-    let chair = git_repo("chair");
+    let chair = git_repo(&home, "chair");
     chair_in(&chair);
     assert!(trusted(&home.join(".claude.json"), &chair));
     assert!(trusted(&profiles[0].join(".claude.json"), &chair));
@@ -279,7 +271,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
 
     // A chair in $HOME, or in a folder another account can write, gets no entry and shows
     // Claude's own trust screen.
-    let shared = git_repo("shared");
+    let shared = git_repo(&home, "shared");
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
     for cwd in [&home, &shared] {
         let warning = chair_in(cwd);
@@ -1409,4 +1401,23 @@ fn an_agy_trust_write_that_fails_stops_the_launch() {
         stderr(&output)
     );
     assert_eq!(std::fs::read_to_string(&settings).unwrap(), "[]\n");
+}
+
+/// Standing consent covers only a folder that passes the trust check (ADR 0043), so a Claude
+/// seat in a plain folder gets no entry and asks in its pane.
+#[test]
+fn a_claude_seat_in_a_folder_that_fails_the_trust_check_gets_no_entry() {
+    let home = scratch("seat-loose");
+    let env = trust_session(&home);
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
+    let loose = home.join("loose");
+    std::fs::create_dir_all(&loose).unwrap();
+
+    let err = stderr(&launch_in(&home, &env, "seat", "chair", &loose));
+    assert!(
+        !trusted(&home.join(".claude.json"), &loose.join(".herdr/workers")),
+        "{err}"
+    );
+    assert!(recorded_trust(&home).is_empty(), "{err}");
+    assert!(err.contains("not pre-trusting for claude"), "{err}");
 }

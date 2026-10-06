@@ -3284,13 +3284,9 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     extra = args;
                 }
                 // The app lets the owner pick any folder for a chair, such as $HOME or a shared
-                // one, so it gets the entry only where Codex and AGY may be pre-trusted.
-                let refused = if agent_id == "orchestrator" {
-                    trust_target(&cwd, &user_home).err()
-                } else {
-                    None
-                };
-                if let Some(reason) = refused {
+                // one, and consent covers only a folder that passes the check (ADR 0043), so a
+                // chair or a seat gets the entry only where Codex and AGY may be pre-trusted.
+                if let Err(reason) = trust_target(&cwd, &user_home) {
                     eprintln!(
                         "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
                     );
