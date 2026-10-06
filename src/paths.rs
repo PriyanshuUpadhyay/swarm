@@ -11,13 +11,15 @@ const TRUST_LOCK: &str = "trust.lock";
 
 /// The parent of the `.swarm` data directory for this build. See ADR 0027.
 ///
-/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8.
+/// SWARM_HOME is read first, so an explicit one works when HOME is unset or not UTF-8. An empty
+/// one is an error, because as a relative path it would put `.swarm` in the current folder.
 pub fn home() -> Result<String, Box<dyn std::error::Error>> {
     match std::env::var("SWARM_HOME") {
         Err(std::env::VarError::NotPresent) => Ok(branch_home(
             &std::env::var("HOME")?,
             env!("SWARM_BUILD_BRANCH"),
         )),
+        Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
         explicit => Ok(explicit?),
     }
 }

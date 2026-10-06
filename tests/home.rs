@@ -28,6 +28,29 @@ fn explicit_swarm_home_works_without_a_usable_home() {
     }
 }
 
+/// An empty SWARM_HOME is an error, not the current folder, so a typo never makes a `./.swarm`.
+#[test]
+fn empty_swarm_home_is_an_error() {
+    let cwd = scratch("empty-cwd");
+    let home = scratch("empty-home");
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", "")
+        .current_dir(&cwd)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("SWARM_HOME is set but empty"),
+        "{output:?}"
+    );
+    assert!(!cwd.join(".swarm").exists());
+    std::fs::remove_dir_all(&cwd).unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 fn scratch(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("swarm-home-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
