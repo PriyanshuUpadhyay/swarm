@@ -269,15 +269,16 @@ public struct SwarmCLIBus: SwarmBus {
 }
 
 extension SwarmCLIBus {
-    /// The app's environment, with `SWARM_BIN` naming the `swarm` inside the app bundle when neither
-    /// `SWARM_BIN` nor the login PATH names one. A DMG install has only that bundled copy.
+    /// The app's environment, with `SWARM_BIN` naming the `swarm` inside the app bundle unless
+    /// `SWARM_BIN` names one. The bundled copy wins over the login PATH, because it is the CLI this
+    /// app was built with: an older PATH swarm lacks newer routes, and a branch build's home can
+    /// hold a schema it refuses. With no bundle, as in `swift test`, the login PATH's swarm runs.
     static func appEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundled: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm"),
-        which: (String) -> String? = { Shell.which($0) }
+        bundled: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm")
     ) -> [String: String] {
         let configured = environment["SWARM_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard configured?.isEmpty ?? true, which("swarm") == nil,
+        guard configured?.isEmpty ?? true,
               FileManager.default.isExecutableFile(atPath: bundled.path)
         else { return environment }
         return environment.merging(["SWARM_BIN": bundled.path]) { _, bundled in bundled }
