@@ -435,3 +435,31 @@ fn a_guard_revert_takes_its_trust_key_and_keeps_the_owners_groups() {
     assert!(listing(&home).iter().all(|entry| entry["state"] == "off"));
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// Under a linked `~/.gemini` with no `config` folder yet, the AGY item swarm writes and the item
+/// that `list` finds there are one place, so it has one id and `revert --all` plans the file once.
+#[test]
+fn an_item_under_a_linked_folder_made_by_the_write_has_one_id() {
+    let home = scratch("linked-parent");
+    std::fs::create_dir_all(home.join("dot/gemini")).unwrap();
+    std::os::unix::fs::symlink(home.join("dot/gemini"), home.join(".gemini")).unwrap();
+    assert!(swarm(&home, &["hooks", "setup"]).status.success());
+
+    let entries = listing(&home);
+    let agy: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry["path"] == serde_json::json!(["swarm"]))
+        .collect();
+    assert_eq!(agy.len(), 1, "{entries:?}");
+    assert_eq!(agy[0]["recorded"], true);
+    assert_eq!(
+        agy[0]["file"],
+        home.join("dot/gemini/config/hooks.json")
+            .display()
+            .to_string()
+    );
+    let plan = swarm(&home, &["managed", "revert", "--all", "--plan"]);
+    let plan = String::from_utf8_lossy(&plan.stdout).into_owned();
+    assert_eq!(plan.matches("+++ ").count(), 2, "{plan}");
+    std::fs::remove_dir_all(&home).unwrap();
+}

@@ -135,15 +135,23 @@ impl Edit {
 }
 
 /// The file a write to `file` lands in, with its folder's links resolved too, so two names of one
-/// file, or of one missing file, are one place.
+/// file, or of one missing file, are one place. The nearest folder that exists is resolved and the
+/// missing rest joined to it, so a file whose folder the write makes has one place before and after.
 fn place(file: &std::path::Path) -> std::path::PathBuf {
     let target = write_target(file).unwrap_or_else(|_| file.to_path_buf());
-    match (target.parent(), target.file_name()) {
-        (Some(dir), Some(name)) => {
-            std::fs::canonicalize(dir).map_or(target.clone(), |dir| dir.join(name))
+    let mut missing = Vec::new();
+    let mut dir = target.as_path();
+    while let (Some(parent), Some(name)) = (dir.parent(), dir.file_name()) {
+        missing.push(name);
+        if let Ok(real) = std::fs::canonicalize(parent) {
+            return missing
+                .iter()
+                .rev()
+                .fold(real, |path, name| path.join(name));
         }
-        _ => target,
+        dir = parent;
     }
+    target
 }
 
 /// The wire name of a `Kind` or `Writer`.
