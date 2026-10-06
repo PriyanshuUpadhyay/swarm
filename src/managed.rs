@@ -920,16 +920,6 @@ pub(crate) fn json_object(
         .ok_or_else(|| format!("swarm: {} is not a JSON object", path.display()))
 }
 
-/// Replace `path` in one rename, with the old file's permissions, because `~/.claude.json` holds
-/// credentials and a running CLI may read it at any moment.
-pub(crate) fn write_json(
-    path: &std::path::Path,
-    before: &str,
-    value: &serde_json::Value,
-) -> Result<(), String> {
-    write_text(path, before, &json_text(value))
-}
-
 pub(crate) fn json_text(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n"
 }

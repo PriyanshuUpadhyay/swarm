@@ -1,6 +1,6 @@
 use crate::managed::{
     Conflict, ConflictKind, Edit, FilePlan, Kind, Writer, json_object, json_text, read_json_object,
-    read_optional, read_text, refuse_read_only, retried, write_json, write_text,
+    read_optional, read_text, refuse_read_only, retried,
 };
 use crate::providers::Provider;
 
@@ -229,27 +229,78 @@ pub fn command_model(command: &[String]) -> Option<&str> {
     None
 }
 
-/// Codex reads folder trust from its config file; its `-c` override does not satisfy the dialog.
-/// The file is edited as TOML, so a project the owner wrote in any form counts as present and
-/// swarm adds nothing to it (ADR 0036); a second table for it would make the file unreadable.
-pub fn ensure_codex_trust(home: &std::path::Path, cwd: &std::path::Path) -> Result<(), String> {
-    retried(|| {
-        let path = home.join("config.toml");
-        let (before, mut config) = read_codex_config(&path)?;
-        let dir = cwd.to_string_lossy();
-        let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
-            format!(
-                "{} has a projects that is not a table; trust {dir} by hand",
-                path.display()
-            )
-        })?;
-        if projects.contains_key(&dir) {
-            return Ok(());
-        }
+/// The plan that marks `dir` trusted in a Codex home's `config.toml`. Codex reads folder trust
+/// from its config file; its `-c` override does not satisfy the dialog. The file is edited as
+/// TOML, so a project the owner wrote in any form counts as present and swarm adds nothing to it
+/// (ADR 0036, C3); a second table for it would make the file unreadable.
+pub fn codex_trust_plan(home: &std::path::Path, dir: &std::path::Path) -> Result<FilePlan, String> {
+    let path = home.join("config.toml");
+    let (before, mut config) = read_codex_config(&path)?;
+    let dir = dir.to_string_lossy();
+    let had_projects = config.get("projects").is_some();
+    let projects = toml_table(config.as_table_mut(), "projects", true).ok_or_else(|| {
+        format!(
+            "{} has a projects that is not a table; trust {dir} by hand",
+            path.display()
+        )
+    })?;
+    let mut edits = Vec::new();
+    if !projects.contains_key(&dir) {
         toml_table(projects, &dir, false)
             .expect("a missing key becomes a table")
             .insert("trust_level", toml_edit::value("trusted"));
-        write_text(&path, &before, &config.to_string())
+        edits.push(Edit {
+            created: 1 + u8::from(!had_projects),
+            ..Edit::new(
+                Writer::LaunchTrust,
+                &path,
+                Kind::TomlKey,
+                &["projects", &dir, "trust_level"],
+                "trusted".into(),
+            )
+        });
+    }
+    trust_plan(
+        path,
+        before,
+        (!edits.is_empty()).then(|| config.to_string()),
+        edits,
+    )
+}
+
+/// A trust plan for `path`: `after` is the planned text, None when nothing changes.
+fn trust_plan(
+    path: std::path::PathBuf,
+    before: String,
+    after: Option<String>,
+    edits: Vec<Edit>,
+) -> Result<FilePlan, String> {
+    if after.is_some() {
+        refuse_read_only(&path)?;
+    }
+    Ok(FilePlan {
+        after: after.unwrap_or_else(|| before.clone()),
+        path,
+        before,
+        conflicts: Vec::new(),
+        edits,
+    })
+}
+
+/// Write one trust plan through the managed-edits module, so the write is recorded (ADR 0042).
+/// A running CLI may rewrite its file at any moment, so a plan whose file changed is made again.
+/// Returns the plan written, or None when the entry was already there.
+pub fn write_trust(
+    store: &rusqlite::Connection,
+    plan: impl Fn() -> Result<FilePlan, String>,
+) -> Result<Option<FilePlan>, String> {
+    retried(|| {
+        let plan = plan()?;
+        if plan.after == plan.before {
+            return Ok(None);
+        }
+        crate::managed::apply(store, std::slice::from_ref(&plan))?;
+        Ok(Some(plan))
     })
 }
 
@@ -637,53 +688,91 @@ pub fn trust_target(
     }
 }
 
-/// Mark `dir` trusted in Claude's `~/.claude.json`, so a child does not boot into the folder-trust
-/// dialog and wait there with nobody to answer. Returns whether the file changed.
-pub fn ensure_claude_trust(
+/// The plan that marks `dir` trusted in a Claude `.claude.json`, so a pane does not boot into the
+/// folder-trust dialog and wait there with nobody to answer. Claude writes `false` itself for a
+/// folder it saw before trust, so a `false` is replaced and the record keeps it (Q4).
+pub fn claude_trust_plan(
     config: &std::path::Path,
     dir: &std::path::Path,
-) -> Result<bool, String> {
-    retried(|| {
-        let (before, mut value) = read_json_object(config)?;
-        let key = dir.to_string_lossy().into_owned();
-        let project = value
-            .as_object_mut()
-            .expect("read_json_object returns an object")
-            .entry("projects")
-            .or_insert_with(|| serde_json::json!({}))
-            .as_object_mut()
-            .ok_or("swarm: projects in ~/.claude.json is not an object")?
-            .entry(key)
-            .or_insert_with(|| serde_json::json!({}));
-        if project["hasTrustDialogAccepted"] == true {
-            return Ok(false);
-        }
-        project
-            .as_object_mut()
-            .ok_or("swarm: a project entry in ~/.claude.json is not an object")?
-            .insert("hasTrustDialogAccepted".into(), true.into());
-        write_json(config, &before, &value).map(|()| true)
-    })
+) -> Result<FilePlan, String> {
+    let (before, mut value) = read_json_object(config)?;
+    let key = dir.to_string_lossy().into_owned();
+    let root = value
+        .as_object_mut()
+        .expect("read_json_object returns an object");
+    let created = match root.get("projects") {
+        None => 2,
+        Some(projects) => u8::from(projects.get(&key).is_none()),
+    };
+    let project = root
+        .entry("projects")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or("swarm: projects in ~/.claude.json is not an object")?
+        .entry(key.clone())
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or("swarm: a project entry in ~/.claude.json is not an object")?;
+    let found = project.get("hasTrustDialogAccepted").cloned();
+    if found == Some(true.into()) {
+        return trust_plan(config.to_path_buf(), before, None, Vec::new());
+    }
+    project.insert("hasTrustDialogAccepted".into(), true.into());
+    let edit = Edit {
+        before: found,
+        created,
+        ..Edit::new(
+            Writer::LaunchTrust,
+            config,
+            Kind::JsonKey,
+            &["projects", &key, "hasTrustDialogAccepted"],
+            true.into(),
+        )
+    };
+    trust_plan(
+        config.to_path_buf(),
+        before,
+        Some(json_text(&value)),
+        vec![edit],
+    )
 }
 
-/// Add `dir` to AGY's `trustedWorkspaces`. Returns whether the file changed.
-pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
-    retried(|| {
-        let (before, mut value) = read_json_object(settings)?;
-        let trusted = value
-            .as_object_mut()
-            .expect("read_json_object returns an object")
-            .entry("trustedWorkspaces")
-            .or_insert_with(|| serde_json::json!([]))
-            .as_array_mut()
-            .ok_or("swarm: trustedWorkspaces in the AGY settings is not a list")?;
-        let dir = serde_json::Value::from(dir.to_string_lossy().into_owned());
-        if trusted.contains(&dir) {
-            return Ok(false);
-        }
-        trusted.push(dir);
-        write_json(settings, &before, &value).map(|()| true)
-    })
+/// The plan that adds `dir` to AGY's `trustedWorkspaces`.
+pub fn agy_trust_plan(
+    settings: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<FilePlan, String> {
+    let (before, mut value) = read_json_object(settings)?;
+    let root = value
+        .as_object_mut()
+        .expect("read_json_object returns an object");
+    let created = u8::from(!root.contains_key("trustedWorkspaces"));
+    let trusted = root
+        .entry("trustedWorkspaces")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or("swarm: trustedWorkspaces in the AGY settings is not a list")?;
+    let dir = serde_json::Value::from(dir.to_string_lossy().into_owned());
+    if trusted.contains(&dir) {
+        return trust_plan(settings.to_path_buf(), before, None, Vec::new());
+    }
+    trusted.push(dir.clone());
+    let edit = Edit {
+        created,
+        ..Edit::new(
+            Writer::LaunchTrust,
+            settings,
+            Kind::JsonArrayItem,
+            &["trustedWorkspaces"],
+            dir,
+        )
+    };
+    trust_plan(
+        settings.to_path_buf(),
+        before,
+        Some(json_text(&value)),
+        vec![edit],
+    )
 }
 
 /// This executable's path, single-quoted for a shell command line.
@@ -1261,6 +1350,28 @@ mod tests {
     fn apply(plans: &[FilePlan]) -> Result<Vec<std::path::PathBuf>, String> {
         let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
         crate::managed::apply(&store, plans)
+    }
+
+    /// A launch's trust write as `write_trust` makes it, with a store of its own; whether the
+    /// file changed.
+    fn trusted(plan: impl Fn() -> Result<FilePlan, String>) -> Result<bool, String> {
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        write_trust(&store, plan).map(|plan| plan.is_some())
+    }
+
+    fn ensure_codex_trust(home: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
+        trusted(|| codex_trust_plan(home, dir))
+    }
+
+    fn ensure_claude_trust(
+        config: &std::path::Path,
+        dir: &std::path::Path,
+    ) -> Result<bool, String> {
+        trusted(|| claude_trust_plan(config, dir))
+    }
+
+    fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Result<bool, String> {
+        trusted(|| agy_trust_plan(settings, dir))
     }
 
     #[test]

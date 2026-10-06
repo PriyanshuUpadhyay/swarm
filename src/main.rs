@@ -1095,7 +1095,7 @@ fn unique_targets(paths: impl Iterator<Item = std::path::PathBuf>) -> Vec<std::p
 fn trust_each(
     paths: &[std::path::PathBuf],
     picked: bool,
-    ensure: impl Fn(&std::path::Path) -> Result<(), String>,
+    mut ensure: impl FnMut(&std::path::Path) -> Result<(), String>,
 ) -> Result<(), String> {
     for path in paths {
         match ensure(path) {
@@ -1104,6 +1104,137 @@ fn trust_each(
         }
     }
     Ok(())
+}
+
+/// What a launch may do with the trust entries its pane needs (ADR 0043).
+#[derive(Clone, Copy, PartialEq)]
+enum TrustConsent {
+    /// The owner gave standing consent: write each entry and name it.
+    Standing,
+    /// A chair in the folder the owner picked, with no standing consent: write each entry for
+    /// this folder, and show its diff, so the write is never silent (owner answer I1).
+    Picked,
+    /// No consent: write nothing; show each pending diff and the command that approves it.
+    Ask,
+}
+
+/// The owner's standing consent for launch folder trust, from `~/.swarm/consent.json`. A missing
+/// file, a missing or unknown `trust`, or a file swarm cannot read is no consent (R4); an
+/// unreadable one is named.
+fn standing_consent() -> bool {
+    let Ok(path) = swarm::paths::consent_file() else {
+        return false;
+    };
+    match std::fs::read_to_string(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            eprintln!(
+                "swarm: cannot read {}: {error}; folder trust has no consent",
+                path.display()
+            );
+            false
+        }
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(value) => value["trust"] == "standing",
+            Err(error) => {
+                eprintln!(
+                    "swarm: cannot parse {}: {error}; folder trust has no consent",
+                    path.display()
+                );
+                false
+            }
+        },
+    }
+}
+
+/// The trust entries one launch needs, and what it may do with them.
+struct LaunchTrust<'a> {
+    store: &'a rusqlite::Connection,
+    consent: TrustConsent,
+    /// The owner picked the account, so its file must take the entry (see `trust_each`).
+    picked: bool,
+    /// The launch's folder, for the command that approves a pending entry.
+    cwd: &'a std::path::Path,
+}
+
+impl LaunchTrust<'_> {
+    /// Plan `dir` trusted for `provider` in each of `files`. With consent, write each plan
+    /// through the managed-edits module under the trust lock, and print the bare
+    /// `trusted <provider> <dir>` line the app reads. With none, write nothing, and print the bare
+    /// `trust-pending <provider> <dir>` line, each diff, and the command that approves it.
+    fn run(
+        &self,
+        provider: &str,
+        dir: &std::path::Path,
+        files: &[std::path::PathBuf],
+        plan: fn(&std::path::Path, &std::path::Path) -> Result<swarm::managed::FilePlan, String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.consent == TrustConsent::Ask {
+            let mut diffs = String::new();
+            for file in files {
+                match plan(file, dir) {
+                    Ok(plan) => diffs += &swarm::managed::diff(&plan),
+                    Err(error) => eprintln!("swarm: skipped {}: {error}", file.display()),
+                }
+            }
+            if !diffs.is_empty() {
+                eprintln!("trust-pending {provider} {}", dir.display());
+                eprint!("{diffs}");
+                eprintln!(
+                    "swarm: no consent for folder trust, so swarm wrote nothing; the pane asks instead."
+                );
+                eprintln!(
+                    "swarm: approve with `swarm setup --plan --cwd {}`, then the `swarm setup --digest …` it prints.",
+                    self.cwd.display()
+                );
+            }
+            return Ok(());
+        }
+        let mut written = Vec::new();
+        swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
+            trust_each(files, self.picked, |file| {
+                written.extend(swarm::bus::write_trust(self.store, || plan(file, dir))?);
+                Ok(())
+            })
+        })?;
+        for plan in &written {
+            if self.consent == TrustConsent::Picked {
+                eprint!("{}", swarm::managed::diff(plan));
+            }
+            eprintln!(
+                "swarm: trusted {} for {provider} in {}",
+                dir.display(),
+                plan.path.display()
+            );
+        }
+        if !written.is_empty() {
+            eprintln!("trusted {provider} {}", dir.display());
+        }
+        Ok(())
+    }
+}
+
+/// AGY's settings file, which holds its folder trust.
+fn agy_settings(user_home: &std::path::Path) -> std::path::PathBuf {
+    user_home.join(".gemini/antigravity-cli/settings.json")
+}
+
+/// Every Claude config a pane with no picked account may read: `~/.claude.json` and each yelo
+/// profile's.
+fn claude_configs(user_home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut configs = vec![user_home.join(".claude.json")];
+    if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles")) {
+        configs.extend(
+            profiles
+                .filter_map(Result::ok)
+                // yelo keeps its own data in hidden dirs here; a profile is not hidden.
+                .filter(|entry| {
+                    !entry.file_name().to_string_lossy().starts_with('.') && entry.path().is_dir()
+                })
+                .map(|entry| entry.path().join(".claude.json")),
+        );
+    }
+    configs
 }
 
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
@@ -2752,7 +2883,21 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         };
         let mut pane_dir = cwd.clone();
         let user_home = std::path::PathBuf::from(env_var("HOME")?);
-        let lock = swarm::paths::trust_lock()?;
+        // The app makes a chair launch in the folder the owner picked, and hides its pane, so
+        // that pick is consent for that one folder (owner answer I1, ADR 0043).
+        let consent = if standing_consent() {
+            TrustConsent::Standing
+        } else if agent_id == "orchestrator" {
+            TrustConsent::Picked
+        } else {
+            TrustConsent::Ask
+        };
+        let launch_trust = LaunchTrust {
+            store: &connection,
+            consent,
+            picked: picked.is_some(),
+            cwd: &cwd,
+        };
         match kind {
             Provider::Codex | Provider::Agy => match trust_target(&cwd, &user_home) {
                 Ok(target) if kind == Provider::Codex => {
@@ -2763,17 +2908,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         codex_homes(&user_home)?
                     };
-                    swarm::managed::with_lock(&lock, || {
-                        trust_each(&homes, picked.is_some(), |home| {
-                            swarm::bus::ensure_codex_trust(home, &target)
-                        })
-                    })?;
+                    launch_trust.run("codex", &target, &homes, swarm::bus::codex_trust_plan)?;
                 }
                 Ok(target) => {
-                    let settings = user_home.join(".gemini/antigravity-cli/settings.json");
-                    swarm::managed::with_lock(&lock, || {
-                        swarm::bus::ensure_agy_trust(&settings, &target)
-                    })?;
+                    let settings = vec![agy_settings(&user_home)];
+                    launch_trust.run("agy", &target, &settings, swarm::bus::agy_trust_plan)?;
                 }
                 Err(reason) => eprintln!(
                     "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",
@@ -2830,28 +2969,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     let configs = if let Some(account) = &picked {
                         vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
                     } else {
-                        let mut configs = vec![user_home.join(".claude.json")];
-                        if let Ok(profiles) = std::fs::read_dir(user_home.join(".claude/.profiles"))
-                        {
-                            configs.extend(
-                                profiles
-                                    .filter_map(Result::ok)
-                                    // yelo keeps its own data in hidden dirs here; a profile is
-                                    // not hidden.
-                                    .filter(|entry| {
-                                        !entry.file_name().to_string_lossy().starts_with('.')
-                                            && entry.path().is_dir()
-                                    })
-                                    .map(|entry| entry.path().join(".claude.json")),
-                            );
-                        }
-                        configs
+                        claude_configs(&user_home)
                     };
-                    swarm::managed::with_lock(&lock, || {
-                        trust_each(&configs, picked.is_some(), |config| {
-                            swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
-                        })
-                    })?;
+                    launch_trust.run(
+                        "claude",
+                        &pane_dir,
+                        &configs,
+                        swarm::bus::claude_trust_plan,
+                    )?;
                 }
             }
         }
@@ -3483,7 +3608,11 @@ mod tests {
         std::fs::write(spare.join("config.toml"), "not toml = =\n").unwrap();
         let project = std::path::Path::new("/project");
 
-        let codex = |home: &std::path::Path| swarm::bus::ensure_codex_trust(home, project);
+        let store = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let codex = |home: &std::path::Path| {
+            swarm::bus::write_trust(&store, || swarm::bus::codex_trust_plan(home, project))
+                .map(|_| ())
+        };
         trust_each(&[spare.clone(), main.clone()], false, codex).unwrap();
         assert!(
             std::fs::read_to_string(main.join("config.toml"))
@@ -3508,8 +3637,11 @@ mod tests {
         std::fs::write(&spare, "{}\n").unwrap();
         std::fs::set_permissions(&spare, std::fs::Permissions::from_mode(0o444)).unwrap();
         let project = std::path::Path::new("/project");
-        let claude =
-            |config: &std::path::Path| swarm::bus::ensure_claude_trust(config, project).map(|_| ());
+        let store = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        let claude = |config: &std::path::Path| {
+            swarm::bus::write_trust(&store, || swarm::bus::claude_trust_plan(config, project))
+                .map(|_| ())
+        };
 
         trust_each(&[spare.clone(), main.clone()], false, claude).unwrap();
         assert!(std::fs::read_to_string(&main).unwrap().contains("/project"));
@@ -5411,7 +5543,11 @@ mod tests {
             _ => None,
         })
         .unwrap();
-        swarm::bus::ensure_codex_trust(&codex, std::path::Path::new("/project")).unwrap();
+        let store = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+        swarm::bus::write_trust(&store, || {
+            swarm::bus::codex_trust_plan(&codex, std::path::Path::new("/project"))
+        })
+        .unwrap();
         assert!(login.join(".codex/config.toml").exists());
 
         let override_home = root.join("override");

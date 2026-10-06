@@ -82,6 +82,8 @@ fn trusted(config: &Path, dir: &Path) -> bool {
 #[test]
 fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     let home = scratch("trust");
+    // The owner gave standing consent for folder trust (ADR 0043).
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
     let profiles = ["a", "b"].map(|name| home.join(".claude/.profiles").join(name));
     for dir in &profiles {
         std::fs::create_dir_all(dir).unwrap();
@@ -1190,4 +1192,183 @@ fn a_failed_sweep_pass_still_prints_the_dead_child_it_reported() {
     let sweep = swarm(&home, &chair(&session), &["sweep"]);
     assert!(!sweep.status.success());
     assert_eq!(String::from_utf8_lossy(&sweep.stdout), "dead first\n");
+}
+
+/// A home with a fake adapter, a `codex` and a `claude` on PATH, and routes `review.deep` to Codex
+/// and `chair` to Claude, with one chair session. Returns the chair's env.
+fn trust_session(home: &Path) -> [(&'static str, String); 3] {
+    tool(home, "codex", "true");
+    tool(home, "claude", "true");
+    std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
+    std::fs::write(
+        home.join(".config/agent-routing/roles.json"),
+        r#"{"routes": {"review.deep": ["codex-x"], "chair": ["claude-opus"]},
+            "runners": {"codex-x": {"provider": "codex", "model": "gpt-6-luna", "effort": "high"},
+                        "claude-opus": {"provider": "claude", "model": "opus", "effort": "high"}}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let session = swarm(
+        home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    [
+        ("SWARM_ADAPTER", "fake".to_string()),
+        ("SWARM_SESSION_ID", session),
+        ("SWARM_AGENT_ID", "orchestrator".to_string()),
+    ]
+}
+
+fn git_repo(home: &Path, name: &str) -> PathBuf {
+    let dir = home.join(name);
+    assert!(
+        Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .arg(&dir)
+            .status()
+            .unwrap()
+            .success()
+    );
+    dir
+}
+
+fn launch_in(home: &Path, env: &[(&str, String)], seat: &str, role: &str, cwd: &Path) -> Output {
+    let env: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let cwd = cwd.to_string_lossy().into_owned();
+    let output = swarm(home, &env, &["launch", seat, role, "--cwd", &cwd]);
+    assert!(output.status.success(), "{seat}: {}", stderr(&output));
+    output
+}
+
+fn recorded_trust(home: &Path) -> Vec<serde_json::Value> {
+    let output = swarm(home, &[], &["managed", "list", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    list["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["writer"] == "launch.trust" && entry["recorded"] == true)
+        .cloned()
+        .collect()
+}
+
+/// With no consent (ADR 0043), a seat's launch writes no trust entry. It prints the bare
+/// `trust-pending` line the app reads, the diff it would write, and the command that approves it,
+/// and the seat still starts, at its CLI's own trust prompt.
+#[test]
+fn a_seat_launch_with_no_consent_writes_no_trust_and_prints_the_plan() {
+    let home = scratch("ask");
+    let env = trust_session(&home);
+    let repo = git_repo(&home, "app");
+    let config = home.join(".codex/config.toml");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(&config, "model = \"gpt\"\n").unwrap();
+
+    let output = launch_in(&home, &env, "seat", "review.deep", &repo);
+    let err = stderr(&output);
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "model = \"gpt\"\n"
+    );
+    assert!(
+        err.lines()
+            .any(|line| line == format!("trust-pending codex {}", repo.display())),
+        "{err}"
+    );
+    assert!(
+        err.contains(&format!("+[projects.\"{}\"]", repo.display())),
+        "{err}"
+    );
+    assert!(err.contains("+trust_level = \"trusted\""), "{err}");
+    assert!(
+        err.contains(&format!("swarm setup --plan --cwd {}", repo.display())),
+        "{err}"
+    );
+    assert!(recorded_trust(&home).is_empty());
+
+    // An unreadable consent file is no consent (R4), and swarm says so.
+    std::fs::write(home.join(".swarm/consent.json"), "{not json").unwrap();
+    let err = stderr(&launch_in(&home, &env, "seat-2", "review.deep", &repo));
+    assert!(err.contains("consent"), "{err}");
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "model = \"gpt\"\n"
+    );
+
+    // Standing consent: the entry is written, recorded, and named.
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
+    let err = stderr(&launch_in(&home, &env, "seat-3", "review.deep", &repo));
+    assert!(
+        err.lines()
+            .any(|line| line == format!("trusted codex {}", repo.display())),
+        "{err}"
+    );
+    assert!(
+        std::fs::read_to_string(&config)
+            .unwrap()
+            .contains("trust_level = \"trusted\"")
+    );
+    let recorded = recorded_trust(&home);
+    assert_eq!(recorded.len(), 1, "{recorded:?}");
+    assert_eq!(recorded[0]["state"], "present");
+}
+
+/// The app makes a chair launch in the folder the owner picked, and hides its pane, so with no
+/// consent that pick is consent for that one folder (owner answer I1). The write is recorded and
+/// shown, with its diff, never made silently.
+#[test]
+fn a_chair_launch_trusts_its_picked_folder_and_shows_the_write() {
+    let home = scratch("chair-pick");
+    let env = trust_session(&home);
+    let repo = git_repo(&home, "picked");
+
+    let err = stderr(&launch_in(&home, &env, "orchestrator", "chair", &repo));
+    assert!(trusted(&home.join(".claude.json"), &repo));
+    assert!(
+        err.lines()
+            .any(|line| line == format!("trusted claude {}", repo.display())),
+        "{err}"
+    );
+    assert!(
+        err.contains("+      \"hasTrustDialogAccepted\": true"),
+        "{err}"
+    );
+    let recorded = recorded_trust(&home);
+    assert_eq!(recorded.len(), 1, "{recorded:?}");
+    assert_eq!(recorded[0]["path"][1], repo.to_string_lossy().as_ref());
+
+    // A Claude `false` is replaced, and the record keeps it for revert (Q4).
+    let other = git_repo(&home, "seen");
+    let claude = home.join(".claude.json");
+    let mut value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&claude).unwrap()).unwrap();
+    value["projects"][other.to_string_lossy().as_ref()] =
+        serde_json::json!({"hasTrustDialogAccepted": false});
+    std::fs::write(&claude, value.to_string()).unwrap();
+    // Each chair gets its own session, as each app chat does.
+    let env = trust_session(&home);
+    launch_in(&home, &env, "orchestrator", "chair", &other);
+    assert!(trusted(&claude, &other));
+    let before: Vec<_> = recorded_trust(&home)
+        .into_iter()
+        .filter(|entry| entry["path"][1] == other.to_string_lossy().as_ref())
+        .map(|entry| entry["before"].clone())
+        .collect();
+    assert_eq!(before, [serde_json::json!(false)]);
 }
