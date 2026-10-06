@@ -80,6 +80,8 @@ struct HooksSetupSheet: View {
     /// Each change runs the plan again.
     @State private var planRun = 0
     @State private var working = false
+    /// A plan is on screen and the next one loads.
+    @State private var reloading = false
     @State private var failure: String?
     @State private var openFile: String?
     @State private var split = false
@@ -139,13 +141,20 @@ struct HooksSetupSheet: View {
         // A dismiss mid-write would hide its failure and reload the page before the write ends.
         .interactiveDismissDisabled(working)
         .task(id: planRun) {
-            phase = .loading
+            // A plan on screen stays while the next one loads, so a checkbox or the radio keeps
+            // its place and its focus (UA-7). A click meanwhile starts a newer run, which wins.
+            if showsPlan { reloading = true } else { phase = .loading }
             do {
                 let plan = try await loadPlan(choice)
+                try Task.checkCancellation()
                 // The first plan has every group, so it gives the checkboxes and the radio.
                 choice.take(plan)
-                openFile = plan.files.first?.id
-                diffFailed = false
+                // The open diff stays open while its file is still in the plan.
+                if !showsPlan || openFile.map({ id in !plan.files.contains { $0.id == id } }) == true {
+                    openFile = plan.files.first?.id
+                    diffFailed = false
+                }
+                reloading = false
                 phase = .ready(plan)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
                 let summary = plan.isSetUp ? copy.unchanged : plan.summary
@@ -153,10 +162,15 @@ struct HooksSetupSheet: View {
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
             } catch {
+                reloading = false
                 phase = .failed(Self.message(error))
                 Self.announce(Self.message(error))
             }
         }
+    }
+
+    private var showsPlan: Bool {
+        if case .ready = phase { true } else { false }
     }
 
     private var question: some View {
@@ -323,6 +337,10 @@ struct HooksSetupSheet: View {
 
     private func buttons(_ plan: SwarmHooksPlan?) -> some View {
         HStack {
+            if reloading {
+                ProgressView().controlSize(.small)
+                Text(copy.loading).foregroundStyle(.secondary)
+            }
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
             Button(copy.cancel, action: notNow)
@@ -337,8 +355,10 @@ struct HooksSetupSheet: View {
                     .overlay { if working { ProgressView().controlSize(.small) } }
             }
             .accessibilityLabel(copy.apply)
-            .keyboardShortcut(plan?.canApply == true && !copy.destructive ? .defaultAction : nil)
-            .disabled(working || plan?.canApply != true)
+            // A plan that is being replaced has a digest that no longer matches the sheet.
+            .keyboardShortcut(
+                plan?.canApply == true && !reloading && !copy.destructive ? .defaultAction : nil)
+            .disabled(working || reloading || plan?.canApply != true)
         }
     }
 
