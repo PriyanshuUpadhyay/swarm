@@ -1339,9 +1339,11 @@ struct SwarmApp: App {
                 AppKeyCommands()
             }
         // One window, not a sheet, because the list grows with each trusted folder. It opens only
-        // from the menu, never at launch, because each open reads every managed file.
+        // from the menu, never at launch and never restored from the last run, because each open
+        // reads every managed file.
         Window("Managed Changes", id: "managed") { ManagedChangesPage() }
             .defaultLaunchBehavior(.suppressed)
+            .restorationBehavior(.disabled)
     }
 }
 
