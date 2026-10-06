@@ -190,6 +190,10 @@ struct ManagedChangesPage: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+            } else if case .partly(let present, let total) = row.state {
+                Text("Partly on: \(present) of \(total) entries. Turning it off removes the rest.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else if row.entries.first?.recorded == false {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
@@ -208,9 +212,13 @@ struct ManagedChangesPage: View {
     /// A switch while the row can be turned off or, for hooks, on again; else its state.
     @ViewBuilder
     private func stateControl(_ row: SwarmManagedList.Row, label: String) -> some View {
-        if row.state == .on || (row.state == .off && row.isHooks) {
+        let on = switch row.state {
+        case .on, .partly: true
+        default: false
+        }
+        if on || (row.state == .off && row.isHooks) {
             Toggle(label, isOn: Binding(
-                get: { row.state == .on },
+                get: { on },
                 set: { on in
                     if on {
                         sheet = .setUp
@@ -237,8 +245,8 @@ struct ManagedChangesPage: View {
             Label("Cannot read", systemImage: "exclamationmark.triangle.fill")
                 .symbolRenderingMode(.multicolor)
                 .font(.callout)
-        case .gone:
-            Text("Gone").foregroundStyle(.secondary)
+        case .gone, .partly:
+            Text(state.name).foregroundStyle(.secondary)
         case .on, .off:
             Text(state == .on ? "On" : "Off").foregroundStyle(.secondary)
         }

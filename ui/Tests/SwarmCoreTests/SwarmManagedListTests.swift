@@ -63,6 +63,21 @@ struct SwarmManagedListTests {
         ])
     }
 
+    @Test("A row with some items on and some off is partly on with its counts, not On")
+    func partlyOn() throws {
+        var list = try SwarmManagedList.decode(Data(Self.listing.utf8))
+        list.entries = list.entries.map { entry in
+            var entry = entry
+            if entry.id == "a2" { entry.state = "off" }
+            return entry
+        }
+        let row = list.groups[0].rows[0]
+        #expect(row.state == .partly(on: 1, of: 2))
+        #expect(row.state.name == "Partly on")
+        #expect(row.presentIDs == ["a1"])
+        #expect(SwarmManagedList.summary(list.groups) == "1 on · 1 partly on · 1 changed by you · 1 gone · 1 off · 1 found")
+    }
+
     @Test("An undo conflict labels swarm's value only for an item that changed, else what swarm needs")
     func conflictLabelsFollowTheCause() throws {
         let plan = try JSONDecoder().decode(SwarmHooksPlan.self, from: Data(#"""
