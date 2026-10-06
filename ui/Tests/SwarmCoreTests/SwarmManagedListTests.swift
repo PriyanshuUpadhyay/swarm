@@ -127,18 +127,20 @@ struct SwarmManagedListTests {
         #expect(!SwarmManagedList.Row(writer: "launch.trust", file: trust.file, entries: [trust]).isHooks)
     }
 
-    @Test("A load after a failed one announces what it loaded, so a Retry is heard")
+    @Test("A load after a failed one or a shown spinner announces what it loaded; a fast first load is silent")
     func retryAnnouncement() throws {
         let list = try SwarmManagedList.decode(Data(Self.listing.utf8))
         let empty = try SwarmManagedList.decode(Data(#"{"entries":[]}"#.utf8))
-        #expect(SwarmManagedList.announcement(from: nil, to: list.groups, afterError: false) == nil)
-        #expect(SwarmManagedList.announcement(from: nil, to: list.groups, afterError: true)
+        // A first load that answers before the spinner shows: focus did not move, so nothing is said.
+        #expect(SwarmManagedList.announcement(from: nil, to: list.groups, waited: false) == nil)
+        // A first load after the spinner showed, or a Retry that works: the list replaces what had focus.
+        #expect(SwarmManagedList.announcement(from: nil, to: list.groups, waited: true)
             == "Loaded managed changes: 2 on · 1 changed by you · 1 gone · 1 off · 1 found")
-        #expect(SwarmManagedList.announcement(from: nil, to: empty.groups, afterError: true)
+        #expect(SwarmManagedList.announcement(from: nil, to: empty.groups, waited: true)
             == "Swarm has changed nothing outside its home")
-        #expect(SwarmManagedList.announcement(from: list.groups, to: empty.groups, afterError: false)
+        #expect(SwarmManagedList.announcement(from: list.groups, to: empty.groups, waited: false)
             == SwarmManagedList.changes(from: list.groups, to: empty.groups).joined(separator: ". "))
-        #expect(SwarmManagedList.announcement(from: list.groups, to: list.groups, afterError: false) == nil)
+        #expect(SwarmManagedList.announcement(from: list.groups, to: list.groups, waited: false) == nil)
     }
 
     @Test("An empty list has no groups and says so")

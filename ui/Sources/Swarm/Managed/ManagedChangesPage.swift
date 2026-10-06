@@ -263,12 +263,17 @@ struct ManagedChangesPage: View {
         loads += 1
         let run = loads
         isLoading = true
+        // The page's spinner shows while there are no groups and the read passes its delay; the
+        // list then replaces the spinner that had VoiceOver's focus.
+        let spinner = groups.isEmpty
+        let started = ContinuousClock.now
         do {
             let loaded = try await bus.managedList()
             guard run == loads else { return }
             let made = loaded.groups
+            let spun = spinner && ContinuousClock.now - started >= DelayedProgress.delay
             let spoken = SwarmManagedList.announcement(
-                from: list == nil ? nil : groups, to: made, afterError: error != nil
+                from: list == nil ? nil : groups, to: made, waited: error != nil || spun
             )
             list = loaded
             groups = made

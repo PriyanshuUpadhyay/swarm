@@ -198,10 +198,11 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
     }
 
     /// What VoiceOver hears after a load: each row that flipped since `old` (nil for a first
-    /// load), and, after a failed load, what loaded, so a Retry that works is heard too.
-    public static func announcement(from old: [Group]?, to new: [Group], afterError: Bool) -> String? {
+    /// load), and, when the owner `waited` (a failed load or a shown spinner came before), what
+    /// loaded, so a Retry that works and a slow first read are heard. A fast first load is silent.
+    public static func announcement(from old: [Group]?, to new: [Group], waited: Bool) -> String? {
         var lines = old.map { changes(from: $0, to: new) } ?? []
-        if afterError {
+        if waited {
             lines.insert(
                 new.isEmpty ? "Swarm has changed nothing outside its home" : "Loaded managed changes: \(summary(new))",
                 at: 0
