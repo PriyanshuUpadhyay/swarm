@@ -825,8 +825,8 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
     let codex_hooks = unique_targets(homes.iter().map(|home| home.join("hooks.json")));
     // A file that swarm cannot read or edit is a conflict in the plan, not an error.
-    let plan = || -> Vec<swarm::bus::HookFilePlan> {
-        let unreadable = swarm::bus::HookFilePlan::unreadable;
+    let plan = || -> Vec<swarm::managed::FilePlan> {
+        let unreadable = swarm::managed::FilePlan::unreadable;
         let guard_plan = |path: &std::path::PathBuf, provider: &str| {
             swarm::bus::guard_hooks_plan(path, provider)
                 .unwrap_or_else(|error| unreadable(path.clone(), error))
@@ -872,22 +872,29 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             "guard": guard_status(has_list, &claude_settings, &codex_hooks, &homes, &agy_hooks),
         })),
         ["setup", "--plan"] => {
-            print!("{}", hook_plan_text(&plan()));
+            print!(
+                "{}",
+                swarm::managed::plan_text(
+                    &plan(),
+                    "swarm hooks setup",
+                    "swarm's hooks are already set up. No file changes."
+                )
+            );
             Ok(())
         }
-        ["setup", "--plan", "--json"] => print_json(&hook_plan_json(&plan())),
+        ["setup", "--plan", "--json"] => print_json(&swarm::managed::plan_json(&plan())),
         ["setup", rest @ ..] if matches!(rest, [] | ["--digest", _]) => {
             let lock = swarm::paths::root_dir()?.join("trust.lock");
-            swarm::bus::with_lock(&lock, || {
+            swarm::managed::with_lock(&lock, || {
                 let plans = plan();
                 if let ["--digest", digest] = rest
-                    && swarm::bus::hook_plan_digest(&plans) != *digest
+                    && swarm::managed::digest(&plans) != *digest
                 {
                     return Err(
                         "swarm: a hook file changed after the plan; check the plan again".into(),
                     );
                 }
-                if let Some(conflicts) = hook_conflicts_text(&plans) {
+                if let Some(conflicts) = swarm::managed::conflicts_text(&plans) {
                     return Err(conflicts);
                 }
                 for plan in &plans {
@@ -958,54 +965,6 @@ fn trust_each(
         }
     }
     Ok(())
-}
-
-fn hook_diff(plan: &swarm::bus::HookFilePlan) -> String {
-    swarm::diff::unified(&plan.path.to_string_lossy(), &plan.before, &plan.after)
-}
-
-/// Each conflict with its fix, and a last line that says no file was written; None without one.
-fn hook_conflicts_text(plans: &[swarm::bus::HookFilePlan]) -> Option<String> {
-    let conflicts: Vec<_> = plans.iter().flat_map(|plan| &plan.conflicts).collect();
-    if conflicts.is_empty() {
-        return None;
-    }
-    let mut text: String = conflicts
-        .iter()
-        .map(|conflict| {
-            format!(
-                "conflict: {} {}\n  found:  {}\n  wanted: {}\n  fix:    {}\n\n",
-                conflict.file, conflict.entry, conflict.found, conflict.wanted, conflict.fix
-            )
-        })
-        .collect();
-    let plural = if conflicts.len() == 1 { "" } else { "s" };
-    text += &format!("{} conflict{plural}. No file written.", conflicts.len());
-    Some(text)
-}
-
-fn hook_plan_text(plans: &[swarm::bus::HookFilePlan]) -> String {
-    let diffs: String = plans.iter().map(hook_diff).collect();
-    let last = match hook_conflicts_text(plans) {
-        Some(conflicts) => format!("\n{conflicts}"),
-        None if diffs.is_empty() => "swarm's hooks are already set up. No file changes.".into(),
-        None => "\nPlan only. No file written. Run `swarm hooks setup` to apply.".into(),
-    };
-    format!("{diffs}{last}\n")
-}
-
-/// The plan for the app: the digest that apply checks, each file that changes with its diff, and
-/// each conflict.
-fn hook_plan_json(plans: &[swarm::bus::HookFilePlan]) -> serde_json::Value {
-    serde_json::json!({
-        "digest": swarm::bus::hook_plan_digest(plans),
-        "files": plans
-            .iter()
-            .filter(|plan| plan.after != plan.before)
-            .map(|plan| serde_json::json!({"path": plan.path.to_string_lossy(), "diff": hook_diff(plan)}))
-            .collect::<Vec<_>>(),
-        "conflicts": plans.iter().flat_map(|plan| &plan.conflicts).collect::<Vec<_>>(),
-    })
 }
 
 fn claude_chair_log(id: &str) -> Option<std::path::PathBuf> {
@@ -2662,7 +2621,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         codex_homes(&user_home)?
                     };
-                    swarm::bus::with_lock(&lock, || {
+                    swarm::managed::with_lock(&lock, || {
                         trust_each(&homes, picked.is_some(), |home| {
                             swarm::bus::ensure_codex_trust(home, &target)
                         })
@@ -2670,7 +2629,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Ok(target) => {
                     let settings = user_home.join(".gemini/antigravity-cli/settings.json");
-                    swarm::bus::with_lock(&lock, || {
+                    swarm::managed::with_lock(&lock, || {
                         swarm::bus::ensure_agy_trust(&settings, &target)
                     })?;
                 }
@@ -2746,7 +2705,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         configs
                     };
-                    swarm::bus::with_lock(&lock, || {
+                    swarm::managed::with_lock(&lock, || {
                         trust_each(&configs, picked.is_some(), |config| {
                             swarm::bus::ensure_claude_trust(config, &pane_dir).map(|_| ())
                         })

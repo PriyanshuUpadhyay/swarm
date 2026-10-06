@@ -1,5 +1,8 @@
+use crate::managed::{
+    Conflict, FilePlan, json_object, json_text, read_json_object, read_optional, read_text,
+    refuse_read_only, retried, write_json, write_text,
+};
 use crate::providers::Provider;
-use std::os::unix::fs::OpenOptionsExt;
 
 use serde::{Deserialize, Serialize};
 
@@ -369,79 +372,6 @@ fn toml_table<'a>(
     parent.get_mut(key)?.as_table_like_mut()
 }
 
-/// An entry that swarm needs at a place where the file already holds another one (ADR 0036).
-/// Swarm never writes over it: the owner removes it, or does without swarm's hooks.
-#[derive(Debug, PartialEq, serde::Serialize)]
-pub struct HookConflict {
-    pub file: String,
-    pub entry: String,
-    pub found: String,
-    pub wanted: String,
-    pub fix: String,
-}
-
-/// What `swarm hooks setup` would do to one file: its text now, its text with each missing entry
-/// of swarm's added, and each conflict. An entry equal to swarm's stays as it is.
-#[derive(Debug)]
-pub struct HookFilePlan {
-    pub path: std::path::PathBuf,
-    pub before: String,
-    pub after: String,
-    pub conflicts: Vec<HookConflict>,
-}
-
-impl HookFilePlan {
-    /// A file that swarm cannot read or edit, as a conflict, so setup writes no file and the
-    /// owner sees the fix (owner's choice, 2026-10-01).
-    pub fn unreadable(path: std::path::PathBuf, error: String) -> Self {
-        let file = path.display().to_string();
-        Self {
-            conflicts: vec![HookConflict {
-                file: file.clone(),
-                entry: "the whole file".into(),
-                found: error,
-                wanted: "a file that swarm can read and edit".into(),
-                fix: format!("repair {file}, or move it away"),
-            }],
-            path,
-            before: String::new(),
-            after: String::new(),
-        }
-    }
-
-    /// Write the planned text. Returns whether the file changed. The caller checks every file of
-    /// the plan first, because setup writes no file while any conflict stands.
-    pub fn apply(&self) -> Result<bool, String> {
-        if !self.conflicts.is_empty() {
-            return Err(format!("swarm: {} has a conflict", self.path.display()));
-        }
-        if self.after == self.before {
-            return Ok(false);
-        }
-        write_text(&self.path, &self.before, &self.after).map(|()| true)
-    }
-}
-
-/// A digest of each planned file's path, text, and planned text, so apply refuses a file that
-/// changed after the owner saw the plan, and a swarm whose entries differ from the plan's.
-pub fn hook_plan_digest(plans: &[HookFilePlan]) -> String {
-    use sha2::Digest;
-    let mut digest = sha2::Sha256::new();
-    for plan in plans {
-        digest.update(plan.path.to_string_lossy().as_bytes());
-        digest.update([0]);
-        digest.update(plan.before.as_bytes());
-        digest.update([0]);
-        digest.update(plan.after.as_bytes());
-        digest.update([0]);
-    }
-    digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
 /// The plan for a Codex home's `config.toml`. A missing trust entry is added; an entry with
 /// swarm's hash stays, in any TOML form or key spelling; any other entry at swarm's key is a
 /// conflict. The file is edited as TOML, so an entry is never added twice: a second table with
@@ -449,7 +379,7 @@ pub fn hook_plan_digest(plans: &[HookFilePlan]) -> String {
 pub fn codex_hook_plan(
     home: &std::path::Path,
     entries: &[(String, String)],
-) -> Result<HookFilePlan, String> {
+) -> Result<FilePlan, String> {
     let path = home.join("config.toml");
     let (before, mut config) = read_codex_config(&path)?;
     let file = path.display().to_string();
@@ -473,7 +403,7 @@ pub fn codex_hook_plan(
             }
         };
         if found != Some(hash.as_str()) {
-            conflicts.push(HookConflict {
+            conflicts.push(Conflict {
                 file: file.clone(),
                 entry: format!("[hooks.state.{key:?}]"),
                 found: found.unwrap_or("an entry with no trusted_hash").to_string(),
@@ -493,7 +423,7 @@ pub fn codex_hook_plan(
     if after != before {
         refuse_read_only(&path)?;
     }
-    Ok(HookFilePlan {
+    Ok(FilePlan {
         path,
         before,
         after,
@@ -654,22 +584,6 @@ pub fn trust_target(
     }
 }
 
-/// Run `change` while holding `lock`, so two launches cannot both read a settings file and the
-/// second write drop the first one's trust entry.
-pub fn with_lock<T>(
-    lock: &std::path::Path,
-    change: impl FnOnce() -> Result<T, String>,
-) -> Result<T, String> {
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(lock)
-        .map_err(|error| format!("swarm: cannot open {}: {error}", lock.display()))?;
-    file.lock()
-        .map_err(|error| format!("swarm: cannot lock {}: {error}", lock.display()))?;
-    change()
-}
-
 /// Mark `dir` trusted in Claude's `~/.claude.json`, so a child does not boot into the folder-trust
 /// dialog and wait there with nobody to answer. Returns whether the file changed.
 pub fn ensure_claude_trust(
@@ -717,194 +631,6 @@ pub fn ensure_agy_trust(settings: &std::path::Path, dir: &std::path::Path) -> Re
         trusted.push(dir);
         write_json(settings, &before, &value).map(|()| true)
     })
-}
-
-/// A file's text, or "" for a missing file.
-fn read_text(path: &std::path::Path) -> Result<String, String> {
-    Ok(read_optional(path)?.unwrap_or_default())
-}
-
-/// A file's text, or None for a missing file. A file that cannot be read, such as one that is not
-/// UTF-8, is an error, so it is never written over whole.
-fn read_optional(path: &std::path::Path) -> Result<Option<String>, String> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("swarm: cannot read {}: {error}", path.display())),
-    }
-}
-
-/// A JSON file's text ("" for a missing file) and its object.
-fn read_json_object(path: &std::path::Path) -> Result<(String, serde_json::Value), String> {
-    let text = read_optional(path)?;
-    let value = json_object(path, text.as_deref())?;
-    Ok((text.unwrap_or_default(), value))
-}
-
-/// `text` as a JSON object; a missing file is an empty object. An empty file is refused, because
-/// another program may be writing it now.
-fn json_object(path: &std::path::Path, text: Option<&str>) -> Result<serde_json::Value, String> {
-    let Some(text) = text else {
-        return Ok(serde_json::json!({}));
-    };
-    let value: serde_json::Value = serde_json::from_str(text)
-        .map_err(|error| format!("swarm: cannot parse {}: {error}", path.display()))?;
-    value
-        .is_object()
-        .then_some(value)
-        .ok_or_else(|| format!("swarm: {} is not a JSON object", path.display()))
-}
-
-/// Replace `path` in one rename, with the old file's permissions, because `~/.claude.json` holds
-/// credentials and a running CLI may read it at any moment.
-fn write_json(
-    path: &std::path::Path,
-    before: &str,
-    value: &serde_json::Value,
-) -> Result<(), String> {
-    write_text(path, before, &json_text(value))
-}
-
-fn json_text(value: &serde_json::Value) -> String {
-    serde_json::to_string_pretty(value).expect("JSON serialization cannot fail") + "\n"
-}
-
-/// The end of the error of a write that found its file changed since the read.
-const CHANGED: &str = "changed while swarm edited it; run the command again";
-
-fn changed_error(path: &std::path::Path) -> String {
-    format!("swarm: {} {CHANGED}", path.display())
-}
-
-/// A launch edits a file that a running CLI may rewrite at any moment, such as `~/.claude.json`,
-/// so an edit that found its file changed reads it again and tries again, up to 3 more times.
-fn retried<T>(mut edit: impl FnMut() -> Result<T, String>) -> Result<T, String> {
-    for _ in 0..3 {
-        match edit() {
-            Err(error) if error.ends_with(CHANGED) => {}
-            result => return result,
-        }
-    }
-    edit()
-}
-
-/// Where a write to `path` lands: the file at the end of its links, or `path` itself. A link, or a
-/// chain of links, to a missing file gets that file made, as a write through the link would, but
-/// never a missing folder. A chain longer than the system's 32 hops is refused.
-fn write_target(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
-    if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
-        return Ok(path.to_path_buf());
-    }
-    match std::fs::canonicalize(path) {
-        Ok(target) => Ok(target),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let mut target = path.to_path_buf();
-            for _ in 0..32 {
-                if !std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
-                    break;
-                }
-                let link = std::fs::read_link(&target).map_err(fail)?;
-                target = target.parent().unwrap_or(&target).join(link);
-            }
-            if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_symlink()) {
-                return Err(format!("swarm: {} links too many times", path.display()));
-            }
-            match target.parent() {
-                Some(dir) if dir.is_dir() => Ok(target),
-                _ => Err(format!(
-                    "swarm: {} links to {}, whose folder is missing",
-                    path.display(),
-                    target.display()
-                )),
-            }
-        }
-        Err(error) => Err(fail(error)),
-    }
-}
-
-/// A file that swarm cannot edit is the owner's lock, and a rename would replace it anyway, so
-/// swarm refuses it. An open for write, with no truncate, changes nothing and fails for a
-/// read-only mode, Finder's Locked box, an ACL, or another user's file. The folder needs its
-/// write bit for the rename. Checks the file at the end of `path`'s links.
-fn refuse_read_only(path: &std::path::Path) -> Result<(), String> {
-    let target = write_target(path)?;
-    let refused =
-        |error: std::io::Error| format!("swarm: cannot edit {}: {error}", target.display());
-    match std::fs::OpenOptions::new().write(true).open(&target) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(refused(error)),
-        _ => {}
-    }
-    // ponytail: mode bits only; a locked or ACL-denied folder fails at the rename, add an
-    // access(2) check if that case is seen.
-    match target.parent() {
-        Some(dir) if std::fs::metadata(dir).is_ok_and(|meta| meta.permissions().readonly()) => {
-            Err(format!("swarm: {} is read-only", dir.display()))
-        }
-        _ => Ok(()),
-    }
-}
-
-/// Replace `path` in one rename, with the old file's permissions; a hard-linked TOML file is written
-/// in place. A linked file is replaced at its target, because a rename onto the link itself would
-/// replace the owner's link (ADR 0036).
-/// `before` is the text the edit was made from ("" for a missing file); a file that another
-/// program changed since then is refused, not written over, and a file that already holds `text`
-/// is done, as when an earlier plan of the same setup wrote it through another link.
-fn write_text(path: &std::path::Path, before: &str, text: &str) -> Result<(), String> {
-    let fail = |error: std::io::Error| format!("swarm: cannot write {}: {error}", path.display());
-    let target = write_target(path)?;
-    let path = target.as_path();
-    refuse_read_only(path)?;
-    let now = read_optional(path)?.unwrap_or_default();
-    if now == text {
-        return Ok(());
-    }
-    if now != before {
-        return Err(changed_error(path));
-    }
-    // A rename would split a hard-linked Codex config.toml from the owner's other name, so it is
-    // written in place, as the base did. A JSON file is renamed, as at the base, because a running
-    // CLI may read `~/.claude.json` at any moment.
-    let toml = path
-        .extension()
-        .is_some_and(|extension| extension == "toml");
-    if toml
-        && std::fs::metadata(path)
-            .is_ok_and(|meta| std::os::unix::fs::MetadataExt::nlink(&meta) > 1)
-    {
-        return std::fs::write(path, text).map_err(fail);
-    }
-    let dir = path
-        .parent()
-        .ok_or_else(|| format!("swarm: {} has no parent", path.display()))?;
-    // A linked file's folder exists already (`write_target`); this makes a missing ~/.gemini/config.
-    std::fs::create_dir_all(dir).map_err(fail)?;
-    let tmp = dir.join(format!(
-        ".{}.swarm-{}",
-        path.file_name().unwrap_or_default().to_string_lossy(),
-        std::process::id()
-    ));
-    let permissions = std::fs::metadata(path)
-        .map(|meta| meta.permissions())
-        .unwrap_or_else(|_| std::os::unix::fs::PermissionsExt::from_mode(0o600));
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&tmp)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()))
-        .and_then(|()| std::fs::set_permissions(&tmp, permissions))
-        .map_err(fail)
-        .and_then(
-            |()| match read_optional(path)?.unwrap_or_default() == before {
-                true => std::fs::rename(&tmp, path).map_err(fail),
-                false => Err(changed_error(path)),
-            },
-        )
-        .inspect_err(|_| {
-            let _ = std::fs::remove_file(&tmp);
-        })
 }
 
 /// This executable's path, single-quoted for a shell command line.
@@ -967,7 +693,7 @@ const CODEX_STATE_EVENTS: [&str; 6] = [
 /// and is a conflict otherwise. Every other
 /// group stays, and a file that is not a JSON object is refused. AGY sends no event name, so each
 /// handler names it.
-pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<HookFilePlan, String> {
+pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<FilePlan, String> {
     let text = read_optional(path)?;
     let mut value = json_object(path, text.as_deref())?;
     let before = text.unwrap_or_default();
@@ -989,7 +715,7 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<HookFilePlan
                 added = true;
             }
             Some(found) if *found == group => {}
-            Some(found) => conflicts.push(HookConflict {
+            Some(found) => conflicts.push(Conflict {
                 file: file.clone(),
                 entry: format!("group {name:?}"),
                 found: found.to_string(),
@@ -1006,7 +732,7 @@ pub fn agy_hook_plan(path: &std::path::Path, guard: bool) -> Result<HookFilePlan
     if after != before {
         refuse_read_only(path)?;
     }
-    Ok(HookFilePlan {
+    Ok(FilePlan {
         path: path.to_path_buf(),
         before,
         after,
@@ -1074,7 +800,7 @@ fn agy_guard_group() -> serde_json::Value {
 /// The plan for the guard registration in a Claude `settings.json` or a Codex `hooks.json`, which
 /// share one shape. A group with no matcher is added to each guard event that has no handler
 /// running swarm's guard command; every other group stays as it is.
-pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFilePlan, String> {
+pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<FilePlan, String> {
     let (before, mut value) = read_json_object(path)?;
     let file = path.display().to_string();
     let hooks = value
@@ -1116,7 +842,7 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
                 .as_u64()
                 .is_none_or(|timeout| timeout < crate::guard::REGISTRATION_TIMEOUT)
         }) {
-            conflicts.push(HookConflict {
+            conflicts.push(Conflict {
                 file: file.clone(),
                 entry: format!("hooks.{event} handler {command:?}"),
                 found: handler.to_string(),
@@ -1136,7 +862,7 @@ pub fn guard_hooks_plan(path: &std::path::Path, provider: &str) -> Result<HookFi
     if after != before {
         refuse_read_only(path)?;
     }
-    Ok(HookFilePlan {
+    Ok(FilePlan {
         path: path.to_path_buf(),
         before,
         after,
@@ -1165,6 +891,7 @@ fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a s
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::managed::{changed_error, with_lock};
 
     fn role(provider: &str) -> ResolvedRole {
         ResolvedRole {
@@ -1433,7 +1160,7 @@ mod tests {
     }
 
     /// Setup for one file as `swarm hooks setup` does it: no write while the file has a conflict.
-    fn set_up(plan: Result<HookFilePlan, String>) -> Result<bool, String> {
+    fn set_up(plan: Result<FilePlan, String>) -> Result<bool, String> {
         let plan = plan?;
         match plan.conflicts.is_empty() {
             true => plan.apply(),
@@ -1604,15 +1331,15 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&hooks).unwrap(), owners);
 
         // Consent covers the planned text too, so a swarm whose entries differ is refused.
-        let planned = |after: &str| HookFilePlan {
+        let planned = |after: &str| FilePlan {
             path: hooks.clone(),
             before: owners.into(),
             after: after.into(),
             conflicts: Vec::new(),
         };
         assert_ne!(
-            hook_plan_digest(&[planned("{}")]),
-            hook_plan_digest(&[planned("{\"swarm\": {}}")])
+            crate::managed::digest(&[planned("{}")]),
+            crate::managed::digest(&[planned("{\"swarm\": {}}")])
         );
 
         std::fs::write(&hooks, "{ not json").unwrap();
