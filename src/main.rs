@@ -1131,27 +1131,28 @@ impl SetupPlan {
             match trust_target(cwd, &user_home) {
                 Err(reason) => setup.skipped.push(("trust", reason)),
                 Ok(target) => {
-                    for home in &files.homes {
-                        let path = home.join("config.toml");
+                    // A Codex home or Claude config swarm cannot edit is skipped with its reason,
+                    // as a launch with no picked account does (`trust_each`).
+                    let configs: Vec<_> = files
+                        .homes
+                        .iter()
+                        .map(|home| home.join("config.toml"))
+                        .collect();
+                    let mut skipped = trust_each(&configs, false, |path| {
                         let earlier = setup
                             .plans
                             .iter()
                             .rev()
-                            .find(|plan| canonical(&plan.path) == canonical(&path));
+                            .find(|plan| canonical(&plan.path) == canonical(path));
                         // A file the earlier plan cannot edit has no planned text to build on.
                         if let Some(conflict) = earlier.and_then(|plan| plan.conflicts.first()) {
-                            let reason = format!("{}: {}", path.display(), conflict.found);
-                            setup.skipped.push(("trust", reason));
-                            continue;
+                            return Err(conflict.found.clone());
                         }
-                        let planned = earlier.map(|plan| plan.after.clone());
-                        let plan = match planned {
-                            Some(text) => swarm::bus::codex_trust_plan_on(&path, text, &target),
-                            None => swarm::bus::codex_trust_plan(home, &target),
+                        let plan = match earlier.map(|plan| plan.after.clone()) {
+                            Some(text) => swarm::bus::codex_trust_plan_on(path, text, &target)?,
+                            None => swarm::bus::codex_trust_plan(path.parent().unwrap(), &target)?,
                         };
-                        if let Ok(plan) = &plan
-                            && swarm::bus::codex_left_untrusted(&plan.before, &target)
-                        {
+                        if swarm::bus::codex_left_untrusted(&plan.before, &target) {
                             setup.skipped.push((
                                 "trust",
                                 format!(
@@ -1160,11 +1161,9 @@ impl SetupPlan {
                                 ),
                             ));
                         }
-                        setup.push(
-                            "trust",
-                            plan.unwrap_or_else(|error| FilePlan::unreadable(path, error)),
-                        );
-                    }
+                        setup.push("trust", plan);
+                        Ok(())
+                    })?;
                     let settings = agy_settings(&user_home);
                     let plan = swarm::bus::agy_trust_plan(&settings, &target)
                         .unwrap_or_else(|error| FilePlan::unreadable(settings, error));
@@ -1176,11 +1175,13 @@ impl SetupPlan {
                         Vec::new()
                     };
                     let (dir, _) = swarm::bus::claude_child("", cwd, &flags, &uuid::Uuid::nil());
-                    for config in claude_configs(&user_home) {
-                        let plan = swarm::bus::claude_trust_plan(&config, &dir)
-                            .unwrap_or_else(|error| FilePlan::unreadable(config, error));
-                        setup.push("trust", plan);
-                    }
+                    skipped.extend(trust_each(&claude_configs(&user_home), false, |config| {
+                        setup.push("trust", swarm::bus::claude_trust_plan(config, &dir)?);
+                        Ok(())
+                    })?);
+                    setup
+                        .skipped
+                        .extend(skipped.into_iter().map(|reason| ("trust", reason)));
                 }
             }
         }
@@ -1480,20 +1481,21 @@ fn unique_targets(paths: impl Iterator<Item = std::path::PathBuf>) -> Vec<std::p
 }
 
 /// Folder trust in each Codex home or Claude config a pane may read. With no account picked, one
-/// that swarm cannot edit is named and skipped, so one broken spare profile does not stop every
-/// launch; the one of a picked account must take the entry.
+/// that swarm cannot edit is skipped, and its path and reason returned, so one broken spare
+/// profile does not stop every launch or setup; the one of a picked account must take the entry.
 fn trust_each(
     paths: &[std::path::PathBuf],
     picked: bool,
     mut ensure: impl FnMut(&std::path::Path) -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
+    let mut skipped = Vec::new();
     for path in paths {
         match ensure(path) {
-            Err(error) if !picked => eprintln!("swarm: skipped {}: {error}", path.display()),
+            Err(error) if !picked => skipped.push(format!("{}: {error}", path.display())),
             result => result?,
         }
     }
-    Ok(())
+    Ok(skipped)
 }
 
 /// What a launch may do with the trust entries its pane needs (ADR 0043).
@@ -1579,12 +1581,15 @@ impl LaunchTrust<'_> {
             return Ok(());
         }
         let mut written = Vec::new();
-        swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
+        let skipped = swarm::managed::with_lock(&swarm::paths::trust_lock()?, || {
             trust_each(files, self.required, |file| {
                 written.extend(swarm::bus::write_trust(self.store, || plan(file, dir))?);
                 Ok(())
             })
         })?;
+        for reason in skipped {
+            eprintln!("swarm: skipped {reason}");
+        }
         for plan in &written {
             if self.consent == TrustConsent::Picked {
                 eprint!("{}", swarm::managed::diff(plan));

@@ -858,6 +858,49 @@ fn a_codex_folder_the_owner_left_untrusted_is_skipped_with_its_reason() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+/// A spare Claude profile whose config swarm cannot edit does not block setup: as a launch with no
+/// picked account does, setup names it under skipped and plans every other file.
+#[test]
+fn a_read_only_spare_claude_profile_is_skipped_and_the_rest_is_planned() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = scratch("setup-spare-claude");
+    let repo = git_repo(&home, "app");
+    let cwd = repo.to_string_lossy().into_owned();
+    let spare = home.join(".claude/.profiles/spare/.claude.json");
+    std::fs::create_dir_all(spare.parent().unwrap()).unwrap();
+    std::fs::write(&spare, "{}\n").unwrap();
+    std::fs::set_permissions(&spare, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["conflicts"], serde_json::json!([]), "{plan}");
+    let paths: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect();
+    let main = home.join(".claude.json");
+    assert!(paths.contains(&&*main.to_string_lossy()), "{paths:?}");
+    assert!(!paths.contains(&&*spare.to_string_lossy()), "{paths:?}");
+    let skipped = plan["skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1, "{plan}");
+    assert_eq!(skipped[0]["group"], "trust");
+    let reason = skipped[0]["reason"].as_str().unwrap();
+    assert!(reason.contains(&*spare.to_string_lossy()), "{reason}");
+
+    let applied = setup(
+        &home,
+        &["--digest", plan["digest"].as_str().unwrap(), "--cwd", &cwd],
+    );
+    assert!(applied.status.success(), "{applied:?}");
+    assert!(std::fs::read_to_string(&main).unwrap().contains(&cwd));
+    assert_eq!(std::fs::read_to_string(&spare).unwrap(), "{}\n");
+    std::fs::set_permissions(&spare, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
 /// A Codex config.toml that swarm cannot read is a hooks conflict, and the trust group plans
 /// nothing on it, so the owner sees no false diff; it names the conflict instead.
 #[test]
