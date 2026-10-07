@@ -1,5 +1,7 @@
 import SwiftUI
 import SwarmCore
+import CoreTransferable
+import UniformTypeIdentifiers
 
 enum WorkspaceSidebarMode: String, CaseIterable {
     case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage", runs = "Runs"
@@ -33,6 +35,8 @@ struct SidebarActions {
     var expandList: (String) -> Void
     var newChat: (String) -> Void
     var togglePin: (String) -> Void
+    var pinWorkspace: (String) -> Bool
+    var moveWorkspace: (String, String) -> Bool
     var rename: (String) -> Void
     var renameChat: (String) -> Void
     var renameProject: (String) -> Void
@@ -105,6 +109,9 @@ struct SidebarView<Details: View>: View {
                 if loaded { emptyList } else { Spacer() }
             } else {
                 List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
+                    if !showingArchive, !sections.contains(where: { $0.kind == .pinned }) {
+                        Section {} header: { pinnedHeader(status: nil) }
+                    }
                     ForEach(sections) { section in
                         if case .project(let path) = section.kind {
                             // The archive view lists every archived row, with no collapse.
@@ -122,7 +129,11 @@ struct SidebarView<Details: View>: View {
                                 )
                             }
                         } else {
-                            Section(section.title) { rows(section.rows) }
+                            Section {
+                                if !collapsed.contains("pinned") { rows(section.rows) }
+                            } header: {
+                                pinnedHeader(status: section.status)
+                            }
                         }
                     }
                 }
@@ -163,14 +174,52 @@ struct SidebarView<Details: View>: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                SidebarRowView(
-                    row: row, selected: row.id == selectedID,
-                    newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) },
-                    toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil
-                )
-                .tag(row.id)
-                .contextMenu { menu(for: row) }
+                if row.kind == .workspace, !showingArchive {
+                    rowView(row)
+                        .draggable(WorkspaceDrag(path: row.id))
+                        .dropDestination(for: WorkspaceDrag.self) { items, _ in
+                            guard items.count == 1, let source = items.first else { return false }
+                            return actions.moveWorkspace(source.path, row.id)
+                        }
+                } else {
+                    rowView(row)
+                }
             }
+        }
+    }
+
+    private func rowView(_ row: SidebarRow) -> some View {
+        SidebarRowView(
+            row: row, selected: row.id == selectedID,
+            newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) },
+            toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil
+        )
+        .tag(row.id)
+        .contextMenu { menu(for: row) }
+    }
+
+    private func pinnedHeader(status: AgentStatus?) -> some View {
+        let expanded = !collapsed.contains("pinned")
+        return HStack(spacing: DesignTokens.Spacing.xs) {
+            Button { actions.toggleCollapsed("pinned") } label: {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                        .font(.caption2.weight(.semibold))
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Text("Pinned")
+                    if !expanded, let status { StatusGlyph(status: status) }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Pinned")
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(expanded ? "expanded" : "collapsed")
+            Spacer(minLength: DesignTokens.Spacing.xs)
+        }
+        .contentShape(Rectangle())
+        .dropDestination(for: WorkspaceDrag.self) { items, _ in
+            guard items.count == 1, let source = items.first else { return false }
+            return actions.pinWorkspace(source.path)
         }
     }
 
@@ -339,6 +388,13 @@ private struct SidebarRowView: View {
             } else if let age = row.age {
                 Text(age).font(.caption).foregroundStyle(.secondary)
             }
+            if row.kind == .workspace, !row.archived, hovering {
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("Drag to reorder or pin workspace")
+                    .accessibilityHidden(true)
+            }
             if let newChat, hovering || selected {
                 Button("New chat in \(row.title)", systemImage: "plus", action: newChat)
                     .labelStyle(.iconOnly)
@@ -353,5 +409,13 @@ private struct SidebarRowView: View {
     private var accessibilityValue: String {
         let counts = row.counts.map { "\($0.count) \(StatusGlyph.title($0.status).lowercased())" }
         return (row.status.map { [StatusGlyph.title($0)] } ?? []).joined() + (counts.isEmpty ? "" : "; " + counts.joined(separator: ", "))
+    }
+}
+
+private struct WorkspaceDrag: Codable, Transferable {
+    let path: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: UTType(exportedAs: "io.github.priyanshuupadhyay.swarm.workspace"))
     }
 }

@@ -44,6 +44,13 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
         case project(path: String)
     }
 
+    public var collapseID: String {
+        switch kind {
+        case .pinned: "pinned"
+        case .project(let path): path
+        }
+    }
+
     public let kind: Kind
     /// Unique even when two projects share a path, such as a bare clone kept as a folder.
     public let id: String
@@ -73,7 +80,15 @@ public enum SidebarRows {
         search: String, showingArchive: Bool, now: Int,
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], expandedLists: Set<String> = []
     ) -> [SidebarSection] {
-        let visible = workspaces.filter { navigation.matches(search, entry: $0) }
+        let entriesByProject = Dictionary(grouping: workspaces, by: { $0.project.id }).mapValues { entries in
+            Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        let ordered = projects.flatMap { project in
+            SessionsTree.ordered(project.workspaces, order: navigation.workspaceOrder[project.path] ?? [],
+                                 mainPath: project.mainWorkspacePath, hubPath: project.path)
+                .compactMap { entriesByProject[project.id]?[$0.path] }
+        }
+        let visible = ordered.filter { navigation.matches(search, entry: $0) }
         var sections: [SidebarSection] = []
         if !showingArchive {
             // Titles once for the whole list; a per-row scan made this quadratic in workspaces.

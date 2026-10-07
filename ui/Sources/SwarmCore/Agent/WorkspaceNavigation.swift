@@ -14,12 +14,11 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
-    public static func list(in tree: SessionsTree) -> [Self] {
+    public static func list(in tree: SessionsTree, workspaceOrder: [String: [String]] = [:]) -> [Self] {
         tree.projects.flatMap { project in
-            project.workspaces.map { Self(project: project, workspace: $0) }
-        }.sorted {
-            if $0.lastActivity != $1.lastActivity { return $0.lastActivity > $1.lastActivity }
-            return $0.id < $1.id
+            SessionsTree.ordered(project.workspaces, order: workspaceOrder[project.path] ?? [],
+                                 mainPath: project.mainWorkspacePath, hubPath: project.path)
+                .map { Self(project: project, workspace: $0) }
         }
     }
 }
@@ -32,11 +31,37 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var names: [String: String] = [:]
     public var chatNames: [String: String] = [:]
     public var projectNames: [String: String] = [:]
+    public var workspaceOrder: [String: [String]] = [:]
     /// Project and workspace paths whose rows are collapsed. Chat children start folded;
     /// `expanded:chat:<root id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
 
     public init() {}
+
+    /// A drop can move only a known workspace within the same project.
+    @discardableResult
+    public mutating func moveWorkspace(_ path: String, onto target: String, in entries: [WorkspaceEntry]) -> Bool {
+        guard path != target,
+              let source = entries.first(where: { $0.id == path }),
+              let destination = entries.first(where: { $0.id == target }),
+              source.project.id == destination.project.id,
+              !archived.contains(path), !archived.contains(target) else { return false }
+        var paths = SessionsTree.ordered(source.project.workspaces,
+                                        order: workspaceOrder[source.project.path] ?? [],
+                                        mainPath: source.project.mainWorkspacePath, hubPath: source.project.path).map(\.path)
+        guard let start = paths.firstIndex(of: path), let end = paths.firstIndex(of: target) else { return false }
+        paths.remove(at: start)
+        paths.insert(path, at: end)
+        workspaceOrder[source.project.path] = paths
+        return true
+    }
+
+    @discardableResult
+    public mutating func pinWorkspace(_ path: String, in entries: [WorkspaceEntry]) -> Bool {
+        guard entries.contains(where: { $0.id == path }), !archived.contains(path) else { return false }
+        pinned.insert(path)
+        return true
+    }
 
     public mutating func renameChat(_ chat: SwarmProjectSession, to name: String) {
         chatNames[ChatTitle.key(chat)] = Self.savedName(name)
@@ -193,6 +218,7 @@ public final class WorkspaceNavigationStore {
             value.names = saved.names
             value.chatNames = saved.chatNames
             value.projectNames = saved.projectNames
+            value.workspaceOrder = saved.workspaceOrder
         }
         return value
     }
@@ -204,6 +230,7 @@ public final class WorkspaceNavigationStore {
             $0.names = value.names
             $0.chatNames = value.chatNames
             $0.projectNames = value.projectNames
+            $0.workspaceOrder = value.workspaceOrder
         }
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
@@ -218,6 +245,7 @@ public final class WorkspaceNavigationStore {
         pruned.names = saved.names
         pruned.chatNames = saved.chatNames
         pruned.projectNames = saved.projectNames
+        pruned.workspaceOrder = saved.workspaceOrder
         pruned.selectedChats = pruned.selectedChats.filter { OwnerChoices.folderExists($0.key) }
         save(pruned)
         return pruned

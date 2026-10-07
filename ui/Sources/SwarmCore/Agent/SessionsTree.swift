@@ -94,6 +94,17 @@ public struct ProjectNode: Sendable, Hashable, Identifiable {
                 : commonDirectory
         }
     }
+    public var mainWorkspacePath: String? { Self.mainWorkspacePath(id, workspaces: workspaces) }
+
+    static func mainWorkspacePath(_ identity: SwarmPathIdentity, workspaces: [WorkspaceNode]) -> String? {
+        let path = projectPath(for: identity)
+        if case .repository(let common) = identity, common != path + "/.git" {
+            return workspaces.first { $0.branch == "main" }?.path
+                ?? workspaces.first { $0.branch == "master" }?.path
+        }
+        return path
+    }
+
     public var chats: [ChatRow] {
         SessionsTree.ordered(workspaces.flatMap { workspace in
             workspace.sessions.compactMap { session in
@@ -209,7 +220,7 @@ public struct SessionsTree: Sendable, Hashable {
                     ?? listed.first { !$0.isBare }?.path ?? path
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: launchDirectory,
-                    workspaces: ordered(workspaces)
+                    workspaces: ordered(workspaces, mainPath: ProjectNode.mainWorkspacePath(identity, workspaces: workspaces), hubPath: path)
                 )
             }
         }.filter { !removed.contains($0.path) && (!$0.chats.isEmpty || openedProjects[$0.id] != nil) }
@@ -291,15 +302,23 @@ public struct SessionsTree: Sendable, Hashable {
         }
     }
 
-    public static func ordered(_ workspaces: [WorkspaceNode]) -> [WorkspaceNode] {
-        workspaces.sorted { lhs, rhs in
-            let left = lhs.state.map(order) ?? 3
-            let right = rhs.state.map(order) ?? 3
+    /// Stored paths lead; other rows keep a fixed name order. Hub and removed rows follow checkouts.
+    public static func ordered(
+        _ workspaces: [WorkspaceNode], order: [String] = [], mainPath: String? = nil, hubPath: String? = nil
+    ) -> [WorkspaceNode] {
+        let positions = Dictionary(order.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: min)
+        func group(_ workspace: WorkspaceNode) -> Int {
+            if workspace.isRemoved { return 2 }
+            return workspace.path == hubPath && workspace.path != mainPath ? 1 : 0
+        }
+        return workspaces.sorted { lhs, rhs in
+            let left = positions[lhs.path] ?? Int.max
+            let right = positions[rhs.path] ?? Int.max
             if left != right { return left < right }
-            let leftActivity = lhs.current?.lastActivity ?? 0
-            let rightActivity = rhs.current?.lastActivity ?? 0
-            if leftActivity != rightActivity { return leftActivity > rightActivity }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            if group(lhs) != group(rhs) { return group(lhs) < group(rhs) }
+            if (lhs.path == mainPath) != (rhs.path == mainPath) { return lhs.path == mainPath }
+            let nameOrder = lhs.name.localizedStandardCompare(rhs.name)
+            return nameOrder == .orderedSame ? lhs.path < rhs.path : nameOrder == .orderedAscending
         }
     }
 

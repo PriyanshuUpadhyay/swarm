@@ -108,7 +108,7 @@ struct SessionsTreeTests {
         let tree = build([older, newer, session("33333333-c", cwd: "/repo/.bare")])
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
-        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", "repo"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "feature", "repo"])
         #expect(tree.projects[0].workspaces.map(\.sessions.count) == [1, 1, 1])
         #expect(tree.projects[0].chats.map(\.id) == [newer.id, older.id, SwarmSessionID("33333333-c")])
         #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
@@ -144,7 +144,7 @@ struct SessionsTreeTests {
         #expect(repository.projects.map(\.path) == ["/repo"])
         #expect(repository.projects[0].launchDirectory == "/repo/wt/feature")
         #expect(repository.projects[0].chats.isEmpty)
-        #expect(repository.projects[0].workspaces.map(\.name) == ["feature", "main"])
+        #expect(repository.projects[0].workspaces.map(\.name) == ["main", "feature"])
 
         let reopened = build([], projectPaths: ["/repo/wt/feature", "/repo/wt/main"])
         #expect(reopened.projects.count == 1)
@@ -270,7 +270,7 @@ struct SessionsTreeTests {
         ).flatMap(\.rows).filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
     }
 
-    @Test("Workspaces sit under their project in activity order, titled without the project name")
+    @Test("Workspaces keep main first under their project, titled without the project name")
     func projectSections() {
         var feature = session("feature-session", cwd: "/repo/wt/feature")
         feature.lastMessageAt = 20
@@ -288,8 +288,8 @@ struct SessionsTreeTests {
         ])
         // A plain folder is its own one workspace.
         #expect(sections[0].rows.map(\.title) == ["empty"])
-        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
-        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.title) == ["feature", "main"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.id) == ["/repo/wt/main", "/repo/wt/feature"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.title) == ["main", "feature"])
         #expect(sections[1].rows.filter { $0.kind == .workspace }.map(\.title) == ["notes"])
 
         // The palette has no headers, so it keeps "project / folder".
@@ -301,7 +301,7 @@ struct SessionsTreeTests {
             projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
             search: "", showingArchive: false, now: 61
         )
-        let row = renamed[2].rows.filter { $0.kind == .workspace }[1]
+        let row = renamed[2].rows.filter { $0.kind == .workspace }[0]
         #expect(row.title == "Fix login")
         #expect(row.detail == "main · 1 chat")
 
@@ -422,7 +422,7 @@ struct SessionsTreeTests {
             == ["live-new", "live-old", "no-chair", "ended-new", "ended-old"])
     }
 
-    @Test("Workspaces sort by state and then recent activity")
+    @Test("Workspace names keep their order across status and activity changes")
     func workspaceOrdering() {
         let workspaces = [
             WorkspaceNode(path: "/ended", name: "ended", sessions: [
@@ -439,7 +439,7 @@ struct SessionsTreeTests {
             ]),
         ]
         #expect(SessionsTree.ordered(workspaces).map(\.name)
-            == ["live-new", "live-old", "no-chair", "ended"])
+            == ["ended", "live-new", "live-old", "no-chair"])
     }
 
     @Test("Archived sessions and empty worktrees are hidden")

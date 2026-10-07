@@ -13,7 +13,12 @@ final class SessionsTreeModel {
     private let projects = SwarmProjectStore()
     private let navigationStore = WorkspaceNavigationStore()
     var navigation = WorkspaceNavigation() {
-        didSet { if navigation != oldValue { navigationStore.save(navigation) } }
+        didSet {
+            if navigation != oldValue { navigationStore.save(navigation) }
+            if navigation.workspaceOrder != oldValue.workspaceOrder {
+                workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder)
+            }
+        }
     }
 
     init() { navigation = navigationStore.load() }
@@ -58,7 +63,7 @@ final class SessionsTreeModel {
     private var refreshRevision = 0
     private(set) var selectionRevision = 0
     var tree = SessionsTree(projects: []) {
-        didSet { workspaces = WorkspaceEntry.list(in: tree) }
+        didSet { workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder) }
     }
     /// False until the first tree loads, so the sidebar does not claim "No projects yet" early.
     private(set) var hasLoaded = false
@@ -854,7 +859,7 @@ private struct SessionsWindow: View {
     /// Rows in the order the sidebar shows them, without the rows of a collapsed project.
     private var visibleSidebarRows: [SidebarRow] {
         sidebarSections(showingArchive: false).flatMap { section -> [SidebarRow] in
-            if case .project(let path) = section.kind, model.navigation.collapsed.contains(path) { return [] }
+            if model.navigation.collapsed.contains(section.collapseID) { return [] }
             return section.rows
         }
     }
@@ -910,6 +915,8 @@ private struct SessionsWindow: View {
                 if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
                 else { model.navigation.pinned.insert(id) }
             },
+            pinWorkspace: { model.navigation.pinWorkspace($0, in: model.workspaces) },
+            moveWorkspace: { model.navigation.moveWorkspace($0, onto: $1, in: model.workspaces) },
             rename: { id in
                 guard let entry = entry(id) else { return }
                 // The name the row shows, so Save with no edit keeps it.
