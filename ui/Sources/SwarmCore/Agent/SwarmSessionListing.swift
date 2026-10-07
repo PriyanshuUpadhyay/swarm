@@ -299,6 +299,7 @@ public actor SwarmSessionDiscovery {
     private var cliHomes: (homes: [URL], at: Date)?
     private var cliNameFiles: [String: (stamp: [CLINameFileStamp?], names: [String: String])] = [:]
     private var claudeNameReaders: [String: ClaudeNameReader] = [:]
+    private var codexIDs: [String: (stamp: CLINameFileStamp?, id: String?)] = [:]
     private var worktreeListings: [String: (entries: [WorktreeEntry], at: Date)] = [:]
     private var worktreeGenerations: [String: UInt64] = [:]
     private let profiles: any SwarmProfileSource
@@ -454,6 +455,7 @@ public actor SwarmSessionDiscovery {
     ) async -> [SwarmSessionID: String] {
         var result: [SwarmSessionID: String] = [:]
         var activeClaudeLogs: Set<String> = []
+        var activeCodexLogs: Set<String> = []
         for session in sessions where session.archivedAt == nil {
             let provider = session.chairProvider ?? agentsBySession[session.id]?
                 .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
@@ -464,6 +466,7 @@ public actor SwarmSessionDiscovery {
                 result[session.id] = reader.name(path: log)
                 claudeNameReaders[log] = reader
             } else if provider == "codex" {
+                if let log { activeCodexLogs.insert(log) }
                 if cliHomes == nil || now.timeIntervalSince(cliHomes!.at) >= 60 {
                     let accounts = try? await profiles.accounts(provider: "codex")
                     cliHomes = (ChairLogDiscovery.homes(
@@ -473,7 +476,7 @@ public actor SwarmSessionDiscovery {
                 // The log's owning account wins; never use another account's duplicate thread id.
                 let homes = cliHomes!.homes
                 let owner = log.flatMap { log in homes.filter { log.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count } }
-                let id = session.chairID?.rawValue ?? log.flatMap(ChairLogTitle.codexID)
+                let id = session.chairID?.rawValue ?? log.flatMap(cachedCodexID)
                 guard let id else { continue }
                 for root in owner.map({ [$0] }) ?? homes {
                     let names = cachedCLINames(files: [root.appendingPathComponent("session_index.jsonl")]) {
@@ -484,7 +487,21 @@ public actor SwarmSessionDiscovery {
             }
         }
         claudeNameReaders = claudeNameReaders.filter { activeClaudeLogs.contains($0.key) }
+        codexIDs = codexIDs.filter { activeCodexLogs.contains($0.key) }
         return result
+    }
+
+    private func cachedCodexID(path: String) -> String? {
+        let stamp = CLINameFileStamp(path: path)
+        if let cached = codexIDs[path] {
+            // The first-line ID is immutable; appends change size and mtime, but not the file.
+            if let id = cached.id, let number = stamp?.fileNumber,
+               cached.stamp?.fileNumber == number { return id }
+            if cached.stamp == stamp { return cached.id }
+        }
+        let id = ChairLogTitle.codexID(path: path)
+        codexIDs[path] = (stamp, id)
+        return id
     }
 
     private func cachedCLINames(files: [URL], read: () -> [String: String]) -> [String: String] {

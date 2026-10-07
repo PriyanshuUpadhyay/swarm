@@ -24,8 +24,16 @@ public enum ChairLogTitle {
     static func codexID(path: String) -> String? {
         guard let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
         defer { try? file.close() }
-        guard let data = try? file.read(upToCount: 65_536), let line = data.split(separator: 10).first,
-              let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+        // Codex SessionMeta stores base_instructions.text and dynamic_tools, so 64 KiB is not a format limit.
+        // ponytail: allow headers up to 1 MiB; larger headers need a background read to keep discovery bounded.
+        var line = Data()
+        while line.count < 1024 * 1024,
+              let chunk = try? file.read(upToCount: min(65_536, 1024 * 1024 - line.count)), !chunk.isEmpty {
+            let newline = chunk.firstIndex(of: 10)
+            line.append(contentsOf: chunk[..<(newline ?? chunk.endIndex)])
+            if newline != nil { break }
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               object["type"] as? String == "session_meta" else { return nil }
         return (object["payload"] as? [String: Any])?["id"] as? String
     }

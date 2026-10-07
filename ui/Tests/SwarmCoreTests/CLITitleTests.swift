@@ -204,6 +204,66 @@ struct CLITitleTests {
         #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Fresh name")
     }
 
+    @Test("Codex session metadata can exceed 64 KiB when it stores base instructions")
+    func largeCodexMetadata() throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("rollout.jsonl")
+        let instructions = String(repeating: "x", count: 512 * 1024)
+        try write([#"{"type":"session_meta","payload":{"id":"thread","base_instructions":{"text":""# + instructions + #""}}}"#], to: log)
+        #expect(ChairLogTitle.codexID(path: log.path) == "thread")
+        let oversized = String(repeating: "x", count: 1024 * 1024)
+        try write([#"{"type":"session_meta","payload":{"id":"thread","base_instructions":{"text":""# + oversized + #""}}}"#], to: log)
+        #expect(ChairLogTitle.codexID(path: log.path) == nil)
+    }
+
+    @Test("Codex keeps found IDs while logs grow and refreshes misses and replacements", arguments: [false, true])
+    func cachedCodexID(missingID: Bool) async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let home = root.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let log = home.appendingPathComponent("rollout.jsonl")
+        let firstRecord = #"{"type":"session_meta","payload":{"id":"first-thread"}}"#
+        let otherRecord = #"{"type":"session_meta","payload":{"id":"other-thread"}}"#
+        try write([missingID ? String(repeating: "x", count: firstRecord.utf8.count) : firstRecord], to: log)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: log.path)
+        try write([
+            #"{"id":"first-thread","thread_name":"First name"}"#,
+            #"{"id":"other-thread","thread_name":"Other name"}"#
+        ], to: home.appendingPathComponent("session_index.jsonl"))
+        let chat = session("codex", provider: "codex", log: log.path, chair: nil)
+        let discovery = SwarmSessionDiscovery(profiles: EmptyProfiles(), home: root)
+        let expected = missingID ? nil : "First name"
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == expected)
+        let stamp = try #require(CLINameFileStamp(path: log.path))
+        // An unchanged stamp must keep the cached result instead of rereading changed contents.
+        try write([otherRecord], to: log)
+        try FileManager.default.setAttributes([.modificationDate: stamp.modified], ofItemAtPath: log.path)
+        #expect(CLINameFileStamp(path: log.path) == stamp)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == expected)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 200)], ofItemAtPath: log.path)
+        let foundName = missingID ? "Other name" : "First name"
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == foundName)
+        let beforeGrowth = try #require(CLINameFileStamp(path: log.path))
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"type\":\"response_item\"}\n".utf8))
+        try handle.close()
+        let afterGrowth = try #require(CLINameFileStamp(path: log.path))
+        #expect(afterGrowth.size > beforeGrowth.size)
+        #expect(afterGrowth.fileNumber == beforeGrowth.fileNumber)
+        // For the hit case, rereading would return Other name from the changed header above.
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == foundName)
+        try Data((otherRecord + "\n").utf8).write(to: log, options: .atomic)
+        #expect(CLINameFileStamp(path: log.path)?.fileNumber != afterGrowth.fileNumber)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Other name")
+        try FileManager.default.removeItem(at: log)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == nil)
+        try write([firstRecord], to: log)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "First name")
+    }
+
     @Test("A CLI name on the newest model link beats the oldest prompt without clipping")
     func chainPrecedence() throws {
         let old = session("old", provider: "claude", log: nil, chair: "chat")
