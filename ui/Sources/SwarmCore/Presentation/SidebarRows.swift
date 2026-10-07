@@ -29,6 +29,14 @@ public struct StatusCount: Sendable, Hashable {
     public let count: Int
 }
 
+public struct SidebarSelection: Sendable, Equatable {
+    public let rowID: String
+    public let workspaceID: String
+    public let chatID: SwarmSessionID?
+    public let agentSessionID: SwarmSessionID?
+    public let agentID: SwarmAgentID?
+}
+
 public struct SidebarSection: Sendable, Hashable, Identifiable {
     public enum Kind: Sendable, Hashable {
         case pinned
@@ -109,6 +117,46 @@ public enum SidebarRows {
         return "chat:\(root.id.rawValue)"
     }
 
+    /// Resolve against the current tree, so a stale row cannot select a different chat or agent.
+    public static func selection(
+        for id: String, in workspaces: [WorkspaceEntry], agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> SidebarSelection? {
+        for entry in workspaces {
+            if id == entry.id {
+                return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: nil, agentSessionID: nil, agentID: nil)
+            }
+            for chat in entry.chats {
+                if id == chatID(chat) {
+                    return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id, agentSessionID: nil, agentID: nil)
+                }
+                for session in chat.sessions {
+                    for agent in agentsBySession[session.id] ?? []
+                    where agent.id != SwarmPanePolicy.chair && agent.id.rawValue != session.chairID?.rawValue {
+                        if id == "child:\(session.id.rawValue)/\(agent.id.rawValue)" {
+                            return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id,
+                                                    agentSessionID: session.id, agentID: agent.id)
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// When a fold hides the selection, highlight its nearest visible parent.
+    public static func selectedID(
+        in rows: [SidebarRow], workspace: String?, chat: SwarmProjectSession?, child: SidebarSelection?
+    ) -> String? {
+        if let child, child.chatID == chat?.id, rows.contains(where: { $0.id == child.rowID }) {
+            return child.rowID
+        }
+        if let chat {
+            let id = chatID(chat)
+            if rows.contains(where: { $0.id == id }) { return id }
+        }
+        return workspace
+    }
+
     private static func rows(
         _ entry: WorkspaceEntry, idsByTitle: [String: [String]], navigation: WorkspaceNavigation,
         now: Int, inProject: Bool = false, agentsBySession: [SwarmSessionID: [SwarmAgent]],
@@ -140,10 +188,11 @@ public enum SidebarRows {
                 ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now
             )
             let waiting = children.filter { $0.1.status == .waiting }.count
+            let childrenLabel = children.count == 1 ? "1 agent" : "\(children.count) agents"
             result.append(SidebarRow(
                 id: id, kind: .chat, depth: 1, parentID: entry.id, expanded: expanded,
                 hasChildren: !children.isEmpty,
-                childrenSummary: children.isEmpty ? nil : "\(children.count) agents · \(waiting) waiting",
+                childrenSummary: children.isEmpty ? nil : childrenLabel + (waiting == 0 ? "" : " · \(waiting) waiting"),
                 title: presentation.title, detail: "", status: status, counts: counts, age: presentation.age,
                 help: "\(presentation.title)\n\(entry.id)", pinned: navigation.pinned.contains(entry.id),
                 archived: navigation.archived.contains(entry.id), missing: false, newChatEnabled: false
@@ -153,7 +202,7 @@ public enum SidebarRows {
                     SidebarRow(
                         id: "child:\(sessionID.rawValue)/\(agent.id.rawValue)", kind: .child, depth: 2,
                         parentID: id, expanded: false, hasChildren: false, childrenSummary: nil,
-                        title: agent.id.rawValue, detail: agent.role, status: agent.status, counts: [], age: nil,
+                        title: agent.id.rawValue, detail: "· \(agent.role)", status: agent.status, counts: [], age: nil,
                         help: "\(agent.id.rawValue) · \(agent.role)", pinned: navigation.pinned.contains(entry.id),
                         archived: navigation.archived.contains(entry.id), missing: false, newChatEnabled: false
                     )

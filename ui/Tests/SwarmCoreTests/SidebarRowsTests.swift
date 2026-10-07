@@ -59,6 +59,7 @@ struct SidebarRowsTests {
         #expect(opened[2].depth == 2)
         #expect(opened[2].parentID == "chat:chat")
         #expect(opened[2].status == .ended)
+        #expect(opened[2].detail == "· code")
         navigation.toggleCollapsed("/repo")
         let workspaceFold = rows(project, navigation: navigation, agents: agents)
         #expect(workspaceFold.count == 1)
@@ -105,5 +106,71 @@ struct SidebarRowsTests {
         #expect(rows(project, navigation: navigation, archive: true).map(\.kind) == [.workspace, .chat])
         #expect(rows(project, navigation: navigation, archive: true).allSatisfy { $0.archived })
         #expect(rows(self.project([])).map(\.kind) == [.workspace])
+    }
+
+    @Test("Children without a wait show only their count")
+    func childrenWithoutWaiting() {
+        let chat = SwarmProjectSession(sessions: [session("chat", time: 1)], title: "Work")
+        let result = rows(project([chat]), agents: [chat.id: [
+            SwarmAgent(id: .init("worker"), role: "code", pane: "%1", alive: true, state: "working"),
+        ]])
+        #expect(result[1].childrenSummary == "1 agent")
+        let two = rows(project([chat]), agents: [chat.id: [
+            SwarmAgent(id: .init("one"), role: "code", pane: "%1", alive: true),
+            SwarmAgent(id: .init("two"), role: "review", pane: "%2", alive: true),
+        ]])
+        #expect(two[1].childrenSummary == "2 agents")
+        let waiting = rows(project([chat]), agents: [chat.id: [
+            SwarmAgent(id: .init("worker"), role: "review", pane: "%1", alive: true, state: "waiting"),
+        ]])
+        #expect(waiting[1].childrenSummary == "1 agent · 1 waiting")
+    }
+
+    @Test("Workspace, chat, and child ids map to the right selection; more and stale ids do not")
+    func selectionMapping() throws {
+        let next = session("next", time: 2)
+        let chat = SwarmProjectSession(sessions: [next, session("root", time: 1)], title: "Continued")
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project([chat])]))
+        let agents: [SwarmSessionID: [SwarmAgent]] = [next.id: [
+            SwarmAgent(id: .init("worker"), role: "code", pane: "%1", alive: true),
+        ]]
+        let workspace = try #require(SidebarRows.selection(for: "/repo", in: entries, agentsBySession: agents))
+        #expect(workspace.workspaceID == "/repo")
+        #expect(workspace.chatID == nil)
+        let chatTarget = try #require(SidebarRows.selection(for: "chat:root", in: entries, agentsBySession: agents))
+        #expect(chatTarget.chatID == next.id)
+        #expect(chatTarget.agentID == nil)
+        let child = try #require(SidebarRows.selection(for: "child:next/worker", in: entries, agentsBySession: agents))
+        #expect(child.workspaceID == "/repo")
+        #expect(child.chatID == next.id)
+        #expect(child.agentID == .init("worker"))
+        #expect(child.agentSessionID == next.id)
+        #expect(child.rowID == "child:next/worker")
+        #expect(SidebarRows.selection(for: "more:/repo", in: entries, agentsBySession: agents) == nil)
+        #expect(SidebarRows.selection(for: "chat:missing", in: entries, agentsBySession: agents) == nil)
+        #expect(SidebarRows.selection(for: "child:next/missing", in: entries, agentsBySession: agents) == nil)
+        var navigation = WorkspaceNavigation()
+        navigation.select(entries[0], chat: child.chatID)
+        #expect(navigation.selectedWorkspace == child.workspaceID)
+        #expect(navigation.selectedChats[child.workspaceID] == "next")
+    }
+
+    @Test("A hidden child highlights its chat and a hidden chat highlights its workspace")
+    func selectionFolds() throws {
+        let chat = SwarmProjectSession(sessions: [session("chat", time: 1)], title: "Work")
+        let project = project([chat])
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project]))
+        let agents: [SwarmSessionID: [SwarmAgent]] = [chat.id: [
+            SwarmAgent(id: .init("worker"), role: "code", pane: "%1", alive: true),
+        ]]
+        let child = try #require(SidebarRows.selection(for: "child:chat/worker", in: entries, agentsBySession: agents))
+        var navigation = WorkspaceNavigation()
+        #expect(SidebarRows.selectedID(in: rows(project, agents: agents), workspace: "/repo", chat: chat, child: child) == "chat:chat")
+        navigation.toggleCollapsed("chat:chat")
+        #expect(SidebarRows.selectedID(in: rows(project, navigation: navigation, agents: agents), workspace: "/repo",
+                                       chat: chat, child: child) == "child:chat/worker")
+        navigation.toggleCollapsed("/repo")
+        #expect(SidebarRows.selectedID(in: rows(project, navigation: navigation, agents: agents), workspace: "/repo",
+                                       chat: chat, child: child) == "/repo")
     }
 }

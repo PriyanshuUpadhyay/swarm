@@ -460,6 +460,9 @@ final class SessionsTreeModel {
 private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
     @State private var panes = AgentPaneStore()
+    @State private var expandedLists: Set<String> = []
+    /// Applied after the chat switch releases its old columns.
+    @State private var sidebarFocus: SidebarSelection?
     @State private var newTaskProject: ProjectNode?
     @State private var switchTarget: SwitchTarget?
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
@@ -505,7 +508,7 @@ private struct SessionsWindow: View {
                 sections: sidebarSections(showingArchive: showingArchive),
                 collapsed: model.navigation.collapsed,
                 loaded: model.hasLoaded,
-                selectedID: model.navigation.selectedWorkspace,
+                selectedID: selectedSidebarID,
                 showingArchive: showingArchive,
                 actions: sidebarActions
             ) {
@@ -598,6 +601,12 @@ private struct SessionsWindow: View {
             guard oldID != id else { return }
             NSApp.keyWindow?.makeFirstResponder(nil)
             panes.stop(keepingSession: id)
+            if let target = sidebarFocus, target.chatID == id,
+               let session = target.agentSessionID, let agent = target.agentID {
+                panes.focus(key: AgentPaneStore.key(session: session, agent: agent.rawValue))
+            } else {
+                sidebarFocus = nil
+            }
             documentVisible = false
         }
         .background(WindowFrameRestorer())
@@ -830,7 +839,15 @@ private struct SessionsWindow: View {
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
         SidebarRows.sections(
             projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
-            showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970)
+            showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970),
+            agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists
+        )
+    }
+
+    private var selectedSidebarID: String? {
+        SidebarRows.selectedID(
+            in: sidebarSections(showingArchive: showingArchive).flatMap(\.rows),
+            workspace: model.navigation.selectedWorkspace, chat: model.selectedSession, child: sidebarFocus
         )
     }
 
@@ -850,13 +867,24 @@ private struct SessionsWindow: View {
                 if mode == .workspaces { documentVisible = false }
             },
             select: { id in
-                guard let entry = entry(id) else { return }
-                if model.navigation.archived.contains(id) {
-                    model.navigation.archived.remove(id)
+                guard let target = SidebarRows.selection(
+                    for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession
+                ), let entry = entry(target.workspaceID) else { return }
+                if model.navigation.archived.contains(entry.id) {
+                    model.navigation.archived.remove(entry.id)
                     showingArchive = false
                 }
                 ownerMoves += 1
-                model.selectWorkspace(entry)
+                sidebarFocus = target.agentID == nil ? nil : target
+                if let chat = target.chatID {
+                    let changedChat = model.selectedSessionID != chat
+                    model.select(chat)
+                    if !changedChat, let session = target.agentSessionID, let agent = target.agentID {
+                        panes.focus(key: AgentPaneStore.key(session: session, agent: agent.rawValue))
+                    }
+                } else {
+                    model.selectWorkspace(entry)
+                }
             },
             home: {
                 ownerMoves += 1
@@ -874,9 +902,9 @@ private struct SessionsWindow: View {
             importProject: importProject,
             createProject: createProject,
             toggleCollapsed: { path in
-                if model.navigation.collapsed.contains(path) { model.navigation.collapsed.remove(path) }
-                else { model.navigation.collapsed.insert(path) }
+                model.navigation.toggleCollapsed(path)
             },
+            expandList: { expandedLists.insert($0) },
             newChat: { startChat(in: $0) },
             togglePin: { id in
                 if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
@@ -889,6 +917,10 @@ private struct SessionsWindow: View {
                 renameTarget = entry
             },
             archive: { id in entry(id).map(model.archiveWorkspace) },
+            archiveChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { archiveChat(chat) }
+            },
             restore: { model.navigation.archived.remove($0) },
             removeProject: { id in
                 removeProjectTarget = model.tree.projects.first { SidebarSection.id(of: $0) == id }

@@ -30,10 +30,12 @@ struct SidebarActions {
     var importProject: () -> Void
     var createProject: () -> Void
     var toggleCollapsed: (String) -> Void
+    var expandList: (String) -> Void
     var newChat: (String) -> Void
     var togglePin: (String) -> Void
     var rename: (String) -> Void
     var archive: (String) -> Void
+    var archiveChat: (String) -> Void
     var restore: (String) -> Void
     var removeProject: (String) -> Void
     var pruneWorktree: (String) -> Void
@@ -152,17 +154,34 @@ struct SidebarView<Details: View>: View {
 
     private func rows(_ rows: [SidebarRow]) -> some View {
         ForEach(rows) { row in
-            SidebarRowView(
-                row: row, selected: row.id == selectedID,
-                newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) }
-            )
-            .tag(row.id)
-            .contextMenu { menu(for: row) }
+            if row.kind == .more, let workspace = row.parentID {
+                Button { actions.expandList(workspace) } label: {
+                    SidebarRowView(row: row, selected: false, newChat: nil, toggle: nil)
+                }
+                .buttonStyle(.plain)
+            } else {
+                SidebarRowView(
+                    row: row, selected: row.id == selectedID,
+                    newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) },
+                    toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil
+                )
+                .tag(row.id)
+                .contextMenu { menu(for: row) }
+            }
         }
     }
 
     @ViewBuilder
     private func menu(for row: SidebarRow) -> some View {
+        if row.kind == .chat, !row.archived {
+            Button("Archive chat") { actions.archiveChat(row.id) }
+        } else if row.kind == .workspace {
+            workspaceMenu(for: row)
+        }
+    }
+
+    @ViewBuilder
+    private func workspaceMenu(for row: SidebarRow) -> some View {
         if row.archived {
             Button("Restore workspace") { actions.restore(row.id) }
         } else {
@@ -231,15 +250,71 @@ private struct SidebarRowView: View {
     let row: SidebarRow
     let selected: Bool
     let newChat: (() -> Void)?
+    let toggle: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            mainLine
+            if let summary = row.childrenSummary, let toggle {
+                Button(action: toggle) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        disclosure
+                        Text(summary).lineLimit(1)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                .accessibilityLabel(summary)
+                .accessibilityValue(row.expanded ? "expanded" : "collapsed")
+            }
+            if row.kind == .workspace, !row.hasChildren, let newChat {
+                Button("New chat", systemImage: "plus", action: newChat)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, DesignTokens.Spacing.l)
+            }
+        }
+        .padding(.leading, CGFloat(row.depth) * DesignTokens.Spacing.l)
+        .opacity(row.kind == .child && (row.status == .done || row.status == .ended) ? DesignTokens.endedPaneOpacity : 1)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .help(row.help)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(row.detail.isEmpty ? row.title : "\(row.title), \(row.detail)")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityActions {
+            if let toggle { Button(row.expanded ? "Collapse" : "Expand", action: toggle) }
+            if let newChat { Button("New chat", action: newChat) }
+        }
+    }
+
+    private var disclosure: some View {
+        Image(systemName: row.expanded ? "chevron.down" : "chevron.forward")
+            .font(.caption2.weight(.semibold))
+            .frame(width: DesignTokens.Size.glyphSlot)
+    }
+
+    private var mainLine: some View {
         HStack(spacing: DesignTokens.Spacing.s) {
+            Group {
+                if row.kind == .workspace, let toggle {
+                    Button(action: toggle) { disclosure }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(row.expanded ? "Collapse workspace" : "Expand workspace")
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: DesignTokens.Size.glyphSlot)
             Group {
                 if let status = row.status { StatusGlyph(status: status) }
             }
             .frame(width: DesignTokens.Size.glyphSlot)
             Text(row.title).lineLimit(1).layoutPriority(1)
+                .foregroundStyle(row.kind == .more ? .secondary : .primary)
             Text(row.detail)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -267,15 +342,6 @@ private struct SidebarRowView: View {
             }
         }
         .frame(minHeight: DesignTokens.Size.row)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .help(row.help)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.detail.isEmpty ? row.title : "\(row.title), \(row.detail)")
-        .accessibilityValue(accessibilityValue)
-        .accessibilityActions {
-            if let newChat { Button("New chat", action: newChat) }
-        }
     }
 
     private var accessibilityValue: String {
