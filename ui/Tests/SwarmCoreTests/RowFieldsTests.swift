@@ -98,6 +98,31 @@ struct RowFieldPresentationTests {
         #expect(noUsage[0].fields.map(\.field) == [.provider, .title])
     }
 
+    @Test("Tab child text counts only the current session, including finished agents")
+    func currentChildrenTabs() {
+        let current = chat()
+        let previous = SwarmSession(
+            id: .init("previous"), talkMode: "lane", adapter: "tmux-solo", cwd: "/repo",
+            createdAt: 1, chairLog: nil, agents: 3, messages: 0, lastMessageAt: nil
+        )
+        let continued = SwarmProjectSession(sessions: [current.session, previous], title: current.title)
+        let row = ChatRow(session: continued, workspace: "repo", workspacePath: "/repo")
+        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "%0", alive: true)
+        let finished = SwarmAgent(id: .init("finished"), role: "code", pane: nil, alive: false)
+        let live = SwarmAgent(id: .init("live"), role: "review", pane: "%1", alive: true)
+        var agents = [current.id: [chair, finished], previous.id: [chair, finished, live]]
+        var navigation = WorkspaceNavigation()
+        navigation.fields.tab = [.children]
+        let single = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        #expect(single[0].fields.map(\.text) == ["1 agent"])
+        agents[current.id] = [chair, finished, live]
+        let multiple = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        #expect(multiple[0].fields.map(\.text) == ["2 agents"])
+        agents[current.id] = [chair]
+        let noChildren = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        #expect(noChildren[0].fields.isEmpty)
+    }
+
     @Test("Usage costs use the current locale's USD currency format")
     func currencyCost() {
         var agent = SwarmAgent(id: .init("orchestrator"), role: "chat", pane: "%0", alive: true)

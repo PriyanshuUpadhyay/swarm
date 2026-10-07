@@ -97,11 +97,9 @@ public enum RowFields {
     }
 
     static func childCount(_ chat: SwarmProjectSession, agentsBySession: [SwarmSessionID: [SwarmAgent]]) -> String? {
-        let count = chat.sessions.reduce(0) { total, session in
-            total + (agentsBySession[session.id] ?? []).filter {
-                !SwarmPanePolicy.isChair($0, in: session)
-            }.count
-        }
+        let count = (agentsBySession[chat.id] ?? []).filter {
+            !SwarmPanePolicy.isChair($0, in: chat.session)
+        }.count
         return count == 0 ? nil : count == 1 ? "1 agent" : "\(count) agents"
     }
 

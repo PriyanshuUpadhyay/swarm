@@ -258,7 +258,7 @@ public enum SidebarRows {
                     var context = RowFields.chatContext(
                         chat, title: row.title, navigation: navigation, now: now, agentsBySession: agentsBySession,
                         branch: entry.workspace.branch, workspace: workspaceFields[path] ?? .init(),
-                        children: row.childrenSummary ?? "", steps: row.runStep.map { "\($0.skill) · \($0.stepName)" }
+                        children: row.childrenSummary, steps: row.runStep.map { "\($0.skill) · \($0.stepName)" }
                     )
                     context.status = row.status
                     row.fields = context.values(navigation.fields.chat)
