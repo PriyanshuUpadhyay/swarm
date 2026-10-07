@@ -160,7 +160,10 @@ struct ProjectRetentionTests {
         #expect(pruned.archived == navigation.archived)
         #expect(pruned.names == navigation.names)
         #expect(pruned.selectedChats == navigation.selectedChats)
-        #expect(store.load() == pruned)
+        var expected = navigation
+        expected.ownerChoices.projectPaths = [existing, gone]
+        expected.workspaceOrder = [existing: [existing, gone], gone: [existing]]
+        #expect(pruned == expected)
         let choices = try OwnerChoicesStore(folder: folder).load()
         #expect(choices.workspaceOrder == [existing: [existing, gone], gone: [existing]])
         #expect(choices.projectPaths == [existing, gone])
@@ -228,18 +231,6 @@ struct ProjectRetentionTests {
             repositoryPathsResolver: { _ in GitRepositoryPaths(gitDirectory: "/repo/.git", commonDirectory: "/repo/.git") },
             worktreeLister: { _ in [WorktreeEntry(path: "/repo/main", branch: "main"), WorktreeEntry(path: "/repo/feature", branch: "feature")] }
         )
-    }
-    private func savedChoices(from store: SwarmProjectStore) throws -> OwnerChoices {
-        try #require(store.loadChoices(reportError: { Issue.record("\($0.message)") }))
-    }
-
-    private func refresh(_ tree: SessionsTree, in projects: SwarmProjectStore, choicesFolder: URL) throws {
-        let suite = "ProjectRetentionTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: choicesFolder)
-        _ = projects.refreshChoices(shown: tree.projects, navigation: store.load(),
-                                    navigationStore: store, reportError: { Issue.record("\($0.message)") })
     }
 
 }

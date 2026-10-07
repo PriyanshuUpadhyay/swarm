@@ -150,6 +150,6 @@ struct WorkspaceOrderTests {
         store.save(navigation)
         let refreshed = store.load()
         #expect(refreshed.workspaceOrder == navigation.workspaceOrder)
-        #expect(store.load().workspaceOrder == refreshed.workspaceOrder)
+        #expect(try OwnerChoicesStore(folder: folder.appendingPathComponent("choices")).load().workspaceOrder == navigation.workspaceOrder)
     }
 }
