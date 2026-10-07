@@ -347,17 +347,17 @@ public enum SidebarRows {
             let counts = chat.statusCounts.map { StatusCount(status: $0.key, count: $0.value) }
                 .sorted { $0.status.urgency > $1.status.urgency }
             let presentation = SessionRowPresentation.make(
-                ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now,
-                appName: navigation.chatNames[ChatTitle.key(chat)]
+                ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now
             )
+            let title = navigation.title(for: chat)
             let waiting = children.filter { $0.1.status == .waiting }.count
             let childrenLabel = children.count == 1 ? "1 agent" : "\(children.count) agents"
             result.append(SidebarRow(
                 id: id, kind: .chat, depth: 1, parentID: entry.id, expanded: expanded,
                 hasChildren: !children.isEmpty,
                 childrenSummary: children.isEmpty ? nil : childrenLabel + (waiting == 0 ? "" : " · \(waiting) waiting"),
-                title: presentation.title, detail: "", status: status, counts: counts, age: presentation.age,
-                help: "\(presentation.title)\n\(entry.id)", pinned: navigation.pinned.contains(entry.id),
+                title: title, detail: "", status: status, counts: counts, age: presentation.age,
+                help: "\(title)\n\(entry.id)", pinned: navigation.pinned.contains(entry.id),
                 archived: navigation.archived.contains(entry.id), missing: false, newChatEnabled: false,
                 runStep: stepsByChat[chat.id]
             ))

@@ -243,7 +243,7 @@ public struct SessionsTree: Sendable, Hashable {
             guard let row = project.chats.first(where: {
                 $0.session.sessions.contains { $0.id == id }
             }) else { continue }
-            let title = ChatTitle.title(row.session, appName: navigation.chatNames[ChatTitle.key(row.session)])
+            let title = navigation.title(for: row.session)
             return "\(navigation.projectTitle(for: project)) · \(title)"
         }
         return nil

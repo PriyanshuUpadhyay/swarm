@@ -33,7 +33,7 @@ struct ChatTitleTests {
         let entries = WorkspaceEntry.list(in: tree)
         let rows = SidebarRows.sections(projects: tree.projects, workspaces: entries, navigation: navigation, search: "", showingArchive: false, now: 3).flatMap(\.rows)
         #expect(rows.first { $0.kind == .chat }?.title == "Fix login")
-        #expect(ChatTab.tabs([chat], closing: [], now: 3, chatNames: navigation.chatNames).first?.title == "Fix login")
+        #expect(ChatTab.tabs([chat], closing: [], now: 3, navigation: navigation).first?.title == "Fix login")
         #expect(PaletteSource.workspaces(entries, navigation: navigation, now: 3).chats.first?.title == "Fix login")
         #expect(SessionRowPresentation.make(chat, now: 3).title == "Original prompt")
     }

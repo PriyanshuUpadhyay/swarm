@@ -20,7 +20,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     /// that a pending chat stands for is left out, so one chat never shows as two tabs.
     public static func tabs(
         _ chats: [ChatRow], pending: [PendingChat] = [], closing: Set<SwarmSessionID>, now: Int,
-        chatNames: [String: String] = [:], navigation: WorkspaceNavigation = .init(),
+        navigation: WorkspaceNavigation = .init(),
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], workspaceFields: [String: RowWorkspaceFields] = [:],
         branches: [String: String] = [:], stepsByChat: [SwarmSessionID: String] = [:]
     ) -> [ChatTab] {
@@ -36,15 +36,16 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
                 pending: pending
             )
         } + chats.filter { !starting.contains($0.id) }.map { chat in
-            ChatTab(
+            let title = navigation.title(for: chat.session)
+            return ChatTab(
                 id: chat.id.rawValue,
-                title: ChatTitle.title(chat.session, appName: chatNames[ChatTitle.key(chat.session)]),
+                title: title,
                 status: chat.session.status,
                 badge: chat.session.provider.map(badge),
                 canClose: SessionRowPresentation.make(chat, now: now).state == .live
                     && !closing.contains(chat.id),
                 fields: RowFields.chatContext(
-                    chat.session, title: ChatTitle.title(chat.session, appName: chatNames[ChatTitle.key(chat.session)]),
+                    chat.session, title: title,
                     navigation: navigation, now: now, agentsBySession: agentsBySession,
                     branch: branches[chat.workspacePath], workspace: workspaceFields[chat.workspacePath] ?? .init(),
                     steps: stepsByChat[chat.id]

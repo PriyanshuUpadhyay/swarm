@@ -87,6 +87,10 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return true
     }
 
+    public func title(for chat: SwarmProjectSession) -> String {
+        ChatTitle.title(chat, appName: chatNames[ChatTitle.key(chat)])
+    }
+
     public mutating func renameChat(_ chat: SwarmProjectSession, to name: String) {
         chatNames[ChatTitle.key(chat)] = Self.savedName(name)
     }
@@ -247,7 +251,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public func matches(_ query: String, entry: WorkspaceEntry) -> Bool {
         query.isEmpty || [title(for: entry), projectTitle(for: entry.project), entry.workspace.name, entry.id]
             .contains { $0.localizedCaseInsensitiveContains(query) }
-            || entry.chats.contains { ChatTitle.title($0, appName: chatNames[ChatTitle.key($0)]).localizedCaseInsensitiveContains(query) }
+            || entry.chats.contains { title(for: $0).localizedCaseInsensitiveContains(query) }
     }
 }
 

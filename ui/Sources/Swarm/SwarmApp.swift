@@ -1033,7 +1033,7 @@ private struct SessionsWindow: View {
         var titles: [String: String] = [:]
         for step in (model.runsByWorkspace[directory] ?? []).flatMap(\.steps) {
             if let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: model.tree.agentsBySession) {
-                titles[step.path] = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
+                titles[step.path] = model.navigation.title(for: chat)
             }
         }
         return titles
@@ -1307,7 +1307,7 @@ private struct SessionsWindow: View {
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
         return ChatTab.tabs(
             chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
-            now: Int(Date().timeIntervalSince1970), chatNames: model.navigation.chatNames,
+            now: Int(Date().timeIntervalSince1970),
             navigation: model.navigation, agentsBySession: model.tree.agentsBySession,
             workspaceFields: model.workspaceFields,
             branches: Dictionary(model.workspaces.compactMap { entry in entry.workspace.branch.map { (entry.id, $0) } },
@@ -1399,7 +1399,7 @@ private struct SessionsWindow: View {
 
     private func beginRenameChat(_ id: SwarmSessionID) {
         guard let chat = model.tree.session(id) else { return }
-        renameName = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
+        renameName = model.navigation.title(for: chat)
         renameTarget = .chat(chat)
     }
 
