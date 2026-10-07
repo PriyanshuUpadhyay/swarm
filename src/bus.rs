@@ -34,6 +34,20 @@ pub struct Agent {
     pub log: Option<String>,
     /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.
     pub prompt: Option<crate::screen::Prompt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(rename = "costUsd", skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

@@ -1795,6 +1795,7 @@ struct SpawnOptions<'a> {
     provider: Option<&'a str>,
     account: Option<&'a str>,
     command: &'a [String],
+    runner: Option<&'a swarm::config::Runner>,
 }
 
 fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
@@ -1808,6 +1809,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
                     provider,
                     account,
                     command: &args[index + 1..],
+                    runner: None,
                 });
             }
             "--provider" if provider.is_none() && index + 1 < args.len() => {
@@ -1828,6 +1830,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
         provider,
         account,
         command: &[],
+        runner: None,
     })
 }
 
@@ -2003,6 +2006,7 @@ fn register_spawned_pane(
     role: &str,
     provider: Option<&str>,
     vars: &[(&str, &str)],
+    launch: Option<(&swarm::config::Runner, Option<&str>)>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     swarm::store::add_agent(connection, session_id, agent_id, role)?;
     if let Some(provider) = provider {
@@ -2016,6 +2020,9 @@ fn register_spawned_pane(
         }
     };
     swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
+    if let Some((runner, account)) = launch {
+        swarm::store::set_launch(connection, session_id, agent_id, role, runner, account)?;
+    }
     Ok(pane)
 }
 
@@ -2139,6 +2146,7 @@ fn spawn_agent(
         role,
         provider.map(Provider::id),
         &vars,
+        options.runner.map(|runner| (runner, options.account)),
     )?;
     if !options.command.is_empty() {
         // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
@@ -2887,6 +2895,13 @@ fn list_agents(
             state_detail: row.state_detail,
             log: row.log.map(resolved_agent_log),
             prompt,
+            profile: row.profile,
+            runner: row.runner,
+            model: row.model,
+            effort: row.effort,
+            account: row.account,
+            cost_usd: row.cost_usd,
+            tokens: row.tokens,
         });
     }
     // The app runs no `swarm sweep`, so its listing also settles rings and reports lost messages
@@ -3383,6 +3398,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
         let kind = Provider::parse(provider.as_deref().unwrap_or_default())
             .ok_or("swarm: launch has no known provider")?;
+        let runner = swarm::config::Runner {
+            provider: kind,
+            model: resolved.model.clone().ok_or("swarm: launch has no model")?,
+            effort: resolved
+                .effort
+                .clone()
+                .ok_or("swarm: launch has no effort")?,
+            sandbox: resolved.sandbox.clone(),
+            approval: resolved.approval.clone(),
+            permission: resolved.permission.clone(),
+        };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
         // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
         // both use this one answer.
@@ -3517,6 +3543,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 provider: provider.as_deref(),
                 account: picked.as_ref().map(|picked| picked.name.as_str()),
                 command: &command,
+                runner: Some(&runner),
             },
         );
     }
@@ -6002,6 +6029,61 @@ mod tests {
     }
 
     #[test]
+    fn launch_fields_survive_a_fresh_connection_and_listing() {
+        let root = std::env::temp_dir().join(format!("swarm-runner-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("bus.sqlite");
+        let connection = swarm::store::open(&db).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::parse("fake", "self = true\nspawn = printf '%s' '%2'\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();
+        let runner = swarm::config::Runner {
+            provider: Provider::Codex,
+            model: "gpt-6".into(),
+            effort: "high".into(),
+            sandbox: None,
+            approval: None,
+            permission: None,
+        };
+        register_spawned_pane(
+            &connection,
+            &adapter,
+            &session,
+            CODER,
+            "code.complex",
+            Some("codex"),
+            &[],
+            Some((&runner, Some("work"))),
+        )
+        .unwrap();
+        let profile: String = connection
+            .query_row("SELECT profile FROM agent WHERE id = ?1", [CODER], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(profile, "code.complex");
+        drop(connection);
+        let mut fresh = swarm::store::open(&db).unwrap();
+        let output =
+            serde_json::to_value(list_agents(&mut fresh, &root, &session, &adapter).unwrap())
+                .unwrap();
+        let agent = &output["agents"][0];
+        assert_eq!(agent["profile"], "code.complex");
+        assert_eq!(agent["runner"], "codex/gpt-6/high");
+        assert_eq!(agent["model"], "gpt-6");
+        assert_eq!(agent["effort"], "high");
+        assert_eq!(agent["account"], "work");
+        assert!(agent.get("costUsd").is_none());
+        assert!(agent.get("tokens").is_none());
+    }
+
+    #[test]
     fn a_failed_adapter_spawn_rolls_back_the_agent() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(
@@ -6019,8 +6101,17 @@ mod tests {
         .unwrap();
 
         assert!(
-            register_spawned_pane(&connection, &failed, &session, CODER, "coder", None, &[])
-                .is_err()
+            register_spawned_pane(
+                &connection,
+                &failed,
+                &session,
+                CODER,
+                "coder",
+                None,
+                &[],
+                None
+            )
+            .is_err()
         );
         assert!(
             swarm::store::agents(&connection, &session)
@@ -6034,8 +6125,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            register_spawned_pane(&connection, &working, &session, CODER, "coder", None, &[])
-                .unwrap(),
+            register_spawned_pane(
+                &connection,
+                &working,
+                &session,
+                CODER,
+                "coder",
+                None,
+                &[],
+                None
+            )
+            .unwrap(),
             "%2"
         );
     }

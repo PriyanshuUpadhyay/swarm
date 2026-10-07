@@ -21,6 +21,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004.sql"),
     include_str!("../migrations/0005.sql"),
     include_str!("../migrations/0006.sql"),
+    include_str!("../migrations/0007.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -100,6 +101,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 6 {
         tx.execute_batch(MIGRATIONS[5])?;
         tx.pragma_update(None, "user_version", 6)?;
+    }
+
+    if version < 7 {
+        tx.execute_batch(MIGRATIONS[6])?;
+        tx.pragma_update(None, "user_version", 7)?;
     }
 
     tx.commit()?;
@@ -544,6 +550,38 @@ pub struct AgentRow {
     pub state_detail: Option<String>,
     /// The chat log its provider's hooks reported; kept after the agent ends.
     pub log: Option<String>,
+    pub profile: Option<String>,
+    pub runner: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub account: Option<String>,
+    pub cost_usd: Option<f64>,
+    pub tokens: Option<i64>,
+}
+
+/// Store the runner selected by launch; absent account means the provider's own login.
+pub fn set_launch(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    profile: &str,
+    runner: &crate::config::Runner,
+    account: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE agent SET profile = ?3, runner = ?4, model = ?5, effort = ?6, account = ?7
+         WHERE session_id = ?1 AND id = ?2",
+        (
+            session_id,
+            agent_id,
+            profile,
+            runner.label(),
+            &runner.model,
+            &runner.effort,
+            account,
+        ),
+    )?;
+    Ok(())
 }
 
 /// Record the chat log a provider hook reported for an agent.
@@ -652,7 +690,7 @@ pub fn agents(
 ) -> Result<Vec<AgentRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT id, role, pane_id, provider, created_at, state, state_at, state_source, state_detail,
-                log
+                log, profile, runner, model, effort, account, cost_usd, tokens
          FROM agent WHERE session_id = ?1 ORDER BY id",
     )?;
     let rows = statement.query_map([session_id], |row| {
@@ -667,6 +705,13 @@ pub fn agents(
             state_source: row.get(7)?,
             state_detail: row.get(8)?,
             log: row.get(9)?,
+            profile: row.get(10)?,
+            runner: row.get(11)?,
+            model: row.get(12)?,
+            effort: row.get(13)?,
+            account: row.get(14)?,
+            cost_usd: row.get(15)?,
+            tokens: row.get(16)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -2053,7 +2098,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2080,7 +2125,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -2332,7 +2377,7 @@ mod tests {
         );
         Connection::open(&db)
             .unwrap()
-            .execute_batch("PRAGMA user_version = 7")
+            .pragma_update(None, "user_version", MIGRATIONS.len() + 1)
             .unwrap();
         assert!(open(&db).is_err());
     }
@@ -2417,14 +2462,18 @@ mod tests {
         let root = temp_root("migrate-race");
         std::fs::create_dir_all(&root).unwrap();
         let db = root.join("swarm.db");
-        open(&db)
-            .unwrap()
-            .execute_batch("DROP TABLE managed_edit; PRAGMA user_version = 5;")
-            .unwrap();
         let first = Connection::open(&db).unwrap();
+        for migration in &MIGRATIONS[..5] {
+            first.execute_batch(migration).unwrap();
+        }
+        first.pragma_update(None, "user_version", 5).unwrap();
         first.execute_batch("BEGIN IMMEDIATE;").unwrap();
-        first.execute_batch(MIGRATIONS[5]).unwrap();
-        first.pragma_update(None, "user_version", 6).unwrap();
+        for migration in &MIGRATIONS[5..] {
+            first.execute_batch(migration).unwrap();
+        }
+        first
+            .pragma_update(None, "user_version", MIGRATIONS.len())
+            .unwrap();
         let committer = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
             first.execute_batch("COMMIT;").unwrap();
