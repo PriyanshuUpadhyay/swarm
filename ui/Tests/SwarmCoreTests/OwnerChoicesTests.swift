@@ -32,7 +32,7 @@ struct OwnerChoicesTests {
         navigation.names = ["/project/main": "Main work"]
         navigation.selectedWorkspace = "/project/main"
         navigation.selectedChats = ["/project/main": "chat"]
-        navigation.collapsed = ["/project"]
+        navigation.collapsed = [WorkspaceNavigation.projectCollapseID("/project")]
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         store.save(navigation)
         #expect(WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load() == navigation)
@@ -46,7 +46,7 @@ struct OwnerChoicesTests {
         #expect(viewState["archived"] == nil)
         #expect(viewState["names"] == nil)
         #expect(viewState["selectedWorkspace"] as? String == "/project/main")
-        #expect(viewState["collapsed"] as? [String] == ["/project"])
+        #expect(viewState["collapsed"] as? [String] == [WorkspaceNavigation.projectCollapseID("/project")])
     }
 
     @Test("Absent choices keys start empty")

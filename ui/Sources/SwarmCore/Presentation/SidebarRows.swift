@@ -74,7 +74,7 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
     public var collapseID: String {
         switch kind {
         case .pinned: "pinned"
-        case .project(let path): path
+        case .project(let path): WorkspaceNavigation.projectCollapseID(path)
         }
     }
 
@@ -100,6 +100,8 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
 }
 
 public enum SidebarRows {
+    public static let chatPrefix = "chat:"
+
     public static func runWorkspaces(_ entries: [WorkspaceEntry], navigation: WorkspaceNavigation) -> [String] {
         entries.filter {
             !$0.workspace.missing && !$0.workspace.isRemoved && !navigation.archived.contains($0.id)
@@ -266,7 +268,7 @@ public enum SidebarRows {
 
     /// A continuation can change the current session id without changing this row's identity.
     public static func chatID(_ chat: SwarmProjectSession) -> String {
-        "chat:\(ChatTitle.key(chat))"
+        "\(chatPrefix)\(ChatTitle.key(chat))"
     }
 
     /// Resolve against the current tree, so a stale row cannot select a different chat or agent.

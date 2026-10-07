@@ -193,7 +193,7 @@ struct WorkspaceNavigationTests {
         #expect(navigation.names.isEmpty)
         #expect(navigation.collapsed.isEmpty)
 
-        navigation.collapsed = ["/repo"]
+        navigation.collapsed = [WorkspaceNavigation.projectCollapseID("/repo")]
         store.save(navigation)
         #expect(store.load() == navigation)
     }
@@ -205,4 +205,20 @@ struct WorkspaceNavigationTests {
         #expect(WorkspaceNavigation.titleKey("Docs") == WorkspaceNavigation.titleKey("docs"))
         #expect(WorkspaceNavigation.titleKey("docs") != WorkspaceNavigation.titleKey("dogs"))
     }
+    @Test("Project and main workspace folds use separate saved keys")
+    func independentFolds() {
+        var navigation = WorkspaceNavigation()
+        navigation.toggleCollapsed("/repo")
+        #expect(navigation.collapsed.contains("workspace:/repo"))
+        #expect(!navigation.collapsed.contains("/repo"))
+        navigation.toggleCollapsed("project:/repo")
+        #expect(navigation.isCollapsed("/repo"))
+        #expect(navigation.isCollapsed("project:/repo"))
+        navigation.toggleCollapsed("project:/repo")
+        #expect(navigation.isCollapsed("/repo"))
+        #expect(!navigation.isCollapsed("project:/repo"))
+        navigation.toggleCollapsed("/repo")
+        #expect(navigation.collapsed.isEmpty)
+    }
+
 }

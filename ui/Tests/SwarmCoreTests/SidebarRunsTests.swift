@@ -61,7 +61,7 @@ struct SidebarRunsTests {
         #expect(SidebarRows.runSummary(waiting.prefix(1).map { $0 }) == "1 run waits")
         #expect(SidebarRows.runSummary(runs.filter { $0.urgency == .active }) == "flow · 01 build")
         var navigation = WorkspaceNavigation()
-        navigation.collapsed = [folder.path, folder.path + "/other"]
+        navigation.collapsed = [WorkspaceNavigation.workspaceCollapseID(folder.path), WorkspaceNavigation.workspaceCollapseID(folder.path + "/other")]
         #expect(SidebarRows.runWorkspaces(entries, navigation: navigation).isEmpty)
         navigation.pinned = [folder.path]
         #expect(SidebarRows.runWorkspaces(entries, navigation: navigation) == [folder.path])

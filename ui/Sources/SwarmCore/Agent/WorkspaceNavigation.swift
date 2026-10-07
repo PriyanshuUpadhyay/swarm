@@ -32,8 +32,8 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var chatNames: [String: String] = [:]
     public var projectNames: [String: String] = [:]
     public var workspaceOrder: [String: [String]] = [:]
-    /// Project and workspace paths whose rows are collapsed. Chat children start folded;
-    /// `expanded:chat:<root id>` records the exception in the same saved view state.
+    /// Project and workspace folds have separate keys. Chat children start folded;
+    /// `expanded:<chat row id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
     public var lastSeen: [String: Int] = [:]
     public var fields = RowFieldLists()
@@ -82,12 +82,21 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return name.isEmpty ? nil : name
     }
 
+    public static func projectCollapseID(_ path: String) -> String { "project:\(path)" }
+    public static func workspaceCollapseID(_ path: String) -> String { "workspace:\(path)" }
+
+    private static func collapseKey(_ id: String) -> String {
+        if id.hasPrefix(SidebarRows.chatPrefix) { return "expanded:\(id)" }
+        return id.hasPrefix("/") ? workspaceCollapseID(id) : id
+    }
+
     public func isCollapsed(_ id: String) -> Bool {
-        id.hasPrefix("chat:") ? !collapsed.contains("expanded:\(id)") : collapsed.contains(id)
+        let stored = collapsed.contains(Self.collapseKey(id))
+        return id.hasPrefix(SidebarRows.chatPrefix) ? !stored : stored
     }
 
     public mutating func toggleCollapsed(_ id: String) {
-        let key = id.hasPrefix("chat:") ? "expanded:\(id)" : id
+        let key = Self.collapseKey(id)
         if collapsed.contains(key) { collapsed.remove(key) }
         else { collapsed.insert(key) }
     }

@@ -115,16 +115,16 @@ struct SidebarView<Details: View>: View {
                         Section {} header: { pinnedHeader(status: nil) }
                     }
                     ForEach(sections) { section in
-                        if case .project(let path) = section.kind {
+                        if case .project = section.kind {
                             // The archive view lists every archived row, with no collapse.
-                            let expanded = showingArchive || !collapsed.contains(path)
+                            let expanded = showingArchive || !collapsed.contains(section.collapseID)
                             Section {
                                 if expanded { rows(section.rows) }
                             } header: {
                                 ProjectHeader(
                                     title: section.title, fields: section.fields, expanded: expanded,
                                     status: expanded ? nil : section.status,
-                                    toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
+                                    toggle: showingArchive ? nil : { actions.toggleCollapsed(section.collapseID) },
                                     newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) },
                                     renameProject: { actions.renameProject(section.id) },
                                     removeProject: { actions.removeProject(section.id) }

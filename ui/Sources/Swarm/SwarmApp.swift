@@ -44,7 +44,7 @@ final class SessionsTreeModel {
     private func expandProject(of entry: WorkspaceEntry) {
         guard !navigation.pinned.contains(entry.id),
               let project = tree.project(containing: entry.id) else { return }
-        navigation.collapsed.remove(project.path)
+        navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
     }
 
     func showHome() {
