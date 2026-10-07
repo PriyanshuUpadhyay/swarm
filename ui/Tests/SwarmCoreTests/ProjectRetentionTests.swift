@@ -16,17 +16,18 @@ struct ProjectRetentionTests {
         var navigation = WorkspaceNavigation()
         navigation.pinned = ["/repo/main"]
         navigation.selectedChats = ["/repo/main": "chat"]
+        var alerts = OwnerChoicesAlerts()
         var errors: [String] = []
         let refreshed = projects.refreshChoices(
             shown: tree.projects, navigation: navigation, navigationStore: navigationStore,
-            reportError: { errors.append($0) }
+            reportError: { if alerts.report($0) { errors.append($0.message) } }
         )
         #expect(refreshed == navigation)
-        #expect(errors == ["SWARM_HOME is set but empty"])
+        #expect(errors == ["Could not save sidebar choices. SWARM_HOME is set but empty"])
         #expect(tree.projects.map(\.path) == ["/repo"])
         _ = projects.refreshChoices(
             shown: tree.projects, navigation: navigation, navigationStore: navigationStore,
-            reportError: { errors.append($0) }
+            reportError: { if alerts.report($0) { errors.append($0.message) } }
         )
         #expect(errors.count == 1)
     }
@@ -229,7 +230,7 @@ struct ProjectRetentionTests {
         )
     }
     private func savedChoices(from store: SwarmProjectStore) throws -> OwnerChoices {
-        try #require(store.loadChoices(reportError: { Issue.record("\($0)") }))
+        try #require(store.loadChoices(reportError: { Issue.record("\($0.message)") }))
     }
 
     private func refresh(_ tree: SessionsTree, in projects: SwarmProjectStore, choicesFolder: URL) throws {
@@ -238,7 +239,7 @@ struct ProjectRetentionTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: choicesFolder)
         _ = projects.refreshChoices(shown: tree.projects, navigation: store.load(),
-                                    navigationStore: store, reportError: { Issue.record("\($0)") })
+                                    navigationStore: store, reportError: { Issue.record("\($0.message)") })
     }
 
 }

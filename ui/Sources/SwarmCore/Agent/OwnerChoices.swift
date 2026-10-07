@@ -65,6 +65,40 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     }
 }
 
+public struct OwnerChoicesFailure: Hashable, Sendable {
+    public enum Operation: String, Sendable { case load, save }
+    public let operation: Operation
+    public let message: String
+
+    public init(_ description: String, operation: Operation) {
+        self.operation = operation
+        message = "Could not \(operation.rawValue) sidebar choices. \(description)"
+    }
+}
+
+public struct OwnerChoicesAlerts: Equatable, Sendable {
+    private var reported: Set<OwnerChoicesFailure> = []
+    private var pending: [OwnerChoicesFailure] = []
+    public var message: String? { pending.first?.message }
+
+    public init() {}
+
+    @discardableResult
+    public mutating func report(_ failure: OwnerChoicesFailure) -> Bool {
+        guard reported.insert(failure).inserted else { return false }
+        pending.append(failure)
+        return true
+    }
+
+    public mutating func resolve(_ operation: OwnerChoicesFailure.Operation) {
+        reported = reported.filter { $0.operation != operation }
+    }
+
+    public mutating func dismiss() {
+        if !pending.isEmpty { pending.removeFirst() }
+    }
+}
+
 @MainActor
 public final class OwnerChoicesStore {
     private let folder: URL?

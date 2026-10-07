@@ -4,7 +4,9 @@ import Foundation
 public final class SwarmProjectStore {
     private let choices: OwnerChoicesStore
     private let initializeRepository: (String) async throws -> Void
-    private var lastRefreshError: String?
+    private var lastGoodChoices: OwnerChoices?
+    public private(set) var choicesLoadFailed = false
+    public private(set) var choicesWriteRevision = 0
 
     public convenience init(choicesFolder: URL? = SwarmHome.dataFolder) {
         self.init(choices: OwnerChoicesStore(folder: choicesFolder))
@@ -17,18 +19,17 @@ public final class SwarmProjectStore {
         self.initializeRepository = initializeRepository
     }
 
-    public func loadChoices(reportError: (String) -> Void) -> OwnerChoices? {
-        do { return try choices.load() }
-        catch {
-            report(error, using: reportError)
-            return nil
+    public func loadChoices(reportError: (OwnerChoicesFailure) -> Void) -> OwnerChoices? {
+        do {
+            let saved = try choices.load()
+            lastGoodChoices = saved
+            choicesLoadFailed = false
+            return saved
+        } catch {
+            choicesLoadFailed = true
+            reportError(OwnerChoicesFailure(error.localizedDescription, operation: .load))
+            return lastGoodChoices
         }
-    }
-
-    private func report(_ error: any Error, using reportError: (String) -> Void) {
-        let failure = error.localizedDescription
-        if failure != lastRefreshError { reportError(failure) }
-        lastRefreshError = failure
     }
 
     private static func rememberShown(_ projects: [ProjectNode], in saved: inout OwnerChoices) {
@@ -46,35 +47,41 @@ public final class SwarmProjectStore {
     public func refreshChoices(
         shown: [ProjectNode], navigation: WorkspaceNavigation, saved: OwnerChoices? = nil,
         loadedAtRevision: Int? = nil,
-        navigationStore: WorkspaceNavigationStore, reportError: (String) -> Void
+        navigationStore: WorkspaceNavigationStore, reportError: (OwnerChoicesFailure) -> Void
     ) -> WorkspaceNavigation {
+        let snapshot: OwnerChoices
+        if let saved, loadedAtRevision == nil || loadedAtRevision == navigationStore.choicesRevision {
+            snapshot = saved
+        } else {
+            let loaded = loadChoices(reportError: reportError)
+            guard !choicesLoadFailed, let loaded else { return navigation }
+            snapshot = loaded
+        }
         do {
-            let snapshot: OwnerChoices
-            if let loadedAtRevision, loadedAtRevision != navigationStore.choicesRevision {
-                snapshot = try choices.load()
-            } else {
-                snapshot = try saved ?? choices.load()
-            }
             var updated = snapshot
             Self.rememberShown(shown, in: &updated)
             if updated != snapshot {
                 updated = try choices.update { Self.rememberShown(shown, in: &$0) }
+                choicesWriteRevision += 1
             }
-            lastRefreshError = nil
+            lastGoodChoices = updated
             return navigationStore.applying(updated, to: navigation)
         } catch {
-            report(error, using: reportError)
+            reportError(OwnerChoicesFailure(error.localizedDescription, operation: .save))
             return navigation
         }
     }
 
     @discardableResult
     public func remove(_ path: String, workspacePaths: [String]) throws -> OwnerChoices {
-        try choices.update {
+        let saved = try choices.update {
             $0.projectPaths.removeAll { $0 == path || Self.projectPath(for: $0) == path }
             $0.removedProjects.insert(path)
             $0.removeProject(path, workspacePaths: workspacePaths)
         }
+        lastGoodChoices = saved
+        choicesWriteRevision += 1
+        return saved
     }
 
     @discardableResult
@@ -104,7 +111,10 @@ public final class SwarmProjectStore {
             if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true {
                 try? FileManager.default.removeItem(atPath: path)
                 if addedPath, !FileManager.default.fileExists(atPath: path) {
-                    try? choices.update { $0.projectPaths.removeAll { $0 == path } }
+                    if let saved = try? choices.update({ $0.projectPaths.removeAll { $0 == path } }) {
+                        lastGoodChoices = saved
+                        choicesWriteRevision += 1
+                    }
                 }
             }
             throw error
@@ -124,7 +134,7 @@ public final class SwarmProjectStore {
     private func remember(_ path: String, projectPath: String? = nil) throws -> Bool {
         let project = projectPath ?? Self.projectPath(for: path)
         var addedPath = false
-        try choices.update {
+        let saved = try choices.update {
             $0.removedProjects.remove(project)
             $0.removedProjects.remove(path)
             if !$0.projectPaths.contains(path) {
@@ -132,6 +142,8 @@ public final class SwarmProjectStore {
                 addedPath = true
             }
         }
+        lastGoodChoices = saved
+        choicesWriteRevision += 1
         return addedPath
     }
 

@@ -270,6 +270,7 @@ public final class WorkspaceNavigationStore {
     private let choices: OwnerChoicesStore
     private var lastChoices = OwnerChoices()
     public private(set) var choicesRevision = 0
+    public var savedChoices: OwnerChoices { lastChoices }
 
     public init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
         self.defaults = defaults

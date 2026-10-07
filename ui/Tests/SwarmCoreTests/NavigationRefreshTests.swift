@@ -39,7 +39,7 @@ struct NavigationRefreshTests {
         let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [])
         var errors: [String] = []
         let refreshed = projects.refreshChoices(shown: [project], navigation: navigation, saved: saved,
-                                                navigationStore: store, reportError: { errors.append($0) })
+                                                navigationStore: store, reportError: { errors.append($0.message) })
         #expect(errors.isEmpty)
         #expect(store.save(refreshed) == nil)
         #expect(reads == 1)
@@ -76,7 +76,7 @@ struct NavigationRefreshTests {
         let project = ProjectNode(id: .folder("/new"), path: "/new", launchDirectory: "/new", workspaces: [])
         var errors: [String] = []
         let refreshed = projects.refreshChoices(shown: [project], navigation: navigation, saved: saved,
-                                                navigationStore: store, reportError: { errors.append($0) })
+                                                navigationStore: store, reportError: { errors.append($0.message) })
         #expect(errors.isEmpty)
         #expect(store.save(refreshed) == nil)
         #expect(reads == 2)
@@ -93,22 +93,35 @@ struct NavigationRefreshTests {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: folder)
         }
-        let choices = OwnerChoicesStore(folder: folder)
+        var failRead = false
+        let choices = OwnerChoicesStore(folder: folder, readFile: {
+            if failRead { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: $0)
+        })
         try choices.update { $0.projectPaths = ["/repo"] }
         let projects = SwarmProjectStore(choices: choices)
         let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
         var navigation = store.load()
         let choicesRevision = store.choicesRevision
-        let saved = projects.loadChoices(reportError: { Issue.record("\($0)") })
+        let saved = projects.loadChoices(reportError: { Issue.record("\($0.message)") })
         navigation.pinned = ["/repo"]
         navigation.names = ["/repo": "Owner name"]
         #expect(store.save(navigation) == nil)
         let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [])
         let refreshed = projects.refreshChoices(shown: [project], navigation: navigation, saved: saved,
-                                                loadedAtRevision: choicesRevision, navigationStore: store, reportError: { Issue.record("\($0)") })
+                                                loadedAtRevision: choicesRevision, navigationStore: store, reportError: { Issue.record("\($0.message)") })
         #expect(refreshed.pinned == ["/repo"])
         #expect(refreshed.names == ["/repo": "Owner name"])
         #expect(try choices.load().pinned == refreshed.pinned)
+        navigation.names["/repo"] = "Later owner name"
+        #expect(store.save(navigation) == nil)
+        failRead = true
+        var failures: [String] = []
+        let kept = projects.refreshChoices(shown: [project], navigation: navigation, saved: saved,
+                                           loadedAtRevision: choicesRevision, navigationStore: store,
+                                           reportError: { failures.append($0.message) })
+        #expect(kept == navigation)
+        #expect(failures.first?.hasPrefix("Could not load sidebar choices.") == true)
     }
 
     @Test("Stale navigation writes keep choices changed by the other store")
@@ -144,6 +157,52 @@ struct NavigationRefreshTests {
         #expect(remaining.names == ["/first": "First"])
     }
 
+    @Test("A failed load keeps known project paths and removed projects and reports a load error once")
+    func failedLoadKeepsLastGoodSnapshot() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "NavigationRefreshTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        try OwnerChoicesStore(folder: folder).update {
+            $0.projectPaths = ["/kept"]
+            $0.removedProjects = ["/removed"]
+            $0.pinned = ["/kept"]
+        }
+        var failRead = false
+        let choices = OwnerChoicesStore(folder: folder, readFile: {
+            if failRead { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: $0)
+        })
+        let projects = SwarmProjectStore(choices: choices)
+        let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
+        var alerts = OwnerChoicesAlerts()
+        var errors: [String] = []
+        let good = try #require(projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } }))
+        failRead = true
+        let retained = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
+        #expect(retained == good)
+        #expect(projects.choicesLoadFailed)
+        let session = SwarmSession(id: .init("removed-chat"), talkMode: "lane", adapter: "tmux-solo", cwd: "/removed",
+                                   createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
+        let tree = SessionsTree.build(sessions: [session], projectPaths: retained?.projectPaths ?? [],
+                                      removed: retained?.removedProjects ?? [],
+                                      repositoryPathsResolver: { _ in nil }, worktreeLister: { _ in [] })
+        #expect(tree.projects.map(\.path) == ["/kept"])
+        #expect(errors.first?.hasPrefix("Could not load sidebar choices.") == true)
+        failRead = false
+        let recovered = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
+        if !projects.choicesLoadFailed { alerts.resolve(.load) }
+        _ = projects.refreshChoices(shown: [], navigation: WorkspaceNavigation(), saved: recovered,
+                                    navigationStore: store, reportError: { if alerts.report($0) { errors.append($0.message) } })
+        #expect(!projects.choicesLoadFailed)
+        failRead = true
+        _ = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
+        #expect(errors.count == 2)
+    }
+
     @Test("A corrupt choices file whose backup cannot move does not stop the tree and reports once")
     func corruptChoicesKeepsTree() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
@@ -157,8 +216,9 @@ struct NavigationRefreshTests {
         try Data().write(to: folder.appendingPathComponent("choices.lock"))
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         let projects = SwarmProjectStore(choicesFolder: folder)
+        var alerts = OwnerChoicesAlerts()
         var errors: [String] = []
-        let saved = projects.loadChoices(reportError: { errors.append($0) })
+        let saved = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
         let session = SwarmSession(id: .init("visible"), talkMode: "lane", adapter: "tmux-solo", cwd: "/visible",
                                    createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
         let tree = SessionsTree.build(sessions: [session], projectPaths: saved?.projectPaths ?? [],
@@ -166,7 +226,7 @@ struct NavigationRefreshTests {
                                       repositoryPathsResolver: { _ in nil }, worktreeLister: { _ in [] })
         #expect(tree.session(session.id) != nil)
         #expect(saved == nil)
-        _ = projects.loadChoices(reportError: { errors.append($0) })
+        _ = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
         #expect(errors.count == 1)
         #expect(try Data(contentsOf: file) == corrupt)
     }

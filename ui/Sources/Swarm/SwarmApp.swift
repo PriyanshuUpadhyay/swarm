@@ -14,10 +14,32 @@ final class SessionsTreeModel {
     private let navigationStore = WorkspaceNavigationStore()
     var navigation = WorkspaceNavigation() {
         didSet {
-            if navigation != oldValue, let failure = navigationStore.save(navigation) { error = failure }
+            if navigation != oldValue {
+                let revision = navigationStore.choicesRevision
+                if let failure = navigationStore.save(navigation) {
+                    reportChoicesError(OwnerChoicesFailure(failure, operation: .save))
+                } else if navigationStore.choicesRevision != revision {
+                    choicesAlerts.resolve(.save)
+                }
+            }
             if navigation.workspaceOrder != oldValue.workspaceOrder {
                 workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder)
             }
+        }
+    }
+
+    var choicesAlerts = OwnerChoicesAlerts()
+
+    private var lastProjectChoicesWriteRevision = 0
+
+    private func reportChoicesError(_ failure: OwnerChoicesFailure) {
+        if choicesAlerts.report(failure) { logger.error("\(failure.message)") }
+    }
+
+    private func resolveProjectChoicesWrites() {
+        if projects.choicesWriteRevision != lastProjectChoicesWriteRevision {
+            choicesAlerts.resolve(.save)
+            lastProjectChoicesWriteRevision = projects.choicesWriteRevision
         }
     }
 
@@ -269,23 +291,27 @@ final class SessionsTreeModel {
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
-            let reportChoicesError = { (message: String) in
-                self.logger.error("Could not save sidebar choices: \(message)")
+            resolveProjectChoicesWrites()
+            let reportChoicesError = { (failure: OwnerChoicesFailure) in
+                self.reportChoicesError(failure)
             }
             let choicesRevision = navigationStore.choicesRevision
-            let saved = projects.loadChoices(reportError: reportChoicesError)
+            let saved = projects.loadChoices(reportError: reportChoicesError) ?? navigationStore.savedChoices
+            let choicesLoaded = !projects.choicesLoadFailed
+            if choicesLoaded { choicesAlerts.resolve(.load) }
             let loaded = try await discovery.tree(
-                sessions: sessions, projectPaths: saved?.projectPaths ?? [], removed: saved?.removedProjects ?? [], bus: bus
+                sessions: sessions, projectPaths: saved.projectPaths, removed: saved.removedProjects, bus: bus
             )
             guard revision == refreshRevision else { return }
             var refreshed = navigation
-            if let saved {
+            if choicesLoaded {
                 refreshed = projects.refreshChoices(
                     shown: loaded.projects, navigation: navigation, saved: saved, loadedAtRevision: choicesRevision,
                     navigationStore: navigationStore,
                     reportError: reportChoicesError
                 )
             }
+            resolveProjectChoicesWrites()
             refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
             navigation = refreshed
             sourceTree = loaded
@@ -365,6 +391,7 @@ final class SessionsTreeModel {
 
     func removeProject(_ project: ProjectNode) throws {
         let saved = try projects.remove(project.path, workspacePaths: project.workspaces.map(\.path))
+        resolveProjectChoicesWrites()
         navigation = navigationStore.applying(saved, to: navigation)
         let removedWorkspaces = Set(project.workspaces.map(\.path))
         navigation.selectedChats = navigation.selectedChats.filter { !removedWorkspaces.contains($0.key) }
@@ -662,6 +689,10 @@ private struct SessionsWindow: View {
                 }
             }
         }
+        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showChoicesError() }
+        .onChange(of: actionError) { _, message in
+            if message == nil { showChoicesError() }
+        }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
@@ -830,6 +861,12 @@ private struct SessionsWindow: View {
         } message: {
             Text(actionError ?? "")
         }
+    }
+
+    private func showChoicesError() {
+        guard actionError == nil, let failure = model.choicesAlerts.message else { return }
+        actionError = failure
+        model.choicesAlerts.dismiss()
     }
 
     private var workspaceContent: some View {

@@ -182,4 +182,55 @@ struct OwnerChoicesTests {
         #expect(!FileManager.default.fileExists(atPath: folder.path))
     }
 
+    @Test("Load and save alerts wait for dismissal and each distinct error appears once")
+    func distinctChoicesAlerts() {
+        let loadFailure = OwnerChoicesFailure("Read denied.", operation: .load)
+        let saveFailure = OwnerChoicesFailure("Write denied.", operation: .save)
+        var alerts = OwnerChoicesAlerts()
+        let addedLoad = alerts.report(loadFailure)
+        let addedSave = alerts.report(saveFailure)
+        let repeatedLoad = alerts.report(loadFailure)
+        #expect(addedLoad)
+        #expect(addedSave)
+        #expect(!repeatedLoad)
+        #expect(alerts.message == loadFailure.message)
+        alerts.dismiss()
+        #expect(alerts.message == saveFailure.message)
+        alerts.dismiss()
+        #expect(alerts.message == nil)
+        let repeatedSaveAfterDismissal = alerts.report(saveFailure)
+        let repeatedLoadAfterDismissal = alerts.report(loadFailure)
+        #expect(!repeatedSaveAfterDismissal)
+        #expect(!repeatedLoadAfterDismissal)
+        #expect(alerts.message == nil)
+        alerts.resolve(.load)
+        let loadAfterRecovery = alerts.report(loadFailure)
+        let saveDuringLoadRecovery = alerts.report(saveFailure)
+        #expect(loadAfterRecovery)
+        #expect(!saveDuringLoadRecovery)
+        #expect(alerts.message == loadFailure.message)
+        alerts.resolve(.save)
+        #expect(alerts.message == loadFailure.message)
+        alerts.dismiss()
+        let saveAfterRecovery = alerts.report(saveFailure)
+        let loadDuringSaveRecovery = alerts.report(loadFailure)
+        #expect(saveAfterRecovery)
+        #expect(!loadDuringSaveRecovery)
+        #expect(alerts.message == saveFailure.message)
+    }
+
+    @Test("A successful choices write permits the same save error to appear again")
+    func choicesAlertsAfterSuccessfulWrite() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let failure = OwnerChoicesFailure("Write denied.", operation: .save)
+        var alerts = OwnerChoicesAlerts()
+        alerts.report(failure)
+        alerts.dismiss()
+        try OwnerChoicesStore(folder: folder).update { $0.pinned = ["/repo"] }
+        alerts.resolve(.save)
+        let afterRecovery = alerts.report(failure)
+        #expect(afterRecovery)
+    }
+
 }
