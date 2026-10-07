@@ -134,6 +134,7 @@ public struct SessionsTree: Sendable, Hashable {
         removed: Set<String> = [],
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
         titles: [SwarmSessionID: String] = [:],
+        cliNames: [SwarmSessionID: String] = [:],
         repositoryPathsResolver: (String) -> GitRepositoryPaths?,
         worktreeLister: (String) -> [WorktreeEntry]
     ) -> SessionsTree {
@@ -162,7 +163,7 @@ public struct SessionsTree: Sendable, Hashable {
                     id: identity, path: path, launchDirectory: path,
                     workspaces: [WorkspaceNode(
                         path: path, name: URL(fileURLWithPath: path).lastPathComponent,
-                        sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles)
+                        sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames)
                     )]
                 )
             case .repository(let commonDirectory):
@@ -174,7 +175,7 @@ public struct SessionsTree: Sendable, Hashable {
                     return WorkspaceNode(
                         path: entry.path,
                         name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,
-                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles),
+                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames),
                         branch: entry.branch, missing: entry.isPrunable,
                         mark: entry.isLocked ? .locked : entry.isDetached ? .detached : nil
                     )
@@ -192,14 +193,14 @@ public struct SessionsTree: Sendable, Hashable {
                 if !removedSessions.isEmpty {
                     workspaces.append(WorkspaceNode(
                         path: path + "#removed", name: "Removed worktrees",
-                        sessions: rows(removedSessions, agentsBySession: agentsBySession, titles: titles),
+                        sessions: rows(removedSessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames),
                         isRemoved: true
                     ))
                 }
                 if !hubSessions.isEmpty {
                     workspaces.append(WorkspaceNode(
                         path: path, name: URL(fileURLWithPath: path).lastPathComponent,
-                        sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles)
+                        sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames)
                     ))
                 }
                 guard !workspaces.isEmpty || openedProjects[identity] != nil else { return nil }
@@ -234,7 +235,7 @@ public struct SessionsTree: Sendable, Hashable {
             guard let row = project.chats.first(where: {
                 $0.session.sessions.contains { $0.id == id }
             }) else { continue }
-            return "\(project.name) · \(row.session.title)"
+            return "\(project.name) · \(ChatTitle.title(row.session))"
         }
         return nil
     }
@@ -304,7 +305,7 @@ public struct SessionsTree: Sendable, Hashable {
 
     private static func rows(
         _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]],
-        titles: [SwarmSessionID: String]
+        titles: [SwarmSessionID: String], cliNames: [SwarmSessionID: String]
     ) -> [SwarmProjectSession] {
         ordered(SwarmSessionListing.chatGroups(sessions).map {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
@@ -325,7 +326,8 @@ public struct SessionsTree: Sendable, Hashable {
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider,
                 status: agentsBySession[$0[0].id].flatMap { AgentStatus.aggregate($0.map(\.status)) },
-                statusCounts: agentsBySession[$0[0].id].map { Dictionary($0.map { ($0.status, 1) }, uniquingKeysWith: +) } ?? [:]
+                statusCounts: agentsBySession[$0[0].id].map { Dictionary($0.map { ($0.status, 1) }, uniquingKeysWith: +) } ?? [:],
+                cliName: $0.lazy.compactMap { cliNames[$0.id] }.first
             )
         })
     }
@@ -391,11 +393,12 @@ extension SwarmSessionDiscovery {
         }
         let titleTiming = SwarmPerformance.begin("TitleResolution")
         let titles = await resolvedTitles(sessions: sessions, agentsBySession: agentsBySession)
+        let cliNames = await resolvedCLINames(sessions: sessions, agentsBySession: agentsBySession)
         titleTiming.end(count: titles.count)
         let buildTiming = SwarmPerformance.begin("TreeBuild")
         let tree = SessionsTree.build(
             sessions: sessions, projectPaths: projectPaths, removed: removed,
-            agentsBySession: agentsBySession, titles: titles,
+            agentsBySession: agentsBySession, titles: titles, cliNames: cliNames,
             repositoryPathsResolver: Git.repositoryPaths,
             worktreeLister: { listings[$0] ?? [] }
         )

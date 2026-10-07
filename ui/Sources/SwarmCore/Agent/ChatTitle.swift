@@ -20,7 +20,7 @@ public enum ChatTitle {
     }
 
     public static func title(_ chat: SwarmProjectSession, appName: String? = nil) -> String {
-        resolve(appName: appName, cliName: nil, firstLine: chat.title, provider: chat.provider, id: chat.id)
+        resolve(appName: appName, cliName: chat.cliName, firstLine: chat.title, provider: chat.provider, id: chat.id)
     }
 
     private static func nonblank(_ value: String?) -> String? {

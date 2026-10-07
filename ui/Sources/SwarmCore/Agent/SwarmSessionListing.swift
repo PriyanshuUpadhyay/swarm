@@ -4,6 +4,7 @@ import Foundation
 public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var sessions: [SwarmSession]
     public var title: String
+    public var cliName: String?
     public var isRunning: Bool?
     public var liveAgents: Int?
     public var totalAgents: Int
@@ -22,11 +23,13 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public init(
         sessions: [SwarmSession], title: String,
         isRunning: Bool? = nil, liveAgents: Int? = nil, totalAgents: Int? = nil,
-        provider: String? = nil, status: AgentStatus? = nil, statusCounts: [AgentStatus: Int] = [:]
+        provider: String? = nil, status: AgentStatus? = nil, statusCounts: [AgentStatus: Int] = [:],
+        cliName: String? = nil
     ) {
         precondition(!sessions.isEmpty)
         self.sessions = sessions
         self.title = title
+        self.cliName = cliName
         self.isRunning = isRunning
         self.liveAgents = liveAgents
         self.totalAgents = totalAgents ?? sessions.reduce(0) { $0 + $1.agents }
@@ -281,6 +284,9 @@ public actor SwarmSessionDiscovery {
     private var titleLogs: [SwarmSessionID: String] = [:]
     private var titleMisses: [SwarmSessionID: Date] = [:]
     private var titleSearches: [SwarmSessionID: (provider: String?, chairID: SwarmChairID?, at: Date)] = [:]
+    private var cliHomes: (homes: [URL], at: Date)?
+    private var cliNameFiles: [String: (stamp: [CLINameFileStamp?], names: [String: String])] = [:]
+    private var claudeNameReaders: [String: ClaudeNameReader] = [:]
     private var worktreeListings: [String: (entries: [WorktreeEntry], at: Date)] = [:]
     private var worktreeGenerations: [String: UInt64] = [:]
     private let profiles: any SwarmProfileSource
@@ -431,6 +437,50 @@ public actor SwarmSessionDiscovery {
         return titles
     }
 
+    func resolvedCLINames(
+        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], now: Date = .now
+    ) async -> [SwarmSessionID: String] {
+        var result: [SwarmSessionID: String] = [:]
+        for session in sessions where session.archivedAt == nil {
+            let provider = session.chairProvider ?? agentsBySession[session.id]?
+                .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
+            let log = titleLogs[session.id] ?? session.chairLog
+            if provider == "claude", let log {
+                var reader = claudeNameReaders[log] ?? ClaudeNameReader()
+                result[session.id] = reader.name(path: log)
+                claudeNameReaders[log] = reader
+            } else if provider == "codex" {
+                if cliHomes == nil || now.timeIntervalSince(cliHomes!.at) >= 60 {
+                    let accounts = try? await profiles.accounts(provider: "codex")
+                    cliHomes = (ChairLogDiscovery.homes(
+                        provider: "codex", accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+                    ), now)
+                }
+                // The log's owning account wins; never use another account's duplicate thread id.
+                let homes = cliHomes!.homes
+                let owner = log.flatMap { log in homes.filter { log.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count } }
+                let id = session.chairID?.rawValue ?? log.flatMap(ChairLogTitle.codexID)
+                guard let id else { continue }
+                for root in owner.map({ [$0] }) ?? homes {
+                    let names = cachedCLINames(files: [root.appendingPathComponent("session_index.jsonl")]) {
+                        ChairLogTitle.codexNames(home: root)
+                    }
+                    if let name = names[id] { result[session.id] = name; break }
+                }
+            }
+        }
+        return result
+    }
+
+    private func cachedCLINames(files: [URL], read: () -> [String: String]) -> [String: String] {
+        let key = files[0].path
+        let stamp = files.map { CLINameFileStamp(path: $0.path) }
+        if let cached = cliNameFiles[key], cached.stamp == stamp { return cached.names }
+        let names = read()
+        cliNameFiles[key] = (stamp, names)
+        return names
+    }
+
     public static func identity(
         for path: String, repositoryPathsResolver: (String) -> GitRepositoryPaths?
     ) -> SwarmPathIdentity {
@@ -454,5 +504,19 @@ public actor SwarmSessionDiscovery {
         let title = SwarmSessionTitle.make(sessionID: session.id, firstUserPrompt: prompt)
         titles[session.id] = title
         return title
+    }
+}
+
+struct CLINameFileStamp: Equatable {
+    let size: UInt64
+    let modified: Date
+    let fileNumber: UInt64?
+
+    init?(path: String) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber, let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.size = size.uint64Value
+        self.modified = modified
+        self.fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
     }
 }
