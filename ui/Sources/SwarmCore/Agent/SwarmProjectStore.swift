@@ -57,10 +57,16 @@ public final class SwarmProjectStore {
 
     public func refreshChoices(
         shown: [ProjectNode], navigation: WorkspaceNavigation, saved: OwnerChoices? = nil,
+        loadedAtRevision: Int? = nil,
         navigationStore: WorkspaceNavigationStore, reportError: (String) -> Void
     ) -> WorkspaceNavigation {
         do {
-            let snapshot = try saved ?? choices.load()
+            let snapshot: OwnerChoices
+            if let loadedAtRevision, loadedAtRevision != navigationStore.choicesRevision {
+                snapshot = try choices.load()
+            } else {
+                snapshot = try saved ?? choices.load()
+            }
             var updated = snapshot
             Self.rememberShown(shown, in: &updated)
             if updated != snapshot {

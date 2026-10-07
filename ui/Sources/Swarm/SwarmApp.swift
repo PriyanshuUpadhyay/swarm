@@ -272,6 +272,7 @@ final class SessionsTreeModel {
             let reportChoicesError = { (message: String) in
                 self.logger.error("Could not save sidebar choices: \(message)")
             }
+            let choicesRevision = navigationStore.choicesRevision
             let saved = projects.loadChoices(reportError: reportChoicesError)
             let loaded = try await discovery.tree(
                 sessions: sessions, projectPaths: saved?.projectPaths ?? [], removed: saved?.removedProjects ?? [], bus: bus
@@ -280,7 +281,8 @@ final class SessionsTreeModel {
             var refreshed = navigation
             if let saved {
                 refreshed = projects.refreshChoices(
-                    shown: loaded.projects, navigation: navigation, saved: saved, navigationStore: navigationStore,
+                    shown: loaded.projects, navigation: navigation, saved: saved, loadedAtRevision: choicesRevision,
+                    navigationStore: navigationStore,
                     reportError: reportChoicesError
                 )
             }

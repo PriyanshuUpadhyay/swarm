@@ -84,6 +84,33 @@ struct NavigationRefreshTests {
         #expect(try OwnerChoicesStore(folder: folder).load().projectPaths == ["/existing", "/new"])
     }
 
+    @Test("An owner save during tree discovery survives the earlier choices snapshot")
+    func ownerSaveDuringDiscovery() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "NavigationRefreshTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let choices = OwnerChoicesStore(folder: folder)
+        try choices.update { $0.projectPaths = ["/repo"] }
+        let projects = SwarmProjectStore(choices: choices)
+        let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
+        var navigation = store.load()
+        let choicesRevision = store.choicesRevision
+        let saved = projects.loadChoices(reportError: { Issue.record("\($0)") })
+        navigation.pinned = ["/repo"]
+        navigation.names = ["/repo": "Owner name"]
+        #expect(store.save(navigation) == nil)
+        let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [])
+        let refreshed = projects.refreshChoices(shown: [project], navigation: navigation, saved: saved,
+                                                loadedAtRevision: choicesRevision, navigationStore: store, reportError: { Issue.record("\($0)") })
+        #expect(refreshed.pinned == ["/repo"])
+        #expect(refreshed.names == ["/repo": "Owner name"])
+        #expect(try choices.load().pinned == refreshed.pinned)
+    }
+
     @Test("Stale navigation writes keep choices changed by the other store")
     func independentStoreChanges() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))

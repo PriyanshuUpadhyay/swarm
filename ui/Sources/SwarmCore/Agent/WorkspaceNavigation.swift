@@ -267,6 +267,7 @@ public final class WorkspaceNavigationStore {
     private let key = "workspaces.navigation"
     private let choices: OwnerChoicesStore
     private var lastChoices = OwnerChoices()
+    public private(set) var choicesRevision = 0
 
     public init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
         self.defaults = defaults
@@ -292,6 +293,7 @@ public final class WorkspaceNavigationStore {
         guard let data = try? encoder.encode(value) else { return "Sidebar view state could not be saved." }
         if data != defaults.data(forKey: key) { defaults.set(data, forKey: key) }
         guard value.ownerChoices != lastChoices else { return nil }
+        choicesRevision += 1
         do {
             try choices.update { $0.applyWorkspaceChanges(from: lastChoices, to: value.ownerChoices) }
             lastChoices = value.ownerChoices
