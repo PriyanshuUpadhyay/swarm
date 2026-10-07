@@ -363,6 +363,8 @@ private struct SidebarRowView: View {
     @State private var hovering = false
     var showRun: (() -> Void)? = nil
 
+    private var dimmed: Bool { row.kind == .child && (row.status == .done || row.status == .ended) }
+
     private var lines: [[RowFieldValue]] {
         var result: [[RowFieldValue]] = [[]]
         for value in row.fields {
@@ -381,7 +383,6 @@ private struct SidebarRowView: View {
             }
         }
         .padding(.leading, CGFloat(row.depth) * DesignTokens.Spacing.l)
-        .opacity(row.kind == .child && (row.status == .done || row.status == .ended) ? DesignTokens.endedPaneOpacity : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(row.help)
@@ -414,13 +415,13 @@ private struct SidebarRowView: View {
             .frame(width: DesignTokens.Size.glyphSlot)
             ForEach(Array(values.enumerated()), id: \.offset) { _, value in
                 if value.field == .steps {
-                    Button(action: { showRun?() }) { RowFieldLabel(value: value) }
+                    Button(action: { showRun?() }) { RowFieldLabel(value: value, dimmed: dimmed) }
                         .buttonStyle(.plain)
                         .help(row.run?.firstQuestion ?? row.runStep?.firstQuestion ?? value.text)
                         .accessibilityLabel("Show run, \(value.text)")
                 } else if value.field == .children, row.kind == .chat, let toggle {
                     Button(action: toggle) {
-                        HStack(spacing: DesignTokens.Spacing.xs) { disclosure; RowFieldLabel(value: value) }
+                        HStack(spacing: DesignTokens.Spacing.xs) { disclosure; RowFieldLabel(value: value, dimmed: dimmed) }
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(row.expanded ? "expanded" : "collapsed")
@@ -435,7 +436,7 @@ private struct SidebarRowView: View {
                     }
                     .font(.caption)
                 } else {
-                    RowFieldLabel(value: value)
+                    RowFieldLabel(value: value, dimmed: dimmed)
                 }
             }
             Spacer(minLength: DesignTokens.Spacing.xs)
@@ -473,17 +474,20 @@ private struct WorkspaceDrag: Codable, Transferable {
 
 struct RowFieldLabel: View {
     let value: RowFieldValue
+    var dimmed = false
 
     var body: some View {
         if let status = value.status {
             StatusGlyph(status: status).fixedSize()
+                .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         } else if value.field == .unread {
             Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.tint)
                 .accessibilityLabel("Unread")
+                .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         } else {
             Text(verbatim: value.text).lineLimit(1)
                 .truncationMode(value.field == .title ? .tail : .middle)
-                .foregroundStyle(value.field == .title ? .primary : .secondary)
+                .foregroundStyle(value.field == .title ? (dimmed ? .secondary : .primary) : (dimmed ? .tertiary : .secondary))
                 .font(value.field == .title ? .body : .caption)
                 .layoutPriority(value.field == .title ? 1 : 0)
         }
