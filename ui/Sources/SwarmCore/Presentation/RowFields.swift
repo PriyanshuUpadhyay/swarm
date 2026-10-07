@@ -149,7 +149,7 @@ public enum RowFields {
             context.text[.tokens] = "\(total) tokens"
         }
         let costs = agents.compactMap(\.costUsd)
-        if !costs.isEmpty { context.text[.cost] = String(format: "$%.2f", costs.reduce(0, +)) }
+        if !costs.isEmpty { context.text[.cost] = costs.reduce(0, +).formatted(.currency(code: "USD")) }
     }
 
     public static func addWorkspace(_ workspace: RowWorkspaceFields, to context: inout RowFieldContext) {

@@ -76,13 +76,14 @@ struct RowFieldPresentationTests {
         navigation.fields.workspace = [.model, .dirty, .title, .branch, .tokens, .cost]
         navigation.fields.chat = [.cost, .tokens, .effort, .question, .provider, .title]
         navigation.fields.tab = navigation.fields.chat
+        let zeroCost = 0.0.formatted(.currency(code: "USD"))
         let sections = SidebarRows.sections(
             projects: [project], workspaces: entries, navigation: navigation, search: "", showingArchive: false,
             now: 100, agentsBySession: agents, workspaceFields: ["/repo": RowWorkspaceFields(dirtyCount: 2)]
         )
-        #expect(sections[0].fields.map(\.text) == ["1200 tokens", "repo", "gpt-6", "$0.00"])
-        #expect(sections[0].rows[0].fields.map(\.text) == ["gpt-6", "2 dirty", "repo", "feature", "1200 tokens", "$0.00"])
-        #expect(sections[0].rows[1].fields.map(\.text) == ["$0.00", "1200 tokens", "high", "Which route?", "codex", "Fix rows"])
+        #expect(sections[0].fields.map(\.text) == ["1200 tokens", "repo", "gpt-6", zeroCost])
+        #expect(sections[0].rows[0].fields.map(\.text) == ["gpt-6", "2 dirty", "repo", "feature", "1200 tokens", zeroCost])
+        #expect(sections[0].rows[1].fields.map(\.text) == [zeroCost, "1200 tokens", "high", "Which route?", "codex", "Fix rows"])
         let tabs = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], closing: [], now: 100,
                                 navigation: navigation, agentsBySession: agents)
         #expect(tabs[0].fields.map(\.field) == navigation.fields.tab)
@@ -95,6 +96,14 @@ struct RowFieldPresentationTests {
         let noUsage = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], closing: [], now: 100,
                                    navigation: navigation)
         #expect(noUsage[0].fields.map(\.field) == [.provider, .title])
+    }
+
+    @Test("Usage costs use the current locale's USD currency format")
+    func currencyCost() {
+        var agent = SwarmAgent(id: .init("orchestrator"), role: "chat", pane: "%0", alive: true)
+        agent.costUsd = 1234.5
+        let context = RowFields.agentContext(agent, title: "Chat")
+        #expect(context.text[.cost] == 1234.5.formatted(.currency(code: "USD")))
     }
 
     @Test("Unread uses the stable chat key and survives defaults without entering choices")
