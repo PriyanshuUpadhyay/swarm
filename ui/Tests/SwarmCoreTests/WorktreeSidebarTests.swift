@@ -4,6 +4,44 @@ import Testing
 
 @Suite("Worktree sidebar")
 struct WorktreeSidebarTests {
+    @Test("A hub-root chat gives Files the hub folder")
+    func hubRootFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for folder in [".bare", "wt/main", "wt/feature"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(folder), withIntermediateDirectories: true
+            )
+        }
+        try "hub file".write(to: root.appendingPathComponent("hub.txt"), atomically: true, encoding: .utf8)
+        try "git metadata".write(to: root.appendingPathComponent(".bare/internal.txt"), atomically: true, encoding: .utf8)
+        let tree = SessionsTree.build(
+            sessions: [
+                session("hub", cwd: root.path),
+                session("main", cwd: root.path + "/wt/main/src"),
+                session("feature", cwd: root.path + "/wt/feature/src"),
+            ], projectPaths: [root.path],
+            repositoryPathsResolver: Git.repositoryPaths,
+            worktreeLister: { common in
+                let hub = URL(fileURLWithPath: common).deletingLastPathComponent().path
+                return [
+                    WorktreeEntry(path: common, isBare: true),
+                    WorktreeEntry(path: hub + "/wt/main", branch: "main"),
+                    WorktreeEntry(path: hub + "/wt/feature", branch: "feature"),
+                ]
+            }
+        )
+        let project = try #require(tree.projects.first)
+        let selected = try #require(WorkspaceEntry.list(in: tree).first { $0.chats.contains { $0.id.rawValue == "hub" } })
+        #expect(selected.id == project.path)
+        let files = try await WorkspaceFiles.list(in: selected.id)
+        #expect(files.entries.contains { $0.name == "hub.txt" })
+        #expect(!files.entries.contains { $0.name == "internal.txt" })
+        #expect(try await WorkspaceFiles.preview(in: selected.id, path: "hub.txt") == .text("hub file"))
+        #expect(tree.launchDirectory(for: SwarmSessionID("main")) == project.path + "/wt/main")
+        #expect(tree.launchDirectory(for: SwarmSessionID("feature")) == project.path + "/wt/feature")
+    }
+
     @Test("Gone worktree chats share one removed row per project")
     func removedWorktrees() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

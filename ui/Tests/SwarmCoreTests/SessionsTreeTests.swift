@@ -108,7 +108,7 @@ struct SessionsTreeTests {
         let tree = build([older, newer, session("33333333-c", cwd: "/repo/.bare")])
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
-        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", ".bare"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", "repo"])
         #expect(tree.projects[0].workspaces.map(\.sessions.count) == [1, 1, 1])
         #expect(tree.projects[0].chats.map(\.id) == [newer.id, older.id, SwarmSessionID("33333333-c")])
         #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
@@ -514,9 +514,9 @@ struct SessionsTreeTests {
             session("main", cwd: "/repo/wt/main"),
         ])
         #expect(tree.projects.count == 1)
-        #expect(tree.projects[0].workspaces.map(\.name) == [".bare", "main"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "repo"])
         #expect(tree.projects[0].launchDirectory == "/repo/wt/main")
-        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo/.bare")
+        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo")
     }
 
     @Test("Tree text prints project and chat presentation")
@@ -527,8 +527,8 @@ struct SessionsTreeTests {
         ])
         #expect(tree.text(now: 61) == """
             repo
-              Chat · .bare · no chair · 1m
               Chat · main · no chair · 1m
+              Chat · repo · no chair · 1m
             """)
     }
 

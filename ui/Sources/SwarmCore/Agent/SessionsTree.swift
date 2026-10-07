@@ -198,10 +198,8 @@ public struct SessionsTree: Sendable, Hashable {
                     ))
                 }
                 if !hubSessions.isEmpty {
-                    let hubPath = URL(fileURLWithPath: commonDirectory).lastPathComponent == ".bare"
-                        ? commonDirectory : path
                     workspaces.append(WorkspaceNode(
-                        path: hubPath, name: URL(fileURLWithPath: hubPath).lastPathComponent,
+                        path: path, name: URL(fileURLWithPath: path).lastPathComponent,
                         sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles)
                     ))
                 }

@@ -138,14 +138,13 @@ final class SessionsTreeModel {
         return true
     }
 
-    /// A chat in a hub root (a folder that holds `.bare`) lists under the hub's `.bare` path, as
-    /// `SessionsTree.build` files it; that path is the start's workspace before the tree has it.
+    /// A chat in a hub root uses the hub folder before discovery adds its workspace row.
     private static func hubWorkspace(for directory: String) -> String? {
         // Only the hub root holds `.bare`; a worktree of the hub has a `.git` file instead.
         guard FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".bare")),
               let common = Git.repositoryPaths(in: directory)?.commonDirectory,
               URL(fileURLWithPath: common).lastPathComponent == ".bare" else { return nil }
-        return common
+        return URL(fileURLWithPath: common).deletingLastPathComponent().path
     }
 
     func selectPending(_ id: UUID) {
