@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import SwarmCore
@@ -133,6 +134,36 @@ struct SwarmProjectStoreTests {
         await #expect(throws: ShellError.self) { try await store.create(at: rememberedProject) }
         #expect(!FileManager.default.fileExists(atPath: rememberedProject.path))
         #expect(try choices.load().projectPaths == [rememberedProject.path])
+    }
+
+    @Test("Remove resolves saved project paths before holding the choices lock")
+    func removeResolvesBeforeLock() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: folder)
+        try choices.update { $0.projectPaths = ["/repo/worktree", "/other"] }
+        var resolvedPaths: [String] = []
+        let store = SwarmProjectStore(choices: choices, initializeRepository: { _ in }, projectPathResolver: { savedPath in
+            resolvedPaths.append(savedPath)
+            let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_RDWR)
+            #expect(descriptor >= 0)
+            defer { close(descriptor) }
+            let acquired = flock(descriptor, LOCK_EX | LOCK_NB) == 0
+            #expect(acquired)
+            if acquired {
+                _ = flock(descriptor, LOCK_UN)
+                if savedPath == "/repo/worktree" {
+                    do { try choices.update { $0.projectPaths.append("/new-project") } }
+                    catch { Issue.record(error) }
+                }
+            }
+            return savedPath == "/repo/worktree" ? "/repo" : savedPath
+        })
+        let saved = try store.remove("/repo", workspacePaths: ["/repo/worktree"])
+        #expect(Set(resolvedPaths) == ["/repo/worktree", "/other"])
+        #expect(saved.projectPaths == ["/other", "/new-project"])
+        #expect(saved.removedProjects == ["/repo"])
+        #expect(try choices.load() == saved)
     }
 
     private func savedChoices(from store: SwarmProjectStore) throws -> OwnerChoices {

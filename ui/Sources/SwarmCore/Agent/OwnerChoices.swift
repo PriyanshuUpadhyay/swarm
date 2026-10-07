@@ -105,6 +105,9 @@ public struct OwnerChoicesAlerts: Equatable, Sendable {
 
 @MainActor @Observable
 public final class OwnerChoicesStore {
+    static let writeLockTimeout: TimeInterval = 1
+    private static let initialRetryDelayMicroseconds: UInt32 = 10_000
+    private static let maximumRetryDelayMicroseconds: UInt32 = 100_000
     public var alerts = OwnerChoicesAlerts()
     private let folder: URL?
     private let readFile: (URL) throws -> Data
@@ -119,10 +122,10 @@ public final class OwnerChoicesStore {
         self.readFile = readFile
     }
 
-    public func load() throws -> OwnerChoices {
+    public func load(waitForLock: Bool = false) throws -> OwnerChoices {
         let saved: OwnerChoices
         if let folder, isClaimed(folder) {
-            saved = try withLock(in: folder) { try readUnlocked(in: folder) }
+            saved = try withLock(in: folder, waitForLock: waitForLock) { try readUnlocked(in: folder) }
         } else {
             saved = OwnerChoices()
         }
@@ -158,7 +161,7 @@ public final class OwnerChoicesStore {
     public func update(_ change: (inout OwnerChoices) -> Void) throws -> OwnerChoices {
         guard let folder else { throw OwnerChoicesError.emptyHome }
         guard isClaimed(folder) else { throw OwnerChoicesError.unclaimedHome(folder.path) }
-        return try withLock(in: folder) {
+        return try withLock(in: folder, waitForLock: true) {
             var choices = try readUnlocked(in: folder)
             let previous = choices
             change(&choices)
@@ -178,20 +181,25 @@ public final class OwnerChoicesStore {
         ) && !isDirectory.boolValue
     }
 
-    private func withLock<T>(in folder: URL, _ body: () throws -> T) throws -> T {
+    private func withLock<T>(in folder: URL, waitForLock: Bool, _ body: () throws -> T) throws -> T {
         let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         defer { close(descriptor) }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
-        var retryDelay: UInt32 = 10_000
+        let deadline = ContinuousClock.now.advanced(by: .seconds(Self.writeLockTimeout))
+        var retryDelay = Self.initialRetryDelayMicroseconds
+        // Refresh reads try once; owner writes wait briefly so another writer can finish.
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let failure = errno
             guard failure == EINTR || failure == EWOULDBLOCK || failure == EAGAIN else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
             }
-            guard ContinuousClock.now < deadline else { throw OwnerChoicesError.lockBusy }
-            usleep(UInt32.random(in: retryDelay / 2...retryDelay))
-            retryDelay = min(retryDelay * 2, 100_000)
+            guard waitForLock, ContinuousClock.now < deadline else { throw OwnerChoicesError.lockBusy }
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            let delay = min(.microseconds(Int64(UInt32.random(in: retryDelay / 2...retryDelay))), remaining)
+            guard delay > .zero else { throw OwnerChoicesError.lockBusy }
+            // The delay is below one second, so its attosecond component gives all microseconds.
+            usleep(UInt32(delay.components.attoseconds / 1_000_000_000_000))
+            retryDelay = min(retryDelay * 2, Self.maximumRetryDelayMicroseconds)
         }
         defer { _ = flock(descriptor, LOCK_UN) }
         return try body()

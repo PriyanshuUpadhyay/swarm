@@ -4,6 +4,7 @@ import Foundation
 public final class SwarmProjectStore {
     private let choices: OwnerChoicesStore
     private let initializeRepository: (String) async throws -> Void
+    private let projectPathResolver: (String) -> String
     private var lastGoodChoices: OwnerChoices?
     public private(set) var choicesLoadFailed = false
 
@@ -15,9 +16,11 @@ public final class SwarmProjectStore {
         self.init(choices: choices, initializeRepository: { try await Git.initialize(at: $0) })
     }
 
-    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> Void) {
+    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> Void,
+         projectPathResolver: ((String) -> String)? = nil) {
         self.choices = choices
         self.initializeRepository = initializeRepository
+        self.projectPathResolver = projectPathResolver ?? Self.projectPath
     }
 
     public func loadChoices(reportError: (OwnerChoicesFailure) -> Void) -> OwnerChoices? {
@@ -74,8 +77,11 @@ public final class SwarmProjectStore {
 
     @discardableResult
     public func remove(_ path: String, workspacePaths: [String]) throws -> OwnerChoices {
+        // Resolve repository identities before the write lock; git can be slow for saved paths.
+        let snapshot = try choices.load(waitForLock: true)
+        let removedPaths = Set(snapshot.projectPaths.filter { $0 == path || projectPathResolver($0) == path })
         let saved = try choices.update {
-            $0.projectPaths.removeAll { $0 == path || Self.projectPath(for: $0) == path }
+            $0.projectPaths.removeAll { $0 == path || removedPaths.contains($0) }
             $0.removedProjects.insert(path)
             $0.removeProject(path, workspacePaths: workspacePaths)
         }
@@ -130,7 +136,7 @@ public final class SwarmProjectStore {
 
     @discardableResult
     private func remember(_ path: String, projectPath: String? = nil) throws -> Bool {
-        let project = projectPath ?? Self.projectPath(for: path)
+        let project = projectPath ?? projectPathResolver(path)
         var addedPath = false
         let saved = try choices.update {
             $0.removedProjects.remove(project)

@@ -192,7 +192,7 @@ struct ProjectRetentionTests {
         #expect(saved.workspaceOrder == ["/other": ["/other/main"]])
     }
 
-    @Test("Remove adopts its written snapshot without a second choices read")
+    @Test("Remove adopts its written snapshot without reading choices after the write")
     func removeUsesWrittenSnapshot() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         let suite = "ProjectRetentionTests.\(UUID().uuidString)"
@@ -209,7 +209,7 @@ struct ProjectRetentionTests {
         var reads = 0
         let choices = OwnerChoicesStore(folder: folder, readFile: {
             reads += 1
-            guard reads == 1 else { throw CocoaError(.fileReadNoPermission) }
+            guard reads <= 2 else { throw CocoaError(.fileReadNoPermission) }
             return try Data(contentsOf: $0)
         })
         let projects = SwarmProjectStore(choices: choices)
@@ -219,7 +219,7 @@ struct ProjectRetentionTests {
         navigation = store.adopt(saved, into: navigation)
         #expect(navigation.pinned.isEmpty)
         #expect(navigation.ownerChoices.removedProjects == ["/repo"])
-        #expect(reads == 1)
+        #expect(reads == 2)
     }
 
     private func build(sessions: [SwarmSession], paths: [String] = [], removed: Set<String> = []) -> SessionsTree {

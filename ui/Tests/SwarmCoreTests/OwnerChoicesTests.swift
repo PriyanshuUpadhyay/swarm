@@ -146,17 +146,46 @@ struct OwnerChoicesTests {
         defer { close(descriptor) }
         #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
         let released = DispatchSemaphore(value: 0)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+        let lockHold = OwnerChoicesStore.writeLockTimeout + 1
+        let lockLimit = Duration.seconds(OwnerChoicesStore.writeLockTimeout + 0.75)
+        DispatchQueue.global().asyncAfter(deadline: .now() + lockHold) {
             _ = flock(descriptor, LOCK_UN)
             released.signal()
         }
         let store = OwnerChoicesStore(folder: folder)
         let started = ContinuousClock.now
-        #expect(throws: OwnerChoicesError.self) { try store.load() }
-        #expect(started.duration(to: .now) < .milliseconds(1_750))
+        #expect(throws: OwnerChoicesError.self) { try store.update { $0.pinned.insert("/repo") } }
+        #expect(started.duration(to: .now) < lockLimit)
         released.wait()
         try store.update { $0.pinned.insert("/repo") }
         #expect(try store.load().pinned == ["/repo"])
+    }
+
+    @Test("A busy refresh read returns the last good snapshot without waiting")
+    func busyRefreshKeepsSnapshot() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: folder)
+        try choices.update { $0.projectPaths = ["/repo"]; $0.pinned = ["/repo"] }
+        let projects = SwarmProjectStore(choices: choices)
+        let expected = try #require(projects.loadChoices(reportError: { Issue.record("\($0.message)") }))
+        let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_RDWR)
+        #expect(descriptor >= 0)
+        defer { _ = flock(descriptor, LOCK_UN); close(descriptor) }
+        #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        var failures: [OwnerChoicesFailure] = []
+        for _ in 0..<3 {
+            let started = ContinuousClock.now
+            let retained = projects.loadChoices(reportError: { failures.append($0) })
+            #expect(started.duration(to: .now) < .milliseconds(250))
+            #expect(retained == expected)
+            #expect(projects.choicesLoadFailed)
+        }
+        #expect(failures.count == 3)
+        #expect(failures.allSatisfy { $0.operation == .load })
+        _ = flock(descriptor, LOCK_UN)
+        #expect(projects.loadChoices(reportError: { Issue.record("\($0.message)") }) == expected)
+        #expect(!projects.choicesLoadFailed)
     }
 
     @Test("A failed choices write still saves selection and folds in view defaults")
