@@ -124,7 +124,8 @@ struct CLITitleTests {
         #expect(reader.name(path: log.path) == "Replaced name")
     }
 
-    @Test("Measures the first Claude name read on a synthetic 50 MiB log")
+    @Test("Measures the first Claude name read on a synthetic 50 MiB log",
+          .enabled(if: ProcessInfo.processInfo.environment["SWARM_PERF"] == "1"))
     func claudeFirstReadCost() throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
