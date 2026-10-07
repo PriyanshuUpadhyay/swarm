@@ -221,4 +221,32 @@ struct WorkspaceNavigationTests {
         #expect(navigation.collapsed.isEmpty)
     }
 
+    @Test("Palette query results use activity order while the sidebar keeps workspace order")
+    func paletteActivityOrder() {
+        var older = session("older", path: "/repo/alpha")
+        older.createdAt = 10
+        var newer = session("newer", path: "/repo/zeta")
+        newer.createdAt = 100
+        let tree = SessionsTree.build(
+            sessions: [older, newer],
+            repositoryPathsResolver: { _ in GitRepositoryPaths(gitDirectory: "/repo/.git", commonDirectory: "/repo/.git") },
+            worktreeLister: { _ in [WorktreeEntry(path: "/repo/alpha", branch: "alpha"), WorktreeEntry(path: "/repo/zeta", branch: "zeta")] }
+        )
+        let entries = WorkspaceEntry.list(in: tree)
+        #expect(entries.map(\.id) == ["/repo/alpha", "/repo/zeta"])
+        var navigation = WorkspaceNavigation()
+        let source = PaletteSource.workspaces(entries, navigation: navigation, now: 200)
+        let items = PaletteItems.build(sidebarViews: [], workspaces: source.workspaces, chats: source.chats, agents: [])
+        #expect(PaletteSearch.rank(items: items, query: "repo").filter { $0.group == .workspace }.map(\.id)
+            == ["workspace:/repo/zeta", "workspace:/repo/alpha"])
+        #expect(source.chats.map(\.id) == ["newer", "older"])
+        navigation.pinned = ["/repo/alpha"]
+        #expect(PaletteSource.workspaces(entries, navigation: navigation, now: 200).workspaces.map(\.id)
+            == ["/repo/alpha", "/repo/zeta"])
+        navigation.pinned = []
+        navigation.archived = ["/repo/zeta"]
+        #expect(PaletteSource.workspaces(entries, navigation: navigation, now: 200).workspaces.map(\.id)
+            == ["/repo/alpha", "/repo/zeta"])
+    }
+
 }

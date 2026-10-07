@@ -119,9 +119,12 @@ extension PaletteSource {
         // Pinned, the rest by activity, then archived, with full "project / folder" titles: the
         // palette has no project headers to name the project.
         let idsByTitle = navigation.idsByTitle(entries)
-        let pinned = entries.filter { navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
-        let others = entries.filter { !navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
-        let archived = entries.filter { navigation.archived.contains($0.id) }
+        let byActivity = entries.sorted {
+            $0.lastActivity == $1.lastActivity ? $0.id < $1.id : $0.lastActivity > $1.lastActivity
+        }
+        let pinned = byActivity.filter { navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
+        let others = byActivity.filter { !navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
+        let archived = byActivity.filter { navigation.archived.contains($0.id) }
         var workspaces: [Workspace] = []
         var chats: [Chat] = []
         for entry in pinned + others + archived {
