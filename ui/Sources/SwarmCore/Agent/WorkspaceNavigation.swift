@@ -230,6 +230,8 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 
     /// First sight sets the baseline; only later activity makes a chat unread.
     public mutating func recordFirstSight(_ chats: [SwarmProjectSession]) {
+        let listed = Set(chats.map(ChatTitle.key))
+        lastSeen = lastSeen.filter { listed.contains($0.key) }
         for chat in chats where lastSeen[ChatTitle.key(chat)] == nil {
             lastSeen[ChatTitle.key(chat)] = chat.lastActivity
         }

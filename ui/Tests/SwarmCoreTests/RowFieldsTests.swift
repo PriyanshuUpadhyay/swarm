@@ -185,6 +185,17 @@ struct RowFieldPresentationTests {
         #expect(navigation.isUnread(chat(time: 81)))
     }
 
+    @Test("Refresh keeps seen values only for the current listing")
+    func prunesSeenChats() {
+        var navigation = WorkspaceNavigation()
+        navigation.lastSeen = ["gone-chat": 50, "chat": 80]
+        navigation.recordFirstSight([chat(time: 81)])
+        #expect(navigation.lastSeen == ["chat": 80])
+        #expect(navigation.isUnread(chat(time: 81)))
+        navigation.recordFirstSight([])
+        #expect(navigation.lastSeen.isEmpty)
+    }
+
     @Test("A continued chat uses the original last-seen key")
     func continuedUnread() {
         let root = chat().session
