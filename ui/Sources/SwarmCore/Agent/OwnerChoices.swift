@@ -10,6 +10,8 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var removedProjects: Set<String> = []
     public var workspaceOrder: [String: [String]] = [:]
 
+    public var fields = RowFieldLists()
+
     public init() {}
 
     public init(from decoder: Decoder) throws {
@@ -22,6 +24,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         projectPaths = try container.decodeIfPresent([String].self, forKey: .projectPaths) ?? []
         removedProjects = try container.decodeIfPresent(Set<String>.self, forKey: .removedProjects) ?? []
         workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
+        fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
     }
 
     public mutating func pruneMissingFolders() {

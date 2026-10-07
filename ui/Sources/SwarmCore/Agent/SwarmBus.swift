@@ -29,6 +29,13 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     public var log: String?
     /// The question the agent's screen shows now; `swarm answer` picks one of its choices.
     public var prompt: SwarmPrompt?
+    public var profile: String?
+    public var runner: String?
+    public var model: String?
+    public var effort: String?
+    public var account: String?
+    public var costUsd: Double?
+    public var tokens: Int64?
 
     public init(
         id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
