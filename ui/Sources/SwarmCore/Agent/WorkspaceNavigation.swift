@@ -268,18 +268,28 @@ public final class WorkspaceNavigationStore {
     private let defaults: UserDefaults
     private let key = "workspaces.navigation"
     private let choices: OwnerChoicesStore
+    private let encodeViewState: (WorkspaceNavigation) throws -> Data
     private var lastChoices = OwnerChoices()
     public private(set) var choicesRevision = 0
     public var savedChoices: OwnerChoices { lastChoices }
 
-    public init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
-        self.defaults = defaults
-        choices = OwnerChoicesStore(folder: choicesFolder)
+    public convenience init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
+        self.init(defaults: defaults, choices: OwnerChoicesStore(folder: choicesFolder))
     }
 
-    public init(defaults: UserDefaults, choices: OwnerChoicesStore) {
+    public convenience init(defaults: UserDefaults, choices: OwnerChoicesStore) {
+        self.init(defaults: defaults, choices: choices, encodeViewState: {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            return try encoder.encode($0)
+        })
+    }
+
+    init(defaults: UserDefaults, choices: OwnerChoicesStore,
+         encodeViewState: @escaping (WorkspaceNavigation) throws -> Data) {
         self.defaults = defaults
         self.choices = choices
+        self.encodeViewState = encodeViewState
     }
 
     public func load() -> WorkspaceNavigation {
@@ -290,17 +300,18 @@ public final class WorkspaceNavigationStore {
     }
 
     @discardableResult
-    public func save(_ value: WorkspaceNavigation) -> String? {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        guard let data = try? encoder.encode(value) else { return "Sidebar view state could not be saved." }
+    public func save(_ value: WorkspaceNavigation) -> OwnerChoicesFailure? {
+        let data: Data
+        do { data = try encodeViewState(value) }
+        catch { return OwnerChoicesFailure(error.localizedDescription, operation: .saveViewState) }
         if data != defaults.data(forKey: key) { defaults.set(data, forKey: key) }
+        choices.alerts.resolve(.saveViewState)
         guard value.ownerChoices != lastChoices else { return nil }
         choicesRevision += 1
         do {
             try choices.update { $0.applyWorkspaceChanges(from: lastChoices, to: value.ownerChoices) }
             lastChoices = value.ownerChoices
-        } catch { return error.localizedDescription }
+        } catch { return OwnerChoicesFailure(error.localizedDescription, operation: .save) }
         return nil
     }
 

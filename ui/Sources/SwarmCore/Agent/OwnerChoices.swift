@@ -67,13 +67,18 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
 }
 
 public struct OwnerChoicesFailure: Hashable, Sendable {
-    public enum Operation: String, Sendable { case load, save }
+    public enum Operation: String, Sendable { case load, save, saveViewState }
     public let operation: Operation
     public let message: String
 
     public init(_ description: String, operation: Operation) {
         self.operation = operation
-        message = "Could not \(operation.rawValue) sidebar choices. \(description)"
+        switch operation {
+        case .load, .save:
+            message = "Could not \(operation.rawValue) sidebar choices. \(description)"
+        case .saveViewState:
+            message = "Could not save sidebar view state. \(description)"
+        }
     }
 }
 
@@ -214,9 +219,9 @@ public enum OwnerChoicesError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .lockBusy: "Sidebar choices are busy. Try again."
+        case .lockBusy: "Another update is in progress. Try again."
         case .emptyHome: "SWARM_HOME is set but empty"
-        case .unclaimedHome(let path): "Sidebar choices were not saved. Run swarm init with SWARM_HOME set to \(path), then try again."
+        case .unclaimedHome(let path): "Run swarm init with SWARM_HOME set to \(path), then try again."
         }
     }
 }

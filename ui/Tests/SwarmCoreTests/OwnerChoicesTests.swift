@@ -203,12 +203,60 @@ struct OwnerChoicesTests {
         navigation.collapsed = ["pinned"]
         navigation.pinned = ["/project/main"]
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
-        #expect(store.save(navigation)?.contains("Run swarm init") == true)
+        #expect(store.save(navigation)?.message.contains("Run swarm init") == true)
         let loaded = store.load()
         #expect(loaded.selectedWorkspace == navigation.selectedWorkspace)
         #expect(loaded.selectedChats == navigation.selectedChats)
         #expect(loaded.collapsed == navigation.collapsed)
         #expect(!FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    @Test("Choices errors name the operation once and give a next step")
+    func choicesErrorMessages() {
+        let unclaimed = OwnerChoicesFailure(OwnerChoicesError.unclaimedHome("/unclaimed").localizedDescription,
+                                            operation: .save)
+        #expect(unclaimed.message == "Could not save sidebar choices. Run swarm init with SWARM_HOME set to /unclaimed, then try again.")
+        let busy = OwnerChoicesFailure(OwnerChoicesError.lockBusy.localizedDescription, operation: .load)
+        #expect(busy.message == "Could not load sidebar choices. Another update is in progress. Try again.")
+    }
+
+    @Test("A view-state encode failure is separate from a choices save failure")
+    func viewStateEncodingFailure() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "OwnerChoicesTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let choices = OwnerChoicesStore(folder: folder)
+        var failEncode = true
+        let store = WorkspaceNavigationStore(defaults: defaults, choices: choices, encodeViewState: { value in
+            if failEncode {
+                throw EncodingError.invalidValue(value, .init(codingPath: [], debugDescription: "View state encoding failed."))
+            }
+            return try JSONEncoder().encode(value)
+        })
+        var navigation = WorkspaceNavigation()
+        navigation.selectedWorkspace = "/repo"
+        navigation.pinned = ["/repo"]
+        let failure = try #require(store.save(navigation))
+        #expect(failure.operation == .saveViewState)
+        #expect(failure.message.hasPrefix("Could not save sidebar view state."))
+        #expect(!failure.message.contains("sidebar choices"))
+        #expect(defaults.data(forKey: "workspaces.navigation") == nil)
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("choices.json").path))
+        let choicesFailure = OwnerChoicesFailure("Write denied.", operation: .save)
+        choices.alerts.report(choicesFailure)
+        choices.alerts.report(failure)
+        failEncode = false
+        navigation.pinned = []
+        #expect(store.save(navigation) == nil)
+        let viewData = try #require(defaults.data(forKey: "workspaces.navigation"))
+        #expect(try JSONDecoder().decode(WorkspaceNavigation.self, from: viewData).selectedWorkspace == "/repo")
+        #expect(choices.alerts.message == choicesFailure.message)
+        choices.alerts.dismiss()
+        #expect(choices.alerts.message == nil)
     }
 
     @Test("Load and save alerts wait for dismissal and each distinct error appears once")

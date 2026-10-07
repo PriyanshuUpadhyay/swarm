@@ -17,7 +17,7 @@ final class SessionsTreeModel {
         didSet {
             if navigation != oldValue {
                 if let failure = navigationStore.save(navigation) {
-                    reportChoicesError(OwnerChoicesFailure(failure, operation: .save))
+                    reportChoicesError(failure)
                 }
             }
             if navigation.workspaceOrder != oldValue.workspaceOrder {
