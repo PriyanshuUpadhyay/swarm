@@ -108,7 +108,7 @@ public enum RowFields {
     public static func workspaceContext(
         _ entries: [WorkspaceEntry], title: String, navigation: WorkspaceNavigation, now: Int,
         agentsBySession: [SwarmSessionID: [SwarmAgent]], workspaceFields: [String: RowWorkspaceFields],
-        runsByWorkspace: [String: [StepRun]] = [:]
+        runsByWorkspace: [String: [StepRun]] = [:], runNoticesByWorkspace: [String: String] = [:]
     ) -> RowFieldContext {
         let chats = entries.flatMap(\.chats)
         let contexts = chats.map { chatContext($0, title: "", navigation: navigation, now: now, agentsBySession: agentsBySession) }
@@ -132,7 +132,9 @@ public enum RowFields {
         setUsage(chairs, in: &context)
         let dirty = entries.compactMap { workspaceFields[$0.id]?.dirtyCount }
         if !dirty.isEmpty { context.text[.dirty] = "\(dirty.reduce(0, +)) dirty" }
-        context.text[.steps] = SidebarRows.runSummary(entries.flatMap { runsByWorkspace[$0.id] ?? [] })
+        let runSummary = SidebarRows.runSummary(entries.flatMap { runsByWorkspace[$0.id] ?? [] })
+        context.text[.steps] = entries.contains { runNoticesByWorkspace[$0.id] != nil }
+            ? runSummary.map { "\($0) (partial)" } ?? "Runs unknown" : runSummary
         let cached = entries.compactMap { workspaceFields[$0.id] }
         context.text[.pr] = unique(cached.compactMap(\.pr))
         context.text[.ci] = unique(cached.compactMap(\.ci))

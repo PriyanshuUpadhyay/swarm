@@ -68,6 +68,75 @@ struct SidebarRunsTests {
         #expect(SidebarRows.runWorkspaces(entries, navigation: navigation) == [folder.path + "/other"])
     }
 
+    @Test("A failed run scan returns an empty current read with a notice instead of keeping old runs")
+    func failedScanNotice() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try "not a directory".write(to: folder.appendingPathComponent("tmp"), atomically: true, encoding: .utf8)
+        let read = await SidebarRows.scanRuns(in: [folder.path])
+        #expect(read[folder.path]?.runs == [])
+        #expect(read[folder.path]?.notice != nil)
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("tmp"))
+        let recovered = await SidebarRows.scanRuns(in: [folder.path])
+        #expect(recovered[folder.path]?.runs == [])
+        #expect(recovered[folder.path]?.notice == nil)
+    }
+
+    @Test("Sidebar scans keep the real listing cut and unreadable folder notices")
+    func scanListingNotices() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let crowded = folder.appendingPathComponent("crowded")
+        let unreadable = folder.appendingPathComponent("unreadable")
+        let locked = unreadable.appendingPathComponent("tmp/flow/locked")
+        try FileManager.default.createDirectory(at: crowded.appendingPathComponent("tmp"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        for index in 0...2_000 {
+            try Data().write(to: crowded.appendingPathComponent("tmp/note-\(index).txt"))
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        let read = await SidebarRows.scanRuns(in: [crowded.path, unreadable.path])
+        #expect(read[crowded.path]?.cut == ["tmp"])
+        #expect(read[crowded.path]?.notice != nil)
+        #expect(read[unreadable.path]?.unreadable == ["tmp/flow/locked"])
+        #expect(read[unreadable.path]?.notice != nil)
+    }
+
+    @Test("Partial run scans show unknown run state on the workspace and project fields")
+    func partialScanNotice() throws {
+        let entries = entries("/repo")
+        var navigation = WorkspaceNavigation()
+        navigation.fields.project = [.title, .steps]
+        for scan in [StepRunScan(cut: ["tmp/flow"]), StepRunScan(unreadable: ["tmp/flow/run"])] {
+            let notice = try #require(scan.notice)
+            let sections = SidebarRows.sections(
+                projects: [entries[0].project], workspaces: entries, navigation: navigation, search: "",
+                showingArchive: false, now: 100, runsByWorkspace: ["/repo": scan.runs],
+                runNoticesByWorkspace: ["/repo": notice]
+            )
+            let workspace = try #require(sections.flatMap(\.rows).first { $0.id == "/repo" })
+            #expect(workspace.fields.contains { $0.field == .steps && $0.text == "Runs unknown" })
+            #expect(sections.first?.fields.contains { $0.field == .steps && $0.text == "Runs unknown" } == true)
+            let waiting = StepRun(id: "tmp/flow/wait", skill: "flow", name: "wait", closed: false, steps: [
+                StepNode(id: "01-pick", path: "tmp/flow/wait/01-pick.md", state: .waiting(question: "Pick?"),
+                         error: nil, needs: [], needsAssumed: false, stale: [], ready: false, todo: nil, lastEvent: nil)
+            ], lastActivity: nil)
+            let partial = SidebarRows.sections(
+                projects: [entries[0].project], workspaces: entries, navigation: navigation, search: "",
+                showingArchive: false, now: 100, runsByWorkspace: ["/repo": [waiting]],
+                runNoticesByWorkspace: ["/repo": notice]
+            )
+            let partialWorkspace = try #require(partial.flatMap(\.rows).first { $0.id == "/repo" })
+            #expect(partialWorkspace.status == .waiting)
+            #expect(partialWorkspace.fields.contains { $0.field == .steps && $0.text == "1 run waits (partial)" })
+            #expect(partial.first?.fields.contains { $0.field == .steps && $0.text == "1 run waits (partial)" } == true)
+        }
+    }
+
     @Test("Run scans include folded empty workspaces and exclude missing, removed, and archived workspaces")
     func runScanTargets() {
         let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [

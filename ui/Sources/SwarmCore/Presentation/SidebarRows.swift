@@ -108,6 +108,19 @@ public enum SidebarRows {
         }.map(\.id)
     }
 
+    public static func scanRuns(in paths: [String]) async -> [String: StepRunScan] {
+        var result: [String: StepRunScan] = [:]
+        for path in paths {
+            guard !Task.isCancelled else { break }
+            do {
+                result[path] = try await StepRuns.scan(workspace: path, includeClosed: false)
+            } catch {
+                result[path] = StepRunScan(unreadable: [path + "/tmp"])
+            }
+        }
+        return result
+    }
+
     static func orderedRuns(_ runs: [StepRun]) -> [StepRun] {
         runs.filter { !$0.closed }.sorted {
             if $0.urgency != $1.urgency { return $0.urgency > $1.urgency }
@@ -168,7 +181,8 @@ public enum SidebarRows {
         projects: [ProjectNode], workspaces: [WorkspaceEntry], navigation: WorkspaceNavigation,
         search: String, showingArchive: Bool, now: Int,
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], expandedLists: Set<String> = [],
-        runsByWorkspace: [String: [StepRun]] = [:], workspaceFields: [String: RowWorkspaceFields] = [:]
+        runsByWorkspace: [String: [StepRun]] = [:], workspaceFields: [String: RowWorkspaceFields] = [:],
+        runNoticesByWorkspace: [String: String] = [:]
     ) -> [SidebarSection] {
         let entriesByProject = Dictionary(grouping: workspaces, by: { $0.project.id }).mapValues { entries in
             Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -218,7 +232,8 @@ public enum SidebarRows {
             if case .project(let path) = section.kind {
                 var context = RowFields.workspaceContext(
                     workspaces.filter { $0.project.path == path }, title: section.title, navigation: navigation,
-                    now: now, agentsBySession: agentsBySession, workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace
+                    now: now, agentsBySession: agentsBySession, workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace,
+                    runNoticesByWorkspace: runNoticesByWorkspace
                 )
                 context.status = section.status
                 section.fields = context.values(navigation.fields.project)
@@ -229,7 +244,8 @@ public enum SidebarRows {
                 if row.kind == .workspace, let entry = entriesByPath[row.id] {
                     var context = RowFields.workspaceContext(
                         [entry], title: row.title, navigation: navigation, now: now, agentsBySession: agentsBySession,
-                        workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace
+                        workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace,
+                        runNoticesByWorkspace: runNoticesByWorkspace
                     )
                     context.status = row.status
                     let suffix = entry.chats.count == 1 ? "1 chat" : "\(entry.chats.count) chats"

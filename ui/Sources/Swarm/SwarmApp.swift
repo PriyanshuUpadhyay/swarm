@@ -80,6 +80,7 @@ final class SessionsTreeModel {
     private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
     private(set) var runsByWorkspace: [String: [StepRun]] = [:]
+    private(set) var runNoticesByWorkspace: [String: String] = [:]
     private let rowFieldCache = RowFieldCache()
     private(set) var workspaceFields: [String: RowWorkspaceFields] = [:]
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
@@ -491,14 +492,7 @@ final class SessionsTreeModel {
         while !Task.isCancelled {
             let paths = SidebarRows.runWorkspaces(workspaces, navigation: navigation)
             let scan = Task.detached(priority: .utility) {
-                var result: [String: [StepRun]] = [:]
-                for path in paths {
-                    guard !Task.isCancelled else { break }
-                    if let scan = try? await StepRuns.scan(workspace: path, includeClosed: false) {
-                        result[path] = scan.runs
-                    }
-                }
-                return result
+                await SidebarRows.scanRuns(in: paths)
             }
             let read = await withTaskCancellationHandler {
                 await scan.value
@@ -508,8 +502,11 @@ final class SessionsTreeModel {
             guard !Task.isCancelled else { return }
             let existing = Set(workspaces.map(\.id))
             var updated = runsByWorkspace.filter { existing.contains($0.key) }
-            updated.merge(read, uniquingKeysWith: { _, new in new })
+            updated.merge(read.mapValues(\.runs), uniquingKeysWith: { _, new in new })
             if runsByWorkspace != updated { runsByWorkspace = updated }
+            var notices = runNoticesByWorkspace.filter { existing.contains($0.key) }
+            for (path, scan) in read { notices[path] = scan.notice }
+            if runNoticesByWorkspace != notices { runNoticesByWorkspace = notices }
             try? await Task.sleep(for: .seconds(RowFieldCache.refreshInterval))
         }
     }
@@ -908,7 +905,8 @@ private struct SessionsWindow: View {
             projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
             showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970),
             agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists,
-            runsByWorkspace: model.runsByWorkspace, workspaceFields: model.workspaceFields
+            runsByWorkspace: model.runsByWorkspace, workspaceFields: model.workspaceFields,
+            runNoticesByWorkspace: model.runNoticesByWorkspace
         )
     }
 
