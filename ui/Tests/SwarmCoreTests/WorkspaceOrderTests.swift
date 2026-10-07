@@ -148,7 +148,7 @@ struct WorkspaceOrderTests {
         navigation.workspaceOrder = [projectPath: [existing.path, folder.appendingPathComponent("gone").path]]
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder.appendingPathComponent("choices")))
         store.save(navigation)
-        let refreshed = try store.reloadChoices(navigation)
+        let refreshed = store.load()
         #expect(refreshed.workspaceOrder == navigation.workspaceOrder)
         #expect(store.load().workspaceOrder == refreshed.workspaceOrder)
     }

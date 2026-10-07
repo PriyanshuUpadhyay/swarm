@@ -155,7 +155,7 @@ struct ProjectRetentionTests {
             worktreeLister: { _ in [] }
         )
         #expect(tree.projects.first?.workspaces.isEmpty == true)
-        let pruned = try store.reloadChoices(navigation)
+        let pruned = store.load()
         #expect(pruned.pinned == navigation.pinned)
         #expect(pruned.archived == navigation.archived)
         #expect(pruned.names == navigation.names)

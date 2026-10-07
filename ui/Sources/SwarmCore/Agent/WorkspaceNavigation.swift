@@ -311,10 +311,6 @@ public final class WorkspaceNavigationStore {
         return refreshed
     }
 
-    public func reloadChoices(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
-        applying(try choices.load(), to: value)
-    }
-
 }
 
 public enum SidebarDrop {
