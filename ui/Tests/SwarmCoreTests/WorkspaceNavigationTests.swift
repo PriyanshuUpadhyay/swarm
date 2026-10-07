@@ -61,13 +61,15 @@ struct WorkspaceNavigationTests {
         navigation.select(entry, chat: .init("two"))
         navigation.pinned.insert(entry.id)
         navigation.names[entry.id] = "Landing page copy"
-        let store = WorkspaceNavigationStore(defaults: defaults)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
         store.save(navigation)
-        #expect(WorkspaceNavigationStore(defaults: defaults).load() == navigation)
+        #expect(WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).load() == navigation)
         navigation.archive(entry.id)
         #expect(navigation.selectedWorkspace == nil)
         store.save(navigation)
-        var restored = WorkspaceNavigationStore(defaults: defaults).load()
+        var restored = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).load()
         #expect(restored.archived.contains(entry.id))
         restored.archived.remove(entry.id)
         restored.select(entry)
@@ -172,7 +174,7 @@ struct WorkspaceNavigationTests {
         SwarmSession(id: .init(id), talkMode: "lane", adapter: "tmux-solo", cwd: path, createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
     }
 
-    @Test("A value saved before collapsed projects existed keeps its pins, names, and archive marks")
+    @Test("Old defaults keep view state and do not migrate choices")
     func loadsOlderValue() throws {
         let suite = "WorkspaceNavigationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -180,13 +182,15 @@ struct WorkspaceNavigationTests {
         let saved = #"{"selectedWorkspace":"/repo/main","selectedChats":{"/repo/main":"one"},"pinned":["/repo/main"],"archived":["/repo/old"],"names":{"/repo/main":"Fix login"}}"#
         defaults.set(Data(saved.utf8), forKey: "workspaces.navigation")
 
-        let store = WorkspaceNavigationStore(defaults: defaults)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
         var navigation = store.load()
         #expect(navigation.selectedWorkspace == "/repo/main")
         #expect(navigation.selectedChats == ["/repo/main": "one"])
-        #expect(navigation.pinned == ["/repo/main"])
-        #expect(navigation.archived == ["/repo/old"])
-        #expect(navigation.names == ["/repo/main": "Fix login"])
+        #expect(navigation.pinned.isEmpty)
+        #expect(navigation.archived.isEmpty)
+        #expect(navigation.names.isEmpty)
         #expect(navigation.collapsed.isEmpty)
 
         navigation.collapsed = ["/repo"]

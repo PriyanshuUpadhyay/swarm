@@ -2,22 +2,20 @@ import Foundation
 
 @MainActor
 public final class SwarmProjectStore {
-    private let defaults: UserDefaults
-    private let key: String
+    private let choices: OwnerChoicesStore
 
-    public init(defaults: UserDefaults = .standard, key: String = "projects.openPaths") {
-        self.defaults = defaults
-        self.key = key
+    public init(choicesFolder: URL? = SwarmHome.dataFolder) {
+        choices = OwnerChoicesStore(folder: choicesFolder)
     }
 
     public func paths() -> [String] {
-        defaults.stringArray(forKey: key) ?? []
+        (try? choices.load().projectPaths) ?? []
     }
 
     @discardableResult
     public func add(_ url: URL) async throws -> String {
         let path = try await Task.detached { try Self.directoryPath(url) }.value
-        remember(path)
+        try remember(path)
         return path
     }
 
@@ -41,7 +39,7 @@ public final class SwarmProjectStore {
             }
             throw error
         }
-        remember(path)
+        try remember(path)
         return path
     }
 
@@ -53,11 +51,10 @@ public final class SwarmProjectStore {
         return path
     }
 
-    private func remember(_ path: String) {
-        var saved = paths()
-        saved.removeAll { $0 == path }
-        saved.append(path)
-        defaults.set(saved, forKey: key)
+    private func remember(_ path: String) throws {
+        try choices.update {
+            if !$0.projectPaths.contains(path) { $0.projectPaths.append(path) }
+        }
     }
 }
 

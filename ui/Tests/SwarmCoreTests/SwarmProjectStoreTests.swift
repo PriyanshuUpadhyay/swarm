@@ -8,21 +8,19 @@ struct SwarmProjectStoreTests {
     @Test("Opened and created folders remain available, and a created folder is a git repo")
     func savedFolders() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "SwarmProjectStoreTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
         defer {
-            defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: root)
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let store = SwarmProjectStore(defaults: defaults)
+        let store = SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))
         let created = root.appendingPathComponent("New Project")
 
         #expect(try await store.create(at: created) == created.path)
         #expect(FileManager.default.fileExists(atPath: created.path))
         #expect(Git.repositoryPaths(in: created.path) != nil)
         #expect(try await store.add(created) == created.path)
-        #expect(SwarmProjectStore(defaults: defaults).paths() == [created.path])
+        #expect(SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices")).paths() == [created.path])
+        #expect(try OwnerChoicesStore(folder: root.appendingPathComponent("choices")).load().projectPaths == [created.path])
         await #expect(throws: SwarmProjectError.self) { try await store.create(at: created) }
     }
 

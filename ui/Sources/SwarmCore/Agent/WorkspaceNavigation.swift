@@ -35,15 +35,14 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 
     public init() {}
 
-    // A synthesized decoder throws for a missing key even when the property has a default, and
-    // `load()` then drops every saved pin and name. A key added later must decode as absent.
+    private enum CodingKeys: String, CodingKey {
+        case selectedWorkspace, selectedChats, collapsed
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
         selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
-        pinned = try container.decodeIfPresent(Set<String>.self, forKey: .pinned) ?? []
-        archived = try container.decodeIfPresent(Set<String>.self, forKey: .archived) ?? []
-        names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
     }
 
@@ -147,18 +146,30 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 public final class WorkspaceNavigationStore {
     private let defaults: UserDefaults
     private let key = "workspaces.navigation"
+    private let choices: OwnerChoicesStore
 
-    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    public init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
+        self.defaults = defaults
+        choices = OwnerChoicesStore(folder: choicesFolder)
+    }
 
     public func load() -> WorkspaceNavigation {
-        guard let data = defaults.data(forKey: key),
-              let value = try? JSONDecoder().decode(WorkspaceNavigation.self, from: data) else {
-            return WorkspaceNavigation()
+        var value = defaults.data(forKey: key)
+            .flatMap { try? JSONDecoder().decode(WorkspaceNavigation.self, from: $0) } ?? WorkspaceNavigation()
+        if let saved = try? choices.load() {
+            value.pinned = saved.pinned
+            value.archived = saved.archived
+            value.names = saved.names
         }
         return value
     }
 
     public func save(_ value: WorkspaceNavigation) {
+        try? choices.update {
+            $0.pinned = value.pinned
+            $0.archived = value.archived
+            $0.names = value.names
+        }
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
     }
