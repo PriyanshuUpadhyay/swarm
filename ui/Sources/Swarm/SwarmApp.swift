@@ -1193,7 +1193,7 @@ private struct SessionsWindow: View {
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
         return ChatTab.tabs(
             chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
-            now: Int(Date().timeIntervalSince1970)
+            now: Int(Date().timeIntervalSince1970), chatNames: model.navigation.chatNames
         )
     }
 

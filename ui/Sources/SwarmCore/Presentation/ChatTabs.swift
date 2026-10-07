@@ -18,7 +18,8 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     /// chat first, so a started chat keeps its place when its row replaces the pending tab. A row
     /// that a pending chat stands for is left out, so one chat never shows as two tabs.
     public static func tabs(
-        _ chats: [ChatRow], pending: [PendingChat] = [], closing: Set<SwarmSessionID>, now: Int
+        _ chats: [ChatRow], pending: [PendingChat] = [], closing: Set<SwarmSessionID>, now: Int,
+        chatNames: [String: String] = [:]
     ) -> [ChatTab] {
         let starting = Set(pending.compactMap(\.session))
         return pending.reversed().map { chat in
@@ -33,7 +34,9 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
             )
         } + chats.filter { !starting.contains($0.id) }.map { chat in
             ChatTab(
-                id: chat.id.rawValue, title: chat.session.title, status: chat.session.status,
+                id: chat.id.rawValue,
+                title: ChatTitle.title(chat.session, appName: chatNames[ChatTitle.key(chat.session)]),
+                status: chat.session.status,
                 badge: chat.session.provider.map(badge),
                 canClose: SessionRowPresentation.make(chat, now: now).state == .live
                     && !closing.contains(chat.id)

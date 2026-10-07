@@ -30,6 +30,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var pinned: Set<String> = []
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
+    public var chatNames: [String: String] = [:]
     /// Project and workspace paths whose rows are collapsed. Chat children start folded;
     /// `expanded:chat:<root id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []

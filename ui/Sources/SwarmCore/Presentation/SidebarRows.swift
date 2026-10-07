@@ -111,10 +111,7 @@ public enum SidebarRows {
 
     /// A continuation can change the current session id without changing this row's identity.
     public static func chatID(_ chat: SwarmProjectSession) -> String {
-        let root = chat.sessions.min {
-            $0.createdAt == $1.createdAt ? $0.id.rawValue < $1.id.rawValue : $0.createdAt < $1.createdAt
-        }!
-        return "chat:\(root.id.rawValue)"
+        "chat:\(ChatTitle.key(chat))"
     }
 
     /// Resolve against the current tree, so a stale row cannot select a different chat or agent.
@@ -185,7 +182,8 @@ public enum SidebarRows {
             let counts = chat.statusCounts.map { StatusCount(status: $0.key, count: $0.value) }
                 .sorted { $0.status.urgency > $1.status.urgency }
             let presentation = SessionRowPresentation.make(
-                ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now
+                ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now,
+                appName: navigation.chatNames[ChatTitle.key(chat)]
             )
             let waiting = children.filter { $0.1.status == .waiting }.count
             let childrenLabel = children.count == 1 ? "1 agent" : "\(children.count) agents"

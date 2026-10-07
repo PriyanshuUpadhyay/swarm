@@ -9,7 +9,7 @@ public struct SessionRowPresentation: Sendable, Hashable {
     public var state: State
     public var provider: String?
 
-    public static func make(_ row: ChatRow, now: Int) -> SessionRowPresentation {
+    public static func make(_ row: ChatRow, now: Int, appName: String? = nil) -> SessionRowPresentation {
         let state = state(of: row.session)
         let age = max(0, now - row.session.lastActivity)
         let ageText: String
@@ -18,8 +18,7 @@ public struct SessionRowPresentation: Sendable, Hashable {
         else if age < 86_400 { ageText = "\(age / 3_600)h" }
         else { ageText = "\(age / 86_400)d" }
 
-        let fallback = "\(row.session.provider ?? "Chat") \(row.id.rawValue.prefix(8))"
-        let title = row.session.title.isEmpty ? fallback : row.session.title
+        let title = ChatTitle.title(row.session, appName: appName)
         let status = state == .ended ? "ended" : row.session.provider ?? "no chair"
         return SessionRowPresentation(
             title: title, caption: "\(row.workspace) · \(status)", age: ageText,
@@ -317,7 +316,11 @@ public struct SessionsTree: Sendable, Hashable {
                 ?? agents.first(where: { $0.id == SwarmPanePolicy.chair })?.provider
                 ?? agents.first?.provider
             return SwarmProjectSession(
-                sessions: $0, title: $0.reversed().lazy.compactMap { titles[$0.id] }.first ?? "Chat",
+                sessions: $0, title: ChatTitle.resolve(
+                    appName: nil, cliName: nil,
+                    firstLine: $0.reversed().lazy.compactMap { titles[$0.id] }.first,
+                    provider: provider, id: $0[0].id
+                ),
                 isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider,

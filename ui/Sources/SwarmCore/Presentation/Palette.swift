@@ -132,7 +132,8 @@ extension PaletteSource {
                 lastActivity: entry.lastActivity > 0 ? entry.lastActivity : nil
             ))
             chats += entry.chats.map {
-                Chat(id: $0.id.rawValue, title: $0.title, workspace: row.title, status: $0.status, lastActivity: $0.lastActivity)
+                Chat(id: $0.id.rawValue, title: ChatTitle.title($0, appName: navigation.chatNames[ChatTitle.key($0)]),
+                     workspace: row.title, status: $0.status, lastActivity: $0.lastActivity)
             }
         }
         return (workspaces, chats)

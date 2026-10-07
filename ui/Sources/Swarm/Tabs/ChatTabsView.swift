@@ -85,6 +85,7 @@ private struct ChatTabView: View {
                 .contentShape(Rectangle())
             }
             .accessibilityAddTraits(selected ? .isSelected : [])
+            .help(tab.title)
             // A start is never cut in half, so a pending tab has no archive or close.
             if tab.pending == nil {
                 archiveButton
