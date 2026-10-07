@@ -39,6 +39,8 @@ struct RenameTitleTests {
         #expect(PaletteSource.workspaces(entries, navigation: loaded, now: 3).chats.first?.title == "Fix login")
         #expect(loaded.matches("Fix login", entry: entries[0]))
         #expect(loaded.matches("Login app", entry: entries[0]))
+        #expect(tree.windowTitle(for: chat.id, navigation: loaded) == "Login app · Fix login")
+        #expect(tree.windowTitle(for: .init("oldest"), navigation: loaded) == "Login app · Fix login")
         navigation.renameChat(chat.session, to: "\n ")
         navigation.renameProject(project, to: " ")
         store.save(navigation)

@@ -58,10 +58,6 @@ public struct WorkspaceNode: Sendable, Hashable, Identifiable {
     public let isRemoved: Bool
     public var canStartChat: Bool { !missing && !isRemoved }
     public var sessions: [SwarmProjectSession]
-    public var current: SwarmProjectSession? { sessions.first }
-    public var state: SessionRowPresentation.State? {
-        current.map(SessionRowPresentation.state)
-    }
 
     public init(
         path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil,
@@ -242,12 +238,13 @@ public struct SessionsTree: Sendable, Hashable {
         return chat(id)?.id
     }
 
-    public func windowTitle(for id: SwarmSessionID) -> String? {
+    public func windowTitle(for id: SwarmSessionID, navigation: WorkspaceNavigation) -> String? {
         for project in projects {
             guard let row = project.chats.first(where: {
                 $0.session.sessions.contains { $0.id == id }
             }) else { continue }
-            return "\(project.name) · \(ChatTitle.title(row.session))"
+            let title = ChatTitle.title(row.session, appName: navigation.chatNames[ChatTitle.key(row.session)])
+            return "\(navigation.projectTitle(for: project)) · \(title)"
         }
         return nil
     }

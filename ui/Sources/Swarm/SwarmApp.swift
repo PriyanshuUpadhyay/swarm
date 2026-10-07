@@ -1395,10 +1395,7 @@ private struct SessionsWindow: View {
     }
 
     private var windowTitle: String {
-        guard let chat = model.selectedSession else { return "Swarm" }
-        let title = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
-        guard let project = model.selectedWorkspace?.project else { return title }
-        return "\(model.navigation.projectTitle(for: project)) · \(title)"
+        model.selectedSessionID.flatMap { model.tree.windowTitle(for: $0, navigation: model.navigation) } ?? "Swarm"
     }
 
     private func archiveChat(_ id: SwarmSessionID) {
