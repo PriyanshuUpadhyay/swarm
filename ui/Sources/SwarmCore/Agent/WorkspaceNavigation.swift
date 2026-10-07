@@ -31,11 +31,29 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
     public var chatNames: [String: String] = [:]
+    public var projectNames: [String: String] = [:]
     /// Project and workspace paths whose rows are collapsed. Chat children start folded;
     /// `expanded:chat:<root id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
 
     public init() {}
+
+    public mutating func renameChat(_ chat: SwarmProjectSession, to name: String) {
+        chatNames[ChatTitle.key(chat)] = Self.savedName(name)
+    }
+
+    public mutating func renameProject(_ project: ProjectNode, to name: String) {
+        projectNames[project.path] = Self.savedName(name)
+    }
+
+    public func projectTitle(for project: ProjectNode) -> String {
+        projectNames[project.path].flatMap(Self.savedName) ?? project.name
+    }
+
+    private static func savedName(_ value: String) -> String? {
+        let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
 
     public func isCollapsed(_ id: String) -> Bool {
         id.hasPrefix("chat:") ? !collapsed.contains("expanded:\(id)") : collapsed.contains(id)
@@ -62,11 +80,11 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     /// checkout, whose folder is named like the project, shows its branch.
     public func title(for entry: WorkspaceEntry, inProject: Bool = false) -> String {
         if let name = customName(for: entry) { return name }
-        let project = entry.project.name
+        let project = projectTitle(for: entry.project)
         let folder = entry.folderName
         if folder.isEmpty { return entry.id }
-        if inProject { return folder == project ? entry.workspace.branch ?? folder : folder }
-        if project == folder { return folder }
+        if inProject { return folder == entry.project.name ? entry.workspace.branch ?? folder : folder }
+        if entry.project.name == folder { return project }
         return "\(project) / \(folder)"
     }
 
@@ -95,8 +113,9 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         if !duplicates.isEmpty {
             parts.append(pathQualifier(for: entry.id, others: duplicates))
         }
-        if !inProject, customName(for: entry) != nil, !parts.contains(entry.project.name) {
-            parts.append(entry.project.name)
+        let project = projectTitle(for: entry.project)
+        if !inProject, customName(for: entry) != nil, !parts.contains(project) {
+            parts.append(project)
         }
         if let branch = entry.workspace.branch,
            !parts.contains(branch), branch != title,
@@ -148,9 +167,9 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func matches(_ query: String, entry: WorkspaceEntry) -> Bool {
-        query.isEmpty || [title(for: entry), entry.project.name, entry.workspace.name, entry.id]
+        query.isEmpty || [title(for: entry), projectTitle(for: entry.project), entry.workspace.name, entry.id]
             .contains { $0.localizedCaseInsensitiveContains(query) }
-            || entry.chats.contains { $0.title.localizedCaseInsensitiveContains(query) }
+            || entry.chats.contains { ChatTitle.title($0, appName: chatNames[ChatTitle.key($0)]).localizedCaseInsensitiveContains(query) }
     }
 }
 
@@ -172,6 +191,8 @@ public final class WorkspaceNavigationStore {
             value.pinned = saved.pinned
             value.archived = saved.archived
             value.names = saved.names
+            value.chatNames = saved.chatNames
+            value.projectNames = saved.projectNames
         }
         return value
     }
@@ -181,6 +202,8 @@ public final class WorkspaceNavigationStore {
             $0.pinned = value.pinned
             $0.archived = value.archived
             $0.names = value.names
+            $0.chatNames = value.chatNames
+            $0.projectNames = value.projectNames
         }
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
@@ -193,6 +216,8 @@ public final class WorkspaceNavigationStore {
         pruned.pinned = saved.pinned
         pruned.archived = saved.archived
         pruned.names = saved.names
+        pruned.chatNames = saved.chatNames
+        pruned.projectNames = saved.projectNames
         pruned.selectedChats = pruned.selectedChats.filter { OwnerChoices.folderExists($0.key) }
         save(pruned)
         return pruned

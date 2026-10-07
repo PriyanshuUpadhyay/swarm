@@ -34,6 +34,8 @@ struct SidebarActions {
     var newChat: (String) -> Void
     var togglePin: (String) -> Void
     var rename: (String) -> Void
+    var renameChat: (String) -> Void
+    var renameProject: (String) -> Void
     var archive: (String) -> Void
     var archiveChat: (String) -> Void
     var restore: (String) -> Void
@@ -115,6 +117,7 @@ struct SidebarView<Details: View>: View {
                                     status: expanded ? nil : section.status,
                                     toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
                                     newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) },
+                                    renameProject: { actions.renameProject(section.id) },
                                     removeProject: { actions.removeProject(section.id) }
                                 )
                             }
@@ -174,6 +177,7 @@ struct SidebarView<Details: View>: View {
     @ViewBuilder
     private func menu(for row: SidebarRow) -> some View {
         if row.kind == .chat, !row.archived {
+            Button("Rename chat…") { actions.renameChat(row.id) }
             Button("Archive chat") { actions.archiveChat(row.id) }
         } else if row.kind == .workspace {
             workspaceMenu(for: row)
@@ -206,6 +210,7 @@ private struct ProjectHeader: View {
     /// Nil in the archive view, which has no collapse.
     let toggle: (() -> Void)?
     let newWorkspace: (() -> Void)?
+    let renameProject: () -> Void
     let removeProject: () -> Void
 
     var body: some View {
@@ -239,6 +244,7 @@ private struct ProjectHeader: View {
         }
         .contextMenu {
             if let newWorkspace { Button("New Workspace…", action: newWorkspace) }
+            Button("Rename Project…", action: renameProject)
             Button("Remove Project…", action: removeProject)
         }
     }

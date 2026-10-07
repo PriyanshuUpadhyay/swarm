@@ -4,6 +4,8 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var pinned: Set<String> = []
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
+    public var chatNames: [String: String] = [:]
+    public var projectNames: [String: String] = [:]
     public var projectPaths: [String] = []
     public var removedProjects: Set<String> = []
     public var workspaceOrder: [String: [String]] = [:]
@@ -15,6 +17,8 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         pinned = try container.decodeIfPresent(Set<String>.self, forKey: .pinned) ?? []
         archived = try container.decodeIfPresent(Set<String>.self, forKey: .archived) ?? []
         names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
+        chatNames = try container.decodeIfPresent([String: String].self, forKey: .chatNames) ?? [:]
+        projectNames = try container.decodeIfPresent([String: String].self, forKey: .projectNames) ?? [:]
         projectPaths = try container.decodeIfPresent([String].self, forKey: .projectPaths) ?? []
         removedProjects = try container.decodeIfPresent(Set<String>.self, forKey: .removedProjects) ?? []
         workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
@@ -24,6 +28,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         pinned = pinned.filter(Self.folderExists)
         archived = archived.filter(Self.folderExists)
         names = names.filter { Self.folderExists($0.key) }
+        projectNames = projectNames.filter { Self.folderExists($0.key) }
         workspaceOrder = workspaceOrder.filter { Self.folderExists($0.key) }
             .mapValues { $0.filter(Self.folderExists) }
     }

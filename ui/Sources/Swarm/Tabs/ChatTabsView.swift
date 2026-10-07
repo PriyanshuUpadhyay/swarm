@@ -6,6 +6,7 @@ struct ChatTabActions {
     var newChat: () -> Void
     var close: (String) -> Void
     var archive: (String) -> Void
+    var rename: (String) -> Void
 }
 
 /// The workspace's chats as tabs: status glyph, title, and provider badge. A tab fits its title
@@ -97,6 +98,7 @@ private struct ChatTabView: View {
         .background(selected ? DesignTokens.selectionFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         .contextMenu {
             if tab.pending == nil {
+                Button("Rename chat…") { actions.rename(tab.id) }
                 Button("New chat here", action: actions.newChat)
                     .disabled(!canStartChat)
                 Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)

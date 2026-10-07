@@ -490,9 +490,9 @@ private struct SessionsWindow: View {
     /// of an app run gets one (ADR 0048).
     @State private var pathSwarmDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
-    @State private var renameTarget: WorkspaceEntry?
+    @State private var renameTarget: RenameTarget?
     @State private var removeProjectTarget: ProjectNode?
-    @State private var workspaceName = ""
+    @State private var renameName = ""
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
     @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
     @AppStorage("workspaceSidebarMode") private var storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
@@ -734,7 +734,7 @@ private struct SessionsWindow: View {
             }
             Button("Cancel", role: .cancel) { removeProjectTarget = nil }
         } message: { project in
-            Text("Hide \(project.name) from the sidebar? Its folder and chats stay on disk.")
+            Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
         }
         .alert("Could not complete action", isPresented: Binding(
             get: { actionError != nil },
@@ -785,7 +785,7 @@ private struct SessionsWindow: View {
                 workspaceLanding
             }
         }
-        .navigationTitle(model.selectedSession.flatMap { model.tree.windowTitle(for: $0.id) } ?? "Swarm")
+        .navigationTitle(windowTitle)
     }
 
     @ViewBuilder private var workspaceLanding: some View {
@@ -913,8 +913,17 @@ private struct SessionsWindow: View {
             rename: { id in
                 guard let entry = entry(id) else { return }
                 // The name the row shows, so Save with no edit keeps it.
-                workspaceName = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
-                renameTarget = entry
+                renameName = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
+                renameTarget = .workspace(entry)
+            },
+            renameChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { beginRenameChat(chat) }
+            },
+            renameProject: { id in
+                guard let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) else { return }
+                renameName = model.navigation.projectTitle(for: project)
+                renameTarget = .project(project)
             },
             archive: { id in entry(id).map(model.archiveWorkspace) },
             archiveChat: { id in
@@ -1229,15 +1238,16 @@ private struct SessionsWindow: View {
                         catch { actionError = String(describing: error) }
                     }
                 },
-                archive: { archiveChat(SwarmSessionID($0)) }
+                archive: { archiveChat(SwarmSessionID($0)) },
+                rename: { beginRenameChat(SwarmSessionID($0)) }
             )
         )
     }
 
     private var renameWorkspaceSheet: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("Rename workspace").font(.title2)
-            TextField("Name", text: $workspaceName)
+            Text(renameTarget?.heading ?? "Rename").font(.title2)
+            TextField("Name", text: $renameName)
                 .textFieldStyle(.roundedBorder)
             Text("Leave the name blank to use the default name.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -1246,12 +1256,21 @@ private struct SessionsWindow: View {
                 Button("Cancel") { renameTarget = nil }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    if let entry = renameTarget {
-                        let name = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = renameName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    switch renameTarget {
+                    case .workspace(let entry):
                         let shown = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
                         // Saving the default title unchanged must not freeze it as a custom name.
                         let unchanged = model.navigation.names[entry.id] == nil && name == shown
                         model.navigation.names[entry.id] = name.isEmpty || unchanged ? nil : name
+                    case .chat(let chat):
+                        let key = ChatTitle.key(chat)
+                        let unchanged = model.navigation.chatNames[key] == nil && name == ChatTitle.title(chat)
+                        model.navigation.renameChat(chat, to: unchanged ? "" : name)
+                    case .project(let project):
+                        let unchanged = model.navigation.projectNames[project.path] == nil && name == project.name
+                        model.navigation.renameProject(project, to: unchanged ? "" : name)
+                    case nil: break
                     }
                     renameTarget = nil
                 }
@@ -1260,6 +1279,19 @@ private struct SessionsWindow: View {
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.narrowSheet)
+    }
+
+    private func beginRenameChat(_ id: SwarmSessionID) {
+        guard let chat = model.tree.session(id) else { return }
+        renameName = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
+        renameTarget = .chat(chat)
+    }
+
+    private var windowTitle: String {
+        guard let chat = model.selectedSession else { return "Swarm" }
+        let title = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
+        guard let project = model.selectedWorkspace?.project else { return title }
+        return "\(model.navigation.projectTitle(for: project)) · \(title)"
     }
 
     private func archiveChat(_ id: SwarmSessionID) {
@@ -1368,6 +1400,18 @@ private struct WorkspacePanels: View {
             if mode == .files { visitedFiles = true }
             if mode == .runs { visitedRuns = true }
             if mode.isDetails { visitedDetails = true; detailsMode = mode }
+        }
+    }
+}
+
+private enum RenameTarget {
+    case workspace(WorkspaceEntry), chat(SwarmProjectSession), project(ProjectNode)
+
+    var heading: String {
+        switch self {
+        case .workspace: "Rename workspace"
+        case .chat: "Rename chat"
+        case .project: "Rename Project"
         }
     }
 }

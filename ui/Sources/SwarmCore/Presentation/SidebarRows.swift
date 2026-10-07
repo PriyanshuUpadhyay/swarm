@@ -86,7 +86,7 @@ public enum SidebarRows {
             }
             if !pinned.isEmpty { sections.append(SidebarSection(kind: .pinned, id: "pinned", title: "Pinned", rows: pinned)) }
         }
-        let names = Dictionary(grouping: projects.map(\.name), by: { $0 }).mapValues(\.count)
+        let names = Dictionary(grouping: projects.map { navigation.projectTitle(for: $0) }, by: { $0 }).mapValues(\.count)
         for project in projects {
             let members = workspaces.filter { $0.project.id == project.id }
             let idsByTitle = navigation.idsByTitle(members, inProject: true)
@@ -100,8 +100,9 @@ public enum SidebarRows {
             }
             if rows.isEmpty, showingArchive || !search.isEmpty { continue }
             let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().lastPathComponent
-            let title = names[project.name, default: 0] > 1 && !parent.isEmpty
-                ? "\(project.name) — \(parent)" : project.name
+            let name = navigation.projectTitle(for: project)
+            let title = names[name, default: 0] > 1 && !parent.isEmpty
+                ? "\(name) — \(parent)" : name
             sections.append(SidebarSection(
                 kind: .project(path: project.path), id: SidebarSection.id(of: project), title: title, rows: rows
             ))
@@ -243,7 +244,7 @@ public enum SidebarRows {
             status: AgentStatus.aggregate(entry.chats.compactMap(\.status) + entry.chats.flatMap {
                 $0.sessions.flatMap { (agentsBySession[$0.id] ?? []).map(\.status) }
             }), counts: counts, age: age,
-            help: "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)",
+            help: "\(navigation.projectTitle(for: entry.project)) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),
             archived: navigation.archived.contains(entry.id),
             missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat
