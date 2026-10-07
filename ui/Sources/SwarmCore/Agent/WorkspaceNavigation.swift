@@ -286,7 +286,7 @@ public final class WorkspaceNavigationStore {
         let value = defaults.data(forKey: key)
             .flatMap { try? JSONDecoder().decode(WorkspaceNavigation.self, from: $0) } ?? WorkspaceNavigation()
         guard let saved = try? choices.load() else { return value }
-        return applying(saved, to: value)
+        return adopt(saved, into: value)
     }
 
     @discardableResult
@@ -304,7 +304,8 @@ public final class WorkspaceNavigationStore {
         return nil
     }
 
-    public func applying(_ saved: OwnerChoices, to value: WorkspaceNavigation) -> WorkspaceNavigation {
+    public func adopt(_ saved: OwnerChoices, into value: WorkspaceNavigation) -> WorkspaceNavigation {
+        // Adopt the snapshot as the baseline for the next owner save.
         lastChoices = saved
         var refreshed = value
         refreshed.ownerChoices = saved

@@ -65,7 +65,7 @@ public final class SwarmProjectStore {
                 choicesWriteRevision += 1
             }
             lastGoodChoices = updated
-            return navigationStore.applying(updated, to: navigation)
+            return navigationStore.adopt(updated, into: navigation)
         } catch {
             reportError(OwnerChoicesFailure(error.localizedDescription, operation: .save))
             return navigation
