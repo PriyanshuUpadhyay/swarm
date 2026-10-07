@@ -309,6 +309,7 @@ struct HookReport {
     agent: String,
     state: Option<(&'static str, Option<String>)>,
     log: Option<std::path::PathBuf>,
+    usage_provider: Option<String>,
 }
 
 /// The chat log a hook payload names, only when it is an absolute path to an existing `.jsonl`
@@ -358,11 +359,15 @@ fn hook_report(
     if state.is_none() && log.is_none() {
         return Ok(None);
     }
+    let usage_provider =
+        (event == "Stop" && state.is_some() && matches!(provider.as_str(), "claude" | "codex"))
+            .then(|| provider.clone());
     Ok(Some(HookReport {
         session: valid_session_id(&session)?,
         agent,
         state,
         log,
+        usage_provider,
     }))
 }
 
@@ -399,6 +404,10 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     connection.busy_timeout(std::time::Duration::from_secs(1))?;
     if let Some(log) = &report.log {
         swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
+    }
+    if let Some(provider) = &report.usage_provider {
+        // Usage must not fail the Stop hook or prevent its state report.
+        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
     }
     let Some((state, detail)) = report.state else {
         return Ok(());
@@ -4267,6 +4276,7 @@ mod tests {
                 agent: CODER.to_string(),
                 state,
                 log,
+                usage_provider: None,
             })
         };
         assert_eq!(
@@ -6026,6 +6036,197 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&shell.stdout), "ran\nafter\n");
+    }
+
+    fn stop_fixture(
+        tag: &str,
+        log: Option<&str>,
+    ) -> (std::path::PathBuf, rusqlite::Connection, String) {
+        let home = std::env::temp_dir().join(format!("swarm-stop-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".swarm")).unwrap();
+        let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        if let Some(text) = log {
+            let path = home.join("chat.jsonl");
+            std::fs::write(&path, text).unwrap();
+            swarm::store::set_log(&connection, &session, CODER, &path).unwrap();
+        }
+        (home, connection, session)
+    }
+
+    fn run_stop_hook(
+        home: &std::path::Path,
+        session: &str,
+        provider: &str,
+        event: &str,
+        payload: &str,
+    ) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        // Cargo builds this executable for the integration tests in the same test run.
+        let exe = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("swarm{}", std::env::consts::EXE_SUFFIX));
+        let mut child = Command::new(exe)
+            .env_clear()
+            .env("HOME", home)
+            .env("SWARM_HOME", home)
+            .env("SWARM_SESSION_ID", session)
+            .env("SWARM_AGENT_ID", CODER)
+            .args(["hook", provider, event])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"{}\n");
+        assert!(
+            output.stderr.is_empty(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn stop_hook_claude_replaces_cumulative_cost_and_model() {
+        let log = format!(
+            "{}\n{}\n{}\n{}\n",
+            include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+            r#"{"type":"cost-state","totalCostUSD":1.25}"#,
+            r#"{"type":"assistant","message":{"model":"claude-new"}}"#,
+            r#"{"type":"cost-state","totalCostUSD":2.5}"#
+        );
+        let (home, connection, session) = stop_fixture("claude", Some(&log));
+        for _ in 0..2 {
+            run_stop_hook(&home, &session, "claude", "Stop", "{}");
+            let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+            assert_eq!(agent.cost_usd, Some(2.5));
+            assert_eq!(agent.model.as_deref(), Some("claude-new"));
+            assert_eq!(agent.tokens, None);
+        }
+        std::fs::write(
+            home.join("chat.jsonl"),
+            r#"{"type":"cost-state","totalCostUSD":0}"#,
+        )
+        .unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.cost_usd, Some(0.0));
+        assert_eq!(agent.model.as_deref(), Some("claude-new"));
+    }
+
+    #[test]
+    fn stop_hook_codex_uses_total_tokens_and_latest_model() {
+        let log = format!(
+            "{}\n{}\n{}\n{}\n",
+            include_str!("../packages/transcript/src/fixtures/codex-chair-run.jsonl"),
+            r#"{"type":"turn_context","payload":{"model":"gpt-old"}}"#,
+            r#"{"type":"turn_context","payload":{"model":"gpt-new"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":12},"total_token_usage":{"input_tokens":90,"output_tokens":10,"total_tokens":100}}}}"#
+        );
+        let (home, connection, session) = stop_fixture("codex", Some(&log));
+        run_stop_hook(&home, &session, "codex", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.tokens, Some(100));
+        assert_eq!(agent.model.as_deref(), Some("gpt-new"));
+        assert_eq!(agent.cost_usd, None);
+    }
+
+    #[test]
+    fn stop_hook_reads_the_last_mebibyte_and_skips_a_partial_line() {
+        let snapshot = r#"{"type":"cost-state","totalCostUSD":4}"#;
+        let log = format!(
+            "{snapshot}\n{}\n{snapshot}\n",
+            "x".repeat(1024 * 1024 + 100)
+        );
+        let (home, connection, session) = stop_fixture("tail", Some(&log));
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+            Some(4.0)
+        );
+        // A snapshot outside the tail is not evidence for this turn.
+        std::fs::write(
+            home.join("chat.jsonl"),
+            format!(
+                "{{\"type\":\"cost-state\",\"totalCostUSD\":9}}\n{}",
+                "x".repeat(1024 * 1024 + 100)
+            ),
+        )
+        .unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+            Some(4.0)
+        );
+    }
+
+    #[test]
+    fn stop_hook_missing_unreadable_or_snapshot_free_log_keeps_values() {
+        let (home, connection, session) = stop_fixture("no-snapshot", Some("not json\n{}\n"));
+        connection
+            .execute(
+                "UPDATE agent SET model = 'kept', cost_usd = 3, tokens = 5",
+                [],
+            )
+            .unwrap();
+        for mode in ["no-snapshot", "missing", "unreadable"] {
+            if mode == "missing" {
+                std::fs::remove_file(home.join("chat.jsonl")).unwrap();
+            } else if mode == "unreadable" {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::write(
+                    home.join("chat.jsonl"),
+                    r#"{"type":"cost-state","totalCostUSD":9}"#,
+                )
+                .unwrap();
+                std::fs::set_permissions(
+                    home.join("chat.jsonl"),
+                    std::fs::Permissions::from_mode(0o000),
+                )
+                .unwrap();
+                assert!(std::fs::File::open(home.join("chat.jsonl")).is_err());
+            }
+            run_stop_hook(&home, &session, "claude", "Stop", "{}");
+            let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+            assert_eq!(agent.model.as_deref(), Some("kept"));
+            assert_eq!(agent.cost_usd, Some(3.0));
+            assert_eq!(agent.tokens, Some(5));
+            assert_eq!(agent.state.as_deref(), Some("done"));
+        }
+    }
+
+    #[test]
+    fn stop_hook_other_provider_interrupt_and_subagent_keep_usage() {
+        let log = r#"{"type":"cost-state","totalCostUSD":9}"#;
+        let (home, connection, session) = stop_fixture("other-provider", Some(log));
+        connection
+            .execute("UPDATE agent SET cost_usd = 3", [])
+            .unwrap();
+        for (provider, event, payload) in [
+            ("agy", "Stop", "{}"),
+            ("codex", "Interrupt", "{}"),
+            ("claude", "Stop", r#"{"agent_id":"subagent"}"#),
+        ] {
+            run_stop_hook(&home, &session, provider, event, payload);
+            assert_eq!(
+                swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+                Some(3.0)
+            );
+        }
     }
 
     #[test]

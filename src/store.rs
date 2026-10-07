@@ -598,6 +598,43 @@ pub fn set_log(
     Ok(())
 }
 
+/// Replace cumulative usage from the agent's stored log. NULL fields leave prior values intact.
+pub fn update_usage(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    provider: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log: Option<String> = connection
+        .query_row(
+            "SELECT log FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let Some(log) = log else {
+        return Ok(());
+    };
+    let snapshot = crate::host::usage_snapshot(provider, Path::new(&log));
+    if snapshot.model.is_none() && snapshot.cost_usd.is_none() && snapshot.tokens.is_none() {
+        return Ok(());
+    }
+    connection.execute(
+        "UPDATE agent SET model = coalesce(?3, model), cost_usd = coalesce(?4, cost_usd),
+                          tokens = coalesce(?5, tokens)
+         WHERE session_id = ?1 AND id = ?2",
+        (
+            session_id,
+            agent_id,
+            snapshot.model,
+            snapshot.cost_usd,
+            snapshot.tokens,
+        ),
+    )?;
+    Ok(())
+}
+
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
 /// states and sources. Returns `Some` with the state it replaced (None when the agent had no
 /// state yet), read in the same immediate transaction, so two hooks that race cannot both see one

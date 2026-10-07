@@ -161,6 +161,92 @@ pub fn hook_state(
     Some((state, None))
 }
 
+/// The newest cumulative usage and model in a provider log; None means no source for that field.
+#[derive(Debug, Default)]
+pub struct UsageSnapshot {
+    pub model: Option<String>,
+    pub cost_usd: Option<f64>,
+    pub tokens: Option<i64>,
+}
+
+/// Read only the last 1 MiB. A missing or unreadable log yields no new values.
+pub fn usage_snapshot(provider: &str, path: &std::path::Path) -> UsageSnapshot {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL_BYTES: u64 = 1024 * 1024;
+    let read_tail = || -> std::io::Result<Vec<u8>> {
+        // A stale log path may now name a directory or pipe; do not wait on a pipe's writer.
+        if !std::fs::metadata(path)?.is_file() {
+            return Err(std::io::Error::other("not a regular log file"));
+        }
+        let mut file = std::fs::File::open(path)?;
+        let start = file.metadata()?.len().saturating_sub(TAIL_BYTES);
+        file.seek(SeekFrom::Start(start))?;
+        let mut bytes = Vec::new();
+        file.take(TAIL_BYTES).read_to_end(&mut bytes)?;
+        // The first line can start outside the tail; it is not a complete record.
+        if start > 0 {
+            let end = bytes
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |i| i + 1);
+            bytes.drain(..end);
+        }
+        Ok(bytes)
+    };
+    read_tail()
+        .map(|bytes| parse_usage_tail(provider, &bytes))
+        .unwrap_or_default()
+}
+
+fn parse_usage_tail(provider: &str, bytes: &[u8]) -> UsageSnapshot {
+    let mut snapshot = UsageSnapshot::default();
+    for line in bytes.rsplit(|byte| *byte == b'\n') {
+        let Ok(record) = serde_json::from_slice::<serde_json::Value>(line) else {
+            continue;
+        };
+        let kind = record.get("type").and_then(serde_json::Value::as_str);
+        match (provider, kind) {
+            ("claude", Some("cost-state")) if snapshot.cost_usd.is_none() => {
+                snapshot.cost_usd = record
+                    .get("totalCostUSD")
+                    .and_then(serde_json::Value::as_f64)
+                    .filter(|cost| cost.is_finite() && *cost >= 0.0);
+            }
+            ("claude", Some("assistant")) if snapshot.model.is_none() => {
+                snapshot.model = record
+                    .pointer("/message/model")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+            }
+            ("codex", Some("turn_context")) if snapshot.model.is_none() => {
+                snapshot.model = record
+                    .pointer("/payload/model")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+            }
+            ("codex", Some("event_msg"))
+                if snapshot.tokens.is_none()
+                    && record
+                        .pointer("/payload/type")
+                        .and_then(serde_json::Value::as_str)
+                        == Some("token_count") =>
+            {
+                snapshot.tokens = record
+                    .pointer("/payload/info/total_token_usage/total_tokens")
+                    .and_then(serde_json::Value::as_i64)
+                    .filter(|tokens| *tokens >= 0);
+            }
+            _ => {}
+        }
+        if (provider == "claude" && snapshot.cost_usd.is_some() && snapshot.model.is_some())
+            || (provider == "codex" && snapshot.tokens.is_some() && snapshot.model.is_some())
+        {
+            break;
+        }
+    }
+    snapshot
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
