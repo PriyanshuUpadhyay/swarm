@@ -88,6 +88,8 @@ pub struct Session {
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,
+    #[serde(rename = "archivedAt", skip_serializing_if = "Option::is_none")]
+    pub archived_at_s: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

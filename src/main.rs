@@ -271,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -3245,7 +3245,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, sub, ids @ ..] = args
         && cmd == "session"
-        && sub == "archive"
+        && matches!(sub.as_str(), "archive" | "unarchive")
         && !ids.is_empty()
     {
         let ids = ids
@@ -3258,15 +3258,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(id.to_string())
             })
             .collect::<Result<Vec<_>, &str>>()?;
-        swarm::store::archive_sessions(&mut connection, &ids)?;
+        if sub == "archive" {
+            swarm::store::archive_sessions(&mut connection, &ids)?;
+        } else {
+            swarm::store::unarchive_sessions(&mut connection, &ids)?;
+        }
         return Ok(());
     }
-    if let [cmd, json] = args
+    if let [cmd, json, flags @ ..] = args
         && cmd == "sessions"
         && json == "--json"
+        && (flags.is_empty() || matches!(flags, [flag] if flag == "--archived"))
     {
         let mut sessions = Vec::new();
-        for row in swarm::store::sessions(&connection)? {
+        for row in swarm::store::sessions_with_archived(&connection, !flags.is_empty())? {
             let chair_log = resolved_chair_log(&row);
             if let Some(path) = &chair_log {
                 let path_text = path.to_string_lossy();
@@ -3287,6 +3292,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 agents: row.agents,
                 messages: row.messages,
                 last_message_at: row.last_message_at,
+                archived_at_s: row.archived_at,
             });
         }
         return print_json(&swarm::bus::SessionList { sessions });
@@ -6036,6 +6042,105 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&shell.stdout), "ran\nafter\n");
+    }
+
+    fn session_command(home: &std::path::Path, args: &[&str]) -> std::process::Output {
+        let exe = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("swarm{}", std::env::consts::EXE_SUFFIX));
+        std::process::Command::new(exe)
+            .env_clear()
+            .env("HOME", home)
+            .env("SWARM_HOME", home)
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn session_archive_can_be_listed_and_reversed() {
+        let (home, connection, first) = stop_fixture("archive-list", None);
+        let second = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let active = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let archived = session_command(&home, &["session", "archive", &first, &second]);
+        assert!(archived.status.success());
+        let normal = session_command(&home, &["sessions", "--json"]);
+        assert!(normal.status.success());
+        let normal: serde_json::Value = serde_json::from_slice(&normal.stdout).unwrap();
+        assert_eq!(normal["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(normal["sessions"][0]["id"], active);
+        assert!(normal["sessions"][0].get("archivedAt").is_none());
+        let all = session_command(&home, &["sessions", "--json", "--archived"]);
+        assert!(
+            all.status.success(),
+            "{}",
+            String::from_utf8_lossy(&all.stderr)
+        );
+        let all: serde_json::Value = serde_json::from_slice(&all.stdout).unwrap();
+        let rows = all["sessions"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        for id in [&first, &second] {
+            let row = rows.iter().find(|row| row["id"] == *id).unwrap();
+            let stored: i64 = connection
+                .query_row(
+                    "SELECT archived_at FROM session WHERE id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(stored > 0);
+            assert_eq!(row["archivedAt"], stored);
+        }
+        let restored = session_command(&home, &["session", "unarchive", &first, &second]);
+        assert!(
+            restored.status.success(),
+            "{}",
+            String::from_utf8_lossy(&restored.stderr)
+        );
+        let normal = session_command(&home, &["sessions", "--json"]);
+        let normal: serde_json::Value = serde_json::from_slice(&normal.stdout).unwrap();
+        assert_eq!(normal["sessions"].as_array().unwrap().len(), 3);
+        for row in normal["sessions"].as_array().unwrap() {
+            assert!(row.get("archivedAt").is_none());
+            let stored: Option<i64> = connection
+                .query_row(
+                    "SELECT archived_at FROM session WHERE id = ?1",
+                    [row["id"].as_str().unwrap()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, None);
+        }
+        assert!(
+            session_command(&home, &["session", "unarchive", &first])
+                .status
+                .success()
+        );
+    }
+
+    #[test]
+    fn session_unarchive_names_unknown_id_and_rolls_back() {
+        let (home, mut connection, known) = stop_fixture("unarchive-unknown", None);
+        swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&known)).unwrap();
+        let unknown = uuid::Uuid::now_v7().to_string();
+        let output = session_command(&home, &["session", "unarchive", &known, &unknown]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains(&format!("swarm: no session {unknown}"))
+        );
+        let archived: Option<i64> = connection
+            .query_row(
+                "SELECT archived_at FROM session WHERE id = ?1",
+                [&known],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(archived.is_some());
     }
 
     fn stop_fixture(

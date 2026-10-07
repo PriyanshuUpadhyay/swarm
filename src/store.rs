@@ -351,11 +351,27 @@ pub fn archive_sessions(
     connection: &mut Connection,
     session_ids: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    set_sessions_archived(connection, session_ids, true)
+}
+
+pub fn unarchive_sessions(
+    connection: &mut Connection,
+    session_ids: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    set_sessions_archived(connection, session_ids, false)
+}
+
+fn set_sessions_archived(
+    connection: &mut Connection,
+    session_ids: &[String],
+    archived: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let tx = connection.transaction()?;
     for session_id in session_ids {
         let changed = tx.execute(
-            "UPDATE session SET archived_at = unixepoch() WHERE id = ?1",
-            [session_id],
+            "UPDATE session SET archived_at = CASE WHEN ?2 THEN unixepoch() ELSE NULL END
+             WHERE id = ?1",
+            (session_id, archived),
         )?;
         if changed != 1 {
             return Err(format!("swarm: no session {session_id}").into());
@@ -380,9 +396,18 @@ pub struct SessionRow {
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,
+    /// `archived_at` in storage and `archivedAt` on the wire both use Unix seconds.
+    pub archived_at: Option<i64>,
 }
 
 pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
+    sessions_with_archived(connection, false)
+}
+
+pub fn sessions_with_archived(
+    connection: &Connection,
+    include_archived: bool,
+) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
     let mut statement = connection.prepare(
         "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
                 chair_provider, chair_id, chair_log, continuation_of,
@@ -391,12 +416,13 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
                 strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
-                (SELECT max(created_at) FROM message WHERE session_id = session.id)
+                (SELECT max(created_at) FROM message WHERE session_id = session.id),
+                archived_at
          FROM session
-         WHERE archived_at IS NULL
+         WHERE archived_at IS NULL OR ?1
          ORDER BY session.created_at DESC, session.id DESC",
     )?;
-    let rows = statement.query_map([], |row| {
+    let rows = statement.query_map([include_archived], |row| {
         Ok(SessionRow {
             id: row.get(0)?,
             talk_mode: row.get(1)?,
@@ -411,6 +437,7 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
             agents: row.get(12)?,
             messages: row.get(13)?,
             last_message_at: row.get(14)?,
+            archived_at: row.get(15)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
