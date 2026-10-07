@@ -92,20 +92,15 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public mutating func renameChat(_ chat: SwarmProjectSession, to name: String) {
-        chatNames[ChatTitle.key(chat)] = Self.savedName(name)
+        chatNames[ChatTitle.key(chat)] = ChatTitle.nonblank(name)
     }
 
     public mutating func renameProject(_ project: ProjectNode, to name: String) {
-        projectNames[project.path] = Self.savedName(name)
+        projectNames[project.path] = ChatTitle.nonblank(name)
     }
 
     public func projectTitle(for project: ProjectNode) -> String {
-        projectNames[project.path].flatMap(Self.savedName) ?? project.name
-    }
-
-    private static func savedName(_ value: String) -> String? {
-        let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+        ChatTitle.nonblank(projectNames[project.path]) ?? project.name
     }
 
     public static func projectCollapseID(_ path: String) -> String { "project:\(path)" }

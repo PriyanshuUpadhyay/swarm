@@ -15,7 +15,7 @@ public enum ChairLogTitle {
     public static func codexNames(home: URL) -> [String: String] {
         var names: [String: String] = [:]
         records(path: home.appendingPathComponent("session_index.jsonl").path) { object in
-            guard let id = object["id"] as? String, let name = nonblank(object["thread_name"] as? String) else { return }
+            guard let id = object["id"] as? String, let name = ChatTitle.nonblank(object["thread_name"] as? String) else { return }
             names[id] = name
         }
         return names
@@ -34,11 +34,6 @@ public enum ChairLogTitle {
     private static func records(path: String, consume: ([String: Any]) -> Void) {
         var reader = CLITitleRecordReader()
         reader.read(path: path, consume: consume)
-    }
-
-    fileprivate static func nonblank(_ value: String?) -> String? {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
-        return value
     }
 
     public static func firstUserPrompt(path: String) -> String? {
@@ -119,10 +114,10 @@ struct ClaudeNameReader {
                 case "custom-title":
                     guard let title = object["customTitle"] as? String else { return }
                     hasCustomRecord = true
-                    custom = ChairLogTitle.nonblank(title)
+                    custom = ChatTitle.nonblank(title)
                 case "ai-title":
                     guard let title = object["aiTitle"] as? String else { return }
-                    generated = ChairLogTitle.nonblank(title)
+                    generated = ChatTitle.nonblank(title)
                 default: break
                 }
             }
@@ -136,7 +131,7 @@ struct ClaudeNameReader {
             sidecarTitle = nil
             if let data = try? Data(contentsOf: sidecar),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                sidecarTitle = ChairLogTitle.nonblank(object["customTitle"] as? String)
+                sidecarTitle = ChatTitle.nonblank(object["customTitle"] as? String)
             }
             sidecarStamp = savedStamp
         }

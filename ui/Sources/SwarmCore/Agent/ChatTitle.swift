@@ -23,7 +23,7 @@ public enum ChatTitle {
         resolve(appName: appName, cliName: chat.cliName, firstLine: chat.title, provider: chat.provider, id: chat.id)
     }
 
-    private static func nonblank(_ value: String?) -> String? {
+    static func nonblank(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         return value
     }
