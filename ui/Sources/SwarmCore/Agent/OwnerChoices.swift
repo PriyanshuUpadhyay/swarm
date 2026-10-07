@@ -199,7 +199,7 @@ public final class OwnerChoicesStore {
         defer { close(descriptor) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(Self.writeLockTimeout))
         var retryDelay = Self.initialRetryDelayMicroseconds
-        // Refresh reads try once; owner writes wait briefly so another writer can finish.
+        // Refresh reads try once. Launch reads and owner writes wait briefly so another writer can finish.
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let failure = errno
             guard failure == EINTR || failure == EWOULDBLOCK || failure == EAGAIN else {

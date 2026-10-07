@@ -30,6 +30,7 @@ public final class SwarmProjectStore {
             choicesLoadFailed = false
             return saved
         } catch OwnerChoicesError.lockBusy {
+            // Keep the last good snapshot without an alert; the next refresh retries.
             choicesLoadFailed = true
             return lastGoodChoices
         } catch {
