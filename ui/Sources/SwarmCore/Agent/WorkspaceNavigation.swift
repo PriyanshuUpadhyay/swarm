@@ -309,7 +309,7 @@ public final class WorkspaceNavigationStore {
         do { data = try encodeViewState(value) }
         catch { return OwnerChoicesFailure(error.localizedDescription, operation: .saveViewState) }
         if data != defaults.data(forKey: key) { defaults.set(data, forKey: key) }
-        choices.alerts.resolve(.saveViewState)
+        choices.resolveAlerts(.saveViewState)
         guard value.ownerChoices != lastChoices else { return nil }
         choicesRevision += 1
         do {

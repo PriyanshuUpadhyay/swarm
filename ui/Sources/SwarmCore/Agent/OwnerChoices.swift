@@ -99,6 +99,7 @@ public struct OwnerChoicesAlerts: Equatable, Sendable {
     }
 
     public mutating func resolve(_ operation: OwnerChoicesFailure.Operation) {
+        guard reported.contains(where: { $0.operation == operation }) else { return }
         reported = reported.filter { $0.operation != operation }
         pending.removeAll { $0.operation == operation }
     }
@@ -134,8 +135,14 @@ public final class OwnerChoicesStore {
         } else {
             saved = OwnerChoices()
         }
-        alerts.resolve(.load)
+        resolveAlerts(.load)
         return saved
+    }
+
+    public func resolveAlerts(_ operation: OwnerChoicesFailure.Operation) {
+        var resolved = alerts
+        resolved.resolve(operation)
+        if resolved != alerts { alerts = resolved }
     }
 
     private func readUnlocked(in folder: URL) throws -> OwnerChoices {
@@ -174,7 +181,7 @@ public final class OwnerChoicesStore {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(choices).write(to: folder.appendingPathComponent("choices.json"), options: .atomic)
-            alerts.resolve(.save)
+            resolveAlerts(.save)
             return choices
         }
     }

@@ -1,5 +1,7 @@
 import Darwin
 import Foundation
+import Observation
+import Synchronization
 import Testing
 @testable import SwarmCore
 
@@ -400,6 +402,43 @@ struct OwnerChoicesTests {
         #expect(loadAfterRecovery)
         let saveDuringLoadRecovery = choices.alerts.report(saveFailure)
         #expect(!saveDuringLoadRecovery)
+    }
+
+    @Test("Resolving an operation with no failure leaves the alerts unchanged")
+    func resolvingAbsentFailureKeepsAlerts() {
+        var alerts = OwnerChoicesAlerts()
+        alerts.report(OwnerChoicesFailure("Write denied.", operation: .save))
+        let before = alerts
+        alerts.resolve(.load)
+        #expect(alerts == before)
+    }
+
+    @Test("A load and view-state save without matching failures do not write observed alerts")
+    func successfulReadsAndSavesKeepObservedAlerts() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "OwnerChoicesTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let choices = OwnerChoicesStore(folder: folder)
+        choices.alerts.report(OwnerChoicesFailure("Write denied.", operation: .save))
+        let before = choices.alerts
+        let changes = Mutex(0)
+        withObservationTracking { _ = choices.alerts.message } onChange: { changes.withLock { $0 += 1 } }
+        _ = try choices.load()
+        withObservationTracking { _ = choices.alerts.message } onChange: { changes.withLock { $0 += 1 } }
+        #expect(WorkspaceNavigationStore(defaults: defaults, choices: choices).save(WorkspaceNavigation()) == nil)
+        #expect(choices.alerts == before)
+        #expect(changes.withLock { $0 } == 0)
+
+        choices.alerts.report(OwnerChoicesFailure("Read denied.", operation: .load))
+        changes.withLock { $0 = 0 }
+        withObservationTracking { _ = choices.alerts.message } onChange: { changes.withLock { $0 += 1 } }
+        _ = try choices.load()
+        #expect(choices.alerts == before)
+        #expect(changes.withLock { $0 } == 1)
     }
 
     @Test("Resolving an operation removes its pending failures and permits one new alert")
