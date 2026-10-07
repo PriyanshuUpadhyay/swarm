@@ -6239,7 +6239,7 @@ mod tests {
         let (home, connection, session) = stop_fixture("state-before-usage", Some(log));
         swarm::store::set_state(&connection, &session, CODER, "working", "hook", None, 1).unwrap();
         // Reject a usage write unless the done state is already stored in the same row.
-        connection.execute_batch("CREATE TRIGGER usage_requires_done BEFORE UPDATE OF usage_offset ON agent WHEN NEW.state IS NOT 'done' BEGIN SELECT RAISE(ABORT, 'usage before done'); END;").unwrap();
+        connection.execute_batch("CREATE TRIGGER usage_requires_done BEFORE UPDATE OF usage_state ON agent WHEN NEW.state IS NOT 'done' BEGIN SELECT RAISE(ABORT, 'usage before done'); END;").unwrap();
         run_stop_hook(&home, &session, "claude", "Stop", "{}");
         let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
         assert_eq!(agent.state.as_deref(), Some("done"));

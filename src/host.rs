@@ -169,62 +169,76 @@ pub struct UsageSnapshot {
     pub tokens: Option<i64>,
 }
 
-pub struct ClaudeUsage {
-    pub snapshot: UsageSnapshot,
-    pub offset: i64,
-    pub message: String,
+pub const COUNTED_MESSAGES: usize = 64;
+const CLAUDE_STOP_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct UsageState {
+    pub logs: std::collections::BTreeMap<String, ClaudeLogUsage>,
 }
 
-/// Read new Claude records. Keep the latest 64 message ids to avoid counting repeated chunks.
-pub fn claude_usage(
-    path: &std::path::Path,
-    offset: Option<i64>,
-    message: Option<&str>,
-) -> Option<ClaudeUsage> {
-    use std::collections::VecDeque;
-    use std::io::{BufRead, Seek, SeekFrom};
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClaudeLogUsage {
+    pub offset: i64,
+    pub tokens: i64,
+    pub ids: std::collections::VecDeque<(String, i64)>,
+}
+
+pub struct ClaudeUsage {
+    pub snapshot: UsageSnapshot,
+    pub log: ClaudeLogUsage,
+}
+
+/// Read a bounded part of a Claude log, retaining each message's highest counted usage.
+pub fn claude_usage(path: &std::path::Path, saved: &ClaudeLogUsage) -> Option<ClaudeUsage> {
+    use std::io::{BufRead, Read, Seek, SeekFrom};
     let read = || -> Result<ClaudeUsage, Box<dyn std::error::Error>> {
         if !std::fs::metadata(path)?.is_file() {
             return Err("not a regular log file".into());
         }
         let mut file = std::fs::File::open(path)?;
         let len = file.metadata()?.len();
-        let mut offset = offset.unwrap_or(0).max(0) as u64;
-        let mut seen: VecDeque<String> = message
-            .map(serde_json::from_str)
-            .transpose()?
-            .unwrap_or_default();
-        while seen.len() > 64 {
-            seen.pop_front();
-        }
+        let mut log = saved.clone();
+        let mut offset = log.offset.max(0) as u64;
         if len < offset {
             offset = 0;
-            seen.clear();
+            log = ClaudeLogUsage::default();
+        }
+        // A prior Stop can end inside an oversized record. Check the preceding byte so its
+        // remaining chunks are skipped, without storing a partial JSON record in usage_state.
+        let mut continuation = false;
+        let mut budget = CLAUDE_STOP_BYTES;
+        if offset > 0 && offset < len {
+            file.seek(SeekFrom::Start(offset - 1))?;
+            let mut previous = [0];
+            file.read_exact(&mut previous)?;
+            continuation = previous[0] != b'\n';
+            budget -= 1;
         }
         file.seek(SeekFrom::Start(offset))?;
-        // Limit this read to the length observed above, so a writer cannot extend it indefinitely.
-        let mut reader = std::io::BufReader::new(std::io::Read::take(file, len - offset));
+        // Bound both the work and the allocation, even while the provider extends the log.
+        budget = (len - offset).min(budget);
+        let mut reader = std::io::BufReader::new(file.take(budget));
         let mut snapshot = UsageSnapshot::default();
         let mut line = Vec::new();
         while reader.read_until(b'\n', &mut line)? > 0 {
-            // Most transcript lines carry no usage. Leave an unfinished line for the next Stop.
-            if !line
-                .windows(b"\"type\":\"assistant\"".len())
-                .any(|part| part == b"\"type\":\"assistant\"")
-                && !line
-                    .windows(b"cost-state".len())
-                    .any(|part| part == b"cost-state")
-            {
-                if !line.ends_with(b"\n") {
-                    break;
-                }
+            if continuation {
                 offset += line.len() as u64;
+                continuation = !line.ends_with(b"\n");
                 line.clear();
                 continue;
             }
+            let complete = line.ends_with(b"\n") || offset + line.len() as u64 == len;
+            if !complete {
+                if line.len() as u64 == budget {
+                    // One record exceeds a Stop's budget. Skip it in bounded chunks.
+                    offset += line.len() as u64;
+                }
+                break; // An ordinary cut record starts again at the next Stop.
+            }
             let record = serde_json::from_slice::<serde_json::Value>(&line);
             if record.is_err() && !line.ends_with(b"\n") {
-                break; // Leave an unfinished record for the next Stop.
+                break;
             }
             offset += line.len() as u64;
             if let Ok(record) = record {
@@ -245,45 +259,53 @@ pub fn claude_usage(
                         .pointer("/message/id")
                         .and_then(serde_json::Value::as_str)
                         .filter(|id| !id.is_empty())
-                    && !seen.iter().any(|seen_id| seen_id == id)
                     && let Some(usage) = record
                         .pointer("/message/usage")
                         .and_then(serde_json::Value::as_object)
+                    && let Some(tokens) = message_tokens(usage)
                 {
-                    let tokens = [
-                        "input_tokens",
-                        "cache_creation_input_tokens",
-                        "cache_read_input_tokens",
-                        "output_tokens",
-                    ]
-                    .into_iter()
-                    .try_fold(0_i64, |total, key| {
-                        let count = usage.get(key).map_or(Some(0), serde_json::Value::as_i64)?;
-                        if count < 0 {
-                            return None;
-                        }
-                        total.checked_add(count)
-                    });
-                    if let Some(total) =
-                        tokens.and_then(|tokens| snapshot.tokens.unwrap_or(0).checked_add(tokens))
+                    let previous = log.ids.iter().position(|(seen, _)| seen == id);
+                    let counted = previous.map_or(0, |index| log.ids[index].1);
+                    let added = tokens.saturating_sub(counted).max(0);
+                    if let Some(total) = log.tokens.checked_add(added)
+                        && let Some(delta) = snapshot.tokens.unwrap_or(0).checked_add(added)
                     {
-                        snapshot.tokens = Some(total);
-                        seen.push_back(id.to_owned());
-                        if seen.len() > 64 {
-                            seen.pop_front();
+                        log.tokens = total;
+                        snapshot.tokens = Some(delta);
+                        if let Some(index) = previous {
+                            log.ids[index].1 = counted.max(tokens);
+                        } else {
+                            log.ids.push_back((id.to_owned(), tokens));
+                            if log.ids.len() > COUNTED_MESSAGES {
+                                log.ids.pop_front();
+                            }
                         }
                     }
                 }
             }
             line.clear();
         }
-        Ok(ClaudeUsage {
-            snapshot,
-            offset: i64::try_from(offset)?,
-            message: serde_json::to_string(&seen)?,
-        })
+        log.offset = i64::try_from(offset)?;
+        Ok(ClaudeUsage { snapshot, log })
     };
     read().ok()
+}
+
+fn message_tokens(usage: &serde_json::Map<String, serde_json::Value>) -> Option<i64> {
+    [
+        "input_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "output_tokens",
+    ]
+    .into_iter()
+    .try_fold(0_i64, |total, key| {
+        let count = usage.get(key).map_or(Some(0), serde_json::Value::as_i64)?;
+        if count < 0 {
+            return None;
+        }
+        total.checked_add(count)
+    })
 }
 
 /// Read only the last 1 MiB. A missing or unreadable log yields no new values.
