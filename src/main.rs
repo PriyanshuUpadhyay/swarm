@@ -405,10 +405,6 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(log) = &report.log {
         swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
     }
-    if let Some(provider) = &report.usage_provider {
-        // Usage must not fail the Stop hook or prevent its state report.
-        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
-    }
     let Some((state, detail)) = report.state else {
         return Ok(());
     };
@@ -428,6 +424,10 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     else {
         return Ok(());
     };
+    if let Some(provider) = &report.usage_provider {
+        // Store the state before a usage read can wait on the log or bus.
+        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    }
     if let Some((title, body)) = waiting_notice(
         &connection,
         &report.session,
@@ -6231,6 +6231,19 @@ mod tests {
         let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
         assert_eq!(agent.cost_usd, Some(0.0));
         assert_eq!(agent.model.as_deref(), Some("claude-new"));
+    }
+
+    #[test]
+    fn stop_hook_commits_done_state_before_usage() {
+        let log = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#;
+        let (home, connection, session) = stop_fixture("state-before-usage", Some(log));
+        swarm::store::set_state(&connection, &session, CODER, "working", "hook", None, 1).unwrap();
+        // Reject a usage write unless the done state is already stored in the same row.
+        connection.execute_batch("CREATE TRIGGER usage_requires_done BEFORE UPDATE OF usage_offset ON agent WHEN NEW.state IS NOT 'done' BEGIN SELECT RAISE(ABORT, 'usage before done'); END;").unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.state.as_deref(), Some("done"));
+        assert_eq!(agent.tokens, Some(3));
     }
 
     #[test]
