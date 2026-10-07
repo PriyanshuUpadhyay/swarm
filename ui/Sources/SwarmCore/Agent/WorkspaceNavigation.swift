@@ -26,17 +26,39 @@ public struct WorkspaceEntry: Identifiable, Sendable {
 public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var selectedWorkspace: String?
     public var selectedChats: [String: String] = [:]
-    public var pinned: Set<String> = []
-    public var archived: Set<String> = []
-    public var names: [String: String] = [:]
-    public var chatNames: [String: String] = [:]
-    public var projectNames: [String: String] = [:]
-    public var workspaceOrder: [String: [String]] = [:]
+    var ownerChoices = OwnerChoices()
+    public var pinned: Set<String> {
+        get { ownerChoices.pinned }
+        set { ownerChoices.pinned = newValue }
+    }
+    public var archived: Set<String> {
+        get { ownerChoices.archived }
+        set { ownerChoices.archived = newValue }
+    }
+    public var names: [String: String] {
+        get { ownerChoices.names }
+        set { ownerChoices.names = newValue }
+    }
+    public var chatNames: [String: String] {
+        get { ownerChoices.chatNames }
+        set { ownerChoices.chatNames = newValue }
+    }
+    public var projectNames: [String: String] {
+        get { ownerChoices.projectNames }
+        set { ownerChoices.projectNames = newValue }
+    }
+    public var workspaceOrder: [String: [String]] {
+        get { ownerChoices.workspaceOrder }
+        set { ownerChoices.workspaceOrder = newValue }
+    }
     /// Project and workspace folds have separate keys. Chat children start folded;
     /// `expanded:<chat row id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
     public var lastSeen: [String: Int] = [:]
-    public var fields = RowFieldLists()
+    public var fields: RowFieldLists {
+        get { ownerChoices.fields }
+        set { ownerChoices.fields = newValue }
+    }
 
     public init() {}
 
@@ -101,6 +123,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         else { collapsed.insert(key) }
     }
 
+    // Owner choices live in choices.json; defaults contain only view state.
     private enum CodingKeys: String, CodingKey {
         case selectedWorkspace, selectedChats, collapsed, lastSeen
     }
@@ -233,56 +256,50 @@ public final class WorkspaceNavigationStore {
     private let defaults: UserDefaults
     private let key = "workspaces.navigation"
     private let choices: OwnerChoicesStore
+    private var lastChoices = OwnerChoices()
 
     public init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
         self.defaults = defaults
         choices = OwnerChoicesStore(folder: choicesFolder)
     }
 
+    init(defaults: UserDefaults, choices: OwnerChoicesStore) {
+        self.defaults = defaults
+        self.choices = choices
+    }
+
     public func load() -> WorkspaceNavigation {
-        var value = defaults.data(forKey: key)
+        let value = defaults.data(forKey: key)
             .flatMap { try? JSONDecoder().decode(WorkspaceNavigation.self, from: $0) } ?? WorkspaceNavigation()
-        if let saved = try? choices.load() {
-            value.pinned = saved.pinned
-            value.archived = saved.archived
-            value.names = saved.names
-            value.chatNames = saved.chatNames
-            value.projectNames = saved.projectNames
-            value.workspaceOrder = saved.workspaceOrder
-            value.fields = saved.fields
-        }
-        return value
+        guard let saved = try? choices.load() else { return value }
+        return applying(saved, to: value)
     }
 
     @discardableResult
     public func save(_ value: WorkspaceNavigation) -> String? {
-        guard let data = try? JSONEncoder().encode(value) else { return "Sidebar view state could not be saved." }
-        defaults.set(data, forKey: key)
-        do { try choices.update {
-            $0.pinned = value.pinned
-            $0.archived = value.archived
-            $0.names = value.names
-            $0.chatNames = value.chatNames
-            $0.projectNames = value.projectNames
-            $0.workspaceOrder = value.workspaceOrder
-            $0.fields = value.fields
-        } } catch { return error.localizedDescription }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(value) else { return "Sidebar view state could not be saved." }
+        if data != defaults.data(forKey: key) { defaults.set(data, forKey: key) }
+        guard value.ownerChoices != lastChoices else { return nil }
+        do {
+            try choices.update { $0.applyWorkspaceChanges(from: lastChoices, to: value.ownerChoices) }
+            lastChoices = value.ownerChoices
+        } catch { return error.localizedDescription }
         return nil
     }
 
-    public func reloadChoices(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
-        let saved = try choices.load()
-        var pruned = value
-        pruned.pinned = saved.pinned
-        pruned.archived = saved.archived
-        pruned.names = saved.names
-        pruned.chatNames = saved.chatNames
-        pruned.projectNames = saved.projectNames
-        pruned.workspaceOrder = saved.workspaceOrder
-        pruned.fields = saved.fields
-        save(pruned)
-        return pruned
+    func applying(_ saved: OwnerChoices, to value: WorkspaceNavigation) -> WorkspaceNavigation {
+        lastChoices = saved
+        var refreshed = value
+        refreshed.ownerChoices = saved
+        return refreshed
     }
+
+    public func reloadChoices(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
+        applying(try choices.load(), to: value)
+    }
+
 }
 
 public enum SidebarDrop {

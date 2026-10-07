@@ -268,14 +268,21 @@ final class SessionsTreeModel {
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
+            let reportChoicesError = { (message: String) in
+                self.logger.error("Could not save sidebar choices: \(message)")
+            }
+            let saved = projects.loadChoices(reportError: reportChoicesError)
             let loaded = try await discovery.tree(
-                sessions: sessions, projectPaths: projects.paths(), removed: projects.removedPaths(), bus: bus
+                sessions: sessions, projectPaths: saved?.projectPaths ?? [], removed: saved?.removedProjects ?? [], bus: bus
             )
             guard revision == refreshRevision else { return }
-            var refreshed = projects.refreshChoices(
-                shown: loaded.projects, navigation: navigation, navigationStore: navigationStore,
-                reportError: { logger.error("Could not save sidebar choices: \($0)") }
-            )
+            var refreshed = navigation
+            if let saved {
+                refreshed = projects.refreshChoices(
+                    shown: loaded.projects, navigation: navigation, saved: saved, navigationStore: navigationStore,
+                    reportError: reportChoicesError
+                )
+            }
             refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
             navigation = refreshed
             sourceTree = loaded

@@ -9,6 +9,22 @@ public final class SwarmProjectStore {
         choices = OwnerChoicesStore(folder: choicesFolder)
     }
 
+    init(choices: OwnerChoicesStore) { self.choices = choices }
+
+    public func loadChoices(reportError: (String) -> Void) -> OwnerChoices? {
+        do { return try choices.load() }
+        catch {
+            report(error, using: reportError)
+            return nil
+        }
+    }
+
+    private func report(_ error: any Error, using reportError: (String) -> Void) {
+        let failure = error.localizedDescription
+        if failure != lastRefreshError { reportError(failure) }
+        lastRefreshError = failure
+    }
+
     public func paths() -> [String] {
         (try? choices.load().projectPaths) ?? []
     }
@@ -18,32 +34,32 @@ public final class SwarmProjectStore {
     }
 
     public func rememberShown(_ projects: [ProjectNode]) throws {
-        try choices.update { saved in
-            for project in projects where !saved.removedProjects.contains(project.path) {
-                if !saved.projectPaths.contains(project.path) { saved.projectPaths.append(project.path) }
-            }
+        try choices.update { Self.rememberShown(projects, in: &$0) }
+    }
+
+    private static func rememberShown(_ projects: [ProjectNode], in saved: inout OwnerChoices) {
+        for project in projects where !saved.removedProjects.contains(project.path) {
+            if !saved.projectPaths.contains(project.path) { saved.projectPaths.append(project.path) }
         }
     }
 
     public func refreshChoices(
-        shown: [ProjectNode], navigation: WorkspaceNavigation,
+        shown: [ProjectNode], navigation: WorkspaceNavigation, saved: OwnerChoices? = nil,
         navigationStore: WorkspaceNavigationStore, reportError: (String) -> Void
     ) -> WorkspaceNavigation {
-        var failures: [String] = []
-        do { try rememberShown(shown) }
-        catch { failures.append(error.localizedDescription) }
-        var refreshed = navigation
         do {
-            if failures.isEmpty { refreshed = try navigationStore.reloadChoices(navigation) }
+            let snapshot = try saved ?? choices.load()
+            var updated = snapshot
+            Self.rememberShown(shown, in: &updated)
+            if updated != snapshot {
+                updated = try choices.update { Self.rememberShown(shown, in: &$0) }
+            }
+            lastRefreshError = nil
+            return navigationStore.applying(updated, to: navigation)
+        } catch {
+            report(error, using: reportError)
+            return navigation
         }
-        catch {
-            let message = error.localizedDescription
-            if !failures.contains(message) { failures.append(message) }
-        }
-        let failure = failures.isEmpty ? nil : failures.joined(separator: "\n")
-        if let failure, failure != lastRefreshError { reportError(failure) }
-        lastRefreshError = failure
-        return refreshed
     }
 
     public func remove(_ path: String) throws {

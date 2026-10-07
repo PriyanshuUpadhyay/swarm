@@ -28,6 +28,27 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
     }
 
+    /// Merge only the owner's changed entries so a stale view cannot erase another process's choices.
+    mutating func applyWorkspaceChanges(from before: Self, to after: Self) {
+        pinned.subtract(before.pinned.subtracting(after.pinned))
+        pinned.formUnion(after.pinned.subtracting(before.pinned))
+        archived.subtract(before.archived.subtracting(after.archived))
+        archived.formUnion(after.archived.subtracting(before.archived))
+        Self.mergeChanges(from: before.names, to: after.names, into: &names)
+        Self.mergeChanges(from: before.chatNames, to: after.chatNames, into: &chatNames)
+        Self.mergeChanges(from: before.projectNames, to: after.projectNames, into: &projectNames)
+        Self.mergeChanges(from: before.workspaceOrder, to: after.workspaceOrder, into: &workspaceOrder)
+        if before.fields != after.fields { fields = after.fields }
+    }
+
+    private static func mergeChanges<Value: Equatable>(
+        from before: [String: Value], to after: [String: Value], into current: inout [String: Value]
+    ) {
+        for key in Set(before.keys).union(after.keys) where before[key] != after[key] {
+            current[key] = after[key]
+        }
+    }
+
     /// A missing folder can be offline. Only Remove Project clears its saved choices.
     public mutating func removeProject(_ path: String) {
         let ordered = Set(workspaceOrder[path] ?? [])
@@ -50,8 +71,17 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
 @MainActor
 public final class OwnerChoicesStore {
     private let folder: URL?
+    private let readFile: (URL) throws -> Data
 
-    public init(folder: URL? = SwarmHome.dataFolder) { self.folder = folder }
+    public init(folder: URL? = SwarmHome.dataFolder) {
+        self.folder = folder
+        readFile = { try Data(contentsOf: $0) }
+    }
+
+    init(folder: URL?, readFile: @escaping (URL) throws -> Data) {
+        self.folder = folder
+        self.readFile = readFile
+    }
 
     public func load() throws -> OwnerChoices {
         guard let folder, isClaimed(folder) else { return OwnerChoices() }
@@ -62,7 +92,7 @@ public final class OwnerChoicesStore {
         let file = folder.appendingPathComponent("choices.json")
         let data: Data
         do {
-            data = try Data(contentsOf: file)
+            data = try readFile(file)
         } catch CocoaError.fileReadNoSuchFile {
             return OwnerChoices()
         }
