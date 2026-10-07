@@ -102,7 +102,7 @@ struct RowFieldPresentationTests {
     func unread() throws {
         let original = chat()
         var navigation = WorkspaceNavigation()
-        #expect(navigation.isUnread(original))
+        #expect(!navigation.isUnread(original))
         let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [
             WorkspaceNode(path: "/repo", name: "repo", sessions: [original])
         ])
@@ -130,6 +130,25 @@ struct RowFieldPresentationTests {
         #expect(keys["lastSeen"] == nil)
         let viewState = try #require(defaults.data(forKey: "workspaces.navigation"))
         #expect((try JSONSerialization.jsonObject(with: viewState) as? [String: Any])?["fields"] == nil)
+    }
+
+    @Test("A refresh at the activity time keeps a later selection time")
+    func refreshSeenTime() {
+        var navigation = WorkspaceNavigation()
+        navigation.markSeen(chat(time: 80), now: 90)
+        navigation.markSeen(chat(time: 80), now: 80)
+        #expect(navigation.lastSeen == ["chat": 90])
+    }
+
+    @Test("First sight records every chat once and later activity becomes unread")
+    func firstSightBaseline() {
+        var navigation = WorkspaceNavigation()
+        navigation.recordFirstSight([chat(time: 80)])
+        #expect(navigation.lastSeen == ["chat": 80])
+        #expect(!navigation.isUnread(chat(time: 80)))
+        navigation.recordFirstSight([chat(time: 81)])
+        #expect(navigation.lastSeen == ["chat": 80])
+        #expect(navigation.isUnread(chat(time: 81)))
     }
 
     @Test("A continued chat uses the original last-seen key")

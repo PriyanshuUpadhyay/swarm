@@ -272,10 +272,12 @@ final class SessionsTreeModel {
                 sessions: sessions, projectPaths: projects.paths(), removed: projects.removedPaths(), bus: bus
             )
             guard revision == refreshRevision else { return }
-            navigation = projects.refreshChoices(
+            var refreshed = projects.refreshChoices(
                 shown: loaded.projects, navigation: navigation, navigationStore: navigationStore,
                 reportError: { logger.error("Could not save sidebar choices: \($0)") }
             )
+            refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
+            navigation = refreshed
             sourceTree = loaded
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
@@ -293,7 +295,7 @@ final class SessionsTreeModel {
             pendingID = nil
             self.selectedSessionID = row.id
             if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
-                navigation.select(entry, chat: row.id)
+                navigation.select(entry, chat: row.id, now: row.lastActivity)
             }
             do {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")

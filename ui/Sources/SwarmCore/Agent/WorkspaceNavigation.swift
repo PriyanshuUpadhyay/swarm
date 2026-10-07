@@ -191,11 +191,20 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func isUnread(_ chat: SwarmProjectSession) -> Bool {
-        chat.lastActivity > (lastSeen[ChatTitle.key(chat)] ?? 0)
+        guard let seen = lastSeen[ChatTitle.key(chat)] else { return false }
+        return chat.lastActivity > seen
+    }
+
+    /// First sight sets the baseline; only later activity makes a chat unread.
+    public mutating func recordFirstSight(_ chats: [SwarmProjectSession]) {
+        for chat in chats where lastSeen[ChatTitle.key(chat)] == nil {
+            lastSeen[ChatTitle.key(chat)] = chat.lastActivity
+        }
     }
 
     public mutating func markSeen(_ chat: SwarmProjectSession, now: Int = Int(Date().timeIntervalSince1970)) {
-        lastSeen[ChatTitle.key(chat)] = max(now, chat.lastActivity)
+        let key = ChatTitle.key(chat)
+        lastSeen[key] = max(lastSeen[key] ?? 0, now, chat.lastActivity)
     }
 
     public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
