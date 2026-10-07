@@ -40,7 +40,7 @@ struct StepRunsView: View {
             if let chosen {
                 StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open,
                              retry: { retryID += 1 }, back: { choose(nil) }, chatTitles: chatTitles, selectChat: selectChat,
-                             focusRequest: isActive ? graphFocusRequest : nil)
+                             focusRequest: isActive ? graphFocusRequest : nil, focusedTitle: { graphFocusRequest = nil })
             } else {
                 list
             }
@@ -234,11 +234,18 @@ private struct StepRunGraph: View {
     let chatTitles: [String: String]
     let selectChat: (String) -> Void
     let focusRequest: UUID?
+    let focusedTitle: () -> Void
     @AccessibilityFocusState(for: .voiceOver) private var titleFocused: Bool
 
     private struct Edge: Identifiable {
         let from: String, to: String, dashed: Bool, stale: Bool
         var id: String { from + ">" + to }
+    }
+
+    private func focusTitle() {
+        guard focusRequest != nil else { return }
+        titleFocused = true
+        focusedTitle()
     }
 
     var body: some View {
@@ -260,8 +267,8 @@ private struct StepRunGraph: View {
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityFocused($titleFocused)
-                    .onAppear { titleFocused = focusRequest != nil }
-                    .onChange(of: focusRequest) { _, request in titleFocused = request != nil }
+                    .onAppear(perform: focusTitle)
+                    .onChange(of: focusRequest) { _, _ in focusTitle() }
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
                 if let error {
                     Text(verbatim: "Showing the last read. \(error)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
