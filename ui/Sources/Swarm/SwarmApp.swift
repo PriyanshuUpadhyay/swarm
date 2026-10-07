@@ -533,6 +533,8 @@ private struct SessionsWindow: View {
     @State private var document: WorkspaceDocument?
     @State private var documentVisible = false
     @State private var reportedUsage: (sessionID: SwarmSessionID, usage: ChatUsage)?
+    @State private var runRequest: StepRunRequest?
+    @State private var runRequestWorkspace: String?
 
     var body: some View {
         MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
@@ -564,7 +566,10 @@ private struct SessionsWindow: View {
                         WorkspacePanels(
                             directory: directory, mode: sidebarMode, visible: sidebarVisible,
                             usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
-                            hasChat: model.selectedSession != nil, open: openDocument
+                            hasChat: model.selectedSession != nil, open: openDocument,
+                            runRequest: runRequestWorkspace == directory ? runRequest : nil,
+                            openedRun: { runRequest = nil }, chatTitles: runChatTitles(in: directory),
+                            selectRunChat: { selectRunChat($0, in: directory) }
                         ).id(directory)
                     }
                 } else {
@@ -978,8 +983,43 @@ private struct SessionsWindow: View {
                     do { try await model.pruneWorktree(workspace) }
                     catch { actionError = String(describing: error) }
                 }
+            },
+            showRun: { id in
+                guard let destination = SidebarRows.runDestination(
+                    for: id, in: model.workspaces, runsByWorkspace: model.runsByWorkspace,
+                    agentsBySession: model.tree.agentsBySession
+                ), let workspace = entry(destination.workspaceID) else { return }
+                ownerMoves += 1
+                sidebarFocus = nil
+                documentVisible = false
+                model.selectWorkspace(workspace)
+                runRequestWorkspace = destination.workspaceID
+                runRequest = StepRunRequest(run: destination.run)
+                storedSidebarMode = WorkspaceSidebarMode.runs.rawValue
+                sidebarVisible = true
             }
         )
+    }
+
+    private func runChatTitles(in directory: String) -> [String: String] {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }) else { return [:] }
+        var titles: [String: String] = [:]
+        for step in (model.runsByWorkspace[directory] ?? []).flatMap(\.steps) {
+            if let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: model.tree.agentsBySession) {
+                titles[step.path] = ChatTitle.title(chat, appName: model.navigation.chatNames[ChatTitle.key(chat)])
+            }
+        }
+        return titles
+    }
+
+    private func selectRunChat(_ path: String, in directory: String) {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }),
+              let step = (model.runsByWorkspace[directory] ?? []).flatMap(\.steps).first(where: { $0.path == path }),
+              let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: model.tree.agentsBySession) else { return }
+        ownerMoves += 1
+        sidebarFocus = nil
+        documentVisible = false
+        model.select(chat.id)
     }
 
     private var paletteItems: [PaletteItem] {
@@ -1415,6 +1455,10 @@ private struct WorkspacePanels: View {
     let usage: ChatUsage?
     let hasChat: Bool
     let open: (WorkspaceDocument) -> Void
+    let runRequest: StepRunRequest?
+    let openedRun: () -> Void
+    let chatTitles: [String: String]
+    let selectRunChat: (String) -> Void
     @State private var visitedFiles = false
     @State private var visitedRuns = false
     @State private var visitedDetails = false
@@ -1427,7 +1471,8 @@ private struct WorkspacePanels: View {
                     .retainedVisibility(mode == .files)
             }
             if visitedRuns || mode == .runs {
-                StepRunsView(directory: directory, isActive: visible && mode == .runs, open: open)
+                StepRunsView(directory: directory, isActive: visible && mode == .runs, open: open,
+                             request: runRequest, openedRun: openedRun, chatTitles: chatTitles, selectChat: selectRunChat)
                     .retainedVisibility(mode == .runs)
             }
             if visitedDetails || mode.isDetails {

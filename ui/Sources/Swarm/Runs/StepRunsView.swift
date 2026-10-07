@@ -1,12 +1,21 @@
 import SwiftUI
 import SwarmCore
 
+struct StepRunRequest {
+    let id = UUID()
+    let run: StepRun
+}
+
 /// The Runs sidebar view: the step runs under `<workspace>/tmp/<skill>/`, and one run as a
 /// top-down graph (ADR 0046). It reads files only; a node opens its step file in the preview.
 struct StepRunsView: View {
     let directory: String
     var isActive = true
     let open: (WorkspaceDocument) -> Void
+    var request: StepRunRequest? = nil
+    var openedRun: () -> Void = {}
+    var chatTitles: [String: String] = [:]
+    var selectChat: (String) -> Void = { _ in }
     @State private var runs: [StepRun]?
     @State private var error: String?
     @State private var notice: String?
@@ -29,16 +38,17 @@ struct StepRunsView: View {
         Group {
             if let chosen {
                 StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open,
-                             retry: { retryID += 1 }, back: { choose(nil) })
+                             retry: { retryID += 1 }, back: { choose(nil) }, chatTitles: chatTitles, selectChat: selectChat)
             } else {
                 list
             }
         }
         .onAppear {
-            chosen = ChosenRun.byDirectory[directory]
+            if request != nil { openRequest() } else { chosen = ChosenRun.byDirectory[directory] }
             // A chosen closed run shows only while the Closed group is read.
             if chosen?.closed == true { showClosed = true }
         }
+        .onChange(of: request?.id) { _, _ in openRequest() }
         // The error and Retry appear in place, so VoiceOver hears them only if they are said, as SwitchModelSheet.
         .onChange(of: error) { _, text in
             if let text { AccessibilityNotification.Announcement(text).post() }
@@ -96,6 +106,13 @@ struct StepRunsView: View {
         chosen = run
         ChosenRun.byDirectory[directory] = run
         notice = nil
+    }
+
+    private func openRequest() {
+        guard let request else { return }
+        choose(request.run)
+        if request.run.closed { showClosed = true }
+        openedRun()
     }
 
     @ViewBuilder
@@ -210,6 +227,8 @@ private struct StepRunGraph: View {
     let open: (WorkspaceDocument) -> Void
     let retry: () -> Void
     let back: () -> Void
+    let chatTitles: [String: String]
+    let selectChat: (String) -> Void
 
     private struct Edge: Identifiable {
         let from: String, to: String, dashed: Bool, stale: Bool
@@ -249,7 +268,17 @@ private struct StepRunGraph: View {
                         HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
                             ForEach(ids, id: \.self) { id in
                                 if let step = byID[id] {
-                                    StepNodeView(step: step) { preview(step) }
+                                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                                        StepNodeView(step: step) { preview(step) }
+                                        if case .active = step.state, let title = chatTitles[step.path] {
+                                            Button { selectChat(step.path) } label: {
+                                                Label(title, systemImage: "bubble.left").lineLimit(1)
+                                            }
+                                            .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                                            .help("Show chat \(title)")
+                                            .accessibilityLabel("Show chat, \(title)")
+                                        }
+                                    }
                                         .anchorPreference(key: NodeBounds.self, value: .bounds) { [id: $0] }
                                 }
                             }

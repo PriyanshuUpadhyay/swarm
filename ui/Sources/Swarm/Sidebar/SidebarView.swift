@@ -46,6 +46,7 @@ struct SidebarActions {
     var restore: (String) -> Void
     var removeProject: (String) -> Void
     var pruneWorktree: (String) -> Void
+    var showRun: (String) -> Void
 }
 
 /// The sidebar chrome: a view switcher over the workspace list, or over the workspace details that
@@ -198,7 +199,8 @@ struct SidebarView<Details: View>: View {
         SidebarRowView(
             row: row, selected: row.id == selectedID,
             newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) },
-            toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil
+            toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil,
+            showRun: { actions.showRun(row.id) }
         )
         .tag(row.id)
         .contextMenu { menu(for: row) }
@@ -313,15 +315,17 @@ private struct SidebarRowView: View {
     let newChat: (() -> Void)?
     let toggle: (() -> Void)?
     @State private var hovering = false
+    var showRun: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             mainLine
             if let text = row.runSummary ?? row.runStep.map({ "\($0.skill) · \($0.stepName)" }) {
-                Text(verbatim: text)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Button(action: { showRun?() }) { Text(verbatim: text).lineLimit(1) }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                     .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
                     .help(row.run?.firstQuestion ?? row.runStep?.firstQuestion ?? text)
+                    .accessibilityLabel("Show run, \(text)")
             }
             if let summary = row.childrenSummary, let toggle {
                 Button(action: toggle) {

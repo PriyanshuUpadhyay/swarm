@@ -65,4 +65,43 @@ struct SidebarRunsTests {
         navigation.archived = [folder.path]
         #expect(SidebarRows.runWorkspaces(entries, navigation: navigation).isEmpty)
     }
+
+    @Test("Workspace and chat run links select the correct run, and active steps link back to the same chat")
+    func jumpMapping() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let runFolder = folder.appendingPathComponent("tmp/flow/build")
+        try FileManager.default.createDirectory(at: runFolder, withIntermediateDirectories: true)
+        try "Status: active coder\nUses: none\n".write(to: runFolder.appendingPathComponent("01-build.md"), atomically: true, encoding: .utf8)
+        let runs = try await StepRuns.scan(workspace: folder.path, includeClosed: false).runs
+        let entries = entries(folder.path)
+        let cache = [folder.path: runs]
+        let workspace = try #require(SidebarRows.runDestination(
+            for: folder.path, in: entries, runsByWorkspace: cache, agentsBySession: agents
+        ))
+        let linked = try #require(SidebarRows.runDestination(
+            for: "chat:new", in: entries, runsByWorkspace: cache, agentsBySession: agents
+        ))
+        #expect(workspace.workspaceID == folder.path)
+        #expect(workspace.run.id == "tmp/flow/build")
+        #expect(linked == workspace)
+        let step = try #require(linked.run.steps.first)
+        #expect(SidebarRows.chat(for: step, in: entries[0], agentsBySession: agents)?.id == .init("new"))
+        #expect(SidebarRows.chat(for: step, in: entries[0], agentsBySession: [:]) == nil)
+        for id in ["chat:old", "chat:other", "chat:gone", "more:" + folder.path, "child:new/coder"] {
+            #expect(SidebarRows.runDestination(for: id, in: entries, runsByWorkspace: cache, agentsBySession: agents) == nil)
+        }
+        #expect(SidebarRows.runDestination(for: "chat:new", in: entries, runsByWorkspace: [:], agentsBySession: agents) == nil)
+        let chain = SwarmProjectSession(sessions: [
+            chat("next", path: folder.path, time: 4).session,
+            chat("root", path: folder.path, time: 1).session
+        ], title: "Continued")
+        let entry = WorkspaceEntry(project: entries[0].project, workspace: WorkspaceNode(
+            path: folder.path, name: "workspace", sessions: [chain]
+        ))
+        #expect(SidebarRows.chat(for: step, in: entry, agentsBySession: [.init("root"): agents[.init("old")]!])?.id == .init("next"))
+        let continued = SidebarRows.runDestination(for: "chat:root", in: [entry], runsByWorkspace: cache,
+                                                  agentsBySession: [.init("root"): agents[.init("old")]!])
+        #expect(continued?.run.id == linked.run.id)
+    }
 }

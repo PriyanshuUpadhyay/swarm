@@ -45,6 +45,11 @@ public struct SidebarRun: Sendable, Hashable {
     }
 }
 
+public struct SidebarRunDestination: Sendable, Equatable {
+    public let workspaceID: String
+    public let run: StepRun
+}
+
 public struct StatusCount: Sendable, Hashable {
     public let status: AgentStatus
     public let count: Int
@@ -133,6 +138,24 @@ public enum SidebarRows {
         }.sorted {
             $0.lastActivity == $1.lastActivity ? chatID($0) < chatID($1) : $0.lastActivity > $1.lastActivity
         }.first
+    }
+
+    public static func runDestination(
+        for rowID: String, in entries: [WorkspaceEntry], runsByWorkspace: [String: [StepRun]],
+        agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> SidebarRunDestination? {
+        guard let selection = selection(for: rowID, in: entries, agentsBySession: agentsBySession),
+              selection.agentID == nil, let entry = entries.first(where: { $0.id == selection.workspaceID }) else { return nil }
+        let runs = orderedRuns(runsByWorkspace[entry.id] ?? [])
+        let run: StepRun?
+        if let chatID = selection.chatID {
+            run = runs.first { run in
+                run.steps.contains { chat(for: $0, in: entry, agentsBySession: agentsBySession)?.id == chatID }
+            }
+        } else {
+            run = runs.first
+        }
+        return run.map { SidebarRunDestination(workspaceID: entry.id, run: $0) }
     }
 
     /// Pinned, then one section per project in tree order, even an empty one, so its "+" stays
