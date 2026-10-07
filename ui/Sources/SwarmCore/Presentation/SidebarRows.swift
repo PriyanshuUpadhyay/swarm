@@ -285,7 +285,7 @@ public enum SidebarRows {
                 }
                 for session in chat.sessions {
                     for agent in agentsBySession[session.id] ?? []
-                    where agent.id != SwarmPanePolicy.chair && agent.id.rawValue != session.chairID?.rawValue {
+                    where !SwarmPanePolicy.isChair(agent, in: session) {
                         if id == "child:\(session.id.rawValue)/\(agent.id.rawValue)" {
                             return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id,
                                                     agentSessionID: session.id, agentID: agent.id)
@@ -336,13 +336,13 @@ public enum SidebarRows {
             let expanded = !navigation.isCollapsed(id)
             let children = chat.sessions.flatMap { session in
                 (agentsBySession[session.id] ?? [])
-                    .filter { $0.id != SwarmPanePolicy.chair && $0.id.rawValue != session.chairID?.rawValue }
+                    .filter { !SwarmPanePolicy.isChair($0, in: session) }
                     .sorted { $0.id < $1.id }
                     .map { (session.id, $0) }
             }
             let agents = agentsBySession[chat.id]
             let status = expanded && !children.isEmpty
-                ? agents?.first { $0.id == SwarmPanePolicy.chair || $0.id.rawValue == chat.session.chairID?.rawValue }?.status
+                ? agents?.first { SwarmPanePolicy.isChair($0, in: chat.session) }?.status
                 : AgentStatus.aggregate((agents ?? []).map(\.status) + children.map { $0.1.status }) ?? chat.status
             let counts = chat.statusCounts.map { StatusCount(status: $0.key, count: $0.value) }
                 .sorted { $0.status.urgency > $1.status.urgency }

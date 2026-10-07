@@ -322,6 +322,10 @@ public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
 public enum SwarmPanePolicy {
     public static let chair = SwarmAgentID("orchestrator")
 
+    public static func isChair(_ agent: SwarmAgent, in session: SwarmSession) -> Bool {
+        agent.id == chair || agent.id.rawValue == session.chairID?.rawValue
+    }
+
     public static func hasLiveChildAgents(session: SwarmSession, agents: [SwarmAgent]) -> Bool {
         !cells(session: session, agents: agents).isEmpty
     }
@@ -329,7 +333,7 @@ public enum SwarmPanePolicy {
     public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
         agents
             .filter {
-                $0.alive == true && $0.id != chair && $0.id.rawValue != session.chairID?.rawValue
+                $0.alive == true && !isChair($0, in: session)
             }
             .sorted {
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }

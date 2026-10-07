@@ -77,7 +77,7 @@ public enum RowFields {
     ) -> RowFieldContext {
         let chairs = chat.sessions.compactMap { session in
             (agentsBySession[session.id] ?? []).first {
-                $0.id == SwarmPanePolicy.chair || $0.id.rawValue == session.chairID?.rawValue
+                SwarmPanePolicy.isChair($0, in: session)
             }
         }
         let agents = chat.sessions.flatMap { agentsBySession[$0.id] ?? [] }
@@ -99,7 +99,7 @@ public enum RowFields {
     static func childCount(_ chat: SwarmProjectSession, agentsBySession: [SwarmSessionID: [SwarmAgent]]) -> String? {
         let count = chat.sessions.reduce(0) { total, session in
             total + (agentsBySession[session.id] ?? []).filter {
-                $0.id != SwarmPanePolicy.chair && $0.id.rawValue != session.chairID?.rawValue
+                !SwarmPanePolicy.isChair($0, in: session)
             }.count
         }
         return count == 0 ? nil : count == 1 ? "1 agent" : "\(count) agents"
@@ -125,7 +125,7 @@ public enum RowFields {
         let chairs = chats.flatMap { chat in
             chat.sessions.compactMap { session in
                 (agentsBySession[session.id] ?? []).first {
-                    $0.id == SwarmPanePolicy.chair || $0.id.rawValue == session.chairID?.rawValue
+                    SwarmPanePolicy.isChair($0, in: session)
                 }
             }
         }
