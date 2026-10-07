@@ -79,6 +79,7 @@ final class SessionsTreeModel {
     /// A pending chat's tab is selected; then `selectedSessionID` is nil.
     private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
+    private(set) var runsByWorkspace: [String: [StepRun]] = [:]
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
     /// log reports one.
     private(set) var launchedModels: [SwarmSessionID: String] = [:]
@@ -459,6 +460,33 @@ final class SessionsTreeModel {
         }
     }
 
+    func runSidebarRuns() async {
+        while !Task.isCancelled {
+            let paths = SidebarRows.runWorkspaces(workspaces, navigation: navigation)
+            let scan = Task.detached(priority: .utility) {
+                var result: [String: [StepRun]] = [:]
+                for path in paths {
+                    guard !Task.isCancelled else { break }
+                    if let scan = try? await StepRuns.scan(workspace: path, includeClosed: false) {
+                        result[path] = scan.runs
+                    }
+                }
+                return result
+            }
+            let read = await withTaskCancellationHandler {
+                await scan.value
+            } onCancel: {
+                scan.cancel()
+            }
+            guard !Task.isCancelled else { return }
+            // A folded workspace keeps its last read for its folded project header.
+            let existing = Set(workspaces.map(\.id))
+            runsByWorkspace = runsByWorkspace.filter { existing.contains($0.key) }
+            runsByWorkspace.merge(read, uniquingKeysWith: { _, new in new })
+            try? await Task.sleep(for: .seconds(10))
+        }
+    }
+
 
 }
 
@@ -624,6 +652,7 @@ private struct SessionsWindow: View {
             LoginShellPath.begin()
             await model.run()
         }
+        .task { await model.runSidebarRuns() }
         .task {
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
@@ -845,7 +874,8 @@ private struct SessionsWindow: View {
         SidebarRows.sections(
             projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
             showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970),
-            agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists
+            agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists,
+            runsByWorkspace: model.runsByWorkspace
         )
     }
 

@@ -317,6 +317,12 @@ private struct SidebarRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             mainLine
+            if let text = row.runSummary ?? row.runStep.map({ "\($0.skill) · \($0.stepName)" }) {
+                Text(verbatim: text)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                    .help(row.run?.firstQuestion ?? row.runStep?.firstQuestion ?? text)
+            }
             if let summary = row.childrenSummary, let toggle {
                 Button(action: toggle) {
                     HStack(spacing: DesignTokens.Spacing.xs) {

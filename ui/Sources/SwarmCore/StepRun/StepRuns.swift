@@ -19,7 +19,7 @@ public struct StepTodo: Equatable, Sendable {
 }
 
 /// What a node or a run most needs from the owner, least to most urgent.
-public enum StepUrgency: Int, Comparable, Sendable {
+public enum StepUrgency: Int, Comparable, Sendable, Hashable {
     case done, open, active, stale, blocked, waiting
     public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }

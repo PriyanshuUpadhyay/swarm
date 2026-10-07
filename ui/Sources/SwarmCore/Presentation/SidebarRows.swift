@@ -22,6 +22,27 @@ public struct SidebarRow: Sendable, Hashable, Identifiable {
     public let archived: Bool
     public let missing: Bool
     public let newChatEnabled: Bool
+    public var run: SidebarRun? = nil
+    public var runSummary: String? = nil
+    public var runStep: SidebarRun? = nil
+}
+
+public struct SidebarRun: Sendable, Hashable {
+    public let runID: String
+    public let skill: String
+    public let step: String
+    public let stepName: String
+    public let urgency: StepUrgency
+    public let firstQuestion: String?
+
+    init(_ run: StepRun, step: StepNode) {
+        runID = run.id
+        skill = run.skill
+        self.step = step.id
+        stepName = step.title
+        urgency = run.urgency
+        firstQuestion = run.firstQuestion
+    }
 }
 
 public struct StatusCount: Sendable, Hashable {
@@ -72,13 +93,56 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
 }
 
 public enum SidebarRows {
+    public static func runWorkspaces(_ entries: [WorkspaceEntry], navigation: WorkspaceNavigation) -> [String] {
+        entries.filter {
+            !$0.workspace.missing && !$0.workspace.isRemoved && !navigation.archived.contains($0.id)
+                && (!navigation.isCollapsed($0.id) || navigation.pinned.contains($0.id))
+        }.map(\.id)
+    }
+
+    private static func orderedRuns(_ runs: [StepRun]) -> [StepRun] {
+        runs.filter { !$0.closed }.sorted {
+            if $0.urgency != $1.urgency { return $0.urgency > $1.urgency }
+            if $0.lastActivity != $1.lastActivity { return ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }
+            return $0.id < $1.id
+        }
+    }
+
+    private static func runReference(_ run: StepRun) -> SidebarRun? {
+        guard let step = run.steps.max(by: { $0.urgency < $1.urgency }) else { return nil }
+        return SidebarRun(run, step: step)
+    }
+
+    public static func runSummary(_ runs: [StepRun]) -> String? {
+        let open = orderedRuns(runs)
+        let waiting = open.count { $0.urgency == .waiting }
+        if waiting > 0 { return waiting == 1 ? "1 run waits" : "\(waiting) runs waiting" }
+        guard let run = open.first, let reference = runReference(run) else { return nil }
+        return "\(reference.skill) · \(reference.stepName)"
+    }
+
+    /// A step names an agent, not a session. Resolve only inside its workspace (ADR 0051).
+    public static func chat(
+        for step: StepNode, in entry: WorkspaceEntry, agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> SwarmProjectSession? {
+        guard case .active(let name) = step.state, !name.isEmpty else { return nil }
+        return entry.chats.filter { chat in
+            chat.sessions.contains { session in
+                (agentsBySession[session.id] ?? []).contains { $0.id.rawValue == name }
+            }
+        }.sorted {
+            $0.lastActivity == $1.lastActivity ? chatID($0) < chatID($1) : $0.lastActivity > $1.lastActivity
+        }.first
+    }
+
     /// Pinned, then one section per project in tree order, even an empty one, so its "+" stays
     /// reachable. The archive view shows only projects with archived rows. Rows keep the
     /// workspace order, so a status change sets a row's glyph but never moves the row.
     public static func sections(
         projects: [ProjectNode], workspaces: [WorkspaceEntry], navigation: WorkspaceNavigation,
         search: String, showingArchive: Bool, now: Int,
-        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], expandedLists: Set<String> = []
+        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], expandedLists: Set<String> = [],
+        runsByWorkspace: [String: [StepRun]] = [:]
     ) -> [SidebarSection] {
         let entriesByProject = Dictionary(grouping: workspaces, by: { $0.project.id }).mapValues { entries in
             Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -97,7 +161,7 @@ public enum SidebarRows {
                 navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id)
             }.flatMap {
                 rows($0, idsByTitle: idsByTitle, navigation: navigation, now: now,
-                     agentsBySession: agentsBySession, expandedLists: expandedLists)
+                     agentsBySession: agentsBySession, expandedLists: expandedLists, runs: runsByWorkspace[$0.id] ?? [])
             }
             if !pinned.isEmpty { sections.append(SidebarSection(kind: .pinned, id: "pinned", title: "Pinned", rows: pinned)) }
         }
@@ -111,7 +175,7 @@ public enum SidebarRows {
                     : !navigation.pinned.contains(entry.id) && !navigation.archived.contains(entry.id))
             }.flatMap {
                 rows($0, idsByTitle: idsByTitle, navigation: navigation, now: now, inProject: true,
-                     agentsBySession: agentsBySession, expandedLists: expandedLists)
+                     agentsBySession: agentsBySession, expandedLists: expandedLists, runs: runsByWorkspace[$0.id] ?? [])
             }
             if rows.isEmpty, showingArchive || !search.isEmpty { continue }
             let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().lastPathComponent
@@ -173,11 +237,19 @@ public enum SidebarRows {
     private static func rows(
         _ entry: WorkspaceEntry, idsByTitle: [String: [String]], navigation: WorkspaceNavigation,
         now: Int, inProject: Bool = false, agentsBySession: [SwarmSessionID: [SwarmAgent]],
-        expandedLists: Set<String>
+        expandedLists: Set<String>, runs: [StepRun]
     ) -> [SidebarRow] {
         var result = [row(entry, idsByTitle: idsByTitle, navigation: navigation, now: now,
-                          inProject: inProject, agentsBySession: agentsBySession)]
+                          inProject: inProject, agentsBySession: agentsBySession, runs: runs)]
         guard !navigation.isCollapsed(entry.id) else { return result }
+        var stepsByChat: [SwarmSessionID: SidebarRun] = [:]
+        for run in orderedRuns(runs) {
+            for step in run.steps {
+                if let chat = self.chat(for: step, in: entry, agentsBySession: agentsBySession), stepsByChat[chat.id] == nil {
+                    stepsByChat[chat.id] = SidebarRun(run, step: step)
+                }
+            }
+        }
         let chats = entry.chats.sorted {
             $0.lastActivity == $1.lastActivity ? chatID($0) < chatID($1) : $0.lastActivity > $1.lastActivity
         }
@@ -209,7 +281,8 @@ public enum SidebarRows {
                 childrenSummary: children.isEmpty ? nil : childrenLabel + (waiting == 0 ? "" : " · \(waiting) waiting"),
                 title: presentation.title, detail: "", status: status, counts: counts, age: presentation.age,
                 help: "\(presentation.title)\n\(entry.id)", pinned: navigation.pinned.contains(entry.id),
-                archived: navigation.archived.contains(entry.id), missing: false, newChatEnabled: false
+                archived: navigation.archived.contains(entry.id), missing: false, newChatEnabled: false,
+                runStep: stepsByChat[chat.id]
             ))
             if expanded {
                 result += children.map { sessionID, agent in
@@ -238,7 +311,7 @@ public enum SidebarRows {
     static func row(
         _ entry: WorkspaceEntry, idsByTitle: [String: [String]],
         navigation: WorkspaceNavigation, now: Int, inProject: Bool = false,
-        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
+        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], runs: [StepRun] = []
     ) -> SidebarRow {
         let age = entry.chats.max { $0.lastActivity < $1.lastActivity }.map {
             SessionRowPresentation.make(
@@ -256,13 +329,22 @@ public enum SidebarRows {
             detail: ([navigation.detail(for: entry, idsByTitle: idsByTitle, inProject: inProject)]
                 + (entry.workspace.missing ? ["folder missing"] : [])
                 + (entry.workspace.mark.map { [$0.rawValue] } ?? [])).joined(separator: " · "),
-            status: AgentStatus.aggregate(entry.chats.compactMap(\.status) + entry.chats.flatMap {
+            status: AgentStatus.aggregate(entry.chats.compactMap(\.status) + orderedRuns(runs).map {
+                switch $0.urgency {
+                case .waiting: AgentStatus.waiting
+                case .blocked, .stale: AgentStatus.failed
+                case .active: AgentStatus.working
+                case .open: AgentStatus.ended
+                case .done: AgentStatus.done
+                }
+            } + entry.chats.flatMap {
                 $0.sessions.flatMap { (agentsBySession[$0.id] ?? []).map(\.status) }
             }), counts: counts, age: age,
             help: "\(navigation.projectTitle(for: entry.project)) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),
             archived: navigation.archived.contains(entry.id),
-            missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat
+            missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat,
+            run: orderedRuns(runs).first.flatMap(runReference), runSummary: runSummary(runs)
         )
     }
 }
