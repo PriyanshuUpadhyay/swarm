@@ -561,13 +561,14 @@ private struct SessionsWindow: View {
     @State private var runRequestWorkspace: String?
 
     var body: some View {
-        MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
+        let sections = sidebarSections(showingArchive: showingArchive)
+        return MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
             SidebarView(
                 mode: sidebarMode,
-                sections: sidebarSections(showingArchive: showingArchive),
+                sections: sections,
                 collapsed: model.navigation.collapsed,
                 loaded: model.hasLoaded,
-                selectedID: selectedSidebarID,
+                selectedID: selectedSidebarID(in: sections),
                 showingArchive: showingArchive,
                 actions: sidebarActions
             ) {
@@ -910,9 +911,9 @@ private struct SessionsWindow: View {
         )
     }
 
-    private var selectedSidebarID: String? {
+    private func selectedSidebarID(in sections: [SidebarSection]) -> String? {
         SidebarRows.selectedID(
-            in: sidebarSections(showingArchive: showingArchive).flatMap(\.rows),
+            in: sections.flatMap(\.rows),
             workspace: model.navigation.selectedWorkspace, chat: model.selectedSession, child: sidebarFocus
         )
     }
