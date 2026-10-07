@@ -94,6 +94,62 @@ struct CLITitleTests {
         #expect(reader.name(path: log.path) == "After replaced")
     }
 
+    @Test("Claude keeps older names in a long log and still follows later appends")
+    func fullClaudeHistory() throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("chat.jsonl")
+        try write([
+            #"{"type":"custom-title","sessionId":"chat","customTitle":"Older rename"}"#,
+            String(repeating: "x", count: 2 * 1024 * 1024),
+            #"{"type":"ai-title","sessionId":"chat","aiTitle":"Recent name"}"#
+        ], to: log)
+        var reader = ClaudeNameReader()
+        #expect(reader.name(path: log.path) == "Older rename")
+        let firstRead = reader.bytesRead
+        #expect(reader.offset == UInt64(try Data(contentsOf: log).count))
+        #expect(reader.name(path: log.path) == "Older rename")
+        #expect(reader.bytesRead == firstRead)
+        let rename = Data(#"{"type":"custom-title","sessionId":"chat","customTitle":"Later name"}"#.utf8)
+        let handle = try FileHandle(forWritingTo: log)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: rename)
+        #expect(reader.name(path: log.path) == "Older rename")
+        try handle.write(contentsOf: Data([10]))
+        #expect(reader.name(path: log.path) == "Later name")
+        #expect(reader.bytesRead - firstRead == UInt64(rename.count + 1))
+        try write([String(repeating: "x", count: 2 * 1024 * 1024),
+                   #"{"type":"ai-title","sessionId":"chat","aiTitle":"Replaced name"}"#], to: log)
+        #expect(reader.name(path: log.path) == "Replaced name")
+    }
+
+    @Test("Measures the first Claude name read on a synthetic 50 MiB log")
+    func claudeFirstReadCost() throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("chat.jsonl")
+        let name = #"{"type":"custom-title","sessionId":"chat","customTitle":"Older rename"}"# + "\n"
+        let record = #"{"type":"assistant","message":{"content":""# + String(repeating: "x", count: 950) + #""}}"# + "\n"
+        let targetBytes = 50 * 1024 * 1024
+        var data = Data(name.utf8)
+        let padding = Data(record.utf8)
+        while data.count + padding.count <= targetBytes { data.append(padding) }
+        data.append(Data((String(repeating: "x", count: targetBytes - data.count - 1) + "\n").utf8))
+        try data.write(to: log)
+        var elapsed: [Double] = []
+        let clock = ContinuousClock()
+        for _ in 0..<3 {
+            var reader = ClaudeNameReader()
+            let started = clock.now
+            #expect(reader.name(path: log.path) == "Older rename")
+            let duration = started.duration(to: clock.now).components
+            elapsed.append(Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
+            #expect(reader.bytesRead == UInt64(targetBytes))
+        }
+        print("Claude 50 MiB first read seconds \(elapsed); p50 \(elapsed.sorted()[1])")
+    }
+
     @Test("Discovery refreshes CLI renames while the first prompt stays cached")
     func refreshNames() async throws {
         let root = try fixture()

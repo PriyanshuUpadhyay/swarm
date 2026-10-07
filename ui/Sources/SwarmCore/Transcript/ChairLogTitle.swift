@@ -84,6 +84,7 @@ public enum ChairLogTitle {
 
 /// Keeps title state and the cut last record across a live Claude log's appends.
 struct ClaudeNameReader {
+    private static let titleMarkers = [Data("custom-title".utf8), Data("ai-title".utf8)]
     private var reader = CLITitleRecordReader()
     private var logStamp: CLINameFileStamp?
     private var sidecarStamp: CLINameFileStamp?
@@ -108,7 +109,7 @@ struct ClaudeNameReader {
             }
             // Use a local reader so its callback can update the title fields without overlapping access.
             var scanning = reader
-            scanning.read(path: path) { object in
+            scanning.read(path: path, markers: Self.titleMarkers) { object in
                 guard object["sessionId"] as? String == id else { return }
                 switch object["type"] as? String {
                 case "custom-title":
@@ -151,24 +152,33 @@ private struct CLITitleRecordReader {
         oversized = false
     }
 
-    mutating func read(path: String, consume: ([String: Any]) -> Void) {
+    mutating func read(path: String, markers: [Data] = [], consume: ([String: Any]) -> Void) {
         guard let file = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return }
         defer { try? file.close() }
         do { try file.seek(toOffset: offset) } catch { return }
         while let chunk = try? file.read(upToCount: 65_536), !chunk.isEmpty {
             offset += UInt64(chunk.count)
             bytesRead += UInt64(chunk.count)
-            for byte in chunk {
-                if byte == 10 {
-                    if !oversized, let object = try? JSONSerialization.jsonObject(with: pending) as? [String: Any] {
-                        consume(object)
+            var start = chunk.startIndex
+            while start < chunk.endIndex {
+                let newline = chunk[start...].firstIndex(of: 10)
+                let end = newline ?? chunk.endIndex
+                if !oversized {
+                    if pending.count + end - start <= 256 * 1024 {
+                        pending.append(contentsOf: chunk[start..<end])
+                    } else {
+                        pending.removeAll(keepingCapacity: true)
+                        oversized = true
                     }
-                    pending.removeAll(keepingCapacity: true)
-                    oversized = false
-                } else if !oversized {
-                    if pending.count < 256 * 1024 { pending.append(byte) }
-                    else { pending.removeAll(keepingCapacity: true); oversized = true }
                 }
+                guard let newline else { break }
+                if !oversized, markers.isEmpty || markers.contains(where: { pending.range(of: $0) != nil }),
+                   let object = try? JSONSerialization.jsonObject(with: pending) as? [String: Any] {
+                    consume(object)
+                }
+                pending.removeAll(keepingCapacity: true)
+                oversized = false
+                start = chunk.index(after: newline)
             }
         }
     }
