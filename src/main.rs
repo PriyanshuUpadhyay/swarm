@@ -6123,6 +6123,43 @@ mod tests {
     }
 
     #[test]
+    fn session_archived_listing_keeps_active_rows_and_limits_archives_in_archive_order() {
+        let (home, connection, first_active) = stop_fixture("archive-limit", None);
+        let second_active =
+            swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let mut archived_ids = Vec::new();
+        for index in 0..55 {
+            let id = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET archived_at = ?1, created_at = ?2 WHERE id = ?3",
+                    (10000 + index, 20000 - index, &id),
+                )
+                .unwrap();
+            archived_ids.push(id);
+        }
+        let all = session_command(&home, &["sessions", "--json", "--archived"]);
+        assert!(
+            all.status.success(),
+            "{}",
+            String::from_utf8_lossy(&all.stderr)
+        );
+        let all: serde_json::Value = serde_json::from_slice(&all.stdout).unwrap();
+        let rows = all["sessions"].as_array().unwrap();
+        assert_eq!(rows.len(), 52);
+        assert!(rows[..2].iter().all(|row| row.get("archivedAt").is_none()));
+        assert!(rows[..2].iter().any(|row| row["id"] == first_active));
+        assert!(rows[..2].iter().any(|row| row["id"] == second_active));
+        for (row, id) in rows[2..].iter().zip(archived_ids[5..].iter().rev()) {
+            assert_eq!(row["id"], *id);
+        }
+        assert_eq!(rows[2]["archivedAt"], 10054);
+        assert_eq!(rows.last().unwrap()["archivedAt"], 10005);
+        drop(connection);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
     fn session_unarchive_names_unknown_id_and_rolls_back() {
         let (home, mut connection, known) = stop_fixture("unarchive-unknown", None);
         swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&known)).unwrap();

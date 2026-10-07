@@ -280,7 +280,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
 | `session unarchive <id>...` | any | Restore one or more archived UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
-| `sessions --json --archived` | any | Include archived sessions, with `archivedAt` in Unix seconds when archived. |
+| `sessions --json --archived` | any | List all active sessions, then the newest 50 archived sessions in archive order, with `archivedAt` in Unix seconds. |
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
 | `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `notify <title> [--body <text>]` | orchestrator or owner | Show the owner one notice through the adapter's `notify` verb (osascript on every shipped adapter, ADR 0045), within 5 s. Needs no session. Refuse a worker, and exit 1 when the adapter has no `notify` verb. `hook` and `agents --json` also send one notice when an agent's state changes to `waiting` (ADR 0044). |

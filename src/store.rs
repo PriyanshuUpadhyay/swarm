@@ -410,6 +410,8 @@ pub fn sessions(connection: &Connection) -> Result<Vec<SessionRow>, Box<dyn std:
     sessions_with_archived(connection, false)
 }
 
+const ARCHIVED_SESSIONS_LIMIT: i64 = 50;
+
 pub fn sessions_with_archived(
     connection: &Connection,
     include_archived: bool,
@@ -425,10 +427,14 @@ pub fn sessions_with_archived(
                 (SELECT max(created_at) FROM message WHERE session_id = session.id),
                 archived_at
          FROM session
-         WHERE archived_at IS NULL OR ?1
-         ORDER BY session.created_at DESC, session.id DESC",
+         WHERE archived_at IS NULL OR (?1 AND session.id IN (
+             SELECT id FROM session WHERE archived_at IS NOT NULL
+             ORDER BY archived_at DESC, id DESC LIMIT ?2
+         ))
+         ORDER BY archived_at IS NOT NULL, coalesce(archived_at, session.created_at) DESC,
+                  session.id DESC",
     )?;
-    let rows = statement.query_map([include_archived], |row| {
+    let rows = statement.query_map((include_archived, ARCHIVED_SESSIONS_LIMIT), |row| {
         Ok(SessionRow {
             id: row.get(0)?,
             talk_mode: row.get(1)?,
