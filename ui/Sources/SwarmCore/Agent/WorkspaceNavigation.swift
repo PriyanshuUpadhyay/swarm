@@ -295,8 +295,12 @@ public final class WorkspaceNavigationStore {
     public func load() -> WorkspaceNavigation {
         let value = defaults.data(forKey: key)
             .flatMap { try? JSONDecoder().decode(WorkspaceNavigation.self, from: $0) } ?? WorkspaceNavigation()
-        guard let saved = try? choices.load() else { return value }
-        return adopt(saved, into: value)
+        do {
+            return adopt(try choices.load(waitForLock: true), into: value)
+        } catch {
+            choices.alerts.report(OwnerChoicesFailure(error.localizedDescription, operation: .load))
+            return value
+        }
     }
 
     @discardableResult

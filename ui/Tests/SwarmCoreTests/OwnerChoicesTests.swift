@@ -137,6 +137,69 @@ struct OwnerChoicesTests {
         #expect(try store.load().pinned == ["/other/process", "/this/process"])
     }
 
+    @Test("The launch read waits for a writer and keeps pins, names, projects, and view state")
+    func launchReadWaitsForWriter() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "OwnerChoicesTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        var viewState = WorkspaceNavigation()
+        viewState.selectedWorkspace = "/repo"
+        viewState.collapsed = ["pinned"]
+        defaults.set(try JSONEncoder().encode(viewState), forKey: "workspaces.navigation")
+        let ready = folder.appendingPathComponent("ready")
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        child.arguments = ["-c", """
+        import fcntl, json, pathlib, sys, time
+        folder = pathlib.Path(sys.argv[1])
+        with (folder / 'choices.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            (folder / 'ready').write_text('locked')
+            time.sleep(0.25)
+            (folder / 'choices.json').write_text(json.dumps({
+                'pinned': ['/repo'], 'names': {'/repo': 'Main work'}, 'projectPaths': ['/repo']
+            }))
+        """, folder.path]
+        try child.run()
+        defer { child.waitUntilExit() }
+        for _ in 0..<500 where !FileManager.default.fileExists(atPath: ready.path) { usleep(10_000) }
+        try #require(FileManager.default.fileExists(atPath: ready.path))
+        let choices = OwnerChoicesStore(folder: folder)
+        let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
+        let loaded = store.load()
+        #expect(loaded.pinned == ["/repo"])
+        #expect(loaded.names == ["/repo": "Main work"])
+        #expect(store.savedChoices.projectPaths == ["/repo"])
+        #expect(loaded.selectedWorkspace == "/repo")
+        #expect(loaded.collapsed == ["pinned"])
+        #expect(choices.alerts.message == nil)
+    }
+
+    @Test("A launch lock timeout reports a load failure within its bounded wait")
+    func launchLockTimeoutReportsFailure() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "OwnerChoicesTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_CREAT | O_RDWR, 0o600)
+        try #require(descriptor >= 0)
+        defer { _ = flock(descriptor, LOCK_UN); close(descriptor) }
+        try #require(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        let choices = OwnerChoicesStore(folder: folder)
+        let started = ContinuousClock.now
+        _ = WorkspaceNavigationStore(defaults: defaults, choices: choices).load()
+        #expect(started.duration(to: .now) >= .milliseconds(900))
+        #expect(started.duration(to: .now) < .seconds(OwnerChoicesStore.writeLockTimeout + 0.75))
+        #expect(choices.alerts.message == OwnerChoicesFailure(OwnerChoicesError.lockBusy.localizedDescription, operation: .load).message)
+    }
+
     @Test("A held choices lock fails within one second and remains usable after release")
     func heldLockTimesOut() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
