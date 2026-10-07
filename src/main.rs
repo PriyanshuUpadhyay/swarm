@@ -6324,8 +6324,8 @@ mod tests {
         let (home, connection, session) = stop_fixture("no-snapshot", Some("not json\n{}\n"));
         connection
             .execute(
-                "UPDATE agent SET model = 'kept', cost_usd = 3, tokens = 5",
-                [],
+                "UPDATE agent SET model = 'kept', cost_usd = 3, tokens = 5 WHERE session_id = ?1 AND id = ?2",
+                (&session, CODER),
             )
             .unwrap();
         for mode in ["no-snapshot", "missing", "unreadable"] {
@@ -6359,7 +6359,10 @@ mod tests {
         let log = r#"{"type":"cost-state","totalCostUSD":9}"#;
         let (home, connection, session) = stop_fixture("other-provider", Some(log));
         connection
-            .execute("UPDATE agent SET cost_usd = 3", [])
+            .execute(
+                "UPDATE agent SET cost_usd = 3 WHERE session_id = ?1 AND id = ?2",
+                (&session, CODER),
+            )
             .unwrap();
         for (provider, event, payload) in [
             ("agy", "Stop", "{}"),
