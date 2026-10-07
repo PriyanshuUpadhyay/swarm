@@ -33,7 +33,9 @@ public final class SwarmProjectStore {
         do { try rememberShown(shown) }
         catch { failures.append(error.localizedDescription) }
         var refreshed = navigation
-        do { refreshed = try navigationStore.pruneMissingFolders(navigation) }
+        do {
+            if failures.isEmpty { refreshed = try navigationStore.reloadChoices(navigation) }
+        }
         catch {
             let message = error.localizedDescription
             if !failures.contains(message) { failures.append(message) }
@@ -48,6 +50,7 @@ public final class SwarmProjectStore {
         try choices.update {
             $0.projectPaths.removeAll { $0 == path || Self.projectPath(for: $0) == path }
             $0.removedProjects.insert(path)
+            $0.removeProject(path)
         }
     }
 

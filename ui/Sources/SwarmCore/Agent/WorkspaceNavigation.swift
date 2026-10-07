@@ -250,8 +250,7 @@ public final class WorkspaceNavigationStore {
         defaults.set(data, forKey: key)
     }
 
-    public func pruneMissingFolders(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
-        try choices.update { $0.pruneMissingFolders() }
+    public func reloadChoices(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
         let saved = try choices.load()
         var pruned = value
         pruned.pinned = saved.pinned
@@ -261,7 +260,6 @@ public final class WorkspaceNavigationStore {
         pruned.projectNames = saved.projectNames
         pruned.workspaceOrder = saved.workspaceOrder
         pruned.fields = saved.fields
-        pruned.selectedChats = pruned.selectedChats.filter { OwnerChoices.folderExists($0.key) }
         save(pruned)
         return pruned
     }

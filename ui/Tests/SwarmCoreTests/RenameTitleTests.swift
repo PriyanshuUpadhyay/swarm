@@ -62,15 +62,15 @@ struct RenameTitleTests {
         #expect(SidebarRows.sections(projects: [first, second], workspaces: [], navigation: navigation, search: "", showingArchive: false, now: 1).map(\.title) == ["Service", "Website"])
     }
 
-    @Test("Pruning path names keeps chat names, whose keys are session ids")
-    func pruneNames() throws {
+    @Test("Removing a project keeps chat names, whose keys are session ids")
+    func removeProjectNames() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         var choices = OwnerChoices()
         choices.projectNames = [root.path: "Existing", root.appendingPathComponent("missing").path: "Gone"]
         choices.chatNames = ["oldest": "Chat name"]
-        choices.pruneMissingFolders()
+        choices.removeProject(root.appendingPathComponent("missing").path)
         #expect(choices.projectNames == [root.path: "Existing"])
         #expect(choices.chatNames == ["oldest": "Chat name"])
     }

@@ -111,8 +111,8 @@ struct WorkspaceOrderTests {
         #expect(loaded.collapsed.contains(section.collapseID))
     }
 
-    @Test("Refresh prunes missing workspace order paths and preserves existing ones")
-    func prune() throws {
+    @Test("Refresh keeps workspace order while a folder is missing")
+    func retainOrder() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let existing = folder.appendingPathComponent("project/workspace")
         try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
@@ -127,8 +127,8 @@ struct WorkspaceOrderTests {
         navigation.workspaceOrder = [projectPath: [existing.path, folder.appendingPathComponent("gone").path]]
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder.appendingPathComponent("choices"))
         store.save(navigation)
-        let refreshed = try store.pruneMissingFolders(navigation)
-        #expect(refreshed.workspaceOrder == [projectPath: [existing.path]])
+        let refreshed = try store.reloadChoices(navigation)
+        #expect(refreshed.workspaceOrder == navigation.workspaceOrder)
         #expect(store.load().workspaceOrder == refreshed.workspaceOrder)
     }
 }

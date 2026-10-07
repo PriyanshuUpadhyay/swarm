@@ -122,8 +122,8 @@ struct ProjectRetentionTests {
         #expect(store.paths() == [path])
     }
 
-    @Test("Prune keeps keys for existing folders even when a git listing is empty")
-    func pruneMissingFolders() throws {
+    @Test("Refresh keeps missing folders and removed rows until the owner removes the project")
+    func retainsMissingFolders() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "ProjectRetentionTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -138,10 +138,10 @@ struct ProjectRetentionTests {
         try Data().write(to: URL(fileURLWithPath: file))
         let folder = root.appendingPathComponent("choices")
         var navigation = WorkspaceNavigation()
-        navigation.pinned = [existing, gone, file]
+        navigation.pinned = [existing, gone, file, existing + "#removed"]
         navigation.archived = [existing, gone]
-        navigation.names = [existing: "Keep", gone: "Drop"]
-        navigation.selectedChats = [existing: "keep-chat", gone: "drop-chat"]
+        navigation.names = [existing: "Keep", gone: "Keep offline"]
+        navigation.selectedChats = [existing: "keep-chat", gone: "offline-chat", existing + "#removed": "removed-chat"]
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
         store.save(navigation)
         try OwnerChoicesStore(folder: folder).update {
@@ -154,15 +154,37 @@ struct ProjectRetentionTests {
             worktreeLister: { _ in [] }
         )
         #expect(tree.projects.first?.workspaces.isEmpty == true)
-        let pruned = try store.pruneMissingFolders(navigation)
-        #expect(pruned.pinned == [existing])
-        #expect(pruned.archived == [existing])
-        #expect(pruned.names == [existing: "Keep"])
-        #expect(pruned.selectedChats == [existing: "keep-chat"])
+        let pruned = try store.reloadChoices(navigation)
+        #expect(pruned.pinned == navigation.pinned)
+        #expect(pruned.archived == navigation.archived)
+        #expect(pruned.names == navigation.names)
+        #expect(pruned.selectedChats == navigation.selectedChats)
         #expect(store.load() == pruned)
         let choices = try OwnerChoicesStore(folder: folder).load()
-        #expect(choices.workspaceOrder == [existing: [existing]])
+        #expect(choices.workspaceOrder == [existing: [existing, gone], gone: [existing]])
         #expect(choices.projectPaths == [existing, gone])
+    }
+
+    @Test("Remove Project clears its choices and preserves another project's choices")
+    func removeProjectChoices() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: folder)
+        try choices.update {
+            $0.pinned = ["/repo/main", "/repo#removed", "/other/main"]
+            $0.archived = ["/repo/offline", "/other/main"]
+            $0.names = ["/repo/offline": "Offline", "/other/main": "Other"]
+            $0.projectNames = ["/repo": "Removed", "/other": "Other"]
+            $0.workspaceOrder = ["/repo": ["/external/worktree"], "/other": ["/other/main"]]
+            $0.pinned.insert("/external/worktree")
+        }
+        try SwarmProjectStore(choicesFolder: folder).remove("/repo")
+        let saved = try choices.load()
+        #expect(saved.pinned == ["/other/main"])
+        #expect(saved.archived == ["/other/main"])
+        #expect(saved.names == ["/other/main": "Other"])
+        #expect(saved.projectNames == ["/other": "Other"])
+        #expect(saved.workspaceOrder == ["/other": ["/other/main"]])
     }
 
     private func build(sessions: [SwarmSession], paths: [String] = [], removed: Set<String> = []) -> SessionsTree {

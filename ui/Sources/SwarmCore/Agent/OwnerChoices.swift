@@ -27,13 +27,17 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
     }
 
-    public mutating func pruneMissingFolders() {
-        pinned = pinned.filter(Self.folderExists)
-        archived = archived.filter(Self.folderExists)
-        names = names.filter { Self.folderExists($0.key) }
-        projectNames = projectNames.filter { Self.folderExists($0.key) }
-        workspaceOrder = workspaceOrder.filter { Self.folderExists($0.key) }
-            .mapValues { $0.filter(Self.folderExists) }
+    /// A missing folder can be offline. Only Remove Project clears its saved choices.
+    public mutating func removeProject(_ path: String) {
+        let ordered = Set(workspaceOrder[path] ?? [])
+        func belongsToProject(_ key: String) -> Bool {
+            key == path || key == path + "#removed" || key.hasPrefix(path + "/") || ordered.contains(key)
+        }
+        pinned = pinned.filter { !belongsToProject($0) }
+        archived = archived.filter { !belongsToProject($0) }
+        names = names.filter { !belongsToProject($0.key) }
+        projectNames.removeValue(forKey: path)
+        workspaceOrder.removeValue(forKey: path)
     }
 
     static func folderExists(_ path: String) -> Bool {
