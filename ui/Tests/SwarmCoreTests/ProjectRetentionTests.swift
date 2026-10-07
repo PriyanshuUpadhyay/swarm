@@ -57,7 +57,7 @@ struct ProjectRetentionTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         try store.rememberShown(build(sessions: [], paths: ["/repo"]).projects)
-        try store.remove("/repo")
+        try store.remove("/repo", workspacePaths: [])
         let restored = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         #expect(restored.paths().isEmpty)
         #expect(restored.removedPaths() == ["/repo"])
@@ -80,7 +80,7 @@ struct ProjectRetentionTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let path = try await store.add(project)
-        try store.remove(path)
+        try store.remove(path, workspacePaths: [])
         #expect(store.removedPaths() == [path])
         #expect(try await store.add(project) == path)
         #expect(store.removedPaths().isEmpty)
@@ -101,7 +101,7 @@ struct ProjectRetentionTests {
         let canonical = ProjectNode.projectPath(for: SwarmSessionDiscovery.identity(
             for: path, repositoryPathsResolver: Git.repositoryPaths
         ))
-        try store.remove(canonical)
+        try store.remove(canonical, workspacePaths: [])
         #expect(store.paths().isEmpty)
         #expect(store.removedPaths() == [canonical])
         _ = try await store.add(workspace)
@@ -116,7 +116,7 @@ struct ProjectRetentionTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let project = root.appendingPathComponent("project")
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
-        try store.remove(project.path)
+        try store.remove(project.path, workspacePaths: [])
         let path = try await store.create(at: project)
         #expect(store.removedPaths().isEmpty)
         #expect(store.paths() == [path])
@@ -165,26 +165,60 @@ struct ProjectRetentionTests {
         #expect(choices.projectPaths == [existing, gone])
     }
 
-    @Test("Remove Project clears its choices and preserves another project's choices")
+    @Test("Remove Project clears its listed workspaces and preserves nested project choices")
     func removeProjectChoices() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        let nested = "/repo/nested/main"
+        let sibling = "/repo-worktrees/task"
         try choices.update {
-            $0.pinned = ["/repo/main", "/repo#removed", "/other/main"]
-            $0.archived = ["/repo/offline", "/other/main"]
-            $0.names = ["/repo/offline": "Offline", "/other/main": "Other"]
-            $0.projectNames = ["/repo": "Removed", "/other": "Other"]
+            $0.pinned = ["/repo", "/repo/main", WorkspaceNode.removedPath(for: "/repo"), nested, sibling, "/other/main"]
+            $0.archived = ["/repo/offline", nested, sibling, "/other/main"]
+            $0.names = ["/repo/offline": "Offline", nested: "Nested", sibling: "Task", "/other/main": "Other"]
+            $0.projectNames = ["/repo": "Removed", "/repo/nested": "Nested", "/other": "Other"]
             $0.workspaceOrder = ["/repo": ["/external/worktree"], "/other": ["/other/main"]]
             $0.pinned.insert("/external/worktree")
         }
-        try SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder)).remove("/repo")
+        try SwarmProjectStore(choicesFolder: folder).remove(
+            "/repo", workspacePaths: ["/repo/main", "/repo/offline", sibling, "/external/worktree"]
+        )
         let saved = try choices.load()
-        #expect(saved.pinned == ["/other/main"])
-        #expect(saved.archived == ["/other/main"])
-        #expect(saved.names == ["/other/main": "Other"])
-        #expect(saved.projectNames == ["/other": "Other"])
+        #expect(saved.pinned == [nested, "/other/main"])
+        #expect(saved.archived == [nested, "/other/main"])
+        #expect(saved.names == [nested: "Nested", "/other/main": "Other"])
+        #expect(saved.projectNames == ["/repo/nested": "Nested", "/other": "Other"])
         #expect(saved.workspaceOrder == ["/other": ["/other/main"]])
+    }
+
+    @Test("Remove adopts its written snapshot without a second choices read")
+    func removeUsesWrittenSnapshot() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let suite = "ProjectRetentionTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let disk = OwnerChoicesStore(folder: folder)
+        let initial = try disk.update {
+            $0.projectPaths = ["/repo"]
+            $0.pinned = ["/repo/main"]
+        }
+        var reads = 0
+        let choices = OwnerChoicesStore(folder: folder, readFile: {
+            reads += 1
+            guard reads == 1 else { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: $0)
+        })
+        let projects = SwarmProjectStore(choices: choices)
+        let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
+        var navigation = store.applying(initial, to: WorkspaceNavigation())
+        let saved = try projects.remove("/repo", workspacePaths: ["/repo/main"])
+        navigation = store.applying(saved, to: navigation)
+        #expect(navigation.pinned.isEmpty)
+        #expect(navigation.ownerChoices.removedProjects == ["/repo"])
+        #expect(reads == 1)
     }
 
     private func build(sessions: [SwarmSession], paths: [String] = [], removed: Set<String> = []) -> SessionsTree {

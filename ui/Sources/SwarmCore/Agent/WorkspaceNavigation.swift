@@ -303,7 +303,7 @@ public final class WorkspaceNavigationStore {
         return nil
     }
 
-    func applying(_ saved: OwnerChoices, to value: WorkspaceNavigation) -> WorkspaceNavigation {
+    public func applying(_ saved: OwnerChoices, to value: WorkspaceNavigation) -> WorkspaceNavigation {
         lastChoices = saved
         var refreshed = value
         refreshed.ownerChoices = saved

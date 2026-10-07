@@ -364,8 +364,8 @@ final class SessionsTreeModel {
     }
 
     func removeProject(_ project: ProjectNode) throws {
-        try projects.remove(project.path)
-        navigation = try navigationStore.reloadChoices(navigation)
+        let saved = try projects.remove(project.path, workspacePaths: project.workspaces.map(\.path))
+        navigation = navigationStore.applying(saved, to: navigation)
         let removedWorkspaces = Set(project.workspaces.map(\.path))
         navigation.selectedChats = navigation.selectedChats.filter { !removedWorkspaces.contains($0.key) }
         refreshRevision += 1

@@ -80,11 +80,12 @@ public final class SwarmProjectStore {
         }
     }
 
-    public func remove(_ path: String) throws {
+    @discardableResult
+    public func remove(_ path: String, workspacePaths: [String]) throws -> OwnerChoices {
         try choices.update {
             $0.projectPaths.removeAll { $0 == path || Self.projectPath(for: $0) == path }
             $0.removedProjects.insert(path)
-            $0.removeProject(path)
+            $0.removeProject(path, workspacePaths: workspacePaths)
         }
     }
 

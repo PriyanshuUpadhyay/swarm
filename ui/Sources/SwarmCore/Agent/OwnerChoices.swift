@@ -50,14 +50,11 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     }
 
     /// A missing folder can be offline. Only Remove Project clears its saved choices.
-    public mutating func removeProject(_ path: String) {
-        let ordered = Set(workspaceOrder[path] ?? [])
-        func belongsToProject(_ key: String) -> Bool {
-            key == path || key == path + "#removed" || key.hasPrefix(path + "/") || ordered.contains(key)
-        }
-        pinned = pinned.filter { !belongsToProject($0) }
-        archived = archived.filter { !belongsToProject($0) }
-        names = names.filter { !belongsToProject($0.key) }
+    public mutating func removeProject(_ path: String, workspacePaths: [String]) {
+        let removed = Set(workspacePaths + [path, WorkspaceNode.removedPath(for: path)])
+        pinned.subtract(removed)
+        archived.subtract(removed)
+        names = names.filter { !removed.contains($0.key) }
         projectNames.removeValue(forKey: path)
         workspaceOrder.removeValue(forKey: path)
     }

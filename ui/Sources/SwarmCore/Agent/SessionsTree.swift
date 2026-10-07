@@ -49,6 +49,8 @@ public struct ChatRow: Sendable, Hashable, Identifiable {
 public struct WorkspaceNode: Sendable, Hashable, Identifiable {
     public enum Mark: String, Sendable, Hashable { case locked, detached }
 
+    public static func removedPath(for projectPath: String) -> String { projectPath + "#removed" }
+
     public var id: String { path }
     public let path: String
     public let name: String
@@ -200,7 +202,7 @@ public struct SessionsTree: Sendable, Hashable {
                 let hubSessions = unmatched.filter { !removedIDs.contains($0.id) }
                 if !removedSessions.isEmpty {
                     workspaces.append(WorkspaceNode(
-                        path: path + "#removed", name: "Removed worktrees",
+                        path: WorkspaceNode.removedPath(for: path), name: "Removed worktrees",
                         sessions: rows(removedSessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: chairLogs),
                         isRemoved: true
                     ))

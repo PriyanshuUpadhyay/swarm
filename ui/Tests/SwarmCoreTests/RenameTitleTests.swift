@@ -72,7 +72,7 @@ struct RenameTitleTests {
         var choices = OwnerChoices()
         choices.projectNames = [root.path: "Existing", root.appendingPathComponent("missing").path: "Gone"]
         choices.chatNames = ["oldest": "Chat name"]
-        choices.removeProject(root.appendingPathComponent("missing").path)
+        choices.removeProject(root.appendingPathComponent("missing").path, workspacePaths: [])
         #expect(choices.projectNames == [root.path: "Existing"])
         #expect(choices.chatNames == ["oldest": "Chat name"])
     }
