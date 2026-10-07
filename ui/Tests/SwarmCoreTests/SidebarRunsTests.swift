@@ -48,7 +48,6 @@ struct SidebarRunsTests {
         #expect(workspace.run?.skill == "flow")
         #expect(workspace.run?.step == "01-build")
         #expect(workspace.run?.firstQuestion != nil)
-        #expect(workspace.runSummary == "2 runs waiting")
         #expect(workspace.fields.contains { $0.field == .steps && $0.text == "2 runs waiting" })
         #expect(workspace.status == .waiting)
         #expect(sections.first?.status == .waiting)

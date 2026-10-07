@@ -24,7 +24,6 @@ public struct SidebarRow: Sendable, Hashable, Identifiable {
     public let newChatEnabled: Bool
     public var fields: [RowFieldValue] = []
     public var run: SidebarRun? = nil
-    public var runSummary: String? = nil
     public var runStep: SidebarRun? = nil
 }
 
@@ -101,6 +100,7 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
 
 public enum SidebarRows {
     public static let chatPrefix = "chat:"
+    public static let chatsShownPerWorkspace = 5
 
     public static func runWorkspaces(_ entries: [WorkspaceEntry], navigation: WorkspaceNavigation) -> [String] {
         entries.filter {
@@ -330,7 +330,7 @@ public enum SidebarRows {
         let chats = entry.chats.sorted {
             $0.lastActivity == $1.lastActivity ? chatID($0) < chatID($1) : $0.lastActivity > $1.lastActivity
         }
-        let shown = expandedLists.contains(entry.id) ? chats.count : min(5, chats.count)
+        let shown = expandedLists.contains(entry.id) ? chats.count : min(chatsShownPerWorkspace, chats.count)
         for chat in chats.prefix(shown) {
             let id = chatID(chat)
             let expanded = !navigation.isCollapsed(id)
@@ -421,7 +421,7 @@ public enum SidebarRows {
             pinned: navigation.pinned.contains(entry.id),
             archived: navigation.archived.contains(entry.id),
             missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat,
-            run: orderedRuns(runs).first.flatMap(runReference), runSummary: runSummary(runs)
+            run: orderedRuns(runs).first.flatMap(runReference)
         )
     }
 }
