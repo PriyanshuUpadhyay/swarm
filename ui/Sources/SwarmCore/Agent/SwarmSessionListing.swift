@@ -14,19 +14,30 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     /// How many of the current session's agents are in each status.
     public var statusCounts: [AgentStatus: Int]
 
+    private let chairLogActivity: Int?
+
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
     public var lastActivity: Int {
-        sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
+        let bus = sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
+        return max(bus, chairLogActivity ?? bus)
     }
 
     public init(
         sessions: [SwarmSession], title: String,
         isRunning: Bool? = nil, liveAgents: Int? = nil, totalAgents: Int? = nil,
         provider: String? = nil, status: AgentStatus? = nil, statusCounts: [AgentStatus: Int] = [:],
-        cliName: String? = nil
+        cliName: String? = nil, resolvedChairLog: String? = nil
     ) {
         precondition(!sessions.isEmpty)
+        // Snapshot one stat per chat, so sorting and rendering use the same activity value.
+        if let path = resolvedChairLog ?? sessions[0].chairLog,
+           let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+           let modified = attributes[.modificationDate] as? Date {
+            chairLogActivity = Int(modified.timeIntervalSince1970)
+        } else {
+            chairLogActivity = nil
+        }
         self.sessions = sessions
         self.title = title
         self.cliName = cliName
@@ -282,6 +293,7 @@ public actor SwarmSessionDiscovery {
     private var locations: [String: SwarmPathIdentity] = [:]
     private var titles: [SwarmSessionID: String] = [:]
     private var titleLogs: [SwarmSessionID: String] = [:]
+    var resolvedChairLogs: [SwarmSessionID: String] { titleLogs }
     private var titleMisses: [SwarmSessionID: Date] = [:]
     private var titleSearches: [SwarmSessionID: (provider: String?, chairID: SwarmChairID?, at: Date)] = [:]
     private var cliHomes: (homes: [URL], at: Date)?
@@ -322,7 +334,7 @@ public actor SwarmSessionDiscovery {
         )
         return grouped.mapValues { matches in
             SwarmSessionListing.chatGroups(matches).map { group in
-                SwarmProjectSession(sessions: group, title: title(for: group[0]))
+                SwarmProjectSession(sessions: group, title: title(for: group[0]), resolvedChairLog: titleLogs[group[0].id])
             }
         }
     }
