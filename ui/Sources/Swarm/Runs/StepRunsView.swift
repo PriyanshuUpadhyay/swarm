@@ -26,6 +26,7 @@ struct StepRunsView: View {
     @State private var chosen: StepRun?
     @State private var showClosed = false
     @State private var retryID = 0
+    @State private var graphFocusRequest: UUID?
 
     private struct Request: Equatable {
         let directory: String
@@ -38,7 +39,8 @@ struct StepRunsView: View {
         Group {
             if let chosen {
                 StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open,
-                             retry: { retryID += 1 }, back: { choose(nil) }, chatTitles: chatTitles, selectChat: selectChat)
+                             retry: { retryID += 1 }, back: { choose(nil) }, chatTitles: chatTitles, selectChat: selectChat,
+                             focusRequest: isActive ? graphFocusRequest : nil)
             } else {
                 list
             }
@@ -112,6 +114,8 @@ struct StepRunsView: View {
         guard let request else { return }
         choose(request.run)
         if request.run.closed { showClosed = true }
+        graphFocusRequest = request.id
+        AccessibilityNotification.Announcement("Opened run, \(request.run.name)").post()
         openedRun()
     }
 
@@ -229,6 +233,8 @@ private struct StepRunGraph: View {
     let back: () -> Void
     let chatTitles: [String: String]
     let selectChat: (String) -> Void
+    let focusRequest: UUID?
+    @AccessibilityFocusState(for: .voiceOver) private var titleFocused: Bool
 
     private struct Edge: Identifiable {
         let from: String, to: String, dashed: Bool, stale: Bool
@@ -253,6 +259,9 @@ private struct StepRunGraph: View {
                 Text(verbatim: run.skill).font(.caption).foregroundStyle(.secondary)
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityFocused($titleFocused)
+                    .onAppear { titleFocused = focusRequest != nil }
+                    .onChange(of: focusRequest) { _, request in titleFocused = request != nil }
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
                 if let error {
                     Text(verbatim: "Showing the last read. \(error)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
