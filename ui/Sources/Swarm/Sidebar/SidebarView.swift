@@ -35,7 +35,7 @@ struct SidebarActions {
     var toggleCollapsed: (String) -> Void
     var expandList: (String) -> Void
     var newChat: (String) -> Void
-    var togglePin: (String) -> Void
+    var unpinWorkspace: (String) -> Void
     var pinWorkspace: (String) -> Bool
     var moveWorkspace: (String, String) -> Bool
     var workspaceMoveTarget: (String, Int) -> String?
@@ -268,7 +268,7 @@ struct SidebarView<Details: View>: View {
             Button("New chat") { actions.newChat(row.id) }
                 .disabled(!row.newChatEnabled)
             Button(row.pinned ? "Unpin workspace" : "Pin workspace") {
-                if row.pinned { actions.togglePin(row.id) }
+                if row.pinned { actions.unpinWorkspace(row.id) }
                 else { _ = pinWorkspace(row.id) }
             }
             Button("Rename workspace…") { actions.rename(row.id) }

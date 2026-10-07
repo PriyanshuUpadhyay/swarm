@@ -1032,10 +1032,7 @@ private struct SessionsWindow: View {
             },
             expandList: { expandedLists.insert($0) },
             newChat: { startChat(in: $0) },
-            togglePin: { id in
-                if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
-                else { model.navigation.pinned.insert(id) }
-            },
+            unpinWorkspace: { model.navigation.pinned.remove($0) },
             pinWorkspace: { model.navigation.pinWorkspace($0, in: model.workspaces) },
             moveWorkspace: { model.navigation.moveWorkspace($0, onto: $1, in: model.workspaces) },
             workspaceMoveTarget: {
