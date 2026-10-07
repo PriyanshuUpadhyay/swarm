@@ -71,14 +71,18 @@ private struct ChatTabView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(.red).accessibilityLabel("Failed")
                     case nil:
-                        if let status = tab.status { StatusGlyph(status: status).font(.caption).fixedSize() }
+                        EmptyView()
                     }
-                    // The title gives way first, so the badge always shows whole.
-                    Text(tab.title).lineLimit(1).truncationMode(.tail)
-                    if let badge = tab.badge {
-                        Text(badge).font(.caption2).foregroundStyle(.secondary)
-                            .fixedSize()
-                            .layoutPriority(1)
+                    if tab.pending != nil {
+                        Text(tab.title).lineLimit(1).truncationMode(.tail)
+                    } else {
+                        ForEach(Array(tab.fields.enumerated()), id: \.offset) { _, value in
+                            if value.field == .provider, let badge = tab.badge {
+                                Text(badge).font(.caption2).foregroundStyle(.secondary).fixedSize()
+                            } else {
+                                RowFieldLabel(value: value)
+                            }
+                        }
                     }
                 }
                 .padding(.leading, DesignTokens.Spacing.s)

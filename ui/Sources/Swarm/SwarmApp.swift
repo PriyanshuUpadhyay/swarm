@@ -80,6 +80,8 @@ final class SessionsTreeModel {
     private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
     private(set) var runsByWorkspace: [String: [StepRun]] = [:]
+    private let rowFieldCache = RowFieldCache()
+    private(set) var workspaceFields: [String: RowWorkspaceFields] = [:]
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
     /// log reports one.
     private(set) var launchedModels: [SwarmSessionID: String] = [:]
@@ -460,6 +462,16 @@ final class SessionsTreeModel {
         }
     }
 
+    func runRowFields() async {
+        while !Task.isCancelled {
+            let paths = RowFields.requestedPaths(for: .dirty, entries: workspaces, fields: navigation.fields)
+            let read = await rowFieldCache.refresh(paths: paths)
+            guard !Task.isCancelled else { return }
+            workspaceFields = read.filter { value in workspaces.contains { $0.id == value.key } }
+            try? await Task.sleep(for: .seconds(10))
+        }
+    }
+
     func runSidebarRuns() async {
         while !Task.isCancelled {
             let paths = SidebarRows.runWorkspaces(workspaces, navigation: navigation)
@@ -658,6 +670,7 @@ private struct SessionsWindow: View {
             await model.run()
         }
         .task { await model.runSidebarRuns() }
+        .task { await model.runRowFields() }
         .task {
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
@@ -880,7 +893,7 @@ private struct SessionsWindow: View {
             projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
             showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970),
             agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists,
-            runsByWorkspace: model.runsByWorkspace
+            runsByWorkspace: model.runsByWorkspace, workspaceFields: model.workspaceFields
         )
     }
 
@@ -1280,8 +1293,19 @@ private struct SessionsWindow: View {
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
         return ChatTab.tabs(
             chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
-            now: Int(Date().timeIntervalSince1970), chatNames: model.navigation.chatNames
+            now: Int(Date().timeIntervalSince1970), chatNames: model.navigation.chatNames,
+            navigation: model.navigation, agentsBySession: model.tree.agentsBySession,
+            workspaceFields: model.workspaceFields,
+            branches: Dictionary(model.workspaces.compactMap { entry in entry.workspace.branch.map { (entry.id, $0) } },
+                                 uniquingKeysWith: { first, _ in first }),
+            stepsByChat: tabSteps(in: directory)
         )
+    }
+
+    private func tabSteps(in directory: String) -> [SwarmSessionID: String] {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }) else { return [:] }
+        return RowFields.stepsByChat(in: entry, runs: model.runsByWorkspace[directory] ?? [],
+                                    agentsBySession: model.tree.agentsBySession)
     }
 
     private var selectedTabID: String {

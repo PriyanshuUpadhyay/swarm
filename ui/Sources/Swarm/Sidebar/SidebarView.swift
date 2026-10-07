@@ -122,7 +122,7 @@ struct SidebarView<Details: View>: View {
                                 if expanded { rows(section.rows) }
                             } header: {
                                 ProjectHeader(
-                                    title: section.title, expanded: expanded,
+                                    title: section.title, fields: section.fields, expanded: expanded,
                                     status: expanded ? nil : section.status,
                                     toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
                                     newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) },
@@ -262,6 +262,7 @@ struct SidebarView<Details: View>: View {
 /// collapsed, and a "+" that makes a workspace in it.
 private struct ProjectHeader: View {
     let title: String
+    let fields: [RowFieldValue]
     let expanded: Bool
     let status: AgentStatus?
     /// Nil in the archive view, which has no collapse.
@@ -269,6 +270,18 @@ private struct ProjectHeader: View {
     let newWorkspace: (() -> Void)?
     let renameProject: () -> Void
     let removeProject: () -> Void
+
+    private var fieldContent: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            ForEach(Array(fields.enumerated()), id: \.offset) { _, value in
+                if value.field == .status {
+                    if let status { StatusGlyph(status: status) }
+                } else {
+                    RowFieldLabel(value: value)
+                }
+            }
+        }
+    }
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
@@ -278,8 +291,7 @@ private struct ProjectHeader: View {
                         Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                             .font(.caption2.weight(.semibold))
                             .frame(width: DesignTokens.Size.glyphSlot)
-                        Text(title).lineLimit(1).truncationMode(.middle)
-                        if let status { StatusGlyph(status: status) }
+                        fieldContent
                     }
                     .contentShape(Rectangle())
                 }
@@ -288,8 +300,7 @@ private struct ProjectHeader: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityValue(expanded ? "expanded" : (["collapsed"] + (status.map { [StatusGlyph.title($0)] } ?? [])).joined(separator: ", "))
             } else {
-                Text(title).lineLimit(1).truncationMode(.middle)
-                    .accessibilityAddTraits(.isHeader)
+                fieldContent.accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: DesignTokens.Spacing.xs)
             if let newWorkspace {
@@ -307,8 +318,7 @@ private struct ProjectHeader: View {
     }
 }
 
-/// One line: status glyph, name, and branch; the last-activity age turns into agent counts by
-/// status while the pointer is over the row.
+/// The selected fields keep their order. Hovering replaces an age with status counts.
 private struct SidebarRowView: View {
     let row: SidebarRow
     let selected: Bool
@@ -317,35 +327,21 @@ private struct SidebarRowView: View {
     @State private var hovering = false
     var showRun: (() -> Void)? = nil
 
+    private var lines: [[RowFieldValue]] {
+        var result: [[RowFieldValue]] = [[]]
+        for value in row.fields {
+            if (value.field == .steps || (value.field == .children && row.kind == .chat)), !result[result.count - 1].isEmpty {
+                result.append([])
+            }
+            result[result.count - 1].append(value)
+        }
+        return result
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            mainLine
-            if let text = row.runSummary ?? row.runStep.map({ "\($0.skill) · \($0.stepName)" }) {
-                Button(action: { showRun?() }) { Text(verbatim: text).lineLimit(1) }
-                    .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
-                    .help(row.run?.firstQuestion ?? row.runStep?.firstQuestion ?? text)
-                    .accessibilityLabel("Show run, \(text)")
-            }
-            if let summary = row.childrenSummary, let toggle {
-                Button(action: toggle) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        disclosure
-                        Text(summary).lineLimit(1)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
-                .accessibilityLabel(summary)
-                .accessibilityValue(row.expanded ? "expanded" : "collapsed")
-            }
-            if row.kind == .workspace, !row.hasChildren, let newChat {
-                Button("New chat", systemImage: "plus", action: newChat)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, DesignTokens.Spacing.l)
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, values in
+                line(values, first: index == 0)
             }
         }
         .padding(.leading, CGFloat(row.depth) * DesignTokens.Spacing.l)
@@ -368,50 +364,53 @@ private struct SidebarRowView: View {
             .frame(width: DesignTokens.Size.glyphSlot)
     }
 
-    private var mainLine: some View {
+    private func line(_ values: [RowFieldValue], first: Bool) -> some View {
         HStack(spacing: DesignTokens.Spacing.s) {
             Group {
-                if row.kind == .workspace, let toggle {
+                if first, (row.kind == .workspace || row.kind == .chat), let toggle {
                     Button(action: toggle) { disclosure }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel(row.expanded ? "Collapse workspace" : "Expand workspace")
+                        .accessibilityLabel(row.expanded ? "Collapse" : "Expand")
                 } else {
                     Color.clear
                 }
             }
             .frame(width: DesignTokens.Size.glyphSlot)
-            Group {
-                if let status = row.status { StatusGlyph(status: status) }
-            }
-            .frame(width: DesignTokens.Size.glyphSlot)
-            Text(row.title).lineLimit(1).layoutPriority(1)
-                .foregroundStyle(row.kind == .more ? .secondary : .primary)
-            Text(row.detail)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: DesignTokens.Spacing.xs)
-            if hovering, !row.counts.isEmpty {
-                HStack(spacing: DesignTokens.Spacing.s) {
-                    ForEach(row.counts, id: \.status) { count in
-                        HStack(spacing: DesignTokens.Spacing.xxs) {
-                            StatusGlyph(status: count.status)
-                            Text("\(count.count)").monospacedDigit()
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                if value.field == .steps {
+                    Button(action: { showRun?() }) { RowFieldLabel(value: value) }
+                        .buttonStyle(.plain)
+                        .help(row.run?.firstQuestion ?? row.runStep?.firstQuestion ?? value.text)
+                        .accessibilityLabel("Show run, \(value.text)")
+                } else if value.field == .children, row.kind == .chat, let toggle {
+                    Button(action: toggle) {
+                        HStack(spacing: DesignTokens.Spacing.xs) { disclosure; RowFieldLabel(value: value) }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(row.expanded ? "expanded" : "collapsed")
+                } else if value.field == .age, hovering, !row.counts.isEmpty {
+                    HStack(spacing: DesignTokens.Spacing.s) {
+                        ForEach(row.counts, id: \.status) { count in
+                            HStack(spacing: DesignTokens.Spacing.xxs) {
+                                StatusGlyph(status: count.status)
+                                Text("\(count.count)").monospacedDigit()
+                            }
                         }
                     }
+                    .font(.caption)
+                } else {
+                    RowFieldLabel(value: value)
                 }
-                .font(.caption)
-            } else if let age = row.age {
-                Text(age).font(.caption).foregroundStyle(.secondary)
             }
-            if row.kind == .workspace, !row.archived, hovering {
+            Spacer(minLength: DesignTokens.Spacing.xs)
+            if first, row.kind == .workspace, !row.archived, hovering {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .help("Drag to reorder or pin workspace")
                     .accessibilityHidden(true)
             }
-            if let newChat, hovering || selected {
+            if first, let newChat, hovering || selected {
                 Button("New chat in \(row.title)", systemImage: "plus", action: newChat)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
@@ -419,7 +418,7 @@ private struct SidebarRowView: View {
                     .help("New chat in \(row.title)")
             }
         }
-        .frame(minHeight: DesignTokens.Size.row)
+        .frame(minHeight: first ? DesignTokens.Size.row : nil)
     }
 
     private var accessibilityValue: String {
@@ -433,5 +432,24 @@ private struct WorkspaceDrag: Codable, Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: UTType(exportedAs: "io.github.priyanshuupadhyay.swarm.workspace"))
+    }
+}
+
+struct RowFieldLabel: View {
+    let value: RowFieldValue
+
+    var body: some View {
+        if let status = value.status {
+            StatusGlyph(status: status).fixedSize()
+        } else if value.field == .unread {
+            Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.tint)
+                .accessibilityLabel("Unread")
+        } else {
+            Text(verbatim: value.text).lineLimit(1)
+                .truncationMode(value.field == .title ? .tail : .middle)
+                .foregroundStyle(value.field == .title ? .primary : .secondary)
+                .font(value.field == .title ? .body : .caption)
+                .layoutPriority(value.field == .title ? 1 : 0)
+        }
     }
 }

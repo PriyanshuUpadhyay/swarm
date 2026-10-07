@@ -22,6 +22,7 @@ public struct SidebarRow: Sendable, Hashable, Identifiable {
     public let archived: Bool
     public let missing: Bool
     public let newChatEnabled: Bool
+    public var fields: [RowFieldValue] = []
     public var run: SidebarRun? = nil
     public var runSummary: String? = nil
     public var runStep: SidebarRun? = nil
@@ -83,7 +84,8 @@ public struct SidebarSection: Sendable, Hashable, Identifiable {
     public let title: String
     /// The most urgent status of the rows; the header shows it while collapsed.
     public let status: AgentStatus?
-    public let rows: [SidebarRow]
+    public var rows: [SidebarRow]
+    public var fields: [RowFieldValue] = []
 
     /// A project section's id, which also names the project for its header's "+".
     public static func id(of project: ProjectNode) -> String { "project:\(project.id)" }
@@ -165,7 +167,7 @@ public enum SidebarRows {
         projects: [ProjectNode], workspaces: [WorkspaceEntry], navigation: WorkspaceNavigation,
         search: String, showingArchive: Bool, now: Int,
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], expandedLists: Set<String> = [],
-        runsByWorkspace: [String: [StepRun]] = [:]
+        runsByWorkspace: [String: [StepRun]] = [:], workspaceFields: [String: RowWorkspaceFields] = [:]
     ) -> [SidebarSection] {
         let entriesByProject = Dictionary(grouping: workspaces, by: { $0.project.id }).mapValues { entries in
             Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -209,7 +211,57 @@ public enum SidebarRows {
                 kind: .project(path: project.path), id: SidebarSection.id(of: project), title: title, rows: rows
             ))
         }
-        return sections
+        let entriesByPath = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return sections.map { original in
+            var section = original
+            if case .project(let path) = section.kind {
+                var context = RowFields.workspaceContext(
+                    workspaces.filter { $0.project.path == path }, title: section.title, navigation: navigation,
+                    now: now, agentsBySession: agentsBySession, workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace
+                )
+                context.status = section.status
+                section.fields = context.values(navigation.fields.project)
+            }
+            section.rows = section.rows.map { original in
+                var row = original
+                let path = row.kind == .workspace ? row.id : row.parentID
+                if row.kind == .workspace, let entry = entriesByPath[row.id] {
+                    var context = RowFields.workspaceContext(
+                        [entry], title: row.title, navigation: navigation, now: now, agentsBySession: agentsBySession,
+                        workspaceFields: workspaceFields, runsByWorkspace: runsByWorkspace
+                    )
+                    context.status = row.status
+                    let suffix = entry.chats.count == 1 ? "1 chat" : "\(entry.chats.count) chats"
+                    context.text[.branch] = navigation.fields.workspace.contains(.title)
+                        ? row.detail.components(separatedBy: " · ").filter { $0 != suffix }.joined(separator: " · ")
+                        : entry.workspace.branch
+                    row.fields = context.values(navigation.fields.workspace)
+                } else if row.kind == .chat, let path, let entry = entriesByPath[path],
+                          let chat = entry.chats.first(where: { chatID($0) == row.id }) {
+                    var context = RowFields.chatContext(
+                        chat, title: row.title, navigation: navigation, now: now, agentsBySession: agentsBySession,
+                        branch: entry.workspace.branch, workspace: workspaceFields[path] ?? .init(),
+                        children: row.childrenSummary, steps: row.runStep.map { "\($0.skill) · \($0.stepName)" }
+                    )
+                    context.status = row.status
+                    row.fields = context.values(navigation.fields.chat)
+                } else if row.kind == .child,
+                          let selection = selection(for: row.id, in: workspaces, agentsBySession: agentsBySession),
+                          let session = selection.agentSessionID, let id = selection.agentID,
+                          let agent = agentsBySession[session]?.first(where: { $0.id == id }) {
+                    var context = RowFields.agentContext(agent, title: "\(row.title) \(row.detail)")
+                    if let entry = entriesByPath[selection.workspaceID] {
+                        context.text[.branch] = entry.workspace.branch
+                        RowFields.addWorkspace(workspaceFields[entry.id] ?? .init(), to: &context)
+                    }
+                    row.fields = context.values(navigation.fields.chat)
+                } else if row.kind == .more {
+                    row.fields = [RowFieldValue(field: .title, text: row.title)]
+                }
+                return row
+            }
+            return section
+        }
     }
 
     /// A continuation can change the current session id without changing this row's identity.

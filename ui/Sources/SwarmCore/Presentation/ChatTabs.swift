@@ -11,6 +11,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     public let canClose: Bool
     /// Set for a chat the app is starting (ADR 0035). Such a tab offers no close or archive.
     public var pending: Pending? = nil
+    public var fields: [RowFieldValue] = []
 
     public enum Pending: Sendable, Hashable { case starting, failed, closing }
 
@@ -19,7 +20,9 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     /// that a pending chat stands for is left out, so one chat never shows as two tabs.
     public static func tabs(
         _ chats: [ChatRow], pending: [PendingChat] = [], closing: Set<SwarmSessionID>, now: Int,
-        chatNames: [String: String] = [:]
+        chatNames: [String: String] = [:], navigation: WorkspaceNavigation = .init(),
+        agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:], workspaceFields: [String: RowWorkspaceFields] = [:],
+        branches: [String: String] = [:], stepsByChat: [SwarmSessionID: String] = [:]
     ) -> [ChatTab] {
         let starting = Set(pending.compactMap(\.session))
         return pending.reversed().map { chat in
@@ -39,7 +42,13 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
                 status: chat.session.status,
                 badge: chat.session.provider.map(badge),
                 canClose: SessionRowPresentation.make(chat, now: now).state == .live
-                    && !closing.contains(chat.id)
+                    && !closing.contains(chat.id),
+                fields: RowFields.chatContext(
+                    chat.session, title: ChatTitle.title(chat.session, appName: chatNames[ChatTitle.key(chat.session)]),
+                    navigation: navigation, now: now, agentsBySession: agentsBySession,
+                    branch: branches[chat.workspacePath], workspace: workspaceFields[chat.workspacePath] ?? .init(),
+                    steps: stepsByChat[chat.id]
+                ).values(navigation.fields.tab)
             )
         }
     }

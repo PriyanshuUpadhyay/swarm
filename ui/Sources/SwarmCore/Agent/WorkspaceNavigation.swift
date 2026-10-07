@@ -35,6 +35,8 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     /// Project and workspace paths whose rows are collapsed. Chat children start folded;
     /// `expanded:chat:<root id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
+    public var lastSeen: [String: Int] = [:]
+    public var fields = RowFieldLists()
 
     public init() {}
 
@@ -91,7 +93,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case selectedWorkspace, selectedChats, collapsed
+        case selectedWorkspace, selectedChats, collapsed, lastSeen
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,6 +101,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
         selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
+        lastSeen = try container.decodeIfPresent([String: Int].self, forKey: .lastSeen) ?? [:]
     }
 
     /// Under its project's header (`inProject`) a row drops the project name, and a main
@@ -178,10 +181,19 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return entry.chats.first
     }
 
-    public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil) {
+    public func isUnread(_ chat: SwarmProjectSession) -> Bool {
+        chat.lastActivity > (lastSeen[ChatTitle.key(chat)] ?? 0)
+    }
+
+    public mutating func markSeen(_ chat: SwarmProjectSession, now: Int = Int(Date().timeIntervalSince1970)) {
+        lastSeen[ChatTitle.key(chat)] = max(now, chat.lastActivity)
+    }
+
+    public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {
             selectedChats[entry.id] = id.rawValue
+            if let selected = SwarmSessionListing.chat(id, in: entry.chats) { markSeen(selected, now: now) }
         }
     }
 
@@ -219,6 +231,7 @@ public final class WorkspaceNavigationStore {
             value.chatNames = saved.chatNames
             value.projectNames = saved.projectNames
             value.workspaceOrder = saved.workspaceOrder
+            value.fields = saved.fields
         }
         return value
     }
@@ -231,6 +244,7 @@ public final class WorkspaceNavigationStore {
             $0.chatNames = value.chatNames
             $0.projectNames = value.projectNames
             $0.workspaceOrder = value.workspaceOrder
+            $0.fields = value.fields
         }
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
@@ -246,6 +260,7 @@ public final class WorkspaceNavigationStore {
         pruned.chatNames = saved.chatNames
         pruned.projectNames = saved.projectNames
         pruned.workspaceOrder = saved.workspaceOrder
+        pruned.fields = saved.fields
         pruned.selectedChats = pruned.selectedChats.filter { OwnerChoices.folderExists($0.key) }
         save(pruned)
         return pruned

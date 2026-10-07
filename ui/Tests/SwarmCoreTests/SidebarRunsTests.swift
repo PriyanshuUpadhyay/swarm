@@ -49,9 +49,12 @@ struct SidebarRunsTests {
         #expect(workspace.run?.step == "01-build")
         #expect(workspace.run?.firstQuestion != nil)
         #expect(workspace.runSummary == "2 runs waiting")
+        #expect(workspace.fields.contains { $0.field == .steps && $0.text == "2 runs waiting" })
         #expect(workspace.status == .waiting)
         #expect(sections.first?.status == .waiting)
         #expect(rows.first { $0.id == "chat:new" }?.runStep?.runID == "tmp/flow/active")
+        #expect(rows.first { $0.id == "chat:new" }?.fields.contains { $0.field == .steps && $0.text == "flow · 01 build" } == true)
+        #expect(RowFields.stepsByChat(in: entries[0], runs: runs, agentsBySession: agents) == [.init("new"): "flow · 01 build"])
         #expect(rows.first { $0.id == "chat:old" }?.runStep == nil)
         #expect(rows.first { $0.id == "chat:other" }?.runStep == nil)
         let waiting = runs.filter { $0.urgency == .waiting }
