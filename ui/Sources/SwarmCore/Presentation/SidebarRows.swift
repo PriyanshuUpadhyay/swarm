@@ -109,7 +109,7 @@ public enum SidebarRows {
         }.map(\.id)
     }
 
-    private static func orderedRuns(_ runs: [StepRun]) -> [StepRun] {
+    static func orderedRuns(_ runs: [StepRun]) -> [StepRun] {
         runs.filter { !$0.closed }.sorted {
             if $0.urgency != $1.urgency { return $0.urgency > $1.urgency }
             if $0.lastActivity != $1.lastActivity { return ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }

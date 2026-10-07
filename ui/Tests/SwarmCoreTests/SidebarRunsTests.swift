@@ -69,6 +69,28 @@ struct SidebarRunsTests {
         #expect(SidebarRows.runWorkspaces(entries, navigation: navigation).isEmpty)
     }
 
+    @Test("Chat rows and tabs choose the newest run when urgency is equal")
+    func newestRunSteps() throws {
+        let entries = entries("/repo")
+        func run(_ name: String, time: TimeInterval) -> StepRun {
+            StepRun(id: "tmp/flow/" + name, skill: "flow", name: name, closed: false, steps: [
+                StepNode(id: "01-" + name, path: "tmp/flow/" + name + "/01-" + name + ".md",
+                         state: .active(agent: "coder"), error: nil, needs: [], needsAssumed: false,
+                         stale: [], ready: false, todo: nil, lastEvent: nil)
+            ], lastActivity: Date(timeIntervalSince1970: time))
+        }
+        let runs = [run("a-old", time: 100), run("z-new", time: 200)]
+        let rows = SidebarRows.sections(
+            projects: [entries[0].project], workspaces: entries, navigation: .init(), search: "",
+            showingArchive: false, now: 100, agentsBySession: agents, runsByWorkspace: ["/repo": runs]
+        ).flatMap(\.rows)
+        let chat = try #require(rows.first { $0.id == "chat:new" })
+        let steps = RowFields.stepsByChat(in: entries[0], runs: runs, agentsBySession: agents)
+        #expect(chat.runStep?.stepName == "01 z-new")
+        #expect(steps[.init("new")] == "flow · 01 z-new")
+        #expect(chat.fields.first { $0.field == .steps }?.text == steps[.init("new")])
+    }
+
     @Test("Workspace and chat run links select the correct run, and active steps link back to the same chat")
     func jumpMapping() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

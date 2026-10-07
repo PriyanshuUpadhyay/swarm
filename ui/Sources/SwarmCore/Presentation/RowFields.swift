@@ -197,10 +197,7 @@ public enum RowFields {
         in entry: WorkspaceEntry, runs: [StepRun], agentsBySession: [SwarmSessionID: [SwarmAgent]]
     ) -> [SwarmSessionID: String] {
         var result: [SwarmSessionID: String] = [:]
-        let ordered = runs.filter { !$0.closed }.sorted {
-            $0.urgency == $1.urgency ? $0.id < $1.id : $0.urgency > $1.urgency
-        }
-        for run in ordered {
+        for run in SidebarRows.orderedRuns(runs) {
             for step in run.steps {
                 if let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: agentsBySession), result[chat.id] == nil {
                     result[chat.id] = "\(run.skill) · \(step.title)"
