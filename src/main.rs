@@ -6210,9 +6210,9 @@ mod tests {
         let log = format!(
             "{}\n{}\n{}\n{}\n",
             include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl"),
-            r#"{"type":"cost-state","totalCostUSD":1.25}"#,
+            r#"{"type":"cost-state","totalCostUSD":1.25,"hasUnknownModelCost":false}"#,
             r#"{"type":"assistant","message":{"model":"claude-new"}}"#,
-            r#"{"type":"cost-state","totalCostUSD":2.5}"#
+            r#"{"type":"cost-state","totalCostUSD":2.5,"hasUnknownModelCost":false}"#
         );
         let (home, connection, session) = stop_fixture("claude", Some(&log));
         for _ in 0..2 {
@@ -6224,13 +6224,40 @@ mod tests {
         }
         std::fs::write(
             home.join("chat.jsonl"),
-            r#"{"type":"cost-state","totalCostUSD":0}"#,
+            r#"{"type":"cost-state","totalCostUSD":0,"hasUnknownModelCost":false}"#,
         )
         .unwrap();
         run_stop_hook(&home, &session, "claude", "Stop", "{}");
         let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
         assert_eq!(agent.cost_usd, Some(0.0));
         assert_eq!(agent.model.as_deref(), Some("claude-new"));
+    }
+
+    #[test]
+    fn stop_hook_claude_adds_only_new_messages_in_a_growing_fixture() {
+        use std::io::Write;
+        let first = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":4}}}"#;
+        let second = first.replace("m1", "m2");
+        let log = format!(
+            "{}\n{first}\n{first}\n",
+            include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+        );
+        let (home, connection, session) = stop_fixture("claude-growing", Some(&log));
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].tokens,
+            Some(64)
+        );
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(home.join("chat.jsonl"))
+            .unwrap();
+        writeln!(file, "{second}\n{first}\n{second}").unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.cost_usd, None);
+        assert_eq!(agent.state.as_deref(), Some("done"));
     }
 
     #[test]
@@ -6251,8 +6278,8 @@ mod tests {
     }
 
     #[test]
-    fn stop_hook_reads_the_last_mebibyte_and_skips_a_partial_line() {
-        let snapshot = r#"{"type":"cost-state","totalCostUSD":4}"#;
+    fn stop_hook_claude_reads_past_a_mebibyte_and_keeps_cost_without_a_complete_record() {
+        let snapshot = r#"{"type":"cost-state","totalCostUSD":4,"hasUnknownModelCost":false}"#;
         let log = format!(
             "{snapshot}\n{}\n{snapshot}\n",
             "x".repeat(1024 * 1024 + 100)
@@ -6263,7 +6290,7 @@ mod tests {
             swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
             Some(4.0)
         );
-        // A snapshot outside the tail is not evidence for this turn.
+        // A cost record without a completeness flag does not replace a reported cost.
         std::fs::write(
             home.join("chat.jsonl"),
             format!(

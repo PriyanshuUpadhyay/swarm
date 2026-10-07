@@ -169,6 +169,123 @@ pub struct UsageSnapshot {
     pub tokens: Option<i64>,
 }
 
+pub struct ClaudeUsage {
+    pub snapshot: UsageSnapshot,
+    pub offset: i64,
+    pub message: String,
+}
+
+/// Read new Claude records. Keep the latest 64 message ids to avoid counting repeated chunks.
+pub fn claude_usage(
+    path: &std::path::Path,
+    offset: Option<i64>,
+    message: Option<&str>,
+) -> Option<ClaudeUsage> {
+    use std::collections::VecDeque;
+    use std::io::{BufRead, Seek, SeekFrom};
+    let read = || -> Result<ClaudeUsage, Box<dyn std::error::Error>> {
+        if !std::fs::metadata(path)?.is_file() {
+            return Err("not a regular log file".into());
+        }
+        let mut file = std::fs::File::open(path)?;
+        let len = file.metadata()?.len();
+        let mut offset = offset.unwrap_or(0).max(0) as u64;
+        let mut seen: VecDeque<String> = message
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or_default();
+        while seen.len() > 64 {
+            seen.pop_front();
+        }
+        if len < offset {
+            offset = 0;
+            seen.clear();
+        }
+        file.seek(SeekFrom::Start(offset))?;
+        // Limit this read to the length observed above, so a writer cannot extend it indefinitely.
+        let mut reader = std::io::BufReader::new(std::io::Read::take(file, len - offset));
+        let mut snapshot = UsageSnapshot::default();
+        let mut line = Vec::new();
+        while reader.read_until(b'\n', &mut line)? > 0 {
+            // Most transcript lines carry no usage. Leave an unfinished line for the next Stop.
+            if !line
+                .windows(b"\"type\":\"assistant\"".len())
+                .any(|part| part == b"\"type\":\"assistant\"")
+                && !line
+                    .windows(b"cost-state".len())
+                    .any(|part| part == b"cost-state")
+            {
+                if !line.ends_with(b"\n") {
+                    break;
+                }
+                offset += line.len() as u64;
+                line.clear();
+                continue;
+            }
+            let record = serde_json::from_slice::<serde_json::Value>(&line);
+            if record.is_err() && !line.ends_with(b"\n") {
+                break; // Leave an unfinished record for the next Stop.
+            }
+            offset += line.len() as u64;
+            if let Ok(record) = record {
+                let mut latest = UsageSnapshot::default();
+                read_usage_record("claude", &record, &mut latest);
+                if latest.model.is_some() {
+                    snapshot.model = latest.model;
+                }
+                if latest.cost_usd.is_some() {
+                    snapshot.cost_usd = latest.cost_usd;
+                }
+                if record.get("type").and_then(serde_json::Value::as_str) == Some("assistant")
+                    && record
+                        .pointer("/message/model")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("<synthetic>")
+                    && let Some(id) = record
+                        .pointer("/message/id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|id| !id.is_empty())
+                    && !seen.iter().any(|seen_id| seen_id == id)
+                    && let Some(usage) = record
+                        .pointer("/message/usage")
+                        .and_then(serde_json::Value::as_object)
+                {
+                    let tokens = [
+                        "input_tokens",
+                        "cache_creation_input_tokens",
+                        "cache_read_input_tokens",
+                        "output_tokens",
+                    ]
+                    .into_iter()
+                    .try_fold(0_i64, |total, key| {
+                        let count = usage.get(key).map_or(Some(0), serde_json::Value::as_i64)?;
+                        if count < 0 {
+                            return None;
+                        }
+                        total.checked_add(count)
+                    });
+                    if let Some(total) =
+                        tokens.and_then(|tokens| snapshot.tokens.unwrap_or(0).checked_add(tokens))
+                    {
+                        snapshot.tokens = Some(total);
+                        seen.push_back(id.to_owned());
+                        if seen.len() > 64 {
+                            seen.pop_front();
+                        }
+                    }
+                }
+            }
+            line.clear();
+        }
+        Ok(ClaudeUsage {
+            snapshot,
+            offset: i64::try_from(offset)?,
+            message: serde_json::to_string(&seen)?,
+        })
+    };
+    read().ok()
+}
+
 /// Read only the last 1 MiB. A missing or unreadable log yields no new values.
 pub fn usage_snapshot(provider: &str, path: &std::path::Path) -> UsageSnapshot {
     use std::io::{Read, Seek, SeekFrom};
@@ -198,46 +315,14 @@ pub fn usage_snapshot(provider: &str, path: &std::path::Path) -> UsageSnapshot {
         .unwrap_or_default()
 }
 
+/// Walk newest first; the first complete value of each kind wins.
 fn parse_usage_tail(provider: &str, bytes: &[u8]) -> UsageSnapshot {
     let mut snapshot = UsageSnapshot::default();
     for line in bytes.rsplit(|byte| *byte == b'\n') {
         let Ok(record) = serde_json::from_slice::<serde_json::Value>(line) else {
             continue;
         };
-        let kind = record.get("type").and_then(serde_json::Value::as_str);
-        match (provider, kind) {
-            ("claude", Some("cost-state")) if snapshot.cost_usd.is_none() => {
-                snapshot.cost_usd = record
-                    .get("totalCostUSD")
-                    .and_then(serde_json::Value::as_f64)
-                    .filter(|cost| cost.is_finite() && *cost >= 0.0);
-            }
-            ("claude", Some("assistant")) if snapshot.model.is_none() => {
-                snapshot.model = record
-                    .pointer("/message/model")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string);
-            }
-            ("codex", Some("turn_context")) if snapshot.model.is_none() => {
-                snapshot.model = record
-                    .pointer("/payload/model")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string);
-            }
-            ("codex", Some("event_msg"))
-                if snapshot.tokens.is_none()
-                    && record
-                        .pointer("/payload/type")
-                        .and_then(serde_json::Value::as_str)
-                        == Some("token_count") =>
-            {
-                snapshot.tokens = record
-                    .pointer("/payload/info/total_token_usage/total_tokens")
-                    .and_then(serde_json::Value::as_i64)
-                    .filter(|tokens| *tokens >= 0);
-            }
-            _ => {}
-        }
+        read_usage_record(provider, &record, &mut snapshot);
         if (provider == "claude" && snapshot.cost_usd.is_some() && snapshot.model.is_some())
             || (provider == "codex" && snapshot.tokens.is_some() && snapshot.model.is_some())
         {
@@ -245,6 +330,51 @@ fn parse_usage_tail(provider: &str, bytes: &[u8]) -> UsageSnapshot {
         }
     }
     snapshot
+}
+
+fn read_usage_record(provider: &str, record: &serde_json::Value, snapshot: &mut UsageSnapshot) {
+    let kind = record.get("type").and_then(serde_json::Value::as_str);
+    match (provider, kind) {
+        ("claude", Some("cost-state"))
+            if snapshot.cost_usd.is_none()
+                && record
+                    .get("hasUnknownModelCost")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false) =>
+        {
+            snapshot.cost_usd = record
+                .get("totalCostUSD")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|cost| cost.is_finite() && *cost >= 0.0);
+        }
+        ("claude", Some("assistant")) if snapshot.model.is_none() => {
+            snapshot.model = record
+                .pointer("/message/model")
+                .and_then(serde_json::Value::as_str)
+                .filter(|model| !model.is_empty() && *model != "<synthetic>")
+                .map(str::to_string);
+        }
+        ("codex", Some("turn_context")) if snapshot.model.is_none() => {
+            snapshot.model = record
+                .pointer("/payload/model")
+                .and_then(serde_json::Value::as_str)
+                .filter(|model| !model.is_empty() && *model != "<synthetic>")
+                .map(str::to_string);
+        }
+        ("codex", Some("event_msg"))
+            if snapshot.tokens.is_none()
+                && record
+                    .pointer("/payload/type")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("token_count") =>
+        {
+            snapshot.tokens = record
+                .pointer("/payload/info/total_token_usage/total_tokens")
+                .and_then(serde_json::Value::as_i64)
+                .filter(|tokens| *tokens >= 0);
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

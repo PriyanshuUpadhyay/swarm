@@ -22,6 +22,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005.sql"),
     include_str!("../migrations/0006.sql"),
     include_str!("../migrations/0007.sql"),
+    include_str!("../migrations/0008.sql"),
 ];
 
 fn known_version(version: i64) -> bool {
@@ -106,6 +107,11 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version < 7 {
         tx.execute_batch(MIGRATIONS[6])?;
         tx.pragma_update(None, "user_version", 7)?;
+    }
+
+    if version < 8 {
+        tx.execute_batch(MIGRATIONS[7])?;
+        tx.pragma_update(None, "user_version", 8)?;
     }
 
     tx.commit()?;
@@ -619,37 +625,56 @@ pub fn set_log(
     log: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
-        "UPDATE agent SET log = ?3 WHERE session_id = ?1 AND id = ?2",
+        "UPDATE agent SET usage_offset = CASE WHEN log IS ?3 THEN usage_offset END,
+                          usage_message = CASE WHEN log IS ?3 THEN usage_message END,
+                          log = ?3 WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, log.to_string_lossy()),
     )?;
     Ok(())
 }
 
-/// Replace cumulative usage from the agent's stored log. NULL fields leave prior values intact.
+/// Add Claude message usage or copy Codex cumulative usage. NULL fields keep prior values.
 pub fn update_usage(
     connection: &Connection,
     session_id: &str,
     agent_id: &str,
     provider: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let log: Option<String> = connection
+    let stored = connection
         .query_row(
-            "SELECT log FROM agent WHERE session_id = ?1 AND id = ?2",
+            "SELECT log, usage_offset, usage_message FROM agent WHERE session_id = ?1 AND id = ?2",
             (session_id, agent_id),
-            |row| row.get(0),
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
-        .optional()?
-        .flatten();
-    let Some(log) = log else {
+        .optional()?;
+    let Some((Some(log), offset, message)) = stored else {
         return Ok(());
     };
-    let snapshot = crate::host::usage_snapshot(provider, Path::new(&log));
-    if snapshot.model.is_none() && snapshot.cost_usd.is_none() && snapshot.tokens.is_none() {
-        return Ok(());
-    }
+    let (snapshot, offset, message) = if provider == "claude" {
+        let Some(read) = crate::host::claude_usage(Path::new(&log), offset, message.as_deref())
+        else {
+            return Ok(());
+        };
+        (read.snapshot, Some(read.offset), Some(read.message))
+    } else {
+        (
+            crate::host::usage_snapshot(provider, Path::new(&log)),
+            None,
+            None,
+        )
+    };
     connection.execute(
         "UPDATE agent SET model = coalesce(?3, model), cost_usd = coalesce(?4, cost_usd),
-                          tokens = coalesce(?5, tokens)
+                          tokens = CASE WHEN ?5 IS NULL THEN tokens
+                                        WHEN ?6 THEN coalesce(tokens, 0) + ?5 ELSE ?5 END,
+                          usage_offset = coalesce(?7, usage_offset),
+                          usage_message = coalesce(?8, usage_message)
          WHERE session_id = ?1 AND id = ?2",
         (
             session_id,
@@ -657,6 +682,9 @@ pub fn update_usage(
             snapshot.model,
             snapshot.cost_usd,
             snapshot.tokens,
+            provider == "claude",
+            offset,
+            message,
         ),
     )?;
     Ok(())
@@ -2162,7 +2190,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         let old = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         let new = create_session(&connection, "lane", Path::new("/work"), None, None).unwrap();
         continue_session(&connection, &new, &old).unwrap();
@@ -2189,7 +2217,7 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         let coder = &agents(&connection, SESSION).unwrap()[0];
         assert_eq!(coder.state, None);
         set_state(&connection, SESSION, CODER, "waiting", "hook", None, 1_700).unwrap();
@@ -2562,5 +2590,202 @@ mod tests {
         assert!(reader.is_ok(), "{:?}", reader.err());
         writer.execute_batch("ROLLBACK;").unwrap();
         std::fs::remove_dir_all(&root).unwrap();
+    }
+    fn usage_fixture(tag: &str) -> (std::path::PathBuf, Connection) {
+        let root = temp_root(tag);
+        std::fs::create_dir_all(&root).unwrap();
+        let connection = open(&root.join("swarm.db")).unwrap();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES (?1, 'lane', ?2)",
+                (SESSION, root.to_string_lossy()),
+            )
+            .unwrap();
+        add_agent(&connection, SESSION, CODER, "coder").unwrap();
+        set_log(&connection, SESSION, CODER, &root.join("chat.jsonl")).unwrap();
+        (root, connection)
+    }
+
+    fn assistant_usage(id: &str, model: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"id":"{id}","model":"{model}","usage":{{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":4}}}}}}"#
+        )
+    }
+
+    #[test]
+    fn claude_usage_grows_once_per_message_across_reads() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-growing");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude-first");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{first}\n{first}\n",
+                include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(
+            file,
+            "{}\n{first}\n{}",
+            assistant_usage("m2", "claude-new"),
+            assistant_usage("stub", "<synthetic>")
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.model.as_deref(), Some("claude-first"));
+        assert_eq!(agent.cost_usd, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_restarts_shorter_or_changed_logs_and_keeps_total() {
+        let (root, connection) = usage_fixture("usage-reset");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        std::fs::write(&path, format!("{first}\n{first}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        std::fs::write(&path, &first).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        let next = root.join("next.jsonl");
+        std::fs::write(&next, &first).unwrap();
+        set_log(&connection, SESSION, CODER, &next).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(192));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_usage_ignores_partial_cost_and_synthetic_models() {
+        let (root, connection) = usage_fixture("usage-partial");
+        let path = root.join("chat.jsonl");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n{}\n",
+                assistant_usage("m1", "claude"),
+                r#"{"type":"cost-state","totalCostUSD":3,"hasUnknownModelCost":true}"#,
+                assistant_usage("stub", "<synthetic>")
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.cost_usd, None);
+        assert_eq!(agent.tokens, Some(64));
+        assert_eq!(agent.model.as_deref(), Some("claude"));
+        std::fs::write(
+            &path,
+            r#"{"type":"cost-state","totalCostUSD":0,"hasUnknownModelCost":false}"#,
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].cost_usd, Some(0.0));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_usage_keeps_an_unfinished_record_for_the_next_read() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-unfinished");
+        let path = root.join("chat.jsonl");
+        let first = assistant_usage("m1", "claude");
+        let second = assistant_usage("m2", "claude");
+        let split = second.len() / 2;
+        std::fs::write(
+            &path,
+            format!(
+                "{first}\n{}\n{}",
+                "x".repeat(1024 * 1024 + 100),
+                &second[..split]
+            ),
+        )
+        .unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{}", &second[split..]).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn usage_migration_keeps_existing_values_and_starts_without_a_cursor() {
+        let root = temp_root("usage-migration");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("swarm.db");
+        let connection = Connection::open(&path).unwrap();
+        for migration in &MIGRATIONS[..7] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.pragma_update(None, "user_version", 7).unwrap();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd) VALUES (?1, 'lane', '/test')",
+                [SESSION],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO agent (id, session_id, role, tokens, cost_usd) VALUES (?1, ?2, 'coder', 42, 3)", (CODER, SESSION)).unwrap();
+        drop(connection);
+        let connection = open(&path).unwrap();
+        let values = connection.query_row("SELECT tokens, cost_usd, usage_offset, usage_message FROM agent WHERE session_id = ?1 AND id = ?2", (SESSION, CODER), |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?, row.get::<_, Option<i64>>(2)?, row.get::<_, Option<String>>(3)?))).unwrap();
+        assert_eq!(values, (42, 3.0, None, None));
+        assert_eq!(
+            connection
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .unwrap(),
+            None
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn claude_usage_retains_only_the_latest_64_message_ids() {
+        use std::io::Write;
+        let (root, connection) = usage_fixture("usage-id-limit");
+        let path = root.join("chat.jsonl");
+        let log = (0..66)
+            .map(|id| assistant_usage(&format!("m{id}"), "claude"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, format!("{log}\n")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_message FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let ids: Vec<String> = serde_json::from_str(&stored).unwrap();
+        assert_eq!(ids.len(), 64);
+        assert_eq!(ids.first().map(String::as_str), Some("m2"));
+        assert_eq!(ids.last().map(String::as_str), Some("m65"));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{}", assistant_usage("m65", "claude")).unwrap();
+        update_usage(&connection, SESSION, CODER, "claude").unwrap();
+        assert_eq!(
+            agents(&connection, SESSION).unwrap()[0].tokens,
+            Some(66 * 64)
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
