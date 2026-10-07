@@ -817,7 +817,7 @@ private struct SessionsWindow: View {
         ) { project in
             Button("Remove Project", role: .destructive) {
                 do { try model.removeProject(project) }
-                catch { actionError = error.localizedDescription }
+                catch { actionError = "Could not remove the project. \(error.localizedDescription)" }
                 removeProjectTarget = nil
             }
             Button("Cancel", role: .cancel) { removeProjectTarget = nil }
@@ -1532,7 +1532,10 @@ private struct SessionsWindow: View {
                 // The kept path is the project's launch folder. The tree can still lack the
                 // project when a later refresh overtook this one, so it is not read here.
                 startChat(in: path)
-            } catch { actionError = error.localizedDescription }
+            } catch {
+                let subject = action == .create ? "Could not create the project." : "Could not add the project."
+                actionError = "\(subject) \(error.localizedDescription)"
+            }
         }
     }
 
