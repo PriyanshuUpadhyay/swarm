@@ -103,16 +103,18 @@ struct SidebarRowsTests {
         #expect(previousChildrenOnly[1].fields.first { $0.field == .children } == nil)
     }
 
-    @Test("A waiting child in an older chain member reaches a folded workspace")
-    func olderChildUrgency() {
+    @Test("A folded workspace ignores waiting and failed children from older chain members",
+          arguments: ["waiting", "failed"])
+    func olderChildUrgency(previousState: String) throws {
         let chat = SwarmProjectSession(sessions: [session("next", time: 2), session("root", time: 1)],
                                        title: "Continued", status: .working)
         var navigation = WorkspaceNavigation()
         navigation.toggleCollapsed("/repo")
         let folded = rows(project([chat]), navigation: navigation, agents: [
-            .init("root"): [SwarmAgent(id: .init("worker"), role: "review", pane: "%1", alive: true, state: "waiting")],
+            .init("root"): [SwarmAgent(id: .init("worker"), role: "review", pane: "%1", alive: true, state: previousState)],
         ])
-        #expect(folded[0].status == .waiting)
+        let workspace = try #require(folded.first)
+        #expect(workspace.status == .working)
     }
 
     @Test("Pinned and archived workspaces keep their chat rows; empty workspaces stay")

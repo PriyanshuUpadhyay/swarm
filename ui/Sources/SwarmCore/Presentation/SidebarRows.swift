@@ -286,6 +286,16 @@ public enum SidebarRows {
         "\(chatPrefix)\(ChatTitle.key(chat))"
     }
 
+    static func childID(chat: SwarmProjectSession, agent: SwarmAgent) -> String {
+        "child:\(chat.id.rawValue)/\(agent.id.rawValue)"
+    }
+
+    static func childAgents(
+        for chat: SwarmProjectSession, agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> [SwarmAgent] {
+        (agentsBySession[chat.id] ?? []).filter { !SwarmPanePolicy.isChair($0, in: chat.session) }
+    }
+
     /// Resolve against the current tree, so a stale row cannot select a different chat or agent.
     public static func selection(
         for id: String, in workspaces: [WorkspaceEntry], agentsBySession: [SwarmSessionID: [SwarmAgent]]
@@ -298,9 +308,8 @@ public enum SidebarRows {
                 if id == chatID(chat) {
                     return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id, agentSessionID: nil, agentID: nil)
                 }
-                for agent in agentsBySession[chat.id] ?? []
-                where !SwarmPanePolicy.isChair(agent, in: chat.session) {
-                    if id == "child:\(chat.id.rawValue)/\(agent.id.rawValue)" {
+                for agent in childAgents(for: chat, agentsBySession: agentsBySession) {
+                    if id == childID(chat: chat, agent: agent) {
                         return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id,
                                                 agentSessionID: chat.id, agentID: agent.id)
                     }
@@ -348,9 +357,7 @@ public enum SidebarRows {
             let id = chatID(chat)
             let expanded = !navigation.isCollapsed(id)
             // Child rows use the same session as SessionDetail's columns; finished children stay.
-            let children = (agentsBySession[chat.id] ?? [])
-                .filter { !SwarmPanePolicy.isChair($0, in: chat.session) }
-                .sorted { $0.id < $1.id }
+            let children = childAgents(for: chat, agentsBySession: agentsBySession).sorted { $0.id < $1.id }
             let agents = agentsBySession[chat.id]
             let status = expanded && !children.isEmpty
                 ? agents?.first { SwarmPanePolicy.isChair($0, in: chat.session) }?.status
@@ -375,7 +382,7 @@ public enum SidebarRows {
             if expanded {
                 result += children.map { agent in
                     SidebarRow(
-                        id: "child:\(chat.id.rawValue)/\(agent.id.rawValue)", kind: .child, depth: 2,
+                        id: childID(chat: chat, agent: agent), kind: .child, depth: 2,
                         parentID: id, expanded: false, hasChildren: false, childrenSummary: nil,
                         title: agent.id.rawValue, detail: "· \(agent.role)", status: agent.status, counts: [], age: nil,
                         help: "\(agent.id.rawValue) · \(agent.role)", pinned: navigation.pinned.contains(entry.id),
@@ -425,9 +432,7 @@ public enum SidebarRows {
                 case .open: AgentStatus.ended
                 case .done: AgentStatus.done
                 }
-            } + entry.chats.flatMap {
-                $0.sessions.flatMap { (agentsBySession[$0.id] ?? []).map(\.status) }
-            }), counts: counts, age: age,
+            } + entry.chats.flatMap { (agentsBySession[$0.id] ?? []).map(\.status) }), counts: counts, age: age,
             help: "\(navigation.projectTitle(for: entry.project)) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),
             archived: navigation.archived.contains(entry.id),

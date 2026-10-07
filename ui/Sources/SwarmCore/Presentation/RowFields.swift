@@ -97,9 +97,7 @@ public enum RowFields {
     }
 
     static func childCount(_ chat: SwarmProjectSession, agentsBySession: [SwarmSessionID: [SwarmAgent]]) -> String? {
-        let count = (agentsBySession[chat.id] ?? []).filter {
-            !SwarmPanePolicy.isChair($0, in: chat.session)
-        }.count
+        let count = SidebarRows.childAgents(for: chat, agentsBySession: agentsBySession).count
         return count == 0 ? nil : count == 1 ? "1 agent" : "\(count) agents"
     }
 
