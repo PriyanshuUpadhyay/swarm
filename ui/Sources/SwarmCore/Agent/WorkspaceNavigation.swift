@@ -30,10 +30,21 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var pinned: Set<String> = []
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
-    /// Project paths whose sidebar section is collapsed.
+    /// Project and workspace paths whose rows are collapsed. Chat children start folded;
+    /// `expanded:chat:<root id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
 
     public init() {}
+
+    public func isCollapsed(_ id: String) -> Bool {
+        id.hasPrefix("chat:") ? !collapsed.contains("expanded:\(id)") : collapsed.contains(id)
+    }
+
+    public mutating func toggleCollapsed(_ id: String) {
+        let key = id.hasPrefix("chat:") ? "expanded:\(id)" : id
+        if collapsed.contains(key) { collapsed.remove(key) }
+        else { collapsed.insert(key) }
+    }
 
     private enum CodingKeys: String, CodingKey {
         case selectedWorkspace, selectedChats, collapsed

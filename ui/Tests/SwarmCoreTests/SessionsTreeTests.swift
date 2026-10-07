@@ -248,7 +248,7 @@ struct SessionsTreeTests {
         )
         #expect(sections.map(\.title) == ["Pinned", "api", "docs"])
         #expect(sections.map(\.kind) == [.pinned, .project(path: "/api"), .project(path: "/docs")])
-        #expect(sections[0].rows.map(\.id) == ["/docs"])
+        #expect(sections[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
         // A project whose only workspace is pinned keeps its header for its "+".
         #expect(sections[2].rows.isEmpty)
         let apiRow = sections[1].rows[0]
@@ -263,11 +263,11 @@ struct SessionsTreeTests {
             showingArchive: true, now: 61
         )
         #expect(archived.map(\.kind) == [.project(path: "/api")])
-        #expect(archived[0].rows.map(\.id) == ["/api"])
+        #expect(archived[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/api"])
         #expect(SidebarRows.sections(
             projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "docs",
             showingArchive: false, now: 61
-        ).flatMap(\.rows).map(\.id) == ["/docs"])
+        ).flatMap(\.rows).filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
     }
 
     @Test("Workspaces sit under their project in activity order, titled without the project name")
@@ -288,9 +288,9 @@ struct SessionsTreeTests {
         ])
         // A plain folder is its own one workspace.
         #expect(sections[0].rows.map(\.title) == ["empty"])
-        #expect(sections[2].rows.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
-        #expect(sections[2].rows.map(\.title) == ["feature", "main"])
-        #expect(sections[1].rows.map(\.title) == ["notes"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.title) == ["feature", "main"])
+        #expect(sections[1].rows.filter { $0.kind == .workspace }.map(\.title) == ["notes"])
 
         // The palette has no headers, so it keeps "project / folder".
         let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
@@ -301,7 +301,7 @@ struct SessionsTreeTests {
             projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
             search: "", showingArchive: false, now: 61
         )
-        let row = renamed[2].rows[1]
+        let row = renamed[2].rows.filter { $0.kind == .workspace }[1]
         #expect(row.title == "Fix login")
         #expect(row.detail == "main · 1 chat")
 
