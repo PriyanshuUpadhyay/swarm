@@ -287,6 +287,11 @@ pub fn claude_usage(path: &std::path::Path, saved: &ClaudeLogUsage) -> Option<Cl
             line.clear();
         }
         log.offset = i64::try_from(offset)?;
+        if offset < len {
+            // Model and cost from a partial read can be older than the launch values.
+            snapshot.model = None;
+            snapshot.cost_usd = None;
+        }
         Ok(ClaudeUsage { snapshot, log })
     };
     read().ok()

@@ -666,6 +666,7 @@ pub fn update_usage(
             .map(serde_json::from_str)
             .transpose()?
             .unwrap_or_default();
+        // Message ids count once within each log; a repeat across logs counts again.
         let saved = state.logs.get(&log).cloned().unwrap_or_default();
         let Some(read) = crate::host::claude_usage(Path::new(&log), &saved) else {
             return Ok(());
@@ -2735,18 +2736,50 @@ mod tests {
     }
 
     #[test]
-    fn claude_usage_limits_one_stop_and_continues_on_the_next_stop() {
+    fn claude_usage_defers_model_and_cost_until_a_stop_reaches_the_log_end() {
         let (root, connection) = usage_fixture("usage-budget");
+        let runner = crate::config::Runner {
+            provider: crate::providers::Provider::Claude,
+            model: "claude-launch".into(),
+            effort: "high".into(),
+            sandbox: None,
+            approval: None,
+            permission: None,
+        };
+        set_launch(&connection, SESSION, CODER, "coder", &runner, None).unwrap();
         let path = root.join("chat.jsonl");
-        let first = assistant_usage("m1", "claude");
-        let second = assistant_usage("m2", "claude");
+        let first = assistant_usage("m1", "claude-old");
+        let second = assistant_usage("m2", "claude-new");
+        let old_cost = r#"{"type":"cost-state","totalCostUSD":1,"hasUnknownModelCost":false}"#;
+        let new_cost = r#"{"type":"cost-state","totalCostUSD":2,"hasUnknownModelCost":false}"#;
         let filler = format!("{}\n", "x".repeat(1023));
-        let log = format!("{first}\n{}{second}\n{first}\n", filler.repeat(8192));
+        let log = format!(
+            "{first}\n{old_cost}\n{}{second}\n{new_cost}\n",
+            filler.repeat(8192)
+        );
         std::fs::write(&path, &log).unwrap();
         update_usage(&connection, SESSION, CODER, "claude").unwrap();
-        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(64));
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(64));
+        assert_eq!(agent.model.as_deref(), Some("claude-launch"));
+        assert_eq!(agent.cost_usd, None);
+        let stored: String = connection
+            .query_row(
+                "SELECT usage_state FROM agent WHERE session_id = ?1 AND id = ?2",
+                (SESSION, CODER),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let state: crate::host::UsageState = serde_json::from_str(&stored).unwrap();
+        let saved = &state.logs[&path.to_string_lossy().into_owned()];
+        assert!(saved.offset > 0 && saved.offset <= 8 * 1024 * 1024);
+        assert!(saved.offset < log.len() as i64);
+        assert_eq!(saved.tokens, 64);
         update_usage(&connection, SESSION, CODER, "claude").unwrap();
-        assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
+        let agent = &agents(&connection, SESSION).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.model.as_deref(), Some("claude-new"));
+        assert_eq!(agent.cost_usd, Some(2.0));
         update_usage(&connection, SESSION, CODER, "claude").unwrap();
         assert_eq!(agents(&connection, SESSION).unwrap()[0].tokens, Some(128));
         std::fs::remove_dir_all(root).unwrap();
