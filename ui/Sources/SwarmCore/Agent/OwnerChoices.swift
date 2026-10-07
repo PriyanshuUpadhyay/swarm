@@ -209,8 +209,7 @@ public final class OwnerChoicesStore {
             let remaining = ContinuousClock.now.duration(to: deadline)
             let delay = min(.microseconds(Int64(UInt32.random(in: retryDelay / 2...retryDelay))), remaining)
             guard delay > .zero else { throw OwnerChoicesError.lockBusy }
-            // The delay is below one second, so its attosecond component gives all microseconds.
-            usleep(UInt32(delay.components.attoseconds / 1_000_000_000_000))
+            usleep(UInt32(delay / .microseconds(1)))
             retryDelay = min(retryDelay * 2, Self.maximumRetryDelayMicroseconds)
         }
         defer { _ = flock(descriptor, LOCK_UN) }
