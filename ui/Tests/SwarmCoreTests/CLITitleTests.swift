@@ -183,6 +183,28 @@ struct CLITitleTests {
         #expect(await discovery.resolvedTitles(sessions: sessions, agentsBySession: [:])[claude.id] == "Original prompt")
     }
 
+    @Test("Discovery keeps Claude readers while a listed log has an unresolved or different provider",
+          arguments: [nil, "codex"] as [String?])
+    func retainsClaudeReader(provider: String?) async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("chat.jsonl")
+        try write([#"{"type":"custom-title","sessionId":"chat","customTitle":"Saved name"}"#], to: log)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: log.path)
+        let chat = session("claude", provider: "claude", log: log.path, chair: "chat")
+        let discovery = SwarmSessionDiscovery(profiles: EmptyProfiles(), home: root)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Saved name")
+        let stamp = try #require(CLINameFileStamp(path: log.path))
+        var unresolved = chat
+        unresolved.chairProvider = provider
+        #expect(await discovery.resolvedCLINames(sessions: [unresolved], agentsBySession: [:]).isEmpty)
+        // An unchanged stamp keeps the old cached value; a discarded reader sees this new value.
+        try write([#"{"type":"custom-title","sessionId":"chat","customTitle":"Fresh name"}"#], to: log)
+        try FileManager.default.setAttributes([.modificationDate: stamp.modified], ofItemAtPath: log.path)
+        #expect(CLINameFileStamp(path: log.path) == stamp)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Saved name")
+    }
+
     @Test("Discovery drops Claude readers when their chats leave the listing", arguments: [false, true])
     func evictsClaudeReaders(archive: Bool) async throws {
         let root = try fixture()
