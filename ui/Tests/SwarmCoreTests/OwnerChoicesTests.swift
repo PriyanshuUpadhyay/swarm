@@ -161,7 +161,7 @@ struct OwnerChoicesTests {
         #expect(try store.load().pinned == ["/repo"])
     }
 
-    @Test("A busy refresh read returns the last good snapshot without waiting")
+    @Test("A busy refresh read keeps the last good snapshot without waiting or reporting")
     func busyRefreshKeepsSnapshot() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -181,8 +181,7 @@ struct OwnerChoicesTests {
             #expect(retained == expected)
             #expect(projects.choicesLoadFailed)
         }
-        #expect(failures.count == 3)
-        #expect(failures.allSatisfy { $0.operation == .load })
+        #expect(failures.isEmpty)
         _ = flock(descriptor, LOCK_UN)
         #expect(projects.loadChoices(reportError: { Issue.record("\($0.message)") }) == expected)
         #expect(!projects.choicesLoadFailed)

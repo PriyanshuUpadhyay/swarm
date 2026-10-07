@@ -29,6 +29,9 @@ public final class SwarmProjectStore {
             lastGoodChoices = saved
             choicesLoadFailed = false
             return saved
+        } catch OwnerChoicesError.lockBusy {
+            choicesLoadFailed = true
+            return lastGoodChoices
         } catch {
             choicesLoadFailed = true
             reportError(OwnerChoicesFailure(error.localizedDescription, operation: .load))
