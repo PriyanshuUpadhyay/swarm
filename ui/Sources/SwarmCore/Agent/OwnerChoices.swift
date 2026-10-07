@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct OwnerChoices: Codable, Equatable, Sendable {
@@ -53,7 +54,11 @@ public final class OwnerChoicesStore {
     public init(folder: URL? = SwarmHome.dataFolder) { self.folder = folder }
 
     public func load() throws -> OwnerChoices {
-        guard let folder else { return OwnerChoices() }
+        guard let folder, isClaimed(folder) else { return OwnerChoices() }
+        return try withLock(in: folder) { try readUnlocked(in: folder) }
+    }
+
+    private func readUnlocked(in folder: URL) throws -> OwnerChoices {
         let file = folder.appendingPathComponent("choices.json")
         let data: Data
         do {
@@ -77,21 +82,50 @@ public final class OwnerChoicesStore {
         }
     }
 
-    public func update(_ change: (inout OwnerChoices) -> Void) throws {
+    @discardableResult
+    public func update(_ change: (inout OwnerChoices) -> Void) throws -> OwnerChoices {
         guard let folder else { throw OwnerChoicesError.emptyHome }
-        var choices = try load()
-        let previous = choices
-        change(&choices)
-        guard choices != previous else { return }
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(choices).write(to: folder.appendingPathComponent("choices.json"), options: .atomic)
+        guard isClaimed(folder) else { throw OwnerChoicesError.unclaimedHome(folder.path) }
+        return try withLock(in: folder) {
+            var choices = try readUnlocked(in: folder)
+            let previous = choices
+            change(&choices)
+            guard choices != previous else { return choices }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(choices).write(to: folder.appendingPathComponent("choices.json"), options: .atomic)
+            return choices
+        }
     }
+
+    private func isClaimed(_ folder: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("swarm-home").path, isDirectory: &isDirectory
+        ) && !isDirectory.boolValue
+    }
+
+    private func withLock<T>(in folder: URL, _ body: () throws -> T) throws -> T {
+        let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(descriptor) }
+        while flock(descriptor, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        }
+        defer { _ = flock(descriptor, LOCK_UN) }
+        return try body()
+    }
+
 }
 
 public enum OwnerChoicesError: LocalizedError {
     case emptyHome
+    case unclaimedHome(String)
 
-    public var errorDescription: String? { "SWARM_HOME is set but empty" }
+    public var errorDescription: String? {
+        switch self {
+        case .emptyHome: "SWARM_HOME is set but empty"
+        case .unclaimedHome(let path): "Sidebar choices were not saved. Run swarm init with SWARM_HOME set to \(path), then try again."
+        }
+    }
 }

@@ -236,8 +236,11 @@ public final class WorkspaceNavigationStore {
         return value
     }
 
-    public func save(_ value: WorkspaceNavigation) {
-        try? choices.update {
+    @discardableResult
+    public func save(_ value: WorkspaceNavigation) -> String? {
+        guard let data = try? JSONEncoder().encode(value) else { return "Sidebar view state could not be saved." }
+        defaults.set(data, forKey: key)
+        do { try choices.update {
             $0.pinned = value.pinned
             $0.archived = value.archived
             $0.names = value.names
@@ -245,9 +248,8 @@ public final class WorkspaceNavigationStore {
             $0.projectNames = value.projectNames
             $0.workspaceOrder = value.workspaceOrder
             $0.fields = value.fields
-        }
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        defaults.set(data, forKey: key)
+        } } catch { return error.localizedDescription }
+        return nil
     }
 
     public func reloadChoices(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {

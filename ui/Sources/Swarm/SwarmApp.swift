@@ -14,7 +14,7 @@ final class SessionsTreeModel {
     private let navigationStore = WorkspaceNavigationStore()
     var navigation = WorkspaceNavigation() {
         didSet {
-            if navigation != oldValue { navigationStore.save(navigation) }
+            if navigation != oldValue, let failure = navigationStore.save(navigation) { error = failure }
             if navigation.workspaceOrder != oldValue.workspaceOrder {
                 workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder)
             }

@@ -95,8 +95,8 @@ struct WorkspaceOrderTests {
         navigation.workspaceOrder = ["/repo": ["/repo/beta", "/repo"]]
         navigation.pinned = ["/repo/beta"]
         navigation.toggleCollapsed("pinned")
-        WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).save(navigation)
-        let loaded = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).load()
+        WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).save(navigation)
+        let loaded = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load()
         #expect(loaded == navigation)
         #expect(loaded.isCollapsed("pinned"))
         #expect(try OwnerChoicesStore(folder: folder).load().workspaceOrder == navigation.workspaceOrder)
@@ -125,7 +125,7 @@ struct WorkspaceOrderTests {
         let projectPath = existing.deletingLastPathComponent().path
         var navigation = WorkspaceNavigation()
         navigation.workspaceOrder = [projectPath: [existing.path, folder.appendingPathComponent("gone").path]]
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder.appendingPathComponent("choices"))
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder.appendingPathComponent("choices")))
         store.save(navigation)
         let refreshed = try store.reloadChoices(navigation)
         #expect(refreshed.workspaceOrder == navigation.workspaceOrder)

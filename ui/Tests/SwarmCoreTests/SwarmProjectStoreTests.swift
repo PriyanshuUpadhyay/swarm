@@ -12,14 +12,14 @@ struct SwarmProjectStoreTests {
             try? FileManager.default.removeItem(at: root)
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let store = SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let created = root.appendingPathComponent("New Project")
 
         #expect(try await store.create(at: created) == created.path)
         #expect(FileManager.default.fileExists(atPath: created.path))
         #expect(Git.repositoryPaths(in: created.path) != nil)
         #expect(try await store.add(created) == created.path)
-        #expect(SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices")).paths() == [created.path])
+        #expect(SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices"))).paths() == [created.path])
         #expect(try OwnerChoicesStore(folder: root.appendingPathComponent("choices")).load().projectPaths == [created.path])
         await #expect(throws: SwarmProjectError.self) { try await store.create(at: created) }
     }

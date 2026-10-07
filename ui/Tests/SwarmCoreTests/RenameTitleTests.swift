@@ -20,7 +20,7 @@ struct RenameTitleTests {
         var navigation = WorkspaceNavigation()
         navigation.renameChat(chat.session, to: " Fix login ")
         navigation.renameProject(project, to: " Login app ")
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         store.save(navigation)
         let stored = try OwnerChoicesStore(folder: folder).load()
         #expect(stored.chatNames == ["oldest": "Fix login"])

@@ -35,7 +35,7 @@ struct ProjectRetentionTests {
     func archivedCLIProject() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let store = SwarmProjectStore(choicesFolder: folder)
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         var chat = SwarmSession(
             id: .init("cli-chat"), talkMode: "lane", adapter: "tmux-solo", cwd: "/repo/main",
             createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
@@ -43,7 +43,7 @@ struct ProjectRetentionTests {
         let first = build(sessions: [chat])
         try store.rememberShown(first.projects)
         chat.archivedAt = 2
-        let restored = SwarmProjectStore(choicesFolder: folder)
+        let restored = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         let archived = build(sessions: [chat], paths: restored.paths())
         #expect(archived.projects.map(\.path) == ["/repo"])
         #expect(archived.projects.first?.chats.isEmpty == true)
@@ -55,10 +55,10 @@ struct ProjectRetentionTests {
     func removedProject() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let store = SwarmProjectStore(choicesFolder: folder)
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         try store.rememberShown(build(sessions: [], paths: ["/repo"]).projects)
         try store.remove("/repo")
-        let restored = SwarmProjectStore(choicesFolder: folder)
+        let restored = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
         #expect(restored.paths().isEmpty)
         #expect(restored.removedPaths() == ["/repo"])
         let chat = SwarmSession(
@@ -78,7 +78,7 @@ struct ProjectRetentionTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        let store = SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let path = try await store.add(project)
         try store.remove(path)
         #expect(store.removedPaths() == [path])
@@ -96,7 +96,7 @@ struct ProjectRetentionTests {
         let workspace = project.appendingPathComponent("workspace")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         try await Git.initialize(at: project.path)
-        let store = SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let path = try await store.add(workspace)
         let canonical = ProjectNode.projectPath(for: SwarmSessionDiscovery.identity(
             for: path, repositoryPathsResolver: Git.repositoryPaths
@@ -115,7 +115,7 @@ struct ProjectRetentionTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let project = root.appendingPathComponent("project")
-        let store = SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))
+        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         try store.remove(project.path)
         let path = try await store.create(at: project)
         #expect(store.removedPaths().isEmpty)
@@ -142,7 +142,7 @@ struct ProjectRetentionTests {
         navigation.archived = [existing, gone]
         navigation.names = [existing: "Keep", gone: "Keep offline"]
         navigation.selectedChats = [existing: "keep-chat", gone: "offline-chat", existing + "#removed": "removed-chat"]
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         store.save(navigation)
         try OwnerChoicesStore(folder: folder).update {
             $0.projectPaths = [existing, gone]
@@ -169,7 +169,7 @@ struct ProjectRetentionTests {
     func removeProjectChoices() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let choices = OwnerChoicesStore(folder: folder)
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
         try choices.update {
             $0.pinned = ["/repo/main", "/repo#removed", "/other/main"]
             $0.archived = ["/repo/offline", "/other/main"]
@@ -178,7 +178,7 @@ struct ProjectRetentionTests {
             $0.workspaceOrder = ["/repo": ["/external/worktree"], "/other": ["/other/main"]]
             $0.pinned.insert("/external/worktree")
         }
-        try SwarmProjectStore(choicesFolder: folder).remove("/repo")
+        try SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder)).remove("/repo")
         let saved = try choices.load()
         #expect(saved.pinned == ["/other/main"])
         #expect(saved.archived == ["/other/main"])

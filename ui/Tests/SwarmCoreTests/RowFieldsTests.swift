@@ -120,7 +120,7 @@ struct RowFieldPresentationTests {
         let suite = "RowFieldsTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: root)
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(root))
         navigation.fields.tab = [.title, .unread]
         store.save(navigation)
         #expect(store.load().lastSeen == ["chat": 90])

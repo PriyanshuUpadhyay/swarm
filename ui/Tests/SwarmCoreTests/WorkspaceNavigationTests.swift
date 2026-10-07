@@ -63,13 +63,13 @@ struct WorkspaceNavigationTests {
         navigation.names[entry.id] = "Landing page copy"
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         store.save(navigation)
-        #expect(WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).load() == navigation)
+        #expect(WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load() == navigation)
         navigation.archive(entry.id)
         #expect(navigation.selectedWorkspace == nil)
         store.save(navigation)
-        var restored = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder).load()
+        var restored = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load()
         #expect(restored.archived.contains(entry.id))
         restored.archived.remove(entry.id)
         restored.select(entry)
@@ -184,7 +184,7 @@ struct WorkspaceNavigationTests {
 
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: folder)
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         var navigation = store.load()
         #expect(navigation.selectedWorkspace == "/repo/main")
         #expect(navigation.selectedChats == ["/repo/main": "one"])
