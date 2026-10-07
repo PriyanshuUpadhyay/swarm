@@ -27,6 +27,21 @@ struct ChatArchivesTests {
         #expect(!filtered.canStartChat)
     }
 
+    @Test("Archive filtering keeps the removed worktree row unable to start a chat")
+    func removedWorkspace() throws {
+        let source = SessionsTree(projects: [ProjectNode(
+            id: .repository(commonDirectory: "/repo/.git"), path: "/repo", launchDirectory: "/repo",
+            workspaces: [WorkspaceNode(
+                path: "/repo#removed", name: "Removed worktrees",
+                sessions: tree([first]).projects[0].workspaces[0].sessions, isRemoved: true
+            )]
+        )])
+        let filtered = try #require(ChatArchives().applying(to: source).projects.first?.workspaces.first)
+        #expect(filtered.isRemoved)
+        #expect(!filtered.canStartChat)
+        #expect(!filtered.missing)
+    }
+
     @Test("Selected tabs move right, then left, and inactive archives keep selection")
     func selection() {
         let tree = tree([first, second, third])

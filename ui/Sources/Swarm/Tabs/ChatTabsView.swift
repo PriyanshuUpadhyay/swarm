@@ -14,6 +14,7 @@ struct ChatTabsView: View {
     let workspaceTitle: String?
     let tabs: [ChatTab]
     let selectedID: String
+    let canStartChat: Bool
     let actions: ChatTabActions
 
     var body: some View {
@@ -30,7 +31,7 @@ struct ChatTabsView: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         ForEach(tabs) { tab in
-                            ChatTabView(tab: tab, selected: tab.id == selectedID, actions: actions)
+                            ChatTabView(tab: tab, selected: tab.id == selectedID, canStartChat: canStartChat, actions: actions)
                                 .id(tab.id)
                         }
                     }
@@ -40,6 +41,7 @@ struct ChatTabsView: View {
                 .onChange(of: selectedID) { _, id in proxy.scrollTo(id) }
             }
             Button("New chat in this workspace", systemImage: "plus", action: actions.newChat)
+                .disabled(!canStartChat)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .help("New chat in this workspace")
@@ -52,6 +54,7 @@ struct ChatTabsView: View {
 private struct ChatTabView: View {
     let tab: ChatTab
     let selected: Bool
+    let canStartChat: Bool
     let actions: ChatTabActions
 
     var body: some View {
@@ -94,6 +97,7 @@ private struct ChatTabView: View {
         .contextMenu {
             if tab.pending == nil {
                 Button("New chat here", action: actions.newChat)
+                    .disabled(!canStartChat)
                 Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
                 Button("Archive chat") { actions.archive(tab.id) }
             }

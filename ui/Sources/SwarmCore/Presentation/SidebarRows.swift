@@ -100,7 +100,8 @@ public enum SidebarRows {
             .map { StatusCount(status: $0.key, count: $0.value) }
             .sorted { $0.status.urgency > $1.status.urgency }
         return SidebarRow(
-            id: entry.id, title: navigation.title(for: entry, inProject: inProject),
+            id: entry.id, title: entry.workspace.isRemoved
+                ? entry.workspace.name : navigation.title(for: entry, inProject: inProject),
             detail: ([navigation.detail(for: entry, idsByTitle: idsByTitle, inProject: inProject)]
                 + (entry.workspace.missing ? ["folder missing"] : [])
                 + (entry.workspace.mark.map { [$0.rawValue] } ?? [])).joined(separator: " · "),

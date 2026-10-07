@@ -56,7 +56,8 @@ public struct WorkspaceNode: Sendable, Hashable, Identifiable {
     public let branch: String?
     public let missing: Bool
     public let mark: Mark?
-    public var canStartChat: Bool { !missing }
+    public let isRemoved: Bool
+    public var canStartChat: Bool { !missing && !isRemoved }
     public var sessions: [SwarmProjectSession]
     public var current: SwarmProjectSession? { sessions.first }
     public var state: SessionRowPresentation.State? {
@@ -65,13 +66,14 @@ public struct WorkspaceNode: Sendable, Hashable, Identifiable {
 
     public init(
         path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil,
-        missing: Bool = false, mark: Mark? = nil
+        missing: Bool = false, mark: Mark? = nil, isRemoved: Bool = false
     ) {
         self.path = path
         self.name = name
         self.branch = branch
         self.missing = missing
         self.mark = mark
+        self.isRemoved = isRemoved
         self.sessions = sessions
     }
 }
@@ -178,10 +180,23 @@ public struct SessionsTree: Sendable, Hashable {
                         mark: entry.isLocked ? .locked : entry.isDetached ? .detached : nil
                     )
                 }
-                let hubSessions = sessions.filter { session in
+                let unmatched = sessions.filter { session in
                     !listed.contains { !$0.isBare && contains(session.cwd, in: $0.path) }
                 }
                 let path = ProjectNode.projectPath(for: identity)
+                let removedSessions = unmatched.filter { session in
+                    let cwd = URL(fileURLWithPath: session.cwd).standardized.path
+                    return cwd != path && cwd != commonDirectory && !FileManager.default.fileExists(atPath: cwd)
+                }
+                let removedIDs = Set(removedSessions.map(\.id))
+                let hubSessions = unmatched.filter { !removedIDs.contains($0.id) }
+                if !removedSessions.isEmpty {
+                    workspaces.append(WorkspaceNode(
+                        path: path + "#removed", name: "Removed worktrees",
+                        sessions: rows(removedSessions, agentsBySession: agentsBySession, titles: titles),
+                        isRemoved: true
+                    ))
+                }
                 if !hubSessions.isEmpty {
                     let hubPath = URL(fileURLWithPath: commonDirectory).lastPathComponent == ".bare"
                         ? commonDirectory : path

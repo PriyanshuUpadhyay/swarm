@@ -1188,6 +1188,7 @@ private struct SessionsWindow: View {
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
             tabs: stripTabs(in: directory),
             selectedID: selectedTabID,
+            canStartChat: model.workspaces.first { $0.id == directory }?.workspace.canStartChat ?? true,
             actions: ChatTabActions(
                 select: showTab,
                 newChat: { startChat(in: directory) },

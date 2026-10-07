@@ -4,6 +4,59 @@ import Testing
 
 @Suite("Worktree sidebar")
 struct WorktreeSidebarTests {
+    @Test("Gone worktree chats share one removed row per project")
+    func removedWorktrees() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projects = [root.appendingPathComponent("first"), root.appendingPathComponent("second")]
+        for project in projects {
+            for folder in [".bare", "wt/main", "existing"] {
+                try FileManager.default.createDirectory(
+                    at: project.appendingPathComponent(folder), withIntermediateDirectories: true
+                )
+            }
+        }
+        let sessions = projects.flatMap { project in
+            [
+                session("\(project.lastPathComponent)-gone-one", cwd: project.path + "/wt/gone-one"),
+                session("\(project.lastPathComponent)-gone-two", cwd: project.path + "/wt/gone-two/src"),
+                session("\(project.lastPathComponent)-hub", cwd: project.path),
+                session("\(project.lastPathComponent)-existing", cwd: project.path + "/existing"),
+                session("\(project.lastPathComponent)-listed", cwd: project.path + "/wt/main/src"),
+                session("\(project.lastPathComponent)-prunable", cwd: project.path + "/wt/prunable"),
+            ]
+        }
+        let tree = SessionsTree.build(
+            sessions: sessions, projectPaths: projects.map(\.path),
+            repositoryPathsResolver: Git.repositoryPaths,
+            worktreeLister: { common in
+                let project = URL(fileURLWithPath: common).deletingLastPathComponent().path
+                return [
+                    WorktreeEntry(path: project + "/wt/main", branch: "main"),
+                    WorktreeEntry(path: project + "/wt/prunable", branch: "prunable", pruneReason: "gone"),
+                ]
+            }
+        )
+        #expect(tree.projects.count == 2)
+        for project in tree.projects {
+            let removed = try #require(project.workspaces.first { $0.id == project.path + "#removed" })
+            #expect(removed.name == "Removed worktrees")
+            #expect(Set(removed.sessions.map { $0.id.rawValue }) == [
+                "\(project.name)-gone-one", "\(project.name)-gone-two",
+            ])
+            let row = try #require(sidebarRows(tree).first { $0.id == removed.id })
+            #expect(row.title == "Removed worktrees")
+            #expect(!row.newChatEnabled)
+            #expect(!row.missing)
+            let hub = try #require(project.workspaces.first { $0.sessions.contains { $0.id.rawValue == "\(project.name)-hub" } })
+            #expect(Set(hub.sessions.map { $0.id.rawValue }) == ["\(project.name)-hub", "\(project.name)-existing"])
+            let main = try #require(project.workspaces.first { $0.path == project.path + "/wt/main" })
+            #expect(main.sessions.map { $0.id.rawValue } == ["\(project.name)-listed"])
+            let prunable = try #require(project.workspaces.first { $0.path == project.path + "/wt/prunable" })
+            #expect(prunable.sessions.map { $0.id.rawValue } == ["\(project.name)-prunable"])
+        }
+    }
+
     @Test("Missing, locked, and detached worktrees show their state")
     func worktreeStates() throws {
         let entries = [
@@ -60,6 +113,13 @@ struct WorktreeSidebarTests {
                 GitRepositoryPaths(gitDirectory: "/repo/.bare", commonDirectory: "/repo/.bare")
             },
             worktreeLister: { _ in entries }
+        )
+    }
+
+    private func session(_ id: String, cwd: String) -> SwarmSession {
+        SwarmSession(
+            id: SwarmSessionID(id), talkMode: "lane", adapter: "tmux-solo", cwd: cwd,
+            createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
         )
     }
 
