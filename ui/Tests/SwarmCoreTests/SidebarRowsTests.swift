@@ -69,18 +69,38 @@ struct SidebarRowsTests {
         #expect(restored == navigation)
     }
 
-    @Test("Chat ids use the oldest chain member and children keep their session id")
-    func stableChainIDs() {
+    @Test("Chat ids stay stable while child rows and selection use only the current session")
+    func stableChainIDs() throws {
         let root = session("root", time: 1)
         let next = session("next", time: 2)
         let chat = SwarmProjectSession(sessions: [next, root], title: "Continued")
         var navigation = WorkspaceNavigation()
         navigation.toggleCollapsed("chat:root")
-        let result = rows(project([chat]), navigation: navigation, agents: [
-            root.id: [SwarmAgent(id: .init("worker"), role: "old", pane: nil, alive: false)],
-            next.id: [SwarmAgent(id: .init("worker"), role: "new", pane: "%1", alive: true)],
-        ])
-        #expect(result.map(\.id) == ["/repo", "chat:root", "child:next/worker", "child:root/worker"])
+        let agents: [SwarmSessionID: [SwarmAgent]] = [
+            root.id: [
+                SwarmAgent(id: .init("worker"), role: "old", pane: nil, alive: false),
+                SwarmAgent(id: .init("previous-only"), role: "old", pane: nil, alive: false),
+            ],
+            next.id: [
+                SwarmAgent(id: .init("worker"), role: "new", pane: "%1", alive: true),
+                SwarmAgent(id: .init("finished"), role: "code", pane: nil, alive: false),
+            ],
+        ]
+        let project = project([chat])
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project]))
+        let result = rows(project, navigation: navigation, agents: agents)
+        #expect(result.map(\.id) == ["/repo", "chat:root", "child:next/finished", "child:next/worker"])
+        #expect(result[1].childrenSummary == "2 agents")
+        #expect(result[2].status == .ended)
+        let current = try #require(SidebarRows.selection(for: "child:next/worker", in: entries, agentsBySession: agents))
+        #expect(current.agentSessionID == next.id)
+        #expect(SidebarRows.selection(for: "child:root/worker", in: entries, agentsBySession: agents) == nil)
+        #expect(SidebarRows.selection(for: "child:root/previous-only", in: entries, agentsBySession: agents) == nil)
+        let previousAgents = try #require(agents[root.id])
+        let previousChildrenOnly = rows(project, navigation: navigation, agents: [root.id: previousAgents])
+        #expect(previousChildrenOnly.map(\.id) == ["/repo", "chat:root"])
+        #expect(!previousChildrenOnly[1].hasChildren)
+        #expect(previousChildrenOnly[1].fields.first { $0.field == .children } == nil)
     }
 
     @Test("A waiting child in an older chain member reaches a folded workspace")

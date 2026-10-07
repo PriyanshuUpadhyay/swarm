@@ -258,7 +258,7 @@ public enum SidebarRows {
                     var context = RowFields.chatContext(
                         chat, title: row.title, navigation: navigation, now: now, agentsBySession: agentsBySession,
                         branch: entry.workspace.branch, workspace: workspaceFields[path] ?? .init(),
-                        children: row.childrenSummary, steps: row.runStep.map { "\($0.skill) · \($0.stepName)" }
+                        children: row.childrenSummary ?? "", steps: row.runStep.map { "\($0.skill) · \($0.stepName)" }
                     )
                     context.status = row.status
                     row.fields = context.values(navigation.fields.chat)
@@ -298,13 +298,11 @@ public enum SidebarRows {
                 if id == chatID(chat) {
                     return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id, agentSessionID: nil, agentID: nil)
                 }
-                for session in chat.sessions {
-                    for agent in agentsBySession[session.id] ?? []
-                    where !SwarmPanePolicy.isChair(agent, in: session) {
-                        if id == "child:\(session.id.rawValue)/\(agent.id.rawValue)" {
-                            return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id,
-                                                    agentSessionID: session.id, agentID: agent.id)
-                        }
+                for agent in agentsBySession[chat.id] ?? []
+                where !SwarmPanePolicy.isChair(agent, in: chat.session) {
+                    if id == "child:\(chat.id.rawValue)/\(agent.id.rawValue)" {
+                        return SidebarSelection(rowID: id, workspaceID: entry.id, chatID: chat.id,
+                                                agentSessionID: chat.id, agentID: agent.id)
                     }
                 }
             }
@@ -349,23 +347,21 @@ public enum SidebarRows {
         for chat in chats.prefix(shown) {
             let id = chatID(chat)
             let expanded = !navigation.isCollapsed(id)
-            let children = chat.sessions.flatMap { session in
-                (agentsBySession[session.id] ?? [])
-                    .filter { !SwarmPanePolicy.isChair($0, in: session) }
-                    .sorted { $0.id < $1.id }
-                    .map { (session.id, $0) }
-            }
+            // Child rows use the same session as SessionDetail's columns; finished children stay.
+            let children = (agentsBySession[chat.id] ?? [])
+                .filter { !SwarmPanePolicy.isChair($0, in: chat.session) }
+                .sorted { $0.id < $1.id }
             let agents = agentsBySession[chat.id]
             let status = expanded && !children.isEmpty
                 ? agents?.first { SwarmPanePolicy.isChair($0, in: chat.session) }?.status
-                : AgentStatus.aggregate((agents ?? []).map(\.status) + children.map { $0.1.status }) ?? chat.status
+                : AgentStatus.aggregate((agents ?? []).map(\.status) + children.map(\.status)) ?? chat.status
             let counts = chat.statusCounts.map { StatusCount(status: $0.key, count: $0.value) }
                 .sorted { $0.status.urgency > $1.status.urgency }
             let presentation = SessionRowPresentation.make(
                 ChatRow(session: chat, workspace: entry.workspace.name, workspacePath: entry.id), now: now
             )
             let title = navigation.title(for: chat)
-            let waiting = children.filter { $0.1.status == .waiting }.count
+            let waiting = children.filter { $0.status == .waiting }.count
             let childrenLabel = children.count == 1 ? "1 agent" : "\(children.count) agents"
             result.append(SidebarRow(
                 id: id, kind: .chat, depth: 1, parentID: entry.id, expanded: expanded,
@@ -377,9 +373,9 @@ public enum SidebarRows {
                 runStep: stepsByChat[chat.id]
             ))
             if expanded {
-                result += children.map { sessionID, agent in
+                result += children.map { agent in
                     SidebarRow(
-                        id: "child:\(sessionID.rawValue)/\(agent.id.rawValue)", kind: .child, depth: 2,
+                        id: "child:\(chat.id.rawValue)/\(agent.id.rawValue)", kind: .child, depth: 2,
                         parentID: id, expanded: false, hasChildren: false, childrenSummary: nil,
                         title: agent.id.rawValue, detail: "· \(agent.role)", status: agent.status, counts: [], age: nil,
                         help: "\(agent.id.rawValue) · \(agent.role)", pinned: navigation.pinned.contains(entry.id),
