@@ -113,7 +113,8 @@ struct SidebarView<Details: View>: View {
             } else {
                 List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
                     if !showingArchive, !sections.contains(where: { $0.kind == .pinned }) {
-                        Section {} header: { pinnedHeader(status: nil) }
+                        // The empty header remains a target for the first workspace pin.
+                        Section {} header: { pinnedHeader(status: nil, hasRows: false) }
                     }
                     ForEach(sections) { section in
                         if case .project = section.kind {
@@ -133,7 +134,7 @@ struct SidebarView<Details: View>: View {
                             }
                         } else {
                             Section {
-                                if !collapsed.contains("pinned") { rows(section.rows) }
+                                if !collapsed.contains(section.collapseID) { rows(section.rows) }
                             } header: {
                                 pinnedHeader(status: section.status)
                             }
@@ -212,29 +213,41 @@ struct SidebarView<Details: View>: View {
         }
     }
 
-    private func pinnedHeader(status: AgentStatus?) -> some View {
+    private func pinnedHeader(status: AgentStatus?, hasRows: Bool = true) -> some View {
         let expanded = !collapsed.contains("pinned")
         return HStack(spacing: DesignTokens.Spacing.xs) {
-            Button { actions.toggleCollapsed("pinned") } label: {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.forward")
-                        .font(.caption2.weight(.semibold))
-                        .frame(width: DesignTokens.Size.glyphSlot)
-                    Text("Pinned")
-                    if !expanded, let status { StatusGlyph(status: status) }
+            if hasRows {
+                Button { actions.toggleCollapsed("pinned") } label: {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                            .font(.caption2.weight(.semibold))
+                            .frame(width: DesignTokens.Size.glyphSlot)
+                        Text("Pinned")
+                        if !expanded, let status { StatusGlyph(status: status) }
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Pinned")
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityValue(expanded ? "expanded" : "collapsed")
+            } else {
+                Text("Pinned")
+                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.xs)
+                    .accessibilityAddTraits(.isHeader)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Pinned")
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityValue(expanded ? "expanded" : "collapsed")
             Spacer(minLength: DesignTokens.Spacing.xs)
         }
         .contentShape(Rectangle())
         .dropDestination(for: WorkspaceDrag.self) { items, _ in
             guard items.count == 1, let source = items.first else { return false }
-            return actions.pinWorkspace(source.path)
+            return pinWorkspace(source.path)
         }
+    }
+
+    private func pinWorkspace(_ path: String) -> Bool {
+        guard actions.pinWorkspace(path) else { return false }
+        if collapsed.contains("pinned") { actions.toggleCollapsed("pinned") }
+        return true
     }
 
     @ViewBuilder
@@ -254,7 +267,10 @@ struct SidebarView<Details: View>: View {
         } else {
             Button("New chat") { actions.newChat(row.id) }
                 .disabled(!row.newChatEnabled)
-            Button(row.pinned ? "Unpin workspace" : "Pin workspace") { actions.togglePin(row.id) }
+            Button(row.pinned ? "Unpin workspace" : "Pin workspace") {
+                if row.pinned { actions.togglePin(row.id) }
+                else { _ = pinWorkspace(row.id) }
+            }
             Button("Rename workspace…") { actions.rename(row.id) }
             workspaceMoveButtons(for: row, showDisabled: true)
             Button("Archive workspace") { actions.archive(row.id) }
