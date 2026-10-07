@@ -10,16 +10,14 @@ final class SessionsTreeModel {
     private let bus = SwarmCLIBus()
     private let discovery = SwarmSessionDiscovery()
     private let drafts = ComposerDraftStore()
-    private let projects = SwarmProjectStore()
-    private let navigationStore = WorkspaceNavigationStore()
+    private let ownerChoices = OwnerChoicesStore()
+    private let projects: SwarmProjectStore
+    private let navigationStore: WorkspaceNavigationStore
     var navigation = WorkspaceNavigation() {
         didSet {
             if navigation != oldValue {
-                let revision = navigationStore.choicesRevision
                 if let failure = navigationStore.save(navigation) {
                     reportChoicesError(OwnerChoicesFailure(failure, operation: .save))
-                } else if navigationStore.choicesRevision != revision {
-                    choicesAlerts.resolve(.save)
                 }
             }
             if navigation.workspaceOrder != oldValue.workspaceOrder {
@@ -28,22 +26,20 @@ final class SessionsTreeModel {
         }
     }
 
-    var choicesAlerts = OwnerChoicesAlerts()
-
-    private var lastProjectChoicesWriteRevision = 0
+    var choicesAlerts: OwnerChoicesAlerts {
+        get { ownerChoices.alerts }
+        set { ownerChoices.alerts = newValue }
+    }
 
     private func reportChoicesError(_ failure: OwnerChoicesFailure) {
         if choicesAlerts.report(failure) { logger.error("\(failure.message)") }
     }
 
-    private func resolveProjectChoicesWrites() {
-        if projects.choicesWriteRevision != lastProjectChoicesWriteRevision {
-            choicesAlerts.resolve(.save)
-            lastProjectChoicesWriteRevision = projects.choicesWriteRevision
-        }
+    init() {
+        projects = SwarmProjectStore(choices: ownerChoices)
+        navigationStore = WorkspaceNavigationStore(defaults: .standard, choices: ownerChoices)
+        navigation = navigationStore.load()
     }
-
-    init() { navigation = navigationStore.load() }
 
     /// Rebuilt when the tree changes, not on every read.
     private(set) var workspaces: [WorkspaceEntry] = []
@@ -291,14 +287,9 @@ final class SessionsTreeModel {
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
-            resolveProjectChoicesWrites()
-            let reportChoicesError = { (failure: OwnerChoicesFailure) in
-                self.reportChoicesError(failure)
-            }
             let choicesRevision = navigationStore.choicesRevision
             let saved = projects.loadChoices(reportError: reportChoicesError) ?? navigationStore.savedChoices
             let choicesLoaded = !projects.choicesLoadFailed
-            if choicesLoaded { choicesAlerts.resolve(.load) }
             let loaded = try await discovery.tree(
                 sessions: sessions, projectPaths: saved.projectPaths, removed: saved.removedProjects, bus: bus
             )
@@ -311,7 +302,6 @@ final class SessionsTreeModel {
                     reportError: reportChoicesError
                 )
             }
-            resolveProjectChoicesWrites()
             refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
             navigation = refreshed
             sourceTree = loaded
@@ -391,7 +381,6 @@ final class SessionsTreeModel {
 
     func removeProject(_ project: ProjectNode) throws {
         let saved = try projects.remove(project.path, workspacePaths: project.workspaces.map(\.path))
-        resolveProjectChoicesWrites()
         navigation = navigationStore.adopt(saved, into: navigation)
         let removedWorkspaces = Set(project.workspaces.map(\.path))
         navigation.selectedChats = navigation.selectedChats.filter { !removedWorkspaces.contains($0.key) }

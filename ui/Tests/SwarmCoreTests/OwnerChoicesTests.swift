@@ -219,18 +219,67 @@ struct OwnerChoicesTests {
         #expect(alerts.message == saveFailure.message)
     }
 
-    @Test("A successful choices write permits the same save error to appear again")
+    @Test("Only an actual choices write resolves a save failure")
     func choicesAlertsAfterSuccessfulWrite() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: folder)
         let failure = OwnerChoicesFailure("Write denied.", operation: .save)
-        var alerts = OwnerChoicesAlerts()
-        alerts.report(failure)
-        alerts.dismiss()
-        try OwnerChoicesStore(folder: folder).update { $0.pinned = ["/repo"] }
-        alerts.resolve(.save)
-        let afterRecovery = alerts.report(failure)
+        choices.alerts.report(failure)
+        choices.alerts.dismiss()
+        try choices.update { _ in }
+        let repeatedBeforeWrite = choices.alerts.report(failure)
+        #expect(!repeatedBeforeWrite)
+        try choices.update { $0.pinned = ["/repo"] }
+        #expect(try choices.load().pinned == ["/repo"])
+        let afterRecovery = choices.alerts.report(failure)
         #expect(afterRecovery)
+    }
+
+    @Test("A real successful load resolves load failures without resolving save failures")
+    func choicesAlertsAfterSuccessfulLoad() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try OwnerChoicesStore(folder: folder).update { $0.pinned = ["/repo"] }
+        var failRead = true
+        let choices = OwnerChoicesStore(folder: folder, readFile: {
+            if failRead { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: $0)
+        })
+        let loadFailure = OwnerChoicesFailure("Read denied.", operation: .load)
+        let saveFailure = OwnerChoicesFailure("Write denied.", operation: .save)
+        choices.alerts.report(loadFailure)
+        choices.alerts.report(saveFailure)
+        choices.alerts.dismiss()
+        choices.alerts.dismiss()
+        #expect(throws: CocoaError.self) { try choices.load() }
+        let repeatedFailedLoad = choices.alerts.report(loadFailure)
+        #expect(!repeatedFailedLoad)
+        failRead = false
+        #expect(try choices.load().pinned == ["/repo"])
+        let loadAfterRecovery = choices.alerts.report(loadFailure)
+        #expect(loadAfterRecovery)
+        let saveDuringLoadRecovery = choices.alerts.report(saveFailure)
+        #expect(!saveDuringLoadRecovery)
+    }
+
+    @Test("Resolving an operation removes its pending failures and permits one new alert")
+    func resolvingDropsPendingFailures() {
+        let loadFailure = OwnerChoicesFailure("Read denied.", operation: .load)
+        let saveFailure = OwnerChoicesFailure("Write denied.", operation: .save)
+        var alerts = OwnerChoicesAlerts()
+        alerts.report(loadFailure)
+        alerts.report(saveFailure)
+        alerts.resolve(.save)
+        #expect(alerts.message == loadFailure.message)
+        alerts.dismiss()
+        #expect(alerts.message == nil)
+        let saveAfterRecovery = alerts.report(saveFailure)
+        #expect(saveAfterRecovery)
+        let repeatedSave = alerts.report(saveFailure)
+        #expect(!repeatedSave)
+        alerts.dismiss()
+        #expect(alerts.message == nil)
     }
 
 }

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Observation
 
 public struct OwnerChoices: Codable, Equatable, Sendable {
     public var pinned: Set<String> = []
@@ -76,6 +77,8 @@ public struct OwnerChoicesFailure: Hashable, Sendable {
     }
 }
 
+/// Repeated failures stay silent until their operation succeeds.
+/// Pending failures wait for dismissal; recovery also removes them.
 public struct OwnerChoicesAlerts: Equatable, Sendable {
     private var reported: Set<OwnerChoicesFailure> = []
     private var pending: [OwnerChoicesFailure] = []
@@ -92,6 +95,7 @@ public struct OwnerChoicesAlerts: Equatable, Sendable {
 
     public mutating func resolve(_ operation: OwnerChoicesFailure.Operation) {
         reported = reported.filter { $0.operation != operation }
+        pending.removeAll { $0.operation == operation }
     }
 
     public mutating func dismiss() {
@@ -99,8 +103,9 @@ public struct OwnerChoicesAlerts: Equatable, Sendable {
     }
 }
 
-@MainActor
+@MainActor @Observable
 public final class OwnerChoicesStore {
+    public var alerts = OwnerChoicesAlerts()
     private let folder: URL?
     private let readFile: (URL) throws -> Data
 
@@ -115,8 +120,14 @@ public final class OwnerChoicesStore {
     }
 
     public func load() throws -> OwnerChoices {
-        guard let folder, isClaimed(folder) else { return OwnerChoices() }
-        return try withLock(in: folder) { try readUnlocked(in: folder) }
+        let saved: OwnerChoices
+        if let folder, isClaimed(folder) {
+            saved = try withLock(in: folder) { try readUnlocked(in: folder) }
+        } else {
+            saved = OwnerChoices()
+        }
+        alerts.resolve(.load)
+        return saved
     }
 
     private func readUnlocked(in folder: URL) throws -> OwnerChoices {
@@ -155,6 +166,7 @@ public final class OwnerChoicesStore {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(choices).write(to: folder.appendingPathComponent("choices.json"), options: .atomic)
+            alerts.resolve(.save)
             return choices
         }
     }

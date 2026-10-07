@@ -6,15 +6,16 @@ public final class SwarmProjectStore {
     private let initializeRepository: (String) async throws -> Void
     private var lastGoodChoices: OwnerChoices?
     public private(set) var choicesLoadFailed = false
-    public private(set) var choicesWriteRevision = 0
 
     public convenience init(choicesFolder: URL? = SwarmHome.dataFolder) {
         self.init(choices: OwnerChoicesStore(folder: choicesFolder))
     }
 
-    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> Void = {
-        try await Git.initialize(at: $0)
-    }) {
+    public convenience init(choices: OwnerChoicesStore) {
+        self.init(choices: choices, initializeRepository: { try await Git.initialize(at: $0) })
+    }
+
+    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> Void) {
         self.choices = choices
         self.initializeRepository = initializeRepository
     }
@@ -62,7 +63,6 @@ public final class SwarmProjectStore {
             Self.rememberShown(shown, in: &updated)
             if updated != snapshot {
                 updated = try choices.update { Self.rememberShown(shown, in: &$0) }
-                choicesWriteRevision += 1
             }
             lastGoodChoices = updated
             return navigationStore.adopt(updated, into: navigation)
@@ -80,7 +80,6 @@ public final class SwarmProjectStore {
             $0.removeProject(path, workspacePaths: workspacePaths)
         }
         lastGoodChoices = saved
-        choicesWriteRevision += 1
         return saved
     }
 
@@ -113,7 +112,6 @@ public final class SwarmProjectStore {
                 if addedPath, !FileManager.default.fileExists(atPath: path) {
                     if let saved = try? choices.update({ $0.projectPaths.removeAll { $0 == path } }) {
                         lastGoodChoices = saved
-                        choicesWriteRevision += 1
                     }
                 }
             }
@@ -143,7 +141,6 @@ public final class SwarmProjectStore {
             }
         }
         lastGoodChoices = saved
-        choicesWriteRevision += 1
         return addedPath
     }
 

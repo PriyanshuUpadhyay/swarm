@@ -178,11 +178,10 @@ struct NavigationRefreshTests {
         })
         let projects = SwarmProjectStore(choices: choices)
         let store = WorkspaceNavigationStore(defaults: defaults, choices: choices)
-        var alerts = OwnerChoicesAlerts()
         var errors: [String] = []
-        let good = try #require(projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } }))
+        let good = try #require(projects.loadChoices(reportError: { if choices.alerts.report($0) { errors.append($0.message) } }))
         failRead = true
-        let retained = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
+        let retained = projects.loadChoices(reportError: { if choices.alerts.report($0) { errors.append($0.message) } })
         #expect(retained == good)
         #expect(projects.choicesLoadFailed)
         let session = SwarmSession(id: .init("removed-chat"), talkMode: "lane", adapter: "tmux-solo", cwd: "/removed",
@@ -193,13 +192,12 @@ struct NavigationRefreshTests {
         #expect(tree.projects.map(\.path) == ["/kept"])
         #expect(errors.first?.hasPrefix("Could not load sidebar choices.") == true)
         failRead = false
-        let recovered = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
-        if !projects.choicesLoadFailed { alerts.resolve(.load) }
+        let recovered = projects.loadChoices(reportError: { if choices.alerts.report($0) { errors.append($0.message) } })
         _ = projects.refreshChoices(shown: [], navigation: WorkspaceNavigation(), saved: recovered,
-                                    navigationStore: store, reportError: { if alerts.report($0) { errors.append($0.message) } })
+                                    navigationStore: store, reportError: { if choices.alerts.report($0) { errors.append($0.message) } })
         #expect(!projects.choicesLoadFailed)
         failRead = true
-        _ = projects.loadChoices(reportError: { if alerts.report($0) { errors.append($0.message) } })
+        _ = projects.loadChoices(reportError: { if choices.alerts.report($0) { errors.append($0.message) } })
         #expect(errors.count == 2)
     }
 

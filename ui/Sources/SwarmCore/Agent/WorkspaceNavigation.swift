@@ -277,7 +277,7 @@ public final class WorkspaceNavigationStore {
         choices = OwnerChoicesStore(folder: choicesFolder)
     }
 
-    init(defaults: UserDefaults, choices: OwnerChoicesStore) {
+    public init(defaults: UserDefaults, choices: OwnerChoicesStore) {
         self.defaults = defaults
         self.choices = choices
     }
