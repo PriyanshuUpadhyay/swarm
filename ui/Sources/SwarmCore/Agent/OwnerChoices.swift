@@ -139,8 +139,16 @@ public final class OwnerChoicesStore {
         let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         defer { close(descriptor) }
-        while flock(descriptor, LOCK_EX) != 0 {
-            guard errno == EINTR else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        var retryDelay: UInt32 = 10_000
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            let failure = errno
+            guard failure == EINTR || failure == EWOULDBLOCK || failure == EAGAIN else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
+            }
+            guard ContinuousClock.now < deadline else { throw OwnerChoicesError.lockBusy }
+            usleep(UInt32.random(in: retryDelay / 2...retryDelay))
+            retryDelay = min(retryDelay * 2, 100_000)
         }
         defer { _ = flock(descriptor, LOCK_UN) }
         return try body()
@@ -149,11 +157,13 @@ public final class OwnerChoicesStore {
 }
 
 public enum OwnerChoicesError: LocalizedError {
+    case lockBusy
     case emptyHome
     case unclaimedHome(String)
 
     public var errorDescription: String? {
         switch self {
+        case .lockBusy: "Sidebar choices are busy. Try again."
         case .emptyHome: "SWARM_HOME is set but empty"
         case .unclaimedHome(let path): "Sidebar choices were not saved. Run swarm init with SWARM_HOME set to \(path), then try again."
         }

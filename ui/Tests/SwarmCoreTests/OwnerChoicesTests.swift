@@ -137,6 +137,28 @@ struct OwnerChoicesTests {
         #expect(try store.load().pinned == ["/other/process", "/this/process"])
     }
 
+    @Test("A held choices lock fails within one second and remains usable after release")
+    func heldLockTimesOut() throws {
+        let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_CREAT | O_RDWR, 0o600)
+        #expect(descriptor >= 0)
+        defer { close(descriptor) }
+        #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        let released = DispatchSemaphore(value: 0)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            _ = flock(descriptor, LOCK_UN)
+            released.signal()
+        }
+        let store = OwnerChoicesStore(folder: folder)
+        let started = ContinuousClock.now
+        #expect(throws: OwnerChoicesError.self) { try store.load() }
+        #expect(started.duration(to: .now) < .milliseconds(1_750))
+        released.wait()
+        try store.update { $0.pinned.insert("/repo") }
+        #expect(try store.load().pinned == ["/repo"])
+    }
+
     @Test("A failed choices write still saves selection and folds in view defaults")
     func failedChoicesKeepsViewState() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
