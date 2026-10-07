@@ -42,6 +42,7 @@ final class SessionsTreeModel {
         projects = SwarmProjectStore(choices: ownerChoices)
         navigationStore = WorkspaceNavigationStore(defaults: .standard, choices: ownerChoices)
         navigation = navigationStore.load()
+        if let message = choicesAlerts.message { logger.error("\(message)") }
     }
 
     /// Rebuilt when the tree changes, not on every read.
