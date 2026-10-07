@@ -453,11 +453,13 @@ public actor SwarmSessionDiscovery {
         sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], now: Date = .now
     ) async -> [SwarmSessionID: String] {
         var result: [SwarmSessionID: String] = [:]
+        var activeClaudeLogs: Set<String> = []
         for session in sessions where session.archivedAt == nil {
             let provider = session.chairProvider ?? agentsBySession[session.id]?
                 .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
             let log = titleLogs[session.id] ?? session.chairLog
             if provider == "claude", let log {
+                activeClaudeLogs.insert(log)
                 var reader = claudeNameReaders[log] ?? ClaudeNameReader()
                 result[session.id] = reader.name(path: log)
                 claudeNameReaders[log] = reader
@@ -481,6 +483,7 @@ public actor SwarmSessionDiscovery {
                 }
             }
         }
+        claudeNameReaders = claudeNameReaders.filter { activeClaudeLogs.contains($0.key) }
         return result
     }
 

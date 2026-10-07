@@ -183,6 +183,27 @@ struct CLITitleTests {
         #expect(await discovery.resolvedTitles(sessions: sessions, agentsBySession: [:])[claude.id] == "Original prompt")
     }
 
+    @Test("Discovery drops Claude readers when their chats leave the listing", arguments: [false, true])
+    func evictsClaudeReaders(archive: Bool) async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let log = root.appendingPathComponent("chat.jsonl")
+        try write([#"{"type":"custom-title","sessionId":"chat","customTitle":"Saved name"}"#], to: log)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: log.path)
+        let chat = session("claude", provider: "claude", log: log.path, chair: "chat")
+        let discovery = SwarmSessionDiscovery(profiles: EmptyProfiles(), home: root)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Saved name")
+        let stamp = try #require(CLINameFileStamp(path: log.path))
+        var archived = chat
+        archived.archivedAt = 2
+        #expect(await discovery.resolvedCLINames(sessions: archive ? [archived] : [], agentsBySession: [:]).isEmpty)
+        // Keep the file stamp unchanged so only discarding the old reader can expose the new title.
+        try write([#"{"type":"custom-title","sessionId":"chat","customTitle":"Fresh name"}"#], to: log)
+        try FileManager.default.setAttributes([.modificationDate: stamp.modified], ofItemAtPath: log.path)
+        #expect(CLINameFileStamp(path: log.path) == stamp)
+        #expect(await discovery.resolvedCLINames(sessions: [chat], agentsBySession: [:])[chat.id] == "Fresh name")
+    }
+
     @Test("A CLI name on the newest model link beats the oldest prompt without clipping")
     func chainPrecedence() throws {
         let old = session("old", provider: "claude", log: nil, chair: "chat")
