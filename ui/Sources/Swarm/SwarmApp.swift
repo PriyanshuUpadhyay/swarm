@@ -549,6 +549,7 @@ private struct SessionsWindow: View {
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: RenameTarget?
     @State private var removeProjectTarget: ProjectNode?
+    @State private var pruneWorktreeTarget: (entry: WorkspaceEntry, paths: [String])?
     @State private var renameName = ""
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
     @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
@@ -801,6 +802,24 @@ private struct SessionsWindow: View {
         } message: { project in
             Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
         }
+        .alert(
+            "Prune missing worktrees?",
+            isPresented: Binding(get: { pruneWorktreeTarget != nil }, set: { if !$0 { pruneWorktreeTarget = nil } }),
+            presenting: pruneWorktreeTarget
+        ) { target in
+            Button("Prune", role: .destructive) {
+                pruneWorktreeTarget = nil
+                Task {
+                    do { try await model.pruneWorktree(target.entry) }
+                    catch { actionError = String(describing: error) }
+                }
+            }
+            Button("Cancel", role: .cancel) { pruneWorktreeTarget = nil }
+        } message: { target in
+            Text(verbatim: "Prune removes the worktree records for these missing folders in "
+                 + model.navigation.projectTitle(for: target.entry.project) + ":\n\n"
+                 + target.paths.joined(separator: "\n"))
+        }
         .alert("Could not complete action", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -1008,9 +1027,17 @@ private struct SessionsWindow: View {
                 removeProjectTarget = model.tree.projects.first { SidebarSection.id(of: $0) == id }
             },
             pruneWorktree: { id in
-                guard let workspace = entry(id) else { return }
+                guard let workspace = entry(id), workspace.workspace.missing,
+                      case .repository(let common) = workspace.project.id else { return }
                 Task {
-                    do { try await model.pruneWorktree(workspace) }
+                    do {
+                        let paths = try await Git.worktrees(of: common).filter(\.isPrunable).map(\.path)
+                        guard !paths.isEmpty else {
+                            actionError = "No missing worktrees to prune."
+                            return
+                        }
+                        pruneWorktreeTarget = (workspace, paths)
+                    }
                     catch { actionError = String(describing: error) }
                 }
             },

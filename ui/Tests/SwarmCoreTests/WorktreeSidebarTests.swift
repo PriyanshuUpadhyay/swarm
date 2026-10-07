@@ -116,12 +116,13 @@ struct WorktreeSidebarTests {
         #expect(rows.first { $0.id == entries[2].path }?.newChatEnabled == true)
     }
 
-    @Test("Prune removes a missing worktree and keeps a locked worktree")
+    @Test("Prune lists both missing worktrees and keeps a locked missing worktree")
     func pruneWorktree() async throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let repo = root.appendingPathComponent("repo")
         let missing = root.appendingPathComponent("missing")
+        let otherMissing = root.appendingPathComponent("other missing")
         let locked = root.appendingPathComponent("locked")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try await Shell.check("git", ["init", "-b", "main", repo.path])
@@ -130,15 +131,21 @@ struct WorktreeSidebarTests {
             "commit", "--allow-empty", "-m", "base",
         ], cwd: repo.path)
         try await Shell.check("git", ["worktree", "add", "-b", "missing", missing.path], cwd: repo.path)
+        try await Shell.check("git", ["worktree", "add", "-b", "other-missing", otherMissing.path], cwd: repo.path)
         try await Shell.check("git", ["worktree", "add", "-b", "locked", locked.path], cwd: repo.path)
         try await Shell.check("git", ["worktree", "lock", locked.path], cwd: repo.path)
         try FileManager.default.removeItem(at: missing)
+        try FileManager.default.removeItem(at: otherMissing)
+        try FileManager.default.removeItem(at: locked)
         let before = try await Git.worktrees(of: repo.path)
         let missingEntry = try #require(before.first { $0.branch == "missing" })
         #expect(missingEntry.isPrunable)
+        let missingFolders = Set(before.filter(\.isPrunable).map { URL(fileURLWithPath: $0.path).lastPathComponent })
+        #expect(missingFolders == [missing.lastPathComponent, otherMissing.lastPathComponent])
         try await Git.pruneWorktrees(in: repo.appendingPathComponent(".git").path)
         let entries = try await Git.worktrees(of: repo.path)
         #expect(!entries.contains { $0.path == missingEntry.path })
+        #expect(!entries.contains { $0.branch == "other-missing" })
         let lockedEntry = try #require(entries.first { $0.branch == "locked" })
         #expect(lockedEntry.isLocked)
         await #expect(throws: (any Error).self) { try await Git.pruneWorktrees(in: root.path) }

@@ -260,7 +260,7 @@ struct SidebarView<Details: View>: View {
             Button("Archive workspace") { actions.archive(row.id) }
         }
         if row.missing {
-            Button("Prune worktree") { actions.pruneWorktree(row.id) }
+            Button("Prune worktree…", role: .destructive) { actions.pruneWorktree(row.id) }
         }
     }
 
