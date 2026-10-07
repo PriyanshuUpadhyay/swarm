@@ -9,7 +9,7 @@ public struct SessionRowPresentation: Sendable, Hashable {
     public var state: State
     public var provider: String?
 
-    public static func make(_ row: ChatRow, now: Int, appName: String? = nil) -> SessionRowPresentation {
+    public static func make(_ row: ChatRow, now: Int) -> SessionRowPresentation {
         let state = state(of: row.session)
         let age = max(0, now - row.session.lastActivity)
         let ageText: String
@@ -18,7 +18,7 @@ public struct SessionRowPresentation: Sendable, Hashable {
         else if age < 86_400 { ageText = "\(age / 3_600)h" }
         else { ageText = "\(age / 86_400)d" }
 
-        let title = ChatTitle.title(row.session, appName: appName)
+        let title = ChatTitle.title(row.session)
         let status = state == .ended ? "ended" : row.session.provider ?? "no chair"
         return SessionRowPresentation(
             title: title, caption: "\(row.workspace) · \(status)", age: ageText,
