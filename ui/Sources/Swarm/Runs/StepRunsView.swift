@@ -242,8 +242,12 @@ private struct StepRunGraph: View {
         var id: String { from + ">" + to }
     }
 
-    private func focusTitle() {
+    private func focusTitle() async {
+        // A cleared request acknowledges focus; it must not clear the title focus again.
         guard focusRequest != nil else { return }
+        titleFocused = false
+        await Task.yield()
+        guard !Task.isCancelled else { return }
         titleFocused = true
         focusedTitle()
     }
@@ -267,8 +271,7 @@ private struct StepRunGraph: View {
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityFocused($titleFocused)
-                    .onAppear(perform: focusTitle)
-                    .onChange(of: focusRequest) { _, _ in focusTitle() }
+                    .task(id: focusRequest) { await focusTitle() }
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
                 if let error {
                     Text(verbatim: "Showing the last read. \(error)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
