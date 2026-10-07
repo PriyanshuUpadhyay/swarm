@@ -105,7 +105,6 @@ public enum SidebarRows {
     public static func runWorkspaces(_ entries: [WorkspaceEntry], navigation: WorkspaceNavigation) -> [String] {
         entries.filter {
             !$0.workspace.missing && !$0.workspace.isRemoved && !navigation.archived.contains($0.id)
-                && (!navigation.isCollapsed($0.id) || navigation.pinned.contains($0.id))
         }.map(\.id)
     }
 

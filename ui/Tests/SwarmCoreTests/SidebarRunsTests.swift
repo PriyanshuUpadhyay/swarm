@@ -61,11 +61,26 @@ struct SidebarRunsTests {
         #expect(SidebarRows.runSummary(runs.filter { $0.urgency == .active }) == "flow · 01 build")
         var navigation = WorkspaceNavigation()
         navigation.collapsed = [WorkspaceNavigation.workspaceCollapseID(folder.path), WorkspaceNavigation.workspaceCollapseID(folder.path + "/other")]
-        #expect(SidebarRows.runWorkspaces(entries, navigation: navigation).isEmpty)
+        #expect(Set(SidebarRows.runWorkspaces(entries, navigation: navigation)) == Set(entries.map(\.id)))
         navigation.pinned = [folder.path]
-        #expect(SidebarRows.runWorkspaces(entries, navigation: navigation) == [folder.path])
+        #expect(Set(SidebarRows.runWorkspaces(entries, navigation: navigation)) == Set(entries.map(\.id)))
         navigation.archived = [folder.path]
-        #expect(SidebarRows.runWorkspaces(entries, navigation: navigation).isEmpty)
+        #expect(SidebarRows.runWorkspaces(entries, navigation: navigation) == [folder.path + "/other"])
+    }
+
+    @Test("Run scans include folded empty workspaces and exclude missing, removed, and archived workspaces")
+    func runScanTargets() {
+        let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [
+            WorkspaceNode(path: "/repo", name: "repo", sessions: []),
+            WorkspaceNode(path: "/repo/missing", name: "missing", sessions: [], missing: true),
+            WorkspaceNode(path: "/repo#removed", name: "Removed worktrees", sessions: [], isRemoved: true),
+            WorkspaceNode(path: "/repo/archive", name: "archived", sessions: [])
+        ])
+        var navigation = WorkspaceNavigation()
+        navigation.toggleCollapsed("/repo")
+        navigation.archived = ["/repo/archive"]
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project]))
+        #expect(SidebarRows.runWorkspaces(entries, navigation: navigation) == ["/repo"])
     }
 
     @Test("Chat rows and tabs choose the newest run when urgency is equal")
