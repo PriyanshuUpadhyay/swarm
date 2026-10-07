@@ -173,4 +173,16 @@ public final class WorkspaceNavigationStore {
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
     }
+
+    public func pruneMissingFolders(_ value: WorkspaceNavigation) throws -> WorkspaceNavigation {
+        try choices.update { $0.pruneMissingFolders() }
+        let saved = try choices.load()
+        var pruned = value
+        pruned.pinned = saved.pinned
+        pruned.archived = saved.archived
+        pruned.names = saved.names
+        pruned.selectedChats = pruned.selectedChats.filter { OwnerChoices.folderExists($0.key) }
+        save(pruned)
+        return pruned
+    }
 }

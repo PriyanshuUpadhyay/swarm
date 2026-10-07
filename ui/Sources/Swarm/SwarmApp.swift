@@ -1,10 +1,12 @@
 import Foundation
 import Observation
+import OSLog
 import SwiftUI
 import SwarmCore
 
 @MainActor @Observable
 final class SessionsTreeModel {
+    private let logger = Logger(subsystem: "io.github.priyanshuupadhyay.swarm", category: "refresh")
     private let bus = SwarmCLIBus()
     private let discovery = SwarmSessionDiscovery()
     private let drafts = ComposerDraftStore()
@@ -258,8 +260,14 @@ final class SessionsTreeModel {
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
-            let loaded = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
+            let loaded = try await discovery.tree(
+                sessions: sessions, projectPaths: projects.paths(), removed: projects.removedPaths(), bus: bus
+            )
             guard revision == refreshRevision else { return }
+            navigation = projects.refreshChoices(
+                shown: loaded.projects, navigation: navigation, navigationStore: navigationStore,
+                reportError: { logger.error("Could not save sidebar choices: \($0)") }
+            )
             sourceTree = loaded
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
@@ -333,6 +341,18 @@ final class SessionsTreeModel {
         await discovery.forgetIdentities()
         try await refresh()
         return path
+    }
+
+    func removeProject(_ project: ProjectNode) throws {
+        try projects.remove(project.path)
+        refreshRevision += 1
+        let wasSelected = selectedWorkspace?.project.path == project.path
+        sourceTree = SessionsTree(
+            projects: sourceTree.projects.filter { $0.path != project.path },
+            agentsBySession: sourceTree.agentsBySession
+        )
+        tree = visibleTree
+        if wasSelected { showHome() }
     }
 
     /// Makes a plain-folder project a git repository and returns it as one. The node comes from
@@ -461,6 +481,7 @@ private struct SessionsWindow: View {
     @State private var pathSwarmDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: WorkspaceEntry?
+    @State private var removeProjectTarget: ProjectNode?
     @State private var workspaceName = ""
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
     @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
@@ -685,6 +706,20 @@ private struct SessionsWindow: View {
                 Task { try? await model.refresh() }
             }
         }
+        .alert(
+            "Remove Project…",
+            isPresented: Binding(get: { removeProjectTarget != nil }, set: { if !$0 { removeProjectTarget = nil } }),
+            presenting: removeProjectTarget
+        ) { project in
+            Button("Remove Project", role: .destructive) {
+                do { try model.removeProject(project) }
+                catch { actionError = error.localizedDescription }
+                removeProjectTarget = nil
+            }
+            Button("Cancel", role: .cancel) { removeProjectTarget = nil }
+        } message: { project in
+            Text("Hide \(project.name) from the sidebar? Its folder and chats stay on disk.")
+        }
         .alert("Could not complete action", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -846,7 +881,10 @@ private struct SessionsWindow: View {
                 renameTarget = entry
             },
             archive: { id in entry(id).map(model.archiveWorkspace) },
-            restore: { model.navigation.archived.remove($0) }
+            restore: { model.navigation.archived.remove($0) },
+            removeProject: { id in
+                removeProjectTarget = model.tree.projects.first { SidebarSection.id(of: $0) == id }
+            }
         )
     }
 

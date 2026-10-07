@@ -5,6 +5,8 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var archived: Set<String> = []
     public var names: [String: String] = [:]
     public var projectPaths: [String] = []
+    public var removedProjects: Set<String> = []
+    public var workspaceOrder: [String: [String]] = [:]
 
     public init() {}
 
@@ -14,6 +16,21 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         archived = try container.decodeIfPresent(Set<String>.self, forKey: .archived) ?? []
         names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
         projectPaths = try container.decodeIfPresent([String].self, forKey: .projectPaths) ?? []
+        removedProjects = try container.decodeIfPresent(Set<String>.self, forKey: .removedProjects) ?? []
+        workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
+    }
+
+    public mutating func pruneMissingFolders() {
+        pinned = pinned.filter(Self.folderExists)
+        archived = archived.filter(Self.folderExists)
+        names = names.filter { Self.folderExists($0.key) }
+        workspaceOrder = workspaceOrder.filter { Self.folderExists($0.key) }
+            .mapValues { $0.filter(Self.folderExists) }
+    }
+
+    static func folderExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 

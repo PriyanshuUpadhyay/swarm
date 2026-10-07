@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 public final class SwarmProjectStore {
     private let choices: OwnerChoicesStore
+    private var lastRefreshError: String?
 
     public init(choicesFolder: URL? = SwarmHome.dataFolder) {
         choices = OwnerChoicesStore(folder: choicesFolder)
@@ -10,6 +11,44 @@ public final class SwarmProjectStore {
 
     public func paths() -> [String] {
         (try? choices.load().projectPaths) ?? []
+    }
+
+    public func removedPaths() -> Set<String> {
+        (try? choices.load().removedProjects) ?? []
+    }
+
+    public func rememberShown(_ projects: [ProjectNode]) throws {
+        try choices.update { saved in
+            for project in projects where !saved.removedProjects.contains(project.path) {
+                if !saved.projectPaths.contains(project.path) { saved.projectPaths.append(project.path) }
+            }
+        }
+    }
+
+    public func refreshChoices(
+        shown: [ProjectNode], navigation: WorkspaceNavigation,
+        navigationStore: WorkspaceNavigationStore, reportError: (String) -> Void
+    ) -> WorkspaceNavigation {
+        var failures: [String] = []
+        do { try rememberShown(shown) }
+        catch { failures.append(error.localizedDescription) }
+        var refreshed = navigation
+        do { refreshed = try navigationStore.pruneMissingFolders(navigation) }
+        catch {
+            let message = error.localizedDescription
+            if !failures.contains(message) { failures.append(message) }
+        }
+        let failure = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        if let failure, failure != lastRefreshError { reportError(failure) }
+        lastRefreshError = failure
+        return refreshed
+    }
+
+    public func remove(_ path: String) throws {
+        try choices.update {
+            $0.projectPaths.removeAll { $0 == path || Self.projectPath(for: $0) == path }
+            $0.removedProjects.insert(path)
+        }
     }
 
     @discardableResult
@@ -53,8 +92,16 @@ public final class SwarmProjectStore {
 
     private func remember(_ path: String) throws {
         try choices.update {
+            $0.removedProjects.remove(Self.projectPath(for: path))
+            $0.removedProjects.remove(path)
             if !$0.projectPaths.contains(path) { $0.projectPaths.append(path) }
         }
+    }
+
+    private static func projectPath(for path: String) -> String {
+        ProjectNode.projectPath(for: SwarmSessionDiscovery.identity(
+            for: path, repositoryPathsResolver: Git.repositoryPaths
+        ))
     }
 }
 

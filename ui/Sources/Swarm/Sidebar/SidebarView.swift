@@ -35,6 +35,7 @@ struct SidebarActions {
     var rename: (String) -> Void
     var archive: (String) -> Void
     var restore: (String) -> Void
+    var removeProject: (String) -> Void
 }
 
 /// The sidebar chrome: a view switcher over the workspace list, or over the workspace details that
@@ -110,7 +111,8 @@ struct SidebarView<Details: View>: View {
                                     title: section.title, expanded: expanded,
                                     status: expanded ? nil : section.status,
                                     toggle: showingArchive ? nil : { actions.toggleCollapsed(path) },
-                                    newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) }
+                                    newWorkspace: showingArchive ? nil : { actions.newWorkspace(section.id) },
+                                    removeProject: { actions.removeProject(section.id) }
                                 )
                             }
                         } else {
@@ -180,6 +182,7 @@ private struct ProjectHeader: View {
     /// Nil in the archive view, which has no collapse.
     let toggle: (() -> Void)?
     let newWorkspace: (() -> Void)?
+    let removeProject: () -> Void
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
@@ -212,6 +215,7 @@ private struct ProjectHeader: View {
         }
         .contextMenu {
             if let newWorkspace { Button("New Workspace…", action: newWorkspace) }
+            Button("Remove Project…", action: removeProject)
         }
     }
 }
