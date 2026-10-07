@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import SwarmCore
 
+private enum InitializeFailure: Error { case rejected }
+
 @Suite("Project folders")
 @MainActor
 struct SwarmProjectStoreTests {
@@ -90,6 +92,26 @@ struct SwarmProjectStoreTests {
         let store = SwarmProjectStore(choicesFolder: nil)
         await #expect(throws: OwnerChoicesError.self) { try await store.create(at: target) }
         #expect(!FileManager.default.fileExists(atPath: target.path))
+    }
+
+    @Test("A failed choices rollback keeps the original git init error")
+    func failedRollbackKeepsInitializeError() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = try claimedChoicesFolder(root.appendingPathComponent("choices"))
+        let target = root.appendingPathComponent("new")
+        var failRead = false
+        let choices = OwnerChoicesStore(folder: folder, readFile: {
+            if failRead { throw CocoaError(.fileReadNoPermission) }
+            return try Data(contentsOf: $0)
+        })
+        let store = SwarmProjectStore(choices: choices, initializeRepository: { _ in
+            failRead = true
+            throw InitializeFailure.rejected
+        })
+        await #expect(throws: InitializeFailure.self) { try await store.create(at: target) }
+        #expect(!FileManager.default.fileExists(atPath: target.path))
+        #expect(try OwnerChoicesStore(folder: folder).load().projectPaths == [target.path])
     }
 
     @Test("A failed git init removes only a newly remembered project path with its empty folder")

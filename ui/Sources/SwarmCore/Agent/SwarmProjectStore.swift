@@ -116,7 +116,7 @@ public final class SwarmProjectStore {
             if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true {
                 try? FileManager.default.removeItem(atPath: path)
                 if addedPath, !FileManager.default.fileExists(atPath: path) {
-                    try choices.update { $0.projectPaths.removeAll { $0 == path } }
+                    try? choices.update { $0.projectPaths.removeAll { $0 == path } }
                 }
             }
             throw error
