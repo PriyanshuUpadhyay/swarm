@@ -41,10 +41,10 @@ struct ProjectRetentionTests {
             createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
         )
         let first = build(sessions: [chat])
-        try store.rememberShown(first.projects)
+        try refresh(first, in: store, choicesFolder: folder)
         chat.archivedAt = 2
         let restored = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
-        let archived = build(sessions: [chat], paths: restored.paths())
+        let archived = build(sessions: [chat], paths: try savedChoices(from: restored).projectPaths)
         #expect(archived.projects.map(\.path) == ["/repo"])
         #expect(archived.projects.first?.chats.isEmpty == true)
         #expect(Set(archived.projects.first?.workspaces.map(\.path) ?? []) == ["/repo/main", "/repo/feature"])
@@ -56,16 +56,16 @@ struct ProjectRetentionTests {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
-        try store.rememberShown(build(sessions: [], paths: ["/repo"]).projects)
+        try refresh(build(sessions: [], paths: ["/repo"]), in: store, choicesFolder: folder)
         try store.remove("/repo", workspacePaths: [])
         let restored = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(folder))
-        #expect(restored.paths().isEmpty)
-        #expect(restored.removedPaths() == ["/repo"])
+        #expect(try savedChoices(from: restored).projectPaths.isEmpty)
+        #expect(try savedChoices(from: restored).removedProjects == ["/repo"])
         let chat = SwarmSession(
             id: .init("new-chat"), talkMode: "lane", adapter: "tmux-solo", cwd: "/repo/main",
             createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil
         )
-        #expect(build(sessions: [chat], paths: ["/repo/main"], removed: restored.removedPaths()).projects.isEmpty)
+        #expect(build(sessions: [chat], paths: ["/repo/main"], removed: try savedChoices(from: restored).removedProjects).projects.isEmpty)
         #expect(SessionsTree.build(
             sessions: [], projectPaths: ["/folder"], removed: ["/folder"],
             repositoryPathsResolver: { _ in nil }, worktreeLister: { _ in [] }
@@ -81,10 +81,10 @@ struct ProjectRetentionTests {
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let path = try await store.add(project)
         try store.remove(path, workspacePaths: [])
-        #expect(store.removedPaths() == [path])
+        #expect(try savedChoices(from: store).removedProjects == [path])
         #expect(try await store.add(project) == path)
-        #expect(store.removedPaths().isEmpty)
-        #expect(store.paths() == [path])
+        #expect(try savedChoices(from: store).removedProjects.isEmpty)
+        #expect(try savedChoices(from: store).projectPaths == [path])
         #expect(FileManager.default.fileExists(atPath: path))
     }
 
@@ -102,11 +102,11 @@ struct ProjectRetentionTests {
             for: path, repositoryPathsResolver: Git.repositoryPaths
         ))
         try store.remove(canonical, workspacePaths: [])
-        #expect(store.paths().isEmpty)
-        #expect(store.removedPaths() == [canonical])
+        #expect(try savedChoices(from: store).projectPaths.isEmpty)
+        #expect(try savedChoices(from: store).removedProjects == [canonical])
         _ = try await store.add(workspace)
-        #expect(store.removedPaths().isEmpty)
-        #expect(store.paths() == [path])
+        #expect(try savedChoices(from: store).removedProjects.isEmpty)
+        #expect(try savedChoices(from: store).projectPaths == [path])
     }
 
     @Test("Create clears a project ignore entry")
@@ -118,8 +118,8 @@ struct ProjectRetentionTests {
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         try store.remove(project.path, workspacePaths: [])
         let path = try await store.create(at: project)
-        #expect(store.removedPaths().isEmpty)
-        #expect(store.paths() == [path])
+        #expect(try savedChoices(from: store).removedProjects.isEmpty)
+        #expect(try savedChoices(from: store).projectPaths == [path])
     }
 
     @Test("Refresh keeps missing folders and removed rows until the owner removes the project")
@@ -228,4 +228,17 @@ struct ProjectRetentionTests {
             worktreeLister: { _ in [WorktreeEntry(path: "/repo/main", branch: "main"), WorktreeEntry(path: "/repo/feature", branch: "feature")] }
         )
     }
+    private func savedChoices(from store: SwarmProjectStore) throws -> OwnerChoices {
+        try #require(store.loadChoices(reportError: { Issue.record("\($0)") }))
+    }
+
+    private func refresh(_ tree: SessionsTree, in projects: SwarmProjectStore, choicesFolder: URL) throws {
+        let suite = "ProjectRetentionTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: choicesFolder)
+        _ = projects.refreshChoices(shown: tree.projects, navigation: store.load(),
+                                    navigationStore: store, reportError: { Issue.record("\($0)") })
+    }
+
 }

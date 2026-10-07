@@ -31,18 +31,6 @@ public final class SwarmProjectStore {
         lastRefreshError = failure
     }
 
-    public func paths() -> [String] {
-        (try? choices.load().projectPaths) ?? []
-    }
-
-    public func removedPaths() -> Set<String> {
-        (try? choices.load().removedProjects) ?? []
-    }
-
-    public func rememberShown(_ projects: [ProjectNode]) throws {
-        try choices.update { Self.rememberShown(projects, in: &$0) }
-    }
-
     private static func rememberShown(_ projects: [ProjectNode], in saved: inout OwnerChoices) {
         for project in projects where !saved.removedProjects.contains(project.path) {
             let path: String

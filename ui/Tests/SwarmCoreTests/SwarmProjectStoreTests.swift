@@ -21,7 +21,7 @@ struct SwarmProjectStoreTests {
         #expect(FileManager.default.fileExists(atPath: created.path))
         #expect(Git.repositoryPaths(in: created.path) != nil)
         #expect(try await store.add(created) == created.path)
-        #expect(SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices"))).paths() == [created.path])
+        #expect(try savedChoices(from: SwarmProjectStore(choicesFolder: root.appendingPathComponent("choices"))).projectPaths == [created.path])
         #expect(try OwnerChoicesStore(folder: root.appendingPathComponent("choices")).load().projectPaths == [created.path])
         await #expect(throws: SwarmProjectError.self) { try await store.create(at: created) }
     }
@@ -73,10 +73,10 @@ struct SwarmProjectStoreTests {
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let initial = build([chat])
         #expect(initial.projects.count == 1)
-        try store.rememberShown(initial.projects)
-        let refreshed = build([chat], paths: store.paths())
+        try refresh(initial, in: store, choicesFolder: root.appendingPathComponent("choices"))
+        let refreshed = build([chat], paths: try savedChoices(from: store).projectPaths)
         #expect(refreshed.projects.count == 1)
-        let archived = build([], paths: store.paths())
+        let archived = build([], paths: try savedChoices(from: store).projectPaths)
         #expect(archived.projects.count == 1)
         #expect(archived.projects.first?.id == initial.projects.first?.id)
         #expect(archived.projects.first?.path == bare.path)
@@ -133,6 +133,19 @@ struct SwarmProjectStoreTests {
         await #expect(throws: ShellError.self) { try await store.create(at: rememberedProject) }
         #expect(!FileManager.default.fileExists(atPath: rememberedProject.path))
         #expect(try choices.load().projectPaths == [rememberedProject.path])
+    }
+
+    private func savedChoices(from store: SwarmProjectStore) throws -> OwnerChoices {
+        try #require(store.loadChoices(reportError: { Issue.record("\($0)") }))
+    }
+
+    private func refresh(_ tree: SessionsTree, in projects: SwarmProjectStore, choicesFolder: URL) throws {
+        let suite = "SwarmProjectStoreTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: choicesFolder)
+        _ = projects.refreshChoices(shown: tree.projects, navigation: store.load(),
+                                    navigationStore: store, reportError: { Issue.record("\($0)") })
     }
 
 }
