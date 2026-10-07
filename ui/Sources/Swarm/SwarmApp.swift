@@ -465,7 +465,9 @@ final class SessionsTreeModel {
     func runRowFields() async {
         while !Task.isCancelled {
             let paths = RowFields.requestedPaths(for: .dirty, entries: workspaces, fields: navigation.fields)
-            let read = await rowFieldCache.refresh(paths: paths)
+            let githubPaths = Set(RowFields.requestedPaths(for: .pr, entries: workspaces, fields: navigation.fields))
+                .union(RowFields.requestedPaths(for: .ci, entries: workspaces, fields: navigation.fields))
+            let read = await rowFieldCache.refresh(paths: paths, githubPaths: Array(githubPaths))
             guard !Task.isCancelled else { return }
             workspaceFields = read.filter { value in workspaces.contains { $0.id == value.key } }
             try? await Task.sleep(for: .seconds(10))

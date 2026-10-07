@@ -34,7 +34,13 @@ public struct RowFieldValue: Sendable, Hashable {
 
 public struct RowWorkspaceFields: Sendable, Equatable {
     public var dirtyCount: Int?
-    public init(dirtyCount: Int? = nil) { self.dirtyCount = dirtyCount }
+    public var pr: String?
+    public var ci: String?
+    public init(dirtyCount: Int? = nil, pr: String? = nil, ci: String? = nil) {
+        self.dirtyCount = dirtyCount
+        self.pr = pr
+        self.ci = ci
+    }
 }
 
 public struct RowFieldContext: Sendable {
@@ -109,9 +115,7 @@ public enum RowFields {
         var context = RowFieldContext(title: title, status: AgentStatus.aggregate(entries.compactMap(\.status)),
                                       unread: chats.contains { navigation.isUnread($0) })
         for field in [RowField.provider, .model, .effort, .question] {
-            let texts = contexts.compactMap { $0.text[field] }
-            var seen: Set<String> = []
-            context.text[field] = texts.filter { seen.insert($0).inserted }.joined(separator: " · ")
+            context.text[field] = unique(contexts.compactMap { $0.text[field] })
         }
         context.text[.branch] = entries.compactMap(\.workspace.branch).joined(separator: " · ")
         context.text[.children] = chats.count == 1 ? "1 chat" : "\(chats.count) chats"
@@ -129,6 +133,9 @@ public enum RowFields {
         let dirty = entries.compactMap { workspaceFields[$0.id]?.dirtyCount }
         if !dirty.isEmpty { context.text[.dirty] = "\(dirty.reduce(0, +)) dirty" }
         context.text[.steps] = SidebarRows.runSummary(entries.flatMap { runsByWorkspace[$0.id] ?? [] })
+        let cached = entries.compactMap { workspaceFields[$0.id] }
+        context.text[.pr] = unique(cached.compactMap(\.pr))
+        context.text[.ci] = unique(cached.compactMap(\.ci))
         return context
     }
 
@@ -161,6 +168,29 @@ public enum RowFields {
 
     private static func setWorkspace(_ workspace: RowWorkspaceFields, in context: inout RowFieldContext) {
         if let count = workspace.dirtyCount { context.text[.dirty] = "\(count) dirty" }
+        context.text[.pr] = workspace.pr
+        context.text[.ci] = workspace.ci
+    }
+
+    private static func unique(_ texts: [String]) -> String {
+        var seen: Set<String> = []
+        return texts.filter { seen.insert($0).inserted }.joined(separator: " · ")
+    }
+
+    public static func githubFields(_ lookup: PullRequestLookup) -> RowWorkspaceFields {
+        guard let request = lookup.match?.pullRequest else { return RowWorkspaceFields() }
+        return RowWorkspaceFields(pr: "PR #\(request.number)", ci: ciText(request.statusCheckRollup ?? []))
+    }
+
+    private static func ciText(_ checks: [GitHubCheck]) -> String? {
+        guard !checks.isEmpty else { return nil }
+        let states = checks.map { $0.result.uppercased() }
+        let failed: Set<String> = ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]
+        let pending: Set<String> = ["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"]
+        let passed: Set<String> = ["SUCCESS", "NEUTRAL", "SKIPPED"]
+        if states.contains(where: failed.contains) { return "CI failed" }
+        if states.contains(where: pending.contains) { return "CI pending" }
+        return states.allSatisfy(passed.contains) ? "CI passed" : "CI unknown"
     }
 
     public static func stepsByChat(
@@ -193,24 +223,61 @@ public enum RowFields {
 /// failed reads cannot cause a burst of subprocesses for the same workspace.
 public actor RowFieldCache {
     public typealias Inspect = @Sendable (String) async throws -> GitWorkspaceSnapshot
+    public typealias Lookup = @Sendable (GitWorkspaceSnapshot) async throws -> PullRequestLookup
     private let inspect: Inspect
+    private let lookup: Lookup
     private var lastDirtyRead: [String: Date] = [:]
+    private var lastGitHubRead: [String: Date] = [:]
     private var values: [String: RowWorkspaceFields] = [:]
 
-    public init(inspect: @escaping Inspect = { try await Git.inspect(in: $0) }) { self.inspect = inspect }
+    public init(
+        inspect: @escaping Inspect = { try await Git.inspect(in: $0) },
+        lookup: @escaping Lookup = { try await GitHubInspection().lookup(in: $0) }
+    ) {
+        self.inspect = inspect
+        self.lookup = lookup
+    }
 
-    public func refresh(paths: [String], now: Date = Date()) async -> [String: RowWorkspaceFields] {
-        for path in Set(paths).sorted() {
+    public func refresh(paths: [String], githubPaths: [String] = [], now: Date? = nil) async -> [String: RowWorkspaceFields] {
+        let dirty = Set(paths)
+        let github = Set(githubPaths)
+        for path in dirty.union(github).sorted() {
             guard !Task.isCancelled else { break }
-            if let last = lastDirtyRead[path], now.timeIntervalSince(last) < 10 { continue }
-            lastDirtyRead[path] = now
+            let readTime = now ?? Date()
+            let readDirty = dirty.contains(path) && due(lastDirtyRead[path], after: 10, now: readTime)
+            let readGitHub = github.contains(path) && due(lastGitHubRead[path], after: 120, now: readTime)
+            guard readDirty || readGitHub else { continue }
+            if readDirty { lastDirtyRead[path] = readTime }
+            if readGitHub { lastGitHubRead[path] = readTime }
             do {
                 let snapshot = try await inspect(path)
-                values[path, default: RowWorkspaceFields()].dirtyCount = Set(snapshot.files.map(\.path)).count
+                if readDirty {
+                    values[path, default: RowWorkspaceFields()].dirtyCount = Set(snapshot.files.map(\.path)).count
+                }
+                if readGitHub {
+                    lastGitHubRead[path] = now ?? Date()
+                    do {
+                        let fields = RowFields.githubFields(try await lookup(snapshot))
+                        values[path, default: RowWorkspaceFields()].pr = fields.pr
+                        values[path, default: RowWorkspaceFields()].ci = fields.ci
+                    } catch {
+                        clearGitHub(path)
+                    }
+                }
             } catch {
-                values[path, default: RowWorkspaceFields()].dirtyCount = nil
+                if readDirty { values[path, default: RowWorkspaceFields()].dirtyCount = nil }
+                if readGitHub { clearGitHub(path) }
             }
         }
         return values
+    }
+
+    private func due(_ last: Date?, after seconds: TimeInterval, now: Date) -> Bool {
+        last.map { now.timeIntervalSince($0) >= seconds } ?? true
+    }
+
+    private func clearGitHub(_ path: String) {
+        values[path, default: RowWorkspaceFields()].pr = nil
+        values[path, default: RowWorkspaceFields()].ci = nil
     }
 }
