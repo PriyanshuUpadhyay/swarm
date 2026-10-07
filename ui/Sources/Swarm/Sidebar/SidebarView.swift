@@ -38,6 +38,7 @@ struct SidebarActions {
     var togglePin: (String) -> Void
     var pinWorkspace: (String) -> Bool
     var moveWorkspace: (String, String) -> Bool
+    var workspaceMoveTarget: (String, Int) -> String?
     var rename: (String) -> Void
     var renameChat: (String) -> Void
     var renameProject: (String) -> Void
@@ -204,6 +205,11 @@ struct SidebarView<Details: View>: View {
         )
         .tag(row.id)
         .contextMenu { menu(for: row) }
+        .accessibilityActions {
+            if row.kind == .workspace, !row.archived {
+                workspaceMoveButtons(for: row, showDisabled: false)
+            }
+        }
     }
 
     private func pinnedHeader(status: AgentStatus?) -> some View {
@@ -250,10 +256,24 @@ struct SidebarView<Details: View>: View {
                 .disabled(!row.newChatEnabled)
             Button(row.pinned ? "Unpin workspace" : "Pin workspace") { actions.togglePin(row.id) }
             Button("Rename workspace…") { actions.rename(row.id) }
+            workspaceMoveButtons(for: row, showDisabled: true)
             Button("Archive workspace") { actions.archive(row.id) }
         }
         if row.missing {
             Button("Prune worktree") { actions.pruneWorktree(row.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func workspaceMoveButtons(for row: SidebarRow, showDisabled: Bool) -> some View {
+        ForEach([-1, 1], id: \.self) { offset in
+            let target = actions.workspaceMoveTarget(row.id, offset)
+            if target != nil || showDisabled {
+                Button(offset < 0 ? "Move Up" : "Move Down") {
+                    if let target { _ = actions.moveWorkspace(row.id, target) }
+                }
+                .disabled(target == nil)
+            }
         }
     }
 }

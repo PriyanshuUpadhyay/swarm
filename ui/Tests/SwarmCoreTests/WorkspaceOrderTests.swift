@@ -82,6 +82,27 @@ struct WorkspaceOrderTests {
         #expect(navigation.pinned == ["/repo"])
     }
 
+    @Test("Move targets use stored order, skip archived rows, and stop at pin group edges")
+    func moveTargets() {
+        let project = project()
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project])).reversed()
+        var navigation = WorkspaceNavigation()
+        navigation.workspaceOrder = ["/repo": ["/repo/beta", "/repo/alpha", "/repo", "/repo#removed"]]
+        navigation.archived = ["/repo/alpha"]
+        let shuffledEntries = Array(entries)
+        #expect(navigation.workspaceMoveTarget("/repo/beta", by: -1, in: shuffledEntries) == nil)
+        #expect(navigation.workspaceMoveTarget("/repo/beta", by: 1, in: shuffledEntries) == "/repo")
+        #expect(navigation.workspaceMoveTarget("/repo#removed", by: 1, in: shuffledEntries) == nil)
+        #expect(navigation.workspaceMoveTarget("/repo#removed", by: -1, in: shuffledEntries) == "/repo")
+        #expect(navigation.workspaceMoveTarget("/repo/alpha", by: 1, in: shuffledEntries) == nil)
+        navigation.pinned = ["/repo/beta", "/repo#removed"]
+        #expect(navigation.workspaceMoveTarget("/repo/beta", by: 1, in: shuffledEntries) == "/repo#removed")
+        #expect(navigation.workspaceMoveTarget("/repo#removed", by: -1, in: shuffledEntries) == "/repo/beta")
+        #expect(navigation.workspaceMoveTarget("/repo", by: -1, in: shuffledEntries) == nil)
+        #expect(navigation.workspaceMoveTarget("/repo", by: 1, in: shuffledEntries) == nil)
+        #expect(navigation.workspaceMoveTarget("/gone", by: 1, in: shuffledEntries) == nil)
+    }
+
     @Test("Order and pins use choices while the Pinned fold uses view defaults across restarts")
     func persistence() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

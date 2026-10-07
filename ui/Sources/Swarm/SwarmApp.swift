@@ -980,6 +980,9 @@ private struct SessionsWindow: View {
             },
             pinWorkspace: { model.navigation.pinWorkspace($0, in: model.workspaces) },
             moveWorkspace: { model.navigation.moveWorkspace($0, onto: $1, in: model.workspaces) },
+            workspaceMoveTarget: {
+                model.navigation.workspaceMoveTarget($0, by: $1, in: model.workspaces)
+            },
             rename: { id in
                 guard let entry = entry(id) else { return }
                 // The name the row shows, so Save with no edit keeps it.

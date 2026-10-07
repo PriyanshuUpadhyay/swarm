@@ -62,6 +62,17 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 
     public init() {}
 
+    public func workspaceMoveTarget(_ path: String, by offset: Int, in entries: [WorkspaceEntry]) -> String? {
+        guard offset == -1 || offset == 1,
+              let source = entries.first(where: { $0.id == path }), !archived.contains(path) else { return nil }
+        let siblings = SessionsTree.ordered(source.project.workspaces,
+                                           order: workspaceOrder[source.project.path] ?? [],
+                                           mainPath: source.project.mainWorkspacePath, hubPath: source.project.path)
+            .map(\.path).filter { !archived.contains($0) && pinned.contains($0) == pinned.contains(path) }
+        guard let index = siblings.firstIndex(of: path), siblings.indices.contains(index + offset) else { return nil }
+        return siblings[index + offset]
+    }
+
     /// A drop can move only a known workspace within the same project.
     @discardableResult
     public mutating func moveWorkspace(_ path: String, onto target: String, in entries: [WorkspaceEntry]) -> Bool {
