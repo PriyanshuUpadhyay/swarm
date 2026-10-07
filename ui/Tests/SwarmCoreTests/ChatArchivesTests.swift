@@ -7,6 +7,26 @@ struct ChatArchivesTests {
     private let second = SwarmSessionID("second")
     private let third = SwarmSessionID("third")
 
+    @Test("Archiving keeps missing and locked workspace flags")
+    func workspaceFlags() throws {
+        let workspace = WorkspaceNode(
+            path: "/repo/missing", name: "missing", sessions: tree([first]).projects[0].workspaces[0].sessions,
+            branch: "feature", missing: true, mark: .locked
+        )
+        let source = SessionsTree(projects: [ProjectNode(
+            id: .repository(commonDirectory: "/repo/.git"), path: "/repo", launchDirectory: "/repo",
+            workspaces: [workspace]
+        )])
+        var archives = ChatArchives()
+        _ = archives.begin(first, in: source)
+        let filtered = try #require(archives.applying(to: source).projects.first?.workspaces.first)
+        #expect(filtered.sessions.isEmpty)
+        #expect(filtered.missing)
+        #expect(filtered.mark == .locked)
+        #expect(filtered.branch == workspace.branch)
+        #expect(!filtered.canStartChat)
+    }
+
     @Test("Selected tabs move right, then left, and inactive archives keep selection")
     func selection() {
         let tree = tree([first, second, third])

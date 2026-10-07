@@ -72,4 +72,8 @@ extension Git {
     public static func worktrees(of repo: String) async throws -> [WorktreeEntry] {
         WorktreeListing.parse(try await checkRaw(["worktree", "list", "--porcelain", "-z"], in: repo).stdout)
     }
+
+    public static func pruneWorktrees(in commonDirectory: String) async throws {
+        _ = try await checkRaw(["worktree", "prune"], in: commonDirectory)
+    }
 }

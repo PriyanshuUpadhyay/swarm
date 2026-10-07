@@ -36,6 +36,7 @@ struct SidebarActions {
     var archive: (String) -> Void
     var restore: (String) -> Void
     var removeProject: (String) -> Void
+    var pruneWorktree: (String) -> Void
 }
 
 /// The sidebar chrome: a view switcher over the workspace list, or over the workspace details that
@@ -153,7 +154,7 @@ struct SidebarView<Details: View>: View {
         ForEach(rows) { row in
             SidebarRowView(
                 row: row, selected: row.id == selectedID,
-                newChat: row.archived ? nil : { actions.newChat(row.id) }
+                newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) }
             )
             .tag(row.id)
             .contextMenu { menu(for: row) }
@@ -166,9 +167,13 @@ struct SidebarView<Details: View>: View {
             Button("Restore workspace") { actions.restore(row.id) }
         } else {
             Button("New chat") { actions.newChat(row.id) }
+                .disabled(!row.newChatEnabled)
             Button(row.pinned ? "Unpin workspace" : "Pin workspace") { actions.togglePin(row.id) }
             Button("Rename workspace…") { actions.rename(row.id) }
             Button("Archive workspace") { actions.archive(row.id) }
+        }
+        if row.missing {
+            Button("Prune worktree") { actions.pruneWorktree(row.id) }
         }
     }
 }

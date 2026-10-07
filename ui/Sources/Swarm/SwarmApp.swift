@@ -107,6 +107,7 @@ final class SessionsTreeModel {
 
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
     func newChat(in directory: String) {
+        guard workspaces.first(where: { $0.id == directory })?.workspace.canStartChat != false else { return }
         guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
         let previous = selectedPendingID.map(PendingChat.Previous.pending)
             ?? selectedSessionID.map(PendingChat.Previous.session)
@@ -393,6 +394,13 @@ final class SessionsTreeModel {
         do { try await refresh() }
         catch { self.error = String(describing: error) }
         return path
+    }
+
+    func pruneWorktree(_ entry: WorkspaceEntry) async throws {
+        guard entry.workspace.missing, case .repository(let common) = entry.project.id else { return }
+        try await Git.pruneWorktrees(in: common)
+        await discovery.forgetWorktrees(for: common)
+        try await refresh()
     }
 
     func archive(_ id: SwarmSessionID) async throws {
@@ -778,6 +786,7 @@ private struct SessionsWindow: View {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
                 Button("New chat") { startChat(in: workspace.id) }
+                    .disabled(!workspace.workspace.canStartChat)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -884,6 +893,13 @@ private struct SessionsWindow: View {
             restore: { model.navigation.archived.remove($0) },
             removeProject: { id in
                 removeProjectTarget = model.tree.projects.first { SidebarSection.id(of: $0) == id }
+            },
+            pruneWorktree: { id in
+                guard let workspace = entry(id) else { return }
+                Task {
+                    do { try await model.pruneWorktree(workspace) }
+                    catch { actionError = String(describing: error) }
+                }
             }
         )
     }
@@ -987,7 +1003,8 @@ private struct SessionsWindow: View {
 
     private var keyActions: WindowKeyActions {
         WindowKeyActions(
-            newChat: workspaceDirectory.map { directory in { startChat(in: directory) } },
+            newChat: model.selectedWorkspace?.workspace.canStartChat == false
+                ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
             newWorkspace: newWorkspaceInCurrentProject,
             newProject: { createSheet = .addProject },
             stepWorkspace: { delta in

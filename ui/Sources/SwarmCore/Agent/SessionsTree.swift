@@ -48,20 +48,30 @@ public struct ChatRow: Sendable, Hashable, Identifiable {
 }
 
 public struct WorkspaceNode: Sendable, Hashable, Identifiable {
+    public enum Mark: String, Sendable, Hashable { case locked, detached }
+
     public var id: String { path }
     public let path: String
     public let name: String
     public let branch: String?
-    public let sessions: [SwarmProjectSession]
+    public let missing: Bool
+    public let mark: Mark?
+    public var canStartChat: Bool { !missing }
+    public var sessions: [SwarmProjectSession]
     public var current: SwarmProjectSession? { sessions.first }
     public var state: SessionRowPresentation.State? {
         current.map(SessionRowPresentation.state)
     }
 
-    public init(path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil) {
+    public init(
+        path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil,
+        missing: Bool = false, mark: Mark? = nil
+    ) {
         self.path = path
         self.name = name
         self.branch = branch
+        self.missing = missing
+        self.mark = mark
         self.sessions = sessions
     }
 }
@@ -159,12 +169,13 @@ public struct SessionsTree: Sendable, Hashable {
                 var workspaces = listed.compactMap { entry -> WorkspaceNode? in
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
-                    guard !matches.isEmpty || openedProjects[identity] != nil else { return nil }
+                    guard !matches.isEmpty || entry.isPrunable || openedProjects[identity] != nil else { return nil }
                     return WorkspaceNode(
                         path: entry.path,
                         name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,
                         sessions: rows(matches, agentsBySession: agentsBySession, titles: titles),
-                        branch: entry.branch
+                        branch: entry.branch, missing: entry.isPrunable,
+                        mark: entry.isLocked ? .locked : entry.isDetached ? .detached : nil
                     )
                 }
                 let hubSessions = sessions.filter { session in

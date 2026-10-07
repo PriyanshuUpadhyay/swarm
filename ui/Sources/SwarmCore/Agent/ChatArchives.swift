@@ -33,12 +33,9 @@ public struct ChatArchives {
             ProjectNode(
                 id: project.id, path: project.path, launchDirectory: project.launchDirectory,
                 workspaces: project.workspaces.map { workspace in
-                    WorkspaceNode(
-                        path: workspace.path, name: workspace.name,
-                        sessions: workspace.sessions.filter {
-                            excluded.isDisjoint(with: $0.sessions.map(\.id))
-                        }, branch: workspace.branch
-                    )
+                    var visible = workspace
+                    visible.sessions.removeAll { !excluded.isDisjoint(with: $0.sessions.map(\.id)) }
+                    return visible
                 }
             )
         }, agentsBySession: source.agentsBySession)

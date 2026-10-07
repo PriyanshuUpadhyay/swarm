@@ -13,6 +13,8 @@ public struct SidebarRow: Sendable, Hashable, Identifiable {
     public let help: String
     public let pinned: Bool
     public let archived: Bool
+    public let missing: Bool
+    public let newChatEnabled: Bool
 }
 
 public struct StatusCount: Sendable, Hashable {
@@ -99,11 +101,14 @@ public enum SidebarRows {
             .sorted { $0.status.urgency > $1.status.urgency }
         return SidebarRow(
             id: entry.id, title: navigation.title(for: entry, inProject: inProject),
-            detail: navigation.detail(for: entry, idsByTitle: idsByTitle, inProject: inProject),
+            detail: ([navigation.detail(for: entry, idsByTitle: idsByTitle, inProject: inProject)]
+                + (entry.workspace.missing ? ["folder missing"] : [])
+                + (entry.workspace.mark.map { [$0.rawValue] } ?? [])).joined(separator: " · "),
             status: entry.status, counts: counts, age: age,
             help: "\(entry.project.name) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),
-            archived: navigation.archived.contains(entry.id)
+            archived: navigation.archived.contains(entry.id),
+            missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat
         )
     }
 }
