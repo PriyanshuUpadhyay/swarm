@@ -481,8 +481,9 @@ final class SessionsTreeModel {
                 .union(RowFields.requestedPaths(for: .ci, entries: workspaces, fields: navigation.fields))
             let read = await rowFieldCache.refresh(paths: paths, githubPaths: Array(githubPaths))
             guard !Task.isCancelled else { return }
-            workspaceFields = read.filter { value in workspaces.contains { $0.id == value.key } }
-            try? await Task.sleep(for: .seconds(10))
+            let updated = read.filter { value in workspaces.contains { $0.id == value.key } }
+            if workspaceFields != updated { workspaceFields = updated }
+            try? await Task.sleep(for: .seconds(RowFieldCache.refreshInterval))
         }
     }
 
@@ -505,11 +506,11 @@ final class SessionsTreeModel {
                 scan.cancel()
             }
             guard !Task.isCancelled else { return }
-            // A folded workspace keeps its last read for its folded project header.
             let existing = Set(workspaces.map(\.id))
-            runsByWorkspace = runsByWorkspace.filter { existing.contains($0.key) }
-            runsByWorkspace.merge(read, uniquingKeysWith: { _, new in new })
-            try? await Task.sleep(for: .seconds(10))
+            var updated = runsByWorkspace.filter { existing.contains($0.key) }
+            updated.merge(read, uniquingKeysWith: { _, new in new })
+            if runsByWorkspace != updated { runsByWorkspace = updated }
+            try? await Task.sleep(for: .seconds(RowFieldCache.refreshInterval))
         }
     }
 

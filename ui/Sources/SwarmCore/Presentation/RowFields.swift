@@ -219,6 +219,8 @@ public enum RowFields {
 /// Each attempted read reserves its interval before awaiting, so concurrent refreshes and
 /// failed reads cannot cause a burst of subprocesses for the same workspace.
 public actor RowFieldCache {
+    public static let refreshInterval: TimeInterval = 10
+    public static let githubInterval: TimeInterval = 120
     public typealias Inspect = @Sendable (String) async throws -> GitWorkspaceSnapshot
     public typealias Lookup = @Sendable (GitWorkspaceSnapshot) async throws -> PullRequestLookup
     private let inspect: Inspect
@@ -241,8 +243,8 @@ public actor RowFieldCache {
         for path in dirty.union(github).sorted() {
             guard !Task.isCancelled else { break }
             let readTime = now ?? Date()
-            let readDirty = dirty.contains(path) && due(lastDirtyRead[path], after: 10, now: readTime)
-            let readGitHub = github.contains(path) && due(lastGitHubRead[path], after: 120, now: readTime)
+            let readDirty = dirty.contains(path) && due(lastDirtyRead[path], after: Self.refreshInterval, now: readTime)
+            let readGitHub = github.contains(path) && due(lastGitHubRead[path], after: Self.githubInterval, now: readTime)
             guard readDirty || readGitHub else { continue }
             if readDirty { lastDirtyRead[path] = readTime }
             if readGitHub { lastGitHubRead[path] = readTime }
