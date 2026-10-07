@@ -32,7 +32,10 @@ final class SessionsTreeModel {
     }
 
     private func reportChoicesError(_ failure: OwnerChoicesFailure) {
-        if choicesAlerts.report(failure) { logger.error("\(failure.message)") }
+        var reported = choicesAlerts
+        guard reported.report(failure) else { return }
+        choicesAlerts = reported
+        logger.error("\(failure.message)")
     }
 
     init() {

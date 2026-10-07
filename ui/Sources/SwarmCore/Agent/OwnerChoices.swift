@@ -99,7 +99,6 @@ public struct OwnerChoicesAlerts: Equatable, Sendable {
     }
 
     public mutating func resolve(_ operation: OwnerChoicesFailure.Operation) {
-        guard reported.contains(where: { $0.operation == operation }) else { return }
         reported = reported.filter { $0.operation != operation }
         pending.removeAll { $0.operation == operation }
     }

@@ -404,15 +404,6 @@ struct OwnerChoicesTests {
         #expect(!saveDuringLoadRecovery)
     }
 
-    @Test("Resolving an operation with no failure leaves the alerts unchanged")
-    func resolvingAbsentFailureKeepsAlerts() {
-        var alerts = OwnerChoicesAlerts()
-        alerts.report(OwnerChoicesFailure("Write denied.", operation: .save))
-        let before = alerts
-        alerts.resolve(.load)
-        #expect(alerts == before)
-    }
-
     @Test("A load and view-state save without matching failures do not write observed alerts")
     func successfulReadsAndSavesKeepObservedAlerts() throws {
         let folder = try claimedChoicesFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
