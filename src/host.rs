@@ -161,11 +161,12 @@ pub fn hook_state(
     Some((state, None))
 }
 
-/// The newest cumulative usage and model in a provider log; None means no source for that field.
+/// The newest model and cumulative cost in a provider log; None means no source for that field.
 #[derive(Debug, Default)]
 pub struct UsageSnapshot {
     pub model: Option<String>,
     pub cost_usd: Option<f64>,
+    /// A delta from claude_usage; a cumulative total from codex_usage_snapshot.
     pub tokens: Option<i64>,
 }
 
@@ -308,8 +309,8 @@ fn message_tokens(usage: &serde_json::Map<String, serde_json::Value>) -> Option<
     })
 }
 
-/// Read only the last 1 MiB. A missing or unreadable log yields no new values.
-pub fn usage_snapshot(provider: &str, path: &std::path::Path) -> UsageSnapshot {
+/// Read Codex cumulative usage from the last 1 MiB. An unreadable log yields no new values.
+pub fn codex_usage_snapshot(path: &std::path::Path) -> UsageSnapshot {
     use std::io::{Read, Seek, SeekFrom};
     const TAIL_BYTES: u64 = 1024 * 1024;
     let read_tail = || -> std::io::Result<Vec<u8>> {
@@ -333,21 +334,19 @@ pub fn usage_snapshot(provider: &str, path: &std::path::Path) -> UsageSnapshot {
         Ok(bytes)
     };
     read_tail()
-        .map(|bytes| parse_usage_tail(provider, &bytes))
+        .map(|bytes| parse_usage_tail(&bytes))
         .unwrap_or_default()
 }
 
-/// Walk newest first; the first complete value of each kind wins.
-fn parse_usage_tail(provider: &str, bytes: &[u8]) -> UsageSnapshot {
+/// Walk Codex records newest first; the first complete value of each kind wins.
+fn parse_usage_tail(bytes: &[u8]) -> UsageSnapshot {
     let mut snapshot = UsageSnapshot::default();
     for line in bytes.rsplit(|byte| *byte == b'\n') {
         let Ok(record) = serde_json::from_slice::<serde_json::Value>(line) else {
             continue;
         };
-        read_usage_record(provider, &record, &mut snapshot);
-        if (provider == "claude" && snapshot.cost_usd.is_some() && snapshot.model.is_some())
-            || (provider == "codex" && snapshot.tokens.is_some() && snapshot.model.is_some())
-        {
+        read_usage_record("codex", &record, &mut snapshot);
+        if snapshot.tokens.is_some() && snapshot.model.is_some() {
             break;
         }
     }
@@ -370,18 +369,18 @@ fn read_usage_record(provider: &str, record: &serde_json::Value, snapshot: &mut 
                 .filter(|cost| cost.is_finite() && *cost >= 0.0);
         }
         ("claude", Some("assistant")) if snapshot.model.is_none() => {
-            snapshot.model = record
-                .pointer("/message/model")
-                .and_then(serde_json::Value::as_str)
-                .filter(|model| !model.is_empty() && *model != "<synthetic>")
-                .map(str::to_string);
+            snapshot.model = real_model(
+                record
+                    .pointer("/message/model")
+                    .and_then(serde_json::Value::as_str),
+            );
         }
         ("codex", Some("turn_context")) if snapshot.model.is_none() => {
-            snapshot.model = record
-                .pointer("/payload/model")
-                .and_then(serde_json::Value::as_str)
-                .filter(|model| !model.is_empty() && *model != "<synthetic>")
-                .map(str::to_string);
+            snapshot.model = real_model(
+                record
+                    .pointer("/payload/model")
+                    .and_then(serde_json::Value::as_str),
+            );
         }
         ("codex", Some("event_msg"))
             if snapshot.tokens.is_none()
@@ -397,6 +396,12 @@ fn read_usage_record(provider: &str, record: &serde_json::Value, snapshot: &mut 
         }
         _ => {}
     }
+}
+
+fn real_model(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|model| !model.is_empty() && *model != "<synthetic>")
+        .map(str::to_string)
 }
 
 #[cfg(test)]

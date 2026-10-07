@@ -630,6 +630,7 @@ pub fn set_log(
     agent_id: &str,
     log: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Keep each log's cursor across path changes; claude_usage resets only a log that shrinks.
     connection.execute(
         "UPDATE agent SET log = ?3 WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id, log.to_string_lossy()),
@@ -691,7 +692,7 @@ pub fn update_usage(
         (snapshot, Some(serde_json::to_string(&state)?))
     } else {
         (
-            crate::host::usage_snapshot(provider, Path::new(&log)),
+            crate::host::codex_usage_snapshot(Path::new(&log)),
             old_state.clone(),
         )
     };
