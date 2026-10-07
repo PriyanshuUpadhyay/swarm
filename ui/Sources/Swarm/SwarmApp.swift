@@ -365,7 +365,8 @@ final class SessionsTreeModel {
             await discovery.forgetIdentities()
         }
         let path = try await projects.add(url)
-        try await refresh()
+        do { try await refresh() }
+        catch { self.error = "Project saved, but the list could not refresh. \(error.localizedDescription)" }
         return path
     }
 
@@ -375,7 +376,8 @@ final class SessionsTreeModel {
         let path = try await projects.create(at: url)
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
-        try await refresh()
+        do { try await refresh() }
+        catch { self.error = "Project saved, but the list could not refresh. \(error.localizedDescription)" }
         return path
     }
 
@@ -1533,7 +1535,7 @@ private struct SessionsWindow: View {
                 // project when a later refresh overtook this one, so it is not read here.
                 startChat(in: path)
             } catch {
-                let subject = action == .create ? "Could not create the project." : "Could not add the project."
+                let subject = action == .create ? "Could not create the project." : "Could not import the project."
                 actionError = "\(subject) \(error.localizedDescription)"
             }
         }
@@ -1646,8 +1648,7 @@ private struct NewTaskSheet: View {
                             onCreated(try await create(name))
                             dismiss()
                         } catch {
-                            self.error = (error as? LocalizedError)?.errorDescription
-                                ?? String(describing: error)
+                            self.error = "Could not add the workspace. \(error.localizedDescription)"
                         }
                     }
                 }
