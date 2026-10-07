@@ -80,7 +80,7 @@ public enum RowFields {
                 SwarmPanePolicy.isChair($0, in: session)
             }
         }
-        let agents = chat.sessions.flatMap { agentsBySession[$0.id] ?? [] }
+        let agents = agentsBySession[chat.id] ?? []
         var context = RowFieldContext(title: title, status: chat.status, unread: navigation.isUnread(chat))
         context.text[.provider] = chat.provider ?? chairs.first?.provider
         context.text[.branch] = branch

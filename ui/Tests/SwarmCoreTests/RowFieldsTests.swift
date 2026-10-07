@@ -123,6 +123,45 @@ struct RowFieldPresentationTests {
         #expect(noChildren[0].fields.isEmpty)
     }
 
+    @Test("Chat, tab, and workspace questions use only the current session", arguments: [false, true], [false, true])
+    func currentSessionQuestions(olderUsesPrompt: Bool, currentHasQuestion: Bool) {
+        let previous = chat().session
+        let current = SwarmSession(id: .init("next"), talkMode: "lane", adapter: "tmux-solo", cwd: "/repo",
+                                   createdAt: 95, chairLog: nil, agents: 1, messages: 0, lastMessageAt: 95,
+                                   continuationOf: previous.id)
+        let continued = SwarmProjectSession(sessions: [current, previous], title: "Continued",
+                                            status: currentHasQuestion ? .waiting : .working)
+        var older = SwarmAgent(id: .init("old-worker"), role: "code", pane: "%1", alive: true, state: "waiting")
+        if olderUsesPrompt {
+            older.prompt = SwarmPrompt(id: "old-question", question: "Old question", choices: [])
+        } else {
+            older.stateDetail = "Old question"
+        }
+        var chair = SwarmAgent(id: .init("orchestrator"), role: "chat", pane: "%0", alive: true,
+                               state: currentHasQuestion ? "waiting" : "working")
+        if currentHasQuestion {
+            chair.prompt = SwarmPrompt(id: "current-question", question: "Current question", choices: [])
+        }
+        let agents = [current.id: [chair], previous.id: [older]]
+        let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo", workspaces: [
+            WorkspaceNode(path: "/repo", name: "repo", sessions: [continued])
+        ])
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project], agentsBySession: agents))
+        var navigation = WorkspaceNavigation()
+        navigation.fields.tab = [.question]
+        let expected = currentHasQuestion ? ["Current question"] : []
+        let chatContext = RowFields.chatContext(continued, title: "Continued", navigation: navigation, now: 100,
+                                                agentsBySession: agents)
+        let workspaceContext = RowFields.workspaceContext(entries, title: "repo", navigation: navigation, now: 100,
+                                                           agentsBySession: agents, workspaceFields: [:])
+        let tabs = ChatTab.tabs([ChatRow(session: continued, workspace: "repo", workspacePath: "/repo")],
+                                closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        #expect(chatContext.values([.question]).map(\.text) == expected)
+        #expect(workspaceContext.values([.question]).map(\.text) == expected)
+        #expect(tabs[0].fields.map(\.text) == expected)
+        #expect(workspaceContext.status == (currentHasQuestion ? .waiting : .working))
+    }
+
     @Test("Usage costs use the current locale's USD currency format")
     func currencyCost() {
         var agent = SwarmAgent(id: .init("orchestrator"), role: "chat", pane: "%0", alive: true)
