@@ -905,6 +905,7 @@ private struct SessionsWindow: View {
             openPalette: { showingPalette = true },
             toggleArchive: { showingArchive.toggle() },
             importProject: importProject,
+            importFolder: importFolder,
             createProject: createProject,
             toggleCollapsed: { path in
                 model.navigation.toggleCollapsed(path)
@@ -1325,18 +1326,22 @@ private struct SessionsWindow: View {
         panel.prompt = "Import Project"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            let identity = SwarmSessionDiscovery.identity(
-                for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
-            )
-            Task {
-                if case .repository = identity {
-                    performProjectAction(url, .open)
-                } else if await Git.isRepository(at: url.path) {
-                    // A bare clone: adding it as today is safe, `git init` in it is not.
-                    performProjectAction(url, .open)
-                } else {
-                    gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
-                }
+            importFolder(url)
+        }
+    }
+
+    private func importFolder(_ url: URL) {
+        let identity = SwarmSessionDiscovery.identity(
+            for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
+        )
+        Task {
+            if case .repository = identity {
+                performProjectAction(url, .open)
+            } else if await Git.isRepository(at: url.path) {
+                // A bare clone: adding it as today is safe, `git init` in it is not.
+                performProjectAction(url, .open)
+            } else {
+                gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
             }
         }
     }

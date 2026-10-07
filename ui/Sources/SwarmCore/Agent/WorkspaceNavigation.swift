@@ -251,3 +251,9 @@ public final class WorkspaceNavigationStore {
         return pruned
     }
 }
+
+public enum SidebarDrop {
+    public static func folder(in urls: [URL]) -> URL? {
+        urls.first { $0.isFileURL && OwnerChoices.folderExists($0.path) }
+    }
+}

@@ -30,6 +30,7 @@ struct SidebarActions {
     var openPalette: () -> Void
     var toggleArchive: () -> Void
     var importProject: () -> Void
+    var importFolder: (URL) -> Void
     var createProject: () -> Void
     var toggleCollapsed: (String) -> Void
     var expandList: (String) -> Void
@@ -149,6 +150,11 @@ struct SidebarView<Details: View>: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .padding(DesignTokens.Spacing.m)
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let folder = SidebarDrop.folder(in: urls) else { return false }
+            actions.importFolder(folder)
+            return true
         }
     }
 
