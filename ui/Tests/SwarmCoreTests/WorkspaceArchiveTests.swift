@@ -12,12 +12,17 @@ struct WorkspaceArchiveTests {
         #expect(try await WorkspaceArchive.liveAgents(in: chats, bus: bus) == 3)
         try await WorkspaceArchive.end(chats, bus: bus)
         #expect(await recorder.calls == [
-            "current:agents --json", "older:agents --json", "another:agents --json",
-            "current:agents --json", "older:agents --json",
-            "current:close orchestrator", "older:close orchestrator",
-            "another:agents --json", "another:close orchestrator",
+            ":agents --json --all", ":agents --json --all",
+            "current:close orchestrator", "older:close orchestrator", "another:close orchestrator",
         ])
         #expect(await recorder.calls.allSatisfy { !$0.contains("session archive") })
+    }
+
+    @Test("Archive and delete require the same confirmation for any live agent")
+    func confirmationRule() {
+        #expect(!WorkspaceArchive.Confirmation(liveAgents: 0).required)
+        #expect(WorkspaceArchive.Confirmation(liveAgents: 1).required)
+        #expect(WorkspaceArchive.Confirmation(liveAgents: 3).liveAgents == 3)
     }
 
     @Test("Archived workspace selection keeps archive state, blocks new chats and has a reason")
@@ -94,10 +99,9 @@ private actor WorkspaceArchiveCalls {
     private(set) var calls: [String] = []
     func reply(_ arguments: [String], environment: [String: String]) -> ShellResult {
         calls.append((environment["SWARM_SESSION_ID"] ?? "") + ":" + arguments.joined(separator: " "))
-        if arguments == ["agents", "--json"] {
-            return ShellResult(status: 0, stdout: """
-                {"agents":[{"id":"orchestrator","role":"chair","pane":"chair","alive":true}]}
-                """, stderr: "")
+        if arguments == ["agents", "--json", "--all"] {
+            let row = "{\"agents\":[{\"id\":\"orchestrator\",\"role\":\"chair\",\"pane\":\"chair\",\"alive\":true}]}"
+            return ShellResult(status: 0, stdout: "{\"current\":\(row),\"older\":\(row),\"another\":\(row)}", stderr: "")
         }
         return ShellResult(status: 0, stdout: "", stderr: "")
     }

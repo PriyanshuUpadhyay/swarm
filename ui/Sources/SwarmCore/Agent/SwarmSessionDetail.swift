@@ -383,9 +383,16 @@ public enum SwarmSessionCloser {
     }
 
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
-        var live: [(SwarmSession, SwarmAgent)] = []
-        for value in session.sessions {
-            live += try await bus.agents(in: value).filter { $0.alive == true }.map { (value, $0) }
+        var agents: [SwarmSessionID: [SwarmAgent]] = [:]
+        for value in session.sessions { agents[value.id] = try await bus.agents(in: value) }
+        try await end(sessions: session.sessions, agentsBySession: agents, bus: bus)
+    }
+
+    public static func end(
+        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
+    ) async throws {
+        let live = sessions.flatMap { value in
+            (agentsBySession[value.id] ?? []).filter { $0.alive == true }.map { (value, $0) }
         }
         let children = live.filter { !SwarmPanePolicy.isChair($0.1, in: $0.0) }
         let chairs = live.filter { SwarmPanePolicy.isChair($0.1, in: $0.0) }

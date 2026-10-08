@@ -74,8 +74,9 @@ final class SessionsTreeModel {
         select(nil)
     }
 
-    func workspaceArchiveCount(_ entry: WorkspaceEntry) async throws -> Int {
-        try await WorkspaceArchive.liveAgents(in: entry.chats, bus: bus)
+    func workspaceEndConfirmation(_ entry: WorkspaceEntry) async throws -> WorkspaceArchive.Confirmation {
+        let count = try await WorkspaceArchive.liveAgents(in: entry.chats, bus: bus)
+        return WorkspaceArchive.Confirmation(liveAgents: count)
     }
 
     func archiveWorkspace(_ entry: WorkspaceEntry) async throws {
@@ -498,6 +499,8 @@ final class SessionsTreeModel {
         if let blocker = await Git.removalBlocker(worktree: entry.id) {
             throw SwarmProfileError.failed(blocker)
         }
+        let current = workspaces.first { $0.id == entry.id } ?? entry
+        try await WorkspaceArchive.end(current.chats, bus: bus)
         try await Git.removeWorktree(entry.id, in: common)
         await discovery.forgetWorktrees(for: common)
         try await refresh()
@@ -955,7 +958,7 @@ private struct SessionsWindow: View {
         case .archiveWorkspace(let entry, _):
             Button("Archive Workspace", role: .destructive) { performWorkspaceArchive(entry) }
             Button("Cancel", role: .cancel) {}
-        case .deleteWorkspace(let entry, _):
+        case .deleteWorkspace(let entry, _, _):
             Button("Delete Workspace", role: .destructive) {
                 Task {
                     do { try await model.deleteWorkspace(entry) }
@@ -990,8 +993,9 @@ private struct SessionsWindow: View {
                  + paths.joined(separator: "\n"))
         case .archiveWorkspace(_, let count):
             Text(verbatim: "\(count == 1 ? "1 agent still runs" : "\(count) agents still run"). Archiving stops them and keeps the workspace folder.")
-        case .deleteWorkspace(let entry, let ignored):
+        case .deleteWorkspace(let entry, let ignored, let confirmation):
             Text(verbatim: "Delete the workspace folder at \(entry.id)? Git refuses uncommitted changes or unpushed commits."
+                 + (confirmation.required ? "\n\n\(confirmation.liveAgents) live agents will stop before the folder is deleted." : "")
                  + (ignored.message.map { "\n\n" + $0 } ?? ""))
         case .endChat(_, _, let confirmation, let archive):
             Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
@@ -1720,7 +1724,8 @@ private struct SessionsWindow: View {
         Task {
             do {
                 let ignored = try await Git.ignoredRemovalItems(worktree: entry.id)
-                showAlert(.deleteWorkspace(entry, ignored: ignored))
+                let confirmation = try await model.workspaceEndConfirmation(entry)
+                showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation))
             } catch { showAlert(.error(error.localizedDescription)) }
         }
     }
@@ -1728,8 +1733,8 @@ private struct SessionsWindow: View {
     private func requestWorkspaceArchive(_ entry: WorkspaceEntry) {
         Task {
             do {
-                let count = try await model.workspaceArchiveCount(entry)
-                if count > 0 { showAlert(.archiveWorkspace(entry, liveAgents: count)) }
+                let confirmation = try await model.workspaceEndConfirmation(entry)
+                if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
                 else { performWorkspaceArchive(entry) }
             } catch { showAlert(.error(error.localizedDescription)) }
         }
@@ -1914,7 +1919,7 @@ private enum WindowAlert {
     case removeProject(ProjectNode)
     case prune(entry: WorkspaceEntry, paths: [String])
     case archiveWorkspace(WorkspaceEntry, liveAgents: Int)
-    case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems)
+    case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems, confirmation: WorkspaceArchive.Confirmation)
     case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
     case closeAgent(SwarmAgentID, SwarmSession)
     case error(String)
