@@ -118,7 +118,7 @@ struct ProjectRetentionTests {
         let project = root.appendingPathComponent("project")
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         try store.remove(project.path, workspacePaths: [])
-        let path = try await store.create(at: project)
+        let path = try await store.create(at: project).path
         #expect(try savedChoices(from: store).removedProjects.isEmpty)
         #expect(try savedChoices(from: store).projectPaths == [path])
     }

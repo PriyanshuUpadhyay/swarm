@@ -425,7 +425,7 @@ final class SessionsTreeModel {
     func createProject(at url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
-        let path = try await projects.create(at: url)
+        let path = try await projects.create(at: url).path
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
         await refreshAfterSave("Project saved")

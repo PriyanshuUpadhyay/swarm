@@ -1,9 +1,14 @@
 import Foundation
 
+public struct CreatedProject: Sendable, Equatable {
+    public let path: String
+    public let firstCommit: FirstCommit
+}
+
 @MainActor
 public final class SwarmProjectStore {
     private let choices: OwnerChoicesStore
-    private let initializeRepository: (String) async throws -> Void
+    private let initializeRepository: (String) async throws -> FirstCommit
     private let projectPathResolver: (String) -> String
     private var lastGoodChoices: OwnerChoices?
     public private(set) var choicesLoadFailed = false
@@ -13,10 +18,10 @@ public final class SwarmProjectStore {
     }
 
     public convenience init(choices: OwnerChoicesStore) {
-        self.init(choices: choices, initializeRepository: { try await Git.initialize(at: $0) })
+        self.init(choices: choices, initializeRepository: { try await Git.initializeProject(at: $0) })
     }
 
-    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> Void,
+    init(choices: OwnerChoicesStore, initializeRepository: @escaping (String) async throws -> FirstCommit,
          projectPathResolver: ((String) -> String)? = nil) {
         self.choices = choices
         self.initializeRepository = initializeRepository
@@ -100,9 +105,9 @@ public final class SwarmProjectStore {
         return path
     }
 
-    /// Makes the folder and runs `git init` in it, so a workspace can be made there at once.
+    /// Makes the folder and its first commit when Git has the owner's identity.
     @discardableResult
-    public func create(at url: URL) async throws -> String {
+    public func create(at url: URL) async throws -> CreatedProject {
         let path = try await Task.detached {
             let path = url.standardizedFileURL.path
             guard !FileManager.default.fileExists(atPath: path) else {
@@ -114,7 +119,8 @@ public final class SwarmProjectStore {
         var addedPath = false
         do {
             addedPath = try remember(path, projectPath: path)
-            try await initializeRepository(path)
+            let firstCommit = try await initializeRepository(path)
+            return CreatedProject(path: path, firstCommit: firstCommit)
         } catch {
             // Only the empty folder made above is removed; anything else there stays.
             if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true {
@@ -127,7 +133,6 @@ public final class SwarmProjectStore {
             }
             throw error
         }
-        return path
     }
 
     nonisolated private static func directoryPath(_ url: URL) throws -> String {

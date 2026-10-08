@@ -8,6 +8,23 @@ private enum InitializeFailure: Error { case rejected }
 @Suite("Project folders")
 @MainActor
 struct SwarmProjectStoreTests {
+    @Test("Create returns the first commit result and resolved project path", arguments: [FirstCommit.made, .skippedNoIdentity])
+    func returnsFirstCommit(firstCommit: FirstCommit) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let project = root.appendingPathComponent("project")
+        let store = SwarmProjectStore(choices: choices, initializeRepository: { path in
+            #expect(path == project.path)
+            return firstCommit
+        })
+
+        let created = try await store.create(at: project)
+        #expect(created.path == project.path)
+        #expect(created.firstCommit == firstCommit)
+        #expect(try choices.load().projectPaths == [project.path])
+    }
+
     @Test("Opened and created folders remain available, and a created folder is a git repo")
     func savedFolders() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -18,7 +35,7 @@ struct SwarmProjectStoreTests {
         let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
         let created = root.appendingPathComponent("New Project")
 
-        #expect(try await store.create(at: created) == created.path)
+        #expect(try await store.create(at: created).path == created.path)
         #expect(FileManager.default.fileExists(atPath: created.path))
         #expect(Git.repositoryPaths(in: created.path) != nil)
         #expect(try await store.add(created) == created.path)
@@ -126,7 +143,7 @@ struct SwarmProjectStoreTests {
         let store = SwarmProjectStore(choices: choices, initializeRepository: { path in
             try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: path)
             defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path) }
-            try await Git.initialize(at: path)
+            return try await Git.initializeProject(at: path)
         })
         await #expect(throws: ShellError.self) { try await store.create(at: newProject) }
         #expect(!FileManager.default.fileExists(atPath: newProject.path))
@@ -143,7 +160,7 @@ struct SwarmProjectStoreTests {
         let choices = OwnerChoicesStore(folder: folder)
         try choices.update { $0.projectPaths = ["/repo/worktree", "/other"] }
         var resolvedPaths: [String] = []
-        let store = SwarmProjectStore(choices: choices, initializeRepository: { _ in }, projectPathResolver: { savedPath in
+        let store = SwarmProjectStore(choices: choices, initializeRepository: { _ in .made }, projectPathResolver: { savedPath in
             resolvedPaths.append(savedPath)
             let descriptor = open(folder.appendingPathComponent("choices.lock").path, O_RDWR)
             #expect(descriptor >= 0)
