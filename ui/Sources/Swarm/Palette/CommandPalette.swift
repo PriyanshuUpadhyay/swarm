@@ -58,9 +58,12 @@ struct CommandPalette: View {
                                         .padding(.bottom, DesignTokens.Spacing.xs)
                                         .accessibilityAddTraits(.isHeader)
                                     ForEach(rows) { item in
-                                        PaletteRow(item: item, selected: item.id == currentID(in: results))
+                                        Button { run(item) } label: {
+                                            PaletteRow(item: item, selected: item.id == currentID(in: results))
+                                        }
+                                            .buttonStyle(.plain)
+                                            .disabled(item.disabledReason != nil)
                                             .id(item.id)
-                                            .onTapGesture { if item.disabledReason == nil { run(item) } }
                                             .opacity(item.disabledReason == nil ? 1 : DesignTokens.endedPaneOpacity)
                                             .help(item.disabledReason ?? item.title)
                                     }
