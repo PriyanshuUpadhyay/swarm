@@ -478,12 +478,13 @@ struct SwarmSessionDetailTests {
         try await SwarmSessionCloser.end(session: SwarmProjectSession(sessions: [value], title: "Chat"), bus: bus)
 
         #expect(await calls.arguments == [
+            ["agents", "--json", "--all"],
             ["agents", "--json"],
             ["close", "child-b"],
             ["close", "child-a"],
             ["close", "orchestrator"],
         ])
-        #expect(await calls.adapters == ["herdr", "herdr", "herdr", "herdr"])
+        #expect(await calls.adapters == ["tmux-solo", "herdr", "herdr", "herdr", "herdr"])
     }
 
     private func chat(_ lines: [String], in directory: URL, named name: String) throws -> URL {

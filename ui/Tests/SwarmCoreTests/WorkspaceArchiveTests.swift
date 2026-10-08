@@ -73,20 +73,36 @@ struct WorkspaceArchiveTests {
             #expect(try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder)) == 0)
             try await WorkspaceArchive.end(chats, bus: bus(recorder))
             try await SwarmSessionCloser.end(session: chats[0], bus: bus(recorder))
-            #expect(await recorder.calls == [":agents --json --all", ":agents --json --all"])
+            let confirmation = try await SwarmSessionCloser.confirmation(session: chats[0], bus: bus(recorder))
+            #expect(!confirmation.required)
+            #expect(confirmation.liveChildren == 0)
+            #expect(confirmation.midTurnChildren == 0)
+            #expect(await recorder.calls == Array(repeating: ":agents --json --all", count: 4))
         }
     }
 
     @Test("End chat and workspace use the same message when a session read fails")
     func endReadFailure() async throws {
-        let recorder = WorkspaceArchiveCalls(unreadable: "current")
+        let recorder = WorkspaceArchiveCalls(omitted: "current", unreadable: "current")
         do {
             try await SwarmSessionCloser.end(session: chat("current"), bus: bus(recorder))
             Issue.record("The unreadable chat must refuse the action")
         } catch {
             #expect(error.localizedDescription == "Swarm could not read the agents of “Chat”. Try again.")
         }
-        #expect(await recorder.calls == ["current:agents --json"])
+        #expect(await recorder.calls == [":agents --json --all", "current:agents --json"])
+    }
+
+    @Test("Chat confirmation names an unreadable session and never closes it")
+    func confirmationReadFailure() async throws {
+        let recorder = WorkspaceArchiveCalls(omitted: "current", unreadable: "current")
+        do {
+            _ = try await SwarmSessionCloser.confirmation(session: chat("current"), bus: bus(recorder))
+            Issue.record("The unreadable chat must refuse confirmation")
+        } catch {
+            #expect(error.localizedDescription == "Swarm could not read the agents of “Chat”. Try again.")
+        }
+        #expect(await recorder.calls == [":agents --json --all", "current:agents --json"])
     }
 
     @Test("Archive and delete require the same confirmation for any live agent")

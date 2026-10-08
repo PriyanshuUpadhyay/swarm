@@ -375,15 +375,17 @@ public enum SwarmSessionCloser {
     public static func confirmation(
         session: SwarmProjectSession, bus: any SwarmBus
     ) async throws -> Confirmation {
-        var agents: [SwarmAgent] = []
-        for value in session.sessions {
-            agents += try await bus.agents(in: value).filter { !SwarmPanePolicy.isChair($0, in: value) }
+        let batch = (try? await bus.agentsBySession()) ?? [:]
+        let listing = try await agents(in: [session], listing: batch, bus: bus)
+        let children = session.sessions.flatMap { value in
+            (listing[value.id] ?? []).filter { !SwarmPanePolicy.isChair($0, in: value) }
         }
-        return Confirmation(children: agents)
+        return Confirmation(children: children)
     }
 
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
-        try await end(chats: [session], agentsBySession: [:], bus: bus)
+        let listing = (try? await bus.agentsBySession()) ?? [:]
+        try await end(chats: [session], agentsBySession: listing, bus: bus)
     }
 
     public static func end(

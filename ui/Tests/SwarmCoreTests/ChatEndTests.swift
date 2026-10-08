@@ -10,6 +10,7 @@ struct ChatEndTests {
         let chat = group()
         try await SwarmSessionCloser.end(session: chat, bus: bus(recorder))
         #expect(await recorder.calls == [
+            ":agents --json --all",
             "current:agents --json", "older:agents --json",
             "current:close child", "current:close no-pane", "older:close child", "older:close no-pane",
             "current:close orchestrator", "older:close orchestrator",
@@ -21,7 +22,7 @@ struct ChatEndTests {
         let recorder = ChatEndCalls()
         try await SwarmSessionCloser.archive(session: group(), bus: bus(recorder))
         #expect(await recorder.calls.last == ":session archive current older")
-        #expect(await recorder.calls.count == 9)
+        #expect(await recorder.calls.count == 10)
     }
 
     @Test("A close failure stops archive and reaches the caller")
@@ -31,6 +32,7 @@ struct ChatEndTests {
             try await SwarmSessionCloser.archive(session: group(), bus: bus(recorder))
         }
         #expect(await recorder.calls == [
+            ":agents --json --all",
             "current:agents --json", "older:agents --json", "current:close child",
         ])
     }
@@ -56,7 +58,7 @@ struct ChatEndTests {
         let fresh = try await SwarmSessionCloser.confirmation(session: group(), bus: bus(recorder))
         #expect(fresh.liveChildren == 4)
         #expect(fresh.midTurnChildren == 2)
-        #expect(await recorder.calls == ["current:agents --json", "older:agents --json"])
+        #expect(await recorder.calls == [":agents --json --all", "current:agents --json", "older:agents --json"])
     }
 
     @Test("Custom chairs do not need child confirmation and close after children")
@@ -71,6 +73,25 @@ struct ChatEndTests {
         #expect(await recorder.calls.suffix(6) == [
             "current:close child", "current:close no-pane", "older:close child", "older:close no-pane",
             "current:close custom-chair", "older:close custom-chair",
+        ])
+    }
+
+    @Test("A live batch finds agents registered after the cached zero-agent session list")
+    func staleEmptySession() async throws {
+        var value = group().session
+        value.agents = 0
+        let chat = SwarmProjectSession(sessions: [value], title: "Chat")
+        let recorder = ChatEndCalls(liveBatch: true)
+        let confirmation = try await SwarmSessionCloser.confirmation(session: chat, bus: bus(recorder))
+        #expect(confirmation.liveChildren == 2)
+        #expect(confirmation.midTurnChildren == 1)
+        try await SwarmSessionCloser.end(session: chat, bus: bus(recorder))
+        try await SwarmSessionCloser.archive(session: chat, bus: bus(recorder))
+        #expect(await recorder.calls == [
+            ":agents --json --all",
+            ":agents --json --all", "current:close child", "current:close no-pane", "current:close orchestrator",
+            ":agents --json --all", "current:close child", "current:close no-pane", "current:close orchestrator",
+            ":session archive current",
         ])
     }
 
@@ -93,13 +114,25 @@ private actor ChatEndCalls {
     private(set) var calls: [String] = []
     let failClose: Bool
     let chairID: String
-    init(failClose: Bool = false, chairID: String = "orchestrator") {
+    let liveBatch: Bool
+    init(failClose: Bool = false, chairID: String = "orchestrator", liveBatch: Bool = false) {
         self.failClose = failClose
         self.chairID = chairID
+        self.liveBatch = liveBatch
     }
 
     func reply(_ arguments: [String], environment: [String: String]) -> ShellResult {
         calls.append((environment["SWARM_SESSION_ID"] ?? "") + ":" + arguments.joined(separator: " "))
+        if arguments == ["agents", "--json", "--all"] {
+            guard liveBatch else { return ShellResult(status: 1, stdout: "", stderr: "Unknown --all") }
+            return ShellResult(status: 0, stdout: """
+                {"current":{"agents":[
+                  {"id":"\(chairID)","role":"chair","pane":"chair","alive":true},
+                  {"id":"child","role":"child","pane":"child","alive":true,"state":"working"},
+                  {"id":"no-pane","role":"child","pane":null,"alive":true}
+                ]}}
+                """, stderr: "")
+        }
         if arguments == ["agents", "--json"] {
             return ShellResult(status: 0, stdout: """
                 {"agents":[
