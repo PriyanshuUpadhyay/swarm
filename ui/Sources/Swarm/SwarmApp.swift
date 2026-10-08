@@ -698,7 +698,9 @@ private struct SessionsWindow: View {
         }
         .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in scheduleNextAlert() }
         .onChange(of: model.saveNotice) { _, _ in scheduleNextAlert() }
+        // Each hop starts from an onChange, after the update that closed the last alert, as probed.
         .onChange(of: shownAlert == nil) { _, closed in if closed { scheduleNextAlert() } }
+        .onChange(of: pendingAlerts.count) { _, _ in scheduleNextAlert() }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
@@ -803,9 +805,9 @@ private struct SessionsWindow: View {
 
     private func showAlert(_ alert: WindowAlert) {
         pendingAlerts.append(alert)
-        scheduleNextAlert()
     }
 
+    /// The hop keeps the next alert out of the tick the last one closes in (see `WindowAlert`).
     private func scheduleNextAlert() {
         Task { showNextAlert() }
     }
@@ -1631,11 +1633,11 @@ private enum CreateSheet: Identifiable {
     var id: Self { self }
 }
 
-/// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
-/// Every alert of the window. SwiftUI drops an alert asked for while a different alert is up, or in
-/// the tick one closes, and leaves its state set with nothing on screen; a sheet does not drop one
-/// (probed: `tmp/redesign/probe/`). So the window has one `.alert`, a new alert waits in a list,
-/// and the next one shows a `Task` hop after the last one closes.
+/// Every alert of the window. On macOS, SwiftUI drops an alert asked for while a different alert is
+/// up, or in the tick one closes, and leaves its state set with nothing on screen; a sheet does not
+/// drop one, the alert waits for it. A scratch app showed this on macOS 27 (2026-10-08). So the
+/// window has one `.alert`, a new alert waits in a list, and the next one shows a `Task` hop after
+/// the last one closes.
 private enum WindowAlert {
     case pathDrift(PathSwarmDrift)
     case gitInit(GitInitRequest)
@@ -1654,6 +1656,7 @@ private enum WindowAlert {
     }
 }
 
+/// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
 private struct GitInitRequest {
     enum Reason { case importFolder(URL), newWorkspace }
     let path: String
