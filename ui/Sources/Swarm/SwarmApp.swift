@@ -676,6 +676,7 @@ private struct SessionsWindow: View {
     @State private var showingArchive = false
     @State private var closedChats: RecentlyClosed.Listing?
     @State private var showingClosedChats = false
+    @State private var checkingWorkspaces: Set<String> = []
     @State private var workspaceActions: [String: WorkspaceAction] = [:]
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
@@ -1803,10 +1804,9 @@ private struct SessionsWindow: View {
     }
 
     private func requestWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
-        guard workspaceActions[entry.id] == nil else { return }
-        workspaceActions[entry.id] = action
+        guard workspaceActions[entry.id] == nil, checkingWorkspaces.insert(entry.id).inserted else { return }
         Task {
-            defer { workspaceActions.removeValue(forKey: entry.id) }
+            defer { checkingWorkspaces.remove(entry.id) }
             do {
                 let ignored = action == .delete ? try await Git.ignoredRemovalItems(worktree: entry.id) : nil
                 let confirmation = try await model.workspaceEndConfirmation(entry)
@@ -1815,14 +1815,18 @@ private struct SessionsWindow: View {
                     if let ignored { showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation)) }
                 case .archive:
                     if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
-                    else { try await runWorkspaceAction(entry, action: action) }
+                    else {
+                        workspaceActions[entry.id] = action
+                        defer { workspaceActions.removeValue(forKey: entry.id) }
+                        try await runWorkspaceAction(entry, action: action)
+                    }
                 }
             } catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
     private func performWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
-        guard workspaceActions[entry.id] == nil else { return }
+        guard workspaceActions[entry.id] == nil, !checkingWorkspaces.contains(entry.id) else { return }
         workspaceActions[entry.id] = action
         Task {
             defer { workspaceActions.removeValue(forKey: entry.id) }
