@@ -47,6 +47,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
 
     var body: some View {
         let hasPanes = !cells.isEmpty
+        let hasFinished = cells.contains(where: \.ended)
         let zoomed = cells.first { $0.id == zoomedID }
         let preferredWidth = storedColumnWidth.map { CGFloat($0) }
         let splits = PaneStripLayout.splits(from: storedSplits, scope: splitScope)
@@ -56,6 +57,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 0) {
                         chat()
+                            .padding(.trailing, hasPanes ? DesignTokens.Size.dragHandle : 0)
                             .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
                                 axis == .horizontal && hasPanes
                                     ? PaneStripLayout.widths(main: length, chat: storedChatWidth.map { CGFloat($0) }).chat
@@ -95,11 +97,14 @@ struct PaneStrip<Chat: View, Pane: View>: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if cells.contains(where: \.ended) {
+            if hasPanes {
                 HStack {
                     Spacer()
                     Button("Clear finished") { onDismiss(cells.filter(\.ended).map(\.id)) }
                         .buttonStyle(.borderless)
+                        .disabled(!hasFinished)
+                        .opacity(hasFinished ? 1 : 0)
+                        .accessibilityHidden(!hasFinished)
                 }
                 .font(.caption)
                 .padding(DesignTokens.Spacing.s)
@@ -285,19 +290,23 @@ private struct PaneView<Content: View>: View {
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Button(action: onStop) { Image(systemName: "stop.fill") }
+                .focusable(false)
                 .disabled(readOnlyReason != nil || !cell.status.isMidTurn)
                 .help(readOnlyReason ?? "Stop")
                 .accessibilityLabel("Stop " + cell.title)
             Button(action: onClose) { Image(systemName: "power") }
+                .focusable(false)
                 .disabled(readOnlyReason != nil || cell.ended)
                 .help(readOnlyReason ?? "Close agent")
                 .accessibilityLabel("Close agent " + cell.title)
             Button { AppClipboard.copy(cell.id) } label: { Image(systemName: "doc.on.doc") }
+                .focusable(false)
                 .help("Copy id")
                 .accessibilityLabel("Copy id of " + cell.title)
             Button { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) } label: {
                 Image(systemName: "terminal")
             }
+                .focusable(false)
                 .help("Copy attach command")
                 .accessibilityLabel("Copy attach command for " + cell.title)
             Button(action: onZoom) {
