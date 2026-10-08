@@ -443,7 +443,7 @@ final class SessionsTreeModel {
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
         // tree lists it, showed the Agent Profiles page and its availability check for a moment.
-        await refreshAfterSave("Workspace added")
+        await refreshAfterSave("Workspace made")
         return path
     }
 
@@ -702,6 +702,7 @@ private struct SessionsWindow: View {
         }
         .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showModelNotice() }
         .onChange(of: model.saveNotice) { _, _ in showModelNotice() }
+        .onChange(of: sheetIsOpen) { _, open in if !open { showModelNotice() } }
         .onChange(of: actionError) { _, message in
             if message == nil { showModelNotice() }
         }
@@ -817,8 +818,7 @@ private struct SessionsWindow: View {
         )) {
             renameWorkspaceSheet
         }
-        // An alert asked for while this sheet is up would be dropped, so a notice waits for it to close.
-        .sheet(item: $newTaskProject, onDismiss: showModelNotice) { project in
+        .sheet(item: $newTaskProject) { project in
             NewTaskSheet(
                 project: project,
                 create: { try await model.createTask(named: $0, in: project) },
@@ -876,9 +876,14 @@ private struct SessionsWindow: View {
         }
     }
 
-    /// One alert shows at a time, so a notice waits until the owner closes the one before.
+    private var sheetIsOpen: Bool {
+        showingHooksSetup || createSheet != nil || renameTarget != nil || newTaskProject != nil || switchTarget != nil
+    }
+
+    /// One alert shows at a time, so a notice waits until the owner closes the one before. An alert
+    /// asked for while a sheet is up can be dropped, so a notice also waits for the sheet to close.
     private func showModelNotice() {
-        guard actionError == nil, newTaskProject == nil else { return }
+        guard actionError == nil, !sheetIsOpen else { return }
         if let notice = model.saveNotice {
             actionError = notice
             model.saveNotice = nil
