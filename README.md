@@ -182,11 +182,13 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 Swarm.app opens on Home, where routed roles show their models. Import Project adds a folder to the
 project list and selects it; a folder that is not a Git repository first gets an offer to run
-`git init`, and "Keep as Folder" adds it as a plain project. Create Project makes a folder, runs `git init`
-in it, and adds and selects it. Creating or importing a project starts no agent.
+`git init`. **Keep as Folder** adds it as a plain project and remembers that choice.
+Create Project makes a folder, runs `git init`, and makes a first commit with `.gitignore` to keep
+`tmp/` out of Changes. If git has no identity or the commit fails, Swarm keeps the project and
+shows why. It adds and selects the project. Creating or importing a project starts no agent.
 New chat starts the chat profile at once with no sheet (ADR 0059): a "New chat" tab shows at once and becomes the
-chat when the chair is up, or shows the launch error with Retry. Right-click or hold a workspace's **+** or
-**New chat** for 0.4 seconds to open **New chat as…** and choose any profile. The chat profile is first and
+chat when the chair is up, or shows the launch error with Retry. Press and hold a workspace's **+** or
+**New chat**, or click its menu indicator, to open **New chat as…** and choose any profile. The chat profile is first and
 marked as the one-click default; each caption shows its first runner's provider and model.
 Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
 Switch model asks the live chair
@@ -197,10 +199,14 @@ summary.
 The sidebar shows one header per project, with its workspaces under it in last-activity order, and
 Pinned workspaces in their own section at the top (ADR 0037). A header collapses with its chevron and
 then shows its most urgent status. The **+** at the top makes or imports a project (⇧⌘N). A project's
-**+** makes a workspace there, and ⌘N makes one in the current project: a branch from the default branch in a worktree beside the
-project. The new workspace is selected without starting an agent; its empty page shows **New chat**.
+**+** makes a workspace there, and ⌘N makes one in the current project. The sheet can make a new
+branch from a base, use an existing branch that no worktree holds, or fetch a GitHub pull request.
+Each project can set its worktree folder and branch prefix. The default folder is beside the
+project, or `wt/` in a bare hub, and the default prefix is `swarm/`.
+The new workspace is selected without starting an agent; its empty page shows **New chat**.
 In a repository with no commit yet, the branch starts empty (an orphan
-branch). A plain-folder project offers `git init` first. A workspace row's **+** adds a chat in it
+branch). A plain-folder project offers `git init` first. If **Keep as Folder** was remembered,
+it stays plain until you choose **Run git init…**. A workspace row's **+** adds a chat in it
 (⌘T). Empty task worktrees stay in the sidebar with 0 chats. The command palette (⌘K) finds
 workspace names, projects, branches, and chat titles. Chats in the selected workspace appear as
 underlined tabs above the transcript. The plus button starts another chat in that workspace.

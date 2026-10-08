@@ -440,6 +440,7 @@ final class SessionsTreeModel {
         }
         let path = try await projects.add(url)
         await refreshAfterSave("Project saved")
+        if tree.project(containing: path) == nil { await refreshAfterSave("Project saved") }
         return path
     }
 
@@ -450,6 +451,7 @@ final class SessionsTreeModel {
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
         await refreshAfterSave("Project saved")
+        if tree.project(containing: created.path) == nil { await refreshAfterSave("Project saved") }
         if let notice = created.firstCommit.notice { addSaveNotice(notice) }
         return created.path
     }
@@ -543,6 +545,7 @@ final class SessionsTreeModel {
         navigation.names[path] = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller selects the workspace after the list refreshes and starts no chat.
         await refreshAfterSave("Workspace made")
+        if !workspaces.contains(where: { $0.id == path }) { await refreshAfterSave("Workspace made") }
         return path
     }
 
@@ -969,6 +972,7 @@ private struct SessionsWindow: View {
                 onCreated: { path in
                     ownerMoves += 1
                     documentVisible = false
+                    // Keep the path selected even when the extra refresh could not list it yet.
                     model.navigation.selectedWorkspace = path
                     model.navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
                     model.select(nil)
@@ -1063,12 +1067,13 @@ private struct SessionsWindow: View {
             Button("Run git init") { runGitInit(request) }
             switch request.reason {
             case .importFolder(let url):
-                Button("Keep as Folder", role: .cancel) {
+                Button("Keep as Folder") {
                     do {
                         try model.keepAsFolder(at: request.path)
                         performProjectAction(url, .open)
-                    } catch { showAlert(.error(error.localizedDescription)) }
+                    } catch { showAlert(.error("Could not remember the folder. \(error.localizedDescription)")) }
                 }
+                Button("Cancel", role: .cancel) {}
             case .newWorkspace:
                 Button("Cancel", role: .cancel) {}
             }
