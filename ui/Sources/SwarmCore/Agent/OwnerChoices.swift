@@ -10,6 +10,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var projectNames: [String: String] = [:]
     public var projectPaths: [String] = []
     public var removedProjects: Set<String> = []
+    public var plainFolders: Set<String> = []
     public var workspaceOrder: [String: [String]] = [:]
     public var tabs: [String: TabStrip] = [:]
 
@@ -26,6 +27,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         projectNames = try container.decodeIfPresent([String: String].self, forKey: .projectNames) ?? [:]
         projectPaths = try container.decodeIfPresent([String].self, forKey: .projectPaths) ?? []
         removedProjects = try container.decodeIfPresent(Set<String>.self, forKey: .removedProjects) ?? []
+        plainFolders = try container.decodeIfPresent(Set<String>.self, forKey: .plainFolders) ?? []
         workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
         tabs = try container.decodeIfPresent([String: TabStrip].self, forKey: .tabs) ?? [:]
         fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
@@ -37,6 +39,8 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         pinned.formUnion(after.pinned.subtracting(before.pinned))
         archived.subtract(before.archived.subtracting(after.archived))
         archived.formUnion(after.archived.subtracting(before.archived))
+        plainFolders.subtract(before.plainFolders.subtracting(after.plainFolders))
+        plainFolders.formUnion(after.plainFolders.subtracting(before.plainFolders))
         Self.mergeChanges(from: before.names, to: after.names, into: &names)
         Self.mergeChanges(from: before.chatNames, to: after.chatNames, into: &chatNames)
         Self.mergeChanges(from: before.projectNames, to: after.projectNames, into: &projectNames)
@@ -60,6 +64,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         archived.subtract(removed)
         names = names.filter { !removed.contains($0.key) }
         projectNames.removeValue(forKey: path)
+        plainFolders.remove(path)
         workspaceOrder.removeValue(forKey: path)
         tabs = tabs.filter { !removed.contains($0.key) }
     }

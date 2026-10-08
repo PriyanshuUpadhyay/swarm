@@ -416,6 +416,7 @@ final class SessionsTreeModel {
         if initializeGit {
             try await Git.initialize(at: url.path)
             await discovery.forgetIdentities()
+            try forgetPlainFolder(at: url.path)
         }
         let path = try await projects.add(url)
         await refreshAfterSave("Project saved")
@@ -433,6 +434,20 @@ final class SessionsTreeModel {
             addSaveNotice("Created without a first commit, because git has no user.name and user.email. Workspaces start orphan branches until you set them.")
         }
         return created.path
+    }
+
+    func shouldAskForGitInit(at path: String) -> Bool {
+        GitInitPolicy.shouldAsk(path: path, choices: navigationStore.savedChoices)
+    }
+
+    func keepAsFolder(at path: String) throws {
+        let saved = try ownerChoices.update { $0.plainFolders.insert(path) }
+        navigation = navigationStore.adopt(saved, into: navigation)
+    }
+
+    private func forgetPlainFolder(at path: String) throws {
+        let saved = try ownerChoices.update { $0.plainFolders.remove(path) }
+        navigation = navigationStore.adopt(saved, into: navigation)
     }
 
     func removeProject(_ project: ProjectNode) throws {
@@ -455,6 +470,7 @@ final class SessionsTreeModel {
     func initializeGit(at path: String) async throws -> ProjectNode {
         try await Git.initialize(at: path)
         await discovery.forgetIdentities()
+        try forgetPlainFolder(at: path)
         try await refresh()
         guard let paths = Git.repositoryPaths(in: path) else { throw GitTaskWorktreeError.notRepository }
         return ProjectNode(
@@ -994,10 +1010,18 @@ private struct SessionsWindow: View {
             Button("Run git init") { runGitInit(request) }
             switch request.reason {
             case .importFolder(let url):
-                Button("Keep as Folder", role: .cancel) { performProjectAction(url, .open) }
+                Button("Keep as Folder", role: .cancel) {
+                    do {
+                        try model.keepAsFolder(at: request.path)
+                        performProjectAction(url, .open)
+                    } catch { showAlert(.error(error.localizedDescription)) }
+                }
             case .newWorkspace:
                 Button("Cancel", role: .cancel) {}
             }
+        case .plainFolder(let path):
+            Button("Run git init…") { runGitInit(GitInitRequest(path: path, reason: .newWorkspace)) }
+            Button("Cancel", role: .cancel) {}
         case .removeProject(let project):
             Button("Remove Project", role: .destructive) {
                 do { try model.removeProject(project) }
@@ -1037,6 +1061,8 @@ private struct SessionsWindow: View {
             Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         case .gitInit:
             Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
+        case .plainFolder(let path):
+            Text(verbatim: path)
         case .removeProject(let project):
             Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
         case .prune(let entry, let paths):
@@ -1544,6 +1570,8 @@ private struct SessionsWindow: View {
             // `git init` inside a bare clone would hide its worktrees behind a nested repository.
             if await Git.isRepository(at: project.path) {
                 showAlert(.error("“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."))
+            } else if !model.shouldAskForGitInit(at: project.path) {
+                showAlert(.plainFolder(project.path))
             } else {
                 showAlert(.gitInit(GitInitRequest(path: project.path, reason: .newWorkspace)))
             }
@@ -1897,11 +1925,14 @@ private struct SessionsWindow: View {
     }
 
     private func importFolder(_ url: URL) {
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
         let identity = SwarmSessionDiscovery.identity(
-            for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
+            for: url.path, repositoryPathsResolver: Git.repositoryPaths
         )
         Task {
             if case .repository = identity {
+                performProjectAction(url, .open)
+            } else if !model.shouldAskForGitInit(at: url.path) {
                 performProjectAction(url, .open)
             } else if await Git.isRepository(at: url.path) {
                 // A bare clone: adding it as today is safe, `git init` in it is not.
@@ -2017,6 +2048,7 @@ private enum CreateSheet: Identifiable {
 private enum WindowAlert {
     case pathDrift(PathSwarmDrift)
     case gitInit(GitInitRequest)
+    case plainFolder(String)
     case removeProject(ProjectNode)
     case prune(entry: WorkspaceEntry, paths: [String])
     case archiveWorkspace(WorkspaceEntry, liveAgents: Int)
@@ -2029,6 +2061,7 @@ private enum WindowAlert {
         switch (self, other) {
         case (.pathDrift(let left), .pathDrift(let right)): left.key == right.key
         case (.gitInit(let left), .gitInit(let right)): left.path == right.path && left.reason == right.reason
+        case (.plainFolder(let left), .plainFolder(let right)): left == right
         case (.removeProject(let left), .removeProject(let right)): left.path == right.path
         case (.prune(let left, _), .prune(let right, _)): left.id == right.id
         case (.archiveWorkspace(let left, _), .archiveWorkspace(let right, _)): left.id == right.id
@@ -2046,6 +2079,7 @@ private enum WindowAlert {
         switch self {
         case .pathDrift: "Terminal runs another swarm"
         case .gitInit(let request): "“\(request.name)” is not a git repository"
+        case .plainFolder: "This project is a plain folder. Workspaces need git."
         case .removeProject: "Remove Project…"
         case .prune: "Prune missing worktrees?"
         case .archiveWorkspace: "Archive workspace?"
