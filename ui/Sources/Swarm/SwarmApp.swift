@@ -113,6 +113,9 @@ final class SessionsTreeModel {
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
+    /// A save that worked but whose list refresh failed. The caller opens a chat right after the
+    /// save, which hides `error`, so the view shows this in its alert.
+    var saveNotice: String?
     private(set) var closing: Set<SwarmSessionID> = []
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
@@ -369,8 +372,7 @@ final class SessionsTreeModel {
             await discovery.forgetIdentities()
         }
         let path = try await projects.add(url)
-        do { try await refresh() }
-        catch { self.error = "Project saved, but the list could not refresh. \(error.localizedDescription)" }
+        await refreshAfterSave("Project saved")
         return path
     }
 
@@ -380,8 +382,7 @@ final class SessionsTreeModel {
         let path = try await projects.create(at: url)
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
-        do { try await refresh() }
-        catch { self.error = "Project saved, but the list could not refresh. \(error.localizedDescription)" }
+        await refreshAfterSave("Project saved")
         return path
     }
 
@@ -435,9 +436,16 @@ final class SessionsTreeModel {
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
         // tree lists it, showed the Agent Profiles page and its availability check for a moment.
-        do { try await refresh() }
-        catch { self.error = String(describing: error) }
+        await refreshAfterSave("Workspace added")
         return path
+    }
+
+    private func refreshAfterSave(_ subject: String) async {
+        do { try await refresh() }
+        catch {
+            let cause = (error as? SwarmProfileError)?.message ?? error.localizedDescription
+            saveNotice = "\(subject), but the list could not refresh. \(cause)"
+        }
     }
 
     func pruneWorktree(_ entry: WorkspaceEntry) async throws {
@@ -684,9 +692,10 @@ private struct SessionsWindow: View {
                 }
             }
         }
-        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showChoicesError() }
+        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showModelNotice() }
+        .onChange(of: model.saveNotice) { _, _ in showModelNotice() }
         .onChange(of: actionError) { _, message in
-            if message == nil { showChoicesError() }
+            if message == nil { showModelNotice() }
         }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
@@ -858,10 +867,16 @@ private struct SessionsWindow: View {
         }
     }
 
-    private func showChoicesError() {
-        guard actionError == nil, let failure = model.choicesAlerts.message else { return }
-        actionError = failure
-        model.choicesAlerts.dismiss()
+    /// One alert shows at a time, so a notice waits until the owner closes the one before.
+    private func showModelNotice() {
+        guard actionError == nil else { return }
+        if let notice = model.saveNotice {
+            actionError = notice
+            model.saveNotice = nil
+        } else if let failure = model.choicesAlerts.message {
+            actionError = failure
+            model.choicesAlerts.dismiss()
+        }
     }
 
     private var workspaceContent: some View {
