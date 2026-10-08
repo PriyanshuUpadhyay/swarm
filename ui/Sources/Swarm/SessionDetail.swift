@@ -335,15 +335,11 @@ struct SessionDetailView: View {
     }
 
     private var modelSwitchDisabledReason: String? {
-        if let readOnlyReason { return readOnlyReason }
-        if currentModel == nil, model.snapshot == .waiting || model.snapshot == .loading {
-            return "Waiting for this chat's model information."
-        }
-        if model.isSending(sessionID: row.id.rawValue)
-            || (row.isRunning == true && ChairTurn.isActive(model.rows)) {
-            return "Wait for the reply to finish, or stop it before switching model."
-        }
-        return nil
+        ModelSwitchChoice.disabledReason(
+            readOnlyReason: readOnlyReason,
+            waitingForModel: currentModel == nil && (model.snapshot == .waiting || model.snapshot == .loading),
+            isSending: model.isSending(sessionID: row.id.rawValue), isRunning: isRunning
+        )
     }
 
     private var isRunning: Bool {

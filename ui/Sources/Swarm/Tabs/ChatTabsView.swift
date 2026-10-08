@@ -11,6 +11,11 @@ struct ChatTabActions {
     var archive: (String) -> Void
     var rename: (String) -> Void
     var group: (TabStrip.Grouping) -> Bool
+    var switchModel: (String) -> Void
+    var switchDisabledReason: (String) -> String?
+    var copySessionID: (String) -> Void
+    var revealFolder: (String) -> Void
+    var openTerminal: (String) -> Void
 }
 
 /// The workspace's chats as tabs: status glyph, title, and provider badge. A tab fits its title
@@ -147,7 +152,7 @@ struct ChatTabsView: View {
     }
 
     @ViewBuilder private func draggableTab(_ tab: ChatTab) -> some View {
-        let view = ChatTabView(tab: tab, selected: tab.id == selectedID, canStartChat: canStartChat,
+        let view = ChatTabView(tab: tab, selected: tab.id == selectedID,
                                actions: actions, groups: groups, newGroup: { groupEditor = .init(tab: $0) })
         if tab.pending == nil {
             view.draggable(tab.id)
@@ -164,7 +169,6 @@ struct ChatTabsView: View {
 private struct ChatTabView: View {
     let tab: ChatTab
     let selected: Bool
-    let canStartChat: Bool
     let actions: ChatTabActions
     let groups: [TabGroup]
     let newGroup: (String) -> Void
@@ -239,6 +243,9 @@ private struct ChatTabView: View {
         .contextMenu {
             if tab.pending == nil {
                 Button("Rename chat…") { actions.rename(tab.id) }
+                Button("Switch model…") { actions.switchModel(tab.id) }
+                    .disabled(actions.switchDisabledReason(tab.id) != nil)
+                    .help(actions.switchDisabledReason(tab.id) ?? "Switch model")
                 Menu("Move to group") {
                     ForEach(groups) { group in
                         Button(group.name) { _ = actions.group(.add(tab.id, to: group.id)) }
@@ -249,8 +256,9 @@ private struct ChatTabView: View {
                         Button("Remove from group") { _ = actions.group(.remove(tab.id)) }
                     }
                 }
-                Button("New chat here", action: actions.newChat)
-                    .disabled(!canStartChat)
+                Button("Copy session id") { actions.copySessionID(tab.id) }
+                Button("Reveal folder in Finder") { actions.revealFolder(tab.id) }
+                Button("Open in Terminal") { actions.openTerminal(tab.id) }
                 Divider()
                 Button("Close tab") { actions.hide(tab.id) }
                 Button("End chat…") { actions.end(tab.id) }.disabled(!tab.canClose)

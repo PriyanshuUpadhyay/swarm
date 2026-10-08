@@ -1613,9 +1613,43 @@ private struct SessionsWindow: View {
                 move: { model.navigation.moveTab($0, onto: $1, in: directory) },
                 archive: { archiveChat(SwarmSessionID($0)) },
                 rename: { beginRenameChat(SwarmSessionID($0)) },
-                group: { model.navigation.groupTab($0, in: directory) }
+                group: { model.navigation.groupTab($0, in: directory) },
+                switchModel: { requestModelSwitch(SwarmSessionID($0)) },
+                switchDisabledReason: { modelSwitchState(SwarmSessionID($0)).reason },
+                copySessionID: { AppClipboard.copy($0) },
+                revealFolder: { id in
+                    if let chat = model.tree.session(SwarmSessionID(id)) { AppFolderActions.reveal(chat.session.cwd) }
+                },
+                openTerminal: { id in
+                    guard let chat = model.tree.session(SwarmSessionID(id)) else { return }
+                    Task {
+                        do { try await AppFolderActions.openInTerminal(chat.session.cwd) }
+                        catch { showAlert(.error(error.localizedDescription)) }
+                    }
+                }
             )
         )
+    }
+
+    private func modelSwitchState(_ id: SwarmSessionID) -> (model: String?, reason: String?) {
+        guard let row = model.tree.session(id) else { return (nil, "This chat is not available.") }
+        let detail = model.detailModels.entries.first { $0.id == row.id }?.model
+        let current = detail?.currentModel ?? model.launchedModels[row.id]
+        let snapshot = detail?.snapshot ?? .waiting
+        let readOnly = model.workspaces.first { $0.chats.contains { $0.id == row.id } }
+            .flatMap { model.navigation.readOnlyReason(in: $0.id) }
+        return (current, ModelSwitchChoice.disabledReason(
+            readOnlyReason: readOnly,
+            waitingForModel: current == nil && (snapshot == .waiting || snapshot == .loading),
+            isSending: detail?.isSending(sessionID: row.id.rawValue) ?? false,
+            isRunning: row.isRunning == true && (detail.map { ChairTurn.isActive($0.rows) } ?? true)
+        ))
+    }
+
+    private func requestModelSwitch(_ id: SwarmSessionID) {
+        let state = modelSwitchState(id)
+        guard state.reason == nil, let row = model.tree.session(id) else { return }
+        switchTarget = SwitchTarget(row: row, model: state.model)
     }
 
     private var renameWorkspaceSheet: some View {

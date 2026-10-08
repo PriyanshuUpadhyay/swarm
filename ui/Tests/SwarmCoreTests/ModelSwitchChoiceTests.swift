@@ -5,6 +5,22 @@ import Testing
 struct ModelSwitchChoiceTests {
     let codexChat = ModelSwitchChoice(currentProvider: "codex", currentModel: "gpt-5.5")
 
+    @Test("Composer and tab menu share the model switch reason")
+    func disabledReason() {
+        func reason(readOnly: String? = nil, waiting: Bool = false, sending: Bool = false,
+                    running: Bool = false) -> String? {
+            ModelSwitchChoice.disabledReason(readOnlyReason: readOnly, waitingForModel: waiting,
+                                             isSending: sending, isRunning: running)
+        }
+        #expect(reason() == nil)
+        #expect(reason(readOnly: "Archived", waiting: true, sending: true, running: true) == "Archived")
+        #expect(reason(waiting: true, sending: true, running: true)
+            == "Waiting for this chat's model information.")
+        let busy = "Wait for the reply to finish, or stop it before switching model."
+        #expect(reason(sending: true) == busy)
+        #expect(reason(running: true) == busy)
+    }
+
     @Test("The chat's own provider and model leave Switch disabled")
     func samePick() {
         #expect(!codexChat.canSwitch(provider: "codex", model: "gpt-5.5", isSwitching: false))
