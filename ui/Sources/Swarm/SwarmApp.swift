@@ -640,8 +640,7 @@ private struct SessionsWindow: View {
     @State private var pendingAlerts: [WindowAlert] = []
     @State private var projectAction: String?
     @State private var showingPalette = false
-    /// When each palette action last ran, in this window only.
-    @State private var recentActions: [AppKey: Int] = [:]
+    @State private var recentActions = PaletteRecentActions.load()
     @State private var showingArchive = false
     @State private var closedChats: [RecentlyClosedChat]?
     @State private var createSheet: CreateSheet?
@@ -1264,45 +1263,63 @@ private struct SessionsWindow: View {
         let listed = PaletteSource.workspaces(
             model.workspaces, navigation: model.navigation, now: Int(Date().timeIntervalSince1970)
         )
-        let session = model.selectedSession?.session
         return PaletteItems.build(
             sidebarViews: WorkspaceSidebarMode.allCases.map(\.rawValue),
             workspaces: listed.workspaces,
             chats: listed.chats,
-            agents: session.map { session in
-                SwarmPanePolicy.liveCells(session: session, agents: model.agents).map {
-                    PaletteSource.Agent(
-                        id: $0.agent.id.rawValue, name: $0.agent.id.rawValue, role: $0.agent.role,
-                        status: $0.agent.status
-                    )
-                }
-            } ?? [],
-            recentActions: recentActions
+            agents: PaletteSource.agents(model.workspaces, agentsBySession: model.tree.agentsBySession,
+                                         navigation: model.navigation),
+            recentActions: recentActions,
+            selectedChat: model.selectedSession != nil,
+            switchModelDisabledReason: model.selectedSessionID.map { modelSwitchState($0).reason } ?? nil
         )
     }
 
     /// Runs a palette item the way its menu command or sidebar row would.
     private func runPaletteItem(_ item: PaletteItem) {
+        guard item.disabledReason == nil else { return }
         showingPalette = false
         guard let colon = item.id.firstIndex(of: ":") else { return }
         let id = String(item.id[item.id.index(after: colon)...])
         switch item.id[..<colon] {
         case "action":
             guard let key = PaletteItems.actions.first(where: { "\($0)" == id }) else { return }
-            recentActions[key] = Int(Date().timeIntervalSince1970)
+            recordPaletteAction(item.id)
             AppKeyTarget.current.perform(key)
+        case "chatAction":
+            guard let action = PaletteChatAction(rawValue: id) else { return }
+            if action == .reopenChat {
+                recordPaletteAction(item.id)
+                AppKeyTarget.current.perform(.recentlyClosed)
+                return
+            }
+            guard let chat = model.selectedSession else { return }
+            recordPaletteAction(item.id)
+            switch action {
+            case .closeTab:
+                if let entry = model.selectedWorkspace { model.hideTab(ChatTitle.key(chat), in: entry.id) }
+            case .endChat: requestChatEnd(chat.id, archive: false)
+            case .archiveChat: archiveChat(chat.id)
+            case .renameChat: beginRenameChat(chat.id)
+            case .switchModel: requestModelSwitch(chat.id)
+            case .reopenChat: break
+            }
         case "workspace":
             sidebarActions.select(id)
         case "chat":
             ownerMoves += 1
             model.select(SwarmSessionID(id))
         case "agent":
-            if let session = model.selectedSession?.session {
-                panes.focus(key: AgentPaneStore.key(session: session.id, agent: id))
-            }
+            documentVisible = false
+            sidebarActions.select(id)
         default:
             break
         }
+    }
+
+    private func recordPaletteAction(_ id: String) {
+        recentActions[id] = Int(Date().timeIntervalSince1970)
+        PaletteRecentActions.save(recentActions)
     }
 
     /// `SWARM_OPEN_SCRIPT=N`: selects each workspace, then each of its chats, through the model,

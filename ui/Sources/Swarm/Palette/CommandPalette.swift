@@ -60,7 +60,9 @@ struct CommandPalette: View {
                                     ForEach(rows) { item in
                                         PaletteRow(item: item, selected: item.id == currentID(in: results))
                                             .id(item.id)
-                                            .onTapGesture { run(item) }
+                                            .onTapGesture { if item.disabledReason == nil { run(item) } }
+                                            .opacity(item.disabledReason == nil ? 1 : DesignTokens.endedPaneOpacity)
+                                            .help(item.disabledReason ?? item.title)
                                     }
                                 }
                             }
@@ -101,7 +103,7 @@ struct CommandPalette: View {
 
     private func runSelected(in results: [PaletteItem]) {
         guard let id = currentID(in: results), let item = results.first(where: { $0.id == id }) else { return }
-        run(item)
+        if item.disabledReason == nil { run(item) }
     }
 }
 
@@ -131,7 +133,7 @@ private struct PaletteRow: View {
         .padding(.horizontal, DesignTokens.Spacing.xs)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([item.title, item.subtitle, item.status.map(StatusGlyph.title)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([item.title, item.subtitle, item.disabledReason, item.status.map(StatusGlyph.title)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(item.shortcut ?? "")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
