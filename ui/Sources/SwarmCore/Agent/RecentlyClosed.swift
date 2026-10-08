@@ -27,18 +27,15 @@ public enum PendingChatSelection: Sendable, Hashable {
 
     /// Call only after a completed refresh does not list the pending chat.
     public static func settleMissingAfterRefresh(
-        _ selection: inout Self?, selectedID: inout SwarmSessionID?
-    ) -> String? {
-        guard selection?.isRestoring == true else { return nil }
-        selection = nil
-        // Clear the optimistic selection of the restored chat that still has no row.
-        selectedID = nil
-        return RecentlyClosed.restoredButNotListed
+        _ selection: Self?
+    ) -> (pending: Self?, clearSelection: Bool, notice: String?) {
+        guard selection?.isRestoring == true else { return (selection, false, nil) }
+        return (nil, true, RecentlyClosed.restoredButNotListed)
     }
 }
 
 public enum RecentlyClosed {
-    public static let restoredButNotListed = "The chat was restored, but it is not in the workspace list. Check the sidebar after the list refreshes."
+    public static let restoredButNotListed = "The chat was reopened, but it is not in the workspace list. Check the sidebar after the list refreshes."
 
     public struct Listing: Sendable {
         /// Keep this in sync with ARCHIVED_SESSIONS_LIMIT in src/store.rs.
@@ -62,6 +59,7 @@ public enum RecentlyClosed {
         for _ in 0..<2 {
             let completed: Bool
             do { completed = try await refresh() }
+            catch let error as CancellationError { throw error }
             catch {
                 throw SwarmProfileError.failed("The chat was reopened, but the list could not refresh. \(error.localizedDescription)")
             }

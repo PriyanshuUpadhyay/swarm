@@ -358,11 +358,11 @@ final class SessionsTreeModel {
         for chat in settled where chat.id == selectedPendingID {
             select(chat.session)
         }
-        if let pendingSelection, tree.session(pendingSelection.id) == nil,
-           let notice = PendingChatSelection.settleMissingAfterRefresh(
-               &self.pendingSelection, selectedID: &selectedSessionID
-           ) {
-            addSaveNotice(notice)
+        if let pendingID, tree.session(pendingID) == nil {
+            let result = PendingChatSelection.settleMissingAfterRefresh(pendingSelection)
+            pendingSelection = result.pending
+            if result.clearSelection { selectedSessionID = nil }
+            if let notice = result.notice { addSaveNotice(notice) }
         }
         if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import SwarmCore
 
@@ -121,6 +122,18 @@ struct RecentlyClosedTests {
         }
         #expect(calls == 1)
         #expect(try await RecentlyClosed.refreshRestoredChat(refresh: { false }, isListed: { true }))
+        #expect(RecentlyClosed.restoredButNotListed ==
+                "The chat was reopened, but it is not in the workspace list. Check the sidebar after the list refreshes.")
+    }
+
+    @Test("A cancelled reopen refresh keeps its cancellation error")
+    @MainActor
+    func refreshCancellation() async {
+        await #expect(throws: CancellationError.self) {
+            try await RecentlyClosed.refreshRestoredChat(refresh: {
+                throw CancellationError()
+            }, isListed: { false })
+        }
     }
 
     @Test("A pending restored selection settles on the next completed list and reports absence once")
@@ -129,17 +142,31 @@ struct RecentlyClosedTests {
         var pending: PendingChatSelection? = .restored(id)
         #expect(pending?.id == id)
         #expect(pending?.isRestoring == true)
-        var selectedID: SwarmSessionID? = id
-        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) ==
-                RecentlyClosed.restoredButNotListed)
-        #expect(pending == nil)
-        #expect(selectedID == nil)
-        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) == nil)
+        let result = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(result.notice == RecentlyClosed.restoredButNotListed)
+        #expect(result.pending == nil)
+        #expect(result.clearSelection)
+        pending = result.pending
+        let repeated = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(repeated.pending == nil)
+        #expect(!repeated.clearSelection)
+        #expect(repeated.notice == nil)
         pending = .handoff(id)
-        selectedID = id
-        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) == nil)
-        #expect(pending == .handoff(id))
-        #expect(selectedID == id)
+        let handoff = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(handoff.notice == nil)
+        #expect(handoff.pending == .handoff(id))
+        #expect(!handoff.clearSelection)
+    }
+
+    @Test("The selected-id observer sees the settled pending value without overlapping writes")
+    func observedSelection() {
+        let model = ReopenedSelectionFixture()
+        let result = PendingChatSelection.settleMissingAfterRefresh(model.pending)
+        model.pending = result.pending
+        if result.clearSelection { model.selectedID = nil }
+        #expect(model.pending == nil)
+        #expect(model.selectedID == nil)
+        #expect(model.pendingAtSelectionChange == nil)
     }
 
     @Test("A refresh failure after restore says the chat was reopened and keeps the cause")
@@ -169,6 +196,15 @@ struct RecentlyClosedTests {
             _, arguments, _, _, _, _ in
             await recorder.reply(arguments)
         }
+    }
+}
+
+@Observable
+private final class ReopenedSelectionFixture {
+    var pending: PendingChatSelection? = .restored(.init("reopened"))
+    var pendingAtSelectionChange: PendingChatSelection? = .restored(.init("reopened"))
+    var selectedID: SwarmSessionID? = .init("reopened") {
+        didSet { pendingAtSelectionChange = pending }
     }
 }
 
