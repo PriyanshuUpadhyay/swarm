@@ -485,11 +485,17 @@ final class SessionsTreeModel {
     }
 
     func archive(_ id: SwarmSessionID) async throws {
+        guard let chat = tree.session(id) else { return }
         let ids = archives.begin(id, in: tree)
         guard !ids.isEmpty else { return }
         let previous = selectedSessionID
         let workspace = navigation.selectedWorkspace
-        let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
+        let entry = workspaces.first { $0.chats.contains { $0.id == chat.id } }
+        let next = ChatArchives.selection(
+            afterArchiving: id, selected: previous, in: tree,
+            history: entry.flatMap { navigation.tabHistory[$0.id] } ?? [],
+            open: entry.flatMap { navigation.tabs[$0.id]?.open } ?? []
+        )
         refreshRevision += 1
         tree = visibleTree
         // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
@@ -497,8 +503,9 @@ final class SessionsTreeModel {
         let revision = selectionRevision
         SwarmPerformance.event("ChatArchiveApplied")
         do {
-            try await bus.archive(ids)
+            try await SwarmSessionCloser.archive(session: chat, bus: bus)
             archives.finish(id, succeeded: true)
+            if let entry { navigation.tabs[entry.id] = navigation.tabs[entry.id]?.closing(ChatTitle.key(chat)) }
             refreshRevision += 1
         } catch {
             archives.finish(id, succeeded: false)
@@ -512,10 +519,15 @@ final class SessionsTreeModel {
         }
     }
 
-    func close(_ id: SwarmSessionID) async throws {
-        guard let session = tree.session(id)?.session, closing.insert(id).inserted else { return }
-        defer { closing.remove(id) }
-        try await SwarmSessionCloser.close(session, bus: bus)
+    func endConfirmation(_ id: SwarmSessionID) async throws -> SwarmSessionCloser.Confirmation? {
+        guard let session = tree.session(id) else { return nil }
+        return try await SwarmSessionCloser.confirmation(session: session, bus: bus)
+    }
+
+    func end(_ id: SwarmSessionID) async throws {
+        guard let session = tree.session(id), closing.insert(session.id).inserted else { return }
+        defer { closing.remove(session.id) }
+        try await SwarmSessionCloser.end(session: session, bus: bus)
         try await refresh()
     }
 
@@ -886,6 +898,11 @@ private struct SessionsWindow: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        case .endChat(let id, _, _, let archive):
+            Button(archive ? "Archive Chat" : "End Chat", role: .destructive) {
+                performChatEnd(id, archive: archive)
+            }
+            Button("Cancel", role: .cancel) {}
         case .error:
             Button("OK") {}
         }
@@ -903,6 +920,8 @@ private struct SessionsWindow: View {
             Text(verbatim: "Prune removes the worktree records for these missing folders in "
                  + model.navigation.projectTitle(for: entry.project) + ":\n\n"
                  + paths.joined(separator: "\n"))
+        case .endChat(_, _, let confirmation, let archive):
+            Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
         case .error(let message):
             Text(verbatim: message)
         }
@@ -1093,6 +1112,10 @@ private struct SessionsWindow: View {
                 renameTarget = .project(project)
             },
             archive: { id in entry(id).map(model.archiveWorkspace) },
+            endChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { requestChatEnd(chat, archive: false) }
+            },
             archiveChat: { id in
                 if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
                    let chat = target.chatID { archiveChat(chat) }
@@ -1467,12 +1490,7 @@ private struct SessionsWindow: View {
                 select: showTab,
                 selectChildren: { showTabChildren($0, in: directory) },
                 newChat: { startChat(in: directory) },
-                close: { id in
-                    Task {
-                        do { try await model.close(SwarmSessionID(id)) }
-                        catch { showAlert(.error(error.localizedDescription)) }
-                    }
-                },
+                end: { requestChatEnd(SwarmSessionID($0), archive: false) },
                 hide: { model.hideTab($0, in: directory) },
                 move: { model.navigation.moveTab($0, onto: $1, in: directory) },
                 archive: { archiveChat(SwarmSessionID($0)) },
@@ -1530,9 +1548,29 @@ private struct SessionsWindow: View {
     }
 
     private func archiveChat(_ id: SwarmSessionID) {
+        requestChatEnd(id, archive: true)
+    }
+
+    private func requestChatEnd(_ id: SwarmSessionID, archive: Bool) {
         Task {
-            do { try await model.archive(id) }
-            catch { showAlert(.error(error.localizedDescription)) }
+            do {
+                guard let confirmation = try await model.endConfirmation(id) else { return }
+                if confirmation.required, let chat = model.tree.session(id) {
+                    showAlert(.endChat(id: chat.id, title: model.navigation.title(for: chat),
+                                       confirmation: confirmation, archive: archive))
+                } else {
+                    performChatEnd(id, archive: archive)
+                }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performChatEnd(_ id: SwarmSessionID, archive: Bool) {
+        Task {
+            do {
+                if archive { try await model.archive(id) }
+                else { try await model.end(id) }
+            } catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
@@ -1680,6 +1718,7 @@ private enum WindowAlert {
     case gitInit(GitInitRequest)
     case removeProject(ProjectNode)
     case prune(entry: WorkspaceEntry, paths: [String])
+    case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
     case error(String)
 
     var title: String {
@@ -1688,6 +1727,7 @@ private enum WindowAlert {
         case .gitInit(let request): "“\(request.name)” is not a git repository"
         case .removeProject: "Remove Project…"
         case .prune: "Prune missing worktrees?"
+        case .endChat(_, let title, _, let archive): "\(archive ? "Archive" : "End") “\(title)”?"
         case .error: "Could not complete action"
         }
     }

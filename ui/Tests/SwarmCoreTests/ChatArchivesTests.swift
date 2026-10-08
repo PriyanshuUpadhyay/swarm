@@ -42,15 +42,21 @@ struct ChatArchivesTests {
         #expect(!filtered.missing)
     }
 
-    @Test("Selected tabs move right, then left, and inactive archives keep selection")
+    @Test("Archive selects the previous open chat and preserves inactive selection")
     func selection() {
-        let tree = tree([first, second, third])
-        #expect(ChatArchives.selection(afterArchiving: first, selected: first, in: tree) == second)
-        #expect(ChatArchives.selection(afterArchiving: second, selected: second, in: tree) == third)
-        #expect(ChatArchives.selection(afterArchiving: third, selected: third, in: tree) == second)
-        #expect(ChatArchives.selection(afterArchiving: first, selected: third, in: tree) == third)
-        #expect(ChatArchives.selection(afterArchiving: first, selected: nil, in: tree) == nil)
-        #expect(ChatArchives.selection(afterArchiving: first, selected: first, in: self.tree([first])) == nil)
+        let source = tree([first, second, third])
+        let open = [first, second, third].map(\.rawValue)
+        let history = [third, first, second].map(\.rawValue)
+        #expect(ChatArchives.selection(afterArchiving: second, selected: second, in: source,
+                                      history: history, open: open) == first)
+        #expect(ChatArchives.selection(afterArchiving: second, selected: second, in: source,
+                                      history: history, open: [second.rawValue, third.rawValue]) == third)
+        #expect(ChatArchives.selection(afterArchiving: first, selected: third, in: source,
+                                      history: history, open: open) == third)
+        #expect(ChatArchives.selection(afterArchiving: first, selected: nil, in: source,
+                                      history: history, open: open) == nil)
+        #expect(ChatArchives.selection(afterArchiving: first, selected: first, in: self.tree([first]),
+                                      history: [first.rawValue], open: [first.rawValue]) == nil)
     }
 
     @Test("Pending archive removes the chat immediately and retains its workspace")
@@ -101,7 +107,9 @@ struct ChatArchivesTests {
         #expect(archives.applying(to: source).session(first) == nil)
         #expect(archives.applying(to: source).session(second) == nil)
         #expect(archives.applying(to: source).session(third) != nil)
-        #expect(ChatArchives.selection(afterArchiving: second, selected: second, in: source) == third)
+        #expect(ChatArchives.selection(afterArchiving: second, selected: second, in: source,
+                                      history: [third.rawValue, second.rawValue],
+                                      open: [second.rawValue, third.rawValue]) == third)
         archives.finish(second, succeeded: false)
         #expect(archives.applying(to: source).session(second) != nil)
     }

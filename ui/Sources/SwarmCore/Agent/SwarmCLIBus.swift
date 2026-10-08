@@ -134,6 +134,16 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
     }
 
+    public func archivedSessions() async throws -> [SwarmSession] {
+        try await read(["sessions", "--json", "--archived"], as: SwarmSessionList.self)
+            .sessions.filter { $0.archivedAt != nil }
+    }
+
+    public func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        guard !sessions.isEmpty else { return }
+        _ = try await call(["session", "unarchive"] + sessions.map(\.rawValue))
+    }
+
     public func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
         _ = try await call(["session", "continue", newSession.rawValue, oldSession.rawValue])
     }

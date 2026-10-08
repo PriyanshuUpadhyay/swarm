@@ -5,7 +5,7 @@ struct ChatTabActions {
     var select: (String) -> Void
     var selectChildren: (String) -> Void
     var newChat: () -> Void
-    var close: (String) -> Void
+    var end: (String) -> Void
     var hide: (String) -> Void
     var move: (String, String) -> Bool
     var archive: (String) -> Void
@@ -229,7 +229,6 @@ private struct ChatTabView: View {
                 .opacity(selected || hovered ? 1 : 0)
                 .allowsHitTesting(selected || hovered)
                 .accessibilityHidden(!selected && !hovered)
-                archiveButton
             }
         }
         .frame(minWidth: DesignTokens.Size.tabMinWidth, alignment: .leading)
@@ -252,24 +251,15 @@ private struct ChatTabView: View {
                 }
                 Button("New chat here", action: actions.newChat)
                     .disabled(!canStartChat)
-                Button("Close chat") { actions.close(tab.id) }.disabled(!tab.canClose)
+                Divider()
+                Button("Close tab") { actions.hide(tab.id) }
+                Button("End chat…") { actions.end(tab.id) }.disabled(!tab.canClose)
                 Button("Archive chat") { actions.archive(tab.id) }
             }
         }
     }
 
-    private var archiveButton: some View {
-        Button { actions.archive(tab.id) } label: {
-            Image(systemName: "archivebox")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(DesignTokens.Spacing.s)
-                .contentShape(Rectangle())
-                .fixedSize()
-        }
-        .help("Archive chat")
-        .accessibilityLabel("Archive \(tab.title)")
-    }
+
 }
 
 /// A horizontal scroll view offers its content unlimited width, so a max-width frame alone lets a

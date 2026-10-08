@@ -344,14 +344,44 @@ public enum SwarmPanePolicy {
 }
 
 public enum SwarmSessionCloser {
-    public static func close(_ session: SwarmSession, bus: any SwarmBus) async throws {
-        let agents = try await bus.agents(in: session)
-        let live = agents.filter { $0.alive == true }
-        let children = live.filter { $0.id != SwarmPanePolicy.chair }
-        let chairs = live.filter { $0.id == SwarmPanePolicy.chair }
-        for agent in children + chairs {
-            try await bus.close(agent.id, in: session)
+    public struct Confirmation: Sendable, Hashable {
+        public let liveChildren: Int
+        public let midTurnChildren: Int
+        public var required: Bool { liveChildren > 0 || midTurnChildren > 0 }
+
+        public init(agents: [SwarmAgent]) {
+            let children = agents.filter { $0.id != SwarmPanePolicy.chair }
+            liveChildren = children.filter { $0.alive == true }.count
+            midTurnChildren = children.filter { $0.status.isMidTurn }.count
         }
-        try await bus.archive([session.id])
+
+        public var message: String {
+            "\(liveChildren == 1 ? "1 agent still runs" : "\(liveChildren) agents still run"), and \(midTurnChildren) \(midTurnChildren == 1 ? "is" : "are") mid-turn. Ending stops them."
+        }
+    }
+
+    public static func confirmation(
+        session: SwarmProjectSession, bus: any SwarmBus
+    ) async throws -> Confirmation {
+        var agents: [SwarmAgent] = []
+        for value in session.sessions { agents += try await bus.agents(in: value) }
+        return Confirmation(agents: agents)
+    }
+
+    public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
+        var live: [(SwarmSession, SwarmAgent)] = []
+        for value in session.sessions {
+            live += try await bus.agents(in: value).filter { $0.alive == true }.map { (value, $0) }
+        }
+        let children = live.filter { $0.1.id != SwarmPanePolicy.chair }
+        let chairs = live.filter { $0.1.id == SwarmPanePolicy.chair }
+        for (value, agent) in children + chairs {
+            try await bus.close(agent.id, in: value)
+        }
+    }
+
+    public static func archive(session: SwarmProjectSession, bus: any SwarmBus) async throws {
+        try await end(session: session, bus: bus)
+        try await bus.archive(session.sessions.map(\.id))
     }
 }

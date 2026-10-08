@@ -511,6 +511,8 @@ public protocol SwarmBus: Sendable {
     func sessions() async throws -> [SwarmSession]
     /// `swarm session archive <id>...`, with no session selected in the environment.
     func archive(_ sessions: [SwarmSessionID]) async throws
+    func archivedSessions() async throws -> [SwarmSession]
+    func unarchive(_ sessions: [SwarmSessionID]) async throws
     /// Save a continuation after the new chair has received its handoff message.
     func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws
     /// `swarm type <agent>` with `text` on stdin.
@@ -558,6 +560,14 @@ public extension SwarmBus {
 
     func archive(_ sessions: [SwarmSessionID]) async throws {
         throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
+    func archivedSessions() async throws -> [SwarmSession] {
+        throw SwarmProfileError.unavailable("swarm archived sessions are not available")
+    }
+
+    func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        throw SwarmProfileError.unavailable("swarm session restore is not available")
     }
 
     func answer(

@@ -42,14 +42,14 @@ public struct ChatArchives {
     }
 
     public static func selection(
-        afterArchiving id: SwarmSessionID, selected: SwarmSessionID?, in tree: SessionsTree
+        afterArchiving id: SwarmSessionID, selected: SwarmSessionID?, in tree: SessionsTree,
+        history: [String], open: [String]
     ) -> SwarmSessionID? {
         guard let row = tree.session(id), let selected,
               row.sessions.contains(where: { $0.id == selected }) else { return selected }
-        let tabs = tree.workspaceChats(for: row.id).map(\.id)
-        guard let index = tabs.firstIndex(of: row.id) else { return nil }
-        if index + 1 < tabs.count { return tabs[index + 1] }
-        return index > 0 ? tabs[index - 1] : nil
+        let remaining = open.filter { $0 != ChatTitle.key(row) }
+        let key = TabStrip.selectionAfterClose(history: history, open: remaining)
+        return tree.workspaceChats(for: row.id).first { ChatTitle.key($0.session) == key }?.id
     }
 
     private var hidden: Set<SwarmSessionID> {

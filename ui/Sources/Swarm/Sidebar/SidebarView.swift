@@ -43,6 +43,7 @@ struct SidebarActions {
     var renameChat: (String) -> Void
     var renameProject: (String) -> Void
     var archive: (String) -> Void
+    var endChat: (String) -> Void
     var archiveChat: (String) -> Void
     var restore: (String) -> Void
     var removeProject: (String) -> Void
@@ -254,6 +255,7 @@ struct SidebarView<Details: View>: View {
     private func menu(for row: SidebarRow) -> some View {
         if row.kind == .chat, !row.archived {
             Button("Rename chat…") { actions.renameChat(row.id) }
+            Button("End chat…") { actions.endChat(row.id) }
             Button("Archive chat") { actions.archiveChat(row.id) }
         } else if row.kind == .workspace {
             workspaceMenu(for: row)
