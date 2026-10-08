@@ -112,7 +112,9 @@ final class SessionsTreeModel {
             }
         }
     }
-    private var pendingID: SwarmSessionID?
+    private var pendingSelection: PendingChatSelection?
+    private var pendingID: SwarmSessionID? { pendingSelection?.id }
+    var isRestoringChat: Bool { pendingSelection?.isRestoring == true }
     /// Chats being started, each shown as its own tab (ADR 0035).
     private(set) var pendingChats = PendingChats()
     /// A pending chat's tab is selected; then `selectedSessionID` is nil.
@@ -141,7 +143,7 @@ final class SessionsTreeModel {
     func select(_ id: SwarmSessionID?) {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         selectionRevision += 1
-        pendingID = nil
+        pendingSelection = nil
         selectedPendingID = nil
         selectedSessionID = id.flatMap { tree.session($0)?.id } ?? id
         if let id, let entry = workspace(containingChat: id) {
@@ -209,7 +211,7 @@ final class SessionsTreeModel {
     func selectPending(_ id: UUID) {
         guard let chat = pendingChats[id] else { return }
         selectionRevision += 1
-        pendingID = nil
+        pendingSelection = nil
         navigation.selectedWorkspace = chat.workspace
         selectedSessionID = nil
         selectedPendingID = id
@@ -296,7 +298,7 @@ final class SessionsTreeModel {
            let reason = navigation.readOnlyReason(in: entry.id) { throw SwarmProfileError.failed(reason) }
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
-        pendingID = id
+        pendingSelection = .handoff(id)
         selectedPendingID = nil
         selectedSessionID = id
         if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
@@ -356,12 +358,19 @@ final class SessionsTreeModel {
         for chat in settled where chat.id == selectedPendingID {
             select(chat.session)
         }
+        if let pendingSelection, tree.session(pendingSelection.id) == nil {
+            self.pendingSelection = pendingSelection.afterRefresh(isListed: false)
+            if pendingSelection.isRestoring {
+                selectedSessionID = nil
+                addSaveNotice(RecentlyClosed.restoredButNotListed)
+            }
+        }
         if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
         }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
             let selectingPending = pendingID != nil
-            pendingID = nil
+            pendingSelection = nil
             self.selectedSessionID = row.id
             if let entry = workspace(containingChat: row.id) {
                 if selectingPending { navigation.openTab(row, in: entry) }
@@ -522,7 +531,7 @@ final class SessionsTreeModel {
         let previous = selectedSessionID
         let workspace = navigation.selectedWorkspace
         let entry = self.workspace(containingChat: chat.id)
-        let snapshot = entry.map { ChatArchives.TabSnapshot(workspace: $0.id, navigation: navigation) }
+        let snapshot = entry.map { ChatArchives.TabSnapshot(key: ChatTitle.key(chat), workspace: $0.id, navigation: navigation) }
         let next = ChatArchives.selection(
             afterArchiving: id, selected: previous, in: tree,
             history: entry.flatMap { navigation.tabHistory[$0.id] } ?? [],
@@ -561,7 +570,8 @@ final class SessionsTreeModel {
     }
 
     func reopen(_ chat: SwarmProjectSession) async throws {
-        try await RecentlyClosed.restore(chat, bus: bus)
+        do { try await RecentlyClosed.restore(chat, bus: bus) }
+        catch { throw SwarmProfileError.failed("Could not reopen the chat. \(error.localizedDescription)") }
         archives.restore(chat.sessions.map(\.id))
         refreshRevision += 1
         let listed = try await RecentlyClosed.refreshRestoredChat(
@@ -571,7 +581,7 @@ final class SessionsTreeModel {
         else {
             // The next completed refresh selects this restored chat through the pending path.
             selectionRevision += 1
-            pendingID = chat.id
+            pendingSelection = .restored(chat.id)
             selectedPendingID = nil
             selectedSessionID = chat.id
             agents = []
@@ -904,7 +914,7 @@ private struct SessionsWindow: View {
                     showingClosedChats = false
                 } catch {
                     showingClosedChats = false
-                    showAlert(.error("Could not reopen the chat. \(error.localizedDescription)"))
+                    showAlert(.error(error.localizedDescription))
                 }
             }
             .task {
@@ -1081,6 +1091,9 @@ private struct SessionsWindow: View {
                         }
                     )
                 }
+            } else if model.isRestoringChat {
+                ProgressView("Loading restored chat…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.selectedSession == nil {
                 workspaceLanding
             }

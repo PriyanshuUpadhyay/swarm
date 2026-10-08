@@ -127,7 +127,7 @@ struct ChatArchivesTests {
         navigation.selectedChats[entry.id] = third.rawValue
         let strip = navigation.tabs[entry.id]
         let history = navigation.tabHistory[entry.id]
-        let snapshot = ChatArchives.TabSnapshot(workspace: entry.id, navigation: navigation)
+        let snapshot = ChatArchives.TabSnapshot(key: first.rawValue, workspace: entry.id, navigation: navigation)
         var archives = ChatArchives()
         _ = archives.begin(first, in: source)
         navigation.closeTab(first.rawValue, in: entry)
@@ -138,6 +138,76 @@ struct ChatArchivesTests {
         #expect(navigation.tabs[entry.id] == strip)
         #expect(navigation.tabHistory[entry.id] == history)
         #expect(navigation.selectedChats[entry.id] == third.rawValue)
+    }
+
+    @Test("Rollback keeps tab opens, moves, group edits and history made during archive")
+    func tabEditsDuringArchive() {
+        let workspace = "/test"
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[workspace] = TabStrip(open: ["first", "second", "third"])
+            .grouping(.new(id: "review", name: "Review", color: .blue, tab: "first"))
+            .grouping(.add("second", to: "review"))
+        navigation.tabHistory[workspace] = ["first", "second", "third"]
+        let snapshot = ChatArchives.TabSnapshot(key: "first", workspace: workspace, navigation: navigation)
+        navigation.tabs[workspace] = navigation.tabs[workspace]?.closing("first")
+        navigation.tabHistory[workspace]?.removeAll { $0 == "first" }
+        navigation.tabs[workspace]?.open = ["third", "second"]
+        navigation.tabs[workspace] = navigation.tabs[workspace]?
+            .opening("new", after: "third")
+            .grouping(.rename("review", to: "Renamed")).grouping(.recolor("review", to: .green))
+        navigation.tabHistory[workspace] = ["third", "second", "new"]
+        snapshot.restore(in: &navigation)
+        #expect(navigation.tabs[workspace]?.open == ["third", "new", "first", "second"])
+        #expect(navigation.tabs[workspace]?.groups.first?.members == ["first", "second"])
+        #expect(navigation.tabs[workspace]?.groups.first?.name == "Renamed")
+        #expect(navigation.tabs[workspace]?.groups.first?.color == .green)
+        #expect(navigation.tabHistory[workspace] == ["first", "third", "second", "new"])
+    }
+
+    @Test("Rollback returns ungrouped at the old index if the old group was deleted")
+    func deletedGroupDuringArchive() {
+        let workspace = "/test"
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[workspace] = TabStrip(open: ["third", "first", "second"])
+            .grouping(.new(id: "review", name: "Review", color: .blue, tab: "first"))
+            .grouping(.add("second", to: "review"))
+        let snapshot = ChatArchives.TabSnapshot(key: "first", workspace: workspace, navigation: navigation)
+        navigation.tabs[workspace] = navigation.tabs[workspace]?.closing("first")
+            .grouping(.delete("review")).opening("new", after: "third")
+        snapshot.restore(in: &navigation)
+        #expect(navigation.tabs[workspace]?.open == ["third", "first", "new", "second"])
+        #expect(navigation.tabs[workspace]?.groups.isEmpty == true)
+    }
+
+    @Test("Rollback clamps an ungrouped tab index and keeps other tabs closed")
+    func ungroupedRollback() {
+        let workspace = "/test"
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[workspace] = TabStrip(open: ["second", "third", "first"])
+        navigation.tabHistory[workspace] = ["second", "third", "first"]
+        let snapshot = ChatArchives.TabSnapshot(key: "first", workspace: workspace, navigation: navigation)
+        navigation.tabs[workspace] = .init(open: ["new"])
+        navigation.tabHistory[workspace] = ["new"]
+        snapshot.restore(in: &navigation)
+        #expect(navigation.tabs[workspace]?.open == ["new", "first"])
+        #expect(navigation.tabHistory[workspace] == ["new", "first"])
+        #expect(navigation.tabs[workspace]?.groups.isEmpty == true)
+    }
+
+    @Test("Rollback restores a group emptied by the archive with its name, color and fold state")
+    func archiveEmptiedGroup() {
+        let workspace = "/test"
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[workspace] = TabStrip(open: ["second", "first", "third"])
+            .grouping(.new(id: "review", name: "Review", color: .blue, tab: "first"))
+            .grouping(.fold("review", true))
+        let group = navigation.tabs[workspace]?.groups.first
+        let snapshot = ChatArchives.TabSnapshot(key: "first", workspace: workspace, navigation: navigation)
+        navigation.tabs[workspace] = navigation.tabs[workspace]?.closing("first").opening("new", after: "third")
+        #expect(navigation.tabs[workspace]?.groups.isEmpty == true)
+        snapshot.restore(in: &navigation)
+        #expect(navigation.tabs[workspace]?.open == ["second", "first", "third", "new"])
+        #expect(navigation.tabs[workspace]?.groups.first == group)
     }
 
     private func tree(_ ids: [SwarmSessionID], linked: SwarmSessionID? = nil) -> SessionsTree {

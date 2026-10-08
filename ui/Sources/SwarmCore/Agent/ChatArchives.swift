@@ -2,21 +2,54 @@ import Foundation
 
 /// Keeps background discovery from restoring a chat while its archive is in flight.
 public struct ChatArchives {
-    /// Restores the strip if discovery prunes it while an archive is pending.
+    /// Restores only the failed chat; other tab edits made during the archive stay in place.
     public struct TabSnapshot {
         private let workspace: String
-        private let strip: TabStrip?
-        private let history: [String]?
+        private let key: String
+        private let index: Int?
+        private let group: TabGroup?
+        private let memberIndex: Int?
+        private let historyIndex: Int?
 
-        public init(workspace: String, navigation: WorkspaceNavigation) {
+        public init(key: String, workspace: String, navigation: WorkspaceNavigation) {
             self.workspace = workspace
-            strip = navigation.tabs[workspace]
-            history = navigation.tabHistory[workspace]
+            self.key = key
+            let strip = navigation.tabs[workspace]
+            index = strip?.open.firstIndex(of: key)
+            group = strip?.groups.first { $0.members.contains(key) }
+            memberIndex = group?.members.firstIndex(of: key)
+            historyIndex = navigation.tabHistory[workspace]?.firstIndex(of: key)
         }
 
         public func restore(in navigation: inout WorkspaceNavigation) {
-            navigation.tabs[workspace] = strip
-            navigation.tabHistory[workspace] = history
+            guard let index else { return }
+            var strip = navigation.tabs[workspace] ?? TabStrip()
+            strip.open.removeAll { $0 == key }
+            for groupIndex in strip.groups.indices { strip.groups[groupIndex].members.removeAll { $0 == key } }
+            // Closing the only member removes its group; that is not an owner deletion.
+            if let group, group.members == [key], !strip.groups.contains(where: { $0.id == group.id }) {
+                var restored = group
+                restored.members = []
+                strip.groups.append(restored)
+            }
+            var position = min(index, strip.open.count)
+            if let groupIndex = strip.groups.firstIndex(where: { $0.id == group?.id }), let memberIndex {
+                let members = strip.groups[groupIndex].members
+                if memberIndex < members.count, let next = strip.open.firstIndex(of: members[memberIndex]) {
+                    position = next
+                } else if let last = members.last, let lastIndex = strip.open.firstIndex(of: last) {
+                    position = lastIndex + 1
+                }
+                strip.groups[groupIndex].members.append(key)
+            }
+            strip.open.insert(key, at: position)
+            navigation.tabs[workspace] = strip.pruned(to: Set(strip.open))
+            if let historyIndex {
+                var history = navigation.tabHistory[workspace] ?? []
+                history.removeAll { $0 == key }
+                history.insert(key, at: min(historyIndex, history.count))
+                navigation.tabHistory[workspace] = history
+            }
         }
     }
 

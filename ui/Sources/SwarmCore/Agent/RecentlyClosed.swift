@@ -9,7 +9,31 @@ public struct RecentlyClosedChat: Sendable, Hashable, Identifiable {
     public let age: String
 }
 
+/// A missing handoff can wait for discovery; a restore waits only for the next completed list.
+public enum PendingChatSelection: Sendable, Hashable {
+    case handoff(SwarmSessionID)
+    case restored(SwarmSessionID)
+
+    public var id: SwarmSessionID {
+        switch self {
+        case .handoff(let id), .restored(let id): id
+        }
+    }
+
+    public var isRestoring: Bool {
+        if case .restored = self { return true }
+        return false
+    }
+
+    /// Call only after a refresh publishes its list.
+    public func afterRefresh(isListed: Bool) -> Self? {
+        isListed || isRestoring ? nil : self
+    }
+}
+
 public enum RecentlyClosed {
+    public static let restoredButNotListed = "The chat was restored, but it is not in the workspace list. Check the sidebar after the list refreshes."
+
     public struct Listing: Sendable {
         public let chats: [RecentlyClosedChat]
         public let notice: String?
@@ -29,7 +53,7 @@ public enum RecentlyClosed {
             let completed = try await refresh()
             if isListed() { return true }
             if completed {
-                throw SwarmProfileError.failed("The chat was restored, but it is not in the workspace list. Check the sidebar after the list refreshes.")
+                throw SwarmProfileError.failed(restoredButNotListed)
             }
         }
         return false

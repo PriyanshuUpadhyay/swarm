@@ -122,6 +122,26 @@ struct RecentlyClosedTests {
         #expect(try await RecentlyClosed.refreshRestoredChat(refresh: { false }, isListed: { true }))
     }
 
+    @Test("A pending restored selection settles on the next completed list and reports absence once")
+    func pendingSelection() {
+        let id = SwarmSessionID("restored")
+        var pending: PendingChatSelection? = .restored(id)
+        #expect(pending?.id == id)
+        #expect(pending?.isRestoring == true)
+        var notices: [String] = []
+        for _ in 0..<2 {
+            if let selection = pending {
+                pending = selection.afterRefresh(isListed: false)
+                if selection.isRestoring { notices.append(RecentlyClosed.restoredButNotListed) }
+            }
+        }
+        #expect(pending == nil)
+        #expect(notices == [RecentlyClosed.restoredButNotListed])
+        #expect(PendingChatSelection.restored(id).afterRefresh(isListed: true) == nil)
+        #expect(PendingChatSelection.handoff(id).afterRefresh(isListed: false) == .handoff(id))
+        #expect(PendingChatSelection.handoff(id).afterRefresh(isListed: true) == nil)
+    }
+
     private func session(
         _ id: String, archivedAt: Int? = 100, createdAt: Int = 1, continuation: String? = nil
     ) -> SwarmSession {
