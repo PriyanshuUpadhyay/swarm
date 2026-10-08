@@ -91,16 +91,32 @@ struct TabStripTests {
         navigation.tabs["/other"] = .init(open: ["notes"])
         navigation.selectedChats["/repo"] = "design"
         navigation.tabHistory["/repo"] = ["review", "design"]
-        let moved = navigation.stepTab("design", toward: "review", in: "/repo")
+        let moved = navigation.moveTab("design", toward: "review", in: "/repo")
         #expect(moved)
         #expect(navigation.tabs["/repo"]?.open == ["review", "design"])
         #expect(navigation.selectedChats["/repo"] == "design")
         #expect(navigation.tabHistory["/repo"] == ["review", "design"])
         #expect(navigation.tabs["/other"]?.open == ["notes"])
-        let foreign = navigation.stepTab("design", toward: "notes", in: "/repo")
-        let missing = navigation.stepTab("design", toward: "review", in: "/missing")
+        let foreign = navigation.moveTab("design", toward: "notes", in: "/repo")
+        let missing = navigation.moveTab("design", toward: "review", in: "/missing")
         #expect(!foreign)
         #expect(!missing)
+    }
+
+    @Test("A decoded tab in two groups uses its first group for menu moves")
+    func duplicateMembership() throws {
+        let data = Data(#"{"open":["design","review","fix","notes"],"groups":[{"id":"planning","name":"Planning","color":"blue","members":["design","review"]},{"id":"repair","name":"Repair","color":"red","members":["review","fix"]}]}"#.utf8)
+        let strip = try JSONDecoder().decode(TabStrip.self, from: data)
+        let targets = strip.stepTargets()
+        #expect(targets["design"]?.right == "review")
+        #expect(targets["review"]?.left == "design")
+        #expect(targets["review"]?.right == nil)
+        #expect(targets["fix"]?.left == nil)
+        #expect(targets["fix"]?.right == nil)
+        let moved = strip.stepping("design", toward: "review")
+        #expect(moved.open == ["review", "design", "fix", "notes"])
+        #expect(moved.groups.first?.members == ["review", "design"])
+        #expect(moved.groups.last?.members == ["fix"])
     }
 
     @Test("Tabs round-trip in owner choices; absent tabs start empty and unknown colors are grey")

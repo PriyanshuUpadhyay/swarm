@@ -340,7 +340,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func stepTab(_ key: String, toward target: String, in workspace: String) -> Bool {
+    public mutating func moveTab(_ key: String, toward target: String, in workspace: String) -> Bool {
         guard let strip = tabs[workspace] else { return false }
         let updated = strip.stepping(key, toward: target)
         guard updated != strip else { return false }

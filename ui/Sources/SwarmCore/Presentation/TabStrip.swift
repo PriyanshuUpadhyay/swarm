@@ -44,9 +44,9 @@ public struct TabStrip: Codable, Sendable, Hashable {
     /// A menu move keeps membership; ungrouped tabs cross a group as one block.
     public func stepTargets(excluding pending: Set<String> = []) -> [String: (left: String?, right: String?)] {
         let keys = open.filter { !pending.contains($0) }
-        let groupByKey = Dictionary(uniqueKeysWithValues: groups.flatMap { group in
+        let groupByKey = Dictionary(groups.flatMap { group in
             group.members.map { ($0, group.id) }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         var bounds: [String: (first: Int, last: Int)] = [:]
         for (index, key) in keys.enumerated() {
             if let group = groupByKey[key] { bounds[group] = (bounds[group]?.first ?? index, index) }
