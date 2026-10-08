@@ -90,6 +90,8 @@ extension Git {
         _ = try await checkRaw(["add", ".gitignore"], in: path, env: environment)
         do {
             _ = try await checkRaw(["commit", "-q", "-m", "Create project"], in: path, env: environment)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return .failed(error.localizedDescription)
         }

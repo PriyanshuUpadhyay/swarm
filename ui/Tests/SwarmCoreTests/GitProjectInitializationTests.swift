@@ -71,6 +71,41 @@ struct GitProjectInitializationTests {
         #expect(try Data(contentsOf: ignore) == Data(expected.utf8))
     }
 
+    @Test("Cancellation during the first commit reaches the caller")
+    func cancelsFirstCommit() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var environment = try Self.projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
+        let project = root.appendingPathComponent("project")
+        let hooks = root.appendingPathComponent("hooks")
+        let started = root.appendingPathComponent("commit-started")
+        let release = root.appendingPathComponent("commit-release")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: true)
+        let hook = hooks.appendingPathComponent("pre-commit")
+        try "#!/bin/sh\n: > \"$SWARM_TEST_COMMIT_STARTED\"\nwhile [ ! -f \"$SWARM_TEST_COMMIT_RELEASE\" ]; do /bin/sleep 0.01; done\n"
+            .write(to: hook, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+        let gitConfig = try #require(environment["GIT_CONFIG_GLOBAL"])
+        let config = try String(contentsOfFile: gitConfig, encoding: .utf8)
+        try (config + "[core]\nhooksPath = \(hooks.path)\n").write(toFile: gitConfig, atomically: true, encoding: .utf8)
+        environment["SWARM_TEST_COMMIT_STARTED"] = started.path
+        environment["SWARM_TEST_COMMIT_RELEASE"] = release.path
+        let task = Task { try await Git.initializeProject(at: project.path, environment: environment) }
+        defer {
+            task.cancel()
+            try? "".write(to: release, atomically: true, encoding: .utf8)
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !FileManager.default.fileExists(atPath: started.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(FileManager.default.fileExists(atPath: started.path))
+        task.cancel()
+        try "".write(to: release, atomically: true, encoding: .utf8)
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
     static func projectEnvironment(in root: URL, identity: String) throws -> [String: String] {
         let home = root.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)

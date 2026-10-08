@@ -439,8 +439,8 @@ final class SessionsTreeModel {
             try forgetPlainFolder(at: url.path)
         }
         let path = try await projects.add(url)
-        await refreshAfterSave("Project saved")
-        if tree.project(containing: path) == nil { await refreshAfterSave("Project saved") }
+        let refreshed = await refreshAfterSave("Project saved")
+        if !refreshed, tree.project(containing: path) == nil { await refreshAfterSave("Project saved") }
         return path
     }
 
@@ -450,8 +450,8 @@ final class SessionsTreeModel {
         let created = try await projects.create(at: url)
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
-        await refreshAfterSave("Project saved")
-        if tree.project(containing: created.path) == nil { await refreshAfterSave("Project saved") }
+        let refreshed = await refreshAfterSave("Project saved")
+        if !refreshed, tree.project(containing: created.path) == nil { await refreshAfterSave("Project saved") }
         if let notice = created.firstCommit.notice { addSaveNotice(notice) }
         return created.path
     }
@@ -544,14 +544,19 @@ final class SessionsTreeModel {
         }
         navigation.names[path] = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller selects the workspace after the list refreshes and starts no chat.
-        await refreshAfterSave("Workspace made")
-        if !workspaces.contains(where: { $0.id == path }) { await refreshAfterSave("Workspace made") }
+        let refreshed = await refreshAfterSave("Workspace made")
+        if !refreshed, !workspaces.contains(where: { $0.id == path }) { await refreshAfterSave("Workspace made") }
         return path
     }
 
-    private func refreshAfterSave(_ subject: String) async {
-        do { try await refresh() }
-        catch { addSaveNotice("\(subject), but the list could not refresh. \(error.localizedDescription)") }
+    /// False means a newer refresh overtook this one. A failure adds one notice and ends the attempt.
+    @discardableResult
+    private func refreshAfterSave(_ subject: String) async -> Bool {
+        do { return try await refresh() }
+        catch {
+            addSaveNotice("\(subject), but the list could not refresh. \(error.localizedDescription)")
+            return true
+        }
     }
 
     private func addSaveNotice(_ notice: String) {
