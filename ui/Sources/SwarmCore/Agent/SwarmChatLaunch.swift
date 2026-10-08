@@ -38,20 +38,19 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
     /// The chat profile. A named account belongs to one provider, so it needs a one-off pick; the
     /// profile takes only Auto, which swarm ignores for a provider with no accounts.
     public init?(profileIn directory: String) {
-        guard directory.hasPrefix("/") else { return nil }
-        self.directory = directory
-        provider = nil
-        role = "chat"
-        model = nil
-        account = "auto"
+        self.init(role: "chat", in: directory)
     }
 
     public init?(profile: String, in directory: String) {
-        guard !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        self.init(role: profile, in: directory)
+    }
+
+    private init?(role: String, in directory: String) {
+        guard !role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               directory.hasPrefix("/") else { return nil }
         self.directory = directory
         provider = nil
-        role = profile
+        self.role = role
         model = nil
         account = "auto"
     }

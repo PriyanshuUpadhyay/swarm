@@ -11,16 +11,34 @@ public enum NewChatMenu {
     public struct State: Sendable, Equatable {
         public private(set) var profiles: [SwarmProfile] = []
         public private(set) var error: String?
+        private static let minimumReadInterval: Duration = .seconds(5)
+        private var isReading = false
+        private var lastReadAt: ContinuousClock.Instant?
 
         public init() {}
 
-        public mutating func received(_ profiles: [SwarmProfile]) {
+        public mutating func apply(profiles: [SwarmProfile]) {
             self.profiles = profiles
             error = nil
         }
 
-        public mutating func failed(_ reason: String) { error = reason }
+        public mutating func record(error: String) { self.error = error }
 
+        /// Reserves the read when no read is running and the minimum interval has passed.
+        public mutating func shouldRead(at now: ContinuousClock.Instant) -> Bool {
+            guard !isReading else { return false }
+            if let lastReadAt, lastReadAt.duration(to: now) < Self.minimumReadInterval { return false }
+            isReading = true
+            return true
+        }
+
+        /// Nil releases a cancelled read without setting a completion stamp.
+        public mutating func finishedRead(at now: ContinuousClock.Instant?) {
+            isReading = false
+            if let now { lastReadAt = now }
+        }
+
+        /// O(n) in the number of profiles.
         public var rows: [Row] { NewChatMenu.rows(profiles: profiles, error: error) }
     }
 

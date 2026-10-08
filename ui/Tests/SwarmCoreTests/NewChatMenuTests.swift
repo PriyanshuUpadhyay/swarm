@@ -29,18 +29,55 @@ struct NewChatMenuTests {
     func failedRead() {
         let profiles = [SwarmProfile(name: "chat", runners: [])]
         var menu = NewChatMenu.State()
-        menu.received(profiles)
+        menu.apply(profiles: profiles)
         let goodRows = menu.rows
-        menu.failed("Read timed out")
+        menu.record(error: "Read timed out")
         #expect(menu.profiles == profiles)
         #expect(Array(menu.rows.dropLast()) == goodRows)
         #expect(menu.rows.last?.name == "Could not read profiles. Read timed out")
         #expect(menu.rows.last?.isEnabled == false)
         #expect(menu.rows.last?.id == .readError)
         #expect(NewChatMenu.rows(profiles: [], error: "No file").map(\.name) == ["Could not read profiles. No file"])
-        menu.received([SwarmProfile(name: "code", runners: [])])
+        menu.apply(profiles: [SwarmProfile(name: "code", runners: [])])
         #expect(menu.error == nil)
         #expect(menu.rows.map(\.name) == ["code"])
         #expect(menu.rows.allSatisfy { $0.isEnabled })
+    }
+
+    @Test("A running read blocks another read and the interval starts at completion")
+    func readInterval() {
+        var menu = NewChatMenu.State()
+        let startedAt = ContinuousClock().now
+        let finishedAt = startedAt.advanced(by: .seconds(20))
+        #expect(menu.shouldRead(at: startedAt) == true)
+        #expect(menu.shouldRead(at: finishedAt) == false)
+        menu.finishedRead(at: finishedAt)
+        #expect(menu.shouldRead(at: finishedAt.advanced(by: .milliseconds(4_999))) == false)
+        #expect(menu.shouldRead(at: finishedAt.advanced(by: .seconds(5))) == true)
+    }
+
+    @Test("A cancelled read sets no stamp and can be retried at once")
+    func cancelledRead() {
+        var menu = NewChatMenu.State()
+        let now = ContinuousClock().now
+        #expect(menu.shouldRead(at: now) == true)
+        menu.finishedRead(at: nil)
+        #expect(menu.shouldRead(at: now) == true)
+        menu.finishedRead(at: now)
+        let nextReadAt = now.advanced(by: .seconds(5))
+        #expect(menu.shouldRead(at: nextReadAt) == true)
+        menu.finishedRead(at: nil)
+        #expect(menu.shouldRead(at: nextReadAt) == true)
+    }
+
+    @Test("A failed read observes the same completion interval")
+    func failedReadInterval() {
+        var menu = NewChatMenu.State()
+        let now = ContinuousClock().now
+        #expect(menu.shouldRead(at: now) == true)
+        menu.record(error: "Read timed out")
+        menu.finishedRead(at: now)
+        #expect(menu.shouldRead(at: now) == false)
+        #expect(menu.shouldRead(at: now.advanced(by: .seconds(5))) == true)
     }
 }

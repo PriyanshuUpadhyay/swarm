@@ -725,8 +725,6 @@ private struct SessionsWindow: View {
     /// selection only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
     @State private var newChatMenu = NewChatMenu.State()
-    @State private var newChatProfilesLoading = false
-    @State private var newChatProfilesReadAt: ContinuousClock.Instant?
     /// The alert on screen, and the ones waiting for it to close (see `WindowAlert`).
     @State private var shownAlert: WindowAlert?
     @State private var pendingAlerts: [WindowAlert] = []
@@ -1987,20 +1985,20 @@ private struct SessionsWindow: View {
     }
 
     private func loadNewChatProfiles() async {
-        guard !newChatProfilesLoading else { return }
-        let now = ContinuousClock().now
-        if let lastRead = newChatProfilesReadAt, lastRead.duration(to: now) < .seconds(5) { return }
-        newChatProfilesLoading = true
-        newChatProfilesReadAt = now
-        defer { newChatProfilesLoading = false }
+        guard !Task.isCancelled, newChatMenu.shouldRead(at: ContinuousClock().now) else { return }
+        var completedAt: ContinuousClock.Instant?
+        defer { newChatMenu.finishedRead(at: completedAt) }
         do {
             let profiles = try await SwarmProfileCatalog.shared.profiles()
             guard !Task.isCancelled else { return }
-            newChatMenu.received(profiles.profiles)
+            newChatMenu.apply(profiles: profiles.profiles)
+        } catch is CancellationError {
+            return
         } catch {
             guard !Task.isCancelled else { return }
-            newChatMenu.failed(error.localizedDescription)
+            newChatMenu.record(error: error.localizedDescription)
         }
+        completedAt = ContinuousClock().now
     }
 
     /// A folder in a git repository, a linked worktree, or a bare hub joins its repository's
