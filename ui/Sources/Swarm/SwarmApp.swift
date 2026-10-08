@@ -425,11 +425,14 @@ final class SessionsTreeModel {
     func createProject(at url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
-        let path = try await projects.create(at: url).path
+        let created = try await projects.create(at: url)
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
         await refreshAfterSave("Project saved")
-        return path
+        if created.firstCommit == .skippedNoIdentity {
+            addSaveNotice("Created without a first commit, because git has no user.name and user.email. Workspaces start orphan branches until you set them.")
+        }
+        return created.path
     }
 
     func removeProject(_ project: ProjectNode) throws {
