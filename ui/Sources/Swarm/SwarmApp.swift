@@ -1441,6 +1441,16 @@ private struct SessionsWindow: View {
         }
     }
 
+    private func showTabChildren(_ key: String, in directory: String) {
+        guard let tab = stripTabs(in: directory).first(where: { $0.id == key }),
+              let target = tab.waitingChildSelection(in: model.workspaces, agentsBySession: model.tree.agentsBySession) else {
+            showTab(key)
+            return
+        }
+        documentVisible = false
+        sidebarActions.select(target.rowID)
+    }
+
     private func workspaceTabs(in directory: String) -> some View {
         ChatTabsView(
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
@@ -1449,6 +1459,7 @@ private struct SessionsWindow: View {
             canStartChat: model.workspaces.first { $0.id == directory }?.workspace.canStartChat ?? true,
             actions: ChatTabActions(
                 select: showTab,
+                selectChildren: { showTabChildren($0, in: directory) },
                 newChat: { startChat(in: directory) },
                 close: { id in
                     Task {

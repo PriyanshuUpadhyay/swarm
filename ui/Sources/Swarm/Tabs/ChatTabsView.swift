@@ -3,6 +3,7 @@ import SwarmCore
 
 struct ChatTabActions {
     var select: (String) -> Void
+    var selectChildren: (String) -> Void
     var newChat: () -> Void
     var close: (String) -> Void
     var hide: (String) -> Void
@@ -202,6 +203,17 @@ private struct ChatTabView: View {
             }
             .accessibilityAddTraits(selected ? .isSelected : [])
             .help(tab.title)
+            if let children = tab.children {
+                Button { actions.selectChildren(tab.id) } label: {
+                    Text(children.text)
+                        .font(.caption)
+                        .foregroundStyle(children.waiting > 0 ? .orange : .secondary)
+                        .padding(.horizontal, DesignTokens.Spacing.xs)
+                        .fixedSize()
+                }
+                .help(children.waiting > 0 ? "Show first waiting child" : "Show chat")
+                .accessibilityLabel("\(tab.title), \(children.count) agents, \(children.waiting) waiting")
+            }
             // A start is never cut in half, so a pending tab has no archive or close.
             if tab.pending == nil {
                 Button { actions.hide(tab.id) } label: {

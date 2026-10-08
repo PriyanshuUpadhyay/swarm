@@ -329,6 +329,47 @@ struct TabStripTests {
         #expect(navigation.tabs[entry.id]?.groups.first?.members == ["design", "review", "ended"])
     }
 
+    @Test("Child badges count live children and focus the first waiting sidebar child")
+    func childBadges() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        let design = try #require(entry.chats.first { $0.id.rawValue == "design" })
+        let strip = TabStrip(open: ["design", "review"])
+        let chair = SwarmAgent(id: .init("orchestrator"), role: "chair", pane: "chair-pane", alive: true, state: "waiting")
+        let builder = SwarmAgent(id: .init("builder"), role: "build", pane: "build-pane", alive: true, state: "working")
+        let reviewer = SwarmAgent(id: .init("reviewer"), role: "review", pane: "review-pane", alive: true, state: "waiting")
+        let analyst = SwarmAgent(id: .init("analyst"), role: "analysis", pane: "analysis-pane", alive: true, state: "waiting")
+        let idle = SwarmAgent(id: .init("idle"), role: "review", pane: "idle-pane", alive: true, state: "done")
+        let failed = SwarmAgent(id: .init("failed"), role: "build", pane: "failed-pane", alive: true, state: "failed")
+        let ended = SwarmAgent(id: .init("ended"), role: "review", pane: "old-pane", alive: false, state: "waiting")
+        let registered = SwarmAgent(id: .init("registered"), role: "review", pane: nil, alive: true, state: "waiting")
+        let unknown = SwarmAgent(id: .init("unknown"), role: "review", pane: "unknown-pane", alive: nil, state: "waiting")
+        let tabs = ChatTab.tabs(entry.project.chats, strip: strip, closing: [], now: 1,
+                                agentsBySession: [design.id: [chair, builder, reviewer, ended, registered, unknown]])
+        #expect(tabs[0].children?.text == "2 · 1 waiting")
+        #expect(tabs[0].children?.firstWaiting == reviewer.id)
+        #expect(tabs[1].children == nil)
+        let multiple = ChatTab.ChildCount.make(session: design.session, agents: [reviewer, builder, analyst])
+        #expect(multiple?.text == "3 · 2 waiting")
+        #expect(multiple?.firstWaiting == analyst.id)
+        let noWaiting = ChatTab.ChildCount.make(session: design.session, agents: [chair, builder, idle, failed])
+        #expect(noWaiting?.text == "3")
+        #expect(noWaiting?.firstWaiting == nil)
+        #expect(ChatTab.ChildCount.make(session: design.session, agents: [chair, ended, registered, unknown]) == nil)
+        #expect(ChatTab.ChildCount.make(session: design.session, agents: []) == nil)
+        var namedChairSession = design.session
+        namedChairSession.chairID = .init("chair-custom")
+        let namedChair = SwarmAgent(id: .init("chair-custom"), role: "chat", pane: "chair-pane", alive: true, state: "waiting")
+        #expect(ChatTab.ChildCount.make(session: namedChairSession, agents: [namedChair, builder])?.text == "1")
+        let rowID = SidebarRows.childID(chat: design, agent: reviewer)
+        let target = SidebarRows.selection(for: rowID, in: [entry], agentsBySession: [design.id: [chair, builder, reviewer]])
+        #expect(target?.chatID == design.id)
+        #expect(target?.agentSessionID == design.id)
+        #expect(target?.agentID == tabs[0].children?.firstWaiting)
+        #expect(tabs[0].waitingChildSelection(in: [entry], agentsBySession: [design.id: [chair, builder, reviewer]]) == target)
+        #expect(tabs[0].waitingChildSelection(in: [entry], agentsBySession: [:]) == nil)
+        #expect(tabs[1].waitingChildSelection(in: [entry], agentsBySession: [:]) == nil)
+    }
+
     private func tree() -> SessionsTree {
         let chats = [("design", true), ("review", true), ("ended", false)].map { key, running in
             SwarmProjectSession(

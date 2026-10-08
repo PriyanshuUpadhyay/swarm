@@ -13,6 +13,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     public var pending: Pending? = nil
     public var fields: [RowFieldValue] = []
     public var group: TabGroup? = nil
+    public var children: ChildCount? = nil
 
     public enum Pending: Sendable, Hashable { case starting, failed, closing }
 
@@ -50,9 +51,40 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
                     branch: branches[chat.workspacePath], workspace: workspaceFields[chat.workspacePath] ?? .init(),
                     steps: stepsByChat[chat.id]
                 ).values(navigation.fields.tab),
-                group: strip.groups.first { $0.members.contains(ChatTitle.key(chat.session)) }
+                group: strip.groups.first { $0.members.contains(ChatTitle.key(chat.session)) },
+                children: ChildCount.make(session: chat.session.session, agents: agentsBySession[chat.id] ?? [])
             )
         }
+    }
+
+    public struct ChildCount: Sendable, Hashable {
+        public let count: Int
+        public let waiting: Int
+        public let firstWaiting: SwarmAgentID?
+        public var text: String { "\(count)" + (waiting == 0 ? "" : " · \(waiting) waiting") }
+
+        public static func make(session: SwarmSession, agents: [SwarmAgent]) -> Self? {
+            let children = agents.filter {
+                $0.alive == true && $0.status != .ended && !SwarmPanePolicy.isChair($0, in: session)
+            }.sorted { $0.id < $1.id }
+            guard !children.isEmpty else { return nil }
+            let waiting = children.filter { $0.status == .waiting }
+            return Self(count: children.count, waiting: waiting.count, firstWaiting: waiting.first?.id)
+        }
+    }
+
+    public func waitingChildSelection(
+        in workspaces: [WorkspaceEntry], agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> SidebarSelection? {
+        guard let child = children?.firstWaiting else { return nil }
+        for entry in workspaces {
+            if let chat = entry.chats.first(where: { ChatTitle.key($0) == id }),
+               let agent = agentsBySession[chat.id]?.first(where: { $0.id == child && $0.status == .waiting }) {
+                return SidebarRows.selection(for: SidebarRows.childID(chat: chat, agent: agent),
+                                             in: workspaces, agentsBySession: agentsBySession)
+            }
+        }
+        return nil
     }
 
     public struct Run: Sendable, Hashable, Identifiable {
