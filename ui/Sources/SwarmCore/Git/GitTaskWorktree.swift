@@ -97,17 +97,6 @@ public enum GitTaskWorktree {
         return created.path
     }
 
-    public static func create(
-        named name: String, in repositoryDirectory: String,
-        commonDirectory: String, under parentDirectory: String
-    ) async throws -> String {
-        let base = try await references(in: commonDirectory).defaultBranch ?? ""
-        return try await create(
-            WorkspaceRequest(name: name, start: .newBranch(base: base), prefix: "swarm/"),
-            in: repositoryDirectory, commonDirectory: commonDirectory, under: parentDirectory
-        )
-    }
-
     /// Nil when no default branch exists and HEAD names no commit: a new repository, or an
     /// unborn HEAD beside other branches. The workspace then starts an orphan branch.
     private static func defaultReference(in commonDirectory: String) async throws -> String? {

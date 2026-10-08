@@ -31,9 +31,10 @@ struct GitProjectInitializationTests {
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         #expect(try await Git.initializeProject(at: project.path, environment: environment) == .made)
         let head = try await Shell.check("git", ["rev-parse", "HEAD"], cwd: project.path, env: environment).trimmed
+        let base = try #require(try await GitTaskWorktree.references(in: project.appendingPathComponent(".git").path).defaultBranch)
         for name in ["First workspace", "Second workspace"] {
             let workspace = try await GitTaskWorktree.create(
-                named: name, in: project.path, commonDirectory: project.appendingPathComponent(".git").path,
+                WorkspaceRequest(name: name, start: .newBranch(base: base), prefix: "swarm/"), in: project.path, commonDirectory: project.appendingPathComponent(".git").path,
                 under: root.appendingPathComponent("workspaces").path
             )
             #expect(try await Shell.check("git", ["rev-parse", "HEAD"], cwd: workspace, env: environment).trimmed == head)

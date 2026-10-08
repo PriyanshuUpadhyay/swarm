@@ -479,18 +479,35 @@ final class SessionsTreeModel {
         )
     }
 
-    func createTask(named name: String, in project: ProjectNode) async throws -> String {
+    func workspaceDefaults(for project: ProjectNode) -> ProjectDefaults {
+        navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()
+    }
+
+    func workspaceReferences(in project: ProjectNode) async throws -> WorkspaceReferences {
+        guard case .repository(let common) = project.id else { throw GitTaskWorktreeError.notRepository }
+        return try await GitTaskWorktree.references(in: common)
+    }
+
+    func createTask(
+        _ request: WorkspaceRequest, in project: ProjectNode, defaults: ProjectDefaults
+    ) async throws -> String {
+        guard GitTaskWorktree.branchName(request.name, prefix: request.prefix) != nil else {
+            throw GitTaskWorktreeError.invalidBranchName
+        }
         let timing = SwarmPerformance.begin("TaskCreate")
         defer { timing.end() }
         guard case .repository(let common) = project.id else {
             throw GitTaskWorktreeError.notRepository
         }
-        let defaults = navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()
+        if navigationStore.savedChoices.projectDefaults[project.path] != defaults {
+            let saved = try ownerChoices.update { $0.projectDefaults[project.path] = defaults }
+            navigation = navigationStore.adopt(saved, into: navigation)
+        }
         let parent = defaults.resolved(for: project).folder
         let repositoryDirectory = URL(fileURLWithPath: common).lastPathComponent == ".bare"
             ? common : project.path
         let path = try await GitTaskWorktree.create(
-            named: name, in: repositoryDirectory,
+            request, in: repositoryDirectory,
             commonDirectory: common, under: parent
         )
         await discovery.forgetWorktrees(for: common)
@@ -501,7 +518,7 @@ final class SessionsTreeModel {
             addSaveNotice("The workspace at \(path) exists, so do not create it again. Swarm could not record it."
                 + "\n\nReason: \(error.localizedDescription)")
         }
-        navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        navigation.names[path] = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
         // tree lists it, showed the Agent Profiles page and its availability check for a moment.
         await refreshAfterSave("Workspace made")
@@ -913,9 +930,15 @@ private struct SessionsWindow: View {
             renameWorkspaceSheet
         }
         .sheet(item: $newTaskProject) { project in
-            NewTaskSheet(
-                project: project,
-                create: { try await model.createTask(named: $0, in: project) },
+            let defaults = model.workspaceDefaults(for: project)
+            NewWorkspaceSheet(
+                projectName: project.name, projectPath: project.path,
+                worktreeFolder: defaults.folderSetting(for: project),
+                branchPrefix: defaults.resolved(for: project).prefix,
+                loadReferences: { try await model.workspaceReferences(in: project) },
+                create: { request, defaults in
+                    try await model.createTask(request, in: project, defaults: defaults)
+                },
                 onCreated: { startChat(in: $0) }
             )
         }
@@ -2094,55 +2117,6 @@ private struct GitInitRequest {
     let path: String
     let reason: Reason
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
-}
-
-private struct NewTaskSheet: View {
-    let project: ProjectNode
-    let create: (String) async throws -> String
-    let onCreated: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var isCreating = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("New workspace in \(project.name)").font(.title2)
-            Text(project.path).foregroundStyle(.secondary)
-            TextField("Workspace name", text: $name)
-            Text("This workspace has its own branch and files.")
-                .foregroundStyle(.secondary)
-            Text("To add a chat in the current workspace, press ⌘T.")
-                .font(.callout).foregroundStyle(.secondary)
-            if let error { Text(verbatim: error).foregroundStyle(.red) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(isCreating)
-                Button(isCreating ? "Creating…" : "Create") {
-                    guard !isCreating else { return }
-                    isCreating = true
-                    error = nil
-                    Task {
-                        defer { isCreating = false }
-                        do {
-                            onCreated(try await create(name))
-                            dismiss()
-                        } catch {
-                            self.error = "Could not add the workspace. \(error.localizedDescription)"
-                        }
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isCreating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(DesignTokens.Spacing.xl)
-        .frame(width: DesignTokens.Size.sheet)
-        .interactiveDismissDisabled(isCreating)
-    }
 }
 
 private struct WindowFrameRestorer: NSViewRepresentable {

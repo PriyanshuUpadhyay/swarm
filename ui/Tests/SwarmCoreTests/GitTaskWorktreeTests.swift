@@ -30,7 +30,7 @@ struct GitTaskWorktreeTests {
         }
         _ = try await discovery.tree(sessions: [], projectPaths: [source.path], bus: bus)
         let taskPath = try await GitTaskWorktree.create(
-            named: "Fix sidebar", in: source.path,
+            WorkspaceRequest(name: "Fix sidebar", start: .newBranch(base: "main"), prefix: "swarm/"), in: source.path,
             commonDirectory: source.appendingPathComponent(".git").path, under: tasks.path
         )
         let common = try #require(Git.repositoryPaths(in: source.path)).commonDirectory
@@ -47,7 +47,7 @@ struct GitTaskWorktreeTests {
 
         await #expect(throws: GitTaskWorktreeError.self) {
             try await GitTaskWorktree.create(
-                named: "Fix sidebar", in: source.path,
+                WorkspaceRequest(name: "Fix sidebar", start: .newBranch(base: "main"), prefix: "swarm/"), in: source.path,
                 commonDirectory: source.appendingPathComponent(".git").path, under: tasks.path
             )
         }
@@ -55,7 +55,7 @@ struct GitTaskWorktreeTests {
         let bare = root.appendingPathComponent(".bare")
         try await Shell.check("git", ["clone", "--bare", source.path, bare.path])
         let bareTaskPath = try await GitTaskWorktree.create(
-            named: "Review", in: bare.path, commonDirectory: bare.path,
+            WorkspaceRequest(name: "Review", start: .newBranch(base: "main"), prefix: "swarm/"), in: bare.path, commonDirectory: bare.path,
             under: root.appendingPathComponent("wt").path
         )
         #expect(try await Shell.check("git", ["rev-parse", "HEAD"], cwd: bareTaskPath).trimmed == mainHead)
@@ -70,7 +70,7 @@ struct GitTaskWorktreeTests {
         try await Git.initialize(at: project.path)
 
         let taskPath = try await GitTaskWorktree.create(
-            named: "First task", in: project.path,
+            WorkspaceRequest(name: "First task", start: .newBranch(base: ""), prefix: "swarm/"), in: project.path,
             commonDirectory: project.appendingPathComponent(".git").path,
             under: root.appendingPathComponent("tasks").path
         )
@@ -196,12 +196,16 @@ struct GitTaskWorktreeTests {
             }
         }
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("workspaces").path))
-        await #expect(throws: GitTaskWorktreeError.self) {
-            try await GitTaskWorktree.create(
+        let spawnsBeforeRefusal = Shell.spawnCount
+        do {
+            _ = try await GitTaskWorktree.create(
                 WorkspaceRequest(name: "Invalid", start: .newBranch(base: ""), prefix: "bad//"),
                 in: fixture.project.path, commonDirectory: fixture.common,
                 under: fixture.root.appendingPathComponent("workspaces").path
             )
+            Issue.record("An invalid branch must refuse creation")
+        } catch GitTaskWorktreeError.invalidBranchName {
+            #expect(Shell.spawnCount == spawnsBeforeRefusal)
         }
     }
 
