@@ -1,6 +1,6 @@
 import Foundation
 
-/// What New Chat starts. With no provider and model, swarm starts the chat profile's first runner
+/// What New Chat starts. With no provider and model, swarm starts the named profile's first runner
 /// that can run; with both, it starts exactly that runner, once, with no fallback (ADR 0033).
 public struct SwarmChatLaunchPlan: Sendable, Equatable {
     public let directory: String
@@ -44,6 +44,16 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
         role = "chat"
         model = nil
         account = "auto"
+    }
+
+    public init?(profile: String, in directory: String) {
+        guard !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              directory.hasPrefix("/") else { return nil }
+        self.directory = directory
+        provider = nil
+        role = profile
+        model = nil
+        account = nil
     }
 }
 

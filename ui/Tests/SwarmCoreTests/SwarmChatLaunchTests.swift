@@ -38,6 +38,26 @@ struct SwarmChatLaunchTests {
         #expect(SwarmChatLaunchPlan(profileIn: "relative") == nil)
     }
 
+    @Test("A named profile reaches launch without provider, model or account overrides")
+    func namedProfile() async throws {
+        let calls = LaunchCalls([
+            ShellResult(status: 0, stdout: "", stderr: ""),
+            ShellResult(status: 0, stdout: "session-id\n", stderr: ""),
+            ShellResult(status: 0, stdout: "%1\n", stderr: ""),
+        ])
+        let plan = try #require(SwarmChatLaunchPlan(profile: "code.complex", in: "/work"))
+        #expect(plan.directory == "/work")
+        #expect(plan.role == "code.complex")
+        #expect(plan.provider == nil)
+        #expect(plan.model == nil)
+        #expect(plan.account == nil)
+        _ = try await SwarmChatLauncher.start(plan, bus: bus(calls))
+        #expect(await calls.arguments.last == ["launch", "orchestrator", "code.complex"])
+        #expect(SwarmChatLaunchPlan(profile: "", in: "/work") == nil)
+        #expect(SwarmChatLaunchPlan(profile: " \n", in: "/work") == nil)
+        #expect(SwarmChatLaunchPlan(profile: "chat", in: "relative") == nil)
+    }
+
     @Test("Start returns the CLI stderr when launch fails")
     func failure() async throws {
         let calls = LaunchCalls([
