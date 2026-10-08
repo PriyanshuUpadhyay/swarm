@@ -385,20 +385,37 @@ public enum SwarmSessionCloser {
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
         var agents: [SwarmSessionID: [SwarmAgent]] = [:]
         for value in session.sessions { agents[value.id] = try await bus.agents(in: value) }
-        try await end(sessions: session.sessions, agentsBySession: agents, bus: bus)
+        try await end(chats: [session], agentsBySession: agents, bus: bus)
     }
 
     public static func end(
-        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
+        chats: [SwarmProjectSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
     ) async throws {
-        let live = sessions.flatMap { value in
-            (agentsBySession[value.id] ?? []).filter { $0.alive == true }.map { (value, $0) }
+        let listing = try await agents(in: chats, listing: agentsBySession, bus: bus)
+        let live = chats.flatMap(\.sessions).flatMap { value in
+            (listing[value.id] ?? []).filter { $0.alive == true }.map { (value, $0) }
         }
         let children = live.filter { !SwarmPanePolicy.isChair($0.1, in: $0.0) }
         let chairs = live.filter { SwarmPanePolicy.isChair($0.1, in: $0.0) }
         for (value, agent) in children + chairs {
             try await bus.close(agent.id, in: value)
         }
+    }
+
+    /// Finish every read before stopping any agent; a partial batch is not an empty session.
+    static func agents(
+        in chats: [SwarmProjectSession], listing: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
+    ) async throws -> [SwarmSessionID: [SwarmAgent]] {
+        var agents = listing
+        for chat in chats {
+            for session in chat.sessions where agents[session.id] == nil {
+                do { agents[session.id] = try await bus.agents(in: session) }
+                catch {
+                    throw SwarmProfileError.failed("Swarm could not read the agents of “\(ChatTitle.title(chat))”. Try again.")
+                }
+            }
+        }
+        return agents
     }
 
     public static func archive(session: SwarmProjectSession, bus: any SwarmBus) async throws {

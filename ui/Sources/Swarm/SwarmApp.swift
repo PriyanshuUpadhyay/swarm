@@ -507,6 +507,9 @@ final class SessionsTreeModel {
         }
         let current = workspaces.first { $0.id == entry.id } ?? entry
         try await WorkspaceArchive.end(current.chats, bus: bus)
+        if let blocker = await Git.removalBlocker(worktree: entry.id) {
+            throw SwarmProfileError.failed(blocker)
+        }
         try await Git.removeWorktree(entry.id, in: common)
         await discovery.forgetWorktrees(for: common)
         try await refresh()
@@ -665,6 +668,7 @@ private struct SessionsWindow: View {
     @State private var closedChats: RecentlyClosed.Listing?
     @State private var showingClosedChats = false
     @State private var deletingWorkspaces: Set<String> = []
+    @State private var archivingWorkspaces: Set<String> = []
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
@@ -743,6 +747,9 @@ private struct SessionsWindow: View {
                 }
                 if !deletingWorkspaces.isEmpty {
                     DelayedProgress("Deleting workspace…").padding(DesignTokens.Spacing.s)
+                }
+                if !archivingWorkspaces.isEmpty {
+                    DelayedProgress("Archiving workspace…").padding(DesignTokens.Spacing.s)
                 }
                 if !model.closing.isEmpty {
                     DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
@@ -1797,9 +1804,11 @@ private struct SessionsWindow: View {
     }
 
     private func requestWorkspaceArchive(_ entry: WorkspaceEntry) {
+        guard !archivingWorkspaces.contains(entry.id) else { return }
         Task {
             do {
                 let confirmation = try await model.workspaceEndConfirmation(entry)
+                guard !archivingWorkspaces.contains(entry.id) else { return }
                 if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
                 else { performWorkspaceArchive(entry) }
             } catch { showAlert(.error(error.localizedDescription)) }
@@ -1807,7 +1816,9 @@ private struct SessionsWindow: View {
     }
 
     private func performWorkspaceArchive(_ entry: WorkspaceEntry) {
+        guard archivingWorkspaces.insert(entry.id).inserted else { return }
         Task {
+            defer { archivingWorkspaces.remove(entry.id) }
             do { try await model.archiveWorkspace(entry) }
             catch { showAlert(.error(error.localizedDescription)) }
         }

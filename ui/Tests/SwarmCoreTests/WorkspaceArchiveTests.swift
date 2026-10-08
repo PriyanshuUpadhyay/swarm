@@ -18,6 +18,50 @@ struct WorkspaceArchiveTests {
         #expect(await recorder.calls.allSatisfy { !$0.contains("session archive") })
     }
 
+    @Test("A missing batch session is read alone and its live agents need confirmation")
+    func missingSession() async throws {
+        let recorder = WorkspaceArchiveCalls(omitted: "older")
+        let chats = [chat("current", older: "older")]
+        let count = try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder))
+        #expect(count == 2)
+        #expect(WorkspaceArchive.Confirmation(liveAgents: count).required)
+        try await WorkspaceArchive.end(chats, bus: bus(recorder))
+        #expect(await recorder.calls == [
+            ":agents --json --all", "older:agents --json",
+            ":agents --json --all", "older:agents --json",
+            "current:close orchestrator", "older:close orchestrator",
+        ])
+    }
+
+    @Test("An unreadable missing session refuses confirmation and stopping before any close")
+    func unreadableSession() async throws {
+        let recorder = WorkspaceArchiveCalls(omitted: "older", unreadable: "older")
+        let chats = [chat("current", older: "older")]
+        do {
+            _ = try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder))
+            Issue.record("The unreadable chat must refuse the action")
+        } catch {
+            #expect(error.localizedDescription == "Swarm could not read the agents of “Chat”. Try again.")
+        }
+        await #expect(throws: (any Error).self) {
+            try await WorkspaceArchive.end(chats, bus: bus(recorder))
+        }
+        #expect(await recorder.calls.allSatisfy { !$0.contains("close") })
+    }
+
+    @Test("An older swarm without the batch command falls back to each session")
+    func olderSwarm() async throws {
+        let recorder = WorkspaceArchiveCalls(batchFails: true)
+        let chats = [chat("current", older: "older")]
+        #expect(try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder)) == 2)
+        try await WorkspaceArchive.end(chats, bus: bus(recorder))
+        #expect(await recorder.calls == [
+            ":agents --json --all", "current:agents --json", "older:agents --json",
+            ":agents --json --all", "current:agents --json", "older:agents --json",
+            "current:close orchestrator", "older:close orchestrator",
+        ])
+    }
+
     @Test("Archive and delete require the same confirmation for any live agent")
     func confirmationRule() {
         #expect(!WorkspaceArchive.Confirmation(liveAgents: 0).required)
@@ -97,11 +141,31 @@ struct WorkspaceArchiveTests {
 
 private actor WorkspaceArchiveCalls {
     private(set) var calls: [String] = []
+    let omitted: String?
+    let unreadable: String?
+    let batchFails: Bool
+
+    init(omitted: String? = nil, unreadable: String? = nil, batchFails: Bool = false) {
+        self.omitted = omitted
+        self.unreadable = unreadable
+        self.batchFails = batchFails
+    }
+
     func reply(_ arguments: [String], environment: [String: String]) -> ShellResult {
         calls.append((environment["SWARM_SESSION_ID"] ?? "") + ":" + arguments.joined(separator: " "))
+        let row = "{\"agents\":[{\"id\":\"orchestrator\",\"role\":\"chair\",\"pane\":\"chair\",\"alive\":true}]}"
         if arguments == ["agents", "--json", "--all"] {
-            let row = "{\"agents\":[{\"id\":\"orchestrator\",\"role\":\"chair\",\"pane\":\"chair\",\"alive\":true}]}"
-            return ShellResult(status: 0, stdout: "{\"current\":\(row),\"older\":\(row),\"another\":\(row)}", stderr: "")
+            if batchFails { return ShellResult(status: 1, stdout: "", stderr: "Unknown --all") }
+            let ids: [String] = ["current", "older", "another"]
+            let rows = ids.filter { $0 != omitted }
+                .map { "\"\($0)\":\(row)" }.joined(separator: ",")
+            return ShellResult(status: 0, stdout: "{\(rows)}", stderr: "")
+        }
+        if arguments == ["agents", "--json"] {
+            if environment["SWARM_SESSION_ID"] == unreadable {
+                return ShellResult(status: 1, stdout: "", stderr: "Read timed out")
+            }
+            return ShellResult(status: 0, stdout: row, stderr: "")
         }
         return ShellResult(status: 0, stdout: "", stderr: "")
     }
