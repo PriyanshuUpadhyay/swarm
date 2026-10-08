@@ -187,7 +187,7 @@ Create Project makes a folder, runs `git init`, and makes a first commit with `.
 `tmp/` out of Changes. If git has no identity or the commit fails, Swarm keeps the project and
 shows why. It adds and selects the project. Creating or importing a project starts no agent.
 New chat starts the chat profile at once with no sheet (ADR 0059): a "New chat" tab shows at once and becomes the
-chat when the chair is up, or shows the launch error with Retry. Press and hold a workspace's **+** or
+chat when the chair is up, or shows the launch error with Retry. Press and hold or right-click a workspace's **+** or
 **New chat**, or click its menu indicator, to open **New chat as…** and choose any profile. The chat profile is first and
 marked as the one-click default; each caption shows its first runner's provider and model.
 Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,

@@ -13,10 +13,11 @@ struct NewChatProfileMenu<Label: View>: View {
             profileRows
         } label: {
             label()
-                .contextMenu { profileRows }
         } primaryAction: {
             primaryAction()
         }
+        // On the Menu itself, not its label: a macOS pull-down can drop label modifiers.
+        .contextMenu { profileRows }
     }
 
     @ViewBuilder private var profileRows: some View {

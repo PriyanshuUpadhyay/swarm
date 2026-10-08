@@ -25,7 +25,7 @@ public enum NewChatMenu {
         public mutating func record(error: String) { self.error = error }
 
         /// Reserves the read when no read is running and the minimum interval has passed.
-        public mutating func shouldRead(at now: ContinuousClock.Instant) -> Bool {
+        public mutating func reserveRead(at now: ContinuousClock.Instant) -> Bool {
             guard !isReading else { return false }
             if let lastReadAt, lastReadAt.duration(to: now) < Self.minimumReadInterval { return false }
             isReading = true
@@ -33,7 +33,7 @@ public enum NewChatMenu {
         }
 
         /// Nil releases a cancelled read without setting a completion stamp.
-        public mutating func finishedRead(at now: ContinuousClock.Instant?) {
+        public mutating func finishRead(at now: ContinuousClock.Instant?) {
             isReading = false
             if let now { lastReadAt = now }
         }

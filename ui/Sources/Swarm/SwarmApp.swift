@@ -1990,9 +1990,9 @@ private struct SessionsWindow: View {
     }
 
     private func loadNewChatProfiles() async {
-        guard !Task.isCancelled, newChatMenu.shouldRead(at: ContinuousClock().now) else { return }
+        guard !Task.isCancelled, newChatMenu.reserveRead(at: ContinuousClock().now) else { return }
         var completedAt: ContinuousClock.Instant?
-        defer { newChatMenu.finishedRead(at: completedAt) }
+        defer { newChatMenu.finishRead(at: completedAt) }
         do {
             let profiles = try await SwarmProfileCatalog.shared.profiles()
             guard !Task.isCancelled else { return }

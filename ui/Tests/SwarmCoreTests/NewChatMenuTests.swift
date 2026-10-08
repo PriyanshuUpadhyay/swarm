@@ -49,35 +49,35 @@ struct NewChatMenuTests {
         var menu = NewChatMenu.State()
         let startedAt = ContinuousClock().now
         let finishedAt = startedAt.advanced(by: .seconds(20))
-        #expect(menu.shouldRead(at: startedAt) == true)
-        #expect(menu.shouldRead(at: finishedAt) == false)
-        menu.finishedRead(at: finishedAt)
-        #expect(menu.shouldRead(at: finishedAt.advanced(by: .milliseconds(4_999))) == false)
-        #expect(menu.shouldRead(at: finishedAt.advanced(by: .seconds(5))) == true)
+        #expect(menu.reserveRead(at: startedAt) == true)
+        #expect(menu.reserveRead(at: finishedAt) == false)
+        menu.finishRead(at: finishedAt)
+        #expect(menu.reserveRead(at: finishedAt.advanced(by: .milliseconds(4_999))) == false)
+        #expect(menu.reserveRead(at: finishedAt.advanced(by: .seconds(5))) == true)
     }
 
     @Test("A cancelled read sets no stamp and can be retried at once")
     func cancelledRead() {
         var menu = NewChatMenu.State()
         let now = ContinuousClock().now
-        #expect(menu.shouldRead(at: now) == true)
-        menu.finishedRead(at: nil)
-        #expect(menu.shouldRead(at: now) == true)
-        menu.finishedRead(at: now)
+        #expect(menu.reserveRead(at: now) == true)
+        menu.finishRead(at: nil)
+        #expect(menu.reserveRead(at: now) == true)
+        menu.finishRead(at: now)
         let nextReadAt = now.advanced(by: .seconds(5))
-        #expect(menu.shouldRead(at: nextReadAt) == true)
-        menu.finishedRead(at: nil)
-        #expect(menu.shouldRead(at: nextReadAt) == true)
+        #expect(menu.reserveRead(at: nextReadAt) == true)
+        menu.finishRead(at: nil)
+        #expect(menu.reserveRead(at: nextReadAt) == true)
     }
 
     @Test("A failed read observes the same completion interval")
     func failedReadInterval() {
         var menu = NewChatMenu.State()
         let now = ContinuousClock().now
-        #expect(menu.shouldRead(at: now) == true)
+        #expect(menu.reserveRead(at: now) == true)
         menu.record(error: "Read timed out")
-        menu.finishedRead(at: now)
-        #expect(menu.shouldRead(at: now) == false)
-        #expect(menu.shouldRead(at: now.advanced(by: .seconds(5))) == true)
+        menu.finishRead(at: now)
+        #expect(menu.reserveRead(at: now) == false)
+        #expect(menu.reserveRead(at: now.advanced(by: .seconds(5))) == true)
     }
 }
