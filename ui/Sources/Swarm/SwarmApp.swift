@@ -565,14 +565,15 @@ private struct SessionsWindow: View {
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
     /// chat only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
-    @State private var actionError: String?
+    /// The alert on screen, and the ones waiting for it to close (see `WindowAlert`).
+    @State private var shownAlert: WindowAlert?
+    @State private var pendingAlerts: [WindowAlert] = []
     @State private var projectAction: String?
     @State private var showingPalette = false
     /// When each palette action last ran, in this window only.
     @State private var recentActions: [AppKey: Int] = [:]
     @State private var showingArchive = false
     @State private var createSheet: CreateSheet?
-    @State private var gitInitRequest: GitInitRequest?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
     /// the setup sheet opens once for folder trust (ADR 0029, 0043).
@@ -583,14 +584,8 @@ private struct SessionsWindow: View {
     /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
     /// setup sheet.
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
-    /// The PATH swarm that the launch check names, until its alert closes. Only the first window
-    /// of an app run gets one (ADR 0048).
-    @State private var pathSwarmDrift: PathSwarmDrift?
-    @State private var heldDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: RenameTarget?
-    @State private var removeProjectTarget: ProjectNode?
-    @State private var pruneWorktreeTarget: (entry: WorkspaceEntry, paths: [String])?
     @State private var renameName = ""
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
     @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
@@ -701,12 +696,9 @@ private struct SessionsWindow: View {
                 }
             }
         }
-        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showModelNotice() }
-        .onChange(of: model.saveNotice) { _, _ in showModelNotice() }
-        .onChange(of: alertIsOpen) { _, open in
-            // An alert asked for in the tick another one closes is dropped, so the next one waits a hop.
-            if !open { Task { showNextAlert() } }
-        }
+        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in scheduleNextAlert() }
+        .onChange(of: model.saveNotice) { _, _ in scheduleNextAlert() }
+        .onChange(of: shownAlert == nil) { _, closed in if closed { scheduleNextAlert() } }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
@@ -743,34 +735,14 @@ private struct SessionsWindow: View {
             guard !SwarmOpenScript.isActive else { return }
             if let drift = await PathSwarmNotice.shared.ask(check: { await PathSwarmCheck.current(dismissed: $0) }) {
                 // The setup sheet waits until this alert closes, so the two never show together.
-                if alertIsOpen { heldDrift = drift } else { pathSwarmDrift = drift }
+                // Only the first window of an app run gets one (ADR 0048).
+                showAlert(.pathDrift(drift))
                 return
             }
             await askForSetup()
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
             showingHooksSetup = true
-        }
-        .alert(
-            "Terminal runs another swarm",
-            isPresented: Binding(
-                get: { pathSwarmDrift != nil },
-                set: {
-                    guard !$0, let drift = pathSwarmDrift else { return }
-                    PathSwarmNotice.shared.answer(drift)
-                    pathSwarmDrift = nil
-                    Task { await askForSetup() }
-                }
-            ),
-            presenting: pathSwarmDrift
-        ) { drift in
-            Button("Copy Command") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(drift.fixCommand, forType: .string)
-            }
-            Button("Not Now", role: .cancel) {}
-        } message: { drift in
-            Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
@@ -799,21 +771,6 @@ private struct SessionsWindow: View {
         }) { sheet in
             createSheetView(sheet)
         }
-        .alert(
-            gitInitRequest.map { "“\($0.name)” is not a git repository" } ?? "",
-            isPresented: Binding(get: { gitInitRequest != nil }, set: { if !$0 { gitInitRequest = nil } }),
-            presenting: gitInitRequest
-        ) { request in
-            Button("Run git init") { runGitInit(request) }
-            switch request.reason {
-            case .importFolder(let url):
-                Button("Keep as Folder", role: .cancel) { performProjectAction(url, .open) }
-            case .newWorkspace:
-                Button("Cancel", role: .cancel) {}
-            }
-        } message: { _ in
-            Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
-        }
         .sheet(isPresented: Binding(
             get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
         )) {
@@ -836,76 +793,94 @@ private struct SessionsWindow: View {
             }
         }
         .alert(
-            "Remove Project…",
-            isPresented: Binding(get: { removeProjectTarget != nil }, set: { if !$0 { removeProjectTarget = nil } }),
-            presenting: removeProjectTarget
-        ) { project in
-            Button("Remove Project", role: .destructive) {
-                removeProjectTarget = nil
-                do { try model.removeProject(project) }
-                catch {
-                    let message = "Could not remove the project. \(error.localizedDescription)"
-                    // This alert is still closing, so the error waits a hop (see `alertIsOpen`).
-                    Task { actionError = message }
-                }
-            }
-            Button("Cancel", role: .cancel) { removeProjectTarget = nil }
-        } message: { project in
-            Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
-        }
-        .alert(
-            "Prune missing worktrees?",
-            isPresented: Binding(get: { pruneWorktreeTarget != nil }, set: { if !$0 { pruneWorktreeTarget = nil } }),
-            presenting: pruneWorktreeTarget
-        ) { target in
-            Button("Prune", role: .destructive) {
-                pruneWorktreeTarget = nil
-                Task {
-                    do { try await model.pruneWorktree(target.entry) }
-                    catch { actionError = error.localizedDescription }
-                }
-            }
-            Button("Cancel", role: .cancel) { pruneWorktreeTarget = nil }
-        } message: { target in
-            Text(verbatim: "Prune removes the worktree records for these missing folders in "
-                 + model.navigation.projectTitle(for: target.entry.project) + ":\n\n"
-                 + target.paths.joined(separator: "\n"))
-        }
-        .alert("Could not complete action", isPresented: Binding(
-            get: { actionError != nil },
-            set: { if !$0 { actionError = nil } }
-        )) {
-            Button("OK") { actionError = nil }
-        } message: {
-            Text(actionError ?? "")
-        }
+            shownAlert?.title ?? "",
+            isPresented: Binding(get: { shownAlert != nil }, set: { if !$0 { closeAlert() } }),
+            presenting: shownAlert,
+            actions: alertActions,
+            message: alertMessage
+        )
     }
 
-    /// SwiftUI drops an alert asked for while a different alert is up, and leaves its state set
-    /// with nothing on screen. A sheet does not drop one: the alert waits for the sheet to close.
-    private var alertIsOpen: Bool {
-        actionError != nil || pathSwarmDrift != nil || gitInitRequest != nil
-            || removeProjectTarget != nil || pruneWorktreeTarget != nil
+    private func showAlert(_ alert: WindowAlert) {
+        pendingAlerts.append(alert)
+        scheduleNextAlert()
+    }
+
+    private func scheduleNextAlert() {
+        Task { showNextAlert() }
     }
 
     private func showNextAlert() {
-        guard !alertIsOpen else { return }
-        if let drift = heldDrift {
-            heldDrift = nil
-            pathSwarmDrift = drift
-        } else {
-            showModelNotice()
+        guard shownAlert == nil else { return }
+        if !pendingAlerts.isEmpty {
+            shownAlert = pendingAlerts.removeFirst()
+        } else if let notice = model.saveNotice {
+            model.saveNotice = nil
+            shownAlert = .error(notice)
+        } else if let failure = model.choicesAlerts.message {
+            model.choicesAlerts.dismiss()
+            shownAlert = .error(failure)
         }
     }
 
-    private func showModelNotice() {
-        guard !alertIsOpen else { return }
-        if let notice = model.saveNotice {
-            actionError = notice
-            model.saveNotice = nil
-        } else if let failure = model.choicesAlerts.message {
-            actionError = failure
-            model.choicesAlerts.dismiss()
+    private func closeAlert() {
+        if case .pathDrift(let drift) = shownAlert {
+            PathSwarmNotice.shared.answer(drift)
+            Task { await askForSetup() }
+        }
+        shownAlert = nil
+    }
+
+    @ViewBuilder
+    private func alertActions(_ alert: WindowAlert) -> some View {
+        switch alert {
+        case .pathDrift(let drift):
+            Button("Copy Command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(drift.fixCommand, forType: .string)
+            }
+            Button("Not Now", role: .cancel) {}
+        case .gitInit(let request):
+            Button("Run git init") { runGitInit(request) }
+            switch request.reason {
+            case .importFolder(let url):
+                Button("Keep as Folder", role: .cancel) { performProjectAction(url, .open) }
+            case .newWorkspace:
+                Button("Cancel", role: .cancel) {}
+            }
+        case .removeProject(let project):
+            Button("Remove Project", role: .destructive) {
+                do { try model.removeProject(project) }
+                catch { showAlert(.error("Could not remove the project. \(error.localizedDescription)")) }
+            }
+            Button("Cancel", role: .cancel) {}
+        case .prune(let entry, _):
+            Button("Prune", role: .destructive) {
+                Task {
+                    do { try await model.pruneWorktree(entry) }
+                    catch { showAlert(.error(error.localizedDescription)) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        case .error:
+            Button("OK") {}
+        }
+    }
+
+    private func alertMessage(_ alert: WindowAlert) -> Text {
+        switch alert {
+        case .pathDrift(let drift):
+            Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
+        case .gitInit:
+            Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
+        case .removeProject(let project):
+            Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
+        case .prune(let entry, let paths):
+            Text(verbatim: "Prune removes the worktree records for these missing folders in "
+                 + model.navigation.projectTitle(for: entry.project) + ":\n\n"
+                 + paths.joined(separator: "\n"))
+        case .error(let message):
+            Text(verbatim: message)
         }
     }
 
@@ -939,7 +914,7 @@ private struct SessionsWindow: View {
                         close: {
                             Task {
                                 do { try await model.discardChat(id) }
-                                catch { actionError = LaunchFailure(error).message }
+                                catch { showAlert(.error(LaunchFailure(error).message)) }
                             }
                         }
                     )
@@ -1100,7 +1075,9 @@ private struct SessionsWindow: View {
             },
             restore: { model.navigation.archived.remove($0) },
             removeProject: { id in
-                removeProjectTarget = model.tree.projects.first { SidebarSection.id(of: $0) == id }
+                if let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) {
+                    showAlert(.removeProject(project))
+                }
             },
             pruneWorktree: { id in
                 guard let workspace = entry(id), workspace.workspace.missing,
@@ -1109,12 +1086,12 @@ private struct SessionsWindow: View {
                     do {
                         let paths = try await Git.worktrees(of: common).filter(\.isPrunable).map(\.path)
                         guard !paths.isEmpty else {
-                            actionError = "No missing worktrees to prune."
+                            showAlert(.error("No missing worktrees to prune."))
                             return
                         }
-                        pruneWorktreeTarget = (workspace, paths)
+                        showAlert(.prune(entry: workspace, paths: paths))
                     }
-                    catch { actionError = error.localizedDescription }
+                    catch { showAlert(.error(error.localizedDescription)) }
                 }
             },
             showRun: { id in
@@ -1357,9 +1334,9 @@ private struct SessionsWindow: View {
         Task {
             // `git init` inside a bare clone would hide its worktrees behind a nested repository.
             if await Git.isRepository(at: project.path) {
-                actionError = "“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."
+                showAlert(.error("“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."))
             } else {
-                gitInitRequest = GitInitRequest(path: project.path, reason: .newWorkspace)
+                showAlert(.gitInit(GitInitRequest(path: project.path, reason: .newWorkspace)))
             }
         }
     }
@@ -1371,7 +1348,7 @@ private struct SessionsWindow: View {
         case .newWorkspace:
             Task {
                 do { newTaskProject = try await model.initializeGit(at: request.path) }
-                catch { actionError = error.localizedDescription }
+                catch { showAlert(.error(error.localizedDescription)) }
             }
         }
     }
@@ -1457,7 +1434,7 @@ private struct SessionsWindow: View {
                 close: { id in
                     Task {
                         do { try await model.close(SwarmSessionID(id)) }
-                        catch { actionError = error.localizedDescription }
+                        catch { showAlert(.error(error.localizedDescription)) }
                     }
                 },
                 archive: { archiveChat(SwarmSessionID($0)) },
@@ -1516,7 +1493,7 @@ private struct SessionsWindow: View {
     private func archiveChat(_ id: SwarmSessionID) {
         Task {
             do { try await model.archive(id) }
-            catch { actionError = error.localizedDescription }
+            catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
@@ -1552,7 +1529,7 @@ private struct SessionsWindow: View {
                 // A bare clone: adding it as today is safe, `git init` in it is not.
                 performProjectAction(url, .open)
             } else {
-                gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
+                showAlert(.gitInit(GitInitRequest(path: url.path, reason: .importFolder(url))))
             }
         }
     }
@@ -1585,7 +1562,7 @@ private struct SessionsWindow: View {
                 startChat(in: path)
             } catch {
                 let subject = action == .create ? "Could not create the project." : "Could not import the project."
-                actionError = "\(subject) \(error.localizedDescription)"
+                showAlert(.error("\(subject) \(error.localizedDescription)"))
             }
         }
     }
@@ -1655,6 +1632,28 @@ private enum CreateSheet: Identifiable {
 }
 
 /// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
+/// Every alert of the window. SwiftUI drops an alert asked for while a different alert is up, or in
+/// the tick one closes, and leaves its state set with nothing on screen; a sheet does not drop one
+/// (probed: `tmp/redesign/probe/`). So the window has one `.alert`, a new alert waits in a list,
+/// and the next one shows a `Task` hop after the last one closes.
+private enum WindowAlert {
+    case pathDrift(PathSwarmDrift)
+    case gitInit(GitInitRequest)
+    case removeProject(ProjectNode)
+    case prune(entry: WorkspaceEntry, paths: [String])
+    case error(String)
+
+    var title: String {
+        switch self {
+        case .pathDrift: "Terminal runs another swarm"
+        case .gitInit(let request): "“\(request.name)” is not a git repository"
+        case .removeProject: "Remove Project…"
+        case .prune: "Prune missing worktrees?"
+        case .error: "Could not complete action"
+        }
+    }
+}
+
 private struct GitInitRequest {
     enum Reason { case importFolder(URL), newWorkspace }
     let path: String
