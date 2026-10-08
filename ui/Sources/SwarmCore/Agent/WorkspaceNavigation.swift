@@ -340,6 +340,15 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     @discardableResult
+    public mutating func stepTab(_ key: String, toward target: String, in workspace: String) -> Bool {
+        guard let strip = tabs[workspace] else { return false }
+        let updated = strip.stepping(key, toward: target)
+        guard updated != strip else { return false }
+        tabs[workspace] = updated
+        return true
+    }
+
+    @discardableResult
     public mutating func groupTab(_ action: TabStrip.Grouping, in workspace: String) -> Bool {
         guard let strip = tabs[workspace] else { return false }
         let updated = strip.grouping(action)

@@ -41,6 +41,47 @@ public struct TabStrip: Codable, Sendable, Hashable {
         return strip.pruned(to: Set(open))
     }
 
+    /// A menu move keeps membership; ungrouped tabs cross a group as one block.
+    public func stepTargets(excluding pending: Set<String> = []) -> [String: (left: String?, right: String?)] {
+        let keys = open.filter { !pending.contains($0) }
+        let groupByKey = Dictionary(uniqueKeysWithValues: groups.flatMap { group in
+            group.members.map { ($0, group.id) }
+        })
+        var bounds: [String: (first: Int, last: Int)] = [:]
+        for (index, key) in keys.enumerated() {
+            if let group = groupByKey[key] { bounds[group] = (bounds[group]?.first ?? index, index) }
+        }
+        var targets: [String: (left: String?, right: String?)] = [:]
+        for (index, key) in keys.enumerated() {
+            var left: String?
+            var right: String?
+            if let group = groupByKey[key], let range = bounds[group] {
+                if index > range.first { left = keys[index - 1] }
+                if index < range.last { right = keys[index + 1] }
+            } else {
+                if index > 0 {
+                    let start = groupByKey[keys[index - 1]].flatMap { bounds[$0]?.first } ?? index - 1
+                    left = keys[start]
+                }
+                if index + 1 < keys.count {
+                    let end = groupByKey[keys[index + 1]].flatMap { bounds[$0]?.last } ?? index + 1
+                    right = keys[end]
+                }
+            }
+            targets[key] = (left, right)
+        }
+        return targets
+    }
+
+    public func stepping(_ key: String, toward target: String) -> Self {
+        guard let targets = stepTargets()[key], targets.left == target || targets.right == target,
+              let source = open.firstIndex(of: key), let destination = open.firstIndex(of: target) else { return self }
+        var strip = self
+        strip.open.remove(at: source)
+        strip.open.insert(key, at: destination)
+        return strip.pruned(to: Set(open))
+    }
+
     public func pruned(to listed: Set<String>) -> Self {
         var strip = self
         var seen = Set<String>()

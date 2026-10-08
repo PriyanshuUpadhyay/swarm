@@ -8,6 +8,7 @@ struct ChatTabActions {
     var end: (String) -> Void
     var hide: (String) -> Void
     var move: (String, String) -> Bool
+    var step: (String, String) -> Bool
     var archive: (String) -> Void
     var rename: (String) -> Void
     var group: (TabStrip.Grouping) -> Bool
@@ -30,14 +31,15 @@ struct ChatTabsView: View {
     @State private var viewportWidth: Double = 0
     @State private var groupEditor: TabGroupEditorTarget?
 
-    private var runs: [ChatTab.Run] { ChatTab.runs(tabs) }
-    private var groups: [TabGroup] { runs.compactMap(\.group) }
-
     private var overflow: [ChatTab] {
         ChatTab.overflow(tabs, trailingEdges: trailingEdges, viewportWidth: viewportWidth)
     }
 
     var body: some View {
+        let runs = ChatTab.runs(tabs)
+        let groups = runs.compactMap(\.group)
+        let pending = Set(tabs.filter { $0.pending != nil }.map(\.id))
+        let targets = TabStrip(open: tabs.map(\.id), groups: groups).stepTargets(excluding: pending)
         HStack(spacing: DesignTokens.Spacing.s) {
             if let workspaceTitle {
                 Text(workspaceTitle)
@@ -55,7 +57,8 @@ struct ChatTabsView: View {
                                 if let group = run.group { groupChip(group, tabs: run.tabs) }
                                 if run.group?.folded != true {
                                     ForEach(run.tabs) { tab in
-                                        draggableTab(tab)
+                                        draggableTab(tab, groups: groups,
+                                                     previous: targets[tab.id]?.left, next: targets[tab.id]?.right)
                                             .id(tab.id)
                                             .onGeometryChange(for: Double.self) { geometry in
                                                 Double(geometry.frame(in: .named("tabViewport")).maxX)
@@ -155,11 +158,9 @@ struct ChatTabsView: View {
         }
     }
 
-    @ViewBuilder private func draggableTab(_ tab: ChatTab) -> some View {
-        let movable = tabs.filter { $0.pending == nil }
-        let index = movable.firstIndex { $0.id == tab.id }
-        let previous = index.flatMap { $0 > 0 ? movable[$0 - 1].id : nil }
-        let next = index.flatMap { $0 + 1 < movable.count ? movable[$0 + 1].id : nil }
+    @ViewBuilder private func draggableTab(
+        _ tab: ChatTab, groups: [TabGroup], previous: String?, next: String?
+    ) -> some View {
         let view = ChatTabView(tab: tab, selected: tab.id == selectedID,
                                actions: actions, groups: groups, previous: previous, next: next,
                                newGroup: { groupEditor = .init(tab: $0) })
@@ -257,9 +258,9 @@ private struct ChatTabView: View {
                 Button("Switch model…") { actions.switchModel(tab.id) }
                     .disabled(actions.switchDisabledReason(tab.id) != nil)
                     .help(actions.switchDisabledReason(tab.id) ?? "Switch model")
-                Button("Move Left") { if let previous { _ = actions.move(tab.id, previous) } }
+                Button("Move Left") { if let previous { _ = actions.step(tab.id, previous) } }
                     .disabled(previous == nil)
-                Button("Move Right") { if let next { _ = actions.move(tab.id, next) } }
+                Button("Move Right") { if let next { _ = actions.step(tab.id, next) } }
                     .disabled(next == nil)
                 Menu("Move to group") {
                     ForEach(groups) { group in

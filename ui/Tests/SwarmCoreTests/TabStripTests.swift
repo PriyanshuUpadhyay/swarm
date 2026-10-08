@@ -39,6 +39,70 @@ struct TabStripTests {
         #expect(strip.moving("design", to: 3) == strip)
     }
 
+    @Test("Menu moves cross whole groups and keep ungrouped tabs outside folded groups")
+    func menuMovesAcrossGroups() {
+        let group = TabGroup(id: "review", name: "Review", color: .blue, members: ["review", "fix"], folded: true)
+        let strip = TabStrip(open: ["design", "review", "fix", "notes"], groups: [group])
+        let right = strip.stepping("design", toward: "fix")
+        #expect(right.open == ["review", "fix", "design", "notes"])
+        #expect(right.groups == strip.groups)
+        let left = strip.stepping("notes", toward: "review")
+        #expect(left.open == ["design", "notes", "review", "fix"])
+        #expect(left.groups == strip.groups)
+    }
+
+    @Test("Menu moves keep a grouped tab within its group")
+    func menuMovesWithinGroup() {
+        let group = TabGroup(id: "review", name: "Review", color: .blue, members: ["review", "fix"])
+        let strip = TabStrip(open: ["design", "review", "fix", "notes"], groups: [group])
+        #expect(strip.stepping("review", toward: "design") == strip)
+        #expect(strip.stepping("fix", toward: "notes") == strip)
+        let moved = strip.stepping("review", toward: "fix")
+        #expect(moved.open == ["design", "fix", "review", "notes"])
+        #expect(moved.groups.first?.members == ["fix", "review"])
+        #expect(moved.groups.first?.id == group.id)
+    }
+
+    @Test("Menu targets skip pending tabs, stop at strip or group ends, and cross group blocks")
+    func menuTargets() {
+        let group = TabGroup(id: "review", name: "Review", color: .blue, members: ["review", "fix"], folded: true)
+        let strip = TabStrip(open: ["pending", "design", "review", "fix", "notes"], groups: [group])
+        let targets = strip.stepTargets(excluding: ["pending"])
+        #expect(targets["pending"] == nil)
+        #expect(targets["design"]?.left == nil)
+        #expect(targets["design"]?.right == "fix")
+        #expect(targets["review"]?.left == nil)
+        #expect(targets["review"]?.right == "fix")
+        #expect(targets["fix"]?.left == "review")
+        #expect(targets["fix"]?.right == nil)
+        #expect(targets["notes"]?.left == "review")
+        #expect(targets["notes"]?.right == nil)
+        #expect(TabStrip().stepTargets().isEmpty)
+        #expect(TabStrip(open: ["design"]).stepTargets()["design"]?.left == nil)
+        #expect(TabStrip(open: ["design"]).stepTargets()["design"]?.right == nil)
+        #expect(strip.stepping("missing", toward: "design") == strip)
+        #expect(strip.stepping("design", toward: "missing") == strip)
+    }
+
+    @Test("Menu moves change only the target workspace strip and keep selection and history")
+    func menuNavigation() {
+        var navigation = WorkspaceNavigation()
+        navigation.tabs["/repo"] = .init(open: ["design", "review"])
+        navigation.tabs["/other"] = .init(open: ["notes"])
+        navigation.selectedChats["/repo"] = "design"
+        navigation.tabHistory["/repo"] = ["review", "design"]
+        let moved = navigation.stepTab("design", toward: "review", in: "/repo")
+        #expect(moved)
+        #expect(navigation.tabs["/repo"]?.open == ["review", "design"])
+        #expect(navigation.selectedChats["/repo"] == "design")
+        #expect(navigation.tabHistory["/repo"] == ["review", "design"])
+        #expect(navigation.tabs["/other"]?.open == ["notes"])
+        let foreign = navigation.stepTab("design", toward: "notes", in: "/repo")
+        let missing = navigation.stepTab("design", toward: "review", in: "/missing")
+        #expect(!foreign)
+        #expect(!missing)
+    }
+
     @Test("Tabs round-trip in owner choices; absent tabs start empty and unknown colors are grey")
     func persistence() throws {
         var choices = OwnerChoices()
