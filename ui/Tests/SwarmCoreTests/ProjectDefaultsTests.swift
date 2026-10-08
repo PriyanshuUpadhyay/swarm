@@ -80,7 +80,7 @@ struct ProjectDefaultsTests {
         #expect(ProjectDefaults().folderSetting(for: checkout) == "../project-worktrees")
         #expect(ProjectDefaults().folderSetting(for: project(common: "/work/project/.bare")) == "wt/")
         #expect(ProjectDefaults().resolved(for: project(common: "/work/project/.bare")).folder == "/work/project/wt")
-        #expect(ProjectDefaults().resolved(for: project(common: "/work/project")).folder == "/work/project/wt")
+        #expect(ProjectDefaults().resolved(for: project(common: "/work/project")).folder == "/work/project-worktrees")
     }
 
     @Test("Stored folders resolve against the project and prefixes allow empty strings")
@@ -93,6 +93,9 @@ struct ProjectDefaultsTests {
         #expect(absolute.folder == "/custom/tasks")
         #expect(absolute.prefix == "")
         #expect(ProjectDefaults(worktreeFolder: "wt/").resolved(for: checkout).folder == "/work/project/wt")
+        let tildeFolder = "~/worktrees"
+        #expect(ProjectDefaults(worktreeFolder: tildeFolder).resolved(for: checkout).folder
+            == URL(fileURLWithPath: (tildeFolder as NSString).expandingTildeInPath).standardizedFileURL.path)
     }
 
     private func project(common: String) -> ProjectNode {

@@ -4,6 +4,8 @@ import SwarmCore
 struct NewWorkspaceSheet: View {
     let projectName: String
     let projectPath: String
+    let seedFolder: String
+    let seedPrefix: String
     let loadReferences: () async throws -> WorkspaceReferences
     let create: (WorkspaceRequest, ProjectDefaults) async throws -> String
     let onCreated: (String) -> Void
@@ -18,18 +20,22 @@ struct NewWorkspaceSheet: View {
     @State private var branchPrefix: String
     @State private var references: WorkspaceReferences?
     @State private var isCreating = false
+    @State private var isLoadingReferences = false
     @State private var error: String?
 
     private enum StartMode { case newBranch, existingBranch, pullRequest }
 
     init(
         projectName: String, projectPath: String, worktreeFolder: String, branchPrefix: String,
+        seedFolder: String, seedPrefix: String,
         loadReferences: @escaping () async throws -> WorkspaceReferences,
         create: @escaping (WorkspaceRequest, ProjectDefaults) async throws -> String,
         onCreated: @escaping (String) -> Void
     ) {
         self.projectName = projectName
         self.projectPath = projectPath
+        self.seedFolder = seedFolder
+        self.seedPrefix = seedPrefix
         self.loadReferences = loadReferences
         self.create = create
         self.onCreated = onCreated
@@ -49,7 +55,7 @@ struct NewWorkspaceSheet: View {
 
     private var canCreate: Bool {
         guard let references else { return false }
-        return !isCreating && NewWorkspaceForm.canCreate(request, references: references)
+        return !isCreating && NewWorkspaceForm.canCreate(request, references: references, worktreeFolder: worktreeFolder)
     }
 
     var body: some View {
@@ -71,7 +77,6 @@ struct NewWorkspaceSheet: View {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         Text(verbatim: NewWorkspaceForm.preview(request) ?? "—")
                             .font(DesignTokens.mono).textSelection(.enabled).lineLimit(2)
-                        if mode == .existingBranch { Text("(as given)").foregroundStyle(.secondary) }
                     }
                 }
             }
@@ -90,7 +95,13 @@ struct NewWorkspaceSheet: View {
                 .padding(.top, DesignTokens.Spacing.s)
             }
             .disabled(isCreating)
-            if let error { Text(verbatim: error).foregroundStyle(.red) }
+            if let error {
+                Text(verbatim: error).foregroundStyle(.red)
+                if references == nil {
+                    Button("Retry") { Task { await reloadReferences() } }
+                        .disabled(isLoadingReferences)
+                }
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -104,15 +115,24 @@ struct NewWorkspaceSheet: View {
         .padding(DesignTokens.Spacing.xl)
         .frame(width: DesignTokens.Size.sheet)
         .interactiveDismissDisabled(isCreating)
-        .task {
-            do {
-                let loaded = try await loadReferences()
-                base = loaded.defaultBranch == nil ? "" : loaded.bases.first ?? ""
-                existingBranch = loaded.availableBranches.first ?? ""
-                references = loaded
-            } catch {
-                self.error = "Could not load branches. \(error.localizedDescription)"
-            }
+        .task { await reloadReferences() }
+        .onChange(of: error) { _, text in
+            if let text { AccessibilityNotification.Announcement(text).post() }
+        }
+    }
+
+    private func reloadReferences() async {
+        guard !isLoadingReferences else { return }
+        isLoadingReferences = true
+        error = nil
+        defer { isLoadingReferences = false }
+        do {
+            let loaded = try await loadReferences()
+            base = loaded.defaultBranch == nil ? "" : loaded.bases.first ?? ""
+            existingBranch = loaded.availableBranches.first ?? ""
+            references = loaded
+        } catch {
+            self.error = "Could not load branches. \(error.localizedDescription)"
         }
     }
 
@@ -169,7 +189,9 @@ struct NewWorkspaceSheet: View {
     private func createWorkspace() {
         guard canCreate else { return }
         let request = request
-        let defaults = ProjectDefaults(worktreeFolder: worktreeFolder, branchPrefix: branchPrefix)
+        let defaults = NewWorkspaceForm.defaults(
+            worktreeFolder: worktreeFolder, branchPrefix: branchPrefix, seedFolder: seedFolder, seedPrefix: seedPrefix
+        )
         isCreating = true
         error = nil
         Task {

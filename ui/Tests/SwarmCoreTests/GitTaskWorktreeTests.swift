@@ -128,7 +128,7 @@ struct GitTaskWorktreeTests {
         #expect(references.availableBranches.first == "fix/free")
         #expect(references.bases.first == "main")
         #expect(!NewWorkspaceForm.canCreate(
-            WorkspaceRequest(name: "Held", start: .existingBranch("main"), prefix: "swarm/"), references: references
+            WorkspaceRequest(name: "Held", start: .existingBranch("main"), prefix: "swarm/"), references: references, worktreeFolder: "../tasks"
         ))
     }
 

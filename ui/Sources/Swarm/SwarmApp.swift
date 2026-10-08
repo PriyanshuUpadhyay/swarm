@@ -519,10 +519,6 @@ final class SessionsTreeModel {
         guard case .repository(let common) = project.id else {
             throw GitTaskWorktreeError.notRepository
         }
-        if navigationStore.savedChoices.projectDefaults[project.path] != defaults {
-            let saved = try ownerChoices.update { $0.projectDefaults[project.path] = defaults }
-            navigation = navigationStore.adopt(saved, into: navigation)
-        }
         let parent = defaults.resolved(for: project).folder
         let repositoryDirectory = URL(fileURLWithPath: common).lastPathComponent == ".bare"
             ? common : project.path
@@ -530,6 +526,14 @@ final class SessionsTreeModel {
             request, in: repositoryDirectory,
             commonDirectory: common, under: parent
         )
+        if (navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()) != defaults {
+            do {
+                let saved = try ownerChoices.update { $0.projectDefaults[project.path] = defaults }
+                navigation = navigationStore.adopt(saved, into: navigation)
+            } catch {
+                addSaveNotice("The workspace at \(path) exists. Could not save the project defaults. \(error.localizedDescription)")
+            }
+        }
         await discovery.forgetWorktrees(for: common)
         // Git already made the worktree, so a failed save must not ask the owner to create it again.
         do { try await projects.add(URL(fileURLWithPath: path)) }
@@ -539,8 +543,7 @@ final class SessionsTreeModel {
                 + "\n\nReason: \(error.localizedDescription)")
         }
         navigation.names[path] = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // The caller starts a chat there, which selects the workspace. Selecting it here, before the
-        // tree lists it, showed the Agent Profiles page and its availability check for a moment.
+        // The caller selects the workspace after the list refreshes and starts no chat.
         await refreshAfterSave("Workspace made")
         return path
     }
@@ -957,6 +960,8 @@ private struct SessionsWindow: View {
                 projectName: project.name, projectPath: project.path,
                 worktreeFolder: defaults.folderSetting(for: project),
                 branchPrefix: defaults.resolved(for: project).prefix,
+                seedFolder: ProjectDefaults().folderSetting(for: project),
+                seedPrefix: ProjectDefaults().resolved(for: project).prefix,
                 loadReferences: { try await model.workspaceReferences(in: project) },
                 create: { request, defaults in
                     try await model.createTask(request, in: project, defaults: defaults)

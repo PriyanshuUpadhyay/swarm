@@ -11,7 +11,7 @@ public struct ProjectDefaults: Codable, Sendable, Hashable {
 
     public func resolved(for project: ProjectNode) -> (folder: String, prefix: String) {
         let root = URL(fileURLWithPath: project.path)
-        let folder = folderSetting(for: project)
+        let folder = (folderSetting(for: project) as NSString).expandingTildeInPath
         let parent = folder.hasPrefix("/") ? URL(fileURLWithPath: folder) : root.appendingPathComponent(folder)
         return (parent.standardizedFileURL.path, branchPrefix ?? "swarm/")
     }
@@ -19,7 +19,7 @@ public struct ProjectDefaults: Codable, Sendable, Hashable {
     public func folderSetting(for project: ProjectNode) -> String {
         let isBare: Bool
         if case .repository(let common) = project.id {
-            isBare = URL(fileURLWithPath: common).lastPathComponent == ".bare" || common == project.path
+            isBare = URL(fileURLWithPath: common).lastPathComponent == ".bare"
         } else {
             isBare = false
         }
