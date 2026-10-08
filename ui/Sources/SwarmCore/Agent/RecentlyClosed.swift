@@ -35,12 +35,16 @@ public enum RecentlyClosed {
     public static let restoredButNotListed = "The chat was restored, but it is not in the workspace list. Check the sidebar after the list refreshes."
 
     public struct Listing: Sendable {
+        /// Keep this in sync with ARCHIVED_SESSIONS_LIMIT in src/store.rs.
+        public static let cliArchivedLimit = 50
+
         public let chats: [RecentlyClosedChat]
         public let notice: String?
 
         public init(chats: [RecentlyClosedChat], archivedSessionCount: Int) {
             self.chats = chats
-            notice = archivedSessionCount == 50 ? "Showing the newest 50 closed sessions." : nil
+            notice = archivedSessionCount == Self.cliArchivedLimit
+                ? "Showing the newest \(Self.cliArchivedLimit) closed sessions." : nil
         }
     }
 

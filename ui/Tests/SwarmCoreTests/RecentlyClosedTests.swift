@@ -73,12 +73,13 @@ struct RecentlyClosedTests {
         #expect(archives.applying(to: source).session(chat.id) != nil)
     }
 
-    @Test("The 50-session cap notice counts archived rows before chat grouping")
+    @Test("The CLI cap notice counts archived rows before chat grouping")
     func limitNotice() {
-        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 49).notice == nil)
+        let limit = RecentlyClosed.Listing.cliArchivedLimit
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: limit - 1).notice == nil)
         #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 0).notice == nil)
-        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 50).notice ==
-                "Showing the newest 50 closed sessions.")
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: limit).notice ==
+                "Showing the newest \(limit) closed sessions.")
     }
 
     @Test("A superseded restore refresh retries once and then uses the completed list")
