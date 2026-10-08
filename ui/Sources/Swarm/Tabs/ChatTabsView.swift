@@ -118,12 +118,16 @@ struct ChatTabsView: View {
             _ = actions.group(.fold(group.id, !group.folded))
         } label: {
             HStack(spacing: DesignTokens.Spacing.xs) {
-                Text(group.name).lineLimit(1)
+                Image(systemName: "circle.fill").font(.caption2).foregroundStyle(group.color.tint)
+                    .accessibilityHidden(true)
+                Text(group.name).lineLimit(1).truncationMode(.tail)
+                    .modifier(CappedWidth(max: DesignTokens.Size.tabMaxWidth))
+                    .help(group.name)
                 if group.folded { Text("\(tabs.count)") }
                 Image(systemName: group.folded ? "chevron.right" : "chevron.down").font(.caption2)
             }
             .padding(DesignTokens.Spacing.s)
-            .foregroundStyle(group.color.tint)
+            .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(group.name), \(CountText.count(tabs.count, singular: "tab", plural: "tabs")), \(group.folded ? "folded" : "expanded")")
@@ -147,13 +151,18 @@ struct ChatTabsView: View {
             Button(group.folded ? "Expand group" : "Fold group") {
                 _ = actions.group(.fold(group.id, !group.folded))
             }
-            Button("Delete group") { _ = actions.group(.delete(group.id)) }
+            Button("Delete group", role: .destructive) { _ = actions.group(.delete(group.id)) }
         }
     }
 
     @ViewBuilder private func draggableTab(_ tab: ChatTab) -> some View {
+        let movable = tabs.filter { $0.pending == nil }
+        let index = movable.firstIndex { $0.id == tab.id }
+        let previous = index.flatMap { $0 > 0 ? movable[$0 - 1].id : nil }
+        let next = index.flatMap { $0 + 1 < movable.count ? movable[$0 + 1].id : nil }
         let view = ChatTabView(tab: tab, selected: tab.id == selectedID,
-                               actions: actions, groups: groups, newGroup: { groupEditor = .init(tab: $0) })
+                               actions: actions, groups: groups, previous: previous, next: next,
+                               newGroup: { groupEditor = .init(tab: $0) })
         if tab.pending == nil {
             view.draggable(tab.id)
                 .dropDestination(for: String.self) { keys, _ in
@@ -171,6 +180,8 @@ private struct ChatTabView: View {
     let selected: Bool
     let actions: ChatTabActions
     let groups: [TabGroup]
+    let previous: String?
+    let next: String?
     let newGroup: (String) -> Void
     @State private var hovered = false
 
@@ -246,6 +257,10 @@ private struct ChatTabView: View {
                 Button("Switch model…") { actions.switchModel(tab.id) }
                     .disabled(actions.switchDisabledReason(tab.id) != nil)
                     .help(actions.switchDisabledReason(tab.id) ?? "Switch model")
+                Button("Move Left") { if let previous { _ = actions.move(tab.id, previous) } }
+                    .disabled(previous == nil)
+                Button("Move Right") { if let next { _ = actions.move(tab.id, next) } }
+                    .disabled(next == nil)
                 Menu("Move to group") {
                     ForEach(groups) { group in
                         Button(group.name) { _ = actions.group(.add(tab.id, to: group.id)) }
@@ -261,7 +276,7 @@ private struct ChatTabView: View {
                 Button("Open in Terminal") { actions.openTerminal(tab.id) }
                 Divider()
                 Button("Close tab") { actions.hide(tab.id) }
-                Button("End chat…") { actions.end(tab.id) }.disabled(!tab.canClose)
+                Button("End chat…", role: .destructive) { actions.end(tab.id) }.disabled(!tab.canClose)
                 Button("Archive chat") { actions.archive(tab.id) }
             }
         }
