@@ -754,6 +754,9 @@ private struct SessionsWindow: View {
                 if let projectAction {
                     DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
                 }
+                if checkingWorkspaces.contains(where: { workspaceActions[$0] == nil }) {
+                    DelayedProgress("Checking workspace…").padding(DesignTokens.Spacing.s)
+                }
                 ForEach(WorkspaceAction.allCases.filter { workspaceActions.values.contains($0) }) { action in
                     DelayedProgress(action.progress).padding(DesignTokens.Spacing.s)
                 }
