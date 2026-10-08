@@ -19,6 +19,10 @@ public struct ChatArchives {
         if succeeded { confirmed.formUnion(ids) }
     }
 
+    public mutating func restored(_ ids: [SwarmSessionID]) {
+        confirmed.subtract(ids)
+    }
+
     /// Call only with discovery started after the last archive completed.
     public mutating func reconcile(_ source: SessionsTree) {
         let present = source.projects.flatMap(\.workspaces).flatMap(\.sessions)

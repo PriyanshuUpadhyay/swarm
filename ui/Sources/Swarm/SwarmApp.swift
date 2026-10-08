@@ -519,6 +519,24 @@ final class SessionsTreeModel {
         }
     }
 
+    func recentlyClosed() async throws -> [RecentlyClosedChat] {
+        let sessions = try await bus.archivedSessions()
+        let chats = await discovery.archivedChats(sessions)
+        return RecentlyClosed.list(chats: chats, navigation: navigation, workspaces: workspaces,
+                                   now: Int(Date().timeIntervalSince1970))
+    }
+
+    func reopen(_ chat: SwarmProjectSession) async throws {
+        try await RecentlyClosed.restore(chat, bus: bus)
+        archives.restored(chat.sessions.map(\.id))
+        refreshRevision += 1
+        try await refresh()
+        guard tree.session(chat.id) != nil else {
+            throw SwarmProfileError.failed("The chat was restored, but it is not in the workspace list.")
+        }
+        select(chat.id)
+    }
+
     func endConfirmation(_ id: SwarmSessionID) async throws -> SwarmSessionCloser.Confirmation? {
         guard let session = tree.session(id) else { return nil }
         return try await SwarmSessionCloser.confirmation(session: session, bus: bus)
@@ -606,6 +624,7 @@ private struct SessionsWindow: View {
     /// When each palette action last ran, in this window only.
     @State private var recentActions: [AppKey: Int] = [:]
     @State private var showingArchive = false
+    @State private var closedChats: [RecentlyClosedChat]?
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
@@ -818,6 +837,21 @@ private struct SessionsWindow: View {
                 create: { try await model.createTask(named: $0, in: project) },
                 onCreated: { startChat(in: $0) }
             )
+        }
+        .sheet(isPresented: Binding(
+            get: { closedChats != nil }, set: { if !$0 { closedChats = nil } }
+        )) {
+            RecentlyClosedSheet(chats: closedChats ?? []) { chat in
+                do {
+                    try await model.reopen(chat)
+                    ownerMoves += 1
+                    documentVisible = false
+                    closedChats = nil
+                } catch {
+                    closedChats = nil
+                    showAlert(.error(error.localizedDescription))
+                }
+            }
         }
         .sheet(item: $switchTarget) { target in
             let row = target.row
@@ -1280,6 +1314,12 @@ private struct SessionsWindow: View {
         WindowKeyActions(
             newChat: model.selectedWorkspace?.workspace.canStartChat == false
                 ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
+            recentlyClosed: {
+                Task {
+                    do { closedChats = try await model.recentlyClosed() }
+                    catch { showAlert(.error(error.localizedDescription)) }
+                }
+            },
             newWorkspace: newWorkspaceInCurrentProject,
             newProject: { createSheet = .addProject },
             stepWorkspace: { delta in

@@ -186,6 +186,7 @@ extension AppKey {
     public func title(sidebarViews: [String]) -> String {
         switch self {
         case .newChat: "New Chat"
+        case .recentlyClosed: "Recently closed…"
         case .newWorkspace: "New Workspace"
         case .newProject: "New Project…"
         case .nextWorkspace: "Next Workspace"

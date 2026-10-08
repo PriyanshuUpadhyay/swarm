@@ -49,6 +49,7 @@ extension KeyChord {
 /// Window actions for the menu. A window publishes them with `focusedSceneValue`.
 struct WindowKeyActions {
     var newChat: (() -> Void)?
+    var recentlyClosed: () -> Void
     var newWorkspace: () -> Void
     var newProject: () -> Void
     var stepWorkspace: (Int) -> Void
@@ -96,6 +97,7 @@ struct AppKeyTarget {
         case .newChat:
             let repeated = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
             if !repeated { window?.newChat?() }
+        case .recentlyClosed: window?.recentlyClosed()
         case .newWorkspace: window?.newWorkspace()
         case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
@@ -139,6 +141,7 @@ struct AppKeyCommands: Commands {
             item("New Workspace", .newWorkspace)
             item("New Chat", .newChat)
             item("New Project…", .newProject)
+            item("Recently closed…", .recentlyClosed)
         }
         CommandGroup(after: .textEditing) {
             Divider()

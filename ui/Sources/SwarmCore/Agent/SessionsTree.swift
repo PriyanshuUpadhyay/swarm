@@ -11,12 +11,7 @@ public struct SessionRowPresentation: Sendable, Hashable {
 
     public static func make(_ row: ChatRow, now: Int) -> SessionRowPresentation {
         let state = state(of: row.session)
-        let age = max(0, now - row.session.lastActivity)
-        let ageText: String
-        if age < 60 { ageText = "\(age)s" }
-        else if age < 3_600 { ageText = "\(age / 60)m" }
-        else if age < 86_400 { ageText = "\(age / 3_600)h" }
-        else { ageText = "\(age / 86_400)d" }
+        let ageText = ageText(since: row.session.lastActivity, now: now)
 
         let title = ChatTitle.title(row.session)
         let status = state == .ended ? "ended" : row.session.provider ?? "no chair"
@@ -24,6 +19,14 @@ public struct SessionRowPresentation: Sendable, Hashable {
             title: title, caption: "\(row.workspace) · \(status)", age: ageText,
             state: state, provider: row.session.provider
         )
+    }
+
+    public static func ageText(since timestamp: Int, now: Int) -> String {
+        let age = max(0, now - timestamp)
+        if age < 60 { return "\(age)s" }
+        if age < 3_600 { return "\(age / 60)m" }
+        if age < 86_400 { return "\(age / 3_600)h" }
+        return "\(age / 86_400)d"
     }
 
     fileprivate static func state(of row: SwarmProjectSession) -> State {

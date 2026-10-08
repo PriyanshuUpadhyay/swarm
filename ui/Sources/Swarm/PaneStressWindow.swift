@@ -41,6 +41,7 @@ struct PaneStressWindow: View {
         // The stress window has no chats or sidebar; these record that the menu reached them.
         .focusedSceneValue(\.windowKeyActions, WindowKeyActions(
             newChat: { lastWindowAction = "newChat" },
+            recentlyClosed: { lastWindowAction = "recentlyClosed" },
             newWorkspace: { lastWindowAction = "newWorkspace" },
             newProject: { lastWindowAction = "newProject" },
             stepWorkspace: { lastWindowAction = "stepWorkspace(\($0))" },

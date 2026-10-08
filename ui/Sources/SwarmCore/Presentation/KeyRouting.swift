@@ -61,7 +61,7 @@ public enum FocusDirection: Sendable, Hashable, CaseIterable {
 
 /// Every app action that has a key (docs/decisions/0023). The menu takes its keys from `chord`.
 public enum AppKey: Sendable, Hashable {
-    case newWorkspace, newChat, newProject, nextWorkspace, previousWorkspace
+    case newWorkspace, newChat, newProject, recentlyClosed, nextWorkspace, previousWorkspace
     case selectTab(Int), nextTab, previousTab
     case moveFocus(FocusDirection), zoom, focusComposer
     case toggleSidebar, moveSidebar, sidebarView(Int), showChanges
@@ -70,6 +70,7 @@ public enum AppKey: Sendable, Hashable {
     public static let table: [(AppKey, KeyChord)] = [
         (.newWorkspace, KeyChord("n", .command)),
         (.newChat, KeyChord("t", .command)),
+        (.recentlyClosed, KeyChord("t", [.shift, .command])),
         (.newProject, KeyChord("n", [.command, .shift])),
         (.nextWorkspace, KeyChord(.down, [.control, .command])),
         (.previousWorkspace, KeyChord(.up, [.control, .command])),

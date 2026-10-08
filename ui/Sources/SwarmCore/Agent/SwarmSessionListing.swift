@@ -340,6 +340,12 @@ public actor SwarmSessionDiscovery {
         }
     }
 
+    public func archivedChats(_ sessions: [SwarmSession]) -> [SwarmProjectSession] {
+        SwarmSessionListing.chatGroups(sessions.filter { $0.archivedAt != nil }).map { group in
+            SwarmProjectSession(sessions: group, title: title(for: group[0]))
+        }
+    }
+
     public func composerCommandSource(
         for session: SwarmSession, provider: String?
     ) async -> ComposerCommandSource {

@@ -8,6 +8,7 @@ struct KeyRoutingTests {
         let appKeys: [(KeyChord, AppKey)] = [
             (KeyChord("n", .command), .newWorkspace),
             (KeyChord("t", .command), .newChat),
+            (KeyChord("t", [.shift, .command]), .recentlyClosed),
             (KeyChord("n", [.command, .shift]), .newProject),
             (KeyChord(.down, [.control, .command]), .nextWorkspace),
             (KeyChord(.up, [.control, .command]), .previousWorkspace),
