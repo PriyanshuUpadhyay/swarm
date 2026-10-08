@@ -586,6 +586,7 @@ private struct SessionsWindow: View {
     /// The PATH swarm that the launch check names, until its alert closes. Only the first window
     /// of an app run gets one (ADR 0048).
     @State private var pathSwarmDrift: PathSwarmDrift?
+    @State private var heldDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: RenameTarget?
     @State private var removeProjectTarget: ProjectNode?
@@ -702,8 +703,9 @@ private struct SessionsWindow: View {
         }
         .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showModelNotice() }
         .onChange(of: model.saveNotice) { _, _ in showModelNotice() }
-        .onChange(of: actionError) { _, message in
-            if message == nil { showModelNotice() }
+        .onChange(of: alertIsOpen) { _, open in
+            // An alert asked for in the tick another one closes is dropped, so the next one waits a hop.
+            if !open { Task { showNextAlert() } }
         }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
@@ -741,7 +743,7 @@ private struct SessionsWindow: View {
             guard !SwarmOpenScript.isActive else { return }
             if let drift = await PathSwarmNotice.shared.ask(check: { await PathSwarmCheck.current(dismissed: $0) }) {
                 // The setup sheet waits until this alert closes, so the two never show together.
-                pathSwarmDrift = drift
+                if alertIsOpen { heldDrift = drift } else { pathSwarmDrift = drift }
                 return
             }
             await askForSetup()
@@ -770,7 +772,7 @@ private struct SessionsWindow: View {
         } message: { drift in
             Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         }
-        .sheet(isPresented: $showingHooksSetup, onDismiss: showModelNotice) {
+        .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
                 loadPlan: { try await SwarmCLIBus().setupPlan($0) },
                 setUp: { digest, choice in
@@ -794,7 +796,6 @@ private struct SessionsWindow: View {
             let action = createAction
             createAction = nil
             action?()
-            showModelNotice()
         }) { sheet in
             createSheetView(sheet)
         }
@@ -815,17 +816,17 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: Binding(
             get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
-        ), onDismiss: showModelNotice) {
+        )) {
             renameWorkspaceSheet
         }
-        .sheet(item: $newTaskProject, onDismiss: showModelNotice) { project in
+        .sheet(item: $newTaskProject) { project in
             NewTaskSheet(
                 project: project,
                 create: { try await model.createTask(named: $0, in: project) },
                 onCreated: { startChat(in: $0) }
             )
         }
-        .sheet(item: $switchTarget, onDismiss: showModelNotice) { target in
+        .sheet(item: $switchTarget) { target in
             let row = target.row
             SwitchModelSheet(
                 directory: row.session.cwd, currentProvider: row.provider, currentModel: target.model,
@@ -840,9 +841,13 @@ private struct SessionsWindow: View {
             presenting: removeProjectTarget
         ) { project in
             Button("Remove Project", role: .destructive) {
-                do { try model.removeProject(project) }
-                catch { actionError = "Could not remove the project. \(error.localizedDescription)" }
                 removeProjectTarget = nil
+                do { try model.removeProject(project) }
+                catch {
+                    let message = "Could not remove the project. \(error.localizedDescription)"
+                    // This alert is still closing, so the error waits a hop (see `alertIsOpen`).
+                    Task { actionError = message }
+                }
             }
             Button("Cancel", role: .cancel) { removeProjectTarget = nil }
         } message: { project in
@@ -876,14 +881,25 @@ private struct SessionsWindow: View {
         }
     }
 
-    private var sheetIsOpen: Bool {
-        showingHooksSetup || createSheet != nil || renameTarget != nil || newTaskProject != nil || switchTarget != nil
+    /// SwiftUI drops an alert asked for while a different alert is up, and leaves its state set
+    /// with nothing on screen. A sheet does not drop one: the alert waits for the sheet to close.
+    private var alertIsOpen: Bool {
+        actionError != nil || pathSwarmDrift != nil || gitInitRequest != nil
+            || removeProjectTarget != nil || pruneWorktreeTarget != nil
     }
 
-    /// One alert shows at a time, so a notice waits until the owner closes the one before. An alert
-    /// asked for while a sheet is up can be dropped, so a notice waits for each sheet's `onDismiss`.
+    private func showNextAlert() {
+        guard !alertIsOpen else { return }
+        if let drift = heldDrift {
+            heldDrift = nil
+            pathSwarmDrift = drift
+        } else {
+            showModelNotice()
+        }
+    }
+
     private func showModelNotice() {
-        guard actionError == nil, !sheetIsOpen else { return }
+        guard !alertIsOpen else { return }
         if let notice = model.saveNotice {
             actionError = notice
             model.saveNotice = nil
