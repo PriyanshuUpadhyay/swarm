@@ -105,6 +105,44 @@ struct GitTaskWorktreeTests {
         #expect(try await fixture.git(["rev-parse", "HEAD"], at: path) == fixture.baseCommit)
     }
 
+    @Test("A branch keeps its name beside a tag of the same name")
+    func branchAndTag() async throws {
+        let fixture = try await WorktreeFixture()
+        defer { fixture.remove() }
+        try await fixture.git(["branch", "v1"])
+        try await fixture.git(["tag", "v1"])
+        let references = try await GitTaskWorktree.references(in: fixture.common)
+        #expect(references.local.contains("v1"))
+        #expect(!references.local.contains("heads/v1"))
+        let path = try await fixture.create("Release", start: .existingBranch("v1"))
+        #expect(try await fixture.git(["branch", "--show-current"], at: path) == "v1")
+    }
+
+    @Test("The main worktree holds main and the first free branch is selected")
+    func heldBranches() async throws {
+        let fixture = try await WorktreeFixture()
+        defer { fixture.remove() }
+        try await fixture.git(["branch", "fix/free"])
+        let references = try await GitTaskWorktree.references(in: fixture.common)
+        #expect(references.held == ["main"])
+        #expect(references.availableBranches.first == "fix/free")
+        #expect(references.bases.first == "main")
+        #expect(!NewWorkspaceForm.canCreate(
+            WorkspaceRequest(name: "Held", start: .existingBranch("main"), prefix: "swarm/"), references: references
+        ))
+    }
+
+    @Test("The raw Git check ends a sleeping command at its deadline")
+    func rawGitTimeout() async throws {
+        let fixture = try await WorktreeFixture()
+        defer { fixture.remove() }
+        await #expect(throws: ShellFailure.timedOut(command: try #require(Shell.which("git")))) {
+            try await Git.checkRaw(["-c", "alias.wait=!sleep 2", "wait"], in: fixture.project.path, timeout: .milliseconds(100))
+        }
+        #expect(GitTaskWorktreeError.pullRequestFetchTimedOut(7).localizedDescription
+            == "Fetching pull request #7 from origin took longer than 60 s.")
+    }
+
     @Test("A new branch uses the selected base and an empty prefix")
     func selectedBase() async throws {
         let fixture = try await WorktreeFixture()

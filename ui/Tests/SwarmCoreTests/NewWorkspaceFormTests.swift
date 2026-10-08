@@ -39,6 +39,15 @@ struct NewWorkspaceFormTests {
         }
     }
 
+    @Test("Held local branches and their origin branches cannot be selected")
+    func heldBranches() {
+        let held = WorkspaceReferences(defaultBranch: "main", local: ["main", "fix/local"], remote: ["origin/main"], held: ["main"])
+        #expect(held.availableBranches == ["fix/local"])
+        #expect(!NewWorkspaceForm.canCreate(request(.existingBranch("main")), references: held))
+        #expect(!NewWorkspaceForm.canCreate(request(.existingBranch("origin/main")), references: held))
+        #expect(NewWorkspaceForm.canCreate(request(.newBranch(base: "main")), references: held))
+    }
+
     private func request(_ start: WorkspaceStart) -> WorkspaceRequest {
         WorkspaceRequest(name: "Fix sidebar", start: start, prefix: "swarm/")
     }

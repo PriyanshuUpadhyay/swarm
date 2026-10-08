@@ -108,7 +108,7 @@ struct NewWorkspaceSheet: View {
             do {
                 let loaded = try await loadReferences()
                 base = loaded.defaultBranch == nil ? "" : loaded.bases.first ?? ""
-                existingBranch = (loaded.local + loaded.remote).first ?? ""
+                existingBranch = loaded.availableBranches.first ?? ""
                 references = loaded
             } catch {
                 self.error = "Could not load branches. \(error.localizedDescription)"
@@ -136,10 +136,10 @@ struct NewWorkspaceSheet: View {
                     HStack(spacing: DesignTokens.Spacing.s) {
                         modeButton("Existing branch", mode: .existingBranch)
                         Picker("Existing branch", selection: $existingBranch) {
-                            ForEach(references.local + references.remote, id: \.self) { Text(verbatim: $0).tag($0) }
+                            ForEach(references.availableBranches, id: \.self) { Text(verbatim: $0).tag($0) }
                         }
                         .labelsHidden()
-                        .disabled(mode != .existingBranch || (references.local + references.remote).isEmpty)
+                        .disabled(mode != .existingBranch || references.availableBranches.isEmpty)
                     }
                     HStack(spacing: DesignTokens.Spacing.s) {
                         modeButton("Pull request", mode: .pullRequest)

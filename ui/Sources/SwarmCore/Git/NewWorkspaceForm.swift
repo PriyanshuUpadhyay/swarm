@@ -12,7 +12,7 @@ public enum NewWorkspaceForm {
         case .newBranch(let base):
             return references.defaultBranch == nil ? base.isEmpty : references.bases.contains(base)
         case .existingBranch(let branch):
-            return references.defaultBranch != nil && (references.local + references.remote).contains(branch)
+            return references.defaultBranch != nil && references.availableBranches.contains(branch)
         case .pullRequest(let number):
             return references.defaultBranch != nil && number > 0
         }

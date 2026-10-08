@@ -35,8 +35,10 @@ public enum Git {
     /// A broken repository, a base branch that no longer exists or a contended `index.lock` all
     /// exit non-zero with empty stdout. Treating that as "no changes" shows a clean worktree to
     /// someone who has plenty of work in it, which is the worst possible lie to tell here.
-    static func checkRaw(_ arguments: [String], in directory: String, env: [String: String] = [:]) async throws -> GitOutput {
-        let result = try await runRaw(arguments, in: directory, env: env)
+    static func checkRaw(
+        _ arguments: [String], in directory: String, env: [String: String] = [:], timeout: Duration? = nil
+    ) async throws -> GitOutput {
+        let result = try await runRaw(arguments, in: directory, env: env, timeout: timeout)
         guard result.ok else {
             throw error(arguments, result.status, result.stderr, String(decoding: result.stdout, as: UTF8.self))
         }
