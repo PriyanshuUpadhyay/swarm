@@ -171,9 +171,7 @@ struct ChildColumnView: View {
             pullBack: SwarmSessionInteraction.canPullBack(provider: agent.provider, adapter: session.adapter)
                 ? { [model, session, agent] in try await model.pullBack(agent.id, in: session) }
                 : nil,
-            sendDisabledReason: agent.status == .ended
-                ? "This agent has ended."
-                : SwarmSessionInteraction.questionReason(status: agent.status, target: .agent),
+            sendDisabledReason: SwarmSessionInteraction.questionReason(status: agent.status, target: .agent),
             placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(
                 provider: agent.provider,
