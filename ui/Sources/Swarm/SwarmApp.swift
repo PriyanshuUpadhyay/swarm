@@ -702,7 +702,6 @@ private struct SessionsWindow: View {
         }
         .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in showModelNotice() }
         .onChange(of: model.saveNotice) { _, _ in showModelNotice() }
-        .onChange(of: sheetIsOpen) { _, open in if !open { showModelNotice() } }
         .onChange(of: actionError) { _, message in
             if message == nil { showModelNotice() }
         }
@@ -771,7 +770,7 @@ private struct SessionsWindow: View {
         } message: { drift in
             Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
         }
-        .sheet(isPresented: $showingHooksSetup) {
+        .sheet(isPresented: $showingHooksSetup, onDismiss: showModelNotice) {
             HooksSetupSheet(
                 loadPlan: { try await SwarmCLIBus().setupPlan($0) },
                 setUp: { digest, choice in
@@ -795,6 +794,7 @@ private struct SessionsWindow: View {
             let action = createAction
             createAction = nil
             action?()
+            showModelNotice()
         }) { sheet in
             createSheetView(sheet)
         }
@@ -815,17 +815,17 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: Binding(
             get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
-        )) {
+        ), onDismiss: showModelNotice) {
             renameWorkspaceSheet
         }
-        .sheet(item: $newTaskProject) { project in
+        .sheet(item: $newTaskProject, onDismiss: showModelNotice) { project in
             NewTaskSheet(
                 project: project,
                 create: { try await model.createTask(named: $0, in: project) },
                 onCreated: { startChat(in: $0) }
             )
         }
-        .sheet(item: $switchTarget) { target in
+        .sheet(item: $switchTarget, onDismiss: showModelNotice) { target in
             let row = target.row
             SwitchModelSheet(
                 directory: row.session.cwd, currentProvider: row.provider, currentModel: target.model,
@@ -881,7 +881,7 @@ private struct SessionsWindow: View {
     }
 
     /// One alert shows at a time, so a notice waits until the owner closes the one before. An alert
-    /// asked for while a sheet is up can be dropped, so a notice also waits for the sheet to close.
+    /// asked for while a sheet is up can be dropped, so a notice waits for each sheet's `onDismiss`.
     private func showModelNotice() {
         guard actionError == nil, !sheetIsOpen else { return }
         if let notice = model.saveNotice {
