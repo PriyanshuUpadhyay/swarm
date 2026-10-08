@@ -651,6 +651,7 @@ private struct SessionsWindow: View {
     @State private var sidebarFocus: SidebarSelection?
     @State private var newTaskProject: ProjectNode?
     @State private var switchTarget: SwitchTarget?
+    @State private var pendingModelSwitch: SwarmSessionID?
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
     /// chat only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
@@ -662,6 +663,8 @@ private struct SessionsWindow: View {
     @State private var recentActions = PaletteRecentActions.load()
     @State private var showingArchive = false
     @State private var closedChats: RecentlyClosed.Listing?
+    @State private var showingClosedChats = false
+    @State private var deletingWorkspaces: Set<String> = []
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
@@ -738,6 +741,9 @@ private struct SessionsWindow: View {
                 if let projectAction {
                     DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
                 }
+                if !deletingWorkspaces.isEmpty {
+                    DelayedProgress("Deleting workspace…").padding(DesignTokens.Spacing.s)
+                }
                 if !model.closing.isEmpty {
                     DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
                 }
@@ -796,6 +802,7 @@ private struct SessionsWindow: View {
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
+            if pendingModelSwitch != id { pendingModelSwitch = nil }
             NSApp.keyWindow?.makeFirstResponder(nil)
             panes.stop(keepingSession: id)
             if let target = sidebarFocus, target.chatID == id,
@@ -805,6 +812,9 @@ private struct SessionsWindow: View {
                 sidebarFocus = nil
             }
             documentVisible = false
+        }
+        .onChange(of: pendingModelSwitchReady) { _, ready in
+            if ready { finishModelSwitchRequest() }
         }
         .background(WindowFrameRestorer())
         .task {
@@ -877,17 +887,27 @@ private struct SessionsWindow: View {
                 onCreated: { startChat(in: $0) }
             )
         }
-        .sheet(isPresented: Binding(
-            get: { closedChats != nil }, set: { if !$0 { closedChats = nil } }
-        )) {
-            RecentlyClosedSheet(chats: closedChats?.chats ?? [], notice: closedChats?.notice) { chat in
+        .sheet(isPresented: $showingClosedChats) {
+            RecentlyClosedSheet(chats: closedChats?.chats ?? [], notice: closedChats?.notice,
+                                loading: closedChats == nil) { chat in
                 do {
                     try await model.reopen(chat)
                     ownerMoves += 1
                     documentVisible = false
-                    closedChats = nil
+                    showingClosedChats = false
                 } catch {
-                    closedChats = nil
+                    showingClosedChats = false
+                    showAlert(.error("Could not reopen the chat. \(error.localizedDescription)"))
+                }
+            }
+            .task {
+                do {
+                    let listing = try await model.recentlyClosed()
+                    guard !Task.isCancelled else { return }
+                    closedChats = listing
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    showingClosedChats = false
                     showAlert(.error(error.localizedDescription))
                 }
             }
@@ -911,6 +931,8 @@ private struct SessionsWindow: View {
     }
 
     private func showAlert(_ alert: WindowAlert) {
+        guard shownAlert?.hasSameTarget(as: alert) != true,
+              !pendingAlerts.contains(where: { $0.hasSameTarget(as: alert) }) else { return }
         pendingAlerts.append(alert)
     }
 
@@ -975,12 +997,7 @@ private struct SessionsWindow: View {
             Button("Archive Workspace", role: .destructive) { performWorkspaceArchive(entry) }
             Button("Cancel", role: .cancel) {}
         case .deleteWorkspace(let entry, _, _):
-            Button("Delete Workspace", role: .destructive) {
-                Task {
-                    do { try await model.deleteWorkspace(entry) }
-                    catch { showAlert(.error(error.localizedDescription)) }
-                }
-            }
+            Button("Delete Workspace", role: .destructive) { performWorkspaceDelete(entry) }
             Button("Cancel", role: .cancel) {}
         case .endChat(let id, _, _, let archive):
             Button(archive ? "Archive Chat" : "End Chat", role: .destructive) {
@@ -1399,10 +1416,9 @@ private struct SessionsWindow: View {
             newChat: model.selectedWorkspace.map({ model.navigation.canStartChat(in: $0) }) == false
                 ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
             recentlyClosed: {
-                Task {
-                    do { closedChats = try await model.recentlyClosed() }
-                    catch { showAlert(.error(error.localizedDescription)) }
-                }
+                guard !showingClosedChats else { return }
+                closedChats = nil
+                showingClosedChats = true
             },
             newWorkspace: newWorkspaceInCurrentProject,
             newProject: { createSheet = .addProject },
@@ -1677,17 +1693,38 @@ private struct SessionsWindow: View {
         let snapshot = detail?.snapshot ?? .waiting
         let readOnly = model.workspace(containingChat: row.id)
             .flatMap { model.navigation.readOnlyReason(in: $0.id) }
+        guard let detail, detail.hasLoaded else {
+            return (current, ModelSwitchChoice.tabDisabledReason(
+                readOnlyReason: readOnly, chat: row, agents: model.tree.agentsBySession[row.id] ?? []
+            ))
+        }
         return (current, ModelSwitchChoice.disabledReason(
             readOnlyReason: readOnly,
             waitingForModel: current == nil && (snapshot == .waiting || snapshot == .loading),
-            isSending: detail?.isSending(sessionID: row.id.rawValue) ?? false,
-            isRunning: row.isRunning == true && (detail.map { ChairTurn.isActive($0.rows) } ?? true)
+            isSending: detail.isSending(sessionID: row.id.rawValue),
+            isRunning: row.isRunning == true && ChairTurn.isActive(detail.rows)
         ))
     }
 
     private func requestModelSwitch(_ id: SwarmSessionID) {
         let state = modelSwitchState(id)
-        guard state.reason == nil, let row = model.tree.session(id) else { return }
+        if let reason = state.reason { showAlert(.error(reason)); return }
+        guard let row = model.tree.session(id) else { return }
+        showTab(ChatTitle.key(row))
+        pendingModelSwitch = row.id
+    }
+
+    private var pendingModelSwitchReady: Bool {
+        guard let id = pendingModelSwitch else { return false }
+        return model.detailModels.entries.first { $0.id == id }?.model.hasLoaded == true
+    }
+
+    private func finishModelSwitchRequest() {
+        guard let id = pendingModelSwitch else { return }
+        pendingModelSwitch = nil
+        let state = modelSwitchState(id)
+        if let reason = state.reason { showAlert(.error(reason)); return }
+        guard let row = model.tree.session(id) else { return }
         switchTarget = SwitchTarget(row: row, model: state.model)
     }
 
@@ -1739,12 +1776,23 @@ private struct SessionsWindow: View {
     }
 
     private func requestWorkspaceDelete(_ entry: WorkspaceEntry) {
+        guard !deletingWorkspaces.contains(entry.id) else { return }
         Task {
             do {
                 let ignored = try await Git.ignoredRemovalItems(worktree: entry.id)
                 let confirmation = try await model.workspaceEndConfirmation(entry)
+                guard !deletingWorkspaces.contains(entry.id) else { return }
                 showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation))
             } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performWorkspaceDelete(_ entry: WorkspaceEntry) {
+        guard deletingWorkspaces.insert(entry.id).inserted else { return }
+        Task {
+            defer { deletingWorkspaces.remove(entry.id) }
+            do { try await model.deleteWorkspace(entry) }
+            catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
@@ -1942,6 +1990,23 @@ private enum WindowAlert {
     case closeAgent(SwarmAgentID, SwarmSession)
     case error(String)
 
+    func hasSameTarget(as other: Self) -> Bool {
+        switch (self, other) {
+        case (.pathDrift(let left), .pathDrift(let right)): left.key == right.key
+        case (.gitInit(let left), .gitInit(let right)): left.path == right.path && left.reason == right.reason
+        case (.removeProject(let left), .removeProject(let right)): left.path == right.path
+        case (.prune(let left, _), .prune(let right, _)): left.id == right.id
+        case (.archiveWorkspace(let left, _), .archiveWorkspace(let right, _)): left.id == right.id
+        case (.deleteWorkspace(let left, _, _), .deleteWorkspace(let right, _, _)): left.id == right.id
+        case (.endChat(let left, _, _, let leftArchive), .endChat(let right, _, _, let rightArchive)):
+            left == right && leftArchive == rightArchive
+        case (.closeAgent(let left, let leftSession), .closeAgent(let right, let rightSession)):
+            left == right && leftSession.id == rightSession.id
+        case (.error(let left), .error(let right)): left == right
+        default: false
+        }
+    }
+
     var title: String {
         switch self {
         case .pathDrift: "Terminal runs another swarm"
@@ -1959,7 +2024,7 @@ private enum WindowAlert {
 
 /// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
 private struct GitInitRequest {
-    enum Reason { case importFolder(URL), newWorkspace }
+    enum Reason: Equatable { case importFolder(URL), newWorkspace }
     let path: String
     let reason: Reason
     var name: String { URL(fileURLWithPath: path).lastPathComponent }

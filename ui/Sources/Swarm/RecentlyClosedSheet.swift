@@ -4,6 +4,7 @@ import SwarmCore
 struct RecentlyClosedSheet: View {
     let chats: [RecentlyClosedChat]
     let notice: String?
+    let loading: Bool
     let restore: (SwarmProjectSession) async -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selection: SwarmSessionID?
@@ -12,7 +13,9 @@ struct RecentlyClosedSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             Text("Recently closed").font(.title2)
-            if chats.isEmpty {
+            if loading {
+                ProgressView("Loading closed chats…")
+            } else if chats.isEmpty {
                 Text("No archived chats").foregroundStyle(.secondary)
             } else {
                 List(chats, selection: $selection) { row in
@@ -38,12 +41,14 @@ struct RecentlyClosedSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Open") { restoreSelected() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(selection == nil || restoring)
+                    .disabled(loading || selection == nil || restoring)
             }
         }
         .padding(DesignTokens.Spacing.l)
         .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
-        .onAppear { selection = chats.first?.id }
+        .onChange(of: chats.map(\.id), initial: true) {
+            if !chats.contains(where: { $0.id == selection }) { selection = chats.first?.id }
+        }
     }
 
     private func restoreSelected() {

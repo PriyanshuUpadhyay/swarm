@@ -14,6 +14,7 @@ final class SessionDetailModel {
     var usage = ChatUsage()
     var currentModel: String?
     var snapshot: ChairTranscriptSnapshot
+    private(set) var hasLoaded = false
     private(set) var transcriptRevision = 0
     var draft = ""
     private(set) var queued: [ComposerQueuedRow] = []
@@ -76,6 +77,7 @@ final class SessionDetailModel {
             let pending = await transcript.queuedMessages
             await updateHistoryAvailability(row: row)
             compose(row: row)
+            hasLoaded = true
             sentMessages.confirm(by: rows)
             let nextQueued = ComposerQueuedRow.queued(pending) + sentMessages.rows
             if queued != nextQueued { queued = nextQueued }
@@ -169,6 +171,7 @@ final class SessionDetailModel {
         transcripts.removeAll()
         snapshots.removeAll()
         snapshot = .loading
+        hasLoaded = false
     }
 
     func setDraft(_ value: String, sessionID: String) {
@@ -225,6 +228,7 @@ final class SessionDetailModel {
         guard activeSessionID != sessionID else { return }
         if let activeSessionID { drafts.save(draft, for: activeSessionID) }
         activeSessionID = sessionID
+        hasLoaded = false
         currentModel = nil
         usage = ChatUsage()
         queued = []
