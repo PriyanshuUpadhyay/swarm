@@ -332,6 +332,16 @@ private struct PaneView<Content: View>: View {
         .foregroundStyle(focused ? .primary : .secondary)
         .background(Color(nsColor: .windowBackgroundColor))
         .contentShape(Rectangle())
+        // One header focus target gives the keyboard access to its menu.
+        .focusable()
+        .contextMenu {
+            Button("Stop", action: onStop)
+                .disabled(readOnlyReason != nil || !cell.status.isMidTurn)
+            Button("Close agent…", action: onClose)
+                .disabled(readOnlyReason != nil || cell.ended)
+            Button("Copy id") { AppClipboard.copy(cell.id) }
+            Button("Copy attach command") { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) }
+        }
         .onTapGesture(perform: onFocus)
     }
 }
