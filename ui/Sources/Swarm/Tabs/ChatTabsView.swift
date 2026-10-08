@@ -6,6 +6,7 @@ struct ChatTabActions {
     var newChat: () -> Void
     var close: (String) -> Void
     var hide: (String) -> Void
+    var move: (String, String) -> Bool
     var archive: (String) -> Void
     var rename: (String) -> Void
 }
@@ -18,6 +19,12 @@ struct ChatTabsView: View {
     let selectedID: String
     let canStartChat: Bool
     let actions: ChatTabActions
+    @State private var trailingEdges: [String: Double] = [:]
+    @State private var viewportWidth: Double = 0
+
+    private var overflow: [ChatTab] {
+        ChatTab.overflow(tabs, trailingEdges: trailingEdges, viewportWidth: viewportWidth)
+    }
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.s) {
@@ -33,15 +40,30 @@ struct ChatTabsView: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         ForEach(tabs) { tab in
-                            ChatTabView(tab: tab, selected: tab.id == selectedID, canStartChat: canStartChat, actions: actions)
+                            draggableTab(tab)
                                 .id(tab.id)
+                                .onGeometryChange(for: Double.self) { geometry in
+                                    Double(geometry.frame(in: .named("tabViewport")).maxX)
+                                } action: { trailingEdges[tab.id] = $0 }
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
+                .coordinateSpace(name: "tabViewport")
+                .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { viewportWidth = $0 }
                 .onAppear { proxy.scrollTo(selectedID) }
                 .onChange(of: selectedID) { _, id in proxy.scrollTo(id) }
             }
+            Menu("More tabs", systemImage: "chevron.down") {
+                ForEach(overflow) { tab in
+                    Button(tab.title) { actions.select(tab.id) }
+                }
+            }
+            .labelStyle(.iconOnly)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(overflow.isEmpty)
+            .help("Tabs past the right edge")
             Button("New chat in this workspace", systemImage: "plus", action: actions.newChat)
                 .disabled(!canStartChat)
                 .labelStyle(.iconOnly)
@@ -50,6 +72,19 @@ struct ChatTabsView: View {
                 .padding(.trailing, DesignTokens.Spacing.m)
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
+    }
+
+    @ViewBuilder private func draggableTab(_ tab: ChatTab) -> some View {
+        let view = ChatTabView(tab: tab, selected: tab.id == selectedID, canStartChat: canStartChat, actions: actions)
+        if tab.pending == nil {
+            view.draggable(tab.id)
+                .dropDestination(for: String.self) { keys, _ in
+                    guard keys.count == 1, let key = keys.first else { return false }
+                    return actions.move(key, tab.id)
+                }
+        } else {
+            view
+        }
     }
 }
 

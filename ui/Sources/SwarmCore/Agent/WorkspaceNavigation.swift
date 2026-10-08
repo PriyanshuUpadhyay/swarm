@@ -286,6 +286,15 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return selected?.id
     }
 
+    /// A tab drop can move only two open keys in the same workspace.
+    @discardableResult
+    public mutating func moveTab(_ key: String, onto target: String, in workspace: String) -> Bool {
+        guard key != target, let strip = tabs[workspace], strip.open.contains(key),
+              let index = strip.open.firstIndex(of: target) else { return false }
+        tabs[workspace] = strip.moving(key, to: index)
+        return true
+    }
+
     public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {

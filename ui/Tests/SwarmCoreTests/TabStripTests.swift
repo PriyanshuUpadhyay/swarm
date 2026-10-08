@@ -183,6 +183,52 @@ struct TabStripTests {
         #expect(navigation.closeTab(oldest.id.rawValue, in: entry) == nil)
     }
 
+    @Test("Dropping reorders only tabs of that workspace and keeps selection and shortcuts stable")
+    func tabDrop() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = .init(open: ["design", "review", "ended"])
+        navigation.tabs["/other"] = .init(open: ["notes"])
+        navigation.select(entry, chat: .init("review"))
+        let movedToEnd = navigation.moveTab("design", onto: "ended", in: entry.id)
+        #expect(movedToEnd)
+        #expect(navigation.tabs[entry.id]?.open == ["review", "ended", "design"])
+        #expect(navigation.selectedChat(in: entry)?.id == .init("review"))
+        let tabs = ChatTab.tabs(entry.project.chats, strip: navigation.tabs[entry.id]!, closing: [], now: 1)
+        #expect(tabs.map(\.id) == ["review", "ended", "design"])
+        #expect(tabs[0].id == "review")
+        #expect(tabs[2].id == "design")
+        let movedToStart = navigation.moveTab("design", onto: "review", in: entry.id)
+        #expect(movedToStart)
+        #expect(navigation.tabs[entry.id]?.open == ["design", "review", "ended"])
+        let foreignSource = navigation.moveTab("notes", onto: "review", in: entry.id)
+        let foreignTarget = navigation.moveTab("design", onto: "notes", in: entry.id)
+        let missingWorkspace = navigation.moveTab("design", onto: "review", in: "/missing")
+        let sameTab = navigation.moveTab("review", onto: "review", in: entry.id)
+        let pendingSource = navigation.moveTab("pending:start", onto: "review", in: entry.id)
+        #expect(!foreignSource)
+        #expect(!foreignTarget)
+        #expect(!missingWorkspace)
+        #expect(!sameTab)
+        #expect(!pendingSource)
+        #expect(navigation.tabs["/other"]?.open == ["notes"])
+    }
+
+    @Test("The overflow menu follows strip order and excludes tabs before or at the right edge")
+    func overflow() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        let tabs = ChatTab.tabs(entry.project.chats, strip: .init(open: ["review", "ended", "design"]),
+                                closing: [], now: 1)
+        let edges: [String: Double] = ["design": 500, "ended": 250, "review": 400]
+        #expect(ChatTab.overflow(tabs, trailingEdges: edges, viewportWidth: 250).map(\.id) == ["review", "design"])
+        #expect(ChatTab.overflow(tabs, trailingEdges: ["design": 251, "ended": 250, "review": -10], viewportWidth: 250)
+            .map(\.id) == ["design"])
+        #expect(ChatTab.overflow(tabs, trailingEdges: edges, viewportWidth: 500).isEmpty)
+        #expect(ChatTab.overflow(tabs, trailingEdges: edges, viewportWidth: 0).isEmpty)
+        #expect(ChatTab.overflow(tabs, trailingEdges: [:], viewportWidth: 250).isEmpty)
+        #expect(ChatTab.overflow([], trailingEdges: edges, viewportWidth: 250).isEmpty)
+    }
+
     private func tree() -> SessionsTree {
         let chats = [("design", true), ("review", true), ("ended", false)].map { key, running in
             SwarmProjectSession(

@@ -60,4 +60,10 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
         default: provider.prefix(1).uppercased()
         }
     }
+
+    /// Only tabs crossing the right edge are in the menu; tabs left of the viewport stay out.
+    public static func overflow(_ tabs: [ChatTab], trailingEdges: [String: Double], viewportWidth: Double) -> [ChatTab] {
+        guard viewportWidth > 0 else { return [] }
+        return tabs.filter { (trailingEdges[$0.id] ?? 0) > viewportWidth }
+    }
 }
