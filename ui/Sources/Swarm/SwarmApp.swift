@@ -698,7 +698,8 @@ private struct SessionsWindow: View {
         }
         .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in scheduleNextAlert() }
         .onChange(of: model.saveNotice) { _, _ in scheduleNextAlert() }
-        // Each hop starts from an onChange, after the update that closed the last alert, as probed.
+        // Each hop starts from an onChange, after the update that closed the last alert
+        // (docs/research/2026-10-08-swiftui-alert-queue.md).
         .onChange(of: shownAlert == nil) { _, closed in if closed { scheduleNextAlert() } }
         .onChange(of: pendingAlerts.count) { _, _ in scheduleNextAlert() }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
@@ -1635,7 +1636,7 @@ private enum CreateSheet: Identifiable {
 
 /// Every alert of the window. On macOS, SwiftUI drops an alert asked for while a different alert is
 /// up, or in the tick one closes, and leaves its state set with nothing on screen; a sheet does not
-/// drop one, the alert waits for it. A scratch app showed this on macOS 27 (2026-10-08). So the
+/// drop one, the alert waits for it (docs/research/2026-10-08-swiftui-alert-queue.md). So the
 /// window has one `.alert`, a new alert waits in a list, and the next one shows a `Task` hop after
 /// the last one closes.
 private enum WindowAlert {
