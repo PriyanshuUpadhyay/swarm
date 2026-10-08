@@ -383,9 +383,7 @@ public enum SwarmSessionCloser {
     }
 
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
-        var agents: [SwarmSessionID: [SwarmAgent]] = [:]
-        for value in session.sessions { agents[value.id] = try await bus.agents(in: value) }
-        try await end(chats: [session], agentsBySession: agents, bus: bus)
+        try await end(chats: [session], agentsBySession: [:], bus: bus)
     }
 
     public static func end(
@@ -409,6 +407,10 @@ public enum SwarmSessionCloser {
         var agents = listing
         for chat in chats {
             for session in chat.sessions where agents[session.id] == nil {
+                guard session.agents != 0, (try? SwarmSessionInteraction.adapter(for: session)) != nil else {
+                    agents[session.id] = []
+                    continue
+                }
                 do { agents[session.id] = try await bus.agents(in: session) }
                 catch {
                     throw SwarmProfileError.failed("Swarm could not read the agents of “\(ChatTitle.title(chat))”. Try again.")

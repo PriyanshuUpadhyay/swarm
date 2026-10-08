@@ -62,6 +62,33 @@ struct WorkspaceArchiveTests {
         ])
     }
 
+    @Test("Missing zero-agent and legacy adapter sessions need no single read")
+    func emptyOrLegacySession() async throws {
+        for (adapter, agents) in [("herdr" as String?, 0), (nil, 1), ("", 1)] {
+            let recorder = WorkspaceArchiveCalls(omitted: "legacy")
+            let legacy = SwarmSession(id: .init("legacy"), talkMode: "lane", adapter: adapter,
+                                     cwd: "/repo/feature", createdAt: 1, chairLog: nil,
+                                     agents: agents, messages: 0, lastMessageAt: nil)
+            let chats = [SwarmProjectSession(sessions: [legacy], title: "Legacy chat")]
+            #expect(try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder)) == 0)
+            try await WorkspaceArchive.end(chats, bus: bus(recorder))
+            try await SwarmSessionCloser.end(session: chats[0], bus: bus(recorder))
+            #expect(await recorder.calls == [":agents --json --all", ":agents --json --all"])
+        }
+    }
+
+    @Test("End chat and workspace use the same message when a session read fails")
+    func endReadFailure() async throws {
+        let recorder = WorkspaceArchiveCalls(unreadable: "current")
+        do {
+            try await SwarmSessionCloser.end(session: chat("current"), bus: bus(recorder))
+            Issue.record("The unreadable chat must refuse the action")
+        } catch {
+            #expect(error.localizedDescription == "Swarm could not read the agents of “Chat”. Try again.")
+        }
+        #expect(await recorder.calls == ["current:agents --json"])
+    }
+
     @Test("Archive and delete require the same confirmation for any live agent")
     func confirmationRule() {
         #expect(!WorkspaceArchive.Confirmation(liveAgents: 0).required)
