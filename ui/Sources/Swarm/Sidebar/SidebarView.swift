@@ -35,6 +35,9 @@ struct SidebarActions {
     var toggleCollapsed: (String) -> Void
     var expandList: (String) -> Void
     var newChat: (String) -> Void
+    var newChatProfiles: [NewChatMenu.Row]
+    var refreshNewChatProfiles: () -> Void
+    var newChatAs: (String, String) -> Void
     var unpinWorkspace: (String) -> Void
     var pinWorkspace: (String) -> Bool
     var moveWorkspace: (String, String) -> Bool
@@ -208,6 +211,9 @@ struct SidebarView<Details: View>: View {
         SidebarRowView(
             row: row, selected: row.id == selectedID,
             newChat: row.archived || !row.newChatEnabled ? nil : { actions.newChat(row.id) },
+            newChatProfiles: actions.newChatProfiles,
+            refreshNewChatProfiles: actions.refreshNewChatProfiles,
+            newChatAs: { actions.newChatAs(row.id, $0) },
             toggle: row.hasChildren ? { actions.toggleCollapsed(row.id) } : nil,
             showRun: { actions.showRun(row.id) }
         )
@@ -370,6 +376,9 @@ private struct SidebarRowView: View {
     let row: SidebarRow
     let selected: Bool
     let newChat: (() -> Void)?
+    var newChatProfiles: [NewChatMenu.Row] = []
+    var refreshNewChatProfiles: () -> Void = {}
+    var newChatAs: (String) -> Void = { _ in }
     let toggle: (() -> Void)?
     @State private var hovering = false
     var showRun: (() -> Void)? = nil
@@ -460,6 +469,7 @@ private struct SidebarRowView: View {
             }
             if first, let newChat, hovering || selected {
                 Button("New chat in \(row.title)", systemImage: "plus", action: newChat)
+                    .newChatProfileMenu(rows: newChatProfiles, refresh: refreshNewChatProfiles, start: newChatAs)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)

@@ -4,6 +4,21 @@ import Testing
 
 @Suite("Pending chats")
 struct PendingChatsTests {
+    @Test("Retry keeps the chosen profile and the one-click account behavior")
+    func retryProfile() throws {
+        var pending = PendingChats()
+        let picked = pending.add(directory: "/api", workspace: "/api", previous: nil, profile: "code.complex")
+        let defaultChat = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        let failure = LaunchFailure(message: "not signed in")
+        pending.update(picked) { $0.state = .failed(failure); $0.session = SwarmSessionID("failed-session") }
+        let pickedPlan = try #require(pending[picked]?.launchPlan)
+        #expect(pickedPlan == SwarmChatLaunchPlan(profile: "code.complex", in: "/api"))
+        #expect(pickedPlan.account == nil)
+        #expect(pending[defaultChat]?.launchPlan == SwarmChatLaunchPlan(profileIn: "/api"))
+        #expect(pending[defaultChat]?.launchPlan?.account == "auto")
+        #expect(pending[picked]?.session == SwarmSessionID("failed-session"))
+    }
+
     // The text `swarm launch` prints when no runner can run (`resolve_role` in `src/main.rs`).
     private let noCLI = """
         swarm: chat: no runner can run

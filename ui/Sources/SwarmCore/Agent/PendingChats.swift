@@ -50,6 +50,12 @@ public struct PendingChat: Identifiable, Sendable, Equatable {
     public let id: UUID
     /// Where the chair runs.
     public let directory: String
+    /// Nil uses the one-click chat profile; a menu pick keeps its profile for Retry.
+    public let profile: String?
+    public var launchPlan: SwarmChatLaunchPlan? {
+        if let profile { return SwarmChatLaunchPlan(profile: profile, in: directory) }
+        return SwarmChatLaunchPlan(profileIn: directory)
+    }
     /// The workspace whose strip shows this start. It differs from `directory` for a project
     /// opened at a folder inside a repository.
     public let workspace: String
@@ -71,10 +77,10 @@ public struct PendingChats: Sendable, Equatable {
     public subscript(id: UUID) -> PendingChat? { items.first { $0.id == id } }
 
     public mutating func add(
-        directory: String, workspace: String, previous: PendingChat.Previous?
+        directory: String, workspace: String, previous: PendingChat.Previous?, profile: String? = nil
     ) -> UUID {
         let chat = PendingChat(
-            id: UUID(), directory: directory, workspace: workspace, previous: previous,
+            id: UUID(), directory: directory, profile: profile, workspace: workspace, previous: previous,
             session: nil, state: .starting
         )
         items.append(chat)

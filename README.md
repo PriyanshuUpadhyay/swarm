@@ -184,9 +184,11 @@ Swarm.app opens on Home, where routed roles show their models. Import Project ad
 project list and selects it; a folder that is not a Git repository first gets an offer to run
 `git init`, and "Keep as Folder" adds it as a plain project. Create Project makes a folder, runs `git init`
 in it, and adds and selects it. Creating or importing a project starts no agent.
-New chat starts the chat profile at once with no sheet (ADR 0035): a "New chat" tab shows at once and becomes the
-chat when the chair is up, or shows the launch error with Retry. To use another model, start a chat and use Switch
-model. Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
+New chat starts the chat profile at once with no sheet (ADR 0059): a "New chat" tab shows at once and becomes the
+chat when the chair is up, or shows the launch error with Retry. Right-click or hold a workspace's **+** or
+**New chat** for 0.4 seconds to open **New chat as…** and choose any profile. The chat profile is first and
+marked as the one-click default; each caption shows its first runner's provider and model.
+Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
 Switch model asks the live chair
 for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
 tab. If the old pane has closed, the new chair receives recent messages and makes its own compact

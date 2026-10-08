@@ -177,9 +177,19 @@ final class SessionsTreeModel {
 
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
     func newChat(in directory: String) {
+        guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
+        newChat(plan, profile: nil)
+    }
+
+    func newChat(in directory: String, profile: String) {
+        guard let plan = SwarmChatLaunchPlan(profile: profile, in: directory) else { return }
+        newChat(plan, profile: profile)
+    }
+
+    private func newChat(_ plan: SwarmChatLaunchPlan, profile: String?) {
+        let directory = plan.directory
         guard navigation.readOnlyReason(in: directory) == nil,
               workspaces.first(where: { $0.id == directory }).map({ navigation.canStartChat(in: $0) }) != false else { return }
-        guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
         let previous = selectedPendingID.map(PendingChat.Previous.pending)
             ?? selectedSessionID.map(PendingChat.Previous.session)
         // The deepest workspace that holds the directory; a project opened inside a repository
@@ -188,7 +198,7 @@ final class SessionsTreeModel {
             .filter { directory == $0 || directory.hasPrefix($0 + "/") }
             .max { $0.count < $1.count } ?? Self.hubWorkspace(for: directory) ?? directory
         guard navigation.readOnlyReason(in: workspace) == nil else { return }
-        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
+        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous, profile: profile)
         navigation.selectedWorkspace = workspace
         if let entry = workspaces.first(where: { $0.id == workspace }) { expandProject(of: entry) }
         selectPending(id)
@@ -233,7 +243,7 @@ final class SessionsTreeModel {
     /// Runs `launch` again, in the session the failed start made if it made one.
     func retryChat(_ id: UUID) {
         guard let chat = pendingChats[id], navigation.readOnlyReason(in: chat.workspace) == nil, case .failed = chat.state,
-              let plan = SwarmChatLaunchPlan(profileIn: chat.directory) else { return }
+              let plan = chat.launchPlan else { return }
         pendingChats.update(id) { $0.state = .starting }
         runStart(id, plan: plan)
     }
@@ -708,8 +718,9 @@ private struct SessionsWindow: View {
     @State private var switchTarget: SwitchTarget?
     @State private var pendingModelSwitch: SwarmSessionID?
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
-    /// chat only when the owner went elsewhere, not when a refresh changed the selection.
+    /// selection only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
+    @State private var newChatProfiles: [NewChatMenu.Row] = []
     /// The alert on screen, and the ones waiting for it to close (see `WindowAlert`).
     @State private var shownAlert: WindowAlert?
     @State private var pendingAlerts: [WindowAlert] = []
@@ -892,6 +903,7 @@ private struct SessionsWindow: View {
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
             await SwarmProfileCatalog.shared.prefetch()
+            await loadNewChatProfiles()
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
@@ -1171,6 +1183,9 @@ private struct SessionsWindow: View {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
                 Button("New chat") { startChat(in: workspace.id) }
+                    .newChatProfileMenu(rows: newChatProfiles, refresh: refreshNewChatProfiles) {
+                        startChat(in: workspace.id, profile: $0)
+                    }
                     .disabled(!model.navigation.canStartChat(in: workspace))
                 if let reason = model.navigation.readOnlyReason(in: workspace.id) {
                     Text(verbatim: reason).foregroundStyle(.secondary)
@@ -1285,6 +1300,9 @@ private struct SessionsWindow: View {
             },
             expandList: { expandedLists.insert($0) },
             newChat: { startChat(in: $0) },
+            newChatProfiles: newChatProfiles,
+            refreshNewChatProfiles: refreshNewChatProfiles,
+            newChatAs: { startChat(in: $0, profile: $1) },
             unpinWorkspace: { model.navigation.pinned.remove($0) },
             pinWorkspace: { model.navigation.pinWorkspace($0, in: model.workspaces) },
             moveWorkspace: { model.navigation.moveWorkspace($0, onto: $1, in: model.workspaces) },
@@ -1944,6 +1962,27 @@ private struct SessionsWindow: View {
         ownerMoves += 1
         documentVisible = false
         model.newChat(in: directory)
+    }
+
+    private func startChat(in directory: String, profile: String) {
+        ownerMoves += 1
+        documentVisible = false
+        model.newChat(in: directory, profile: profile)
+    }
+
+    private func refreshNewChatProfiles() {
+        Task { await loadNewChatProfiles() }
+    }
+
+    private func loadNewChatProfiles() async {
+        do {
+            let profiles = try await SwarmProfileCatalog.shared.profiles()
+            guard !Task.isCancelled else { return }
+            newChatProfiles = NewChatMenu.rows(profiles: profiles.profiles)
+        } catch {
+            newChatProfiles = []
+            model.error = error.localizedDescription
+        }
     }
 
     /// A folder in a git repository, a linked worktree, or a bare hub joins its repository's
