@@ -436,10 +436,9 @@ final class SessionsTreeModel {
         // Git already made the worktree, so a failed save must not ask the owner to create it again.
         do { try await projects.add(URL(fileURLWithPath: path)) }
         catch {
-            // lockBusy says "Try again.", which here would make a second worktree.
-            let cause = if case OwnerChoicesError.lockBusy = error { "Another update held the list." }
-                else { error.localizedDescription }
-            addSaveNotice("Workspace made at \(path), so do not create it again. Swarm could not record it. \(cause)")
+            // The cause can end "try again", which here would make a second worktree, so the notice ends after it.
+            addSaveNotice("Swarm could not record the workspace at \(path). \(error.localizedDescription) "
+                + "The workspace exists, so do not create it again.")
         }
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
