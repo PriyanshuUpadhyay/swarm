@@ -78,6 +78,16 @@ final class SessionsTreeModel {
         select(nil)
     }
 
+    func selectProject(at path: String) {
+        guard let project = tree.project(containing: path) else { showHome(); return }
+        navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
+        let entries = workspaces.filter { $0.project.id == project.id }
+        let workspace = entries.filter { path == $0.id || path.hasPrefix($0.id + "/") }
+            .max { $0.id.count < $1.id.count } ?? entries.first
+        if let workspace { selectWorkspace(workspace) }
+        else { showHome() }
+    }
+
     func workspaceEndConfirmation(_ entry: WorkspaceEntry) async throws -> WorkspaceArchive.Confirmation {
         let count = try await WorkspaceArchive.liveAgents(in: entry.chats, bus: bus)
         return WorkspaceArchive.Confirmation(liveAgents: count)
@@ -133,7 +143,7 @@ final class SessionsTreeModel {
     private var commandSourceKey: String?
     var error: String?
     /// A create, import or new workspace that went through in part: the list refresh after it failed,
-    /// or a new worktree's save failed. The caller opens a chat right after, which hides `error`, so
+    /// or a new worktree's save failed. Selecting the new workspace can hide `error`, so
     /// the view shows this in its alert.
     var saveNotice: String?
     private(set) var closing: Set<SwarmSessionID> = []
@@ -939,7 +949,13 @@ private struct SessionsWindow: View {
                 create: { request, defaults in
                     try await model.createTask(request, in: project, defaults: defaults)
                 },
-                onCreated: { startChat(in: $0) }
+                onCreated: { path in
+                    ownerMoves += 1
+                    documentVisible = false
+                    model.navigation.selectedWorkspace = path
+                    model.navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
+                    model.select(nil)
+                }
             )
         }
         .sheet(isPresented: $showingClosedChats) {
@@ -1986,9 +2002,9 @@ private struct SessionsWindow: View {
                     ? model.createProject(at: url)
                     : model.openProject(url, initializeGit: action == .initializeGitAndOpen))
                 guard ownerMoves == moves else { return }
-                // The kept path is the project's launch folder. The tree can still lack the
-                // project when a later refresh overtook this one, so it is not read here.
-                startChat(in: path)
+                ownerMoves += 1
+                documentVisible = false
+                model.selectProject(at: path)
             } catch {
                 let subject = action == .create ? "Could not create the project." : "Could not import the project."
                 showAlert(.error("\(subject) \(error.localizedDescription)"))
