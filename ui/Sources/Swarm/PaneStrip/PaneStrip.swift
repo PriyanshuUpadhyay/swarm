@@ -283,32 +283,44 @@ private struct PaneView<Content: View>: View {
         }
     }
 
+    private struct HeaderAction: Identifiable {
+        var id: String { title }
+        let title: String
+        let symbol: String
+        let label: String
+        var help: String?
+        var disabled = false
+        let perform: () -> Void
+    }
+
+    private var headerActions: [HeaderAction] {
+        [
+            HeaderAction(title: "Stop", symbol: "stop.fill", label: "Stop " + cell.title,
+                         help: readOnlyReason, disabled: readOnlyReason != nil || !cell.status.isMidTurn,
+                         perform: onStop),
+            HeaderAction(title: "Close agent…", symbol: "power", label: "Close agent " + cell.title,
+                         help: readOnlyReason ?? "Close agent", disabled: readOnlyReason != nil || cell.ended,
+                         perform: onClose),
+            HeaderAction(title: "Copy id", symbol: "doc.on.doc", label: "Copy id of " + cell.title,
+                         perform: { AppClipboard.copy(cell.id) }),
+            HeaderAction(title: "Copy attach command", symbol: "terminal", label: "Copy attach command for " + cell.title,
+                         perform: { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) }),
+        ]
+    }
+
     private var header: some View {
         HStack(spacing: DesignTokens.Spacing.s) {
             StatusGlyph(status: cell.status)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
-            Button(action: onStop) { Image(systemName: "stop.fill") }
-                .focusable(false)
-                .disabled(readOnlyReason != nil || !cell.status.isMidTurn)
-                .help(readOnlyReason ?? "Stop")
-                .accessibilityLabel("Stop " + cell.title)
-            Button(action: onClose) { Image(systemName: "power") }
-                .focusable(false)
-                .disabled(readOnlyReason != nil || cell.ended)
-                .help(readOnlyReason ?? "Close agent")
-                .accessibilityLabel("Close agent " + cell.title)
-            Button { AppClipboard.copy(cell.id) } label: { Image(systemName: "doc.on.doc") }
-                .focusable(false)
-                .help("Copy id")
-                .accessibilityLabel("Copy id of " + cell.title)
-            Button { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) } label: {
-                Image(systemName: "terminal")
+            ForEach(headerActions) { action in
+                Button(action: action.perform) { Image(systemName: action.symbol) }
+                    .focusable(false)
+                    .disabled(action.disabled)
+                    .help(action.help ?? action.title)
+                    .accessibilityLabel(action.label)
             }
-                .focusable(false)
-                .help("Copy attach command")
-                .accessibilityLabel("Copy attach command for " + cell.title)
             Button(action: onZoom) {
                 Image(systemName: zoomed
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
@@ -334,13 +346,13 @@ private struct PaneView<Content: View>: View {
         .contentShape(Rectangle())
         // One header focus target gives the keyboard access to its menu.
         .focusable()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Controls for \(cell.id)")
         .contextMenu {
-            Button("Stop", action: onStop)
-                .disabled(readOnlyReason != nil || !cell.status.isMidTurn)
-            Button("Close agent…", action: onClose)
-                .disabled(readOnlyReason != nil || cell.ended)
-            Button("Copy id") { AppClipboard.copy(cell.id) }
-            Button("Copy attach command") { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) }
+            ForEach(headerActions) { action in
+                Button(action.title, action: action.perform)
+                    .disabled(action.disabled)
+            }
         }
         .onTapGesture(perform: onFocus)
     }
