@@ -62,6 +62,24 @@ struct WorkspaceArchiveTests {
         ])
     }
 
+    @Test("A failed batch reads a session the cached list shows with zero agents")
+    func failedBatchStaleEmptySession() async throws {
+        let recorder = WorkspaceArchiveCalls(batchFails: true)
+        var late = chat("current").session
+        late.agents = 0
+        let chats = [SwarmProjectSession(sessions: [late], title: "Chat")]
+        #expect(try await WorkspaceArchive.liveAgents(in: chats, bus: bus(recorder)) == 1)
+        try await WorkspaceArchive.end(chats, bus: bus(recorder))
+        #expect(try await SwarmSessionCloser.confirmation(session: chats[0], bus: bus(recorder)).liveChildren == 0)
+        try await SwarmSessionCloser.end(session: chats[0], bus: bus(recorder))
+        #expect(await recorder.calls == [
+            ":agents --json --all", "current:agents --json",
+            ":agents --json --all", "current:agents --json", "current:close orchestrator",
+            ":agents --json --all", "current:agents --json",
+            ":agents --json --all", "current:agents --json", "current:close orchestrator",
+        ])
+    }
+
     @Test("Missing zero-agent and legacy adapter sessions need no single read")
     func emptyOrLegacySession() async throws {
         for (adapter, agents) in [("herdr" as String?, 0), (nil, 1), ("", 1)] {

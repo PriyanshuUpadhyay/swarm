@@ -8,15 +8,13 @@ public enum WorkspaceArchive {
     }
 
     public static func liveAgents(in chats: [SwarmProjectSession], bus: any SwarmBus) async throws -> Int {
-        let listing = (try? await bus.agentsBySession()) ?? [:]
-        let agents = try await SwarmSessionCloser.agents(in: chats, listing: listing, bus: bus)
+        let agents = try await SwarmSessionCloser.agents(in: chats, listing: try? await bus.agentsBySession(), bus: bus)
         return chats.flatMap(\.sessions).reduce(0) { count, session in
             count + (agents[session.id] ?? []).filter { $0.alive == true }.count
         }
     }
 
     public static func end(_ chats: [SwarmProjectSession], bus: any SwarmBus) async throws {
-        let listing = (try? await bus.agentsBySession()) ?? [:]
-        try await SwarmSessionCloser.end(chats: chats, agentsBySession: listing, bus: bus)
+        try await SwarmSessionCloser.end(chats: chats, agentsBySession: try? await bus.agentsBySession(), bus: bus)
     }
 }

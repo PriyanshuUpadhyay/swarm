@@ -375,8 +375,7 @@ public enum SwarmSessionCloser {
     public static func confirmation(
         session: SwarmProjectSession, bus: any SwarmBus
     ) async throws -> Confirmation {
-        let batch = (try? await bus.agentsBySession()) ?? [:]
-        let listing = try await agents(in: [session], listing: batch, bus: bus)
+        let listing = try await agents(in: [session], listing: try? await bus.agentsBySession(), bus: bus)
         let children = session.sessions.flatMap { value in
             (listing[value.id] ?? []).filter { !SwarmPanePolicy.isChair($0, in: value) }
         }
@@ -384,12 +383,11 @@ public enum SwarmSessionCloser {
     }
 
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
-        let listing = (try? await bus.agentsBySession()) ?? [:]
-        try await end(chats: [session], agentsBySession: listing, bus: bus)
+        try await end(chats: [session], agentsBySession: try? await bus.agentsBySession(), bus: bus)
     }
 
     public static func end(
-        chats: [SwarmProjectSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
+        chats: [SwarmProjectSession], agentsBySession: [SwarmSessionID: [SwarmAgent]]?, bus: any SwarmBus
     ) async throws {
         let listing = try await agents(in: chats, listing: agentsBySession, bus: bus)
         let live = chats.flatMap(\.sessions).flatMap { value in
@@ -403,13 +401,15 @@ public enum SwarmSessionCloser {
     }
 
     /// Finish every read before stopping any agent; a partial batch is not an empty session.
+    /// A nil listing means the batch read failed, so a cached zero count is not trusted.
     static func agents(
-        in chats: [SwarmProjectSession], listing: [SwarmSessionID: [SwarmAgent]], bus: any SwarmBus
+        in chats: [SwarmProjectSession], listing: [SwarmSessionID: [SwarmAgent]]?, bus: any SwarmBus
     ) async throws -> [SwarmSessionID: [SwarmAgent]] {
-        var agents = listing
+        var agents = listing ?? [:]
         for chat in chats {
             for session in chat.sessions where agents[session.id] == nil {
-                guard session.agents != 0, (try? SwarmSessionInteraction.adapter(for: session)) != nil else {
+                guard listing == nil || session.agents != 0,
+                      (try? SwarmSessionInteraction.adapter(for: session)) != nil else {
                     agents[session.id] = []
                     continue
                 }
