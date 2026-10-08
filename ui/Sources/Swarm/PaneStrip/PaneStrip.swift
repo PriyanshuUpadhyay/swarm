@@ -28,6 +28,9 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
     let onDismiss: ([String]) -> Void
+    let readOnlyReason: String?
+    let onStop: (String) -> Void
+    let onClose: (String) -> Void
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let pane: (PaneCell) -> Pane
 
@@ -175,7 +178,9 @@ struct PaneStrip<Chat: View, Pane: View>: View {
             cell: cell, focused: cell.id == focusedID, zoomed: cell.id == zoomedID,
             onFocus: { onFocus(cell.id) },
             onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) },
-            onDismiss: { onDismiss([cell.id]) }
+            onDismiss: { onDismiss([cell.id]) },
+            readOnlyReason: readOnlyReason,
+            onStop: { onStop(cell.id) }, onClose: { onClose(cell.id) }
         ) {
             // A column shows in one place only; the zoomed copy owns it.
             if showsContent { pane(cell) } else { Color.clear }
@@ -224,6 +229,9 @@ private struct PaneView<Content: View>: View {
     let onFocus: () -> Void
     let onZoom: () -> Void
     let onDismiss: () -> Void
+    let readOnlyReason: String?
+    let onStop: () -> Void
+    let onClose: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -248,6 +256,22 @@ private struct PaneView<Content: View>: View {
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
+            Button(action: onStop) { Image(systemName: "stop.fill") }
+                .disabled(readOnlyReason != nil || !cell.status.isMidTurn)
+                .help(readOnlyReason ?? "Stop")
+                .accessibilityLabel("Stop " + cell.title)
+            Button(action: onClose) { Image(systemName: "power") }
+                .disabled(readOnlyReason != nil || cell.ended)
+                .help(readOnlyReason ?? "Close agent")
+                .accessibilityLabel("Close agent " + cell.title)
+            Button { AppClipboard.copy(cell.id) } label: { Image(systemName: "doc.on.doc") }
+                .help("Copy id")
+                .accessibilityLabel("Copy id of " + cell.title)
+            Button { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) } label: {
+                Image(systemName: "terminal")
+            }
+                .help("Copy attach command")
+                .accessibilityLabel("Copy attach command for " + cell.title)
             Button(action: onZoom) {
                 Image(systemName: zoomed
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")

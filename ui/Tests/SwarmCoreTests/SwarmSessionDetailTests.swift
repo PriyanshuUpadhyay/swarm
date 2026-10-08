@@ -6,6 +6,37 @@ import TranscriptTool
 
 @Suite("Session detail")
 struct SwarmSessionDetailTests {
+    @Test("Child headers use the model before the provider and copy a safe attach command")
+    func childHeaderValues() {
+        var child = SwarmAgent(id: .init("reviewer"), role: "review", pane: "pane", alive: true,
+                               provider: "codex", state: "done")
+        child.model = "gpt-6"
+        #expect(SwarmAgentCell(agent: child).model == "gpt-6")
+        #expect(SwarmAgentCell(agent: child).id.rawValue == "reviewer")
+        #expect(child.id.attachCommand == "swarm attach reviewer")
+        child.model = nil
+        #expect(SwarmAgentCell(agent: child).model == "codex")
+        child.provider = nil
+        #expect(SwarmAgentCell(agent: child).model == "unknown")
+        #expect(SwarmAgentID("reviewer's $(touch file)").attachCommand
+            == "swarm attach 'reviewer'\"'\"'s $(touch file)'")
+    }
+
+    @Test("Closing a working or waiting child asks first, but an idle or ended child does not")
+    func childCloseConfirmation() {
+        for state in ["working", "waiting", "done", "failed"] {
+            var child = SwarmAgent(id: .init("reviewer"), role: "review", pane: "pane", alive: true,
+                                   state: state)
+            #expect(SwarmAgentCell(agent: child).requiresCloseConfirmation
+                == ["working", "waiting"].contains(state))
+            child.alive = false
+            #expect(!SwarmAgentCell(agent: child).requiresCloseConfirmation)
+            child.alive = true
+            child.pane = nil
+            #expect(!SwarmAgentCell(agent: child).requiresCloseConfirmation)
+        }
+    }
+
     @Test("The grid keeps finished agents and sorts by creation time")
     func agentCells() {
         var value = session(adapter: "tmux-solo")

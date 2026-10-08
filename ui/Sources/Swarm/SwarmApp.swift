@@ -969,6 +969,9 @@ private struct SessionsWindow: View {
                 performChatEnd(id, archive: archive)
             }
             Button("Cancel", role: .cancel) {}
+        case .closeAgent(let agent, let session):
+            Button("Close Agent", role: .destructive) { performChildAction(agent, in: session, close: true) }
+            Button("Cancel", role: .cancel) {}
         case .error:
             Button("OK") {}
         }
@@ -993,6 +996,8 @@ private struct SessionsWindow: View {
                  + (ignored.message.map { "\n\n" + $0 } ?? ""))
         case .endChat(_, _, let confirmation, let archive):
             Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
+        case .closeAgent(let agent, _):
+            Text("“\(agent.rawValue)” is in a turn. Closing the agent stops it.")
         case .error(let message):
             Text(verbatim: message)
         }
@@ -1508,8 +1513,32 @@ private struct SessionsWindow: View {
             dismissedChildren: model.navigation.dismissedChildren[ChatTitle.key(row)] ?? [],
             onDismissChildren: { ids in
                 model.navigation.dismissFinishedChildren(ids, in: row, agents: model.agents)
-            }
+            },
+            onStopChild: { performChildAction($0, in: row.session, close: false) },
+            onCloseChild: { requestChildClose($0, in: row.session) }
         )
+    }
+
+    private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
+        Task {
+            do {
+                let agents = try await SwarmCLIBus().agents(in: session)
+                guard let agent = agents.first(where: { $0.id == id }), agent.status != .ended else { return }
+                if SwarmAgentCell(agent: agent).requiresCloseConfirmation {
+                    showAlert(.closeAgent(id, session))
+                } else { performChildAction(id, in: session, close: true) }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performChildAction(_ id: SwarmAgentID, in session: SwarmSession, close: Bool) {
+        Task {
+            do {
+                let bus = SwarmCLIBus()
+                if close { try await bus.close(id, in: session) }
+                else { try await bus.interrupt(id, in: session) }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
     }
 
     /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
@@ -1836,6 +1865,7 @@ private enum WindowAlert {
     case archiveWorkspace(WorkspaceEntry, liveAgents: Int)
     case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems)
     case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
+    case closeAgent(SwarmAgentID, SwarmSession)
     case error(String)
 
     var title: String {
@@ -1847,6 +1877,7 @@ private enum WindowAlert {
         case .archiveWorkspace: "Archive workspace?"
         case .deleteWorkspace: "Delete workspace?"
         case .endChat(_, let title, _, let archive): "\(archive ? "Archive" : "End") “\(title)”?"
+        case .closeAgent(let id, _): "Close “\(id.rawValue)”?"
         case .error: "Could not complete action"
         }
     }

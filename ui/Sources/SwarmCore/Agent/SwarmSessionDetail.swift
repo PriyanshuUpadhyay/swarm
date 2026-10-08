@@ -316,7 +316,10 @@ public actor SwarmChairTranscript {
 
 public struct SwarmAgentCell: Sendable, Equatable, Identifiable {
     public let agent: SwarmAgent
+    public init(agent: SwarmAgent) { self.agent = agent }
     public var id: SwarmAgentID { agent.id }
+    public var model: String { agent.model ?? agent.provider ?? "unknown" }
+    public var requiresCloseConfirmation: Bool { agent.status.isMidTurn }
 }
 
 public enum SwarmPanePolicy {

@@ -24,7 +24,8 @@ struct PaneStressWindow: View {
             onDismiss: { ids in
                 cells.removeAll { $0.ended && ids.contains($0.id) }
                 panes.revealChat()
-            }
+            },
+            readOnlyReason: nil, onStop: { _ in }, onClose: { _ in }
         ) {
             Text("Pane stress: \(cells.count) panes")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -279,6 +279,8 @@ struct SessionDetailView: View {
     let onShowUsage: () -> Void
     let dismissedChildren: [String]
     let onDismissChildren: ([String]) -> Void
+    let onStopChild: (SwarmAgentID) -> Void
+    let onCloseChild: (SwarmAgentID) -> Void
 
     @State private var didShowRows = false
     @FocusState private var composerFocused: Bool
@@ -481,7 +483,7 @@ struct SessionDetailView: View {
             cells: agentCells.map { cell in
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
-                    model: cell.agent.provider ?? "unknown", status: cell.agent.status
+                    model: cell.model, status: cell.agent.status
                 )
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
@@ -496,7 +498,10 @@ struct SessionDetailView: View {
                     panes.revealChat()
                 }
                 onDismissChildren(ids)
-            }
+            },
+            readOnlyReason: readOnlyReason,
+            onStop: { onStopChild(SwarmAgentID($0)) },
+            onClose: { onCloseChild(SwarmAgentID($0)) }
         ) {
             VStack(spacing: 0) {
                 waitingChildren(SwarmPanePolicy.liveCells(session: session, agents: agents).map(\.agent))
