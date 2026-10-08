@@ -215,7 +215,7 @@ private struct ChatTabView: View {
                 .accessibilityLabel("\(tab.title), \(children.count) agents, \(children.waiting) waiting")
             }
             // A start is never cut in half, so a pending tab has no archive or close.
-            if tab.pending == nil {
+            if tab.canHide {
                 Button { actions.hide(tab.id) } label: {
                     Image(systemName: "xmark")
                         .font(.caption)

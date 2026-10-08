@@ -370,6 +370,72 @@ struct TabStripTests {
         #expect(tabs[1].waitingChildSelection(in: [entry], agentsBySession: [:]) == nil)
     }
 
+    @Test("An ended tab can hide, and leaving it removes only its open key and history")
+    func endedTabs() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        let strip = TabStrip(open: ["design", "ended", "review"])
+            .grouping(.new(id: "finished", name: "Finished", color: .grey, tab: "ended"))
+        let tabs = ChatTab.tabs(entry.project.chats, strip: strip, closing: [], now: 1)
+        let ended = try #require(tabs.first { $0.id == "ended" })
+        #expect(ended.canHide)
+        #expect(!ended.canClose)
+        var pending = PendingChats()
+        _ = pending.add(directory: entry.id, workspace: entry.id, previous: nil)
+        #expect(ChatTab.tabs(entry.project.chats, strip: strip, pending: pending.items, closing: [], now: 1)
+            .first?.canHide == false)
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = strip
+        navigation.select(entry, chat: .init("design"))
+        navigation.select(entry, chat: .init("ended"))
+        let stayed = navigation.hideEndedTab(leaving: .init("ended"), selecting: .init("ended"), in: [entry])
+        #expect(!stayed)
+        #expect(navigation.tabs[entry.id] == strip)
+        let left = navigation.hideEndedTab(leaving: .init("ended"), selecting: .init("review"), in: [entry])
+        #expect(left)
+        #expect(navigation.tabs[entry.id]?.open == ["design", "review"])
+        #expect(navigation.tabs[entry.id]?.groups.isEmpty == true)
+        #expect(navigation.tabHistory[entry.id] == ["design"])
+        #expect(entry.chats.count == 3)
+        #expect(entry.chats.first { $0.id.rawValue == "ended" }?.isRunning == false)
+        navigation.openTab(try #require(entry.chats.first { $0.id.rawValue == "ended" }), in: entry)
+        #expect(navigation.tabs[entry.id]?.open.contains("ended") == true)
+        let leftForHomeOrStart = navigation.hideEndedTab(leaving: .init("ended"), selecting: nil, in: [entry])
+        #expect(leftForHomeOrStart)
+        let liveLeft = navigation.hideEndedTab(leaving: .init("design"), selecting: nil, in: [entry])
+        let unknownLeft = navigation.hideEndedTab(leaving: .init("missing"), selecting: nil, in: [entry])
+        let nothingLeft = navigation.hideEndedTab(leaving: nil, selecting: .init("review"), in: [entry])
+        let alreadyHidden = navigation.hideEndedTab(leaving: .init("ended"), selecting: nil, in: [entry])
+        #expect(!liveLeft)
+        #expect(!unknownLeft)
+        #expect(!nothingLeft)
+        #expect(!alreadyHidden)
+    }
+
+    @Test("Leaving an ended chat across workspaces hides only its tab; a same-chat handoff keeps it")
+    func endedWorkspaceAndHandoff() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = .init(open: ["design", "ended"])
+        navigation.tabs["/other"] = .init(open: ["notes"])
+        let changedWorkspace = navigation.hideEndedTab(leaving: .init("ended"), selecting: .init("notes"), in: [entry])
+        #expect(changedWorkspace)
+        #expect(navigation.tabs[entry.id]?.open == ["design"])
+        #expect(navigation.tabs["/other"]?.open == ["notes"])
+        let ended = try #require(entry.chats.first { $0.id.rawValue == "ended" })
+        var current = ended.session
+        current.id = .init("continuation")
+        current.continuationOf = ended.id
+        current.createdAt += 1
+        let chat = SwarmProjectSession(sessions: [current, ended.session], title: "Ended", isRunning: false)
+        let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo",
+                                  workspaces: [WorkspaceNode(path: "/repo", name: "repo", sessions: [chat])])
+        let continuedEntry = try #require(WorkspaceEntry.list(in: SessionsTree(projects: [project])).first)
+        navigation.tabs[entry.id] = .init(open: ["ended"])
+        let continued = navigation.hideEndedTab(leaving: ended.id, selecting: current.id, in: [continuedEntry])
+        #expect(!continued)
+        #expect(navigation.tabs[entry.id]?.open == ["ended"])
+    }
+
     private func tree() -> SessionsTree {
         let chats = [("design", true), ("review", true), ("ended", false)].map { key, running in
             SwarmProjectSession(

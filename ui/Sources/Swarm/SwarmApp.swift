@@ -92,7 +92,13 @@ final class SessionsTreeModel {
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
-            if selectedSessionID != oldValue { detailModels.activate(selectedSessionID) }
+            if selectedSessionID != oldValue {
+                // A handoff's new session is not listed yet; it still owns the same tab.
+                if pendingID == nil {
+                    navigation.hideEndedTab(leaving: oldValue, selecting: selectedSessionID, in: workspaces)
+                }
+                detailModels.activate(selectedSessionID)
+            }
         }
     }
     private var pendingID: SwarmSessionID?

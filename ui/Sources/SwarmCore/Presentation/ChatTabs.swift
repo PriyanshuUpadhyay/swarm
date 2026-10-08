@@ -9,6 +9,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     public let badge: String?
     /// A live chat can be closed; an ended one or one already closing cannot.
     public let canClose: Bool
+    public var canHide: Bool { pending == nil }
     /// Set for a chat the app is starting (ADR 0035). Such a tab offers no close or archive.
     public var pending: Pending? = nil
     public var fields: [RowFieldValue] = []
