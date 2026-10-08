@@ -295,6 +295,15 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return true
     }
 
+    @discardableResult
+    public mutating func groupTab(_ action: TabStrip.Grouping, in workspace: String) -> Bool {
+        guard let strip = tabs[workspace] else { return false }
+        let updated = strip.grouping(action)
+        guard updated != strip else { return false }
+        tabs[workspace] = updated
+        return true
+    }
+
     public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {

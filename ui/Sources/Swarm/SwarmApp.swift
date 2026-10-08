@@ -1459,7 +1459,8 @@ private struct SessionsWindow: View {
                 hide: { model.hideTab($0, in: directory) },
                 move: { model.navigation.moveTab($0, onto: $1, in: directory) },
                 archive: { archiveChat(SwarmSessionID($0)) },
-                rename: { beginRenameChat(SwarmSessionID($0)) }
+                rename: { beginRenameChat(SwarmSessionID($0)) },
+                group: { model.navigation.groupTab($0, in: directory) }
             )
         )
     }

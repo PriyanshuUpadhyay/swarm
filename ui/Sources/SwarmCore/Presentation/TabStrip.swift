@@ -20,7 +20,7 @@ public struct TabStrip: Codable, Sendable, Hashable {
         var strip = self
         let index = current.flatMap { open.firstIndex(of: $0) }.map { $0 + 1 } ?? open.count
         strip.open.insert(key, at: index)
-        return strip
+        return strip.pruned(to: Set(strip.open))
     }
 
     public func closing(_ key: String) -> Self {
@@ -29,7 +29,13 @@ public struct TabStrip: Codable, Sendable, Hashable {
 
     public func moving(_ key: String, to index: Int) -> Self {
         guard let source = open.firstIndex(of: key), open.indices.contains(index) else { return self }
+        guard source != index else { return self }
+        let targetGroup = groups.first { $0.members.contains(open[index]) }?.id
         var strip = self
+        for groupIndex in strip.groups.indices {
+            strip.groups[groupIndex].members.removeAll { $0 == key }
+            if strip.groups[groupIndex].id == targetGroup { strip.groups[groupIndex].members.append(key) }
+        }
         strip.open.remove(at: source)
         strip.open.insert(key, at: index)
         return strip.pruned(to: Set(open))
@@ -39,12 +45,67 @@ public struct TabStrip: Codable, Sendable, Hashable {
         var strip = self
         var seen = Set<String>()
         strip.open = open.filter { listed.contains($0) && seen.insert($0).inserted }
+        var grouped = Set<String>()
         strip.groups = groups.compactMap { group in
             var pruned = group
-            pruned.members = strip.open.filter { group.members.contains($0) }
+            pruned.members = strip.open.filter { group.members.contains($0) && grouped.insert($0).inserted }
             return pruned.members.isEmpty ? nil : pruned
         }
+        let groupByKey = Dictionary(uniqueKeysWithValues: strip.groups.flatMap { group in
+            group.members.map { ($0, group) }
+        })
+        var emitted = Set<String>()
+        strip.open = strip.open.flatMap { key -> [String] in
+            guard let group = groupByKey[key] else { return [key] }
+            return emitted.insert(group.id).inserted ? group.members : []
+        }
         return strip
+    }
+
+    public enum Grouping: Sendable {
+        case new(id: String, name: String, color: TabGroupColor, tab: String)
+        case add(String, to: String)
+        case remove(String)
+        case rename(String, to: String)
+        case recolor(String, to: TabGroupColor)
+        case fold(String, Bool)
+        case delete(String)
+    }
+
+    public func grouping(_ action: Grouping) -> Self {
+        var strip = self
+        switch action {
+        case let .new(id, name, color, key):
+            guard open.contains(key), !groups.contains(where: { $0.id == id }),
+                  let name = ChatTitle.nonblank(name) else { return self }
+            strip = grouping(.remove(key))
+            strip.groups.append(TabGroup(id: id, name: name, color: color, members: [key]))
+        case let .add(key, id):
+            guard open.contains(key), let group = groups.first(where: { $0.id == id }),
+                  !group.members.contains(key) else { return self }
+            strip = grouping(.remove(key))
+            guard let groupIndex = strip.groups.firstIndex(where: { $0.id == id }),
+                  let last = group.members.last else { return self }
+            strip.open.removeAll { $0 == key }
+            let position = strip.open.firstIndex(of: last).map { $0 + 1 } ?? strip.open.count
+            strip.open.insert(key, at: position)
+            strip.groups[groupIndex].members.append(key)
+        case let .remove(key):
+            for index in strip.groups.indices { strip.groups[index].members.removeAll { $0 == key } }
+        case let .rename(id, name):
+            guard let index = groups.firstIndex(where: { $0.id == id }),
+                  let name = ChatTitle.nonblank(name) else { return self }
+            strip.groups[index].name = name
+        case let .recolor(id, color):
+            guard let index = groups.firstIndex(where: { $0.id == id }) else { return self }
+            strip.groups[index].color = color
+        case let .fold(id, folded):
+            guard let index = groups.firstIndex(where: { $0.id == id }) else { return self }
+            strip.groups[index].folded = folded
+        case let .delete(id):
+            strip.groups.removeAll { $0.id == id }
+        }
+        return strip.pruned(to: Set(open))
     }
 
     public static func seed(_ chats: [ChatRow]) -> Self {
@@ -82,7 +143,7 @@ public struct TabGroup: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-public enum TabGroupColor: String, Codable, Sendable, Hashable {
+public enum TabGroupColor: String, Codable, Sendable, Hashable, CaseIterable {
     case grey, blue, green, yellow, orange, red, purple, pink
 
     public init(from decoder: Decoder) throws {

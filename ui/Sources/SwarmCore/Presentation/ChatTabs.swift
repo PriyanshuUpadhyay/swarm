@@ -12,6 +12,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     /// Set for a chat the app is starting (ADR 0035). Such a tab offers no close or archive.
     public var pending: Pending? = nil
     public var fields: [RowFieldValue] = []
+    public var group: TabGroup? = nil
 
     public enum Pending: Sendable, Hashable { case starting, failed, closing }
 
@@ -48,9 +49,28 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
                     navigation: navigation, now: now, agentsBySession: agentsBySession,
                     branch: branches[chat.workspacePath], workspace: workspaceFields[chat.workspacePath] ?? .init(),
                     steps: stepsByChat[chat.id]
-                ).values(navigation.fields.tab)
+                ).values(navigation.fields.tab),
+                group: strip.groups.first { $0.members.contains(ChatTitle.key(chat.session)) }
             )
         }
+    }
+
+    public struct Run: Sendable, Hashable, Identifiable {
+        public var group: TabGroup?
+        public var tabs: [ChatTab]
+        public var id: String { group.map { "group:\($0.id)" } ?? "tab:\(tabs[0].id)" }
+    }
+
+    public static func runs(_ tabs: [ChatTab]) -> [Run] {
+        var runs: [Run] = []
+        for tab in tabs {
+            if let group = tab.group, runs.last?.group?.id == group.id {
+                runs[runs.count - 1].tabs.append(tab)
+            } else {
+                runs.append(Run(group: tab.group, tabs: [tab]))
+            }
+        }
+        return runs
     }
 
     public static func badge(_ provider: String) -> String {
