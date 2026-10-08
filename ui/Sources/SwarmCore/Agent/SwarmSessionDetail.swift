@@ -342,7 +342,7 @@ public enum SwarmPanePolicy {
     ) -> [SwarmAgentCell] {
         agents
             .filter {
-                !isChair($0, in: session) && !dismissed.contains($0.id.rawValue)
+                !isChair($0, in: session) && ($0.status != .ended || !dismissed.contains($0.id.rawValue))
             }
             .sorted {
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }
@@ -358,8 +358,11 @@ public enum SwarmSessionCloser {
         public let midTurnChildren: Int
         public var required: Bool { liveChildren > 0 || midTurnChildren > 0 }
 
-        public init(agents: [SwarmAgent]) {
-            let children = agents.filter { $0.id != SwarmPanePolicy.chair }
+        public init(session: SwarmSession, agents: [SwarmAgent]) {
+            self.init(children: agents.filter { !SwarmPanePolicy.isChair($0, in: session) })
+        }
+
+        fileprivate init(children: [SwarmAgent]) {
             liveChildren = children.filter { $0.alive == true }.count
             midTurnChildren = children.filter { $0.status.isMidTurn }.count
         }
@@ -373,8 +376,10 @@ public enum SwarmSessionCloser {
         session: SwarmProjectSession, bus: any SwarmBus
     ) async throws -> Confirmation {
         var agents: [SwarmAgent] = []
-        for value in session.sessions { agents += try await bus.agents(in: value) }
-        return Confirmation(agents: agents)
+        for value in session.sessions {
+            agents += try await bus.agents(in: value).filter { !SwarmPanePolicy.isChair($0, in: value) }
+        }
+        return Confirmation(children: agents)
     }
 
     public static func end(session: SwarmProjectSession, bus: any SwarmBus) async throws {
@@ -382,8 +387,8 @@ public enum SwarmSessionCloser {
         for value in session.sessions {
             live += try await bus.agents(in: value).filter { $0.alive == true }.map { (value, $0) }
         }
-        let children = live.filter { $0.1.id != SwarmPanePolicy.chair }
-        let chairs = live.filter { $0.1.id == SwarmPanePolicy.chair }
+        let children = live.filter { !SwarmPanePolicy.isChair($0.1, in: $0.0) }
+        let chairs = live.filter { SwarmPanePolicy.isChair($0.1, in: $0.0) }
         for (value, agent) in children + chairs {
             try await bus.close(agent.id, in: value)
         }

@@ -56,6 +56,15 @@ struct SwarmSessionDetailTests {
         #expect(SwarmPanePolicy.liveCells(session: value, agents: agents).map(\.id.rawValue) == ["early", "later"])
     }
 
+    @Test("A live child reusing a dismissed id returns after a model switch")
+    func reusedDismissedID() {
+        let value = session(adapter: "herdr")
+        let live = SwarmAgent(id: .init("child"), role: "code", pane: "new-pane", alive: true)
+        let ended = SwarmAgent(id: live.id, role: "code", pane: "old-pane", alive: false)
+        #expect(SwarmPanePolicy.cells(session: value, agents: [ended], dismissed: ["child"]).isEmpty)
+        #expect(SwarmPanePolicy.cells(session: value, agents: [live], dismissed: ["child"]).map(\.id) == [live.id])
+    }
+
     @Test("The live child view excludes dead agents and agents without panes")
     func liveChildAgents() {
         let value = session(adapter: "tmux-solo")

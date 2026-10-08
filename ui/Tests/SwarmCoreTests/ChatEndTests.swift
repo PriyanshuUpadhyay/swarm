@@ -40,23 +40,38 @@ struct ChatEndTests {
         let chair = SwarmAgent(id: SwarmPanePolicy.chair, role: "chair", pane: "chair", alive: true, state: "working")
         let dead = SwarmAgent(id: .init("dead"), role: "child", pane: "old", alive: false, state: "working")
         let notStarted = SwarmAgent(id: .init("registered"), role: "child", pane: nil, alive: nil)
-        #expect(!SwarmSessionCloser.Confirmation(agents: [chair, dead, notStarted]).required)
+        #expect(!SwarmSessionCloser.Confirmation(session: group().session, agents: [chair, dead, notStarted]).required)
         let idle = SwarmAgent(id: .init("idle"), role: "child", pane: "idle", alive: true, state: "done")
         let waiting = SwarmAgent(id: .init("waiting"), role: "child", pane: "waiting", alive: true, state: "waiting")
         let unknown = SwarmAgent(id: .init("unknown"), role: "child", pane: "unknown", alive: nil)
         let noPane = SwarmAgent(id: .init("no-pane"), role: "child", pane: nil, alive: true)
-        let confirmation = SwarmSessionCloser.Confirmation(agents: [chair, idle, waiting, unknown, noPane, dead])
+        let confirmation = SwarmSessionCloser.Confirmation(session: group().session, agents: [chair, idle, waiting, unknown, noPane, dead])
         #expect(confirmation.required)
         #expect(confirmation.liveChildren == 3)
         #expect(confirmation.midTurnChildren == 1)
-        #expect(SwarmSessionCloser.Confirmation(agents: [noPane]).required)
-        #expect(SwarmSessionCloser.Confirmation(agents: [idle]).message ==
+        #expect(SwarmSessionCloser.Confirmation(session: group().session, agents: [noPane]).required)
+        #expect(SwarmSessionCloser.Confirmation(session: group().session, agents: [idle]).message ==
                 "1 agent still runs, and 0 are mid-turn. Ending stops them.")
         let recorder = ChatEndCalls()
         let fresh = try await SwarmSessionCloser.confirmation(session: group(), bus: bus(recorder))
         #expect(fresh.liveChildren == 4)
         #expect(fresh.midTurnChildren == 2)
         #expect(await recorder.calls == ["current:agents --json", "older:agents --json"])
+    }
+
+    @Test("Custom chairs do not need child confirmation and close after children")
+    func customChair() async throws {
+        var sessions = group().sessions
+        for index in sessions.indices { sessions[index].chairID = .init("custom-chair") }
+        let chat = SwarmProjectSession(sessions: sessions, title: "Chat")
+        let recorder = ChatEndCalls(chairID: "custom-chair")
+        let confirmation = try await SwarmSessionCloser.confirmation(session: chat, bus: bus(recorder))
+        #expect(confirmation.liveChildren == 4)
+        try await SwarmSessionCloser.end(session: chat, bus: bus(recorder))
+        #expect(await recorder.calls.suffix(6) == [
+            "current:close child", "current:close no-pane", "older:close child", "older:close no-pane",
+            "current:close custom-chair", "older:close custom-chair",
+        ])
     }
 
     private func group() -> SwarmProjectSession {
@@ -77,14 +92,18 @@ struct ChatEndTests {
 private actor ChatEndCalls {
     private(set) var calls: [String] = []
     let failClose: Bool
-    init(failClose: Bool = false) { self.failClose = failClose }
+    let chairID: String
+    init(failClose: Bool = false, chairID: String = "orchestrator") {
+        self.failClose = failClose
+        self.chairID = chairID
+    }
 
     func reply(_ arguments: [String], environment: [String: String]) -> ShellResult {
         calls.append((environment["SWARM_SESSION_ID"] ?? "") + ":" + arguments.joined(separator: " "))
         if arguments == ["agents", "--json"] {
             return ShellResult(status: 0, stdout: """
                 {"agents":[
-                  {"id":"orchestrator","role":"chair","pane":"chair","alive":true},
+                  {"id":"\(chairID)","role":"chair","pane":"chair","alive":true},
                   {"id":"child","role":"child","pane":"child","alive":true,"state":"working"},
                   {"id":"no-pane","role":"child","pane":null,"alive":true},
                   {"id":"dead","role":"child","pane":null,"alive":false}
