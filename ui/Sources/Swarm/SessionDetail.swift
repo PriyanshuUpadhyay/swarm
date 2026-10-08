@@ -277,6 +277,8 @@ struct SessionDetailView: View {
     let isVisible: Bool
     let onUsageChanged: (ChatUsage) -> Void
     let onShowUsage: () -> Void
+    let dismissedChildren: [String]
+    let onDismissChildren: ([String]) -> Void
 
     @State private var didShowRows = false
     @FocusState private var composerFocused: Bool
@@ -438,7 +440,7 @@ struct SessionDetailView: View {
 
     private var paneKeys: [String] {
         guard isActive else { return [] }
-        return SwarmPanePolicy.cells(session: row.session, agents: agents).map {
+        return SwarmPanePolicy.cells(session: row.session, agents: agents, dismissed: dismissedChildren).map {
             AgentPaneStore.key(session: row.session.id, agent: $0.agent.id.rawValue)
         }
     }
@@ -471,7 +473,8 @@ struct SessionDetailView: View {
 
     private var paneStrip: some View {
         let session = row.session
-        let agentCells = isActive ? SwarmPanePolicy.cells(session: session, agents: agents) : []
+        let agentCells = isActive
+            ? SwarmPanePolicy.cells(session: session, agents: agents, dismissed: dismissedChildren) : []
         let byID = Dictionary(agentCells.map { ($0.agent.id.rawValue, $0) }) { first, _ in first }
         func key(_ id: String) -> String { AgentPaneStore.key(session: session.id, agent: id) }
         return PaneStrip(
@@ -487,10 +490,17 @@ struct SessionDetailView: View {
             revealCount: panes.revealCount,
             splitScope: session.id.rawValue,
             onFocus: { panes.focus(key: key($0)) },
-            onZoom: { panes.toggleZoom(key: $0.map(key)) }
+            onZoom: { panes.toggleZoom(key: $0.map(key)) },
+            onDismiss: { ids in
+                if ids.contains(where: { key($0) == panes.focusedKey || key($0) == panes.zoomedKey }) {
+                    panes.revealChat()
+                }
+                onDismissChildren(ids)
+            }
         ) {
             VStack(spacing: 0) {
-                waitingChildren(agentCells.map(\.agent)).disabled(readOnlyReason != nil)
+                waitingChildren(SwarmPanePolicy.liveCells(session: session, agents: agents).map(\.agent))
+                    .disabled(readOnlyReason != nil)
                 transcriptColumn
             }
         } pane: { cell in
@@ -498,7 +508,7 @@ struct SessionDetailView: View {
                 let paneKey = key(cell.id)
                 ChildColumnView(
                     session: session, agent: agent, model: panes.column(key: paneKey),
-                    readOnlyReason: readOnlyReason,
+                    readOnlyReason: readOnlyReason ?? (agent.status == .ended ? "This agent has ended." : nil),
                     selected: panes.focusedKey == paneKey, focusRequest: panes.revealCount,
                     onFocused: { [panes] in panes.focused(key: paneKey) }
                 )

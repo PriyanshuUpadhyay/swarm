@@ -7,7 +7,7 @@ private let stressStatuses: [AgentStatus] = [.working, .waiting, .done, .failed,
 struct PaneStressWindow: View {
     @State private var panes = AgentPaneStore()
     @State private var lastWindowAction = "none"
-    private let cells = (0..<SwarmPaneStress.count).map {
+    @State private var cells = (0..<SwarmPaneStress.count).map {
         PaneCell(id: "stress-\($0)", title: "stress-\($0)", role: "stress", model: "sh", status: stressStatuses[$0 % stressStatuses.count])
     }
 
@@ -20,7 +20,11 @@ struct PaneStressWindow: View {
             revealCount: panes.revealCount,
             splitScope: "pane-stress",
             onFocus: { panes.focus(key: $0) },
-            onZoom: { panes.toggleZoom(key: $0) }
+            onZoom: { panes.toggleZoom(key: $0) },
+            onDismiss: { ids in
+                cells.removeAll { $0.ended && ids.contains($0.id) }
+                panes.revealChat()
+            }
         ) {
             Text("Pane stress: \(cells.count) panes")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

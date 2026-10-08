@@ -27,6 +27,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let splitScope: String
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
+    let onDismiss: ([String]) -> Void
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let pane: (PaneCell) -> Pane
 
@@ -81,6 +82,18 @@ struct PaneStrip<Chat: View, Pane: View>: View {
             .retainedVisibility(zoomed == nil)
             if let zoomed {
                 paneView(zoomed, showsContent: true)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if cells.contains(where: \.ended) {
+                HStack {
+                    Spacer()
+                    Button("Clear finished") { onDismiss(cells.filter(\.ended).map(\.id)) }
+                        .buttonStyle(.borderless)
+                }
+                .font(.caption)
+                .padding(DesignTokens.Spacing.s)
+                .background(.bar)
             }
         }
     }
@@ -161,7 +174,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         PaneView(
             cell: cell, focused: cell.id == focusedID, zoomed: cell.id == zoomedID,
             onFocus: { onFocus(cell.id) },
-            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) }
+            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) },
+            onDismiss: { onDismiss([cell.id]) }
         ) {
             // A column shows in one place only; the zoomed copy owns it.
             if showsContent { pane(cell) } else { Color.clear }
@@ -209,6 +223,7 @@ private struct PaneView<Content: View>: View {
     let zoomed: Bool
     let onFocus: () -> Void
     let onZoom: () -> Void
+    let onDismiss: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -241,6 +256,12 @@ private struct PaneView<Content: View>: View {
             // ⌘↩ zooms from the keyboard; this button must not be the window's first key view.
             .focusable(false)
             .accessibilityLabel(zoomed ? "Unzoom \(cell.title)" : "Zoom \(cell.title)")
+            if cell.ended {
+                Button(action: onDismiss) { Image(systemName: "xmark") }
+                    .help("Dismiss finished agent")
+                    .focusable(false)
+                    .accessibilityLabel("Dismiss \(cell.title)")
+            }
         }
         .buttonStyle(.borderless)
         .font(.caption)

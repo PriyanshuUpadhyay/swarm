@@ -31,6 +31,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var selectedWorkspace: String?
     public var selectedChats: [String: String] = [:]
     public var tabHistory: [String: [String]] = [:]
+    public var dismissedChildren: [String: [String]] = [:]
     var ownerChoices = OwnerChoices()
     public var pinned: Set<String> {
         get { ownerChoices.pinned }
@@ -144,7 +145,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 
     // Owner choices live in choices.json; defaults contain only view state.
     private enum CodingKeys: String, CodingKey {
-        case selectedWorkspace, selectedChats, collapsed, lastSeen, tabHistory
+        case selectedWorkspace, selectedChats, collapsed, lastSeen, tabHistory, dismissedChildren
     }
 
     public init(from decoder: Decoder) throws {
@@ -152,6 +153,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
         selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
         tabHistory = try container.decodeIfPresent([String: [String]].self, forKey: .tabHistory) ?? [:]
+        dismissedChildren = try container.decodeIfPresent([String: [String]].self, forKey: .dismissedChildren) ?? [:]
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
         lastSeen = try container.decodeIfPresent([String: Int].self, forKey: .lastSeen) ?? [:]
     }
@@ -257,6 +259,7 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public mutating func recordFirstSight(_ chats: [SwarmProjectSession]) {
         let listed = Set(chats.map(ChatTitle.key))
         lastSeen = lastSeen.filter { listed.contains($0.key) }
+        dismissedChildren = dismissedChildren.filter { listed.contains($0.key) }
         for chat in chats where lastSeen[ChatTitle.key(chat)] == nil {
             lastSeen[ChatTitle.key(chat)] = chat.lastActivity
         }
@@ -265,6 +268,18 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public mutating func markSeen(_ chat: SwarmProjectSession, now: Int = Int(Date().timeIntervalSince1970)) {
         let key = ChatTitle.key(chat)
         lastSeen[key] = max(lastSeen[key] ?? 0, now, chat.lastActivity)
+    }
+
+    public mutating func dismissFinishedChildren(
+        _ ids: [String], in chat: SwarmProjectSession, agents: [SwarmAgent]
+    ) {
+        let key = ChatTitle.key(chat)
+        let finished = SwarmPanePolicy.cells(session: chat.session, agents: agents,
+                                             dismissed: dismissedChildren[key] ?? []).filter {
+            $0.agent.status == .ended && ids.contains($0.id.rawValue)
+        }.map(\.id.rawValue)
+        guard !finished.isEmpty else { return }
+        dismissedChildren[key, default: []] += finished
     }
 
     public mutating func recordTabFirstSight(_ entries: [WorkspaceEntry]) {

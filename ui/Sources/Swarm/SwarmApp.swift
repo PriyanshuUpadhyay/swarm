@@ -1265,7 +1265,7 @@ private struct SessionsWindow: View {
             workspaces: listed.workspaces,
             chats: listed.chats,
             agents: session.map { session in
-                SwarmPanePolicy.cells(session: session, agents: model.agents).map {
+                SwarmPanePolicy.liveCells(session: session, agents: model.agents).map {
                     PaletteSource.Agent(
                         id: $0.agent.id.rawValue, name: $0.agent.id.rawValue, role: $0.agent.role,
                         status: $0.agent.status
@@ -1504,7 +1504,11 @@ private struct SessionsWindow: View {
                       reportedUsage?.sessionID != row.id || reportedUsage?.usage != usage else { return }
                 reportedUsage = (row.id, usage)
             },
-            onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
+            onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true },
+            dismissedChildren: model.navigation.dismissedChildren[ChatTitle.key(row)] ?? [],
+            onDismissChildren: { ids in
+                model.navigation.dismissFinishedChildren(ids, in: row, agents: model.agents)
+            }
         )
     }
 

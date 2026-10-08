@@ -65,9 +65,8 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
         public var text: String { "\(count)" + (waiting == 0 ? "" : " · \(waiting) waiting") }
 
         public static func make(session: SwarmSession, agents: [SwarmAgent]) -> Self? {
-            let children = agents.filter {
-                $0.alive == true && $0.status != .ended && !SwarmPanePolicy.isChair($0, in: session)
-            }.sorted { $0.id < $1.id }
+            let children = SwarmPanePolicy.liveCells(session: session, agents: agents)
+                .map(\.agent).sorted { $0.id < $1.id }
             guard !children.isEmpty else { return nil }
             let waiting = children.filter { $0.status == .waiting }
             return Self(count: children.count, waiting: waiting.count, firstWaiting: waiting.first?.id)

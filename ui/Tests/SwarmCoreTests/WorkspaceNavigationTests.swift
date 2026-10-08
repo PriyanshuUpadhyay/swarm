@@ -61,6 +61,7 @@ struct WorkspaceNavigationTests {
         navigation.select(entry, chat: .init("two"))
         navigation.pinned.insert(entry.id)
         navigation.names[entry.id] = "Landing page copy"
+        navigation.dismissedChildren = ["one": ["finished-child"]]
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
@@ -77,6 +78,24 @@ struct WorkspaceNavigationTests {
         #expect(restored.title(for: entry) == "Landing page copy")
         #expect(restored.pinned.contains(entry.id))
         #expect(entry.chats.count == 2)
+        #expect(restored.dismissedChildren == ["one": ["finished-child"]])
+        let viewData = try #require(defaults.data(forKey: "workspaces.navigation"))
+        #expect(try JSONDecoder().decode(WorkspaceNavigation.self, from: viewData).dismissedChildren
+            == ["one": ["finished-child"]])
+    }
+
+    @Test("Dismissed children use the stable chat key and prune only chats that no longer list")
+    func pruneDismissedChildren() {
+        let root = session("root", path: "/repo/main")
+        var current = session("current", path: "/repo/main")
+        current.createdAt = 2
+        let chat = SwarmProjectSession(sessions: [current, root], title: "Continued")
+        var navigation = WorkspaceNavigation()
+        navigation.dismissedChildren = ["root": ["finished-child"], "gone-chat": ["old-child"]]
+        navigation.recordFirstSight([chat])
+        #expect(navigation.dismissedChildren == ["root": ["finished-child"]])
+        navigation.recordFirstSight([])
+        #expect(navigation.dismissedChildren.isEmpty)
     }
 
     @Test("Search finds project, branch, saved name and chat text")
@@ -192,6 +211,7 @@ struct WorkspaceNavigationTests {
         #expect(navigation.archived.isEmpty)
         #expect(navigation.names.isEmpty)
         #expect(navigation.collapsed.isEmpty)
+        #expect(navigation.dismissedChildren.isEmpty)
 
         navigation.collapsed = [WorkspaceNavigation.projectCollapseID("/repo")]
         store.save(navigation)

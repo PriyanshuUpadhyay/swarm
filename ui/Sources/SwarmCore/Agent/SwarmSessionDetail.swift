@@ -327,13 +327,19 @@ public enum SwarmPanePolicy {
     }
 
     public static func hasLiveChildAgents(session: SwarmSession, agents: [SwarmAgent]) -> Bool {
-        !cells(session: session, agents: agents).isEmpty
+        !liveCells(session: session, agents: agents).isEmpty
     }
 
-    public static func cells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
+    public static func liveCells(session: SwarmSession, agents: [SwarmAgent]) -> [SwarmAgentCell] {
+        cells(session: session, agents: agents).filter { $0.agent.alive == true && $0.agent.status != .ended }
+    }
+
+    public static func cells(
+        session: SwarmSession, agents: [SwarmAgent], dismissed: [String] = []
+    ) -> [SwarmAgentCell] {
         agents
             .filter {
-                $0.alive == true && !isChair($0, in: session)
+                !isChair($0, in: session) && !dismissed.contains($0.id.rawValue)
             }
             .sorted {
                 if $0.createdAt != $1.createdAt { return ($0.createdAt ?? .max) < ($1.createdAt ?? .max) }

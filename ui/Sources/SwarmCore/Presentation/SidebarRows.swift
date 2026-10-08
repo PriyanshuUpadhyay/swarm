@@ -25,6 +25,7 @@ public struct SidebarRow: Sendable, Hashable, Identifiable {
     public var fields: [RowFieldValue] = []
     public var run: SidebarRun? = nil
     public var runStep: SidebarRun? = nil
+    public var dimmed: Bool { kind == .child && (status == .done || status == .ended) }
 }
 
 public struct SidebarRun: Sendable, Hashable {

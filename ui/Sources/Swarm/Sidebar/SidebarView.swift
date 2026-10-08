@@ -374,7 +374,7 @@ private struct SidebarRowView: View {
     @State private var hovering = false
     var showRun: (() -> Void)? = nil
 
-    private var dimmed: Bool { row.kind == .child && (row.status == .done || row.status == .ended) }
+    private var dimmed: Bool { row.dimmed }
 
     private var lines: [[RowFieldValue]] {
         var result: [[RowFieldValue]] = [[]]
