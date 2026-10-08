@@ -113,8 +113,8 @@ final class SessionsTreeModel {
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
-    /// A create or import that went through in part: the folder or worktree exists, but its save or
-    /// the list refresh after it failed. The caller opens a chat right after, which hides `error`, so
+    /// A create, import or new workspace that went through in part: the list refresh after it failed,
+    /// or a new worktree's save failed. The caller opens a chat right after, which hides `error`, so
     /// the view shows this in its alert.
     var saveNotice: String?
     private(set) var closing: Set<SwarmSessionID> = []
