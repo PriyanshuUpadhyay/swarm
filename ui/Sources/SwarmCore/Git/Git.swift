@@ -88,7 +88,11 @@ extension Git {
             }
         }
         _ = try await checkRaw(["add", ".gitignore"], in: path, env: environment)
-        _ = try await checkRaw(["commit", "-q", "-m", "Create project"], in: path, env: environment)
+        do {
+            _ = try await checkRaw(["commit", "-q", "-m", "Create project"], in: path, env: environment)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
         return .made
     }
 
@@ -114,4 +118,14 @@ extension Git {
 
 public enum FirstCommit: Sendable, Equatable {
     case made, skippedNoIdentity
+    case failed(String)
+
+    public var notice: String? {
+        switch self {
+        case .made: nil
+        case .skippedNoIdentity:
+            "Created without a first commit, because git has no user.name and user.email. Set them, then commit once; until then workspaces start orphan branches."
+        case .failed(let reason): "Created without a first commit. \(reason)"
+        }
+    }
 }

@@ -116,7 +116,11 @@ struct ProjectRetentionTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let project = root.appendingPathComponent("project")
-        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let environment = try GitProjectInitializationTests.projectEnvironment(in: root, identity: "")
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let store = SwarmProjectStore(choices: choices, initializeRepository: {
+            try await Git.initializeProject(at: $0, environment: environment)
+        })
         try store.remove(project.path, workspacePaths: [])
         let path = try await store.create(at: project).path
         #expect(try savedChoices(from: store).removedProjects.isEmpty)

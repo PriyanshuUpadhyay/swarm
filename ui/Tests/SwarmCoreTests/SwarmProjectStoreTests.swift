@@ -8,7 +8,7 @@ private enum InitializeFailure: Error { case rejected }
 @Suite("Project folders")
 @MainActor
 struct SwarmProjectStoreTests {
-    @Test("Create returns the first commit result and resolved project path", arguments: [FirstCommit.made, .skippedNoIdentity])
+    @Test("Create returns the first commit result and resolved project path", arguments: [FirstCommit.made, .skippedNoIdentity, .failed("Hook refused")])
     func returnsFirstCommit(firstCommit: FirstCommit) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -32,7 +32,11 @@ struct SwarmProjectStoreTests {
             try? FileManager.default.removeItem(at: root)
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let store = SwarmProjectStore(choicesFolder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let environment = try GitProjectInitializationTests.projectEnvironment(in: root, identity: "")
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let store = SwarmProjectStore(choices: choices, initializeRepository: {
+            try await Git.initializeProject(at: $0, environment: environment)
+        })
         let created = root.appendingPathComponent("New Project")
 
         #expect(try await store.create(at: created).path == created.path)
@@ -66,6 +70,44 @@ struct SwarmProjectStoreTests {
         guard case .repository = await discovery.identity(for: folder.path) else {
             Issue.record("after git init the folder is a repository"); return
         }
+    }
+
+    @Test("A rejected first commit keeps the created project and reports the cause")
+    func rejectedFirstCommit() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let environment = try GitProjectInitializationTests.projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
+        let hooks = root.appendingPathComponent("hooks")
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: true)
+        let preCommit = hooks.appendingPathComponent("pre-commit")
+        try "#!/bin/sh\necho 'Commit rejected by test hook' >&2\nexit 1\n".write(to: preCommit, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: preCommit.path)
+        let gitConfig = try #require(environment["GIT_CONFIG_GLOBAL"])
+        try await Shell.check("git", ["config", "--file", gitConfig, "core.hooksPath", hooks.path], env: environment)
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(root.appendingPathComponent("choices")))
+        let store = SwarmProjectStore(choices: choices, initializeRepository: {
+            try await Git.initializeProject(at: $0, environment: environment)
+        })
+        let project = root.appendingPathComponent("project")
+
+        let created = try await store.create(at: project)
+        guard case .failed(let reason) = created.firstCommit else {
+            Issue.record("The rejected hook must return a failed first commit")
+            return
+        }
+        #expect(reason.contains("Commit rejected by test hook"))
+        #expect(created.firstCommit.notice == "Created without a first commit. \(reason)")
+        #expect(try choices.load().projectPaths == [project.path])
+        #expect(try String(contentsOf: project.appendingPathComponent(".gitignore"), encoding: .utf8) == "tmp/\n")
+        #expect(try await Shell.run("git", ["rev-parse", "--verify", "HEAD"], cwd: project.path, env: environment).ok == false)
+        #expect(try await Shell.check("git", ["ls-files"], cwd: project.path, env: environment).trimmed == ".gitignore")
+    }
+
+    @Test("The no-identity notice requires both identity and a later first commit")
+    func firstCommitNotices() {
+        #expect(FirstCommit.made.notice == nil)
+        #expect(FirstCommit.skippedNoIdentity.notice
+            == "Created without a first commit, because git has no user.name and user.email. Set them, then commit once; until then workspaces start orphan branches.")
     }
 
     @Test("A bare repository outside a hub stays one project after its chat is archived")

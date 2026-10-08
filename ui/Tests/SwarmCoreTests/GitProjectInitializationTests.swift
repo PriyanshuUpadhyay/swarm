@@ -8,7 +8,7 @@ struct GitProjectInitializationTests {
     func createsFirstCommit() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let environment = try projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
+        let environment = try Self.projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 
@@ -26,7 +26,7 @@ struct GitProjectInitializationTests {
     func sharesFirstCommit() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let environment = try projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
+        let environment = try Self.projectEnvironment(in: root, identity: "name = Test\nemail = test@example.com")
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         #expect(try await Git.initializeProject(at: project.path, environment: environment) == .made)
@@ -45,7 +45,7 @@ struct GitProjectInitializationTests {
     func skipsWithoutIdentity(identity: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let environment = try projectEnvironment(in: root, identity: identity)
+        let environment = try Self.projectEnvironment(in: root, identity: identity)
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 
@@ -59,7 +59,7 @@ struct GitProjectInitializationTests {
     func preservesIgnoreRules(original: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let environment = try projectEnvironment(in: root, identity: "")
+        let environment = try Self.projectEnvironment(in: root, identity: "")
         let project = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         let ignore = project.appendingPathComponent(".gitignore")
@@ -71,7 +71,7 @@ struct GitProjectInitializationTests {
         #expect(try Data(contentsOf: ignore) == Data(expected.utf8))
     }
 
-    private func projectEnvironment(in root: URL, identity: String) throws -> [String: String] {
+    static func projectEnvironment(in root: URL, identity: String) throws -> [String: String] {
         let home = root.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try ("[user]\n" + identity + "\n").write(to: home.appendingPathComponent(".gitconfig"), atomically: true, encoding: .utf8)

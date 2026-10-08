@@ -450,9 +450,7 @@ final class SessionsTreeModel {
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
         await refreshAfterSave("Project saved")
-        if created.firstCommit == .skippedNoIdentity {
-            addSaveNotice("Created without a first commit, because git has no user.name and user.email. Workspaces start orphan branches until you set them.")
-        }
+        if let notice = created.firstCommit.notice { addSaveNotice(notice) }
         return created.path
     }
 
