@@ -113,8 +113,9 @@ final class SessionsTreeModel {
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
-    /// A save that worked but whose list refresh failed. The caller opens a chat right after the
-    /// save, which hides `error`, so the view shows this in its alert.
+    /// A create or import that went through in part: the folder or worktree exists, but its save or
+    /// the list refresh after it failed. The caller opens a chat right after, which hides `error`, so
+    /// the view shows this in its alert.
     var saveNotice: String?
     private(set) var closing: Set<SwarmSessionID> = []
 
@@ -434,7 +435,12 @@ final class SessionsTreeModel {
         await discovery.forgetWorktrees(for: common)
         // Git already made the worktree, so a failed save must not ask the owner to create it again.
         do { try await projects.add(URL(fileURLWithPath: path)) }
-        catch { saveNotice = "Workspace made at \(path), but Swarm could not save it. \(error.localizedDescription)" }
+        catch {
+            // lockBusy says "Try again.", which here would make a second worktree.
+            let cause = if case OwnerChoicesError.lockBusy = error { "Another update held the list." }
+                else { error.localizedDescription }
+            addSaveNotice("Workspace made at \(path), so do not create it again. Swarm could not record it. \(cause)")
+        }
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
         // tree lists it, showed the Agent Profiles page and its availability check for a moment.
@@ -444,9 +450,11 @@ final class SessionsTreeModel {
 
     private func refreshAfterSave(_ subject: String) async {
         do { try await refresh() }
-        catch {
-            saveNotice = "\(subject), but the list could not refresh. \(error.localizedDescription)"
-        }
+        catch { addSaveNotice("\(subject), but the list could not refresh. \(error.localizedDescription)") }
+    }
+
+    private func addSaveNotice(_ notice: String) {
+        saveNotice = saveNotice.map { "\($0)\n\n\(notice)" } ?? notice
     }
 
     func pruneWorktree(_ entry: WorkspaceEntry) async throws {
@@ -500,7 +508,7 @@ final class SessionsTreeModel {
         while !Task.isCancelled {
             let timing = SwarmPerformance.begin(first ? "InitialRefresh" : "RefreshTick")
             do { try await refresh() }
-            catch { self.error = String(describing: error) }
+            catch { self.error = error.localizedDescription }
             timing.end()
             await discovery.prefetchHomes()
             first = false
@@ -810,7 +818,8 @@ private struct SessionsWindow: View {
         )) {
             renameWorkspaceSheet
         }
-        .sheet(item: $newTaskProject) { project in
+        // An alert asked for while this sheet is up would be dropped, so a notice waits for it to close.
+        .sheet(item: $newTaskProject, onDismiss: showModelNotice) { project in
             NewTaskSheet(
                 project: project,
                 create: { try await model.createTask(named: $0, in: project) },
@@ -849,7 +858,7 @@ private struct SessionsWindow: View {
                 pruneWorktreeTarget = nil
                 Task {
                     do { try await model.pruneWorktree(target.entry) }
-                    catch { actionError = String(describing: error) }
+                    catch { actionError = error.localizedDescription }
                 }
             }
             Button("Cancel", role: .cancel) { pruneWorktreeTarget = nil }
@@ -870,7 +879,7 @@ private struct SessionsWindow: View {
 
     /// One alert shows at a time, so a notice waits until the owner closes the one before.
     private func showModelNotice() {
-        guard actionError == nil else { return }
+        guard actionError == nil, newTaskProject == nil else { return }
         if let notice = model.saveNotice {
             actionError = notice
             model.saveNotice = nil
@@ -1085,7 +1094,7 @@ private struct SessionsWindow: View {
                         }
                         pruneWorktreeTarget = (workspace, paths)
                     }
-                    catch { actionError = String(describing: error) }
+                    catch { actionError = error.localizedDescription }
                 }
             },
             showRun: { id in
@@ -1428,7 +1437,7 @@ private struct SessionsWindow: View {
                 close: { id in
                     Task {
                         do { try await model.close(SwarmSessionID(id)) }
-                        catch { actionError = String(describing: error) }
+                        catch { actionError = error.localizedDescription }
                     }
                 },
                 archive: { archiveChat(SwarmSessionID($0)) },
@@ -1487,7 +1496,7 @@ private struct SessionsWindow: View {
     private func archiveChat(_ id: SwarmSessionID) {
         Task {
             do { try await model.archive(id) }
-            catch { actionError = String(describing: error) }
+            catch { actionError = error.localizedDescription }
         }
     }
 
