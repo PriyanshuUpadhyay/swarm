@@ -1,6 +1,8 @@
 import Foundation
 
 public enum GitTaskWorktree {
+    static let pullRequestFetchTimeout: Duration = .seconds(60)
+
     public static func branchName(_ name: String, prefix: String) -> String? {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let branch = prefix + slug(name)
@@ -72,8 +74,8 @@ public enum GitTaskWorktree {
                 : ["worktree", "add", "-b", branch, "--", path, base]
         case .existingBranch(let existing):
             guard references.defaultBranch != nil else { throw GitTaskWorktreeError.noCommit }
-            if existing.hasPrefix("origin/") {
-                let local = String(existing.dropFirst("origin/".count))
+            let local = WorkspaceReferences.localName(of: existing)
+            if local != existing {
                 add = ["worktree", "add", "--track", "-b", local, "--", path, existing]
             } else {
                 add = ["worktree", "add", "--", path, existing]
@@ -83,7 +85,7 @@ public enum GitTaskWorktree {
             guard number > 0 else { throw GitTaskWorktreeError.invalidPullRequest }
             do {
                 _ = try await Git.checkRaw(
-                    ["fetch", "origin", "refs/pull/\(number)/head"], in: repositoryDirectory, timeout: .seconds(60)
+                    ["fetch", "origin", "refs/pull/\(number)/head"], in: repositoryDirectory, timeout: pullRequestFetchTimeout
                 )
             } catch ShellFailure.timedOut {
                 throw GitTaskWorktreeError.pullRequestFetchTimedOut(number)
@@ -94,7 +96,7 @@ public enum GitTaskWorktree {
         _ = try await Git.checkRaw(add, in: repositoryDirectory)
         let expectedBranch: String
         if case .existingBranch(let existing) = request.start {
-            expectedBranch = existing.hasPrefix("origin/") ? String(existing.dropFirst("origin/".count)) : existing
+            expectedBranch = WorkspaceReferences.localName(of: existing)
         } else {
             expectedBranch = branch
         }
@@ -160,7 +162,7 @@ public enum GitTaskWorktreeError: LocalizedError {
         case .folderExists(let path): "A folder already exists at \(path)"
         case .invalidBranchName: "Enter a name and prefix that make a valid Git branch"
         case .invalidPullRequest: "Enter a positive pull request number"
-        case .pullRequestFetchTimedOut(let number): "Fetching pull request #\(number) from origin took longer than 60 s."
+        case .pullRequestFetchTimedOut(let number): "Fetching pull request #\(number) from origin took longer than \(GitTaskWorktree.pullRequestFetchTimeout.components.seconds) s."
         case .noCommit: "The first workspace must start a new branch"
         case .notListed(let branch): "Git created \(branch), but did not list its worktree"
         }
@@ -198,9 +200,19 @@ public struct WorkspaceReferences: Sendable, Equatable {
         self.held = held
     }
 
+    public static func localName(of branch: String) -> String {
+        let prefix = "origin/"
+        return branch.hasPrefix(prefix) ? String(branch.dropFirst(prefix.count)) : branch
+    }
+
+    /// O(n) in the number of local and remote branches.
     public var availableBranches: [String] {
-        local.filter { !held.contains($0) }
-            + remote.filter { !held.contains(String($0.dropFirst("origin/".count))) }
+        let localNames = Set(local)
+        return local.filter { !held.contains($0) }
+            + remote.filter {
+                let local = Self.localName(of: $0)
+                return !localNames.contains(local) && !held.contains(local)
+            }
     }
 
     public var bases: [String] {

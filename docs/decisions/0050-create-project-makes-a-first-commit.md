@@ -26,9 +26,9 @@ after "Keep as Folder".
 
 ## Decision Outcome
 
-Chosen: Create Project runs `git init`, writes a `.gitignore` with `tmp/`, and makes an empty first
-commit. With no git identity, it skips the commit and says so, and a workspace falls back to the
-orphan worktree of ADR 0037. Importing a folder with no git asks once; "Keep as Folder" is saved
+Chosen: Create Project runs `git init`, writes a `.gitignore` with `tmp/`, and makes a first commit
+that holds `.gitignore`. With no git identity, it skips the commit and says so, and a workspace
+falls back to the orphan worktree of ADR 0037. Importing a folder with no git asks once; "Keep as Folder" is saved
 for that folder. The New Workspace sheet can start from an existing branch, a PR or a base branch,
 and takes a name with no forced suffix; each project sets its worktree folder and branch prefix
 (default `swarm/`) once.

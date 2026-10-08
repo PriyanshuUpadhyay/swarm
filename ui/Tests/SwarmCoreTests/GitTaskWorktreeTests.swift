@@ -123,9 +123,11 @@ struct GitTaskWorktreeTests {
         let fixture = try await WorktreeFixture()
         defer { fixture.remove() }
         try await fixture.git(["branch", "fix/free"])
+        try await fixture.git(["update-ref", "refs/remotes/origin/fix/free", fixture.baseCommit])
         let references = try await GitTaskWorktree.references(in: fixture.common)
         #expect(references.held == ["main"])
         #expect(references.availableBranches.first == "fix/free")
+        #expect(references.availableBranches == ["fix/free"])
         #expect(references.bases.first == "main")
         #expect(!NewWorkspaceForm.canCreate(
             WorkspaceRequest(name: "Held", start: .existingBranch("main"), prefix: "swarm/"), references: references, worktreeFolder: "../tasks"

@@ -155,11 +155,16 @@ struct NewWorkspaceSheet: View {
                 } else {
                     HStack(spacing: DesignTokens.Spacing.s) {
                         modeButton("Existing branch", mode: .existingBranch)
+                            .disabled(references.availableBranches.isEmpty)
                         Picker("Existing branch", selection: $existingBranch) {
                             ForEach(references.availableBranches, id: \.self) { Text(verbatim: $0).tag($0) }
                         }
                         .labelsHidden()
                         .disabled(mode != .existingBranch || references.availableBranches.isEmpty)
+                    }
+                    if references.availableBranches.isEmpty {
+                        Text("Every branch is already checked out in a worktree.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                     HStack(spacing: DesignTokens.Spacing.s) {
                         modeButton("Pull request", mode: .pullRequest)

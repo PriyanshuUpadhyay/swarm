@@ -61,6 +61,23 @@ struct NewWorkspaceFormTests {
         }
     }
 
+    @Test("A free local branch hides its matching origin branch")
+    func localBranchHidesRemote() {
+        let branches = WorkspaceReferences(defaultBranch: "main", local: ["main", "fix/free"], remote: ["origin/main", "origin/fix/free", "origin/fix/remote"], held: ["main"])
+        #expect(branches.availableBranches == ["fix/free", "origin/fix/remote"])
+        #expect(!NewWorkspaceForm.canCreate(request(.existingBranch("origin/fix/free")), references: branches, worktreeFolder: "../tasks"))
+    }
+
+    @Test("Defaults trim the folder and prefix before saving or comparing the seed")
+    func trimsDefaults() {
+        #expect(NewWorkspaceForm.defaults(
+            worktreeFolder: " ../x \n", branchPrefix: " fix/ \t", seedFolder: "../project-worktrees", seedPrefix: "swarm/"
+        ) == ProjectDefaults(worktreeFolder: "../x", branchPrefix: "fix/"))
+        #expect(NewWorkspaceForm.defaults(
+            worktreeFolder: " ../project-worktrees \n", branchPrefix: " swarm/ \t", seedFolder: "../project-worktrees", seedPrefix: "swarm/"
+        ) == ProjectDefaults())
+    }
+
     @Test("Only values that differ from the built-in seed are saved")
     func savesOverrides() {
         #expect(NewWorkspaceForm.defaults(

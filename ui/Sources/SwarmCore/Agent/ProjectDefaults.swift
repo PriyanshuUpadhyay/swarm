@@ -11,9 +11,9 @@ public struct ProjectDefaults: Codable, Sendable, Hashable {
 
     public func resolved(for project: ProjectNode) -> (folder: String, prefix: String) {
         let root = URL(fileURLWithPath: project.path)
-        let folder = (folderSetting(for: project) as NSString).expandingTildeInPath
+        let folder = (folderSetting(for: project).trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
         let parent = folder.hasPrefix("/") ? URL(fileURLWithPath: folder) : root.appendingPathComponent(folder)
-        return (parent.standardizedFileURL.path, branchPrefix ?? "swarm/")
+        return (parent.standardizedFileURL.path, (branchPrefix ?? "swarm/").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     public func folderSetting(for project: ProjectNode) -> String {

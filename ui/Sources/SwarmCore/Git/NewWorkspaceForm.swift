@@ -4,8 +4,8 @@ public enum NewWorkspaceForm {
     public static func preview(_ request: WorkspaceRequest) -> String? {
         if case .existingBranch(let branch) = request.start {
             guard !branch.isEmpty else { return nil }
-            return branch.hasPrefix("origin/")
-                ? "\(branch.dropFirst("origin/".count)) (tracks \(branch))" : branch
+            let local = WorkspaceReferences.localName(of: branch)
+            return local != branch ? "\(local) (tracks \(branch))" : branch
         }
         return GitTaskWorktree.branchName(request.name, prefix: request.prefix)
     }
@@ -28,7 +28,9 @@ public enum NewWorkspaceForm {
     public static func defaults(
         worktreeFolder: String, branchPrefix: String, seedFolder: String, seedPrefix: String
     ) -> ProjectDefaults {
-        ProjectDefaults(
+        let worktreeFolder = worktreeFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+        let branchPrefix = branchPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ProjectDefaults(
             worktreeFolder: worktreeFolder == seedFolder ? nil : worktreeFolder,
             branchPrefix: branchPrefix == seedPrefix ? nil : branchPrefix
         )
