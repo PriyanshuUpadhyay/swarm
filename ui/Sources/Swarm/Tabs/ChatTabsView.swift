@@ -5,6 +5,7 @@ struct ChatTabActions {
     var select: (String) -> Void
     var newChat: () -> Void
     var close: (String) -> Void
+    var hide: (String) -> Void
     var archive: (String) -> Void
     var rename: (String) -> Void
 }
@@ -57,6 +58,7 @@ private struct ChatTabView: View {
     let selected: Bool
     let canStartChat: Bool
     let actions: ChatTabActions
+    @State private var hovered = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -93,12 +95,26 @@ private struct ChatTabView: View {
             .help(tab.title)
             // A start is never cut in half, so a pending tab has no archive or close.
             if tab.pending == nil {
+                Button { actions.hide(tab.id) } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(DesignTokens.Spacing.s)
+                        .contentShape(Rectangle())
+                        .fixedSize()
+                }
+                .help("Close tab")
+                .accessibilityLabel("Close tab \(tab.title)")
+                .opacity(selected || hovered ? 1 : 0)
+                .allowsHitTesting(selected || hovered)
+                .accessibilityHidden(!selected && !hovered)
                 archiveButton
             }
         }
         .frame(minWidth: DesignTokens.Size.tabMinWidth, alignment: .leading)
         .modifier(CappedWidth(max: DesignTokens.Size.tabMaxWidth))
         .buttonStyle(.plain)
+        .onHover { hovered = $0 }
         .background(selected ? DesignTokens.selectionFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         .contextMenu {
             if tab.pending == nil {

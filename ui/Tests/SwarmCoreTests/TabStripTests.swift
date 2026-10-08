@@ -121,6 +121,68 @@ struct TabStripTests {
         #expect(TabStrip.selectionAfterClose(history: ["design"], open: []) == nil)
     }
 
+    @Test("The tab builder follows only the open keys and puts starts first")
+    func storedTabOrder() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        let rows = entry.project.chats
+        var pending = PendingChats()
+        let start = pending.add(directory: entry.id, workspace: entry.id, previous: nil)
+        let tabs = ChatTab.tabs(rows, strip: .init(open: ["review", "design"]), pending: pending.items, closing: [], now: 1)
+        #expect(tabs.map(\.id) == [pending[start]!.tabID, "review", "design"])
+        #expect(ChatTab.tabs(rows, strip: .init(), closing: [], now: 1).isEmpty)
+        #expect(ChatTab.tabs(rows.reversed(), strip: .init(open: ["design", "review"]), closing: [], now: 1)
+            .map(\.id) == ["design", "review"])
+    }
+
+    @Test("A sidebar open goes right of the current chat; closing selects history and leaves the chat running")
+    func openAndHide() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        let design = try #require(entry.chats.first { $0.id.rawValue == "design" })
+        let review = try #require(entry.chats.first { $0.id.rawValue == "review" })
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = TabStrip(open: ["design", "ended"])
+        navigation.select(entry, chat: design.id)
+        navigation.openTab(review, in: entry)
+        #expect(navigation.tabs[entry.id]?.open == ["design", "review", "ended"])
+        navigation.select(entry, chat: review.id)
+        #expect(navigation.closeTab("review", in: entry) == design.id)
+        #expect(navigation.selectedChat(in: entry)?.id == design.id)
+        #expect(entry.chats.first { $0.id == review.id }?.isRunning == true)
+        navigation.recordTabFirstSight([entry])
+        #expect(navigation.tabs[entry.id]?.open == ["design", "ended"])
+        navigation.openTab(review, in: entry)
+        #expect(navigation.tabs[entry.id]?.open == ["design", "review", "ended"])
+        #expect(navigation.closeTab("ended", in: entry) == design.id)
+        #expect(navigation.closeTab("review", in: entry) == design.id)
+        #expect(navigation.closeTab("design", in: entry) == nil)
+        #expect(navigation.selectedChat(in: entry) == nil)
+        #expect(entry.chats.count == 3)
+    }
+
+    @Test("A handoff keeps the stored tab and history key while selecting the current session")
+    func continuedTab() throws {
+        var oldest = try #require(tree().projects.first?.workspaces.first?.sessions.first?.session)
+        oldest.createdAt = 1
+        var current = oldest
+        current.id = .init("continuation")
+        current.createdAt = 2
+        current.continuationOf = oldest.id
+        let chat = SwarmProjectSession(sessions: [current, oldest], title: "Design", isRunning: true)
+        let project = ProjectNode(id: .folder("/repo"), path: "/repo", launchDirectory: "/repo",
+                                  workspaces: [WorkspaceNode(path: "/repo", name: "repo", sessions: [chat])])
+        let entry = try #require(WorkspaceEntry.list(in: SessionsTree(projects: [project])).first)
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = .init(open: [oldest.id.rawValue])
+        navigation.select(entry, chat: current.id)
+        navigation.recordTabFirstSight([entry])
+        #expect(navigation.tabs[entry.id]?.open == [oldest.id.rawValue])
+        #expect(navigation.tabHistory[entry.id] == [oldest.id.rawValue])
+        #expect(navigation.selectedChat(in: entry)?.id == current.id)
+        #expect(ChatTab.tabs(project.chats, strip: navigation.tabs[entry.id]!, closing: [], now: 2)
+            .map(\.id) == [oldest.id.rawValue])
+        #expect(navigation.closeTab(oldest.id.rawValue, in: entry) == nil)
+    }
+
     private func tree() -> SessionsTree {
         let chats = [("design", true), ("review", true), ("ended", false)].map { key, running in
             SwarmProjectSession(

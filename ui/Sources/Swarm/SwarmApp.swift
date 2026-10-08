@@ -126,18 +126,26 @@ final class SessionsTreeModel {
         selectionRevision += 1
         pendingID = nil
         selectedPendingID = nil
-        selectedSessionID = id
+        selectedSessionID = id.flatMap { tree.session($0)?.id } ?? id
         if let id, let entry = workspaces.first(where: {
             $0.chats.contains { $0.sessions.contains { $0.id == id } }
         }) {
             // Only a move to another workspace opens its project; a tab switch keeps a collapse.
             let moved = navigation.selectedWorkspace != entry.id
+            if let chat = tree.session(id) { navigation.openTab(chat, in: entry) }
             navigation.select(entry, chat: id)
             if moved { expandProject(of: entry) }
         }
-        agents = id.flatMap { tree.agentsBySession[$0] } ?? []
+        agents = selectedSessionID.flatMap { tree.agentsBySession[$0] } ?? []
         commandSource = nil
         commandSourceKey = nil
+    }
+
+    func hideTab(_ key: String, in directory: String) {
+        guard let entry = workspaces.first(where: { $0.id == directory }) else { return }
+        let wasSelected = selectedSession.map(ChatTitle.key) == key
+        let next = navigation.closeTab(key, in: entry)
+        if wasSelected, next != nil || !selectNewestStart() { select(next) }
     }
 
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
@@ -316,6 +324,13 @@ final class SessionsTreeModel {
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
             tree = visibleTree
+            navigation.recordTabFirstSight(workspaces)
+            for chat in settled {
+                if let id = chat.session, let row = tree.session(id),
+                   let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
+                    navigation.openTab(row, in: entry)
+                }
+            }
             hasLoaded = true
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
@@ -1383,7 +1398,7 @@ private struct SessionsWindow: View {
     /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
     private var tabsDirectory: String? {
         if let id = model.selectedPendingID { return model.pendingChats[id]?.workspace }
-        return model.selectedSession.flatMap { model.tree.workspaceChats(for: $0.id).first?.workspacePath }
+        return model.selectedWorkspace?.id
     }
 
     /// The tabs of `directory` in strip order: its starts, then its chats. The tab keys use it too.
@@ -1392,7 +1407,8 @@ private struct SessionsWindow: View {
             ?? model.workspaces.first { $0.id == directory }?.chats.first?.id
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
         return ChatTab.tabs(
-            chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
+            chats, strip: model.navigation.tabs[directory] ?? .init(),
+            pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
             now: Int(Date().timeIntervalSince1970),
             navigation: model.navigation, agentsBySession: model.tree.agentsBySession,
             workspaceFields: model.workspaceFields,
@@ -1410,7 +1426,7 @@ private struct SessionsWindow: View {
 
     private var selectedTabID: String {
         model.selectedPendingID.flatMap { model.pendingChats[$0]?.tabID }
-            ?? model.selectedSession?.id.rawValue ?? ""
+            ?? model.selectedSession.map(ChatTitle.key) ?? ""
     }
 
     private func showTab(_ id: String) {
@@ -1440,6 +1456,7 @@ private struct SessionsWindow: View {
                         catch { showAlert(.error(error.localizedDescription)) }
                     }
                 },
+                hide: { model.hideTab($0, in: directory) },
                 archive: { archiveChat(SwarmSessionID($0)) },
                 rename: { beginRenameChat(SwarmSessionID($0)) }
             )

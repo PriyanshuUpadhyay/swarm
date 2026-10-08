@@ -91,7 +91,7 @@ struct RowFieldCacheTests {
         #expect(sections[0].fields.map(\.text) == ["CI pending", "PR #7"])
         #expect(sections[0].rows[0].fields.map(\.text) == ["PR #7", "CI pending"])
         #expect(sections[0].rows[1].fields.map(\.text) == ["CI pending", "PR #7"])
-        let tabs = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], closing: [], now: 100,
+        let tabs = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], strip: .init(open: [ChatTitle.key(chat)]), closing: [], now: 100,
                                 navigation: navigation, workspaceFields: cache)
         #expect(tabs[0].fields.map(\.text) == ["PR #7", "CI pending"])
         navigation.fields = RowFieldLists()

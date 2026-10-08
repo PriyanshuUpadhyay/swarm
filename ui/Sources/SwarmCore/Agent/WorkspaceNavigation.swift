@@ -222,6 +222,13 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func selectedChat(in entry: WorkspaceEntry) -> SwarmProjectSession? {
+        if let strip = tabs[entry.id] {
+            if let saved = selectedChats[entry.id],
+               let chat = SwarmSessionListing.chat(SwarmSessionID(saved), in: entry.chats),
+               strip.open.contains(ChatTitle.key(chat)) { return chat }
+            let key = TabStrip.selectionAfterClose(history: tabHistory[entry.id] ?? [], open: strip.open)
+            return key.flatMap { key in entry.chats.first { ChatTitle.key($0) == key } }
+        }
         if let saved = selectedChats[entry.id],
            let chat = SwarmSessionListing.chat(SwarmSessionID(saved), in: entry.chats) {
             return chat
@@ -260,6 +267,23 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         history.removeAll { $0 == key }
         history.append(key)
         tabHistory[workspace] = Array(history.suffix(20))
+    }
+
+    public mutating func openTab(_ chat: SwarmProjectSession, in entry: WorkspaceEntry) {
+        let current = selectedChats[entry.id].flatMap { SwarmSessionListing.chat(.init($0), in: entry.chats) }
+        let strip = tabs[entry.id] ?? TabStrip.seed(entry.project.chats.filter { $0.workspacePath == entry.id })
+        tabs[entry.id] = strip.opening(ChatTitle.key(chat), after: current.map(ChatTitle.key))
+    }
+
+    /// Hiding changes only view choices. The listed chat and its agents are untouched.
+    @discardableResult
+    public mutating func closeTab(_ key: String, in entry: WorkspaceEntry) -> SwarmSessionID? {
+        guard let strip = tabs[entry.id], strip.open.contains(key) else { return selectedChat(in: entry)?.id }
+        tabs[entry.id] = strip.closing(key)
+        tabHistory[entry.id]?.removeAll { $0 == key }
+        let selected = selectedChat(in: entry)
+        selectedChats[entry.id] = selected?.id.rawValue
+        return selected?.id
     }
 
     public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {

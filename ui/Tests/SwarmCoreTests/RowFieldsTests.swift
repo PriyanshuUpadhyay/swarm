@@ -84,7 +84,7 @@ struct RowFieldPresentationTests {
         #expect(sections[0].fields.map(\.text) == ["1200 tokens", "repo", "gpt-6", zeroCost])
         #expect(sections[0].rows[0].fields.map(\.text) == ["gpt-6", "2 dirty", "repo", "feature", "1200 tokens", zeroCost])
         #expect(sections[0].rows[1].fields.map(\.text) == [zeroCost, "1200 tokens", "high", "Which route?", "codex", "Fix rows"])
-        let tabs = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], closing: [], now: 100,
+        let tabs = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], strip: .init(open: [ChatTitle.key(chat)]), closing: [], now: 100,
                                 navigation: navigation, agentsBySession: agents)
         #expect(tabs[0].fields.map(\.field) == navigation.fields.tab)
         #expect(tabs[0].fields.map(\.text) == sections[0].rows[1].fields.map(\.text))
@@ -93,7 +93,7 @@ struct RowFieldPresentationTests {
         let branchOnly = SidebarRows.sections(projects: [project], workspaces: entries, navigation: navigation,
                                               search: "", showingArchive: false, now: 100)
         #expect(branchOnly[0].rows[0].fields.map(\.text) == ["feature"])
-        let noUsage = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], closing: [], now: 100,
+        let noUsage = ChatTab.tabs([ChatRow(session: chat, workspace: "repo", workspacePath: "/repo")], strip: .init(open: [ChatTitle.key(chat)]), closing: [], now: 100,
                                    navigation: navigation)
         #expect(noUsage[0].fields.map(\.field) == [.provider, .title])
     }
@@ -113,13 +113,13 @@ struct RowFieldPresentationTests {
         var agents = [current.id: [chair, finished], previous.id: [chair, finished, live]]
         var navigation = WorkspaceNavigation()
         navigation.fields.tab = [.children]
-        let single = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        let single = ChatTab.tabs([row], strip: .init(open: [ChatTitle.key(row.session)]), closing: [], now: 100, navigation: navigation, agentsBySession: agents)
         #expect(single[0].fields.map(\.text) == ["1 agent"])
         agents[current.id] = [chair, finished, live]
-        let multiple = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        let multiple = ChatTab.tabs([row], strip: .init(open: [ChatTitle.key(row.session)]), closing: [], now: 100, navigation: navigation, agentsBySession: agents)
         #expect(multiple[0].fields.map(\.text) == ["2 agents"])
         agents[current.id] = [chair]
-        let noChildren = ChatTab.tabs([row], closing: [], now: 100, navigation: navigation, agentsBySession: agents)
+        let noChildren = ChatTab.tabs([row], strip: .init(open: [ChatTitle.key(row.session)]), closing: [], now: 100, navigation: navigation, agentsBySession: agents)
         #expect(noChildren[0].fields.isEmpty)
     }
 
@@ -154,7 +154,7 @@ struct RowFieldPresentationTests {
                                                 agentsBySession: agents)
         let workspaceContext = RowFields.workspaceContext(entries, title: "repo", navigation: navigation, now: 100,
                                                            agentsBySession: agents, workspaceFields: [:])
-        let tabs = ChatTab.tabs([ChatRow(session: continued, workspace: "repo", workspacePath: "/repo")],
+        let tabs = ChatTab.tabs([ChatRow(session: continued, workspace: "repo", workspacePath: "/repo")], strip: .init(open: [ChatTitle.key(continued)]),
                                 closing: [], now: 100, navigation: navigation, agentsBySession: agents)
         #expect(chatContext.values([.question]).map(\.text) == expected)
         #expect(workspaceContext.values([.question]).map(\.text) == expected)
@@ -186,7 +186,7 @@ struct RowFieldPresentationTests {
         let row = SidebarRows.sections(projects: [project], workspaces: [entry], navigation: navigation,
                                        search: "", showingArchive: false, now: 100)[0].rows[1]
         #expect(!row.fields.contains { $0.field == .unread })
-        let tabs = ChatTab.tabs([ChatRow(session: chat(time: 91), workspace: "repo", workspacePath: "/repo")],
+        let tabs = ChatTab.tabs([ChatRow(session: chat(time: 91), workspace: "repo", workspacePath: "/repo")], strip: .init(open: [ChatTitle.key(chat(time: 91))]),
                                 closing: [], now: 100, navigation: navigation)
         #expect(tabs[0].fields.contains { $0.field == .unread })
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

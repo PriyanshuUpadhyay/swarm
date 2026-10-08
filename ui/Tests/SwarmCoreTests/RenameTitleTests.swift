@@ -35,7 +35,7 @@ struct RenameTitleTests {
         let sections = SidebarRows.sections(projects: tree.projects, workspaces: entries, navigation: loaded, search: "", showingArchive: false, now: 3)
         #expect(sections.first?.title == "Login app")
         #expect(sections.first?.rows.first { $0.kind == .chat }?.title == "Fix login")
-        #expect(ChatTab.tabs([chat], closing: [], now: 3, navigation: loaded).first?.title == "Fix login")
+        #expect(ChatTab.tabs([chat], strip: .init(open: [ChatTitle.key(chat.session)]), closing: [], now: 3, navigation: loaded).first?.title == "Fix login")
         #expect(PaletteSource.workspaces(entries, navigation: loaded, now: 3).chats.first?.title == "Fix login")
         #expect(loaded.matches("Fix login", entry: entries[0]))
         #expect(loaded.matches("Login app", entry: entries[0]))

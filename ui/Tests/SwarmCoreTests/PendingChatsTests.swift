@@ -37,7 +37,7 @@ struct PendingChatsTests {
         #expect(pending.inWorkspace("/docs").isEmpty)
         #expect(pending[first]?.previous == .session(SwarmSessionID("old-chat")))
         #expect(pending[second]?.previous == .pending(first))
-        let tabs = ChatTab.tabs([], pending: pending.items, closing: [], now: 0)
+        let tabs = ChatTab.tabs([], strip: .init(), pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.title) == ["New chat", "New chat"])
         // Newest first, as the tree lists chats, so a started chat keeps its tab's place.
         #expect(tabs.map(\.id) == [pending[second]!.tabID, pending[first]!.tabID])
@@ -93,11 +93,11 @@ struct PendingChatsTests {
             $0.session = made.id
             $0.state = .failed(LaunchFailure(message: "not signed in"))
         }
-        let tabs = ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)
+        let tabs = ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.id) == [pending.items[0].tabID])
         #expect(tabs[0].pending == .failed)
         pending.update(id) { $0.state = .closing(LaunchFailure(message: "not signed in")) }
-        #expect(ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)[0].pending == .closing)
+        #expect(ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), pending: pending.items, closing: [], now: 0)[0].pending == .closing)
     }
 
     @Test("A start in a folder inside a workspace shows in that workspace's strip")

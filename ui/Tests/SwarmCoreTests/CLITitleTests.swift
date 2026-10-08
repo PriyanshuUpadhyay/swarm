@@ -297,7 +297,7 @@ struct CLITitleTests {
         let tree = SessionsTree.build(sessions: [old, new], titles: [old.id: "Old prompt"], cliNames: [new.id: title], repositoryPathsResolver: { _ in nil }, worktreeLister: { _ in [] })
         let chat = try #require(tree.projects.first?.chats.first)
         #expect(ChatTitle.title(chat.session) == title)
-        #expect(ChatTab.tabs([chat], closing: [], now: 3).first?.title == title)
+        #expect(ChatTab.tabs([chat], strip: .init(open: [ChatTitle.key(chat.session)]), closing: [], now: 3).first?.title == title)
         #expect(ChatTitle.title(chat.session, appName: "App name") == "App name")
     }
 

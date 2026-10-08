@@ -378,12 +378,12 @@ struct SessionsTreeTests {
             id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
         )]])
         let chats = tree.workspaceChats(for: live.id)
-        let tab = ChatTab.tabs(chats, closing: [], now: 61)[0]
+        let tab = ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [], now: 61)[0]
         #expect(tab.id == "live-session")
         #expect(tab.status == .working)
         #expect(tab.badge == "X")
         #expect(tab.canClose)
-        #expect(!ChatTab.tabs(chats, closing: [live.id], now: 61)[0].canClose)
+        #expect(!ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [live.id], now: 61)[0].canClose)
         #expect(ChatTab.badge("claude") == "C")
         #expect(ChatTab.badge("agy") == "A")
     }
