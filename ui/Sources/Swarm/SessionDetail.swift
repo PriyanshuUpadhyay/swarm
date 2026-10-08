@@ -265,6 +265,7 @@ struct SessionDetailView: View {
     let row: SwarmProjectSession
     let model: SessionDetailModel
     let agents: [SwarmAgent]
+    let readOnlyReason: String?
     let launchedModel: String?
     /// The folder trust the chair's launch wrote, shown so it is never silent (owner answer I1).
     let launchedTrust: [SwarmTrustWrite]
@@ -330,6 +331,7 @@ struct SessionDetailView: View {
     }
 
     private var modelSwitchDisabledReason: String? {
+        if let readOnlyReason { return readOnlyReason }
         if currentModel == nil, model.snapshot == .waiting || model.snapshot == .loading {
             return "Waiting for this chat's model information."
         }
@@ -402,7 +404,10 @@ struct SessionDetailView: View {
             onTap: { [panes] in panes.clearFocus() },
             focus: $transcriptFocused
         ) {
-            composer
+            if let readOnlyReason {
+                Text(verbatim: readOnlyReason).font(.caption).foregroundStyle(.secondary)
+                    .padding(DesignTokens.Spacing.m)
+            } else { composer }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !launchedTrust.isEmpty { trustNotice }
@@ -442,10 +447,12 @@ struct SessionDetailView: View {
         // The menu bar keeps old command closures alive, so these capture only what they use:
         // capturing the view kept every freed chat's model (and its rows) with them.
         let keys = paneKeys
+        let canWrite = readOnlyReason == nil
         let composerFocus = $composerFocused
         let transcriptFocus = $transcriptFocused
         return ChatKeyActions(
             focusComposer: { [panes] in
+                guard canWrite else { return }
                 panes.revealChat()
                 composerFocus.wrappedValue = true
             },
@@ -456,6 +463,7 @@ struct SessionDetailView: View {
             },
             zoom: { [panes] in panes.toggleZoom() },
             stop: { [weak model, session = row.session] in
+                guard canWrite else { return }
                 Task { try? await model?.interrupt(session: session) }
             }
         )
@@ -482,7 +490,7 @@ struct SessionDetailView: View {
             onZoom: { panes.toggleZoom(key: $0.map(key)) }
         ) {
             VStack(spacing: 0) {
-                waitingChildren(agentCells.map(\.agent))
+                waitingChildren(agentCells.map(\.agent)).disabled(readOnlyReason != nil)
                 transcriptColumn
             }
         } pane: { cell in
@@ -490,6 +498,7 @@ struct SessionDetailView: View {
                 let paneKey = key(cell.id)
                 ChildColumnView(
                     session: session, agent: agent, model: panes.column(key: paneKey),
+                    readOnlyReason: readOnlyReason,
                     selected: panes.focusedKey == paneKey, focusRequest: panes.revealCount,
                     onFocused: { [panes] in panes.focused(key: paneKey) }
                 )

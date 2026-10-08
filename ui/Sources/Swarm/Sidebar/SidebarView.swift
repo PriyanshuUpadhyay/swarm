@@ -45,6 +45,8 @@ struct SidebarActions {
     var archive: (String) -> Void
     var endChat: (String) -> Void
     var archiveChat: (String) -> Void
+    var deleteWorkspace: (String) -> Void
+    var canDeleteWorkspace: (String) -> Bool
     var restore: (String) -> Void
     var removeProject: (String) -> Void
     var pruneWorktree: (String) -> Void
@@ -60,6 +62,7 @@ struct SidebarView<Details: View>: View {
     let loaded: Bool
     let selectedID: String?
     let showingArchive: Bool
+    let archivedStatus: AgentStatus?
     let actions: SidebarActions
     @ViewBuilder let details: () -> Details
 
@@ -147,7 +150,10 @@ struct SidebarView<Details: View>: View {
             }
             HStack {
                 Button(action: actions.toggleArchive) {
-                    Label(showingArchive ? "Workspaces" : "Archived", systemImage: "clock.arrow.circlepath")
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Label(showingArchive ? "Workspaces" : "Archived", systemImage: "clock.arrow.circlepath")
+                        if !showingArchive, let archivedStatus { StatusGlyph(status: archivedStatus) }
+                    }
                 }
                 Spacer()
             }
@@ -276,6 +282,9 @@ struct SidebarView<Details: View>: View {
             Button("Rename workspace…") { actions.rename(row.id) }
             workspaceMoveButtons(for: row, showDisabled: true)
             Button("Archive workspace") { actions.archive(row.id) }
+        }
+        if actions.canDeleteWorkspace(row.id) {
+            Button("Delete workspace…", role: .destructive) { actions.deleteWorkspace(row.id) }
         }
         if row.missing {
             Button("Prune worktree…", role: .destructive) { actions.pruneWorktree(row.id) }

@@ -12,6 +12,10 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     public var statusCounts: [AgentStatus: Int] {
         chats.reduce(into: [:]) { total, chat in total.merge(chat.statusCounts, uniquingKeysWith: +) }
     }
+    public var canDelete: Bool {
+        if case .folder = project.id { return false }
+        return id != project.mainWorkspacePath && id != project.path && !workspace.missing && !workspace.isRemoved
+    }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
     public static func list(in tree: SessionsTree, workspaceOrder: [String: [String]] = [:]) -> [Self] {
@@ -219,6 +223,14 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
             }
         }
         return path
+    }
+
+    public func readOnlyReason(in workspace: String) -> String? {
+        archived.contains(workspace) ? "This workspace is archived. Restore it to send messages or start a chat." : nil
+    }
+
+    public func canStartChat(in entry: WorkspaceEntry) -> Bool {
+        readOnlyReason(in: entry.id) == nil && entry.workspace.canStartChat
     }
 
     public func selectedChat(in entry: WorkspaceEntry) -> SwarmProjectSession? {

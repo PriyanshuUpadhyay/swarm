@@ -74,7 +74,13 @@ final class SessionsTreeModel {
         select(nil)
     }
 
-    func archiveWorkspace(_ entry: WorkspaceEntry) {
+    func workspaceArchiveCount(_ entry: WorkspaceEntry) async throws -> Int {
+        try await WorkspaceArchive.liveAgents(in: entry.chats, bus: bus)
+    }
+
+    func archiveWorkspace(_ entry: WorkspaceEntry) async throws {
+        guard let current = workspaces.first(where: { $0.id == entry.id }) else { return }
+        try await WorkspaceArchive.end(current.chats, bus: bus)
         let wasSelected = navigation.selectedWorkspace == entry.id
         navigation.archive(entry.id)
         if wasSelected { select(nil) }
@@ -156,7 +162,8 @@ final class SessionsTreeModel {
 
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
     func newChat(in directory: String) {
-        guard workspaces.first(where: { $0.id == directory })?.workspace.canStartChat != false else { return }
+        guard navigation.readOnlyReason(in: directory) == nil,
+              workspaces.first(where: { $0.id == directory }).map({ navigation.canStartChat(in: $0) }) != false else { return }
         guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
         let previous = selectedPendingID.map(PendingChat.Previous.pending)
             ?? selectedSessionID.map(PendingChat.Previous.session)
@@ -165,8 +172,8 @@ final class SessionsTreeModel {
         let workspace = workspaces.map(\.id)
             .filter { directory == $0 || directory.hasPrefix($0 + "/") }
             .max { $0.count < $1.count } ?? Self.hubWorkspace(for: directory) ?? directory
+        guard navigation.readOnlyReason(in: workspace) == nil else { return }
         let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
-        navigation.archived.remove(workspace)
         navigation.selectedWorkspace = workspace
         if let entry = workspaces.first(where: { $0.id == workspace }) { expandProject(of: entry) }
         selectPending(id)
@@ -210,7 +217,7 @@ final class SessionsTreeModel {
 
     /// Runs `launch` again, in the session the failed start made if it made one.
     func retryChat(_ id: UUID) {
-        guard let chat = pendingChats[id], case .failed = chat.state,
+        guard let chat = pendingChats[id], navigation.readOnlyReason(in: chat.workspace) == nil, case .failed = chat.state,
               let plan = SwarmChatLaunchPlan(profileIn: chat.directory) else { return }
         pendingChats.update(id) { $0.state = .starting }
         runStart(id, plan: plan)
@@ -282,6 +289,8 @@ final class SessionsTreeModel {
         _ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession,
         onProgress: @escaping @Sendable (ChatSwitchPhase) async -> Void
     ) async throws -> SwarmSessionID {
+        if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }),
+           let reason = navigation.readOnlyReason(in: entry.id) { throw SwarmProfileError.failed(reason) }
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
         pendingID = id
@@ -484,6 +493,16 @@ final class SessionsTreeModel {
         try await refresh()
     }
 
+    func deleteWorkspace(_ entry: WorkspaceEntry) async throws {
+        guard entry.canDelete, case .repository(let common) = entry.project.id else { return }
+        if let blocker = await Git.removalBlocker(worktree: entry.id) {
+            throw SwarmProfileError.failed(blocker)
+        }
+        try await Git.removeWorktree(entry.id, in: common)
+        await discovery.forgetWorktrees(for: common)
+        try await refresh()
+    }
+
     func archive(_ id: SwarmSessionID) async throws {
         guard let chat = tree.session(id) else { return }
         let ids = archives.begin(id, in: tree)
@@ -659,6 +678,8 @@ private struct SessionsWindow: View {
                 loaded: model.hasLoaded,
                 selectedID: selectedSidebarID(in: sections),
                 showingArchive: showingArchive,
+                archivedStatus: SidebarRows.archivedStatus(model.workspaces, navigation: model.navigation,
+                                                          agentsBySession: model.tree.agentsBySession),
                 actions: sidebarActions
             ) {
                 if let directory = workspaceDirectory {
@@ -932,6 +953,17 @@ private struct SessionsWindow: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        case .archiveWorkspace(let entry, _):
+            Button("Archive Workspace", role: .destructive) { performWorkspaceArchive(entry) }
+            Button("Cancel", role: .cancel) {}
+        case .deleteWorkspace(let entry, _):
+            Button("Delete Workspace", role: .destructive) {
+                Task {
+                    do { try await model.deleteWorkspace(entry) }
+                    catch { showAlert(.error(error.localizedDescription)) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
         case .endChat(let id, _, _, let archive):
             Button(archive ? "Archive Chat" : "End Chat", role: .destructive) {
                 performChatEnd(id, archive: archive)
@@ -954,6 +986,11 @@ private struct SessionsWindow: View {
             Text(verbatim: "Prune removes the worktree records for these missing folders in "
                  + model.navigation.projectTitle(for: entry.project) + ":\n\n"
                  + paths.joined(separator: "\n"))
+        case .archiveWorkspace(_, let count):
+            Text(verbatim: "\(count == 1 ? "1 agent still runs" : "\(count) agents still run"). Archiving stops them and keeps the workspace folder.")
+        case .deleteWorkspace(let entry, let ignored):
+            Text(verbatim: "Delete the workspace folder at \(entry.id)? Git refuses uncommitted changes or unpushed commits."
+                 + (ignored.message.map { "\n\n" + $0 } ?? ""))
         case .endChat(_, _, let confirmation, let archive):
             Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
         case .error(let message):
@@ -1009,7 +1046,10 @@ private struct SessionsWindow: View {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
                 Button("New chat") { startChat(in: workspace.id) }
-                    .disabled(!workspace.workspace.canStartChat)
+                    .disabled(!model.navigation.canStartChat(in: workspace))
+                if let reason = model.navigation.readOnlyReason(in: workspace.id) {
+                    Text(verbatim: reason).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -1087,10 +1127,6 @@ private struct SessionsWindow: View {
                 guard let target = SidebarRows.selection(
                     for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession
                 ), let entry = entry(target.workspaceID) else { return }
-                if model.navigation.archived.contains(entry.id) {
-                    model.navigation.archived.remove(entry.id)
-                    showingArchive = false
-                }
                 ownerMoves += 1
                 sidebarFocus = target.agentID == nil ? nil : target
                 if let chat = target.chatID {
@@ -1145,7 +1181,9 @@ private struct SessionsWindow: View {
                 renameName = model.navigation.projectTitle(for: project)
                 renameTarget = .project(project)
             },
-            archive: { id in entry(id).map(model.archiveWorkspace) },
+            archive: { id in
+                if let workspace = entry(id) { requestWorkspaceArchive(workspace) }
+            },
             endChat: { id in
                 if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
                    let chat = target.chatID { requestChatEnd(chat, archive: false) }
@@ -1154,6 +1192,10 @@ private struct SessionsWindow: View {
                 if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
                    let chat = target.chatID { archiveChat(chat) }
             },
+            deleteWorkspace: { id in
+                if let workspace = entry(id), workspace.canDelete { requestWorkspaceDelete(workspace) }
+            },
+            canDeleteWorkspace: { entry($0)?.canDelete == true },
             restore: { model.navigation.archived.remove($0) },
             removeProject: { id in
                 if let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) {
@@ -1312,7 +1354,7 @@ private struct SessionsWindow: View {
 
     private var keyActions: WindowKeyActions {
         WindowKeyActions(
-            newChat: model.selectedWorkspace?.workspace.canStartChat == false
+            newChat: model.selectedWorkspace.map({ model.navigation.canStartChat(in: $0) }) == false
                 ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
             recentlyClosed: {
                 Task {
@@ -1446,6 +1488,8 @@ private struct SessionsWindow: View {
         SessionDetailView(
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
+            readOnlyReason: model.workspaces.first { $0.chats.contains { $0.id == row.id } }
+                .flatMap { model.navigation.readOnlyReason(in: $0.id) },
             launchedModel: model.launchedModels[row.id],
             launchedTrust: model.launchedTrust[row.id] ?? [],
             panes: panes, commandSource: active ? model.commandSource : nil,
@@ -1525,7 +1569,8 @@ private struct SessionsWindow: View {
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
             tabs: stripTabs(in: directory),
             selectedID: selectedTabID,
-            canStartChat: model.workspaces.first { $0.id == directory }?.workspace.canStartChat ?? true,
+            canStartChat: model.navigation.readOnlyReason(in: directory) == nil
+                && (model.workspaces.first { $0.id == directory }.map { model.navigation.canStartChat(in: $0) } ?? true),
             actions: ChatTabActions(
                 select: showTab,
                 selectChildren: { showTabChildren($0, in: directory) },
@@ -1585,6 +1630,32 @@ private struct SessionsWindow: View {
 
     private var windowTitle: String {
         model.selectedSessionID.flatMap { model.tree.windowTitle(for: $0, navigation: model.navigation) } ?? "Swarm"
+    }
+
+    private func requestWorkspaceDelete(_ entry: WorkspaceEntry) {
+        Task {
+            do {
+                let ignored = try await Git.ignoredRemovalItems(worktree: entry.id)
+                showAlert(.deleteWorkspace(entry, ignored: ignored))
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func requestWorkspaceArchive(_ entry: WorkspaceEntry) {
+        Task {
+            do {
+                let count = try await model.workspaceArchiveCount(entry)
+                if count > 0 { showAlert(.archiveWorkspace(entry, liveAgents: count)) }
+                else { performWorkspaceArchive(entry) }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performWorkspaceArchive(_ entry: WorkspaceEntry) {
+        Task {
+            do { try await model.archiveWorkspace(entry) }
+            catch { showAlert(.error(error.localizedDescription)) }
+        }
     }
 
     private func archiveChat(_ id: SwarmSessionID) {
@@ -1758,6 +1829,8 @@ private enum WindowAlert {
     case gitInit(GitInitRequest)
     case removeProject(ProjectNode)
     case prune(entry: WorkspaceEntry, paths: [String])
+    case archiveWorkspace(WorkspaceEntry, liveAgents: Int)
+    case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems)
     case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
     case error(String)
 
@@ -1767,6 +1840,8 @@ private enum WindowAlert {
         case .gitInit(let request): "“\(request.name)” is not a git repository"
         case .removeProject: "Remove Project…"
         case .prune: "Prune missing worktrees?"
+        case .archiveWorkspace: "Archive workspace?"
+        case .deleteWorkspace: "Delete workspace?"
         case .endChat(_, let title, _, let archive): "\(archive ? "Archive" : "End") “\(title)”?"
         case .error: "Could not complete action"
         }

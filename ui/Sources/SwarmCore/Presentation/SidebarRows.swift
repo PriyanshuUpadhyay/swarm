@@ -102,6 +102,16 @@ public enum SidebarRows {
     public static let chatPrefix = "chat:"
     public static let chatsShownPerWorkspace = 5
 
+    public static func archivedStatus(
+        _ entries: [WorkspaceEntry], navigation: WorkspaceNavigation,
+        agentsBySession: [SwarmSessionID: [SwarmAgent]]
+    ) -> AgentStatus? {
+        let sessions = entries.filter { navigation.archived.contains($0.id) }
+            .flatMap(\.chats).flatMap(\.sessions)
+        return AgentStatus.aggregate(sessions.flatMap { agentsBySession[$0.id] ?? [] }
+            .map(\.status).filter { $0 == .waiting })
+    }
+
     public static func runWorkspaces(_ entries: [WorkspaceEntry], navigation: WorkspaceNavigation) -> [String] {
         entries.filter {
             !$0.workspace.missing && !$0.workspace.isRemoved && !navigation.archived.contains($0.id)
@@ -436,7 +446,7 @@ public enum SidebarRows {
             help: "\(navigation.projectTitle(for: entry.project)) · \(entry.workspace.name)\n\(entry.id)",
             pinned: navigation.pinned.contains(entry.id),
             archived: navigation.archived.contains(entry.id),
-            missing: entry.workspace.missing, newChatEnabled: entry.workspace.canStartChat,
+            missing: entry.workspace.missing, newChatEnabled: navigation.canStartChat(in: entry),
             run: orderedRuns(runs).first.flatMap(runReference)
         )
     }
