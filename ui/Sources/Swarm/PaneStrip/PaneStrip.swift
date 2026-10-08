@@ -36,12 +36,14 @@ struct PaneStrip<Chat: View, Pane: View>: View {
 
     /// nil is the default width, a third of the main area.
     @AppStorage("paneColumnWidth") private var storedColumnWidth: Double?
+    @AppStorage("chatPageWidth") private var storedChatWidth: Double?
     @AppStorage("paneColumnSplits") private var storedSplits = ""
     @State private var main = CGSize.zero
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollOffset = ScrollOffset()
     @State private var widthDragStart: (width: CGFloat, offset: CGFloat)?
     @State private var splitDragStart: Double?
+    @State private var chatDragStart: CGFloat?
 
     var body: some View {
         let hasPanes = !cells.isEmpty
@@ -55,7 +57,12 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                     LazyHStack(spacing: 0) {
                         chat()
                             .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
-                                axis == .horizontal && hasPanes ? PaneStripLayout.widths(main: length).chat : length
+                                axis == .horizontal && hasPanes
+                                    ? PaneStripLayout.widths(main: length, chat: storedChatWidth.map { CGFloat($0) }).chat
+                                    : length
+                            }
+                            .overlay(alignment: .trailing) {
+                                if hasPanes { chatWidthHandle }
                             }
                             .id(Self.chatID)
                         ForEach(Array(columns.enumerated()), id: \.element[0].id) { index, column in
@@ -137,6 +144,27 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                 ForEach(column) { paneView($0, showsContent: $0.id != zoomedID) }
             }
         }
+    }
+
+    private var chatWidth: CGFloat {
+        PaneStripLayout.widths(main: main.width, chat: storedChatWidth.map { CGFloat($0) }).chat
+    }
+
+    private var chatWidthHandle: some View {
+        ResizeHandle(axis: .horizontal, label: "Chat page width") { translation in
+            if chatDragStart == nil { chatDragStart = chatWidth }
+            resizeChat(to: (chatDragStart ?? chatWidth) + translation)
+        } onEnd: {
+            chatDragStart = nil
+        } onReset: {
+            resizeChat(to: nil)
+        } onAdjust: { step in
+            resizeChat(to: chatWidth + step * 20)
+        }
+    }
+
+    private func resizeChat(to preferred: CGFloat?) {
+        storedChatWidth = preferred.map { Double(PaneStripLayout.widths(main: main.width, chat: $0).chat) }
     }
 
     private func widthHandle(column index: Int) -> some View {
