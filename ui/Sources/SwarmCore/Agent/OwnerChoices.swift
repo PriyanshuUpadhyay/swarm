@@ -11,6 +11,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var projectPaths: [String] = []
     public var removedProjects: Set<String> = []
     public var workspaceOrder: [String: [String]] = [:]
+    public var tabs: [String: TabStrip] = [:]
 
     public var fields = RowFieldLists()
 
@@ -26,6 +27,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         projectPaths = try container.decodeIfPresent([String].self, forKey: .projectPaths) ?? []
         removedProjects = try container.decodeIfPresent(Set<String>.self, forKey: .removedProjects) ?? []
         workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
+        tabs = try container.decodeIfPresent([String: TabStrip].self, forKey: .tabs) ?? [:]
         fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
     }
 
@@ -39,6 +41,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         Self.mergeChanges(from: before.chatNames, to: after.chatNames, into: &chatNames)
         Self.mergeChanges(from: before.projectNames, to: after.projectNames, into: &projectNames)
         Self.mergeChanges(from: before.workspaceOrder, to: after.workspaceOrder, into: &workspaceOrder)
+        Self.mergeChanges(from: before.tabs, to: after.tabs, into: &tabs)
         if before.fields != after.fields { fields = after.fields }
     }
 
@@ -58,6 +61,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         names = names.filter { !removed.contains($0.key) }
         projectNames.removeValue(forKey: path)
         workspaceOrder.removeValue(forKey: path)
+        tabs = tabs.filter { !removed.contains($0.key) }
     }
 
     static func folderExists(_ path: String) -> Bool {

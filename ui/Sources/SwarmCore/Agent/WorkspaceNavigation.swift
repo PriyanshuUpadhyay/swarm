@@ -26,6 +26,7 @@ public struct WorkspaceEntry: Identifiable, Sendable {
 public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var selectedWorkspace: String?
     public var selectedChats: [String: String] = [:]
+    public var tabHistory: [String: [String]] = [:]
     var ownerChoices = OwnerChoices()
     public var pinned: Set<String> {
         get { ownerChoices.pinned }
@@ -50,6 +51,10 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var workspaceOrder: [String: [String]] {
         get { ownerChoices.workspaceOrder }
         set { ownerChoices.workspaceOrder = newValue }
+    }
+    public var tabs: [String: TabStrip] {
+        get { ownerChoices.tabs }
+        set { ownerChoices.tabs = newValue }
     }
     /// Project and workspace folds have separate keys. Chat children start folded;
     /// `expanded:<chat row id>` records the exception in the same saved view state.
@@ -135,13 +140,14 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 
     // Owner choices live in choices.json; defaults contain only view state.
     private enum CodingKeys: String, CodingKey {
-        case selectedWorkspace, selectedChats, collapsed, lastSeen
+        case selectedWorkspace, selectedChats, collapsed, lastSeen, tabHistory
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
         selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
+        tabHistory = try container.decodeIfPresent([String: [String]].self, forKey: .tabHistory) ?? [:]
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
         lastSeen = try container.decodeIfPresent([String: Int].self, forKey: .lastSeen) ?? [:]
     }
@@ -242,11 +248,28 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         lastSeen[key] = max(lastSeen[key] ?? 0, now, chat.lastActivity)
     }
 
+    public mutating func recordTabFirstSight(_ entries: [WorkspaceEntry]) {
+        for entry in entries {
+            let rows = entry.project.chats.filter { $0.workspacePath == entry.id }
+            tabs[entry.id] = tabs[entry.id]?.pruned(to: Set(entry.chats.map(ChatTitle.key))) ?? TabStrip.seed(rows)
+        }
+    }
+
+    public mutating func recordTabSelection(_ key: String, in workspace: String) {
+        var history = tabHistory[workspace] ?? []
+        history.removeAll { $0 == key }
+        history.append(key)
+        tabHistory[workspace] = Array(history.suffix(20))
+    }
+
     public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {
             selectedChats[entry.id] = id.rawValue
-            if let selected = SwarmSessionListing.chat(id, in: entry.chats) { markSeen(selected, now: now) }
+            if let selected = SwarmSessionListing.chat(id, in: entry.chats) {
+                markSeen(selected, now: now)
+                recordTabSelection(ChatTitle.key(selected), in: entry.id)
+            }
         }
     }
 
