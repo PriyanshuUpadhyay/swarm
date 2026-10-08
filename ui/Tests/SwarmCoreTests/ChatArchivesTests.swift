@@ -114,6 +114,32 @@ struct ChatArchivesTests {
         #expect(archives.applying(to: source).session(second) != nil)
     }
 
+    @Test("A failed background archive restores tab order, groups and history after refresh")
+    func tabRollback() throws {
+        let source = tree([first, second, third])
+        let entry = try #require(WorkspaceEntry.list(in: source).first)
+        var navigation = WorkspaceNavigation()
+        navigation.recordTabFirstSight([entry])
+        navigation.tabs[entry.id] = TabStrip(open: [third.rawValue, first.rawValue, second.rawValue])
+            .grouping(.new(id: "review", name: "Review", color: .blue, tab: first.rawValue))
+            .grouping(.add(second.rawValue, to: "review"))
+        navigation.tabHistory[entry.id] = [first.rawValue, third.rawValue, second.rawValue]
+        navigation.selectedChats[entry.id] = third.rawValue
+        let strip = navigation.tabs[entry.id]
+        let history = navigation.tabHistory[entry.id]
+        let snapshot = ChatArchives.TabSnapshot(workspace: entry.id, navigation: navigation)
+        var archives = ChatArchives()
+        _ = archives.begin(first, in: source)
+        navigation.closeTab(first.rawValue, in: entry)
+        #expect(navigation.tabHistory[entry.id]?.contains(first.rawValue) == false)
+        navigation.recordTabFirstSight(WorkspaceEntry.list(in: archives.applying(to: source)))
+        archives.finish(first, succeeded: false)
+        snapshot.restore(in: &navigation)
+        #expect(navigation.tabs[entry.id] == strip)
+        #expect(navigation.tabHistory[entry.id] == history)
+        #expect(navigation.selectedChats[entry.id] == third.rawValue)
+    }
+
     private func tree(_ ids: [SwarmSessionID], linked: SwarmSessionID? = nil) -> SessionsTree {
         let rows = ids.enumerated().map { index, id in
             SwarmProjectSession(

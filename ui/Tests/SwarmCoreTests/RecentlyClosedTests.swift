@@ -69,8 +69,57 @@ struct RecentlyClosedTests {
         _ = archives.begin(chat.id, in: source)
         archives.finish(chat.id, succeeded: true)
         #expect(archives.applying(to: source).session(chat.id) == nil)
-        archives.restored(chat.sessions.map(\.id))
+        archives.restore(chat.sessions.map(\.id))
         #expect(archives.applying(to: source).session(chat.id) != nil)
+    }
+
+    @Test("The 50-session cap notice counts archived rows before chat grouping")
+    func limitNotice() {
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 49).notice == nil)
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 0).notice == nil)
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 50).notice ==
+                "Showing the newest 50 closed sessions.")
+    }
+
+    @Test("A superseded restore refresh retries once and then uses the completed list")
+    @MainActor
+    func refreshSuperseded() async throws {
+        var calls = 0
+        var listed = false
+        let result = try await RecentlyClosed.refreshRestoredChat(refresh: {
+            calls += 1
+            if calls == 1 { return false }
+            listed = true
+            return true
+        }, isListed: { listed })
+        #expect(result)
+        #expect(calls == 2)
+    }
+
+    @Test("Two superseded refreshes leave restore pending without a false missing-chat error")
+    @MainActor
+    func refreshPending() async throws {
+        var calls = 0
+        let result = try await RecentlyClosed.refreshRestoredChat(refresh: {
+            calls += 1
+            return false
+        }, isListed: { false })
+        #expect(!result)
+        #expect(calls == 2)
+    }
+
+    @Test("Only a completed refresh can report a missing restored chat")
+    @MainActor
+    func refreshMissing() async throws {
+        var calls = 0
+        await #expect(throws: (any Error).self) {
+            try await RecentlyClosed.refreshRestoredChat(refresh: {
+                calls += 1
+                return true
+            }, isListed: { false })
+        }
+        #expect(calls == 1)
+        #expect(try await RecentlyClosed.refreshRestoredChat(refresh: { false }, isListed: { true }))
     }
 
     private func session(

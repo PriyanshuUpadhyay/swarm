@@ -368,7 +368,7 @@ public enum SwarmSessionCloser {
         }
 
         public var message: String {
-            "\(liveChildren == 1 ? "1 agent still runs" : "\(liveChildren) agents still run"), and \(midTurnChildren) \(midTurnChildren == 1 ? "is" : "are") mid-turn. Ending stops them."
+            "\(CountText.agentsStillRunning(liveChildren)), and \(midTurnChildren) \(midTurnChildren == 1 ? "is" : "are") mid-turn. Ending stops them."
         }
     }
 

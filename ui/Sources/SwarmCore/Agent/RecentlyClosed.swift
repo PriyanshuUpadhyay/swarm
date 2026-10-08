@@ -10,6 +10,31 @@ public struct RecentlyClosedChat: Sendable, Hashable, Identifiable {
 }
 
 public enum RecentlyClosed {
+    public struct Listing: Sendable {
+        public let chats: [RecentlyClosedChat]
+        public let notice: String?
+
+        public init(chats: [RecentlyClosedChat], archivedSessionCount: Int) {
+            self.chats = chats
+            notice = archivedSessionCount == 50 ? "Showing the newest 50 closed sessions." : nil
+        }
+    }
+
+    /// A superseded discovery gets one retry; a second supersession leaves selection pending.
+    @MainActor
+    public static func refreshRestoredChat(
+        refresh: () async throws -> Bool, isListed: () -> Bool
+    ) async throws -> Bool {
+        for _ in 0..<2 {
+            let completed = try await refresh()
+            if isListed() { return true }
+            if completed {
+                throw SwarmProfileError.failed("The chat was restored, but it is not in the workspace list. Check the sidebar after the list refreshes.")
+            }
+        }
+        return false
+    }
+
     public static func list(
         chats: [SwarmProjectSession], navigation: WorkspaceNavigation,
         workspaces: [WorkspaceEntry], now: Int

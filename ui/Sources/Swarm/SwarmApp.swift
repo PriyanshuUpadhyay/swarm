@@ -51,6 +51,10 @@ final class SessionsTreeModel {
         workspaces.first { $0.id == navigation.selectedWorkspace }
     }
 
+    func workspace(containingChat id: SwarmSessionID) -> WorkspaceEntry? {
+        workspaces.first { $0.chats.contains { $0.sessions.contains { $0.id == id } } }
+    }
+
     func selectWorkspace(_ entry: WorkspaceEntry) {
         navigation.select(entry)
         expandProject(of: entry)
@@ -140,9 +144,7 @@ final class SessionsTreeModel {
         pendingID = nil
         selectedPendingID = nil
         selectedSessionID = id.flatMap { tree.session($0)?.id } ?? id
-        if let id, let entry = workspaces.first(where: {
-            $0.chats.contains { $0.sessions.contains { $0.id == id } }
-        }) {
+        if let id, let entry = workspace(containingChat: id) {
             // Only a move to another workspace opens its project; a tab switch keeps a collapse.
             let moved = navigation.selectedWorkspace != entry.id
             if let chat = tree.session(id) { navigation.openTab(chat, in: entry) }
@@ -290,7 +292,7 @@ final class SessionsTreeModel {
         _ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession,
         onProgress: @escaping @Sendable (ChatSwitchPhase) async -> Void
     ) async throws -> SwarmSessionID {
-        if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }),
+        if let entry = workspace(containingChat: row.id),
            let reason = navigation.readOnlyReason(in: entry.id) { throw SwarmProfileError.failed(reason) }
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
@@ -302,7 +304,8 @@ final class SessionsTreeModel {
         return id
     }
 
-    func refresh() async throws {
+    @discardableResult
+    func refresh() async throws -> Bool {
         refreshRevision += 1
         let revision = refreshRevision
         let timing = SwarmPerformance.begin("UIRefresh")
@@ -313,7 +316,7 @@ final class SessionsTreeModel {
             defer { listTiming.end() }
             sessions = try await bus.sessions()
         }
-        guard revision == refreshRevision else { return }
+        guard revision == refreshRevision else { return false }
         var settled: [PendingChat] = []
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         do {
@@ -325,7 +328,7 @@ final class SessionsTreeModel {
             let loaded = try await discovery.tree(
                 sessions: sessions, projectPaths: saved.projectPaths, removed: saved.removedProjects, bus: bus
             )
-            guard revision == refreshRevision else { return }
+            guard revision == refreshRevision else { return false }
             var refreshed = navigation
             if choicesLoaded {
                 refreshed = projects.refreshChoices(
@@ -343,7 +346,7 @@ final class SessionsTreeModel {
             navigation.recordTabFirstSight(workspaces)
             for chat in settled {
                 if let id = chat.session, let row = tree.session(id),
-                   let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
+                   let entry = workspace(containingChat: row.id) {
                     navigation.openTab(row, in: entry)
                 }
             }
@@ -357,16 +360,18 @@ final class SessionsTreeModel {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
         }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
+            let selectingPending = pendingID != nil
             pendingID = nil
             self.selectedSessionID = row.id
-            if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
+            if let entry = workspace(containingChat: row.id) {
+                if selectingPending { navigation.openTab(row, in: entry) }
                 navigation.select(entry, chat: row.id, now: row.lastActivity)
             }
             do {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
                 defer { agentTiming.end() }
                 let loaded = try await bus.agents(in: row.session)
-                guard revision == refreshRevision, self.selectedSessionID == row.id else { return }
+                guard revision == refreshRevision, self.selectedSessionID == row.id else { return true }
                 agents = loaded
             }
             let provider = row.provider ?? agents.first {
@@ -393,6 +398,7 @@ final class SessionsTreeModel {
             if selectedSessionID == nil, selectedPendingID == nil { _ = selectNewestStart() }
         }
         error = nil
+        return true
     }
 
     /// `initializeGit` runs `git init` in a plain folder first, after the owner agreed to it.
@@ -512,12 +518,14 @@ final class SessionsTreeModel {
         guard !ids.isEmpty else { return }
         let previous = selectedSessionID
         let workspace = navigation.selectedWorkspace
-        let entry = workspaces.first { $0.chats.contains { $0.id == chat.id } }
+        let entry = self.workspace(containingChat: chat.id)
+        let snapshot = entry.map { ChatArchives.TabSnapshot(workspace: $0.id, navigation: navigation) }
         let next = ChatArchives.selection(
             afterArchiving: id, selected: previous, in: tree,
             history: entry.flatMap { navigation.tabHistory[$0.id] } ?? [],
             open: entry.flatMap { navigation.tabs[$0.id]?.open } ?? []
         )
+        if let entry { navigation.closeTab(ChatTitle.key(chat), in: entry) }
         refreshRevision += 1
         tree = visibleTree
         // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
@@ -527,10 +535,10 @@ final class SessionsTreeModel {
         do {
             try await SwarmSessionCloser.archive(session: chat, bus: bus)
             archives.finish(id, succeeded: true)
-            if let entry { navigation.tabs[entry.id] = navigation.tabs[entry.id]?.closing(ChatTitle.key(chat)) }
             refreshRevision += 1
         } catch {
             archives.finish(id, succeeded: false)
+            snapshot?.restore(in: &navigation)
             refreshRevision += 1
             tree = visibleTree
             if selectionRevision == revision, navigation.selectedWorkspace == workspace,
@@ -541,22 +549,30 @@ final class SessionsTreeModel {
         }
     }
 
-    func recentlyClosed() async throws -> [RecentlyClosedChat] {
+    func recentlyClosed() async throws -> RecentlyClosed.Listing {
         let sessions = try await bus.archivedSessions()
         let chats = await discovery.archivedChats(sessions)
-        return RecentlyClosed.list(chats: chats, navigation: navigation, workspaces: workspaces,
-                                   now: Int(Date().timeIntervalSince1970))
+        let rows = RecentlyClosed.list(chats: chats, navigation: navigation, workspaces: workspaces,
+                                       now: Int(Date().timeIntervalSince1970))
+        return RecentlyClosed.Listing(chats: rows, archivedSessionCount: sessions.count)
     }
 
     func reopen(_ chat: SwarmProjectSession) async throws {
         try await RecentlyClosed.restore(chat, bus: bus)
-        archives.restored(chat.sessions.map(\.id))
+        archives.restore(chat.sessions.map(\.id))
         refreshRevision += 1
-        try await refresh()
-        guard tree.session(chat.id) != nil else {
-            throw SwarmProfileError.failed("The chat was restored, but it is not in the workspace list.")
+        let listed = try await RecentlyClosed.refreshRestoredChat(
+            refresh: { try await self.refresh() }, isListed: { self.tree.session(chat.id) != nil }
+        )
+        if listed { select(chat.id) }
+        else {
+            // The next completed refresh selects this restored chat through the pending path.
+            selectionRevision += 1
+            pendingID = chat.id
+            selectedPendingID = nil
+            selectedSessionID = chat.id
+            agents = []
         }
-        select(chat.id)
     }
 
     func endConfirmation(_ id: SwarmSessionID) async throws -> SwarmSessionCloser.Confirmation? {
@@ -645,7 +661,7 @@ private struct SessionsWindow: View {
     @State private var showingPalette = false
     @State private var recentActions = PaletteRecentActions.load()
     @State private var showingArchive = false
-    @State private var closedChats: [RecentlyClosedChat]?
+    @State private var closedChats: RecentlyClosed.Listing?
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
@@ -864,7 +880,7 @@ private struct SessionsWindow: View {
         .sheet(isPresented: Binding(
             get: { closedChats != nil }, set: { if !$0 { closedChats = nil } }
         )) {
-            RecentlyClosedSheet(chats: closedChats ?? []) { chat in
+            RecentlyClosedSheet(chats: closedChats?.chats ?? [], notice: closedChats?.notice) { chat in
                 do {
                     try await model.reopen(chat)
                     ownerMoves += 1
@@ -992,10 +1008,10 @@ private struct SessionsWindow: View {
                  + model.navigation.projectTitle(for: entry.project) + ":\n\n"
                  + paths.joined(separator: "\n"))
         case .archiveWorkspace(_, let count):
-            Text(verbatim: "\(count == 1 ? "1 agent still runs" : "\(count) agents still run"). Archiving stops them and keeps the workspace folder.")
+            Text(verbatim: "\(CountText.agentsStillRunning(count)). Archiving stops them and keeps the workspace folder.")
         case .deleteWorkspace(let entry, let ignored, let confirmation):
             Text(verbatim: "Delete the workspace folder at \(entry.id)? Git refuses uncommitted changes or unpushed commits."
-                 + (confirmation.required ? "\n\n\(confirmation.liveAgents) live agents will stop before the folder is deleted." : "")
+                 + (confirmation.required ? "\n\n\(CountText.agentsStillRunning(confirmation.liveAgents)). Deleting stops them before the folder is removed." : "")
                  + (ignored.message.map { "\n\n" + $0 } ?? ""))
         case .endChat(_, _, let confirmation, let archive):
             Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
@@ -1514,7 +1530,7 @@ private struct SessionsWindow: View {
         SessionDetailView(
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
-            readOnlyReason: model.workspaces.first { $0.chats.contains { $0.id == row.id } }
+            readOnlyReason: model.workspace(containingChat: row.id)
                 .flatMap { model.navigation.readOnlyReason(in: $0.id) },
             launchedModel: model.launchedModels[row.id],
             launchedTrust: model.launchedTrust[row.id] ?? [],
@@ -1637,7 +1653,9 @@ private struct SessionsWindow: View {
                 group: { model.navigation.groupTab($0, in: directory) },
                 switchModel: { requestModelSwitch(SwarmSessionID($0)) },
                 switchDisabledReason: { modelSwitchState(SwarmSessionID($0)).reason },
-                copySessionID: { AppClipboard.copy($0) },
+                copySessionID: { key in
+                    if let chat = model.tree.session(SwarmSessionID(key)) { AppClipboard.copy(chat.id.rawValue) }
+                },
                 revealFolder: { id in
                     if let chat = model.tree.session(SwarmSessionID(id)) { AppFolderActions.reveal(chat.session.cwd) }
                 },
@@ -1657,7 +1675,7 @@ private struct SessionsWindow: View {
         let detail = model.detailModels.entries.first { $0.id == row.id }?.model
         let current = detail?.currentModel ?? model.launchedModels[row.id]
         let snapshot = detail?.snapshot ?? .waiting
-        let readOnly = model.workspaces.first { $0.chats.contains { $0.id == row.id } }
+        let readOnly = model.workspace(containingChat: row.id)
             .flatMap { model.navigation.readOnlyReason(in: $0.id) }
         return (current, ModelSwitchChoice.disabledReason(
             readOnlyReason: readOnly,

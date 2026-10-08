@@ -3,6 +3,7 @@ import SwarmCore
 
 struct RecentlyClosedSheet: View {
     let chats: [RecentlyClosedChat]
+    let notice: String?
     let restore: (SwarmProjectSession) async -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selection: SwarmSessionID?
@@ -31,6 +32,7 @@ struct RecentlyClosedSheet: View {
                     .disabled(restoring)
                 }
             }
+            if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

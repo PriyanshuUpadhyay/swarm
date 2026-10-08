@@ -2,6 +2,24 @@ import Foundation
 
 /// Keeps background discovery from restoring a chat while its archive is in flight.
 public struct ChatArchives {
+    /// Restores the strip if discovery prunes it while an archive is pending.
+    public struct TabSnapshot {
+        private let workspace: String
+        private let strip: TabStrip?
+        private let history: [String]?
+
+        public init(workspace: String, navigation: WorkspaceNavigation) {
+            self.workspace = workspace
+            strip = navigation.tabs[workspace]
+            history = navigation.tabHistory[workspace]
+        }
+
+        public func restore(in navigation: inout WorkspaceNavigation) {
+            navigation.tabs[workspace] = strip
+            navigation.tabHistory[workspace] = history
+        }
+    }
+
     private var pending: [SwarmSessionID: Set<SwarmSessionID>] = [:]
     private var confirmed: Set<SwarmSessionID> = []
 
@@ -19,7 +37,7 @@ public struct ChatArchives {
         if succeeded { confirmed.formUnion(ids) }
     }
 
-    public mutating func restored(_ ids: [SwarmSessionID]) {
+    public mutating func restore(_ ids: [SwarmSessionID]) {
         confirmed.subtract(ids)
     }
 

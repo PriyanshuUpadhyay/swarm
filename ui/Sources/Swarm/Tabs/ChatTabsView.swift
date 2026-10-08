@@ -126,7 +126,7 @@ struct ChatTabsView: View {
             .foregroundStyle(group.color.tint)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(group.name), \(tabs.count) tabs, \(group.folded ? "folded" : "expanded")")
+        .accessibilityLabel("\(group.name), \(CountText.count(tabs.count, singular: "tab", plural: "tabs")), \(group.folded ? "folded" : "expanded")")
         .help(group.folded ? "Expand group" : "Fold group")
         .dropDestination(for: String.self) { keys, _ in
             guard keys.count == 1, let key = keys.first else { return false }
@@ -216,7 +216,7 @@ private struct ChatTabView: View {
                         .fixedSize()
                 }
                 .help(children.waiting > 0 ? "Show first waiting child" : "Show chat")
-                .accessibilityLabel("\(tab.title), \(children.count) agents, \(children.waiting) waiting")
+                .accessibilityLabel("\(tab.title), \(CountText.count(children.count, singular: "agent", plural: "agents")), \(children.waiting) waiting")
             }
             // A start is never cut in half, so a pending tab has no archive or close.
             if tab.canHide {
