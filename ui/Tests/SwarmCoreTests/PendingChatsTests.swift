@@ -13,7 +13,7 @@ struct PendingChatsTests {
         pending.update(picked) { $0.state = .failed(failure); $0.session = SwarmSessionID("failed-session") }
         let pickedPlan = try #require(pending[picked]?.launchPlan)
         #expect(pickedPlan == SwarmChatLaunchPlan(profile: "code.complex", in: "/api"))
-        #expect(pickedPlan.account == nil)
+        #expect(pickedPlan.account == "auto")
         #expect(pending[defaultChat]?.launchPlan == SwarmChatLaunchPlan(profileIn: "/api"))
         #expect(pending[defaultChat]?.launchPlan?.account == "auto")
         #expect(pending[picked]?.session == SwarmSessionID("failed-session"))

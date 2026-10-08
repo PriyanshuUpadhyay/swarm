@@ -17,11 +17,30 @@ struct NewChatMenuTests {
         #expect(rows.map(\.name) == ["chat", "code.complex", "empty"])
         #expect(rows.map(\.caption) == ["claude · sonnet", "codex · gpt-code", nil])
         #expect(rows.map(\.isDefault) == [true, false, false])
-        #expect(rows.map(\.id) == rows.map(\.name))
+        #expect(rows.map(\.id) == rows.map { .profile($0.name) })
         #expect(NewChatMenu.rows(profiles: [codeProfile, chatProfile], defaultProfile: "code.complex")
             .map(\.name) == ["code.complex", "chat"])
         #expect(NewChatMenu.rows(profiles: [codeProfile, emptyProfile]).map(\.name)
             == ["code.complex", "empty"])
         #expect(NewChatMenu.rows(profiles: []).isEmpty)
+    }
+
+    @Test("A failed read retains the last good profiles and appends a disabled error row")
+    func failedRead() {
+        let profiles = [SwarmProfile(name: "chat", runners: [])]
+        var menu = NewChatMenu.State()
+        menu.received(profiles)
+        let goodRows = menu.rows
+        menu.failed("Read timed out")
+        #expect(menu.profiles == profiles)
+        #expect(Array(menu.rows.dropLast()) == goodRows)
+        #expect(menu.rows.last?.name == "Could not read profiles. Read timed out")
+        #expect(menu.rows.last?.isEnabled == false)
+        #expect(menu.rows.last?.id == .readError)
+        #expect(NewChatMenu.rows(profiles: [], error: "No file").map(\.name) == ["Could not read profiles. No file"])
+        menu.received([SwarmProfile(name: "code", runners: [])])
+        #expect(menu.error == nil)
+        #expect(menu.rows.map(\.name) == ["code"])
+        #expect(menu.rows.allSatisfy { $0.isEnabled })
     }
 }

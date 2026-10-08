@@ -53,7 +53,7 @@ public struct SwarmChatLaunchPlan: Sendable, Equatable {
         provider = nil
         role = profile
         model = nil
-        account = nil
+        account = "auto"
     }
 }
 

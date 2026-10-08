@@ -721,7 +721,9 @@ private struct SessionsWindow: View {
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
     /// selection only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
-    @State private var newChatProfiles: [NewChatMenu.Row] = []
+    @State private var newChatMenu = NewChatMenu.State()
+    @State private var newChatProfilesLoading = false
+    @State private var newChatProfilesReadAt: ContinuousClock.Instant?
     /// The alert on screen, and the ones waiting for it to close (see `WindowAlert`).
     @State private var shownAlert: WindowAlert?
     @State private var pendingAlerts: [WindowAlert] = []
@@ -903,7 +905,7 @@ private struct SessionsWindow: View {
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
-            await SwarmProfileCatalog.shared.prefetch()
+            Task { _ = try? await SwarmProfileCatalog.shared.providers() }
             await loadNewChatProfiles()
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
@@ -1185,11 +1187,13 @@ private struct SessionsWindow: View {
             VStack(spacing: DesignTokens.Spacing.l) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
-                Button("New chat") { startChat(in: workspace.id) }
-                    .newChatProfileMenu(rows: newChatProfiles, refresh: refreshNewChatProfiles) {
-                        startChat(in: workspace.id, profile: $0)
-                    }
-                    .disabled(!model.navigation.canStartChat(in: workspace))
+                NewChatProfileMenu(
+                    rows: newChatMenu.rows, refresh: refreshNewChatProfiles,
+                    start: { startChat(in: workspace.id, profile: $0) },
+                    primaryAction: { startChat(in: workspace.id) }
+                ) { Text("New chat") }
+                .menuStyle(.button)
+                .disabled(!model.navigation.canStartChat(in: workspace))
                 if let reason = model.navigation.readOnlyReason(in: workspace.id) {
                     Text(verbatim: reason).foregroundStyle(.secondary)
                 }
@@ -1303,7 +1307,7 @@ private struct SessionsWindow: View {
             },
             expandList: { expandedLists.insert($0) },
             newChat: { startChat(in: $0) },
-            newChatProfiles: newChatProfiles,
+            newChatProfiles: newChatMenu.rows,
             refreshNewChatProfiles: refreshNewChatProfiles,
             newChatAs: { startChat(in: $0, profile: $1) },
             unpinWorkspace: { model.navigation.pinned.remove($0) },
@@ -1978,13 +1982,19 @@ private struct SessionsWindow: View {
     }
 
     private func loadNewChatProfiles() async {
+        guard !newChatProfilesLoading else { return }
+        let now = ContinuousClock().now
+        if let lastRead = newChatProfilesReadAt, lastRead.duration(to: now) < .seconds(5) { return }
+        newChatProfilesLoading = true
+        newChatProfilesReadAt = now
+        defer { newChatProfilesLoading = false }
         do {
             let profiles = try await SwarmProfileCatalog.shared.profiles()
             guard !Task.isCancelled else { return }
-            newChatProfiles = NewChatMenu.rows(profiles: profiles.profiles)
+            newChatMenu.received(profiles.profiles)
         } catch {
-            newChatProfiles = []
-            model.error = error.localizedDescription
+            guard !Task.isCancelled else { return }
+            newChatMenu.failed(error.localizedDescription)
         }
     }
 

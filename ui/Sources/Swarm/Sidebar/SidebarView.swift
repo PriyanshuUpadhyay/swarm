@@ -468,12 +468,13 @@ private struct SidebarRowView: View {
                     .accessibilityHidden(true)
             }
             if first, let newChat, hovering || selected {
-                Button("New chat in \(row.title)", systemImage: "plus", action: newChat)
-                    .newChatProfileMenu(rows: newChatProfiles, refresh: refreshNewChatProfiles, start: newChatAs)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("New chat in \(row.title)")
+                NewChatProfileMenu(
+                    rows: newChatProfiles, refresh: refreshNewChatProfiles, start: newChatAs, primaryAction: newChat
+                ) { Label("New chat in \(row.title)", systemImage: "plus") }
+                .labelStyle(.iconOnly)
+                .menuStyle(.borderlessButton)
+                .foregroundStyle(.secondary)
+                .help("New chat in \(row.title)")
             }
         }
         .frame(minHeight: first ? DesignTokens.Size.row : nil)
