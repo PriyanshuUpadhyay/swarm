@@ -432,7 +432,9 @@ final class SessionsTreeModel {
             commonDirectory: common, under: parent.path
         )
         await discovery.forgetWorktrees(for: common)
-        try await projects.add(URL(fileURLWithPath: path))
+        // Git already made the worktree, so a failed save must not ask the owner to create it again.
+        do { try await projects.add(URL(fileURLWithPath: path)) }
+        catch { saveNotice = "Workspace made at \(path), but Swarm could not save it. \(error.localizedDescription)" }
         navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
         // The caller starts a chat there, which selects the workspace. Selecting it here, before the
         // tree lists it, showed the Agent Profiles page and its availability check for a moment.
@@ -443,8 +445,7 @@ final class SessionsTreeModel {
     private func refreshAfterSave(_ subject: String) async {
         do { try await refresh() }
         catch {
-            let cause = (error as? SwarmProfileError)?.message ?? error.localizedDescription
-            saveNotice = "\(subject), but the list could not refresh. \(cause)"
+            saveNotice = "\(subject), but the list could not refresh. \(error.localizedDescription)"
         }
     }
 

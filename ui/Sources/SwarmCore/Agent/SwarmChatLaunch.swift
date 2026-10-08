@@ -101,4 +101,7 @@ public extension SwarmProfileError {
         case .unavailable(let message), .failed(let message): message
         }
     }
+
+    /// Alerts read `localizedDescription`, which is otherwise "The operation couldn't be completed".
+    var errorDescription: String? { message }
 }

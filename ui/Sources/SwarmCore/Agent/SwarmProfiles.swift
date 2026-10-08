@@ -251,7 +251,7 @@ public struct SwarmUsage: Sendable, Hashable, Codable {
     }
 }
 
-public enum SwarmProfileError: Error, Sendable, Equatable {
+public enum SwarmProfileError: LocalizedError, Sendable, Equatable {
     /// swarm, or a tool swarm wraps, cannot be reached. The message is what to tell the reader.
     case unavailable(String)
     /// swarm ran and failed, or printed something that is not the contract's JSON.

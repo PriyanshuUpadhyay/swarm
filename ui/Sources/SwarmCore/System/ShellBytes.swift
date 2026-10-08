@@ -8,7 +8,7 @@ public struct ShellBytes: Sendable {
     public let stderr: Data
 }
 
-public enum ShellFailure: Error, Sendable, Equatable, CustomStringConvertible {
+public enum ShellFailure: LocalizedError, Sendable, Equatable, CustomStringConvertible {
     case timedOut(command: String)
     case outputLimit(command: String, stream: String, limit: Int)
     case incompleteOutput(command: String)
@@ -25,4 +25,7 @@ public enum ShellFailure: Error, Sendable, Equatable, CustomStringConvertible {
             "Could not \(operation) for \(command): \(String(cString: strerror(code)))."
         }
     }
+
+    /// Alerts read `localizedDescription`, which is otherwise "The operation couldn't be completed".
+    public var errorDescription: String? { description }
 }
