@@ -358,12 +358,11 @@ final class SessionsTreeModel {
         for chat in settled where chat.id == selectedPendingID {
             select(chat.session)
         }
-        if let pendingSelection, tree.session(pendingSelection.id) == nil {
-            self.pendingSelection = pendingSelection.afterRefresh(isListed: false)
-            if pendingSelection.isRestoring {
-                selectedSessionID = nil
-                addSaveNotice(RecentlyClosed.restoredButNotListed)
-            }
+        if let pendingSelection, tree.session(pendingSelection.id) == nil,
+           let notice = PendingChatSelection.settleMissingAfterRefresh(
+               &self.pendingSelection, selectedID: &selectedSessionID
+           ) {
+            addSaveNotice(notice)
         }
         if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
@@ -677,8 +676,7 @@ private struct SessionsWindow: View {
     @State private var showingArchive = false
     @State private var closedChats: RecentlyClosed.Listing?
     @State private var showingClosedChats = false
-    @State private var deletingWorkspaces: Set<String> = []
-    @State private var archivingWorkspaces: Set<String> = []
+    @State private var workspaceActions: [String: WorkspaceAction] = [:]
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
@@ -755,11 +753,8 @@ private struct SessionsWindow: View {
                 if let projectAction {
                     DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
                 }
-                if !deletingWorkspaces.isEmpty {
-                    DelayedProgress("Deleting workspace…").padding(DesignTokens.Spacing.s)
-                }
-                if !archivingWorkspaces.isEmpty {
-                    DelayedProgress("Archiving workspace…").padding(DesignTokens.Spacing.s)
+                ForEach(WorkspaceAction.allCases.filter { workspaceActions.values.contains($0) }) { action in
+                    DelayedProgress(action.progress).padding(DesignTokens.Spacing.s)
                 }
                 if !model.closing.isEmpty {
                     DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
@@ -1011,10 +1006,10 @@ private struct SessionsWindow: View {
             }
             Button("Cancel", role: .cancel) {}
         case .archiveWorkspace(let entry, _):
-            Button("Archive Workspace", role: .destructive) { performWorkspaceArchive(entry) }
+            Button("Archive Workspace", role: .destructive) { performWorkspaceAction(entry, action: .archive) }
             Button("Cancel", role: .cancel) {}
         case .deleteWorkspace(let entry, _, _):
-            Button("Delete Workspace", role: .destructive) { performWorkspaceDelete(entry) }
+            Button("Delete Workspace", role: .destructive) { performWorkspaceAction(entry, action: .delete) }
             Button("Cancel", role: .cancel) {}
         case .endChat(let id, _, _, let archive):
             Button(archive ? "Archive Chat" : "End Chat", role: .destructive) {
@@ -1243,7 +1238,7 @@ private struct SessionsWindow: View {
                 renameTarget = .project(project)
             },
             archive: { id in
-                if let workspace = entry(id) { requestWorkspaceArchive(workspace) }
+                if let workspace = entry(id) { requestWorkspaceAction(workspace, action: .archive) }
             },
             endChat: { id in
                 if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
@@ -1254,7 +1249,7 @@ private struct SessionsWindow: View {
                    let chat = target.chatID { archiveChat(chat) }
             },
             deleteWorkspace: { id in
-                if let workspace = entry(id), workspace.canDelete { requestWorkspaceDelete(workspace) }
+                if let workspace = entry(id), workspace.canDelete { requestWorkspaceAction(workspace, action: .delete) }
             },
             canDeleteWorkspace: { entry($0)?.canDelete == true },
             restore: { model.navigation.archived.remove($0) },
@@ -1796,45 +1791,50 @@ private struct SessionsWindow: View {
         model.selectedSessionID.flatMap { model.tree.windowTitle(for: $0, navigation: model.navigation) } ?? "Swarm"
     }
 
-    private func requestWorkspaceDelete(_ entry: WorkspaceEntry) {
-        guard !deletingWorkspaces.contains(entry.id) else { return }
+    private enum WorkspaceAction: CaseIterable, Identifiable {
+        case archive, delete
+        var id: Self { self }
+        var progress: String {
+            switch self {
+            case .archive: "Archiving workspace…"
+            case .delete: "Deleting workspace…"
+            }
+        }
+    }
+
+    private func requestWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
+        guard workspaceActions[entry.id] == nil else { return }
+        workspaceActions[entry.id] = action
         Task {
+            defer { workspaceActions.removeValue(forKey: entry.id) }
             do {
-                let ignored = try await Git.ignoredRemovalItems(worktree: entry.id)
+                let ignored = action == .delete ? try await Git.ignoredRemovalItems(worktree: entry.id) : nil
                 let confirmation = try await model.workspaceEndConfirmation(entry)
-                guard !deletingWorkspaces.contains(entry.id) else { return }
-                showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation))
+                switch action {
+                case .delete:
+                    if let ignored { showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation)) }
+                case .archive:
+                    if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
+                    else { try await runWorkspaceAction(entry, action: action) }
+                }
             } catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
-    private func performWorkspaceDelete(_ entry: WorkspaceEntry) {
-        guard deletingWorkspaces.insert(entry.id).inserted else { return }
+    private func performWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
+        guard workspaceActions[entry.id] == nil else { return }
+        workspaceActions[entry.id] = action
         Task {
-            defer { deletingWorkspaces.remove(entry.id) }
-            do { try await model.deleteWorkspace(entry) }
+            defer { workspaceActions.removeValue(forKey: entry.id) }
+            do { try await runWorkspaceAction(entry, action: action) }
             catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
-    private func requestWorkspaceArchive(_ entry: WorkspaceEntry) {
-        guard !archivingWorkspaces.contains(entry.id) else { return }
-        Task {
-            do {
-                let confirmation = try await model.workspaceEndConfirmation(entry)
-                guard !archivingWorkspaces.contains(entry.id) else { return }
-                if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
-                else { performWorkspaceArchive(entry) }
-            } catch { showAlert(.error(error.localizedDescription)) }
-        }
-    }
-
-    private func performWorkspaceArchive(_ entry: WorkspaceEntry) {
-        guard archivingWorkspaces.insert(entry.id).inserted else { return }
-        Task {
-            defer { archivingWorkspaces.remove(entry.id) }
-            do { try await model.archiveWorkspace(entry) }
-            catch { showAlert(.error(error.localizedDescription)) }
+    private func runWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) async throws {
+        switch action {
+        case .archive: try await model.archiveWorkspace(entry)
+        case .delete: try await model.deleteWorkspace(entry)
         }
     }
 

@@ -129,18 +129,31 @@ struct RecentlyClosedTests {
         var pending: PendingChatSelection? = .restored(id)
         #expect(pending?.id == id)
         #expect(pending?.isRestoring == true)
-        var notices: [String] = []
-        for _ in 0..<2 {
-            if let selection = pending {
-                pending = selection.afterRefresh(isListed: false)
-                if selection.isRestoring { notices.append(RecentlyClosed.restoredButNotListed) }
-            }
-        }
+        var selectedID: SwarmSessionID? = id
+        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) ==
+                RecentlyClosed.restoredButNotListed)
         #expect(pending == nil)
-        #expect(notices == [RecentlyClosed.restoredButNotListed])
-        #expect(PendingChatSelection.restored(id).afterRefresh(isListed: true) == nil)
-        #expect(PendingChatSelection.handoff(id).afterRefresh(isListed: false) == .handoff(id))
-        #expect(PendingChatSelection.handoff(id).afterRefresh(isListed: true) == nil)
+        #expect(selectedID == nil)
+        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) == nil)
+        pending = .handoff(id)
+        selectedID = id
+        #expect(PendingChatSelection.settleMissingAfterRefresh(&pending, selectedID: &selectedID) == nil)
+        #expect(pending == .handoff(id))
+        #expect(selectedID == id)
+    }
+
+    @Test("A refresh failure after restore says the chat was reopened and keeps the cause")
+    @MainActor
+    func refreshFailure() async throws {
+        do {
+            _ = try await RecentlyClosed.refreshRestoredChat(refresh: {
+                throw SwarmProfileError.failed("Read timed out")
+            }, isListed: { false })
+            Issue.record("The failed refresh must reach the caller")
+        } catch {
+            #expect(error.localizedDescription ==
+                    "The chat was reopened, but the list could not refresh. Read timed out")
+        }
     }
 
     private func session(
