@@ -485,16 +485,13 @@ final class SessionsTreeModel {
         guard case .repository(let common) = project.id else {
             throw GitTaskWorktreeError.notRepository
         }
-        let root = URL(fileURLWithPath: project.path)
-        let parent = URL(fileURLWithPath: common).lastPathComponent == ".bare"
-            ? root.appendingPathComponent("wt", isDirectory: true)
-            : root.deletingLastPathComponent()
-                .appendingPathComponent(project.name + "-worktrees", isDirectory: true)
+        let defaults = navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()
+        let parent = defaults.resolved(for: project).folder
         let repositoryDirectory = URL(fileURLWithPath: common).lastPathComponent == ".bare"
             ? common : project.path
         let path = try await GitTaskWorktree.create(
             named: name, in: repositoryDirectory,
-            commonDirectory: common, under: parent.path
+            commonDirectory: common, under: parent
         )
         await discovery.forgetWorktrees(for: common)
         // Git already made the worktree, so a failed save must not ask the owner to create it again.
