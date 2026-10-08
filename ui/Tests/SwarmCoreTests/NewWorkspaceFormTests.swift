@@ -94,6 +94,13 @@ struct NewWorkspaceFormTests {
         ) == ProjectDefaults(worktreeFolder: "../custom", branchPrefix: "fix/"))
     }
 
+    @Test("A request trims its branch prefix")
+    func requestTrimsPrefix() {
+        let spaced = WorkspaceRequest(name: "Fix sidebar", start: .newBranch(base: "main"), prefix: " fix/ ")
+        #expect(spaced.prefix == "fix/")
+        #expect(NewWorkspaceForm.preview(spaced) == "fix/fix-sidebar")
+    }
+
     private func request(_ start: WorkspaceStart) -> WorkspaceRequest {
         WorkspaceRequest(name: "Fix sidebar", start: start, prefix: "swarm/")
     }

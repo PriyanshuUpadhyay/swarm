@@ -180,10 +180,11 @@ public struct WorkspaceRequest: Sendable, Equatable {
     public var start: WorkspaceStart
     public var prefix: String
 
+    /// The prefix is trimmed here, so a typed "fix/ " never reaches the branch rule.
     public init(name: String, start: WorkspaceStart, prefix: String) {
         self.name = name
         self.start = start
-        self.prefix = prefix
+        self.prefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

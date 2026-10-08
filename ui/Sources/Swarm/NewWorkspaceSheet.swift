@@ -50,7 +50,7 @@ struct NewWorkspaceSheet: View {
         case .existingBranch: start = .existingBranch(existingBranch)
         case .pullRequest: start = .pullRequest(Int(pullRequest.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
         }
-        return WorkspaceRequest(name: name, start: start, prefix: branchPrefix.trimmingCharacters(in: .whitespacesAndNewlines))
+        return WorkspaceRequest(name: name, start: start, prefix: branchPrefix)
     }
 
     private var canCreate: Bool {

@@ -16,7 +16,7 @@ struct NewChatProfileMenu<Label: View>: View {
         } primaryAction: {
             primaryAction()
         }
-        // On the Menu itself, not its label: a macOS pull-down can drop label modifiers.
+        // On the Menu itself, not its label, so the native pull-down keeps the right-click path.
         .contextMenu { profileRows }
     }
 
