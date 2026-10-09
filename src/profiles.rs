@@ -67,6 +67,9 @@ pub fn pick_auto(accounts: &[Account], current_home: Option<&str>) -> Option<Str
 
 pub fn apply_cached_usage(list: &mut AccountList, usage: &serde_json::Value, now: i64) {
     for account in &mut list.accounts {
+        if account.usage_state == "no_source" {
+            continue;
+        }
         let rows: Vec<&serde_json::Value> = if list.provider == "codex" {
             usage["accounts"]
                 .as_array()
@@ -115,7 +118,9 @@ pub fn apply_cached_usage(list: &mut AccountList, usage: &serde_json::Value, now
                 .or_else(|| row.get("asOf"))
                 .and_then(serde_json::Value::as_i64);
             fresh &= matches!(state, "fresh" | "ok")
-                && time.is_some_and(|time| time <= now && now - time <= 300);
+                && time.is_some_and(|time| {
+                    time >= 0 && time <= now && now - time <= crate::usage::MAX_AGE_SECONDS
+                });
             remaining.push(100 - percent);
         }
         if let Some(remaining) = remaining.into_iter().min() {
@@ -126,33 +131,32 @@ pub fn apply_cached_usage(list: &mut AccountList, usage: &serde_json::Value, now
     }
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub meters: Vec<UsageMeter>,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageMeter {
     pub provider: String,
     pub account: Option<String>,
     pub label: String,
     pub window: Option<String>,
+    pub window_minutes: Option<i64>,
     pub used_pct: Option<i64>,
-    pub resets_in: Option<String>,
+    pub reset_time_seconds: Option<i64>,
     pub state: String,
+    pub source: Option<String>,
     pub reason: Option<String>,
-    pub as_of: Option<i64>,
+    pub as_of_seconds: Option<i64>,
 }
 
 #[derive(Deserialize)]
 struct YeloUsageMeter {
-    provider: String,
     label: String,
     window: Option<String>,
     pct: Option<i64>,
-    reset: Option<String>,
     state: String,
-    reason: Option<String>,
     #[serde(rename = "asOf")]
     as_of: Option<i64>,
 }
@@ -160,48 +164,73 @@ struct YeloUsageMeter {
 pub fn translate_usage(
     json: &str,
     account_lists: &[AccountList],
+    now: i64,
 ) -> Result<(Usage, Vec<String>), String> {
     let input: Vec<serde_json::Value> =
-        serde_json::from_str(json).map_err(|error| format!("yelo usage JSON: {error}"))?;
+        serde_json::from_str(json).map_err(|_| "Claude usage JSON is invalid")?;
     let mut skipped = Vec::new();
-    let rows: Vec<YeloUsageMeter> = input
-        .into_iter()
-        .filter_map(|row| match serde_json::from_value(row) {
-            Ok(row) => Some(row),
-            Err(error) => {
-                skipped.push(error.to_string().replace(['\r', '\n'], " "));
-                None
+    let mut meters = Vec::new();
+    for value in input.into_iter().filter(|row| row["provider"] == "claude") {
+        let row: YeloUsageMeter = match serde_json::from_value(value) {
+            Ok(row) => row,
+            Err(_) => {
+                skipped.push("invalid Claude usage row".into());
+                continue;
             }
-        })
-        .collect();
-    let meters = rows
-        .into_iter()
-        .map(|row| {
-            let account = row.label.split_once('·').and_then(|(_, tail)| {
-                account_lists
-                    .iter()
-                    .find(|list| list.provider == row.provider)
-                    .and_then(|list| {
-                        list.accounts
-                            .iter()
-                            .find(|account| account.email.as_deref() == Some(tail))
-                            .or_else(|| list.accounts.iter().find(|account| account.name == tail))
-                    })
-                    .map(|account| account.name.clone())
-            });
-            UsageMeter {
-                provider: row.provider,
-                account,
-                label: row.label,
-                window: row.window,
-                used_pct: row.pct,
-                resets_in: row.reset,
-                state: row.state,
-                reason: row.reason,
-                as_of: row.as_of,
+        };
+        let account = row.label.split_once('·').and_then(|(_, tail)| {
+            account_lists
+                .iter()
+                .find(|list| list.provider == "claude")
+                .and_then(|list| {
+                    list.accounts
+                        .iter()
+                        .find(|account| account.email.as_deref() == Some(tail))
+                        .or_else(|| list.accounts.iter().find(|account| account.name == tail))
+                })
+        });
+        let as_of = row.as_of.filter(|time| *time >= 0 && *time <= now);
+        let valid_percent = row.pct.is_none_or(|percent| (0..=100).contains(&percent));
+        let state = if !valid_percent {
+            "failed"
+        } else {
+            match row.state.as_str() {
+                "ok" | "fresh" if row.pct.is_some() => {
+                    if as_of.is_some_and(|time| now - time <= crate::usage::MAX_AGE_SECONDS) {
+                        "fresh"
+                    } else {
+                        "stale"
+                    }
+                }
+                "stale" if row.pct.is_some() => "stale",
+                "missing" | "logged_out" => "missing",
+                _ => "failed",
             }
-        })
-        .collect();
+        };
+        let window_minutes = row.window.as_deref().and_then(crate::usage::window_minutes);
+        let window = row.window.filter(|_| window_minutes.is_some());
+        meters.push(UsageMeter {
+            provider: "claude".into(),
+            account: account.map(|account| account.name.clone()),
+            label: account
+                .map(|account| account.name.clone())
+                .unwrap_or_else(|| "Claude".into()),
+            window,
+            window_minutes,
+            used_pct: matches!(state, "fresh" | "stale")
+                .then_some(row.pct)
+                .flatten(),
+            reset_time_seconds: None,
+            state: state.into(),
+            source: Some("yelo".into()),
+            reason: match state {
+                "failed" => Some("Claude usage read failed".into()),
+                "missing" => Some("No cached Claude usage".into()),
+                _ => None,
+            },
+            as_of_seconds: as_of,
+        });
+    }
     Ok((Usage { meters }, skipped))
 }
 

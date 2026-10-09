@@ -69,6 +69,18 @@ pub fn discover(
 }
 
 pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String> {
+    load_inner(provider, deadline, true)
+}
+
+pub(crate) fn identities(provider: Provider, deadline: Instant) -> Result<AccountList, String> {
+    load_inner(provider, deadline, false)
+}
+
+fn load_inner(
+    provider: Provider,
+    deadline: Instant,
+    include_usage: bool,
+) -> Result<AccountList, String> {
     if !provider.has_accounts() {
         return Ok(super::empty_accounts(provider.id()));
     }
@@ -92,10 +104,14 @@ pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String
                 .and_then(|mut server| {
                     server.request(2, "account/read", json!({"refreshToken":false}))
                 })
-                .and_then(codex_identity),
-            _ => claude_identity(&env, deadline),
+                .and_then(|result| {
+                    let api_key = result["account"]["type"] == "apiKey";
+                    codex_identity(result).map(|(state, email)| (state, email, api_key))
+                }),
+            _ => claude_identity(&env, deadline).map(|(state, email)| (state, email, false)),
         };
-        let (auth_state, email) = identity.unwrap_or((AuthState::Unavailable, None));
+        let (auth_state, email, api_key) =
+            identity.unwrap_or((AuthState::Unavailable, None, false));
         list.accounts.push(Account {
             name,
             email,
@@ -103,8 +119,8 @@ pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String
             env,
             auth_state,
             remaining_pct: None,
-            usage_state: "missing".into(),
-            usage_source: Some(
+            usage_state: if api_key { "no_source" } else { "missing" }.into(),
+            usage_source: (!api_key).then_some(
                 match provider {
                     Provider::Codex => "codex_app_server",
                     _ => "yelo",
@@ -116,22 +132,17 @@ pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String
     }
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
-    let usage = match provider {
-        Provider::Claude => {
-            let executable = std::env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".into());
-            read_json(
-                &executable,
-                &["usage", "show", "--json"],
-                &BTreeMap::new(),
-                deadline,
-            )
-            .ok()
+    let usage = if include_usage {
+        match provider {
+            Provider::Claude => crate::usage::claude_snapshot(deadline).ok(),
+            Provider::Codex => crate::paths::root_dir()
+                .ok()
+                .and_then(|root| std::fs::read(root.join("codex-usage.json")).ok())
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+            Provider::Agy => None,
         }
-        Provider::Codex => crate::paths::root_dir()
-            .ok()
-            .and_then(|root| std::fs::read(root.join("codex-usage.json")).ok())
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
-        Provider::Agy => None,
+    } else {
+        None
     };
     if let Some(usage) = usage {
         let now = std::time::SystemTime::now()
@@ -303,8 +314,14 @@ impl AppServer {
     }
 
     pub fn request(&mut self, id: u64, method: &str, params: Value) -> Result<Value, String> {
+        if Instant::now() >= self.deadline {
+            return Err("Codex read timed out".into());
+        }
         self.send(json!({"id":id,"method":method,"params":params}))?;
         loop {
+            if Instant::now() >= self.deadline {
+                return Err("Codex read timed out".into());
+            }
             let value = self
                 .responses
                 .recv_timeout(self.deadline.saturating_duration_since(Instant::now()))
