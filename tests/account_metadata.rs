@@ -470,7 +470,7 @@ fn concurrent_logins_with_one_revision_cannot_overwrite_each_other() {
 #[test]
 fn a_failed_login_start_keeps_metadata_and_worker_cannot_open_login() {
     let home = fixture("personal-ring-failure");
-    std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = true\nspawn = printf pane-work\nring = echo private-login-error >&2; exit 8\nlist = true\nclose = true\ncapture = true\n").unwrap();
+    std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = true\nspawn = printf pane-work\nring = echo private-login-error >&2; exit 8\nlist = true\nclose = printf '%s' \"$SWARM_PANE\" > \"$HOME/closed-pane\"\ncapture = true\n").unwrap();
     let initial = revision(&home);
     let blocked = command(&home, &login("codex", "work", &initial))
         .env("SWARM_AGENT_ID", "worker")
@@ -488,6 +488,10 @@ fn a_failed_login_start_keeps_metadata_and_worker_cannot_open_login() {
     );
     assert!(!home.join(".codex-work").exists());
     assert!(!home.join(".swarm/swarm.db").exists());
+    assert_eq!(
+        std::fs::read_to_string(home.join("closed-pane")).unwrap(),
+        "pane-work"
+    );
 }
 
 #[test]
@@ -533,13 +537,36 @@ fn login_retry_after_pane_failure_reuses_equal_registration() {
 }
 
 #[test]
-fn login_typed_line_closes_the_shell_after_native_command_exit() {
+fn login_typed_line_closes_only_after_native_login_succeeds() {
     let home = fixture("personal-pane-exit");
     for provider in ["codex", "claude"] {
         json(run(&home, &login(provider, "personal", &revision(&home))));
         let text = std::fs::read_to_string(home.join("login-line")).unwrap();
-        assert!(text.ends_with("; exit"), "{text}");
-        assert_eq!(text.matches("; exit").count(), 1);
+        assert!(text.ends_with(" && exit"), "{text}");
+        assert_eq!(text.matches(" && exit").count(), 1);
+        let success = Command::new("/bin/sh")
+            .env("HOME", &home)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", home.join("bin").display()),
+            )
+            .args(["-c", &format!("{text}; printf shell-stays-open")])
+            .output()
+            .unwrap();
+        assert!(success.status.success());
+        assert!(success.stdout.is_empty());
+        tool(&home, provider, "echo login-failed >&2; exit 1");
+        let failure = Command::new("/bin/sh")
+            .env("HOME", &home)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", home.join("bin").display()),
+            )
+            .args(["-c", &format!("{text}; printf shell-stays-open")])
+            .output()
+            .unwrap();
+        assert_eq!(failure.stdout, b"shell-stays-open");
+        assert!(String::from_utf8_lossy(&failure.stderr).contains("login-failed"));
     }
 }
 
@@ -557,4 +584,55 @@ fn account_name_length_accepts_64_and_refuses_65_before_registration() {
     assert!(!home.join("pane-cwd").exists());
     let opened = json(run(&home, &login("codex", &maximum, &revision(&home))));
     assert_eq!(opened["account"], maximum);
+}
+
+#[test]
+fn each_login_attempt_uses_a_unique_valid_agent_id() {
+    let home = fixture("work-pane-names");
+    std::fs::write(home.join(".swarm/adapters/fake.conf"), r#"self = true
+spawn = mkdir -p "$HOME/panes" && mkdir "$HOME/panes/$SWARM_AGENT_ID" && printf '%s\n' "$SWARM_AGENT_ID" >> "$HOME/pane-names" && printf '%s' "$SWARM_AGENT_ID"
+ring = true
+list = true
+close = true
+capture = true
+"#).unwrap();
+    let maximum = "work".repeat(16);
+    for name in ["work", "work", "work.dev", "work_dev", &maximum] {
+        let opened = json(run(&home, &login("codex", name, &revision(&home))));
+        assert!(swarm::bus::valid_agent_id(opened["pane"].as_str().unwrap()));
+    }
+    let names = std::fs::read_to_string(home.join("pane-names")).unwrap();
+    assert_eq!(names.lines().count(), 5);
+    assert_eq!(
+        names
+            .lines()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        5
+    );
+}
+
+#[test]
+fn a_timed_out_ring_still_closes_its_spawned_pane_before_the_process_limit() {
+    let home = fixture("spare-ring-timeout");
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        r#"self = true
+spawn = printf pane-spare
+ring = exec /bin/sleep 25
+list = true
+close = printf '%s' "$SWARM_PANE" > "$HOME/closed-pane"
+capture = true
+"#,
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let output = run(&home, &login("codex", "spare", &revision(&home)));
+    assert!(!output.status.success());
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot start native login"));
+    assert_eq!(
+        std::fs::read_to_string(home.join("closed-pane")).unwrap(),
+        "pane-spare"
+    );
 }

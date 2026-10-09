@@ -797,7 +797,14 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
     };
     env::set_current_dir(cwd)?;
-    let pane_name = format!("login-{}-{name}", provider.id());
+    // Eight label characters and a UUID suffix keep the unique attempt ID below 40 bytes.
+    let label: String = name
+        .chars()
+        .take(8)
+        .map(|ch| if matches!(ch, '.' | '_') { '-' } else { ch })
+        .collect();
+    let attempt = uuid::Uuid::now_v7().simple().to_string();
+    let pane_name = format!("login-{}-{label}-{}", provider.id(), &attempt[16..]);
     let session = env::var("SWARM_SESSION_ID").unwrap_or_default();
     let home = swarm::paths::home()?;
     let pane = adapter
@@ -834,10 +841,22 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|arg| arg.to_string()),
     );
-    let text = format!("{}; exit", swarm::adapter::shell_line(&command));
-    adapter
+    // Keep a failed login and its error text visible; a successful login closes the shell.
+    let text = format!("{} && exit", swarm::adapter::shell_line(&command));
+    if adapter
         .run("ring", &[("pane", &pane), ("text", &text)])
-        .map_err(|_| "swarm: account registered; cannot start native login in pane")?;
+        .is_err()
+    {
+        // Cleanup also runs after ring exhausts its budget, within the Swift process limit.
+        let closer = swarm::adapter::Adapter {
+            deadline: Some(swarm::profiles::native::deadline(
+                LOGIN_PANE_CLOSE_TIMEOUT_SECONDS,
+            )),
+            ..adapter
+        };
+        let _ = closer.run("close", &[("pane", &pane)]);
+        return Err("swarm: account registered; cannot start native login in pane".into());
+    }
     print_json(
         &serde_json::json!({"provider":provider.id(), "account":entry.name, "pane":pane, "state":"opened", "revision":revision}),
     )
@@ -3045,6 +3064,7 @@ const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
 // Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
 const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
 const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let account_deadline = swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS);
