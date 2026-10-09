@@ -5,7 +5,7 @@ use std::os::unix::fs::OpenOptionsExt;
 
 /// An entry that swarm needs at a place where the file already holds another one (ADR 0036).
 /// Swarm never writes over it: the owner removes it, or does without swarm's hooks.
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Conflict {
     pub kind: ConflictKind,
     pub file: String,
@@ -16,7 +16,7 @@ pub struct Conflict {
 }
 
 /// Why a conflict stops a plan, so the app words `wanted` for its cause. Wire names are open.
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictKind {
     /// The owner's entry is where setup needs swarm's; `wanted` is swarm's value.
@@ -31,13 +31,48 @@ pub enum ConflictKind {
 
 /// What one writer would do to one file: its text now, its planned text, each conflict, and each
 /// item that the planned text adds. An entry equal to swarm's stays as it is.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FilePlan {
     pub path: std::path::PathBuf,
     pub before: String,
     pub after: String,
     pub conflicts: Vec<Conflict>,
     pub edits: Vec<Edit>,
+}
+
+/// A link leaf's exact state. Other leaf types are conflicts, not absent links.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkState {
+    Absent,
+    Link(std::path::PathBuf),
+}
+
+#[derive(Clone, Debug)]
+pub struct LinkPlan {
+    pub path: std::path::PathBuf,
+    pub before: LinkState,
+    pub after: LinkState,
+    pub conflicts: Vec<Conflict>,
+    pub edits: Vec<Edit>,
+}
+
+/// Text writers keep FilePlan; the shared write boundary accepts either kind.
+#[derive(Clone, Debug)]
+pub enum Plan {
+    File(FilePlan),
+    Link(LinkPlan),
+}
+
+impl From<FilePlan> for Plan {
+    fn from(plan: FilePlan) -> Self {
+        Self::File(plan)
+    }
+}
+
+impl From<LinkPlan> for Plan {
+    fn from(plan: LinkPlan) -> Self {
+        Self::Link(plan)
+    }
 }
 
 impl FilePlan {
@@ -62,7 +97,7 @@ impl FilePlan {
     }
 }
 
-/// The three places swarm writes. Wire names are open: a later build may add one (A4).
+/// The places swarm writes. Wire names are open: a later build may add one (A4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
@@ -72,6 +107,8 @@ pub enum Kind {
     JsonKey,
     /// One item of a JSON array; `path` is the keys to the array.
     JsonArrayItem,
+    /// The leaf itself; `path` is empty and `wrote` is its exact absolute target.
+    Symlink,
 }
 
 /// The swarm feature that wrote an item. Wire names are open: a later build may add one (A4).
@@ -85,13 +122,15 @@ pub enum Writer {
     LaunchTrust,
     #[serde(rename = "herdr")]
     Herdr,
+    #[serde(rename = "skills")]
+    Skills,
 }
 
 /// One item that a writer adds to a file outside the swarm home.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Edit {
     pub writer: Writer,
-    /// The write target, links followed, so two names of one file are one place.
+    /// The write target for text, or the resolved parent plus the leaf for a symlink.
     pub file: std::path::PathBuf,
     pub kind: Kind,
     pub path: Vec<String>,
@@ -120,7 +159,10 @@ impl Edit {
     ) -> Self {
         Self {
             writer,
-            file: place(file),
+            file: match kind {
+                Kind::Symlink => link_place(file),
+                _ => place(file),
+            },
             kind,
             path: path.iter().map(|part| part.to_string()).collect(),
             wrote,
@@ -159,8 +201,13 @@ impl Edit {
 /// missing rest joined to it, so a file whose folder the write makes has one place before and after.
 fn place(file: &std::path::Path) -> std::path::PathBuf {
     let target = write_target(file).unwrap_or_else(|_| file.to_path_buf());
+    link_place(&target)
+}
+
+/// Resolve the parent and missing folders without following the leaf.
+fn link_place(file: &std::path::Path) -> std::path::PathBuf {
     let mut missing = Vec::new();
-    let mut dir = target.as_path();
+    let mut dir = file;
     while let (Some(parent), Some(name)) = (dir.parent(), dir.file_name()) {
         missing.push(name);
         if let Ok(real) = std::fs::canonicalize(parent) {
@@ -171,7 +218,7 @@ fn place(file: &std::path::Path) -> std::path::PathBuf {
         }
         dir = parent;
     }
-    target
+    file.to_path_buf()
 }
 
 /// The wire name of a `Kind` or `Writer`.
@@ -187,7 +234,7 @@ pub fn wire(value: &impl serde::Serialize) -> String {
 /// file that changed. The caller holds `trust.lock` from the plan to here and checks the digest.
 pub fn apply(
     store: &rusqlite::Connection,
-    plans: &[FilePlan],
+    plans: &[Plan],
 ) -> Result<Vec<std::path::PathBuf>, String> {
     commit(store, plans, false)
 }
@@ -195,17 +242,24 @@ pub fn apply(
 /// `apply` for the plans of `revert_plan`: each edit's row is set off, not added.
 pub fn revert(
     store: &rusqlite::Connection,
-    plans: &[FilePlan],
+    plans: &[Plan],
 ) -> Result<Vec<std::path::PathBuf>, String> {
     commit(store, plans, true)
 }
 
 fn commit(
     store: &rusqlite::Connection,
-    plans: &[FilePlan],
+    plans: &[Plan],
     off: bool,
 ) -> Result<Vec<std::path::PathBuf>, String> {
-    if let Some(conflicts) = conflicts_text(plans) {
+    let plans = plans
+        .iter()
+        .map(|plan| match plan {
+            Plan::File(plan) => Ok(plan.clone()),
+            Plan::Link(_) => Err("swarm: this write boundary cannot apply links yet".to_string()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(conflicts) = conflicts_text(&plans) {
         return Err(conflicts);
     }
     let failed = |error: rusqlite::Error| format!("swarm: cannot record a managed edit: {error}");
@@ -214,7 +268,7 @@ fn commit(
         .map_or(0, |since| since.as_secs() as i64);
     let mut changed = Vec::new();
     let result = (|| {
-        for plan in plans {
+        for plan in &plans {
             let writes = plan.after != plan.before;
             if !writes && plan.edits.is_empty() {
                 continue;
@@ -704,6 +758,7 @@ fn describe(edit: &Edit) -> String {
             edit.path.iter().map(quoted).collect::<Vec<_>>().join("."),
             edit.wrote
         ),
+        Kind::Symlink => "the symlink".into(),
     }
 }
 
@@ -1147,6 +1202,131 @@ pub fn plan_json(plans: &[FilePlan]) -> serde_json::Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_skill_link_row_keeps_the_existing_columns_and_wire_fields() {
+        let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
+        let example = serde_json::json!({
+            "writer": "skills", "kind": "symlink",
+            "file": "/home/u/.agents/skills/flow", "path": [],
+            "wrote": "/home/u/.swarm/skills/kit/skills/flow", "before": null,
+            "state": "present", "recorded": true,
+        });
+        store
+            .execute(
+                "INSERT INTO managed_edit
+             (id, writer, file, kind, path, wrote, before, created, with_id, at_s, off)
+             VALUES ('skill-link', 'skills', ?1, 'symlink', '[]', ?2, NULL, 0, NULL, 0, 0)",
+                rusqlite::params![
+                    example["file"].as_str().unwrap(),
+                    example["wrote"].to_string()
+                ],
+            )
+            .unwrap();
+        let mut entry = list(&store, &[]).unwrap().remove(0);
+        assert_eq!(entry.edit.kind, Kind::Symlink);
+        assert_eq!(entry.edit.writer, Writer::Skills);
+        assert_eq!(entry.edit.created, 0);
+        entry.state = State::Present;
+        let row = entry.json();
+        for (field, value) in example.as_object().unwrap() {
+            assert_eq!(&row[field], value, "{field}");
+        }
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&row.to_string()).unwrap(),
+            row
+        );
+        let plan = Plan::Link(LinkPlan {
+            path: entry.edit.file.clone(),
+            before: LinkState::Absent,
+            after: LinkState::Link(entry.edit.wrote.as_str().unwrap().into()),
+            conflicts: Vec::new(),
+            edits: vec![entry.edit],
+        });
+        assert!(matches!(plan, Plan::Link(_)));
+    }
+
+    #[test]
+    fn a_link_id_keeps_the_parent_and_leaf_when_the_target_changes() {
+        let fixture =
+            std::env::temp_dir().join(format!("swarm-link-identity-{}", std::process::id()));
+        std::fs::create_dir_all(&fixture).unwrap();
+        let link = fixture.join("skill-link");
+        let target_a = fixture.join("first-target");
+        let target_b = fixture.join("second-target");
+        std::fs::create_dir_all(&target_a).unwrap();
+        std::fs::create_dir_all(&target_b).unwrap();
+        let edit = |target: &std::path::Path| {
+            Edit::new(
+                Writer::Skills,
+                &link,
+                Kind::Symlink,
+                &[],
+                target.to_str().unwrap().into(),
+            )
+        };
+        let absent = edit(&target_a);
+        std::os::unix::fs::symlink(&target_a, &link).unwrap();
+        let first = edit(&target_a);
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&target_b, &link).unwrap();
+        let second = edit(&target_b);
+        assert_eq!(absent.id(), first.id());
+        assert_eq!(first.id(), second.id());
+        assert_eq!(
+            second.file,
+            std::fs::canonicalize(&fixture).unwrap().join("skill-link")
+        );
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn text_edit_ids_keep_the_existing_hash_and_follow_file_links() {
+        use sha2::Digest;
+        let fixture =
+            std::env::temp_dir().join(format!("swarm-text-identity-{}", std::process::id()));
+        std::fs::create_dir_all(&fixture).unwrap();
+        let file = fixture.join("settings.json");
+        let alias = fixture.join("settings-link.json");
+        std::fs::write(&file, "{}").unwrap();
+        std::os::unix::fs::symlink(&file, &alias).unwrap();
+        for kind in [Kind::JsonKey, Kind::TomlKey, Kind::JsonArrayItem] {
+            let edit = Edit::new(
+                Writer::HooksState,
+                &file,
+                kind,
+                &["hooks", "Stop"],
+                "group".into(),
+            );
+            let alias_edit = Edit::new(
+                Writer::HooksState,
+                &alias,
+                kind,
+                &["hooks", "Stop"],
+                "group".into(),
+            );
+            let mut digest = sha2::Sha256::new();
+            digest.update(
+                std::fs::canonicalize(&file)
+                    .unwrap()
+                    .to_string_lossy()
+                    .as_bytes(),
+            );
+            digest.update([0]);
+            digest.update(wire(&kind).as_bytes());
+            digest.update(b"\0hooks\0Stop");
+            if kind == Kind::JsonArrayItem {
+                digest.update(b"\0\"group\"");
+            }
+            let expected: String = digest.finalize()[..6]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            assert_eq!(edit.id(), expected);
+            assert_eq!(alias_edit.id(), expected);
+        }
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
     /// A launch whose trust lock another swarm holds fails after the wait and names the lock,
     /// so a git stalled on a hung mount under the lock cannot stall every launch (SRV-18).
     #[test]
@@ -1198,7 +1378,7 @@ mod tests {
             conflicts: Vec::new(),
             edits: vec![edit.clone()],
         };
-        apply(&store, &[plan]).unwrap();
+        apply(&store, &[plan.into()]).unwrap();
         assert_eq!(state(&edit, false), State::Present);
         let entries = list(&store, &[]).unwrap();
         assert_eq!(entries[0].json()["writer"], "herdr");
@@ -1207,7 +1387,11 @@ mod tests {
 
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
         assert!(plans[0].conflicts.is_empty());
-        revert(&store, &plans).unwrap();
+        revert(
+            &store,
+            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
+        )
+        .unwrap();
         let back = std::fs::read_to_string(&file).unwrap();
         assert_eq!(back, owners);
         assert_eq!(state(&edit, true), State::Off);
@@ -1245,7 +1429,7 @@ mod tests {
             conflicts: Vec::new(),
             edits: vec![edit.clone()],
         };
-        apply(&store, &[plan]).unwrap();
+        apply(&store, &[plan.into()]).unwrap();
 
         std::fs::write(&file, r#"{"hooks": []}"#).unwrap();
         let entry = Entry {
@@ -1265,7 +1449,13 @@ mod tests {
         assert!(entry.json()["found"].is_null());
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
         assert_eq!(plans[0].conflicts.len(), 1);
-        assert!(revert(&store, &plans).is_err());
+        assert!(
+            revert(
+                &store,
+                &plans.iter().cloned().map(Into::into).collect::<Vec<_>>()
+            )
+            .is_err()
+        );
         let off: bool = store
             .query_row("SELECT off FROM managed_edit", [], |row| row.get(0))
             .unwrap();
@@ -1300,7 +1490,7 @@ mod tests {
             conflicts: Vec::new(),
             edits: vec![edit.clone()],
         };
-        apply(&store, &[plan]).unwrap();
+        apply(&store, &[plan.into()]).unwrap();
 
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
         assert!(plans[0].conflicts.is_empty(), "{:?}", plans[0].conflicts);
@@ -1352,7 +1542,10 @@ mod tests {
         let claude_file = dir.join("claude-settings.json");
         apply(
             &store,
-            &[group("codex", &codex_file), group("claude", &claude_file)],
+            &[
+                group("codex", &codex_file).into(),
+                group("claude", &claude_file).into(),
+            ],
         )
         .unwrap();
 

@@ -346,7 +346,7 @@ pub fn write_trust(
         if plan.after == plan.before {
             return Ok(None);
         }
-        crate::managed::apply(store, std::slice::from_ref(&plan))?;
+        crate::managed::apply(store, &[plan.clone().into()])?;
         Ok(Some(plan))
     })
 }
@@ -1408,7 +1408,10 @@ mod tests {
 
     fn apply(plans: &[FilePlan]) -> Result<Vec<std::path::PathBuf>, String> {
         let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
-        crate::managed::apply(&store, plans)
+        crate::managed::apply(
+            &store,
+            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
+        )
     }
 
     /// A launch's trust write as `write_trust` makes it, with a store of its own; whether the

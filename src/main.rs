@@ -935,7 +935,10 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         "swarm: a hook file changed after the plan; check the plan again".into(),
                     );
                 }
-                for path in swarm::managed::apply(&store, &plans)? {
+                for path in swarm::managed::apply(
+                    &store,
+                    &plans.into_iter().map(Into::into).collect::<Vec<_>>(),
+                )? {
                     println!("swarm: set up swarm's hooks in {}", path.display());
                 }
                 Ok(())
@@ -1082,7 +1085,10 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         {
                             return Err("swarm: a managed file changed after the plan; check the plan again".into());
                         }
-                        for path in swarm::managed::revert(&store, &plans)? {
+                        for path in swarm::managed::revert(
+                            &store,
+                            &plans.into_iter().map(Into::into).collect::<Vec<_>>(),
+                        )? {
                             println!("swarm: removed swarm's entries from {}", path.display());
                         }
                         Ok(())
@@ -1564,7 +1570,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let written = match replan {
                 Some(replan) => swarm::bus::write_trust(&store, replan)
                     .map(|written| written.into_iter().map(|plan| plan.path).collect()),
-                None => swarm::managed::apply(&store, std::slice::from_ref(plan)),
+                None => swarm::managed::apply(&store, &[plan.clone().into()]),
             };
             match written {
                 Ok(changed) => {
