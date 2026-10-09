@@ -98,7 +98,7 @@ public enum AppKey: Sendable, Hashable {
         (.findPrevious, KeyChord("g", [.command, .shift])),
         (.stop, KeyChord(".", .command)),
     ] + (1...8).map { (.selectTab($0), KeyChord(Character(String($0)), .command)) }
-      + (1...6).map { (.sidebarView($0), KeyChord(Character(String($0)), [.option, .command])) }
+      + (1...7).map { (.sidebarView($0), KeyChord(Character(String($0)), [.option, .command])) }
 
     public var chord: KeyChord { Self.table.first { $0.0 == self }!.1 }
 

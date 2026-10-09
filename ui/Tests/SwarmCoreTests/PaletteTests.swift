@@ -83,6 +83,15 @@ struct PaletteTests {
         #expect(selection.workspaceID == "/repo")
     }
 
+    @Test("Choice seven lists Skills and its shortcut")
+    func skillsChoice() {
+        let items = PaletteItems.build(sidebarViews: ["Workspaces", "Files", "Changes", "PR", "Usage", "Runs", "Skills"],
+                                       workspaces: [], chats: [], agents: [])
+        let skills = items.first { $0.id == "action:sidebarView(7)" }
+        #expect(skills?.title == "Show Skills")
+        #expect(skills?.shortcut == "⌥⌘7")
+    }
+
     @Test("Every query word must appear in the title or subtitle, in any case")
     func words() {
         #expect(PaletteSearch.rank(items: items, query: "BILL export").map(\.id) == ["chat:chat-billing"])

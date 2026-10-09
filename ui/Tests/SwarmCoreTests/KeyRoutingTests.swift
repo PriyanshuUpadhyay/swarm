@@ -3,6 +3,11 @@ import Testing
 
 @Suite("Key routing")
 struct KeyRoutingTests {
+    @Test("Choice seven opens Skills with Command-Option-7")
+    func skillsChoice() {
+        #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == .sidebarView(7))
+    }
+
     @Test("Each app key has one chord")
     func table() {
         let appKeys: [(KeyChord, AppKey)] = [
@@ -42,7 +47,7 @@ struct KeyRoutingTests {
             #expect(AppKey.action(for: chord) == action)
             #expect(action.chord == chord)
         }
-        #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == nil)
+        #expect(AppKey.action(for: KeyChord("8", [.option, .command])) == nil)
         #expect(AppKey.action(for: KeyChord(.returnKey, .command)) == nil)
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
     }

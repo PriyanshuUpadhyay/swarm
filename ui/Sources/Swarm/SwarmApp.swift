@@ -869,38 +869,43 @@ private struct SessionsWindow: View {
                                                           agentsBySession: model.tree.agentsBySession),
                 actions: sidebarActions
             ) {
-                if let directory = workspaceDirectory {
-                    VStack(spacing: 0) {
-                        Button {
-                            storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
-                            documentVisible = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
-                                Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                ZStack {
+                    SkillsView().retainedVisibility(sidebarMode == .skills)
+                    Group {
+                        if let directory = workspaceDirectory {
+                            VStack(spacing: 0) {
+                                Button {
+                                    storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+                                    documentVisible = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
+                                        Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    .lineLimit(1).truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(tokens.spacing.m)
+                                }
+                                .buttonStyle(.plain).help("Choose a workspace")
+                                Divider()
+                                WorkspacePanels(
+                                    directory: directory, mode: sidebarMode, visible: sidebarVisible,
+                                    usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
+                                    chainUsage: model.selectedChainUsage,
+                                    hasChat: model.selectedSession != nil, open: openDocument,
+                                    runRequest: runRequestWorkspace == directory ? runRequest : nil,
+                                    openedRun: { runRequest = nil }, chatTitles: runChatTitles(in: directory),
+                                    selectRunChat: { selectRunChat($0, in: directory) }
+                                ).id(directory)
                             }
-                            .lineLimit(1).truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(tokens.spacing.m)
+                        } else {
+                            VStack {
+                                ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
+                                Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }
+                                    .padding(tokens.spacing.l)
+                            }
                         }
-                        .buttonStyle(.plain).help("Choose a workspace")
-                        Divider()
-                        WorkspacePanels(
-                            directory: directory, mode: sidebarMode, visible: sidebarVisible,
-                            usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
-                            chainUsage: model.selectedChainUsage,
-                            hasChat: model.selectedSession != nil, open: openDocument,
-                            runRequest: runRequestWorkspace == directory ? runRequest : nil,
-                            openedRun: { runRequest = nil }, chatTitles: runChatTitles(in: directory),
-                            selectRunChat: { selectRunChat($0, in: directory) }
-                        ).id(directory)
-                    }
-                } else {
-                    VStack {
-                        ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
-                        Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }
-                            .padding(tokens.spacing.l)
-                    }
+                    }.retainedVisibility(sidebarMode != .skills)
                 }
             }
         } content: {

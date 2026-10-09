@@ -4,7 +4,7 @@ import CoreTransferable
 import UniformTypeIdentifiers
 
 enum WorkspaceSidebarMode: String, CaseIterable {
-    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage", runs = "Runs"
+    case workspaces = "Workspaces", files = "Files", changes = "Changes", pullRequest = "PR", usage = "Usage", runs = "Runs", skills = "Skills"
 
     var isDetails: Bool { self == .changes || self == .pullRequest || self == .usage }
 
@@ -16,6 +16,7 @@ enum WorkspaceSidebarMode: String, CaseIterable {
         case .pullRequest: "arrow.triangle.pull"
         case .usage: "chart.pie"
         case .runs: "point.3.connected.trianglepath.dotted"
+        case .skills: "book"
         }
     }
 }

@@ -194,27 +194,7 @@ public enum StepRuns {
     /// Longest-path layers in file order: a step with no needs is layer 0, else one more than its
     /// highest need. An edge to a missing step, or one that closes a cycle, is dropped.
     public static func layers(_ steps: [StepNode]) -> [[String]] {
-        let byID = Dictionary(steps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var layer: [String: Int] = [:]
-        var visiting: Set<String> = []
-        func depth(_ id: String) -> Int {
-            if let known = layer[id] { return known }
-            visiting.insert(id)
-            let needs = (byID[id]?.needs ?? []).filter { byID[$0] != nil && !visiting.contains($0) }
-            let value = needs.map { depth($0) + 1 }.max() ?? 0
-            visiting.remove(id)
-            layer[id] = value
-            return value
-        }
-        // From the last step back, so the edge dropped in a cycle is the one that points to a later file.
-        for step in steps.reversed() { _ = depth(step.id) }
-        var result: [[String]] = []
-        for step in steps {
-            let value = layer[step.id] ?? 0
-            while result.count <= value { result.append([]) }
-            result[value].append(step.id)
-        }
-        return result
+        GraphLayers.layers(steps.map { (id: $0.id, needs: $0.needs) })
     }
 
     private struct Parsed {

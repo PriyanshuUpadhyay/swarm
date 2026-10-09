@@ -240,11 +240,6 @@ private struct StepRunGraph: View {
     let focusedTitle: () -> Void
     @AccessibilityFocusState(for: .voiceOver) private var titleFocused: Bool
 
-    private struct Edge: Identifiable {
-        let from: String, to: String, dashed: Bool, stale: Bool
-        var id: String { from + ">" + to }
-    }
-
     private func focusTitle() async {
         // A cleared request acknowledges focus; it must not clear the title focus again.
         guard focusRequest != nil else { return }
@@ -261,10 +256,10 @@ private struct StepRunGraph: View {
         let byID = Dictionary(run.steps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // An edge goes down only; one that closes a cycle (a hand edit) is not drawn.
         let edges = run.steps.flatMap { step in
-            step.needs.compactMap { need -> Edge? in
+            step.needs.compactMap { need -> GraphEdge? in
                 guard let from = layerOf[need], let to = layerOf[step.id], from < to else { return nil }
                 let skipped = if case .skipped = step.state { true } else { false }
-                return Edge(from: need, to: step.id, dashed: step.needsAssumed || skipped, stale: step.stale.contains(need))
+                return GraphEdge(from: need, to: step.id, dashed: step.needsAssumed || skipped, stale: step.stale.contains(need))
             }
         }
         VStack(alignment: .leading, spacing: 0) {
@@ -285,46 +280,20 @@ private struct StepRunGraph: View {
             .padding(tokens.spacing.m)
             Divider()
             ScrollView {
-                VStack(spacing: tokens.spacing.xl) {
-                    ForEach(Array(layers.enumerated()), id: \.element) { _, ids in
-                        HStack(alignment: .top, spacing: tokens.spacing.s) {
-                            ForEach(ids, id: \.self) { id in
-                                if let step = byID[id] {
-                                    VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
-                                        StepNodeView(step: step) { preview(step) }
-                                        if case .active = step.state, let title = chatTitles[step.path] {
-                                            Button { selectChat(step.path) } label: {
-                                                Label(title, systemImage: "bubble.left").lineLimit(1)
-                                            }
-                                            .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                                            .help("Show chat \(title)")
-                                            .accessibilityLabel("Show chat, \(title)")
-                                        }
-                                    }
-                                        .anchorPreference(key: NodeBounds.self, value: .bounds) { [id: $0] }
+                StepGraph(layers: layers, edges: edges) { id in
+                    if let step = byID[id] {
+                        VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
+                            StepNodeView(step: step) { preview(step) }
+                            if case .active = step.state, let title = chatTitles[step.path] {
+                                Button { selectChat(step.path) } label: {
+                                    Label(title, systemImage: "bubble.left").lineLimit(1)
                                 }
+                                .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                                .help("Show chat \(title)")
+                                .accessibilityLabel("Show chat, \(title)")
                             }
                         }
                     }
-                }
-                // A gutter on the left carries the edges that skip a layer, so no edge crosses a node.
-                .padding(.leading, tokens.spacing.l)
-                .backgroundPreferenceValue(NodeBounds.self) { bounds in
-                    GeometryReader { proxy in
-                        ForEach(edges) { edge in
-                            if let from = bounds[edge.from].map({ proxy[$0] }), let to = bounds[edge.to].map({ proxy[$0] }) {
-                                path(from: from, to: to, long: (layerOf[edge.to] ?? 0) - (layerOf[edge.from] ?? 0) > 1)
-                                    .stroke(
-                                        edge.stale ? Color.orange : Color.secondary,
-                                        style: StrokeStyle(
-                                            lineWidth: DesignTokens.Size.hairline,
-                                            dash: edge.dashed || edge.stale ? [tokens.spacing.xs, tokens.spacing.xs] : []
-                                        )
-                                    )
-                            }
-                        }
-                    }
-                    .accessibilityHidden(true)
                 }
                 .padding(tokens.spacing.m)
             }
@@ -337,21 +306,6 @@ private struct StepRunGraph: View {
         return waiting > 0 ? "\(done) · \(waiting) waiting" : done
     }
 
-    private func path(from: CGRect, to: CGRect, long: Bool) -> Path {
-        Path { path in
-            if long {
-                let gutter = min(from.minX, to.minX) - tokens.spacing.s
-                path.move(to: CGPoint(x: from.minX, y: from.midY))
-                path.addLine(to: CGPoint(x: gutter, y: from.midY))
-                path.addLine(to: CGPoint(x: gutter, y: to.midY))
-                path.addLine(to: CGPoint(x: to.minX, y: to.midY))
-            } else {
-                path.move(to: CGPoint(x: from.midX, y: from.maxY))
-                path.addLine(to: CGPoint(x: to.midX, y: to.minY))
-            }
-        }
-    }
-
     private func preview(_ step: StepNode) {
         let directory = directory
         open(WorkspaceDocument(title: step.path, detail: "Read-only · \(directory)", isDiff: false) {
@@ -362,20 +316,13 @@ private struct StepRunGraph: View {
     }
 }
 
-private struct NodeBounds: PreferenceKey {
-    static let defaultValue: [String: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue()) { first, _ in first }
-    }
-}
-
 private struct StepNodeView: View {
     @Environment(\.designTokens) private var tokens
     let step: StepNode
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        GraphNodeButton(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.xs) {
                 glyph.frame(width: DesignTokens.Size.glyphSlot)
                 VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
@@ -400,16 +347,7 @@ private struct StepNodeView: View {
                     }
                 }
             }
-            .padding(tokens.spacing.s)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
-                    .strokeBorder(Color.secondary.opacity(DesignTokens.endedPaneOpacity), lineWidth: DesignTokens.Size.hairline)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         .help(help)
         .accessibilityLabel(step.spokenLabel)
