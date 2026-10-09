@@ -461,3 +461,68 @@ fn every_host_skill_path_names_a_catalog_skill_and_a_planned_cli_destination() {
         }
     }
 }
+
+#[test]
+fn owner_recreated_link_agrees_in_list_and_setup_and_does_not_block_undo_all() {
+    let f = Fixture::new("owner-recreated-undo-all", true);
+    let plan = f.plan();
+    assert!(f.apply(plan["digest"].as_str().unwrap()).status.success());
+    let listed = f.json(&["managed", "list", "--json"]);
+    let owner = listed["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| {
+            entry["file"]
+                .as_str()
+                .unwrap()
+                .ends_with("/.agents/skills/flow")
+        })
+        .unwrap();
+    let undo = f.run(&["managed", "revert", owner["id"].as_str().unwrap()]);
+    assert!(undo.status.success(), "{undo:?}");
+    let target = f.build_home.join(".swarm/skills/kit/skills/flow");
+    symlink(&target, f.destination()).unwrap();
+    let listed = f.json(&["managed", "list", "--json"]);
+    let owner = listed["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| {
+            entry["file"]
+                .as_str()
+                .unwrap()
+                .ends_with("/.agents/skills/flow")
+        })
+        .unwrap();
+    assert_eq!(owner["state"], "changed");
+    let plan = f.plan();
+    let conflict = plan["conflicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|conflict| conflict["file"] == f.destination().to_string_lossy().as_ref())
+        .unwrap();
+    assert_eq!(conflict["kind"], "taken");
+    let undo = f.json(&["managed", "revert", "--all", "--plan", "--json"]);
+    assert_eq!(undo["files"].as_array().unwrap().len(), 68);
+    assert_eq!(undo["conflicts"], serde_json::json!([]));
+    let output = f.run(&[
+        "managed",
+        "revert",
+        "--all",
+        "--digest",
+        undo["digest"].as_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    for root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
+        for skill in swarm::skills::link_catalog() {
+            let path = f.home.join(root).join(skill.name);
+            if path == f.destination() {
+                assert_eq!(fs::read_link(path).unwrap(), target);
+            } else {
+                assert!(fs::symlink_metadata(path).is_err());
+            }
+        }
+    }
+}

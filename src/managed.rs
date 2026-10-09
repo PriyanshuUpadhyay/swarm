@@ -760,7 +760,7 @@ pub fn state(edit: &Edit, off: bool) -> State {
             Ok(LinkLeaf::Absent) if off => State::Off,
             Ok(LinkLeaf::Absent) => State::Gone,
             Ok(LinkLeaf::Link(target)) => match target.to_str().map(serde_json::Value::from) {
-                Some(value) if value == edit.wrote => State::Present,
+                Some(value) if !off && value == edit.wrote => State::Present,
                 Some(value) => State::Changed(value),
                 None => unreachable!(),
             },
@@ -1642,23 +1642,57 @@ mod tests {
     #[test]
     fn a_link_recreated_by_the_owner_after_undo_is_taken() {
         let fixture = LinkFixture::new("owner-recreated-after-undo");
-        apply(&fixture.store, &[fixture.plan()]).unwrap();
+        let other_links: Vec<_> = [".claude/skills", ".agents/skills", ".gemini/config/skills"]
+            .into_iter()
+            .flat_map(|root| {
+                crate::skills::link_catalog()
+                    .into_iter()
+                    .map(move |skill| (root, skill))
+            })
+            .skip(1)
+            .map(|(root, skill)| fixture.root.join("home").join(root).join(skill.name))
+            .collect();
+        let mut plans = vec![fixture.plan()];
+        plans.extend(other_links.iter().map(|path| {
+            LinkPlan::create(&fixture.store, path.clone(), fixture.target.clone())
+                .unwrap()
+                .into()
+        }));
+        apply(&fixture.store, &plans).unwrap();
+        let owner = Target::Ids(vec![fixture.edit().id()]);
         revert(
             &fixture.store,
-            &revert_plan(&fixture.store, &[], &Target::All).unwrap(),
+            &revert_plan(&fixture.store, &[], &owner).unwrap(),
         )
         .unwrap();
+        // A repeated undo of an absent off row still changes no file.
+        assert!(
+            revert(
+                &fixture.store,
+                &revert_plan(&fixture.store, &[], &owner).unwrap()
+            )
+            .unwrap()
+            .is_empty()
+        );
         std::os::unix::fs::symlink(&fixture.target, &fixture.link).unwrap();
         let plan = fixture.plan();
         assert_eq!(plan.conflicts()[0].kind, ConflictKind::Taken);
         assert!(apply(&fixture.store, &[plan]).is_err());
         assert_eq!(std::fs::read_link(&fixture.link).unwrap(), fixture.target);
+        let entries = list(&fixture.store, &[]).unwrap();
+        let entry = entries
+            .iter()
+            .find(|entry| entry.edit.id() == fixture.edit().id())
+            .unwrap();
+        assert_eq!(entry.state, State::Changed(fixture.edit().wrote));
+        let plans = revert_plan(&fixture.store, &[], &Target::All).unwrap();
+        assert_eq!(plans.len(), 68);
+        let removed = revert(&fixture.store, &plans).unwrap();
+        assert_eq!(removed.len(), 68);
         assert!(
-            revert(
-                &fixture.store,
-                &revert_plan(&fixture.store, &[], &Target::All).unwrap()
-            )
-            .is_err()
+            other_links
+                .iter()
+                .all(|path| std::fs::symlink_metadata(path).is_err())
         );
         assert_eq!(std::fs::read_link(&fixture.link).unwrap(), fixture.target);
     }
