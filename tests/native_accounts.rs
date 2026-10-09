@@ -212,3 +212,37 @@ fn missing_cli_has_a_typed_native_read_error() {
     assert!(matches!(error, NativeReadError::CliUnavailable));
     assert_eq!(error.to_string(), "provider CLI is unavailable");
 }
+
+#[test]
+fn reserved_discovered_names_are_skipped_so_external_current_keeps_its_name() {
+    let home = fixture("spare-reserved-discovery");
+    for name in ["current", "auto", "default"] {
+        std::fs::create_dir_all(home.join(format!(".codex-{name}"))).unwrap();
+    }
+    let external = home.join("external-work");
+    std::fs::create_dir(&external).unwrap();
+    tool(
+        &home,
+        "codex",
+        include_str!("fixtures/accounts/work-app-server.sh"),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("CODEX_HOME", &external)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .args(["accounts", "--provider", "codex", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let rows = list["accounts"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let current = rows.iter().find(|row| row["name"] == "current").unwrap();
+    assert_eq!(current["home"], external.to_string_lossy().as_ref());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid account name"));
+}

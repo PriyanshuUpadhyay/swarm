@@ -570,18 +570,15 @@ struct Probe {
     /// `--account <name>`: only that account counts. None or `auto` counts every account.
     account: Option<String>,
     accounts: std::cell::RefCell<
-        std::collections::HashMap<Provider, Option<Vec<swarm::config::AccountState>>>,
+        std::collections::HashMap<Provider, Result<swarm::profiles::AccountList, String>>,
     >,
 }
 
 impl Probe {
-    fn new(
-        config: &swarm::config::Config,
-        account: Option<&str>,
-        deadline: std::time::Instant,
-    ) -> Probe {
+    fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
+        // Account selection starts its budget after launch has checked the host and opened the store.
         Probe {
-            deadline,
+            deadline: swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -602,7 +599,11 @@ impl Probe {
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
-            .or_insert_with(|| read_accounts(provider, self.account.as_deref(), self.deadline));
+            .or_insert_with(|| swarm::profiles::native::load(provider, self.deadline));
+        let accounts = accounts
+            .as_ref()
+            .ok()
+            .and_then(|list| account_states(list, self.account.as_deref()));
         // A named account belongs to one provider; another provider's runner cannot use it.
         if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
             return Some((
@@ -615,12 +616,10 @@ impl Probe {
 }
 
 /// Native authentication uncertainty remains a read failure for ADR 0032.
-fn read_accounts(
-    provider: Provider,
+fn account_states(
+    list: &swarm::profiles::AccountList,
     only: Option<&str>,
-    deadline: std::time::Instant,
 ) -> Option<Vec<swarm::config::AccountState>> {
-    let list = swarm::profiles::native::load(provider, deadline).ok()?;
     let rows: Vec<_> = list
         .accounts
         .iter()
@@ -651,8 +650,7 @@ fn resolve_role(
     provider: Option<&str>,
     account: Option<&str>,
     running: bool,
-    deadline: std::time::Instant,
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, Probe), String> {
     let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
     let profile = config
         .profile(role)
@@ -668,7 +666,7 @@ fn resolve_role(
             only.id()
         ));
     }
-    let probe = Probe::new(&config, account, deadline);
+    let probe = Probe::new(&config, account);
     let selection = swarm::config::select(profile, only, |runner| probe.check(runner));
     let id = |index: usize| format!("{role}#{}", index + 1);
     let Some(index) = selection.pick else {
@@ -719,7 +717,7 @@ fn resolve_role(
         "skipped".into(),
         serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
     );
-    Ok(value)
+    Ok((value, probe))
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that
@@ -3067,7 +3065,6 @@ const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
 const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let account_deadline = swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS);
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
     if let [flag] = args
@@ -3166,7 +3163,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let resolved = resolve_role(role, provider, None, false, account_deadline)?;
+        let (resolved, _) = resolve_role(role, provider, None, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
@@ -3176,7 +3173,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
-        let probe = Probe::new(&config, None, account_deadline);
+        let probe = Probe::new(&config, None);
         let profiles: Vec<swarm::config::ProfileCheck> = config
             .profiles
             .iter()
@@ -3531,7 +3528,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved: swarm::bus::ResolvedRole = match requested_model {
+        let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
             Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
@@ -3544,17 +3541,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
                 let runner = swarm::config::one_off(&config.profiles[0], provider, model)
                     .map_err(|error| format!("swarm: {error}"))?;
-                serde_json::from_value(serde_json::to_value(runner)?)?
+                (
+                    serde_json::from_value(serde_json::to_value(runner)?)?,
+                    Probe::new(&config, account),
+                )
             }
-            None => serde_json::from_value(resolve_role(
-                role,
-                requested_provider,
-                account,
-                true,
-                account_deadline,
-            )?)
-            .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
+            None => {
+                let (value, probe) = resolve_role(role, requested_provider, account, true)?;
+                let resolved = serde_json::from_value(value)
+                    .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
+                (resolved, probe)
+            }
         };
+        let account_deadline = probe.deadline;
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
@@ -3578,19 +3577,26 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => match load_accounts(kind.id(), account_deadline)
-                .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
-                .and_then(|accounts| {
-                    swarm::profiles::resolve_account(&accounts, requested).cloned()
-                }) {
-                Ok(account) => Some(account),
-                // Auto without a known native account retains the CLI login (ADR 0032).
-                Err(error) if requested == "auto" => {
-                    eprintln!("swarm: {error}; {} uses its own login", kind.id());
-                    None
+            (Some(requested), true) => {
+                let mut cache = probe.accounts.borrow_mut();
+                let accounts = cache
+                    .entry(kind)
+                    .or_insert_with(|| swarm::profiles::native::load(kind, account_deadline));
+                match accounts
+                    .as_ref()
+                    .map_err(Clone::clone)
+                    .and_then(|accounts| {
+                        swarm::profiles::resolve_account(accounts, requested).cloned()
+                    }) {
+                    Ok(account) => Some(account),
+                    // Auto without a known native account retains the CLI login (ADR 0032).
+                    Err(error) if requested == "auto" => {
+                        eprintln!("swarm: {error}; {} uses its own login", kind.id());
+                        None
+                    }
+                    Err(error) => return Err(format!("swarm: {error}").into()),
                 }
-                Err(error) => return Err(format!("swarm: {error}").into()),
-            },
+            }
             _ => None,
         };
         let mut pane_dir = cwd.clone();
@@ -3731,7 +3737,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             agent_id,
             role,
             options,
-            account_deadline,
+            swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
         );
     }
     if let [cmd] = args

@@ -70,8 +70,12 @@ pub fn discover(
                 Provider::Codex => name.strip_prefix(".codex-").map(str::to_string),
                 _ => (!name.starts_with('.')).then_some(name),
             };
-            if let Some(name) = name.filter(|name| !name.is_empty()) {
-                candidates.push((name, entry.path()));
+            if let Some(name) = name {
+                if crate::config::valid_account_name(&name) {
+                    candidates.push((name, entry.path()));
+                } else {
+                    eprintln!("swarm: skipped native home: invalid account name");
+                }
             }
         }
     }

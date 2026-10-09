@@ -193,8 +193,8 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     let native_reads = std::fs::read_to_string(home.join("native-reads")).unwrap();
     assert_eq!(
         native_reads.lines().count(),
-        6,
-        "the pane must reuse the resolved account"
+        3,
+        "the role probe, Auto and pane must share one native account read"
     );
     assert!(
         stderr(&output).contains("account work"),
@@ -1593,4 +1593,144 @@ fn named_launch_reuses_the_role_probe_deadline() {
             .count(),
         1
     );
+}
+
+fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
+    let home = scratch(role);
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust":"standing"}"#).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true}'"#,
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = printf chair\nspawn = printf pane-work\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let cwd = git_repo(&home, "work-project")
+        .to_string_lossy()
+        .into_owned();
+    (home, session, cwd)
+}
+
+#[test]
+fn slow_working_auth_is_read_once_by_role_and_named_launch() {
+    let (home, session, cwd) = account_launch_fixture("work-slow-probe");
+    std::fs::create_dir_all(home.join(".claude/.profiles/personal")).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.5; echo '{"loggedIn":true}'"#,
+    );
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
+    assert_eq!(
+        std::fs::read_to_string(home.join("native-reads"))
+            .unwrap()
+            .lines()
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn account_budget_starts_after_the_herdr_check() {
+    let (home, session, cwd) = account_launch_fixture("personal-herdr-budget");
+    let adapter = std::fs::read(home.join(".swarm/adapters/fake.conf")).unwrap();
+    std::fs::write(home.join(".swarm/adapters/herdr.conf"), adapter).unwrap();
+    tool(
+        &home,
+        "herdr",
+        "test \"$*\" = status || exit 8; /bin/sleep 2.2",
+    );
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "herdr"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "chat",
+            "--model",
+            "opus",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
+}
+
+#[test]
+fn account_budget_starts_after_a_waiting_store_open() {
+    let (home, session, cwd) = account_launch_fixture("spare-store-budget");
+    let connection = rusqlite::Connection::open(home.join(".swarm/swarm.db")).unwrap();
+    connection
+        .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        connection.execute_batch("COMMIT;").unwrap();
+    });
+    let started = std::time::Instant::now();
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "chat",
+            "--model",
+            "opus",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    release.join().unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
 }

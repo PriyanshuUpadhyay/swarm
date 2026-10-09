@@ -198,12 +198,15 @@ pub(crate) fn for_accounts(
 }
 
 fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, String> {
-    let stored = match std::fs::read(cache_path()?) {
-        Ok(bytes) => serde_json::from_slice::<Cache>(&bytes)
-            .map(Some)
-            .map_err(|_| "invalid cache"),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err("unavailable cache"),
+    let stored = match cache_path() {
+        Err(_) => Err("refused cache"),
+        Ok(path) => match std::fs::read(path) {
+            Ok(bytes) => serde_json::from_slice::<Cache>(&bytes)
+                .map(Some)
+                .map_err(|_| "invalid cache"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err("unavailable cache"),
+        },
     };
     let mut meters = Vec::new();
     for account in accounts {
@@ -333,12 +336,14 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
                         .iter()
                         .filter(|meter| {
                             meter.account.as_deref() == Some(&account.name)
-                                && matches!(meter.state.as_str(), "fresh" | "stale")
+                                && matches!(meter.state.as_str(), "fresh" | "stale" | "failed")
                         })
                         .map(|meter| {
                             let mut meter = meter.clone();
-                            meter.state = "stale".into();
-                            meter.reason = Some(REFRESH_FAILED_REASON.into());
+                            if meter.state != "failed" {
+                                meter.state = "stale".into();
+                                meter.reason = Some(REFRESH_FAILED_REASON.into());
+                            }
                             meter
                         })
                         .collect();

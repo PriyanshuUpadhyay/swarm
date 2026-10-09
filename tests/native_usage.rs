@@ -466,3 +466,83 @@ fn failed_refresh_retains_good_samples_and_their_age_as_stale() {
                 && row["used_pct"] == 30)
     );
 }
+
+#[test]
+fn refused_usage_cache_keeps_native_accounts_with_failed_usage() {
+    let home = fixture("spare-refused-cache");
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("CLAUDE_CONFIG_DIR", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .args(["accounts", "--provider", "codex", "--json"])
+        .output()
+        .unwrap();
+    let list = json(output);
+    assert_eq!(list["state"], "ready");
+    let work = list["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "work")
+        .unwrap();
+    assert_eq!(work["auth_state"], "signed_in");
+    assert_eq!(work["usage_state"], "failed");
+    assert!(work["remaining_pct"].is_null());
+    assert!(!home.join(".swarm/codex-usage.json").exists());
+}
+
+#[test]
+fn failed_refresh_keeps_failed_windows_beside_retained_good_windows() {
+    let home = fixture("work-mixed-retention");
+    json(run(
+        &home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let path = home.join(".swarm/codex-usage.json");
+    let mut cache: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let work = cache["accounts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["home"].as_str().unwrap().ends_with("/.codex-work"))
+        .unwrap();
+    let mut failed = work["meters"][0].clone();
+    failed["state"] = "failed".into();
+    failed["used_pct"] = serde_json::Value::Null;
+    failed["window"] = "secondary".into();
+    work["meters"].as_array_mut().unwrap().push(failed);
+    std::fs::write(&path, serde_json::to_vec(&cache).unwrap()).unwrap();
+    std::fs::write(
+        home.join("limits.json"),
+        r#"{"id":3,"error":{"message":"quota-unavailable"}}"#,
+    )
+    .unwrap();
+    let refreshed = json(run(
+        &home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let rows: Vec<_> = refreshed["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["account"] == "work")
+        .collect();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["state"], "stale");
+    assert_eq!(rows[1]["state"], "failed");
+    let list = json(run(&home, &["accounts", "--provider", "codex", "--json"]));
+    let work = list["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "work")
+        .unwrap();
+    assert_eq!(work["usage_state"], "failed");
+    assert!(work["remaining_pct"].is_null());
+}
