@@ -185,7 +185,10 @@ mod tests {
             probe
                 .env_clear()
                 .env("HOME", vector["home"].as_str().unwrap())
-                .env("SWARM_TEST_GUARDS_EXPECTED", vector["guards"].as_str().unwrap())
+                .env(
+                    "SWARM_TEST_GUARDS_EXPECTED",
+                    vector["guards"].as_str().unwrap(),
+                )
                 .args(["--exact", "paths::tests::guards_path_probe"]);
             if let Some(explicit) = vector["explicit"].as_str() {
                 probe.env("SWARM_HOME", explicit);
@@ -208,7 +211,10 @@ mod tests {
         let Ok(expected) = std::env::var("SWARM_TEST_GUARDS_EXPECTED") else {
             return;
         };
-        assert_eq!(super::guards_file().unwrap(), std::path::PathBuf::from(expected));
+        assert_eq!(
+            super::guards_file().unwrap(),
+            std::path::PathBuf::from(expected)
+        );
     }
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
