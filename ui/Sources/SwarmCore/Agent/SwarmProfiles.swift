@@ -341,11 +341,13 @@ public struct SwarmAccountLoginRequest: Sendable, Hashable {
     public var provider: String
     public var name: String
     public var revision: String
+    public var directory: String?
 
-    public init(provider: String, name: String, revision: String) {
+    public init(provider: String, name: String, revision: String, directory: String? = nil) {
         self.provider = provider
         self.name = name
         self.revision = revision
+        self.directory = directory
     }
 
     public static func validName(_ name: String) -> Bool {

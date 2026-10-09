@@ -127,6 +127,18 @@ struct AccountContractTests {
         }
     }
 
+    @Test("login passes the pane directory as one fixed argv value")
+    func loginDirectory() async throws {
+        let login = try fixtureText("work-login")
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp/scratch") { _, args, _ in
+            #expect(args == ["accounts", "login", "--provider", "codex", "--name", "work",
+                             "--revision", "opaque", "--cwd", "/tmp/work project", "--json"])
+            return ShellResult(status: 0, stdout: login, stderr: "")
+        }
+        let request = SwarmAccountLoginRequest(provider: "codex", name: "work", revision: "opaque", directory: "/tmp/work project")
+        #expect(try await source.openLogin(request).pane == "pane-work")
+    }
+
     private func wire<T: Decodable>(_ type: T.Type, _ text: String) throws -> T {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

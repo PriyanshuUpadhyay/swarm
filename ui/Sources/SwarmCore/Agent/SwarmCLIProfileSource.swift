@@ -71,10 +71,15 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         guard ["claude", "codex"].contains(request.provider), SwarmAccountLoginRequest.validName(request.name) else {
             throw SwarmProfileError.failed("Use a valid account name and a supported provider")
         }
-        return try await read(
-            ["accounts", "login", "--provider", request.provider, "--name", request.name,
-             "--revision", request.revision, "--json"], as: SwarmAccountLoginResult.self
-        )
+        var arguments = ["accounts", "login", "--provider", request.provider, "--name", request.name,
+                         "--revision", request.revision]
+        if let directory = request.directory {
+            guard directory.hasPrefix("/"), !directory.contains("\0") else {
+                throw SwarmProfileError.failed("Use an absolute directory for the login pane")
+            }
+            arguments += ["--cwd", directory]
+        }
+        return try await read(arguments + ["--json"], as: SwarmAccountLoginResult.self)
     }
 
     public func resetAccounts(revision: String) async throws -> SwarmAccountMetadataAction {

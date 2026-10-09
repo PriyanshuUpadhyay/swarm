@@ -133,6 +133,37 @@ struct SettingsWindow: View {
                     else { selection.setPageError(nil, on: .profiles) }
                 }
             )
+        case .accounts:
+            AccountsPage(
+                loadAccounts: { provider in
+                    await LoginShellPath.ready()
+                    if provider != "agy", Shell.which(provider) == nil {
+                        throw AccountsPageError.cliMissing(provider)
+                    }
+                    return try await SwarmCLIProfileSource().accounts(provider: provider)
+                },
+                loadUsage: {
+                    await LoginShellPath.ready()
+                    return try await SwarmCLIProfileSource().usage()
+                },
+                refreshUsage: { provider in
+                    await LoginShellPath.ready()
+                    return try await SwarmCLIProfileSource().refreshUsage(provider: provider)
+                },
+                openLogin: { request in
+                    await LoginShellPath.ready()
+                    var request = request
+                    request.directory = model.navigation.selectedWorkspace ?? NSHomeDirectory()
+                    return try await SwarmCLIProfileSource().openLogin(request)
+                },
+                resetAccounts: { revision in
+                    try await SwarmCLIProfileSource().resetAccounts(revision: revision)
+                },
+                onError: { message in
+                    if let message { selection.reportPageError(message, on: .accounts) }
+                    else { selection.setPageError(nil, on: .accounts) }
+                }
+            )
         case .managedChanges:
             ManagedChangesPage()
         case .setup:
