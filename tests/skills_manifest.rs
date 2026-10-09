@@ -163,3 +163,93 @@ fn manifest_and_host_use_the_same_skill_names() {
         assert!(found >= 2, "{provider}: {context}");
     }
 }
+
+#[test]
+fn manifest_checks_listed_content_and_ignores_foreign_files() {
+    let tree = std::env::temp_dir().join(format!(
+        "swarm-manifest-foreign-files-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&tree).unwrap();
+    assert!(
+        Command::new("cp")
+            .arg("-Rp")
+            .arg(fixture().join("."))
+            .arg(&tree)
+            .status()
+            .unwrap()
+            .success()
+    );
+    swarm::skills::write_manifest(&tree, &tree.join("manifest.json")).unwrap();
+    let original = swarm::skills::Manifest::read(&tree).unwrap();
+    for path in [
+        ".DS_Store",
+        "kit/references/.role.md.swp",
+        "kit/references/__pycache__/role.pyc",
+        "kit/references/editor-backup/role.md",
+    ] {
+        let path = tree.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "foreign data").unwrap();
+    }
+    original.validate(&tree).unwrap();
+    assert_eq!(
+        swarm::skills::Manifest::read(&tree).unwrap().content_id,
+        original.content_id
+    );
+    let script = tree.join("kit/scripts/role.sh");
+    let bytes = fs::read(&script).unwrap();
+    let permissions = fs::metadata(&script).unwrap().permissions();
+    for role in [
+        "missing-file",
+        "changed-bytes",
+        "changed-mode",
+        "linked-file",
+    ] {
+        match role {
+            "missing-file" => fs::remove_file(&script).unwrap(),
+            "changed-bytes" => fs::write(&script, "changed source").unwrap(),
+            "changed-mode" => {
+                fs::set_permissions(&script, fs::Permissions::from_mode(0o644)).unwrap()
+            }
+            "linked-file" => {
+                fs::remove_file(&script).unwrap();
+                std::os::unix::fs::symlink(fixture().join("kit/scripts/role.sh"), &script).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert!(original.validate(&tree).is_err(), "{role}");
+        assert!(swarm::skills::Manifest::read(&tree).is_err(), "{role}");
+        if fs::symlink_metadata(&script).is_ok() {
+            fs::remove_file(&script).unwrap();
+        }
+        fs::write(&script, &bytes).unwrap();
+        fs::set_permissions(&script, permissions.clone()).unwrap();
+    }
+    let directory = tree.join("kit/scripts");
+    let permissions = fs::metadata(&directory).unwrap().permissions();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(original.validate(&tree).is_err());
+    assert!(swarm::skills::Manifest::read(&tree).is_err());
+    fs::set_permissions(&directory, permissions).unwrap();
+    let backup = tree.join("unlisted-script-backup");
+    for role in ["missing-directory", "linked-directory"] {
+        fs::rename(&directory, &backup).unwrap();
+        if role == "linked-directory" {
+            std::os::unix::fs::symlink(&backup, &directory).unwrap();
+        }
+        assert!(original.validate(&tree).is_err(), "{role}");
+        assert!(swarm::skills::Manifest::read(&tree).is_err(), "{role}");
+        if role == "linked-directory" {
+            fs::remove_file(&directory).unwrap();
+        }
+        fs::rename(&backup, &directory).unwrap();
+    }
+    let mut incomplete = original.clone();
+    incomplete
+        .directories
+        .retain(|directory| directory.path != "kit/scripts");
+    assert!(incomplete.validate(&tree).is_err());
+    original.validate(&tree).unwrap();
+    fs::remove_dir_all(tree).unwrap();
+}

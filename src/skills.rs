@@ -146,13 +146,27 @@ fn tree_content(root: &Path) -> Result<(Vec<SkillFile>, Vec<SkillDirectory>, Str
     }
     let mut paths = Vec::new();
     files_in(root, root, &mut paths)?;
+    listed_content(root, paths)
+}
+
+fn listed_content(
+    root: &Path,
+    mut paths: Vec<(String, bool)>,
+) -> Result<(Vec<SkillFile>, Vec<SkillDirectory>, String)> {
+    if !fs::symlink_metadata(root)?.is_dir() {
+        return Err("skills: source must be a plain directory".into());
+    }
     paths.sort();
     let mut files = Vec::new();
     let mut directories = Vec::new();
     let mut content = Sha256::new();
     for (path, is_directory) in paths {
         let full = root.join(&path);
-        let mode = fs::metadata(&full)?.permissions().mode() & 0o777;
+        let metadata = fs::symlink_metadata(&full)?;
+        if (is_directory && !metadata.is_dir()) || (!is_directory && !metadata.is_file()) {
+            return Err(format!("skills: wrong manifest entry type: {}", full.display()).into());
+        }
+        let mode = metadata.permissions().mode() & 0o777;
         let bytes = if is_directory {
             Vec::new()
         } else {
@@ -243,7 +257,29 @@ impl Manifest {
         if self.catalog != link_catalog() {
             return Err("skills: manifest catalog differs from the link catalog".into());
         }
-        let (files, directories, content_id) = tree_content(root)?;
+        let directory_paths: BTreeSet<_> = self
+            .directories
+            .iter()
+            .map(|dir| dir.path.as_str())
+            .collect();
+        for path in &paths {
+            if let Some(parent) = Path::new(path)
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                && !directory_paths.contains(parent.to_str().ok_or("skills: non-UTF-8 path")?)
+            {
+                return Err(
+                    format!("skills: missing manifest directory {}", parent.display()).into(),
+                );
+            }
+        }
+        let listed_paths = self
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), false))
+            .chain(self.directories.iter().map(|dir| (dir.path.clone(), true)))
+            .collect();
+        let (files, directories, content_id) = listed_content(root, listed_paths)?;
         if self.files != files || self.directories != directories || self.content_id != content_id {
             return Err("skills: manifest paths, modes or bytes do not match the source".into());
         }

@@ -141,9 +141,17 @@ fn first_copy_noop_and_whole_replacement_use_cask_source() {
         "discard on version refresh",
     )
     .unwrap();
+    fs::write(f.home.join("skills/.DS_Store"), "Finder metadata").unwrap();
+    assert_eq!(f.installed().content_id, before.content_id);
+    assert_eq!(
+        f.refresh().unwrap(),
+        swarm::skills::RefreshOutcome::Unchanged
+    );
+    assert!(f.home.join("skills/.DS_Store").exists());
     f.change();
     assert_eq!(f.refresh().unwrap(), swarm::skills::RefreshOutcome::Updated);
     assert!(!f.home.join("skills/owner-extra").exists());
+    assert!(!f.home.join("skills/.DS_Store").exists());
     assert_ne!(f.installed().content_id, before.content_id);
     assert_eq!(
         fs::metadata(f.home.join("skills/kit/scripts/role.sh"))

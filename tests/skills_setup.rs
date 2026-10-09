@@ -526,3 +526,19 @@ fn owner_recreated_link_agrees_in_list_and_setup_and_does_not_block_undo_all() {
         }
     }
 }
+
+#[test]
+fn finder_metadata_keeps_the_applied_skills_copy_available() {
+    let f = Fixture::new("finder-metadata-after-apply", true);
+    let plan = f.plan();
+    assert!(f.apply(plan["digest"].as_str().unwrap()).status.success());
+    fs::write(
+        f.build_home.join(".swarm/skills/.DS_Store"),
+        "Finder metadata",
+    )
+    .unwrap();
+    assert_eq!(f.status()["skills"], true);
+    let plan = f.plan();
+    assert_eq!(plan["files"], serde_json::json!([]));
+    assert_eq!(plan["conflicts"], serde_json::json!([]));
+}
