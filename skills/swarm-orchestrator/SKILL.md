@@ -30,6 +30,9 @@ role covers. The child must know the voice protocol in
 Codex and AGY find it through `AGENTS.md`; otherwise give it as the child's first prompt, for
 example "Read <repo>/skills/swarm-voice/SKILL.md and follow it".
 
+Launch every seat of a stage in one turn and send their asks in one turn, as the agent kit's
+`references/fan-out.md` says.
+
 ## Work
 
 ```sh
