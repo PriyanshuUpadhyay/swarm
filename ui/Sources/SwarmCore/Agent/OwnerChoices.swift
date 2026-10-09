@@ -16,6 +16,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
     public var tabs: [String: TabStrip] = [:]
 
     public var fields = RowFieldLists()
+    public var prefs = Prefs()
 
     public init() {}
 
@@ -33,6 +34,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         workspaceOrder = try container.decodeIfPresent([String: [String]].self, forKey: .workspaceOrder) ?? [:]
         tabs = try container.decodeIfPresent([String: TabStrip].self, forKey: .tabs) ?? [:]
         fields = try container.decodeIfPresent(RowFieldLists.self, forKey: .fields) ?? RowFieldLists()
+        prefs = try container.decodeIfPresent(Prefs.self, forKey: .prefs) ?? Prefs()
     }
 
     /// Merge only the owner's changed entries so a stale view cannot erase another process's choices.
@@ -50,6 +52,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
         Self.mergeChanges(from: before.workspaceOrder, to: after.workspaceOrder, into: &workspaceOrder)
         Self.mergeChanges(from: before.tabs, to: after.tabs, into: &tabs)
         if before.fields != after.fields { fields = after.fields }
+        if before.prefs != after.prefs { prefs = after.prefs }
     }
 
     private static func mergeChanges<Value: Equatable>(
