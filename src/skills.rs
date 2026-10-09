@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Component, Path},
 };
 
@@ -253,4 +253,232 @@ pub fn write_manifest(source: &Path, out: &Path) -> Result<()> {
     bytes.push(b'\n');
     fs::write(out, bytes)?;
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefreshOutcome {
+    Updated,
+    Unchanged,
+}
+
+// O_NOFOLLOW prevents the lock or a source file from following a link at its final component.
+#[cfg(target_os = "macos")]
+const NOFOLLOW: i32 = 0x100;
+#[cfg(not(target_os = "macos"))]
+const NOFOLLOW: i32 = 0x20000;
+
+fn source_from_helper(helper: &Path) -> Result<std::path::PathBuf> {
+    let helper = helper.canonicalize().map_err(|error| {
+        format!(
+            "skills: cannot resolve helper {}: {error}",
+            helper.display()
+        )
+    })?;
+    let contents = helper
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("skills: helper has no bundle parent")?;
+    let source = contents.join("Resources/Skills");
+    let resolved = source.canonicalize().map_err(|error| {
+        format!(
+            "skills: missing bundle source {}: {error}",
+            source.display()
+        )
+    })?;
+    if !resolved.starts_with(contents) {
+        return Err(format!("skills: bundle source escapes {}", contents.display()).into());
+    }
+    Ok(source)
+}
+
+fn remove_leaf(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
+        Ok(_) => fs::remove_file(path)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn complete(path: &Path) -> Option<Manifest> {
+    if fs::symlink_metadata(path).ok()?.is_dir() {
+        Manifest::read(path).ok()
+    } else {
+        None
+    }
+}
+
+fn write_version(root: &Path, content_id: &str) -> Result<()> {
+    use std::io::Write;
+    let temporary = root.join(".skills-version-next");
+    remove_leaf(&temporary)?;
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    file.write_all(format!("{content_id}\n").as_bytes())?;
+    file.sync_all()?;
+    fs::rename(&temporary, root.join("skills-version"))?;
+    fs::File::open(root)?.sync_all()?;
+    Ok(())
+}
+
+fn recover(root: &Path) -> Result<()> {
+    let destination = root.join("skills");
+    let previous = root.join(".skills-previous");
+    let stage = root.join(".skills-stage");
+    if fs::symlink_metadata(&previous).is_ok() {
+        if let Some(manifest) = complete(&destination) {
+            write_version(root, &manifest.content_id)?;
+            remove_leaf(&previous)?;
+        } else if let Some(manifest) = complete(&previous) {
+            remove_leaf(&destination)?;
+            fs::rename(&previous, &destination)?;
+            write_version(root, &manifest.content_id)?;
+        } else if let Some(manifest) = complete(&stage) {
+            remove_leaf(&destination)?;
+            fs::rename(&stage, &destination)?;
+            write_version(root, &manifest.content_id)?;
+            remove_leaf(&previous)?;
+        } else if fs::symlink_metadata(&previous)?.is_dir() {
+            return Err("skills: interrupted promotion has no complete copy to recover".into());
+        } else {
+            remove_leaf(&previous)?;
+        }
+    }
+    if complete(&destination).is_none()
+        && let Some(manifest) = complete(&stage)
+    {
+        remove_leaf(&destination)?;
+        fs::rename(&stage, &destination)?;
+        write_version(root, &manifest.content_id)?;
+    }
+    remove_leaf(&stage)?;
+    remove_leaf(&root.join(".skills-version-next"))?;
+    Ok(())
+}
+
+fn stage_tree(source: &Path, stage: &Path, manifest: &Manifest) -> Result<()> {
+    fs::create_dir(stage)?;
+    for directory in &manifest.directories {
+        fs::create_dir_all(stage.join(&directory.path))?;
+    }
+    for entry in &manifest.files {
+        let mut input = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(NOFOLLOW)
+            .open(source.join(&entry.path))?;
+        if !input.metadata()?.is_file() {
+            return Err(format!("skills: source is not a plain file: {}", entry.path).into());
+        }
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(stage.join(&entry.path))?;
+        std::io::copy(&mut input, &mut output)?;
+        output.set_permissions(fs::Permissions::from_mode(entry.mode))?;
+        output.sync_all()?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(stage.join("manifest.json"))?;
+    let mut input = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(NOFOLLOW)
+        .open(source.join("manifest.json"))?;
+    std::io::copy(&mut input, &mut file)?;
+    file.set_permissions(fs::Permissions::from_mode(
+        input.metadata()?.permissions().mode() & 0o777,
+    ))?;
+    file.sync_all()?;
+    for directory in manifest.directories.iter().rev() {
+        fs::set_permissions(
+            stage.join(&directory.path),
+            fs::Permissions::from_mode(directory.mode),
+        )?;
+        fs::File::open(stage.join(&directory.path))?.sync_all()?;
+    }
+    manifest.validate(stage)?;
+    fs::File::open(stage)?.sync_all()?;
+    Ok(())
+}
+
+/// Refresh from a bundled helper into an already selected home; callers own home selection.
+/// Kept explicit so fixtures can exercise cask links and separate homes without global env writes.
+pub fn refresh_from(helper: &Path, root: &Path) -> Result<RefreshOutcome> {
+    let source = source_from_helper(helper);
+    fs::create_dir_all(root)?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .custom_flags(NOFOLLOW)
+        .open(root.join(".skills-lock"))?;
+    lock.try_lock()
+        .map_err(|error| format!("skills: cannot take home refresh lock: {error}"))?;
+    recover(root)?;
+    let source = source?;
+    let manifest = Manifest::read(&source).map_err(|error| {
+        format!(
+            "skills: invalid bundle source {}: {error}",
+            source.display()
+        )
+    })?;
+    let destination = root.join("skills");
+    if complete(&destination).is_some_and(|installed| installed.content_id == manifest.content_id) {
+        use std::io::Read;
+        let mut version = String::new();
+        let matches = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(NOFOLLOW)
+            .open(root.join("skills-version"))
+            .and_then(|mut file| file.read_to_string(&mut version))
+            .is_ok()
+            && version.trim() == manifest.content_id;
+        if !matches {
+            write_version(root, &manifest.content_id)?;
+        }
+        return Ok(RefreshOutcome::Unchanged);
+    }
+    let stage = root.join(".skills-stage");
+    if let Err(error) = stage_tree(&source, &stage, &manifest) {
+        let _ = remove_leaf(&stage);
+        return Err(format!("skills: cannot stage bundle: {error}").into());
+    }
+    let previous = root.join(".skills-previous");
+    let had_previous = fs::symlink_metadata(&destination).is_ok();
+    if had_previous {
+        fs::rename(&destination, &previous)?;
+    }
+    if let Err(error) =
+        fs::rename(&stage, &destination).and_then(|()| fs::File::open(root)?.sync_all())
+    {
+        if had_previous {
+            if fs::symlink_metadata(&destination).is_ok() {
+                remove_leaf(&destination)?;
+            }
+            fs::rename(&previous, &destination)?;
+        }
+        return Err(format!("skills: cannot promote bundle: {error}").into());
+    }
+    if let Err(error) = write_version(root, &manifest.content_id) {
+        remove_leaf(&destination)?;
+        if had_previous {
+            fs::rename(&previous, &destination)?;
+        }
+        return Err(format!("skills: cannot write version after promotion: {error}").into());
+    }
+    remove_leaf(&previous)?;
+    Ok(RefreshOutcome::Updated)
+}
+
+pub fn refresh() -> Result<RefreshOutcome> {
+    let destination = crate::paths::skills_dir()?;
+    refresh_from(
+        &std::env::current_exe()?,
+        destination.parent().ok_or("skills: home has no parent")?,
+    )
 }
