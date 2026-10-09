@@ -17,6 +17,7 @@ struct HooksSetupSheet: View {
     let done: () -> Void
     var copy = Copy.hooks
     var isPage = false
+    var onError: (String?) -> Void = { _ in }
 
     /// The sheet's words, so one plan and consent flow serves hooks setup and an undo.
     struct Copy {
@@ -88,6 +89,7 @@ struct HooksSetupSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            if isPage && copy.choosesGroups { consentPicker }
             switch phase {
             case .ready(let plan) where plan.isSetUp:
                 Text(verbatim: plan.unchangedText(copy.unchanged))
@@ -169,6 +171,7 @@ struct HooksSetupSheet: View {
                 }
                 reloading = false
                 phase = .ready(plan)
+                onError(failure)
                 // One announcement, so a setup failure is not cut off by the plan that follows it.
                 let summary = plan.isSetUp ? plan.unchangedText(copy.unchanged) : plan.summary
                 Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
@@ -177,6 +180,7 @@ struct HooksSetupSheet: View {
             } catch {
                 reloading = false
                 phase = .failed(Self.message(error))
+                onError(Self.message(error))
                 Self.announce(Self.message(error))
             }
         }
@@ -310,7 +314,7 @@ struct HooksSetupSheet: View {
                 .help(checked && choice.checked.count == 1 ? "Keep one group to apply" : "")
                 if checked {
                     VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                        if group == "trust" { consentPicker }
+                        if group == "trust" && !isPage { consentPicker }
                         ForEach(plan.files.filter { $0.group == group }) { file in
                             fileRow(file, label: Self.short(file.path))
                         }
@@ -326,21 +330,25 @@ struct HooksSetupSheet: View {
         Picker("Launch consent", selection: Binding(
             get: { choice.standing ?? true },
             set: { standing in
-                choice.standing = standing
+                if isPage {
+                    choice = .trustOnly(standing: standing)
+                } else {
+                    choice.standing = standing
+                }
                 checkAgain()
             }
         )) {
             // Each title wraps itself; the long one needs two lines at the sheet's width.
-            Text("Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
+            Text(isPage ? "Trust from now on" : "Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
                 .fixedSize(horizontal: false, vertical: true)
                 .tag(true)
-            Text("Ask in the agent's column for each new folder")
+            Text(isPage ? "Ask" : "Ask in the agent's column for each new folder")
                 .fixedSize(horizontal: false, vertical: true)
                 .tag(false)
         }
         .pickerStyle(.radioGroup)
         .labelsHidden()
-        .disabled(working)
+        .disabled(working || (isPage && !showsPlan))
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -395,6 +403,7 @@ struct HooksSetupSheet: View {
 
     private func checkAgain() {
         failure = nil
+        onError(nil)
         planRun += 1
     }
 

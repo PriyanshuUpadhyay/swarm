@@ -4,6 +4,37 @@ import Testing
 
 @Suite("Setup settings")
 struct SetupSettingsTests {
+    @Test("Changing trust plans and applies only trust, even after setup is complete")
+    func trustChoice() async throws {
+        actor RecordedCalls {
+            var arguments: [[String]] = []
+            func record(_ value: [String]) { arguments.append(value) }
+        }
+        let recorder = RecordedCalls()
+        let bus = SwarmCLIBus(environment: [:], cwd: "/temporary-project", resolveExecutable: { $0 }) {
+            _, arguments, _, _, _, _ in
+            await recorder.record(arguments)
+            return ShellResult(status: 0,
+                               stdout: #"{"digest":"ready","consent":"ask","files":[],"conflicts":[]}"#,
+                               stderr: "")
+        }
+        for standing in [false, true] {
+            var choice = SwarmSetupChoice.trustOnly(standing: standing)
+            let plan = try await bus.setupPlan(choice)
+            #expect(plan.isSetUp)
+            choice.take(plan)
+            #expect(choice.standing == standing)
+            #expect(choice.checked == ["trust"])
+            try await bus.setUp(digest: plan.digest, choice: choice)
+        }
+        #expect(await recorder.arguments == [
+            ["setup", "--plan", "--json", "--only", "trust", "--consent", "ask"],
+            ["setup", "--digest", "ready", "--only", "trust", "--consent", "ask"],
+            ["setup", "--plan", "--json", "--only", "trust", "--consent", "standing"],
+            ["setup", "--digest", "ready", "--only", "trust", "--consent", "standing"],
+        ])
+    }
+
     @Test("Each dependency reports its own present and missing state")
     func dependencies() {
         let names = ["tmux", "claude", "codex", "agy", "gh", "yelo"]

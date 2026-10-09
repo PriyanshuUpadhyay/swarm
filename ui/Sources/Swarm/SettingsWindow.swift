@@ -10,6 +10,7 @@ struct SettingsWindow: View {
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
     @State private var helperVersion = "Reading helper version…"
     @State private var drift: PathSwarmDrift?
+    @State private var dependencies: [DependencyRow] = []
 
     var body: some View {
         NavigationSplitView {
@@ -62,12 +63,19 @@ struct SettingsWindow: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Setup").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                         .padding([.horizontal, .top], DesignTokens.Spacing.xl)
+                    DependenciesGroup(rows: dependencies)
+                        .padding([.horizontal, .top], DesignTokens.Spacing.xl)
+                        .task {
+                            await LoginShellPath.ready()
+                            dependencies = Dependencies.check(lookup: Shell.which)
+                        }
                     HooksSetupSheet(
                         loadPlan: { try await SwarmCLIBus().setupPlan($0) },
                         setUp: { digest, choice in
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
-                        notNow: { _ in }, done: {}, copy: .setup, isPage: true
+                        notNow: { _ in }, done: {}, copy: .setup, isPage: true,
+                        onError: { selection.setError($0) }
                     )
                 }
             }

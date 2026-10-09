@@ -107,6 +107,10 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     /// The groups to apply.
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
+    public static func trustOnly(standing: Bool) -> Self {
+        Self(groups: ["hooks", "trust", "herdr"], unchecked: ["hooks", "herdr"], standing: standing)
+    }
+
     /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
     /// group is asked again at the next start. Nil when no box is cleared, which declines the
     /// whole sheet (02-design screen 1).
