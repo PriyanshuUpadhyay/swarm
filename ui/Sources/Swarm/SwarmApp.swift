@@ -1021,7 +1021,7 @@ private struct SessionsWindow: View {
                     showingHooksSetup = false
                 },
                 done: { showingHooksSetup = false },
-                copy: .setup
+                copy: .setupSheet
             )
         }
         .onDisappear {

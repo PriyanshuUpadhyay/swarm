@@ -81,7 +81,7 @@ struct SettingsWindow: View {
                         setUp: { digest, choice in
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
-                        notNow: { _ in }, done: {}, copy: .setup, isPage: true,
+                        notNow: { _ in }, done: {}, copy: .setup,
                         onError: {
                             setupError = $0
                             selection.setError(guardsError ?? setupError)

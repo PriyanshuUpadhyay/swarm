@@ -7,7 +7,7 @@ import SwarmCore
 /// changed after the owner looked is refused (ADR 0036). "Not now" writes nothing; the app menu
 /// offers the same sheet later. The Managed Changes page asks its undo through the same steps with
 /// the `undo` copy (ADR 0042). On start and from the app menu it shows the whole `swarm setup`
-/// plan with the `setup` copy: each group with its checkbox and files, and the launch consent
+/// plan with the `setupSheet` copy: each group with its checkbox and files, and the launch consent
 /// radio under folder trust (ADR 0043, 02-design screen 1).
 struct HooksSetupSheet: View {
     @Environment(\.designTokens) private var tokens
@@ -17,11 +17,28 @@ struct HooksSetupSheet: View {
     let notNow: (SwarmSetupChoice) -> Void
     let done: () -> Void
     var copy = Copy.hooks
-    var isPage = false
     var onError: (String?) -> Void = { _ in }
 
-    /// The sheet's words, so one plan and consent flow serves hooks setup and an undo.
+    /// The words and layout for hooks setup, full setup, and undo.
     struct Copy {
+        enum Layout {
+            case sheet, page
+
+            var width: CGFloat? {
+                switch self {
+                case .sheet: DesignTokens.Size.hooksSheet
+                case .page: nil
+                }
+            }
+
+            var maxWidth: CGFloat? {
+                switch self {
+                case .sheet: nil
+                case .page: .infinity
+                }
+            }
+        }
+
         var question: String
         var body: String
         var loading: String
@@ -35,6 +52,10 @@ struct HooksSetupSheet: View {
         var destructive = false
         /// Each group gets a checkbox, and folder trust its consent radio.
         var choosesGroups = false
+        var layout = Layout.sheet
+        var consentTitle = "Launch consent"
+        var standingConsent = "Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on"
+        var askConsent = "Ask in the agent's column for each new folder"
 
         static let hooks = Copy(
             question: "Let swarm set up its own hooks for Codex and AGY?",
@@ -46,7 +67,7 @@ struct HooksSetupSheet: View {
             cancel: "Not now"
         )
 
-        static let setup = Copy(
+        static let setupSheet = Copy(
             question: "Let swarm set up this Mac?",
             body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start without a trust dialog. Clear a group to leave it as it is. You can undo each change in Swarm › Managed Changes.",
             loading: "Reading your config…",
@@ -56,6 +77,13 @@ struct HooksSetupSheet: View {
             cancel: "Not now",
             choosesGroups: true
         )
+
+        static let setup: Copy = {
+            var copy = setupSheet
+            copy.layout = .page
+            copy.standingConsent = "Trust each git repo and scratch folder that passes the safety check, from now on"
+            return copy
+        }()
 
         static let undo = Copy(
             question: "Remove swarm's entries from these files?",
@@ -90,7 +118,7 @@ struct HooksSetupSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: tokens.spacing.m) {
-            if isPage && copy.choosesGroups { consentPicker }
+            if copy.layout == .page && copy.choosesGroups { consentPicker }
             switch phase {
             case .ready(let plan) where plan.isSetUp:
                 Text(verbatim: plan.unchangedText(copy.unchanged))
@@ -98,7 +126,7 @@ struct HooksSetupSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
-                    if isPage {
+                    if copy.layout == .page {
                         Button("Check again", action: checkAgain)
                     } else {
                         Button("Done", action: done).keyboardShortcut(.defaultAction)
@@ -114,7 +142,7 @@ struct HooksSetupSheet: View {
                     Spacer()
                     // A plan that keeps failing, such as on a broken config.toml, must not
                     // reopen the sheet at each launch.
-                    if !isPage {
+                    if copy.layout == .sheet {
                         Button(copy.cancel) { notNow(choice) }.keyboardShortcut(.cancelAction)
                     }
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
@@ -152,8 +180,8 @@ struct HooksSetupSheet: View {
             }
         }
         .padding(tokens.spacing.xl)
-        .frame(width: isPage ? nil : DesignTokens.Size.hooksSheet)
-        .frame(maxWidth: isPage ? .infinity : nil, alignment: .leading)
+        .frame(width: copy.layout.width)
+        .frame(maxWidth: copy.layout.maxWidth, alignment: .leading)
         // A dismiss mid-write would hide its failure and reload the page before the write ends.
         .interactiveDismissDisabled(working)
         .task(id: planRun) {
@@ -315,7 +343,7 @@ struct HooksSetupSheet: View {
                 .help(checked && choice.checked.count == 1 ? "Keep one group to apply" : "")
                 if checked {
                     VStack(alignment: .leading, spacing: tokens.spacing.xs) {
-                        if group == "trust" && !isPage { consentPicker }
+                        if group == "trust" && copy.layout == .sheet { consentPicker }
                         ForEach(plan.files.filter { $0.group == group }) { file in
                             fileRow(file, label: Self.short(file.path))
                         }
@@ -328,29 +356,32 @@ struct HooksSetupSheet: View {
     }
 
     private var consentPicker: some View {
-        Picker("Launch consent", selection: Binding(
-            get: { choice.standing ?? true },
-            set: { standing in
-                if isPage {
-                    choice = .trustOnly(standing: standing)
-                } else {
-                    choice.standing = standing
-                }
-                checkAgain()
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
+            if copy.layout == .page {
+                Text(copy.consentTitle).font(.headline).accessibilityAddTraits(.isHeader)
             }
-        )) {
-            // Each title wraps itself; the long one needs two lines at the sheet's width.
-            Text(isPage ? "Trust from now on" : "Trust each git repo and swarm scratch folder that passes the safety check, for Claude, Codex, and AGY, from now on")
-                .fixedSize(horizontal: false, vertical: true)
-                .tag(true)
-            Text(isPage ? "Ask" : "Ask in the agent's column for each new folder")
-                .fixedSize(horizontal: false, vertical: true)
-                .tag(false)
+            Picker(copy.consentTitle, selection: Binding(
+                get: { choice.standing ?? true },
+                set: { standing in
+                    switch copy.layout {
+                    case .page: choice = .trustOnly(standing: standing)
+                    case .sheet: choice.standing = standing
+                    }
+                    checkAgain()
+                }
+            )) {
+                Text(copy.standingConsent)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .tag(true)
+                Text(copy.askConsent)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .tag(false)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .disabled(working || (copy.layout == .page && !showsPlan))
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .pickerStyle(.radioGroup)
-        .labelsHidden()
-        .disabled(working || (isPage && !showsPlan))
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The diff viewer, or the plain diff text when the viewer cannot load, because the owner
@@ -381,7 +412,7 @@ struct HooksSetupSheet: View {
             }
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
-            if !isPage {
+            if copy.layout == .sheet {
                 Button(copy.cancel) { notNow(choice) }
                     .keyboardShortcut(.cancelAction)
                     .disabled(working)
@@ -414,7 +445,7 @@ struct HooksSetupSheet: View {
         Task {
             do {
                 try await setUp(plan.digest, choice)
-                if isPage { checkAgain() } else { done() }
+                if copy.layout == .page { checkAgain() } else { done() }
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
                 failure = Self.message(error)
