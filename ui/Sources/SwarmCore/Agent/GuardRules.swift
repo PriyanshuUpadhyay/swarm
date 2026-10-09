@@ -97,7 +97,9 @@ public struct GuardRules: Codable, Sendable, Equatable {
             guard links.insert(destination.path).inserted else {
                 throw GuardListError(reason: "The guard list has a symbolic link loop")
             }
-            destination = URL(fileURLWithPath: target, relativeTo: parent)
+            // A relative URL normalizes ".." before the next folder can resolve its links.
+            let targetPath = target.hasPrefix("/") ? target : parent.path + "/" + target
+            destination = URL(fileURLWithPath: targetPath)
         }
         destination = destination.resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)

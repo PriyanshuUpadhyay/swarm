@@ -282,6 +282,27 @@ struct SetupSettingsTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: guardLink.path) == "../shared/guards.json")
     }
 
+    @Test("Saving follows a linked component before a target's parent traversal", arguments: ["relative", "absolute"])
+    func linkedGuardTargetSave(linkKind: String) throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let config = folder.appendingPathComponent("config")
+        let dotfiles = folder.appendingPathComponent("dotfiles/swarm")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: config.appendingPathComponent("linked"), withDestinationURL: dotfiles)
+        let target = folder.appendingPathComponent("dotfiles/guards.json")
+        try GuardRules().save(to: target)
+        let link = config.appendingPathComponent("guards.json")
+        let destination = linkKind == "absolute" ? config.path + "/linked/../guards.json" : "linked/../guards.json"
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: destination)
+        let updated = GuardRules(rules: [.init(name: "policy", command: ["/bin/true"])])
+        try updated.save(to: link)
+        #expect(try GuardRules.load(url: link).get() == updated)
+        #expect(try GuardRules.load(url: target).get() == updated)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == destination)
+    }
+
     @Test("A guard link loop fails without replacing either link")
     func guardSymlinkLoop() throws {
         let folder = try temporaryFolder()
