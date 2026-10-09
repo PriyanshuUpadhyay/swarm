@@ -44,6 +44,7 @@ public struct SkillSection: Equatable, Sendable {
 public struct SkillDocument: Sendable {
     public let key: String
     public let bytes: Data
+    public let sourceURL: URL?
     public let revision: String
     public let lineEnding: String
     public let tableRange: Range<Int>?
@@ -52,8 +53,9 @@ public struct SkillDocument: Sendable {
     public let state: SkillDocumentState
     public let capability: SkillCapability
 
-    public static func parse(data: Data, key: String) -> SkillDocument {
-        SkillParser(data: data, key: key).parse()
+    public static func parse(data: Data, key: String, sourceURL: URL? = nil,
+                             state: SkillDocumentState = .checkoutEditable) -> SkillDocument {
+        SkillParser(data: data, key: key, sourceURL: sourceURL, sourceState: state).parse()
     }
 
     static func revision(of data: Data) -> String {
@@ -182,6 +184,8 @@ enum SkillNeeds {
 private struct SkillParser {
     let data: Data
     let key: String
+    let sourceURL: URL?
+    let sourceState: SkillDocumentState
 
     func parse() -> SkillDocument {
         let lines = SkillLine.scan(data)
@@ -192,7 +196,7 @@ private struct SkillParser {
         let generic = source.range(of: #"references/step_run\.py\s+start\b"#, options: .regularExpression) != nil
         let capability: SkillCapability = !ownsScript && generic ? .generic : .scriptOwned
         func result(_ state: SkillDocumentState, table: Range<Int>? = nil, rows: [SkillRow] = [], sections: [String: SkillSection] = [:]) -> SkillDocument {
-            SkillDocument(key: key, bytes: data, revision: SkillDocument.revision(of: data), lineEnding: ending,
+            SkillDocument(key: key, bytes: data, sourceURL: sourceURL, revision: SkillDocument.revision(of: data), lineEnding: ending,
                           tableRange: table, rows: rows, sections: sections, state: state, capability: capability)
         }
         guard String(data: data, encoding: .utf8) != nil else { return result(.invalidSource(reason: "Source is not UTF-8.")) }
@@ -244,7 +248,7 @@ private struct SkillParser {
             sections[row.id] = SkillSection(headingRange: lines[index].range, bodyRange: bodyRange,
                                            body: String(decoding: data.subdata(in: bodyRange), as: UTF8.self))
         }
-        return result(errors.isEmpty ? .checkoutEditable : .invalidSource(reason: errors.joined(separator: " ")),
+        return result(errors.isEmpty ? sourceState : .invalidSource(reason: errors.joined(separator: " ")),
                       table: range, rows: rows, sections: sections)
     }
 

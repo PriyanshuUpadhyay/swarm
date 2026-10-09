@@ -2,6 +2,7 @@ import Foundation
 
 public struct Prefs: Codable, Sendable, Hashable {
     public var settingsPage: String?
+    public var skillsCheckout: String?
     public var splitDiff: Bool
     public var theme: Theme
     public var textSize: TextSize
@@ -10,11 +11,12 @@ public struct Prefs: Codable, Sendable, Hashable {
     public var notices: NoticePrefs
 
     public init(
-        settingsPage: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
+        settingsPage: String? = nil, skillsCheckout: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
         textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return,
         notices: NoticePrefs = NoticePrefs()
     ) {
         self.settingsPage = settingsPage
+        self.skillsCheckout = skillsCheckout
         self.splitDiff = splitDiff
         self.theme = theme
         self.textSize = textSize
@@ -26,6 +28,7 @@ public struct Prefs: Codable, Sendable, Hashable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         settingsPage = try container.decodeIfPresent(String.self, forKey: .settingsPage)
+        skillsCheckout = try container.decodeIfPresent(String.self, forKey: .skillsCheckout)
         splitDiff = try container.decodeIfPresent(Bool.self, forKey: .splitDiff) ?? false
         theme = (try? container.decode(Theme.self, forKey: .theme)) ?? .system
         textSize = (try? container.decode(TextSize.self, forKey: .textSize)) ?? .default

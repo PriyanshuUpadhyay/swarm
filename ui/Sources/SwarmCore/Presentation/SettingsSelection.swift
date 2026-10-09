@@ -142,16 +142,36 @@ public final class SettingsSelection {
         save { $0.sendKey = sendKey }
     }
 
-    private func save(_ change: (inout Prefs) -> Void) {
+    @discardableResult
+    public func setSkillsCheckout(_ path: String?) -> Bool {
+        let canonical: String?
+        do {
+            canonical = try path.flatMap { $0.isEmpty ? nil : try SkillCheckout.validate(path: $0) }
+        } catch {
+            reportPageError(error.localizedDescription, on: .skills)
+            return false
+        }
+        if save({ $0.skillsCheckout = canonical }) {
+            setPageError(nil, on: .skills)
+            return true
+        }
+        reportPageError(saveError ?? "Could not save your settings.", on: .skills)
+        return false
+    }
+
+    @discardableResult
+    private func save(_ change: (inout Prefs) -> Void) -> Bool {
         let previous = prefs
         change(&prefs)
         do {
             prefs = try choices.update { change(&$0.prefs) }.prefs
             saveError = nil
+            return true
         } catch {
             prefs = previous
             saveError = OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message
             saveErrorRevision += 1
+            return false
         }
     }
 
