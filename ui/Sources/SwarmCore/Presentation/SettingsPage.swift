@@ -7,10 +7,12 @@ public struct Prefs: Codable, Sendable, Hashable {
     public var textSize: TextSize
     public var density: Density
     public var sendKey: SendKey
+    public var notices: NoticePrefs
 
     public init(
         settingsPage: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
-        textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return
+        textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return,
+        notices: NoticePrefs = NoticePrefs()
     ) {
         self.settingsPage = settingsPage
         self.splitDiff = splitDiff
@@ -18,6 +20,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         self.textSize = textSize
         self.density = density
         self.sendKey = sendKey
+        self.notices = notices
     }
 
     public init(from decoder: Decoder) throws {
@@ -28,6 +31,7 @@ public struct Prefs: Codable, Sendable, Hashable {
         textSize = (try? container.decode(TextSize.self, forKey: .textSize)) ?? .default
         density = (try? container.decode(Density.self, forKey: .density)) ?? .comfortable
         sendKey = (try? container.decode(SendKey.self, forKey: .sendKey)) ?? .return
+        notices = try container.decodeIfPresent(NoticePrefs.self, forKey: .notices) ?? NoticePrefs()
     }
 }
 
