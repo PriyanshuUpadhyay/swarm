@@ -3,16 +3,31 @@ import Foundation
 public struct Prefs: Codable, Sendable, Hashable {
     public var settingsPage: String?
     public var splitDiff: Bool
+    public var theme: Theme
+    public var textSize: TextSize
+    public var density: Density
+    public var sendKey: SendKey
 
-    public init(settingsPage: String? = nil, splitDiff: Bool = false) {
+    public init(
+        settingsPage: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
+        textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return
+    ) {
         self.settingsPage = settingsPage
         self.splitDiff = splitDiff
+        self.theme = theme
+        self.textSize = textSize
+        self.density = density
+        self.sendKey = sendKey
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         settingsPage = try container.decodeIfPresent(String.self, forKey: .settingsPage)
         splitDiff = try container.decodeIfPresent(Bool.self, forKey: .splitDiff) ?? false
+        theme = (try? container.decode(Theme.self, forKey: .theme)) ?? .system
+        textSize = (try? container.decode(TextSize.self, forKey: .textSize)) ?? .default
+        density = (try? container.decode(Density.self, forKey: .density)) ?? .comfortable
+        sendKey = (try? container.decode(SendKey.self, forKey: .sendKey)) ?? .return
     }
 }
 
