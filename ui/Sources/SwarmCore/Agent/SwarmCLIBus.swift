@@ -41,6 +41,12 @@ public struct SwarmCLIBus: SwarmBus {
         self.run = run
     }
 
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        try await read(
+            ["roles"] + action.arguments + ["--revision", revision], as: ProfileActionRevision.self
+        ).revision
+    }
+
     public func startChairSession(
         chair: SwarmChair?, directory: String
     ) async throws -> SwarmSessionID {
@@ -295,6 +301,10 @@ public struct SwarmCLIBus: SwarmBus {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }
+}
+
+private struct ProfileActionRevision: Decodable {
+    var revision: String
 }
 
 extension SwarmCLIBus {

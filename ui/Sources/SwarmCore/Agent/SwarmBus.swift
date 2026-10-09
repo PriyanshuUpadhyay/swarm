@@ -487,6 +487,8 @@ public struct SwarmTrustWrite: Sendable, Hashable {
 /// and previews hand in their own. Failures are `SwarmProfileError`, the same two kinds the
 /// profile source throws.
 public protocol SwarmBus: Sendable {
+    /// Changes the profiles only when their saved revision still matches.
+    func profileAction(_ action: ProfileAction, revision: String) async throws -> String
     /// Creates the session whose chair is the app's interactive CLI. The chair registers from its
     /// tmux pane immediately before that CLI starts.
     func startChairSession(
@@ -653,6 +655,10 @@ public struct UnavailableSwarmBus: SwarmBus {
     public init() {}
 
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
+
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        throw notConnected
+    }
 
     public func launch(
         _ agent: SwarmAgentID, role: String, provider: String?, model: String?, account: String?,
