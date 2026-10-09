@@ -28,7 +28,7 @@ struct SettingsWindow: View {
             .navigationSplitViewColumnWidth(DesignTokens.Size.settingsSidebar)
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
-                if let error = selection.error ?? (selection.page == .setup ? guardsError : nil) {
+                if let error = errorMessage {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .textSelection(.enabled).padding(tokens.spacing.m)
@@ -39,7 +39,14 @@ struct SettingsWindow: View {
         }
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
         .task { selection.reload() }
+        .onChange(of: errorMessage, initial: true) { _, message in
+            if let message { AccessibilityNotification.Announcement(message).post() }
+        }
         .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
+    }
+
+    private var errorMessage: String? {
+        selection.error ?? (selection.page == .setup ? guardsError : nil)
     }
 
     @ViewBuilder
@@ -139,7 +146,7 @@ struct SettingsWindow: View {
                         }
                     }
                 }
-                Text("A custom keymap comes later (ADR 0060)").foregroundStyle(.secondary)
+                Text("A custom keymap comes later.").foregroundStyle(.secondary)
             }
             .padding(tokens.spacing.xl)
         case .appearance:

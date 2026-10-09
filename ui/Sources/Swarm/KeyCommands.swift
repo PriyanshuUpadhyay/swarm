@@ -90,6 +90,7 @@ struct AppKeyTarget {
 
     func canPerform(_ key: AppKey) -> Bool {
         switch key {
+        case .closeTab: window != nil || NSApp.keyWindow != nil
         case .closeWindow: NSApp.keyWindow != nil
         case .find, .findNext, .findPrevious, .moveFocus, .zoom, .focusComposer, .stop: chat != nil
         default: window != nil
@@ -108,7 +109,9 @@ struct AppKeyTarget {
         case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
-        case .closeTab: window?.closeTab()
+        case .closeTab:
+            if let window { window.closeTab() }
+            else { NSApp.keyWindow?.performClose(nil) }
         case .closeWindow: NSApp.keyWindow?.performClose(nil)
         case .previousRecentChat: window?.stepRecentChat(-1)
         case .nextRecentChat: window?.stepRecentChat(1)

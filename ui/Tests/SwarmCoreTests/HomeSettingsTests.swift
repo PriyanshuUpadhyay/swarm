@@ -36,8 +36,8 @@ struct HomeSettingsTests {
             "Notifications", "Keys", "Advanced",
         ])
         #expect(SettingsPage.allCases.allSatisfy { !$0.symbol.isEmpty })
-        #expect(SettingsPage.skills.placeholder == "Comes with slice 2")
-        #expect(SettingsPage.accounts.placeholder == "Comes with slice 3")
+        #expect(SettingsPage.skills.placeholder == "Coming soon.")
+        #expect(SettingsPage.accounts.placeholder == "Coming soon.")
         #expect(SettingsPage.appearance.placeholder == nil)
         #expect(SettingsPage.notifications.placeholder == nil)
         #expect(SettingsPage.keys.placeholder == nil)
