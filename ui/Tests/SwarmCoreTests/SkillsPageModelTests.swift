@@ -148,7 +148,7 @@ struct SkillsPageModelTests {
         #expect(model.isDirty)
         #expect(model.selectedStep?.holds == "unsaved draft")
         #expect(model.canRetry)
-        model.discard()
+        await model.discard()
         #expect(!model.isDirty)
         #expect(model.conflict)
         #expect(!model.canSave)
@@ -218,6 +218,139 @@ struct SkillsPageModelTests {
         #expect(!model.canRetry)
     }
 
+    @Test("A canceled checkout change applies after Save or Discard, including a cleared setting")
+    func pendingCheckoutAfterDraft() async throws {
+        for discard in [false, true] {
+            let fixture = try SkillsPageFixture()
+            defer { fixture.clean() }
+            let source = SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document)
+            let model = SkillsPageModel(source: source, checkoutPath: "/fixture/checkout")
+            await model.loadList()
+            await model.open(key: fixture.key)
+            model.setHolds("unsaved draft")
+            let requested = discard ? nil : "/different/checkout"
+            await model.changeCheckout(requested, loadError: nil)
+            _ = await model.resolveNavigation(.cancel)
+            #expect(model.checkoutChangePending)
+            #expect(model.checkoutPath == "/fixture/checkout")
+            #expect(model.selectedStep?.holds == "unsaved draft")
+            if discard {
+                await model.requestDiscard()
+                #expect(await model.resolveNavigation(.discard))
+            } else { #expect(await model.save()) }
+            #expect(model.checkoutPath == requested)
+            #expect(!model.checkoutChangePending)
+            #expect(!model.isDirty)
+            #expect(await source.loadedPaths.last == .some(requested))
+            if !discard { #expect(await source.savedPaths == ["/fixture/checkout"]) }
+            await model.back()
+            await model.open(key: fixture.key)
+            #expect(await source.loadedPaths.last == .some(requested))
+        }
+    }
+
+    @Test("A checkout request during a load or save applies when the busy operation ends")
+    func busyCheckoutChange() async throws {
+        for operation in [SkillsPageSourceFixture.Operation.load, .save] {
+            let fixture = try SkillsPageFixture()
+            defer { fixture.clean() }
+            let source = SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document)
+            let model = SkillsPageModel(source: source, checkoutPath: "/fixture/checkout")
+            await model.loadList()
+            if operation == .save {
+                await model.open(key: fixture.key)
+                model.setHolds("unsaved draft")
+            }
+            await source.pause(operation)
+            let work = Task {
+                if operation == .load { await model.open(key: fixture.key) }
+                else { _ = await model.save() }
+            }
+            await source.waitForPausedOperation()
+            #expect(model.busy)
+            await model.changeCheckout("/different/checkout", loadError: nil)
+            await source.resumeOperation()
+            await work.value
+            #expect(!model.busy)
+            #expect(model.checkoutPath == "/different/checkout")
+            #expect(await source.loadedPaths.last == .some("/different/checkout"))
+            if operation == .save { #expect(await source.savedPaths == ["/fixture/checkout"]) }
+        }
+    }
+
+    @Test("A failed checkout load keeps the new path, blocks edits, and Retry uses that path")
+    func failedCheckoutLoad() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let source = SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document)
+        let model = SkillsPageModel(source: source, checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        await source.failLoad()
+        await model.changeCheckout("/different/checkout", loadError: nil)
+        #expect(model.checkoutPath == "/different/checkout")
+        #expect(model.error?.contains("fixture load failure") == true)
+        #expect(!model.canEdit)
+        #expect(model.canRetry)
+        await source.failLoad(false)
+        await model.retry()
+        #expect(await source.loadedPaths.last == .some("/different/checkout"))
+        #expect(model.canEdit)
+        #expect(model.error == nil)
+    }
+
+    @Test("The latest checkout wins when Settings changes while a dirty checkout prompt saves")
+    func latestCheckoutDuringResolution() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let source = SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document)
+        let model = SkillsPageModel(source: source, checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        model.setHolds("unsaved draft")
+        await model.changeCheckout("/first/checkout", loadError: nil)
+        await source.pause(.save)
+        let resolving = Task { await model.resolveNavigation(.save) }
+        await source.waitForPausedOperation()
+        await model.changeCheckout("/latest/checkout", loadError: nil)
+        await source.resumeOperation()
+        #expect(await resolving.value)
+        #expect(model.checkoutPath == "/latest/checkout")
+        #expect(await source.loadedPaths.last == .some("/latest/checkout"))
+    }
+
+    @Test("Need choices update after selection, rename, edge edits, addition, removal, and Discard")
+    func needChoiceChanges() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let model = SkillsPageModel(source: SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document),
+                                    checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        #expect(!model.canChooseNeed("02-local"))
+        model.select("02-local")
+        #expect(model.canChooseNeed("01-question"))
+        model.clearNeeds()
+        model.select("01-question")
+        #expect(model.canChooseNeed("02-local"))
+        model.setNeed("02-local", selected: true)
+        model.select("02-local")
+        #expect(!model.canChooseNeed("01-question"))
+        model.clearNeeds()
+        await model.requestDiscard()
+        _ = await model.resolveNavigation(.discard)
+        model.select("01-question")
+        #expect(!model.canChooseNeed("02-local"))
+        model.addStep(withSection: false)
+        let added = try #require(model.selectedID)
+        model.setName("close-extra")
+        #expect(!model.canChooseNeed("06-close"))
+        model.setName("extra")
+        #expect(model.canChooseNeed("06-close"))
+        model.removeSelected()
+        #expect(!model.canChooseNeed(added))
+    }
+
     @Test("IO failure keeps the draft; Retry saves it, and failed Save cancels a skill change")
     func retryAndNavigation() async throws {
         let fixture = try SkillsPageFixture()
@@ -272,6 +405,13 @@ private actor SkillsPageSourceFixture: SkillsPageSource {
     var saveError: SkillSaveError?
     var listFails = false
     var loadFails = false
+    var loadedPaths: [String?] = []
+    var savedPaths: [String] = []
+    enum Operation { case load, save }
+    private var pausedOperation: Operation?
+    private var didPause = false
+    private var pauseGate: CheckedContinuation<Void, Never>?
+    private var pauseWaiter: CheckedContinuation<Void, Never>?
 
     init(inventory: SkillInventory, document: SkillDocument) { values = inventory; self.document = document }
     func inventory() async throws -> SkillInventory {
@@ -279,10 +419,14 @@ private actor SkillsPageSourceFixture: SkillsPageSource {
         return values
     }
     func load(key: String, checkoutPath: String?, inventory: SkillInventory) async throws -> SkillDocument {
+        loadedPaths.append(checkoutPath)
+        await suspendIfRequested(.load)
         if loadFails { throw SkillSaveError.io(path: "/fixture/SKILL.md", reason: "fixture load failure") }
         return document
     }
     func save(document: SkillDocument, candidate: Data, checkoutPath: String, inventory: SkillInventory) async throws -> SkillDocument {
+        savedPaths.append(checkoutPath)
+        await suspendIfRequested(.save)
         if let saveError { throw saveError }
         self.document = SkillDocument.parse(data: candidate, key: document.key, sourceURL: document.sourceURL)
         return self.document
@@ -290,12 +434,61 @@ private actor SkillsPageSourceFixture: SkillsPageSource {
     func use(_ document: SkillDocument) { self.document = document }
     func failSave(_ error: SkillSaveError?) { saveError = error }
     func failList() { listFails = true }
-    func failLoad() { loadFails = true }
+    func failLoad(_ fails: Bool = true) { loadFails = fails }
+    func pause(_ operation: Operation) { pausedOperation = operation; didPause = false }
+    func waitForPausedOperation() async {
+        if didPause { return }
+        await withCheckedContinuation { pauseWaiter = $0 }
+    }
+    func resumeOperation() { pauseGate?.resume(); pauseGate = nil }
+    private func suspendIfRequested(_ operation: Operation) async {
+        guard pausedOperation == operation else { return }
+        pausedOperation = nil
+        await withCheckedContinuation { continuation in
+            pauseGate = continuation
+            didPause = true
+            pauseWaiter?.resume()
+            pauseWaiter = nil
+        }
+    }
 }
 
 @Suite("Skills file source")
 @MainActor
 struct SkillsFileSourceTests {
+    @Test("A pending checkout saves the old draft first, then later edits write only the new checkout")
+    func pendingCheckoutDiskWrites() async throws {
+        let fixture = try SkillCheckoutFixture()
+        defer { fixture.clean() }
+        let manifest = try JSONSerialization.data(withJSONObject: ["files": [["path": fixture.key]]])
+        try manifest.write(to: fixture.bundle.appendingPathComponent("manifest.json"))
+        let nextCheckout = fixture.root.appendingPathComponent("next-checkout")
+        let nextTarget = nextCheckout.appendingPathComponent("skills/" + fixture.key)
+        try FileManager.default.createDirectory(at: nextTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("gitdir: /unused/next-checkout/git\n".utf8).write(to: nextCheckout.appendingPathComponent(".git"))
+        let nextBytes = try Data(contentsOf: fixture.target)
+        try nextBytes.write(to: nextTarget)
+        let source = SkillsFileSource(root: fixture.bundle, protectedRoots: [fixture.bundle])
+        let model = SkillsPageModel(source: source, checkoutPath: fixture.root.appendingPathComponent("checkout").path)
+        await model.loadList()
+        await model.open(key: fixture.key)
+        model.setHolds("saved in prior checkout")
+        let previousCandidate = try #require(try model.draft?.render())
+        await model.changeCheckout(nextCheckout.path, loadError: nil)
+        _ = await model.resolveNavigation(.cancel)
+        #expect(model.checkoutChangePending)
+        #expect(await model.save())
+        #expect(try Data(contentsOf: fixture.target) == previousCandidate)
+        #expect(try Data(contentsOf: nextTarget) == nextBytes)
+        #expect(model.document?.sourceURL == nextTarget.resolvingSymlinksInPath())
+        #expect(!model.checkoutChangePending)
+        model.setHolds("saved in next checkout")
+        let nextCandidate = try #require(try model.draft?.render())
+        #expect(await model.save())
+        #expect(try Data(contentsOf: nextTarget) == nextCandidate)
+        #expect(try Data(contentsOf: fixture.target) == previousCandidate)
+    }
+
     @Test("The real source reads the bundle, falls back on missing checkout files and saves only the checkout")
     func actualSource() async throws {
         let fixture = try SkillCheckoutFixture()

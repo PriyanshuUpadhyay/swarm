@@ -35,6 +35,8 @@ public final class SkillsPageModel {
     private var fieldErrors: [String: String] = [:]
     private var retrySave = false
     private var retryKey: String?
+    private var pendingCheckout: SkillsNavigationAction?
+    private var allowedNeeds: Set<String> = []
     @ObservationIgnored private let source: any SkillsPageSource
     @ObservationIgnored private var inventory: SkillInventory?
 
@@ -44,6 +46,7 @@ public final class SkillsPageModel {
         self.settingsError = settingsError
     }
 
+    public var checkoutChangePending: Bool { pendingCheckout != nil }
     public var document: SkillDocument? { draft?.document }
     public var steps: [SkillDraftStep] { draft?.steps ?? [] }
     public var selectedStep: SkillDraftStep? { steps.first { $0.id == selectedID } }
@@ -91,6 +94,7 @@ public final class SkillsPageModel {
     public func select(_ id: String) {
         guard !busy, steps.contains(where: { $0.id == id }) else { return }
         selectedID = id
+        refreshAllowedNeeds()
     }
 
     public func setName(_ text: String) {
@@ -114,12 +118,18 @@ public final class SkillsPageModel {
         if fieldErrors["body:" + id] == nil { bodyInputs[id] = nil }
     }
 
-    public func canChooseNeed(_ id: String) -> Bool {
-        guard canEdit, let selectedStep, id != selectedStep.id else { return false }
-        if selectedStep.needs.contains(id) { return true }
-        guard var proposed = draft else { return false }
-        do { try proposed.setNeeds(id: selectedStep.id, needs: selectedStep.needs + [id]); return true }
-        catch { return false }
+    public func canChooseNeed(_ id: String) -> Bool { canEdit && allowedNeeds.contains(id) }
+
+    private func refreshAllowedNeeds() {
+        guard let draft, let selectedStep else { allowedNeeds = []; return }
+        allowedNeeds = Set(needChoices.compactMap { step in
+            if selectedStep.needs.contains(step.id) { return step.id }
+            var proposed = draft
+            do {
+                try proposed.setNeeds(id: selectedStep.id, needs: selectedStep.needs + [step.id])
+                return step.id
+            } catch { return nil }
+        })
     }
 
     public func setNeed(_ id: String, selected: Bool) {
@@ -144,7 +154,10 @@ public final class SkillsPageModel {
     public func removeSelected(confirmSection: Bool = false) {
         guard canRemove, let id = selectedID, let index = steps.firstIndex(where: { $0.id == id }) else { return }
         edit { try $0.remove(id: id, removeSection: confirmSection) }
-        if !steps.contains(where: { $0.id == id }) { selectedID = steps[min(index, steps.count - 1)].id }
+        if !steps.contains(where: { $0.id == id }) {
+            selectedID = steps[min(index, steps.count - 1)].id
+            refreshAllowedNeeds()
+        }
     }
 
     public func moveSelected(by delta: Int) {
@@ -152,7 +165,7 @@ public final class SkillsPageModel {
         edit { try $0.move(id: id, to: index + delta) }
     }
 
-    public func discard() {
+    public func discard() async {
         guard !busy, let document else { return }
         let stem = document.rows.first { $0.id == selectedID }?.stem
         let hadConflict = conflict
@@ -161,10 +174,17 @@ public final class SkillsPageModel {
             conflict = true
             operationError = "This skill changed on disk. Reload before saving."
         }
+        _ = await applyPendingCheckout()
     }
 
     @discardableResult
     public func save() async -> Bool {
+        let saved = await saveDraft()
+        _ = await applyPendingCheckout()
+        return saved
+    }
+
+    private func saveDraft() async -> Bool {
         guard canSave, let draft, let checkoutPath, let inventory else { return false }
         busy = true
         defer { busy = false }
@@ -202,8 +222,15 @@ public final class SkillsPageModel {
     public func requestLeave() async { await request(.leave) }
     public func changeCheckout(_ path: String?, loadError: String?) async {
         settingsError = loadError
-        guard path != checkoutPath else { return }
-        await request(.checkout(path))
+        guard path != checkoutPath else {
+            pendingCheckout = nil
+            if case .checkout = pendingAction { pendingAction = nil }
+            return
+        }
+        pendingCheckout = .checkout(path)
+        guard !busy else { return }
+        if isDirty { pendingAction = pendingCheckout }
+        else { _ = await applyPendingCheckout() }
     }
 
     public func resolveNavigation(_ choice: SkillsNavigationChoice) async -> Bool {
@@ -213,15 +240,25 @@ public final class SkillsPageModel {
         case .cancel: return false
         case .save: guard await save() else { return false }
         case .discard:
-            if action == .list || action == .leave { discard() }
+            if action == .list || action == .leave || action == .discard || pendingCheckout != nil { await discard() }
         }
+        if case .checkout = action { return pendingCheckout == nil && retryKey == nil }
         return await perform(action)
     }
 
     private func request(_ action: SkillsNavigationAction) async {
         guard !busy else { return }
+        _ = await applyPendingCheckout()
         if isDirty { pendingAction = action }
         else { _ = await perform(action) }
+    }
+
+    @discardableResult
+    private func applyPendingCheckout() async -> Bool {
+        guard !busy, !isDirty, let action = pendingCheckout else { return false }
+        pendingCheckout = nil
+        if case .checkout = pendingAction { pendingAction = nil }
+        return await perform(action)
     }
 
     private func perform(_ action: SkillsNavigationAction) async -> Bool {
@@ -230,21 +267,26 @@ public final class SkillsPageModel {
         case .reload:
             guard let selectedKey else { return false }
             return await load(key: selectedKey, keepingStem: selectedStep?.stem)
-        case .discard: discard(); return true
+        case .discard: await discard(); return true
         case .checkout(let path):
-            let previousPath = checkoutPath
             checkoutPath = path
             guard let selectedKey else { return true }
-            let loaded = await load(key: selectedKey, keepingStem: selectedStep?.stem)
-            if !loaded { checkoutPath = previousPath }
-            return loaded
+            let stem = selectedStep?.stem
+            draft = nil; selectedID = nil; allowedNeeds = []
+            return await load(key: selectedKey, keepingStem: stem)
         case .list:
-            selectedKey = nil; draft = nil; selectedID = nil; clearErrors(); return true
+            selectedKey = nil; draft = nil; selectedID = nil; allowedNeeds = []; clearErrors(); return true
         case .leave: return true
         }
     }
 
     private func load(key: String, keepingStem: String? = nil) async -> Bool {
+        let loaded = await loadDocument(key: key, keepingStem: keepingStem)
+        if pendingCheckout != nil && !isDirty { return await applyPendingCheckout() }
+        return loaded
+    }
+
+    private func loadDocument(key: String, keepingStem: String?) async -> Bool {
         guard !busy, let inventory else { return false }
         busy = true
         defer { busy = false }
@@ -271,6 +313,7 @@ public final class SkillsPageModel {
         draft = SkillDraft(document: document)
         selectedID = steps.first { $0.stem == keepingStem }?.id ?? steps.first?.id
         clearErrors()
+        refreshAllowedNeeds()
     }
 
     private func clearErrors() {
@@ -283,6 +326,7 @@ public final class SkillsPageModel {
         do {
             try change(&next)
             draft = next
+            refreshAllowedNeeds()
             if let field { fieldErrors[field] = nil }
             operationError = nil
             notice = nil

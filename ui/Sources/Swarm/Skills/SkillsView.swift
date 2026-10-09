@@ -170,6 +170,9 @@ struct SkillsView: View {
     }
 
     @ViewBuilder private var sourceNotice: some View {
+        if model.checkoutChangePending {
+            Text("checkout change waits for this draft").font(.caption).foregroundStyle(.secondary)
+        }
         if let document = model.document {
             VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                 switch document.state {
@@ -190,6 +193,8 @@ struct SkillsView: View {
                     Text(verbatim: reason).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                 }
             }
+        } else if let path = model.checkoutPath {
+            Text(verbatim: path).font(.caption).textSelection(.enabled)
         }
     }
 
@@ -233,10 +238,11 @@ struct SkillsView: View {
                 Toggle("None", isOn: Binding(get: { step.needs.isEmpty }, set: { if $0 { model.clearNeeds() } }))
                     .disabled(!model.canEdit)
                 ForEach(model.needChoices) { need in
+                    let allowed = model.canChooseNeed(need.id)
                     Toggle(need.stem, isOn: Binding(get: { model.selectedStep?.needs.contains(need.id) == true },
                                                   set: { model.setNeed(need.id, selected: $0) }))
-                        .disabled(!model.canChooseNeed(need.id))
-                        .help(model.canChooseNeed(need.id) ? "" : "This dependency cannot be selected. It can create a cycle or an ambiguous name.")
+                        .disabled(!allowed)
+                        .help(allowed ? "" : "This dependency cannot be selected. It can create a cycle or an ambiguous name.")
                 }
                 Text("Holds").font(.caption)
                 TextField("Holds", text: Binding(get: { model.holdsText }, set: model.setHolds))
