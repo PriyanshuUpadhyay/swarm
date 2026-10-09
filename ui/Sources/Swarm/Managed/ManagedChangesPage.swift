@@ -1,7 +1,7 @@
 import SwiftUI
 import SwarmCore
 
-/// Swarm > Managed Changes…: each item swarm wrote outside its home, one row per writer and file
+/// Settings > Managed Changes: each item swarm wrote outside its home, one row per writer and file
 /// (ADR 0042). A row's switch is its undo: off shows the removal's diff in the hooks setup sheet
 /// before anything is written, and on runs the writer's own plan again. The page holds no write
 /// logic; each write is the CLI behind that sheet (ADR 0036).
@@ -77,7 +77,7 @@ struct ManagedChangesPage: View {
             }
         }
         .padding(DesignTokens.Spacing.xl)
-        .frame(minWidth: DesignTokens.Size.hooksSheet, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await load() }
         .onChange(of: activeState) { _, state in
             if state == .key { Task { await load() } }

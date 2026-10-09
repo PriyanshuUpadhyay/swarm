@@ -8,6 +8,7 @@ struct AgentProfilesHome: View {
     let sessionsError: String?
     let onOpenProject: () -> Void
     let onCreateProject: () -> Void
+    var showsProjectActions = true
     @State private var list: SwarmProfileList?
     @State private var checks: [String: SwarmProfileCheck] = [:]
     @State private var checkedAt: Date?
@@ -34,9 +35,11 @@ struct AgentProfilesHome: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            HStack {
-                Button("Import Project…", action: onOpenProject)
-                Button("Create Project…", action: onCreateProject)
+            if showsProjectActions {
+                HStack {
+                    Button("Import Project…", action: onOpenProject)
+                    Button("Create Project…", action: onCreateProject)
+                }
             }
             header
             if let sessionsError {

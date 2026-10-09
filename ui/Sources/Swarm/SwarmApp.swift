@@ -719,6 +719,8 @@ final class SessionsTreeModel {
 
 private struct SessionsWindow: View {
     @State private var model = SessionsTreeModel()
+    @Environment(SettingsSelection.self) private var settings
+    @Environment(\.openSettings) private var openSettings
     @State private var panes = AgentPaneStore()
     @State private var expandedLists: Set<String> = []
     /// Applied after the chat switch releases its old columns.
@@ -926,7 +928,7 @@ private struct SessionsWindow: View {
             await askForSetup()
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
-            showingHooksSetup = true
+            openSettings(on: .setup)
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
@@ -1426,13 +1428,20 @@ private struct SessionsWindow: View {
             recentActions: recentActions,
             selectedChat: model.selectedSession != nil,
             switchModelDisabledReason: model.selectedSessionID.map { modelSwitchState($0).reason } ?? nil
-        )
+        ) + SettingsPage.paletteItems.map {
+            PaletteItem(id: $0.id, title: $0.title, group: $0.group, recency: recentActions[$0.id])
+        }
     }
 
     /// Runs a palette item the way its menu command or sidebar row would.
     private func runPaletteItem(_ item: PaletteItem) {
         guard item.disabledReason == nil else { return }
         showingPalette = false
+        if let page = SettingsPage.openable(from: item) {
+            recordPaletteAction(item.id)
+            openSettings(on: page)
+            return
+        }
         guard let colon = item.id.firstIndex(of: ":") else { return }
         let id = String(item.id[item.id.index(after: colon)...])
         switch item.id[..<colon] {
@@ -1474,6 +1483,11 @@ private struct SessionsWindow: View {
     private func recordPaletteAction(_ id: String) {
         recentActions[id] = Int(Date().timeIntervalSince1970)
         PaletteRecentActions.save(recentActions)
+    }
+
+    private func openSettings(on page: SettingsPage) {
+        settings.select(page)
+        openSettings()
     }
 
     /// `SWARM_OPEN_SCRIPT=N`: selects each workspace, then each of its chats, through the model,
@@ -2232,6 +2246,7 @@ private struct SwitchTarget: Identifiable {
 }
 
 struct SwarmApp: App {
+    @State private var settings = SettingsSelection()
     init() {
         SwarmPerformance.event("AppStarted")
         // Screenshot aid: SWARM_APPEARANCE=dark or light fixes this app's appearance only.
@@ -2248,42 +2263,30 @@ struct SwarmApp: App {
         WindowGroup(id: "sessions") {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
+            .environment(settings)
             .commands {
-                SetupCommands()
-                DebugCommands()
+                SetupCommands(selection: settings)
                 AppKeyCommands()
             }
-        // One window, not a sheet, because the list grows with each trusted folder. It opens only
-        // from the menu, never at launch and never restored from the last run, because each open
-        // reads every managed file.
-        Window("Managed Changes", id: "managed") { ManagedChangesPage() }
-            .defaultLaunchBehavior(.suppressed)
-            .restorationBehavior(.disabled)
+        Settings { SettingsWindow().environment(settings) }
+            .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)
     }
 }
 
 private struct SetupCommands: Commands {
-    @Environment(\.openWindow) private var openWindow
+    let selection: SettingsSelection
+    @Environment(\.openSettings) private var openSettings
 
     var body: some Commands {
         CommandGroup(after: .appSettings) {
             Button("Set Up Swarm…") {
-                NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+                selection.select(.setup)
+                openSettings()
             }
-            Button("Managed Changes…") { openWindow(id: "managed") }
-        }
-    }
-}
-
-private struct DebugCommands: Commands {
-    @AppStorage("showRawData") private var showRawData = false
-    @AppStorage("performanceLogging") private var performanceLogging = false
-
-    var body: some Commands {
-        CommandMenu("Debug") {
-            Toggle("Show Raw Data", isOn: $showRawData)
-                .keyboardShortcut("r", modifiers: [.command, .option])
-            Toggle("Performance Logging", isOn: $performanceLogging)
+            Button("Managed Changes…") {
+                selection.select(.managedChanges)
+                openSettings()
+            }
         }
     }
 }

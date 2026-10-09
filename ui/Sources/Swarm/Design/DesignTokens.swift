@@ -41,6 +41,9 @@ enum DesignTokens {
         static let profileSheet: CGFloat = 680
         /// The hooks setup sheet: wide enough for a split diff, as the profile editor is.
         static let hooksSheet: CGFloat = 680
+        static let settingsWidth: CGFloat = 760
+        static let settingsHeight: CGFloat = 520
+        static let settingsSidebar: CGFloat = 180
         /// The hooks setup conflicts stop growing here and scroll.
         static let conflictList: CGFloat = 180
         /// The setup sheet's group list scrolls past this, so its buttons stay on a 13-inch screen.

@@ -2,7 +2,7 @@ import SwiftUI
 import SwarmCore
 
 extension Notification.Name {
-    /// The app menu's "Set Up Swarm…" asks the window to show the sheet.
+    /// Older setup callers ask the window to open Settings on Setup.
     static let showHooksSetup = Notification.Name("SwarmShowHooksSetup")
 }
 
@@ -21,6 +21,7 @@ struct HooksSetupSheet: View {
     let notNow: (SwarmSetupChoice) -> Void
     let done: () -> Void
     var copy = Copy.hooks
+    var isPage = false
 
     /// The sheet's words, so one plan and consent flow serves hooks setup and an undo.
     struct Copy {
@@ -99,7 +100,11 @@ struct HooksSetupSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
-                    Button("Done", action: done).keyboardShortcut(.defaultAction)
+                    if isPage {
+                        Button("Check again", action: checkAgain)
+                    } else {
+                        Button("Done", action: done).keyboardShortcut(.defaultAction)
+                    }
                 }
             case .failed(let message):
                 question
@@ -111,7 +116,9 @@ struct HooksSetupSheet: View {
                     Spacer()
                     // A plan that keeps failing, such as on a broken config.toml, must not
                     // reopen the sheet at each launch.
-                    Button(copy.cancel) { notNow(choice) }.keyboardShortcut(.cancelAction)
+                    if !isPage {
+                        Button(copy.cancel) { notNow(choice) }.keyboardShortcut(.cancelAction)
+                    }
                     Button("Try again", action: checkAgain).keyboardShortcut(.defaultAction)
                 }
             case .loading:
@@ -147,7 +154,8 @@ struct HooksSetupSheet: View {
             }
         }
         .padding(DesignTokens.Spacing.xl)
-        .frame(width: DesignTokens.Size.hooksSheet)
+        .frame(width: isPage ? nil : DesignTokens.Size.hooksSheet)
+        .frame(maxWidth: isPage ? .infinity : nil, alignment: .leading)
         // A dismiss mid-write would hide its failure and reload the page before the write ends.
         .interactiveDismissDisabled(working)
         .task(id: planRun) {
@@ -369,9 +377,11 @@ struct HooksSetupSheet: View {
             }
             Spacer()
             // While setup writes, "Not now" would record a decline for files being set up.
-            Button(copy.cancel) { notNow(choice) }
-                .keyboardShortcut(.cancelAction)
-                .disabled(working)
+            if !isPage {
+                Button(copy.cancel) { notNow(choice) }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(working)
+            }
             Button(role: copy.destructive ? .destructive : nil) {
                 if let plan { apply(plan) }
             } label: {
@@ -399,7 +409,7 @@ struct HooksSetupSheet: View {
         Task {
             do {
                 try await setUp(plan.digest, choice)
-                done()
+                if isPage { checkAgain() } else { done() }
             } catch {
                 // The plan runs again, so a file that changed shows its new diff.
                 failure = Self.message(error)

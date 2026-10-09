@@ -63,6 +63,10 @@ public final class PathSwarmNotice {
 }
 
 public enum PathSwarmCheck {
+    public static func helperVersion() async -> String? {
+        await versionLine(Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/swarm").path)
+    }
+
     /// Nil unless a release build (empty `branch`) finds another file on PATH whose
     /// `swarm --version` line differs from the helper's and the pair was not dismissed. A version
     /// that cannot be read in 2 s is nil too, because a guess would nag about a working CLI.
