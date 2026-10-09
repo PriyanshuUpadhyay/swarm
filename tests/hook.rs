@@ -1285,45 +1285,52 @@ fn swarm_notify_refuses_a_worker() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+fn hold_app_lock(path: &Path) -> std::fs::File {
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    let file = std::fs::File::create(path).unwrap();
+    // SAFETY: the descriptor stays open in the returned file; 2 | 4 is LOCK_EX | LOCK_NB.
+    assert_eq!(unsafe { flock(file.as_raw_fd(), 2 | 4) }, 0);
+    file
+}
+
 #[test]
-fn swarm_notify_skips_a_live_app_lock_and_keeps_the_fallback_for_other_locks() {
-    let mut departed = Command::new("/usr/bin/true").spawn().unwrap();
-    let dead_pid = departed.id();
-    assert!(departed.wait().unwrap().success());
-    for (role, lock, expected) in [
-        ("missing", None, true),
-        ("live", Some(std::process::id().to_string()), false),
-        ("dead", Some(dead_pid.to_string()), true),
-        ("garbage", Some("not a pid".into()), true),
-        ("zero", Some("0".into()), true),
-        ("negative", Some("-1".into()), true),
+fn swarm_notify_skips_a_held_app_lock_and_sends_after_release() {
+    let home = scratch("notify-app-held");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let sent_to = stand_in_notify(&home);
+    let app_lock = home.join(".swarm/app.lock");
+    let held = hold_app_lock(&app_lock);
+    std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
+    let skipped = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
+    assert!(skipped.status.success(), "{skipped:?}");
+    assert!(skipped.stdout.is_empty() && skipped.stderr.is_empty());
+    assert_eq!(notices(&sent_to), "");
+    drop(held);
+    let sent = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
+    assert!(sent.status.success(), "{sent:?}");
+    assert_eq!(notices(&sent_to), "Swarm — chat|done\n");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[test]
+fn swarm_notify_sends_for_missing_and_unlocked_pid_files() {
+    for (role, content) in [
+        ("missing", None),
+        ("recycled-live-pid", Some(std::process::id().to_string())),
+        ("garbage", Some("not a pid".into())),
     ] {
         let home = scratch(&format!("notify-app-{role}"));
         assert!(swarm(&home, &[], &["init"], "").status.success());
         let sent_to = stand_in_notify(&home);
-        if let Some(pid) = lock {
-            std::fs::write(home.join(".swarm/app.lock"), format!("{pid}\n")).unwrap();
+        if let Some(content) = content {
+            std::fs::write(home.join(".swarm/app.lock"), content).unwrap();
         }
-        let output = swarm(
-            &home,
-            &[],
-            &["notify", "Swarm — chat", "--body", "done"],
-            "",
-        );
+        let output = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
         assert!(output.status.success(), "{role}: {output:?}");
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{role}: {output:?}"
-        );
-        assert_eq!(
-            notices(&sent_to),
-            if expected {
-                "Swarm — chat|done\n"
-            } else {
-                ""
-            },
-            "{role}"
-        );
+        assert_eq!(notices(&sent_to), "Swarm — chat|done\n", "{role}");
         std::fs::remove_dir_all(&home).unwrap();
     }
 }
@@ -1434,11 +1441,11 @@ fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
     assert_eq!(notices(&sent_to), notice.repeat(2));
 
     let app_lock = home.join(".swarm/app.lock");
-    std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
+    let held = hold_app_lock(&app_lock);
     hook(r#"{"hook_event_name":"PreToolUse"}"#);
     hook(r#"{"hook_event_name":"PermissionRequest"}"#);
     assert_eq!(notices(&sent_to), notice.repeat(2));
-    std::fs::remove_file(app_lock).unwrap();
+    drop(held);
     hook(r#"{"hook_event_name":"PreToolUse"}"#);
     hook(r#"{"hook_event_name":"PermissionRequest"}"#);
     assert_eq!(notices(&sent_to), notice.repeat(3));

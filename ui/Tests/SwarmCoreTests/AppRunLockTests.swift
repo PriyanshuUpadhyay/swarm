@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import SwarmCore
 
@@ -23,22 +24,41 @@ struct AppRunLockTests {
         }
     }
 
-    @Test("A held lock stores the live pid, releases once, and does not remove another app's lock")
+    @Test("An app holds the file lock until release and leaves only informational pid text")
     func lifecycle() throws {
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let folder = try claimedChoicesFolder(scratch)
         let lock = try AppRunLock(folder: folder)
         #expect(try String(contentsOf: lock.file, encoding: .utf8) == "\(ProcessInfo.processInfo.processIdentifier)\n")
+        let probe = open(lock.file.path, O_RDONLY)
+        #expect(probe >= 0)
+        defer { close(probe) }
+        #expect(flock(probe, LOCK_SH | LOCK_NB) == -1)
+        #expect(errno == EWOULDBLOCK)
+        #expect(throws: POSIXError.self) { try AppRunLock(folder: folder) }
         try lock.release()
-        #expect(!FileManager.default.fileExists(atPath: lock.file.path))
+        #expect(flock(probe, LOCK_SH | LOCK_NB) == 0)
+        #expect(FileManager.default.fileExists(atPath: lock.file.path))
         try lock.release()
-        let held = try AppRunLock(folder: folder, pid: 42)
-        try Data("43\n".utf8).write(to: held.file)
-        try held.release()
-        #expect(try String(contentsOf: held.file, encoding: .utf8) == "43\n")
+        #expect(flock(probe, LOCK_UN) == 0)
+        let next = try AppRunLock(folder: folder, pid: 42)
+        #expect(try String(contentsOf: next.file, encoding: .utf8) == "42\n")
+        try next.release()
         #expect(throws: CocoaError.self) { try AppRunLock(folder: folder, pid: 0) }
-        #expect(try String(contentsOf: held.file, encoding: .utf8) == "43\n")
+    }
+
+    @Test("Dropping the app lock closes its descriptor without removing the file")
+    func drop() throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let folder = try claimedChoicesFolder(scratch)
+        var lock: AppRunLock? = try AppRunLock(folder: folder)
+        let probe = open(try #require(lock).file.path, O_RDONLY)
+        defer { close(probe) }
+        #expect(flock(probe, LOCK_SH | LOCK_NB) == -1)
+        lock = nil
+        #expect(flock(probe, LOCK_SH | LOCK_NB) == 0)
     }
 
     @Test("Initialization uses the CLI before the app writes to its home")

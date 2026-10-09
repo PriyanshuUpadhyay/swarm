@@ -490,21 +490,18 @@ fn send_notice(
     }
 }
 
-/// ADR 0058: the app owns notices while its pid is alive; an invalid or stale lock keeps
-/// the adapter path. Positive pids only, because zero and negative values name process groups.
+/// ADR 0058: only a held kernel lock means the app owns notices. The pid is informational.
 fn app_is_running(root: &std::path::Path) -> bool {
-    let Some(pid) = std::fs::read_to_string(root.join(swarm::paths::APP_LOCK))
-        .ok()
-        .and_then(|text| text.trim().parse::<i32>().ok())
-        .filter(|pid| *pid > 0)
-    else {
+    use std::os::fd::AsRawFd;
+    let Ok(file) = std::fs::File::open(root.join(swarm::paths::APP_LOCK)) else {
         return false;
     };
     unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
+        fn flock(fd: i32, operation: i32) -> i32;
     }
-    // SAFETY: signal zero checks a positive pid without sending a signal or touching memory.
-    unsafe { kill(pid, 0) == 0 }
+    // SAFETY: file owns this open descriptor; 1 | 4 is LOCK_SH | LOCK_NB on supported Unix hosts.
+    let result = unsafe { flock(file.as_raw_fd(), 1 | 4) };
+    result != 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock
 }
 
 fn adapter_name() -> String {

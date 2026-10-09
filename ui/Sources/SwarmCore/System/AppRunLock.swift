@@ -1,26 +1,39 @@
 import Foundation
+import Darwin
 
-/// The pid file lives in the CLI-claimed data folder, just like paths::root_dir()/app.lock.
-public struct AppRunLock: Sendable {
+/// Holds the CLI data folder's app.lock descriptor; the kernel releases it if the app exits.
+public final class AppRunLock: Sendable {
     public let file: URL
-    private let pid: Int32
+    private let handle: FileHandle
 
     public static func file(in folder: URL) -> URL {
         folder.appendingPathComponent("app.lock")
     }
 
-    /// Writes atomically into an existing folder. The caller first initializes the home through the CLI.
+    /// The caller first initializes the home through the CLI. The pid is informational only.
     public init(folder: URL, pid: Int32 = ProcessInfo.processInfo.processIdentifier) throws {
         guard pid > 0 else { throw CocoaError(.fileWriteInvalidFileName) }
-        self.file = Self.file(in: folder)
-        self.pid = pid
-        try Data("\(pid)\n".utf8).write(to: file, options: .atomic)
+        file = Self.file(in: folder)
+        let descriptor = open(file.path, O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let opened = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            try? opened.close()
+            throw error
+        }
+        do {
+            // Keep the inode while locked; atomic replacement would leave the lock on the old file.
+            try opened.truncate(atOffset: 0)
+            try opened.write(contentsOf: Data("\(pid)\n".utf8))
+        } catch {
+            try? opened.close()
+            throw error
+        }
+        handle = opened
     }
 
-    public func release() throws {
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
-        // A second app may have replaced the pid; keep a lock whose pid differs.
-        guard try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) == "\(pid)" else { return }
-        try FileManager.default.removeItem(at: file)
-    }
+    public func release() throws { try handle.close() }
+
+    deinit { try? handle.close() }
 }
