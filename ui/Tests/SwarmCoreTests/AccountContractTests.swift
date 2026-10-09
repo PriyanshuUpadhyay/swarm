@@ -75,6 +75,34 @@ struct AccountContractTests {
         #expect(SwarmLaunchAccount(name: "personal", provider: "claude", environment: injected) == nil)
     }
 
+    @Test("the default-only Claude list agrees in Settings, launch and Switch Model")
+    func defaultClaude() throws {
+        let list = try decode(SwarmAccountList.self, fixture: "default-claude")
+        let automatic = try #require(SwarmLaunchAccount.resolve(.auto, from: list))
+        let selected = try #require(SwarmLaunchAccount.resolve(.named("default"), from: list))
+        #expect(automatic == selected)
+        #expect(selected.environment.isEmpty)
+        var settings = AccountsPageModel()
+        let started = settings.beginLoad()
+        let generation = try #require(started)
+        settings.receiveAccounts(list, provider: "claude", generation: generation)
+        #expect(settings.section("claude").auto == automatic.name)
+        #expect(settings.section("claude").accounts[0].env == automatic.environment)
+        let decision = SwarmAccountLoadDecision.loaded(list)
+        #expect(decision.selection == .auto)
+        #expect(decision.fallbackCaption == nil)
+        #expect(decision.options.map(\.selection) == [.auto, .named("default")])
+        #expect(decision.options.allSatisfy { $0.disabledReason == nil })
+        #expect(SwarmAccountOption.account(for: .named("default"), in: decision.options) == selected)
+        let account = SwarmAccountOption.launchSelection(for: .auto, in: decision.options)
+        #expect(account == .named("default"))
+        let plan = try #require(SwarmChatLaunchPlan(directory: "/tmp/work", provider: "claude", model: "opus", account: account))
+        #expect(plan.account == "default")
+        #expect(SwarmLaunchAccount(name: "personal", provider: "claude", environment: [:]) == nil)
+        #expect(SwarmLaunchAccount(name: "default", provider: "codex", environment: [:]) == nil)
+        #expect(SwarmLaunchAccount(name: "default", provider: "agy", environment: [:]) == nil)
+    }
+
     @Test("Auto never falls back to another row and picker keeps returned order")
     func returnedAuto() throws {
         var list = try decode(SwarmAccountList.self, fixture: "work")

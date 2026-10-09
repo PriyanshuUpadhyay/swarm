@@ -314,6 +314,39 @@ struct AccountsPageModelTests {
         #expect(model.errorMessage?.contains("Work quota failed") == true)
     }
 
+    @Test("failed pane open reloads the revision and permits the same-name typed retry")
+    func loginRetry() async throws {
+        let initial = list()
+        let fixture = LoginRetryFixture(list: initial)
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, _ in
+            try await fixture.run(args)
+        }
+        var model = AccountsPageModel()
+        let generation = try start(&model)
+        model.receiveAccounts(initial, provider: "codex", generation: generation)
+        model.finishLoad(generation)
+        let request = try #require(model.loginRequest(provider: "codex", name: "work"))
+        await #expect(throws: SwarmProfileError.self) { try await source.openLogin(request) }
+        model.setActionError("Cannot open login pane")
+        let queued = model.requestLoad(refreshUsage: false)
+        #expect(queued)
+        let reload = try start(&model)
+        let changed = try await source.accounts(provider: "codex")
+        model.receiveAccounts(changed, provider: "codex", generation: reload)
+        model.finishLoad(reload)
+        let retry = try #require(model.loginRequest(provider: "codex", name: request.name))
+        #expect(retry.name == request.name)
+        #expect(retry.revision == "registered")
+        model.setActionError(nil)
+        let opened = try await source.openLogin(retry)
+        try model.loginOpened(opened, request: retry)
+        #expect(model.section("codex").pendingLogin == "work")
+        #expect(model.errorMessage == nil)
+        #expect(await fixture.loginCalls == 2)
+        #expect(model.loginRequest(provider: "agy", name: "work") == nil)
+        #expect(model.loginRequest(provider: "codex", name: "../work") == nil)
+    }
+
     private func start(_ model: inout AccountsPageModel) throws -> Int {
         let generation = model.beginLoad()
         return try #require(generation)
@@ -337,5 +370,27 @@ struct AccountsPageModelTests {
         try JSONDecoder().decode(SwarmAccountLoginResult.self, from: Data(
             #"{"provider":"codex","account":"work","pane":"pane-work","state":"opened","revision":"next"}"#.utf8
         ))
+    }
+}
+
+private actor LoginRetryFixture {
+    private var list: SwarmAccountList
+    private(set) var loginCalls = 0
+
+    init(list: SwarmAccountList) { self.list = list }
+
+    func run(_ args: [String]) throws -> ShellResult {
+        if args == ["accounts", "--provider", "codex", "--json"] {
+            let encoder = JSONEncoder()
+            encoder.keyEncodingStrategy = .convertToSnakeCase
+            return ShellResult(status: 0, stdout: String(decoding: try encoder.encode(list), as: UTF8.self), stderr: "")
+        }
+        #expect(args == ["accounts", "login", "--provider", "codex", "--name", "work", "--revision", list.revision, "--json"])
+        loginCalls += 1
+        if loginCalls == 1 {
+            list.revision = "registered"
+            return ShellResult(status: 1, stdout: "", stderr: "Cannot open login pane")
+        }
+        return ShellResult(status: 0, stdout: #"{"provider":"codex","account":"work","pane":"pane-work","state":"opened","revision":"registered"}"#, stderr: "")
     }
 }

@@ -40,6 +40,8 @@ public struct AccountsUsageRow: Sendable, Hashable, Identifiable {
 
 /// Owns page decisions without UI, provider processes, or clocks hidden inside state transitions.
 public struct AccountsPageModel: Sendable, Equatable {
+    // Matches Rust usage::MAX_AGE_SECONDS for the CLI quota cache.
+    private static let maxUsageAgeSeconds = 300
     private static let providers = ["claude", "codex", "agy"]
     public static let resetConfirmation = "Reset to bundled clears Swarm account metadata. CLI accounts stay signed in."
     public private(set) var generation = 0
@@ -222,6 +224,11 @@ public struct AccountsPageModel: Sendable, Equatable {
         }
     }
 
+    public func loginRequest(provider: String, name: String) -> SwarmAccountLoginRequest? {
+        guard section(provider).canAdd, SwarmAccountLoginRequest.validName(name), let revision else { return nil }
+        return SwarmAccountLoginRequest(provider: provider, name: name, revision: revision)
+    }
+
     public mutating func loginOpened(_ result: SwarmAccountLoginResult, request: SwarmAccountLoginRequest) throws {
         guard result.state == .opened, result.provider == request.provider,
               result.account == request.name, !result.pane.isEmpty else {
@@ -245,7 +252,7 @@ public struct AccountsPageModel: Sendable, Equatable {
         return samples.map { meter in
             let state = usageErrors[provider] == nil ? meter.state : .failed
             let percentage = [.missing, .noSource].contains(state) ? nil : meter.usedPct.map { 100 - $0 }
-            let ageIsOld = meter.asOfSeconds.map { nowSeconds - $0 > 300 || $0 > nowSeconds } ?? true
+            let ageIsOld = meter.asOfSeconds.map { nowSeconds - $0 > Self.maxUsageAgeSeconds || $0 > nowSeconds } ?? true
             let isOld = percentage != nil && (state != .fresh || ageIsOld)
             let title = [meter.window, meter.windowMinutes.map { "\($0) min" }].compactMap { $0 }.joined(separator: " · ")
             return AccountsUsageRow(

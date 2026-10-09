@@ -18,8 +18,10 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
     public var environment: [String: String]
 
     public init?(name: String, provider: String, environment: [String: String]) {
-        guard let key = Self.environmentKey(for: provider),
-              let value = environment[key], !value.isEmpty else { return nil }
+        guard let key = Self.environmentKey(for: provider) else { return nil }
+        if !(provider == "claude" && name == "default" && environment.isEmpty) {
+            guard let value = environment[key], !value.isEmpty else { return nil }
+        }
         self.name = name
         self.provider = provider
         let allowed: Set<String> = provider == "claude"

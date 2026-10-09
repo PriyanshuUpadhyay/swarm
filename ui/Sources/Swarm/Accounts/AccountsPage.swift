@@ -14,7 +14,11 @@ struct AccountsPage: View {
     @State private var state = AccountsPageModel()
     @State private var addingProvider: String?
     @State private var accountName = ""
-    @State private var isActing = false
+    @State private var action: Action?
+    private enum Action: Equatable {
+        case login(String)
+        case reset
+    }
     @State private var confirmReset = false
 
     var body: some View {
@@ -41,6 +45,7 @@ struct AccountsPage: View {
         }
     }
 
+    private var isActing: Bool { action != nil }
     private var busy: Bool { isActing || state.isLoading || state.hasPendingRead }
 
     private var header: some View {
@@ -72,6 +77,7 @@ struct AccountsPage: View {
                 HStack {
                     Button("Cancel") { confirmReset = false }
                     Button("Reset to bundled", role: .destructive) { reset() }
+                    if action == .reset { ProgressView("Resetting accounts…").controlSize(.small) }
                 }
                 .disabled(busy)
             }
@@ -136,6 +142,7 @@ struct AccountsPage: View {
             HStack {
                 Button("Open login") { login(section.provider) }
                     .disabled(busy || !section.canAdd || !SwarmAccountLoginRequest.validName(accountName))
+                if action == .login(section.provider) { ProgressView("Opening login…").controlSize(.small) }
                 Button("Cancel") { addingProvider = nil }.disabled(isActing)
             }
         }
@@ -260,14 +267,12 @@ struct AccountsPage: View {
     }
 
     private func login(_ provider: String) {
-        guard !busy, state.section(provider).canAdd, SwarmAccountLoginRequest.validName(accountName),
-              let revision = state.revision else { return }
-        let request = SwarmAccountLoginRequest(provider: provider, name: accountName, revision: revision)
-        isActing = true
+        guard !busy, let request = state.loginRequest(provider: provider, name: accountName) else { return }
+        action = .login(provider)
         state.setActionError(nil)
         onError(state.errorMessage)
         Task {
-            defer { isActing = false }
+            defer { action = nil }
             do {
                 let result = try await openLogin(request)
                 try state.loginOpened(result, request: request)
@@ -284,11 +289,11 @@ struct AccountsPage: View {
 
     private func reset() {
         guard !busy, let revision = state.revision else { return }
-        isActing = true
+        action = .reset
         state.setActionError(nil)
         onError(state.errorMessage)
         Task {
-            defer { isActing = false }
+            defer { action = nil }
             do {
                 let result = try await resetAccounts(revision)
                 state.metadataReset(result)
