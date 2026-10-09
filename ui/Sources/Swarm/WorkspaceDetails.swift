@@ -6,6 +6,7 @@ private enum WorkspaceDetailsTab: String {
 }
 
 struct WorkspaceDetails: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let usage: ChatUsage?
     let chainUsage: ChainUsage?
@@ -69,7 +70,7 @@ struct WorkspaceDetails: View {
                 }
             }
             .buttonStyle(.plain)
-            .padding(DesignTokens.Spacing.m)
+            .padding(tokens.spacing.m)
             if mode == .changes {
                 Picker("Changes view", selection: $branchSelected) {
                     Text("Local").tag(false)
@@ -77,12 +78,12 @@ struct WorkspaceDetails: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .padding(.horizontal, DesignTokens.Spacing.m)
-                .padding(.bottom, DesignTokens.Spacing.s)
+                .padding(.horizontal, tokens.spacing.m)
+                .padding(.bottom, tokens.spacing.s)
             }
             Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                LazyVStack(alignment: .leading, spacing: tokens.spacing.m) {
                     if tab == .usage {
                         UsageDetails(usage: usage, chainUsage: chainUsage, hasChat: hasChat)
                     } else {
@@ -118,7 +119,7 @@ struct WorkspaceDetails: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
         }
         .background(.background)
@@ -285,7 +286,7 @@ struct WorkspaceDetails: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .padding(.vertical, DesignTokens.Spacing.xxs)
+            .padding(.vertical, tokens.spacing.xxs)
         }
         .buttonStyle(.plain)
         .help(file.path)

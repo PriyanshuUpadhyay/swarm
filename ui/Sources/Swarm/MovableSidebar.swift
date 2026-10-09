@@ -1,4 +1,5 @@
 import SwiftUI
+import SwarmCore
 
 struct MovableSidebar<Sidebar: View, Content: View>: View {
     let visible: Bool
@@ -11,7 +12,9 @@ struct MovableSidebar<Sidebar: View, Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let actualWidth = min(max(width, 230), min(440, max(230, geometry.size.width - minimumContentWidth - 1)))
+            let range = SidebarWidth.range
+            let availableWidth = max(range.lowerBound, geometry.size.width - minimumContentWidth - 1)
+            let actualWidth = min(max(width, range.lowerBound), min(range.upperBound, availableWidth))
             let inset = visible ? actualWidth + 1 : 0
             ZStack(alignment: onRight ? .trailing : .leading) {
                 content()
@@ -28,16 +31,18 @@ struct MovableSidebar<Sidebar: View, Content: View>: View {
                                 .frame(width: DesignTokens.Size.dragHandle).contentShape(Rectangle())
                                 .gesture(DragGesture().onChanged { value in
                                     if dragStart == nil { dragStart = actualWidth }
-                                    width = min(440, max(230, (dragStart ?? actualWidth) + value.translation.width * (onRight ? -1 : 1)))
+                                    width = min(range.upperBound, max(range.lowerBound,
+                                        (dragStart ?? actualWidth) + value.translation.width * (onRight ? -1 : 1)))
                                 }.onEnded { _ in dragStart = nil })
                                 .accessibilityLabel("Sidebar width")
                                 .accessibilityAdjustableAction { direction in
-                                    width = min(440, max(230, actualWidth + (direction == .increment ? 20 : -20)))
+                                    width = min(range.upperBound, max(range.lowerBound,
+                                        actualWidth + (direction == .increment ? SidebarWidth.step : -SidebarWidth.step)))
                                 }
                         }
                     }
             }
         }
-        .frame(minWidth: minimumContentWidth + (visible ? 231 : 0), minHeight: 420)
+        .frame(minWidth: minimumContentWidth + (visible ? SidebarWidth.range.lowerBound + 1 : 0), minHeight: 420)
     }
 }

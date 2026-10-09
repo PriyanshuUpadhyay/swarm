@@ -23,7 +23,7 @@ enum DesignTokens {
 
     enum Size {
         /// A one-line sidebar row.
-        static let row: CGFloat = 28
+        static func row(density: Density) -> CGFloat { AppearanceScale.rowHeight(density: density) }
         /// A pane header.
         static let paneHeader: CGFloat = 24
         static let tabMinWidth: CGFloat = 120
@@ -80,9 +80,15 @@ enum DesignTokens {
     }
 
     /// Body text is 13 pt; this spacing gives it about 1.45 line height.
-    static let body = Font.system(size: 13)
-    static let bodyLineSpacing: CGFloat = 5.5
-    static let mono = Font.system(size: 12, design: .monospaced)
+    static func body(textSize: TextSize) -> Font {
+        Font.system(size: AppearanceScale.fonts(textSize: textSize).body)
+    }
+    static func bodyLineSpacing(textSize: TextSize) -> CGFloat {
+        5.5 * AppearanceScale.fonts(textSize: textSize).body / 13
+    }
+    static func mono(textSize: TextSize) -> Font {
+        Font.system(size: AppearanceScale.fonts(textSize: textSize).mono, design: .monospaced)
+    }
 
     /// Quiet fills: a selected row, a user message, a match highlight.
     static let selectionFill = Color.primary.opacity(0.08)

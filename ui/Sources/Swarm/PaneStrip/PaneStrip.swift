@@ -17,6 +17,7 @@ struct PaneCell: Identifiable, Equatable {
 /// Focus and zoom change with no animation, because keys drive them. The owner drags a column's
 /// trailing edge to size every column and the line in a two-pane column to split it (ADR 0026).
 struct PaneStrip<Chat: View, Pane: View>: View {
+    @Environment(\.designTokens) private var tokens
     let cells: [PaneCell]
     let focusedID: String?
     let zoomedID: String?
@@ -105,7 +106,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                         .accessibilityHidden(!hasFinished)
                 }
                 .font(.caption)
-                .padding(DesignTokens.Spacing.s)
+                .padding(tokens.spacing.s)
                 .background(.bar)
             }
         }
@@ -260,6 +261,7 @@ private struct ResizeHandle: View {
 }
 
 private struct PaneView<Content: View>: View {
+    @Environment(\.designTokens) private var tokens
     let cell: PaneCell
     let focused: Bool
     let zoomed: Bool
@@ -313,7 +315,7 @@ private struct PaneView<Content: View>: View {
     }
 
     private var header: some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             StatusGlyph(status: cell.status, helpText: cell.stateTooltip)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
@@ -343,7 +345,7 @@ private struct PaneView<Content: View>: View {
         .buttonStyle(.borderless)
         .font(.caption)
         .lineLimit(1)
-        .padding(.horizontal, DesignTokens.Spacing.s)
+        .padding(.horizontal, tokens.spacing.s)
         .frame(height: DesignTokens.Size.paneHeader)
         .foregroundStyle(focused ? .primary : .secondary)
         .background(Color(nsColor: .windowBackgroundColor))

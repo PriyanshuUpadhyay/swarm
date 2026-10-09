@@ -9,6 +9,7 @@ struct StepRunRequest {
 /// The Runs sidebar view: the step runs under `<workspace>/tmp/<skill>/`, and one run as a
 /// top-down graph (ADR 0046). It reads files only; a node opens its step file in the preview.
 struct StepRunsView: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     var isActive = true
     let open: (WorkspaceDocument) -> Void
@@ -122,19 +123,19 @@ struct StepRunsView: View {
     @ViewBuilder
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Runs").font(.headline).padding(DesignTokens.Spacing.m).accessibilityAddTraits(.isHeader)
+            Text("Runs").font(.headline).padding(tokens.spacing.m).accessibilityAddTraits(.isHeader)
             Divider()
             if let error {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+                VStack(alignment: .leading, spacing: tokens.spacing.s) {
                     Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
                     Button("Retry") { retryID += 1 }
-                }.padding(DesignTokens.Spacing.m)
+                }.padding(tokens.spacing.m)
             }
             if let notice {
-                Text(notice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
+                Text(notice).font(.caption).foregroundStyle(.secondary).padding(tokens.spacing.m)
             }
             if let scanNotice {
-                Text(verbatim: scanNotice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
+                Text(verbatim: scanNotice).font(.caption).foregroundStyle(.secondary).padding(tokens.spacing.m)
             }
             if let runs {
                 let open = runs.filter { !$0.closed }
@@ -145,10 +146,10 @@ struct StepRunsView: View {
                     )
                 }
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    LazyVStack(alignment: .leading, spacing: tokens.spacing.xs) {
                         ForEach(Dictionary(grouping: open, by: \.skill).sorted { $0.key < $1.key }, id: \.key) { skill, runs in
                             Text(verbatim: skill.uppercased()).font(.caption).foregroundStyle(.secondary)
-                                .padding(.top, DesignTokens.Spacing.s)
+                                .padding(.top, tokens.spacing.s)
                                 .accessibilityAddTraits(.isHeader)
                             ForEach(runs) { run in StepRunRow(run: run) { choose(run) } }
                         }
@@ -162,12 +163,12 @@ struct StepRunsView: View {
                             ForEach(closed) { run in StepRunRow(run: run) { choose(run) } }
                         }
                         .foregroundStyle(.secondary)
-                        .padding(.top, DesignTokens.Spacing.s)
+                        .padding(.top, tokens.spacing.s)
                     }
-                    .padding(DesignTokens.Spacing.m)
+                    .padding(tokens.spacing.m)
                 }
             } else if error == nil {
-                DelayedProgress("Reading runs…").padding(DesignTokens.Spacing.m)
+                DelayedProgress("Reading runs…").padding(tokens.spacing.m)
             }
             Spacer(minLength: 0)
         }
@@ -181,21 +182,22 @@ private enum ChosenRun {
 }
 
 private struct StepRunRow: View {
+    @Environment(\.designTokens) private var tokens
     let run: StepRun
     let choose: () -> Void
 
     var body: some View {
         Button(action: choose) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                 UrgencyGlyph(urgency: run.urgency).frame(width: DesignTokens.Size.glyphSlot)
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                     Text(verbatim: run.name).lineLimit(1).truncationMode(.middle)
                     Text(verbatim: summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs)
+        .buttonStyle(.plain).padding(.vertical, tokens.spacing.xxs)
         .help(run.id)
         .accessibilityLabel(run.spokenLabel)
     }
@@ -223,6 +225,7 @@ private struct UrgencyGlyph: View {
 }
 
 private struct StepRunGraph: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let run: StepRun
     let error: String?
@@ -265,7 +268,7 @@ private struct StepRunGraph: View {
             }
         }
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                 Button("Runs", systemImage: "chevron.backward", action: back).buttonStyle(.borderless)
                 Text(verbatim: run.skill).font(.caption).foregroundStyle(.secondary)
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
@@ -279,15 +282,15 @@ private struct StepRunGraph: View {
                 }
                 if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.secondary) }
             }
-            .padding(DesignTokens.Spacing.m)
+            .padding(tokens.spacing.m)
             Divider()
             ScrollView {
-                VStack(spacing: DesignTokens.Spacing.xl) {
+                VStack(spacing: tokens.spacing.xl) {
                     ForEach(Array(layers.enumerated()), id: \.element) { _, ids in
-                        HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
+                        HStack(alignment: .top, spacing: tokens.spacing.s) {
                             ForEach(ids, id: \.self) { id in
                                 if let step = byID[id] {
-                                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                                    VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                                         StepNodeView(step: step) { preview(step) }
                                         if case .active = step.state, let title = chatTitles[step.path] {
                                             Button { selectChat(step.path) } label: {
@@ -305,7 +308,7 @@ private struct StepRunGraph: View {
                     }
                 }
                 // A gutter on the left carries the edges that skip a layer, so no edge crosses a node.
-                .padding(.leading, DesignTokens.Spacing.l)
+                .padding(.leading, tokens.spacing.l)
                 .backgroundPreferenceValue(NodeBounds.self) { bounds in
                     GeometryReader { proxy in
                         ForEach(edges) { edge in
@@ -315,7 +318,7 @@ private struct StepRunGraph: View {
                                         edge.stale ? Color.orange : Color.secondary,
                                         style: StrokeStyle(
                                             lineWidth: DesignTokens.Size.hairline,
-                                            dash: edge.dashed || edge.stale ? [DesignTokens.Spacing.xs, DesignTokens.Spacing.xs] : []
+                                            dash: edge.dashed || edge.stale ? [tokens.spacing.xs, tokens.spacing.xs] : []
                                         )
                                     )
                             }
@@ -323,7 +326,7 @@ private struct StepRunGraph: View {
                     }
                     .accessibilityHidden(true)
                 }
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
         }
     }
@@ -337,7 +340,7 @@ private struct StepRunGraph: View {
     private func path(from: CGRect, to: CGRect, long: Bool) -> Path {
         Path { path in
             if long {
-                let gutter = min(from.minX, to.minX) - DesignTokens.Spacing.s
+                let gutter = min(from.minX, to.minX) - tokens.spacing.s
                 path.move(to: CGPoint(x: from.minX, y: from.midY))
                 path.addLine(to: CGPoint(x: gutter, y: from.midY))
                 path.addLine(to: CGPoint(x: gutter, y: to.midY))
@@ -367,17 +370,18 @@ private struct NodeBounds: PreferenceKey {
 }
 
 private struct StepNodeView: View {
+    @Environment(\.designTokens) private var tokens
     let step: StepNode
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.xs) {
                 glyph.frame(width: DesignTokens.Size.glyphSlot)
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(verbatim: step.title).font(.callout.weight(.medium)).lineLimit(1)
-                        Spacer(minLength: DesignTokens.Spacing.xs)
+                        Spacer(minLength: tokens.spacing.xs)
                         if let todo = step.todo {
                             Text(verbatim: "\(todo.checked)/\(todo.total)").font(.caption).monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -396,7 +400,7 @@ private struct StepNodeView: View {
                     }
                 }
             }
-            .padding(DesignTokens.Spacing.s)
+            .padding(tokens.spacing.s)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
             .overlay {

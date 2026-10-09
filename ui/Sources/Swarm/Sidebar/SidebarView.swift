@@ -60,6 +60,7 @@ struct SidebarActions {
 /// The sidebar chrome: a view switcher over the workspace list, or over the workspace details that
 /// the caller passes in. It gets plain rows and closures, and owns no app state.
 struct SidebarView<Details: View>: View {
+    @Environment(\.designTokens) private var tokens
     let mode: WorkspaceSidebarMode
     let sections: [SidebarSection]
     let collapsed: Set<String>
@@ -83,7 +84,7 @@ struct SidebarView<Details: View>: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            .padding(DesignTokens.Spacing.s)
+            .padding(tokens.spacing.s)
             ZStack {
                 workspaceList.retainedVisibility(mode == .workspaces)
                 details().retainedVisibility(mode != .workspaces)
@@ -94,7 +95,7 @@ struct SidebarView<Details: View>: View {
 
     private var workspaceList: some View {
         VStack(spacing: 0) {
-            HStack(spacing: DesignTokens.Spacing.m) {
+            HStack(spacing: tokens.spacing.m) {
                 Button("Home", systemImage: "house", action: actions.home)
                 Menu {
                     Button("Create Project…", action: actions.createProject)
@@ -113,8 +114,8 @@ struct SidebarView<Details: View>: View {
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, DesignTokens.Spacing.m)
-            .padding(.vertical, DesignTokens.Spacing.xs)
+            .padding(.horizontal, tokens.spacing.m)
+            .padding(.vertical, tokens.spacing.xs)
             if sections.isEmpty {
                 // A failed load shows its error on Home; the list stays blank until a tree loads.
                 if loaded { emptyList } else { Spacer() }
@@ -154,7 +155,7 @@ struct SidebarView<Details: View>: View {
             }
             HStack {
                 Button(action: actions.toggleArchive) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Label(showingArchive ? "Workspaces" : "Archived", systemImage: "clock.arrow.circlepath")
                         if !showingArchive, let archivedStatus { StatusGlyph(status: archivedStatus) }
                     }
@@ -163,7 +164,7 @@ struct SidebarView<Details: View>: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .padding(DesignTokens.Spacing.m)
+            .padding(tokens.spacing.m)
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard let folder = SidebarDrop.folder(in: urls) else { return false }
@@ -174,7 +175,7 @@ struct SidebarView<Details: View>: View {
 
     @ViewBuilder
     private var emptyList: some View {
-        VStack(spacing: DesignTokens.Spacing.m) {
+        VStack(spacing: tokens.spacing.m) {
             if showingArchive {
                 Text("No archived workspaces").foregroundStyle(.secondary)
             } else {
@@ -229,10 +230,10 @@ struct SidebarView<Details: View>: View {
 
     private func pinnedHeader(status: AgentStatus?, hasRows: Bool = true) -> some View {
         let expanded = !collapsed.contains("pinned")
-        return HStack(spacing: DesignTokens.Spacing.xs) {
+        return HStack(spacing: tokens.spacing.xs) {
             if hasRows {
                 Button { actions.toggleCollapsed("pinned") } label: {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                             .font(.caption2.weight(.semibold))
                             .frame(width: DesignTokens.Size.glyphSlot)
@@ -246,10 +247,10 @@ struct SidebarView<Details: View>: View {
                 .accessibilityValue(expanded ? "expanded" : "collapsed")
             } else {
                 Text("Pinned")
-                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.xs)
+                    .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.xs)
                     .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: DesignTokens.Spacing.xs)
+            Spacer(minLength: tokens.spacing.xs)
         }
         .contentShape(Rectangle())
         .dropDestination(for: WorkspaceDrag.self) { items, _ in
@@ -316,6 +317,7 @@ struct SidebarView<Details: View>: View {
 /// A project's header: a chevron and name that collapse it, its most urgent status while
 /// collapsed, and a "+" that makes a workspace in it.
 private struct ProjectHeader: View {
+    @Environment(\.designTokens) private var tokens
     let title: String
     let fields: [RowFieldValue]
     let expanded: Bool
@@ -327,7 +329,7 @@ private struct ProjectHeader: View {
     let removeProject: () -> Void
 
     private var fieldContent: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: tokens.spacing.xs) {
             ForEach(Array(fields.enumerated()), id: \.offset) { _, value in
                 if value.field == .status {
                     if let status { StatusGlyph(status: status) }
@@ -339,10 +341,10 @@ private struct ProjectHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: tokens.spacing.xs) {
             if let toggle {
                 Button(action: toggle) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                             .font(.caption2.weight(.semibold))
                             .frame(width: DesignTokens.Size.glyphSlot)
@@ -357,7 +359,7 @@ private struct ProjectHeader: View {
             } else {
                 fieldContent.accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: DesignTokens.Spacing.xs)
+            Spacer(minLength: tokens.spacing.xs)
             if let newWorkspace {
                 Button("New workspace in \(title)", systemImage: "plus", action: newWorkspace)
                     .labelStyle(.iconOnly)
@@ -375,6 +377,7 @@ private struct ProjectHeader: View {
 
 /// The selected fields keep their order. Hovering replaces an age with status counts.
 private struct SidebarRowView: View {
+    @Environment(\.designTokens) private var tokens
     let row: SidebarRow
     let selected: Bool
     let newChat: (() -> Void)?
@@ -404,7 +407,7 @@ private struct SidebarRowView: View {
                 line(values, first: index == 0)
             }
         }
-        .padding(.leading, CGFloat(row.depth) * DesignTokens.Spacing.l)
+        .padding(.leading, CGFloat(row.depth) * tokens.spacing.l)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(row.help)
@@ -424,7 +427,7 @@ private struct SidebarRowView: View {
     }
 
     private func line(_ values: [RowFieldValue], first: Bool) -> some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             Group {
                 if first, (row.kind == .workspace || row.kind == .chat), let toggle {
                     Button(action: toggle) { disclosure }
@@ -443,14 +446,14 @@ private struct SidebarRowView: View {
                         .accessibilityLabel("Show run, \(value.text)")
                 } else if value.field == .children, row.kind == .chat, let toggle {
                     Button(action: toggle) {
-                        HStack(spacing: DesignTokens.Spacing.xs) { disclosure; RowFieldLabel(value: value, dimmed: dimmed) }
+                        HStack(spacing: tokens.spacing.xs) { disclosure; RowFieldLabel(value: value, dimmed: dimmed) }
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(row.expanded ? "expanded" : "collapsed")
                 } else if value.field == .age, hovering, !row.counts.isEmpty {
-                    HStack(spacing: DesignTokens.Spacing.s) {
+                    HStack(spacing: tokens.spacing.s) {
                         ForEach(row.counts, id: \.status) { count in
-                            HStack(spacing: DesignTokens.Spacing.xxs) {
+                            HStack(spacing: tokens.spacing.xxs) {
                                 StatusGlyph(status: count.status)
                                 Text("\(count.count)").monospacedDigit()
                             }
@@ -461,7 +464,7 @@ private struct SidebarRowView: View {
                     RowFieldLabel(value: value, dimmed: dimmed)
                 }
             }
-            Spacer(minLength: DesignTokens.Spacing.xs)
+            Spacer(minLength: tokens.spacing.xs)
             if first, row.kind == .workspace, !row.archived, hovering {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption)
@@ -479,7 +482,7 @@ private struct SidebarRowView: View {
                 .help("New chat in \(row.title)")
             }
         }
-        .frame(minHeight: first ? DesignTokens.Size.row : nil)
+        .frame(minHeight: first ? tokens.row : nil)
     }
 
     private var accessibilityValue: String {

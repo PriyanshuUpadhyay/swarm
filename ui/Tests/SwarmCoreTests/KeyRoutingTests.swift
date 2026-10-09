@@ -24,7 +24,7 @@ struct KeyRoutingTests {
             (KeyChord(.right, [.option, .command]), .moveFocus(.right)),
             (KeyChord(.up, [.option, .command]), .moveFocus(.up)),
             (KeyChord(.down, [.option, .command]), .moveFocus(.down)),
-            (KeyChord(.returnKey, .command), .zoom),
+            (KeyChord(.returnKey, [.shift, .command]), .zoom),
             (KeyChord("l", .command), .focusComposer),
             (KeyChord("b", .command), .toggleSidebar),
             (KeyChord("b", [.command, .shift]), .moveSidebar),
@@ -43,6 +43,7 @@ struct KeyRoutingTests {
             #expect(action.chord == chord)
         }
         #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == nil)
+        #expect(AppKey.action(for: KeyChord(.returnKey, .command)) == nil)
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
     }
 

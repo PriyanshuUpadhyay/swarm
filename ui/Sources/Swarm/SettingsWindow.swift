@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct SettingsWindow: View {
+    @Environment(\.designTokens) private var tokens
     @Environment(SettingsSelection.self) private var selection
     @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
@@ -29,7 +30,7 @@ struct SettingsWindow: View {
                 if let error = selection.error ?? (selection.page == .setup ? guardsError : nil) {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
-                        .textSelection(.enabled).padding(DesignTokens.Spacing.m)
+                        .textSelection(.enabled).padding(tokens.spacing.m)
                 }
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -66,9 +67,9 @@ struct SettingsWindow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Setup").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                        .padding([.horizontal, .top], DesignTokens.Spacing.xl)
+                        .padding([.horizontal, .top], tokens.spacing.xl)
                     DependenciesGroup(rows: dependencies)
-                        .padding([.horizontal, .top], DesignTokens.Spacing.xl)
+                        .padding([.horizontal, .top], tokens.spacing.xl)
                         .task {
                             await LoginShellPath.ready()
                             dependencies = Dependencies.check(lookup: Shell.which)
@@ -100,7 +101,7 @@ struct SettingsWindow: View {
                             selection.setError(guardsError ?? setupError)
                         }
                     )
-                    .padding([.horizontal, .bottom], DesignTokens.Spacing.xl)
+                    .padding([.horizontal, .bottom], tokens.spacing.xl)
                 }
             }
         case .advanced:
@@ -125,10 +126,10 @@ struct SettingsWindow: View {
                 drift = await PathSwarmCheck.current(dismissed: [])
             }
         case .keys:
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text("Keys").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                Grid(alignment: .leading, horizontalSpacing: DesignTokens.Spacing.xl,
-                     verticalSpacing: DesignTokens.Spacing.s) {
+                Grid(alignment: .leading, horizontalSpacing: tokens.spacing.xl,
+                     verticalSpacing: tokens.spacing.s) {
                     ForEach(KeysPage.rows, id: \.shortcut) { row in
                         GridRow {
                             Text(row.shortcut).monospaced()
@@ -138,24 +139,42 @@ struct SettingsWindow: View {
                 }
                 Text("A custom keymap comes later (ADR 0060)").foregroundStyle(.secondary)
             }
-            .padding(DesignTokens.Spacing.xl)
+            .padding(tokens.spacing.xl)
         case .appearance:
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text("Appearance").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Picker("Theme", selection: Binding(get: { selection.prefs.theme }, set: selection.setTheme)) {
+                    Text("System").tag(Theme.system)
+                    Text("Light").tag(Theme.light)
+                    Text("Dark").tag(Theme.dark)
+                }
+                Picker("Text size", selection: Binding(get: { selection.prefs.textSize }, set: selection.setTextSize)) {
+                    Text("Small").tag(TextSize.small)
+                    Text("Default").tag(TextSize.default)
+                    Text("Large").tag(TextSize.large)
+                }
+                Picker("Density", selection: Binding(get: { selection.prefs.density }, set: selection.setDensity)) {
+                    Text("Comfortable").tag(Density.comfortable)
+                    Text("Compact").tag(Density.compact)
+                }
                 Picker("Diff layout", selection: splitDiff) {
                     Text("Unified").tag(false)
                     Text("Split").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: DesignTokens.Size.segmentedPicker)
+                Picker("Send with", selection: Binding(get: { selection.prefs.sendKey }, set: selection.setSendKey)) {
+                    Text("Return").tag(SendKey.return)
+                    Text("⌘Return").tag(SendKey.commandReturn)
+                }
             }
-            .padding(DesignTokens.Spacing.xl)
+            .padding(tokens.spacing.xl)
         default:
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text(selection.page.title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 if let placeholder = selection.page.placeholder { Text(placeholder).foregroundStyle(.secondary) }
             }
-            .padding(DesignTokens.Spacing.xl)
+            .padding(tokens.spacing.xl)
         }
     }
 }

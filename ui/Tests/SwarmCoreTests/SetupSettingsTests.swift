@@ -4,6 +4,36 @@ import Testing
 
 @Suite("Setup settings")
 struct SetupSettingsTests {
+    @Test("Appearance changes apply now, persist, and preserve other owner choices")
+    @MainActor
+    func sharedAppearancePreferences() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        try choices.update { $0.pinned = ["/project"]; $0.prefs.splitDiff = true }
+        let settings = SettingsSelection(choices: choices)
+        settings.select(.appearance)
+        settings.setTheme(.dark)
+        settings.setTextSize(.large)
+        settings.setDensity(.compact)
+        settings.setSendKey(.commandReturn)
+        let expected = Prefs(settingsPage: "appearance", splitDiff: true, theme: .dark,
+                             textSize: .large, density: .compact, sendKey: .commandReturn)
+        #expect(settings.prefs == expected)
+        #expect(settings.error == nil)
+        #expect(try choices.load().prefs == expected)
+        #expect(try choices.load().pinned == ["/project"])
+        #expect(SettingsSelection(choices: choices).prefs == expected)
+        try choices.update { $0.prefs.splitDiff = false }
+        settings.setTheme(.system)
+        #expect(!settings.prefs.splitDiff)
+        #expect(settings.prefs.sendKey == .commandReturn)
+        let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        unavailable.setTheme(.light)
+        #expect(unavailable.prefs.theme == .light)
+        #expect(unavailable.error?.contains("Could not save") == true)
+    }
+
     @Test("Reading default preferences does not create choices.json")
     @MainActor
     func readDefaultDiffPreference() throws {

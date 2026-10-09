@@ -266,6 +266,7 @@ final class SessionDetailStore {
 }
 
 struct SessionDetailView: View {
+    @Environment(\.designTokens) private var tokens
     let row: SwarmProjectSession
     let model: SessionDetailModel
     let agents: [SwarmAgent]
@@ -412,7 +413,7 @@ struct SessionDetailView: View {
         ) {
             if let readOnlyReason {
                 Text(verbatim: readOnlyReason).font(.caption).foregroundStyle(.secondary)
-                    .padding(DesignTokens.Spacing.m)
+                    .padding(tokens.spacing.m)
             } else { composer }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -428,7 +429,7 @@ struct SessionDetailView: View {
 
     /// One line per provider, as one element, so VoiceOver reads the whole notice.
     private var trustNotice: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
             ForEach(launchedTrust, id: \.self) { write in
                 Label(write.notice, systemImage: "checkmark.shield")
                     .fixedSize(horizontal: false, vertical: true)
@@ -437,7 +438,7 @@ struct SessionDetailView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DesignTokens.Spacing.s)
+        .padding(tokens.spacing.s)
         .background(.bar)
         .accessibilityElement(children: .combine)
     }
@@ -533,7 +534,7 @@ struct SessionDetailView: View {
         if !waiting.isEmpty {
             let session = row.session
             ScrollView {
-                VStack(spacing: DesignTokens.Spacing.s) {
+                VStack(spacing: tokens.spacing.s) {
                     ForEach(waiting) { agent in
                         if let prompt = agent.prompt {
                             PromptCard(
@@ -552,7 +553,7 @@ struct SessionDetailView: View {
                         }
                     }
                 }
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
             .frame(maxHeight: DesignTokens.promptListMaxHeight)
             .fixedSize(horizontal: false, vertical: true)

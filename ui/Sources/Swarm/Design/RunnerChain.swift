@@ -72,6 +72,7 @@ extension ProfileStatus {
 /// A profile's runners in order as chips, marked from the last launch check. It shows as many
 /// chips as the width allows, then "+N"; the chip the next launch takes always stays.
 struct RunnerChain: View {
+    @Environment(\.designTokens) private var tokens
     let runners: [SwarmRunner]
     let check: SwarmProfileCheck?
     var providers: [SwarmProvider] = []
@@ -88,7 +89,7 @@ struct RunnerChain: View {
     }
 
     private func chain(_ fit: ChainFit, states: [RunnerChipState]) -> some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: tokens.spacing.xs) {
             if fit.leadingCut {
                 Text("…").foregroundStyle(.secondary)
                     .help(hiddenList(0..<(fit.shown.first ?? 0)))
@@ -146,22 +147,23 @@ struct RunnerChain: View {
 }
 
 private struct ChipContent: View {
+    @Environment(\.designTokens) private var tokens
     let runner: SwarmRunner
     let state: RunnerChipState
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: tokens.spacing.xs) {
             ProviderMark(provider: runner.provider)
             Text("\(runner.model)·\(Self.effort(runner.effort))")
-                .font(DesignTokens.mono)
+                .font(tokens.mono)
                 .strikethrough(isSkipped)
             if case .skipped(let short, _) = state {
                 Text("(\(short))").font(.caption)
             }
         }
         .foregroundStyle(isSkipped ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-        .padding(.horizontal, DesignTokens.Spacing.xs)
-        .padding(.vertical, DesignTokens.Spacing.xxs)
+        .padding(.horizontal, tokens.spacing.xs)
+        .padding(.vertical, tokens.spacing.xxs)
         .background {
             if state == .next {
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.control)

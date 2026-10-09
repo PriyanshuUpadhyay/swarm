@@ -10,6 +10,7 @@ import SwarmCore
 /// plan with the `setup` copy: each group with its checkbox and files, and the launch consent
 /// radio under folder trust (ADR 0043, 02-design screen 1).
 struct HooksSetupSheet: View {
+    @Environment(\.designTokens) private var tokens
     let loadPlan: (SwarmSetupChoice) async throws -> SwarmHooksPlan
     let setUp: (_ digest: String, SwarmSetupChoice) async throws -> Void
     /// Gets the owner's choice, so "Not now" can decline only the groups they cleared.
@@ -88,7 +89,7 @@ struct HooksSetupSheet: View {
     @State private var choice = SwarmSetupChoice()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+        VStack(alignment: .leading, spacing: tokens.spacing.m) {
             if isPage && copy.choosesGroups { consentPicker }
             switch phase {
             case .ready(let plan) where plan.isSetUp:
@@ -120,7 +121,7 @@ struct HooksSetupSheet: View {
                 }
             case .loading:
                 question
-                HStack(spacing: DesignTokens.Spacing.s) {
+                HStack(spacing: tokens.spacing.s) {
                     ProgressView().controlSize(.small)
                     Text(copy.loading).foregroundStyle(.secondary)
                 }
@@ -150,7 +151,7 @@ struct HooksSetupSheet: View {
                 buttons(plan)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: isPage ? nil : DesignTokens.Size.hooksSheet)
         .frame(maxWidth: isPage ? .infinity : nil, alignment: .leading)
         // A dismiss mid-write would hide its failure and reload the page before the write ends.
@@ -191,7 +192,7 @@ struct HooksSetupSheet: View {
     }
 
     private var question: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+        VStack(alignment: .leading, spacing: tokens.spacing.m) {
             Text(copy.question)
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
@@ -201,7 +202,7 @@ struct HooksSetupSheet: View {
     }
 
     private func conflictList(_ conflicts: [SwarmHooksPlan.Conflict]) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack(alignment: .firstTextBaseline) {
                 Label(copy.blocked, systemImage: "exclamationmark.triangle.fill")
                     .symbolRenderingMode(.multicolor)
@@ -218,9 +219,9 @@ struct HooksSetupSheet: View {
     }
 
     private func conflictRows(_ conflicts: [SwarmHooksPlan.Conflict]) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             ForEach(conflicts) { conflict in
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                     Text(verbatim: "\(Self.short(conflict.file)) — \(conflict.entry)")
                         .font(.callout.weight(.medium))
                     Group {
@@ -240,7 +241,7 @@ struct HooksSetupSheet: View {
     }
 
     private func fileList(_ plan: SwarmHooksPlan) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack {
                 Text(plan.conflicts.isEmpty
                     ? "Swarm will change these files. Nothing else changes."
@@ -278,7 +279,7 @@ struct HooksSetupSheet: View {
     /// Each group with its checkbox and its files, and the consent radio under folder trust. The
     /// list scrolls when it would push the buttons off a small screen (02-design).
     private func groupList(_ plan: SwarmHooksPlan) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack {
                 Text("Swarm changes the files of each checked group. Nothing else changes.")
                 Spacer()
@@ -299,7 +300,7 @@ struct HooksSetupSheet: View {
 
     /// The last checked group keeps its box, so the plan always has a group to apply.
     private func groupRows(_ plan: SwarmHooksPlan) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             ForEach(choice.groups, id: \.self) { group in
                 let checked = !choice.unchecked.contains(group)
                 Toggle(SwarmHooksPlan.groupTitle(group), isOn: Binding(
@@ -313,13 +314,13 @@ struct HooksSetupSheet: View {
                 .disabled(working || (checked && choice.checked.count == 1))
                 .help(checked && choice.checked.count == 1 ? "Keep one group to apply" : "")
                 if checked {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                         if group == "trust" && !isPage { consentPicker }
                         ForEach(plan.files.filter { $0.group == group }) { file in
                             fileRow(file, label: Self.short(file.path))
                         }
                     }
-                    .padding(.leading, DesignTokens.Spacing.l)
+                    .padding(.leading, tokens.spacing.l)
                 }
             }
         }

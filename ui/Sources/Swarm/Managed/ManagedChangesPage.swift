@@ -6,6 +6,7 @@ import SwarmCore
 /// before anything is written, and on runs the writer's own plan again. The page holds no write
 /// logic; each write is the CLI behind that sheet (ADR 0036).
 struct ManagedChangesPage: View {
+    @Environment(\.designTokens) private var tokens
     @State private var list: SwarmManagedList?
     /// `list`'s groups and summary, made once per load, not once per body pass.
     @State private var groups: [SwarmManagedList.Group] = []
@@ -37,7 +38,7 @@ struct ManagedChangesPage: View {
 
     var body: some View {
         let collapsed = self.collapsed
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             header
             if let error {
                 HStack {
@@ -76,7 +77,7 @@ struct ManagedChangesPage: View {
                 )
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await load() }
         .onChange(of: activeState) { _, state in
@@ -107,7 +108,7 @@ struct ManagedChangesPage: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             HStack {
                 Text("Managed Changes").font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
@@ -140,7 +141,7 @@ struct ManagedChangesPage: View {
             Button {
                 withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(group.name) }
             } label: {
-                HStack(spacing: DesignTokens.Spacing.xs) {
+                HStack(spacing: tokens.spacing.xs) {
                     Image(systemName: isOpen ? "chevron.down" : "chevron.forward")
                         .frame(width: DesignTokens.Size.glyphSlot)
                     Text(group.name).font(.subheadline.weight(.semibold))
@@ -149,7 +150,7 @@ struct ManagedChangesPage: View {
                     }
                 }
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: tokens.row, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -165,7 +166,7 @@ struct ManagedChangesPage: View {
 
     private func managedRow(_ row: SwarmManagedList.Row, in group: SwarmManagedList.Group) -> some View {
         let label = "\(group.name), \(Self.short(row.file)), \(row.entry)"
-        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+        return VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
             HStack {
                 Text(verbatim: Self.short(row.file))
                     .lineLimit(1)
@@ -207,8 +208,8 @@ struct ManagedChangesPage: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.xs)
-        .frame(minHeight: DesignTokens.Size.row)
+        .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.xs)
+        .frame(minHeight: tokens.row)
         .accessibilityElement(children: .contain)
     }
 

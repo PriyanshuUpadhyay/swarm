@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 public enum Theme: String, Codable, CaseIterable, Sendable {
     case system, light, dark
@@ -33,6 +34,29 @@ public enum AppearanceScale {
 
     public static func rowHeight(density: Density) -> Double {
         density == .compact ? 24 : 28
+    }
+
+    public static func spacing(density: Density) -> Double {
+        rowHeight(density: density) / rowHeight(density: .comfortable)
+    }
+}
+
+public enum AppearanceTheme {
+    public static func effective(theme: Theme, override: String?) -> Theme {
+        switch override {
+        case "light": .light
+        case "dark": .dark
+        default: theme
+        }
+    }
+}
+
+public enum FirstWindowFrame {
+    public static func frame(visibleFrame: CGRect) -> CGRect {
+        let width = min(1280, visibleFrame.width)
+        let height = min(820, visibleFrame.height)
+        return CGRect(x: visibleFrame.midX - width / 2, y: visibleFrame.midY - height / 2,
+                      width: width, height: height)
     }
 }
 

@@ -749,6 +749,7 @@ final class SessionsTreeModel {
 }
 
 private struct SessionsWindow: View {
+    @Environment(\.designTokens) private var tokens
     let model: SessionsTreeModel
     @Environment(SettingsSelection.self) private var settings
     @Environment(\.openSettings) private var openSettings
@@ -823,13 +824,13 @@ private struct SessionsWindow: View {
                             storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
                             documentVisible = false
                         } label: {
-                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                                 Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
                                     .font(.subheadline.weight(.semibold))
                                 Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
                             }
                             .lineLimit(1).truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(DesignTokens.Spacing.m)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(tokens.spacing.m)
                         }
                         .buttonStyle(.plain).help("Choose a workspace")
                         Divider()
@@ -847,26 +848,26 @@ private struct SessionsWindow: View {
                     VStack {
                         ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
                         Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }
-                            .padding(DesignTokens.Spacing.l)
+                            .padding(tokens.spacing.l)
                     }
                 }
             }
         } content: {
             VStack(spacing: 0) {
                 if let projectAction {
-                    DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
+                    DelayedProgress(projectAction).padding(tokens.spacing.s)
                 }
                 if checkingWorkspaces.contains(where: { workspaceActions[$0] == nil }) {
-                    DelayedProgress("Checking workspace…").padding(DesignTokens.Spacing.s)
+                    DelayedProgress("Checking workspace…").padding(tokens.spacing.s)
                 }
                 ForEach(WorkspaceAction.allCases.filter { workspaceActions.values.contains($0) }) { action in
-                    DelayedProgress(action.progress).padding(DesignTokens.Spacing.s)
+                    DelayedProgress(action.progress).padding(tokens.spacing.s)
                 }
                 if !model.closing.isEmpty {
-                    DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
+                    DelayedProgress("Closing chat…").padding(tokens.spacing.s)
                 }
                 if let document {
-                    HStack(spacing: DesignTokens.Spacing.l) {
+                    HStack(spacing: tokens.spacing.l) {
                         Button("Chat") { documentVisible = false }
                             .foregroundStyle(documentVisible ? Color.secondary : Color.primary)
                         Button(document.title) { documentVisible = true }
@@ -875,7 +876,7 @@ private struct SessionsWindow: View {
                         Button { closeDocument() } label: { Image(systemName: "xmark") }
                             .accessibilityLabel("Close file preview")
                         Spacer()
-                    }.buttonStyle(.plain).padding(DesignTokens.Spacing.m)
+                    }.buttonStyle(.plain).padding(tokens.spacing.m)
                     Divider()
                 }
                 ZStack {
@@ -1231,7 +1232,7 @@ private struct SessionsWindow: View {
 
     @ViewBuilder private var workspaceLanding: some View {
         if let workspace = model.selectedWorkspace {
-            VStack(spacing: DesignTokens.Spacing.l) {
+            VStack(spacing: tokens.spacing.l) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
                 NewChatProfileMenu(
@@ -1689,12 +1690,12 @@ private struct SessionsWindow: View {
 
     /// ⌘N's fallback lists the projects; ⇧⌘N's sheet has only the two project buttons.
     private func createSheetView(_ sheet: CreateSheet) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text(sheet == .pickProject ? "New workspace" : "Add project").font(.title2)
             if sheet == .pickProject {
                 Text("Choose a project").foregroundStyle(.secondary)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.m) {
                         ForEach(model.tree.projects) { project in
                             Button(project.name) {
                                 createAction = { newWorkspace(in: project) }
@@ -1716,7 +1717,7 @@ private struct SessionsWindow: View {
                     .keyboardShortcut(.cancelAction)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
     }
 
@@ -1961,7 +1962,7 @@ private struct SessionsWindow: View {
     }
 
     private var renameWorkspaceSheet: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text(renameTarget?.heading ?? "Rename").font(.title2)
             TextField("Name", text: $renameName)
                 .textFieldStyle(.roundedBorder)
@@ -1993,7 +1994,7 @@ private struct SessionsWindow: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.narrowSheet)
     }
 
@@ -2321,7 +2322,8 @@ private final class WindowFrameView: NSView {
         guard let window, window.frameAutosaveName != frameName else { return }
         window.setFrameAutosaveName(frameName)
         if !window.setFrameUsingName(frameName) {
-            window.setFrame(window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame, display: true)
+            let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
+            window.setFrame(FirstWindowFrame.frame(visibleFrame: visible), display: true)
         }
         let notifications = NotificationCenter.default
         notifications.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didEndLiveResizeNotification, object: window)
@@ -2352,19 +2354,16 @@ struct SwarmApp: App {
     }
     init() {
         SwarmPerformance.event("AppStarted")
-        // Screenshot aid: SWARM_APPEARANCE=dark or light fixes this app's appearance only.
-        switch ProcessInfo.processInfo.environment["SWARM_APPEARANCE"] {
-        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
-        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
-        default: break
-        }
     }
 
     var body: some Scene {
         // A fixed id: without one, SwiftUI names the scene by a type address that changes with
         // each build, so a new build restores no window and opens none.
         WindowGroup(id: "sessions") {
-            if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow(model: model) }
+            Group {
+                if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow(model: model) }
+            }
+            .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .environment(settings)
             .environment(\.splitDiff, splitDiff)
@@ -2373,13 +2372,17 @@ struct SwarmApp: App {
                 AppKeyCommands()
             }
         WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
-            if let sessionID { ChatWindow(sessionID: sessionID, model: model) }
+            if let sessionID {
+                ChatWindow(sessionID: sessionID, model: model)
+                    .modifier(AppearancePreferences(prefs: settings.prefs))
+            }
         }
             .environment(settings)
             .environment(\.splitDiff, splitDiff)
             .commandsRemoved()
         Settings {
             SettingsWindow().environment(settings).environment(\.splitDiff, splitDiff)
+                .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)
     }

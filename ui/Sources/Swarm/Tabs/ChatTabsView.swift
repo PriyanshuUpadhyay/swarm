@@ -23,6 +23,7 @@ struct ChatTabActions {
 /// The workspace's chats as tabs: status glyph, title, and provider badge. A tab fits its title
 /// between 120 and 220 pt.
 struct ChatTabsView: View {
+    @Environment(\.designTokens) private var tokens
     let workspaceTitle: String?
     let tabs: [ChatTab]
     let selectedID: String
@@ -41,20 +42,20 @@ struct ChatTabsView: View {
         let groups = runs.compactMap(\.group)
         let pending = Set(tabs.filter { $0.pending != nil }.map(\.id))
         let targets = TabStrip(open: tabs.map(\.id), groups: groups).stepTargets(excluding: pending)
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             if let workspaceTitle {
                 Text(workspaceTitle)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: DesignTokens.Size.tabMaxWidth, alignment: .leading)
-                    .padding(.leading, DesignTokens.Spacing.m)
+                    .padding(.leading, tokens.spacing.m)
             }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         ForEach(runs) { run in
-                            HStack(spacing: DesignTokens.Spacing.xs) {
+                            HStack(spacing: tokens.spacing.xs) {
                                 if let group = run.group { groupChip(group, tabs: run.tabs) }
                                 if run.group?.folded != true {
                                     ForEach(run.tabs) { tab in
@@ -101,9 +102,9 @@ struct ChatTabsView: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .help("New chat in this workspace")
-                .padding(.trailing, DesignTokens.Spacing.m)
+                .padding(.trailing, tokens.spacing.m)
         }
-        .padding(.vertical, DesignTokens.Spacing.xs)
+        .padding(.vertical, tokens.spacing.xs)
         .sheet(item: $groupEditor) { target in
             TabGroupEditor(target: target) { name, color in
                 if let group = target.group {
@@ -121,7 +122,7 @@ struct ChatTabsView: View {
         Button {
             _ = actions.group(.fold(group.id, !group.folded))
         } label: {
-            HStack(spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: tokens.spacing.xs) {
                 Image(systemName: "circle.fill").font(.caption2).foregroundStyle(group.color.tint)
                     .accessibilityHidden(true)
                 Text(group.name).lineLimit(1).truncationMode(.tail)
@@ -130,7 +131,7 @@ struct ChatTabsView: View {
                 if group.folded { Text("\(tabs.count)") }
                 Image(systemName: group.folded ? "chevron.right" : "chevron.down").font(.caption2)
             }
-            .padding(DesignTokens.Spacing.s)
+            .padding(tokens.spacing.s)
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
@@ -178,6 +179,7 @@ struct ChatTabsView: View {
 }
 
 private struct ChatTabView: View {
+    @Environment(\.designTokens) private var tokens
     let tab: ChatTab
     let selected: Bool
     let actions: ChatTabActions
@@ -190,7 +192,7 @@ private struct ChatTabView: View {
     var body: some View {
         HStack(spacing: 0) {
             Button { actions.select(tab.id) } label: {
-                HStack(spacing: DesignTokens.Spacing.xs) {
+                HStack(spacing: tokens.spacing.xs) {
                     switch tab.pending {
                     case .starting:
                         ProgressView().controlSize(.mini).accessibilityLabel("Starting")
@@ -214,8 +216,8 @@ private struct ChatTabView: View {
                         }
                     }
                 }
-                .padding(.leading, DesignTokens.Spacing.s)
-                .padding(.vertical, DesignTokens.Spacing.s)
+                .padding(.leading, tokens.spacing.s)
+                .padding(.vertical, tokens.spacing.s)
                 .contentShape(Rectangle())
             }
             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -225,7 +227,7 @@ private struct ChatTabView: View {
                     Text(children.text)
                         .font(.caption)
                         .foregroundStyle(children.waiting > 0 ? .orange : .secondary)
-                        .padding(.horizontal, DesignTokens.Spacing.xs)
+                        .padding(.horizontal, tokens.spacing.xs)
                         .fixedSize()
                 }
                 .help(children.waiting > 0 ? "Show first waiting child" : "Show chat")
@@ -237,7 +239,7 @@ private struct ChatTabView: View {
                     Image(systemName: "xmark")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .padding(DesignTokens.Spacing.s)
+                        .padding(tokens.spacing.s)
                         .contentShape(Rectangle())
                         .fixedSize()
                 }
@@ -321,6 +323,7 @@ private struct TabGroupEditorTarget: Identifiable {
 }
 
 private struct TabGroupEditor: View {
+    @Environment(\.designTokens) private var tokens
     let target: TabGroupEditorTarget
     let save: (String, TabGroupColor) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -335,7 +338,7 @@ private struct TabGroupEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text(target.group == nil ? "New group" : "Rename group").font(.title2)
             TextField("Name", text: $name).textFieldStyle(.roundedBorder)
             Picker("Color", selection: $color) {
@@ -351,7 +354,7 @@ private struct TabGroupEditor: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(DesignTokens.Spacing.l)
+        .padding(tokens.spacing.l)
         .frame(minWidth: DesignTokens.Size.tabMaxWidth)
     }
 }

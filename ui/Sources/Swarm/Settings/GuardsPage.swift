@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct GuardsPage: View {
+    @Environment(\.designTokens) private var tokens
     let load: () -> Result<GuardRules, GuardListError>
     let save: (inout GuardRulesEditor) throws -> Void
     let onError: (String?) -> Void
@@ -10,7 +11,7 @@ struct GuardsPage: View {
 
     var body: some View {
         GroupBox("Guards") {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 HStack {
                     Button("Add") {
                         editor.add()
@@ -30,7 +31,7 @@ struct GuardsPage: View {
                     Text("No guard rules").foregroundStyle(.secondary)
                 }
                 ForEach(editor.drafts.indices, id: \.self) { index in
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.s) {
                         HStack {
                             Text(editor.drafts[index].name).font(.headline)
                             Spacer()
@@ -59,7 +60,7 @@ struct GuardsPage: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(DesignTokens.Spacing.s)
+            .padding(tokens.spacing.s)
         }
         .task { reload() }
     }
@@ -74,10 +75,11 @@ struct GuardsPage: View {
 }
 
 private struct GuardFields: View {
+    @Environment(\.designTokens) private var tokens
     @Binding var fields: GuardRuleFields
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             TextField("Name", text: $fields.name)
             TextField("Event", text: $fields.event)
             Toggle("All tools", isOn: Binding(

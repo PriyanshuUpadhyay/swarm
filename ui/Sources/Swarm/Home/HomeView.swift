@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct HomeView: View {
+    @Environment(\.designTokens) private var tokens
     let recentWork: [RecentWorkRow]
     let firstRunSteps: [FirstRunStep]
     let sessionsError: String?
@@ -14,7 +15,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xl) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xl) {
                 HStack {
                     Button("Import Project…", action: onOpenProject)
                     Button("Create Project…", action: onCreateProject)
@@ -24,10 +25,10 @@ struct HomeView: View {
                         .textSelection(.enabled)
                 }
                 if !firstRunSteps.isEmpty {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.m) {
                         Text("Get started").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                         ForEach(firstRunSteps) { step in
-                            HStack(spacing: DesignTokens.Spacing.m) {
+                            HStack(spacing: tokens.spacing.m) {
                                 Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(step.done ? .green : .secondary)
                                     .accessibilityLabel(step.done ? "Done" : "To do")
@@ -36,24 +37,24 @@ struct HomeView: View {
                         }
                     }
                 }
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                VStack(alignment: .leading, spacing: tokens.spacing.m) {
                     Text("Recent work").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                     if recentWork.isEmpty {
                         Text("Your recent chats appear here.").foregroundStyle(.secondary)
                     } else {
                         ForEach(recentWork) { row in
                             Button { onSelectChat(row.id.rawValue) } label: {
-                                HStack(spacing: DesignTokens.Spacing.m) {
+                                HStack(spacing: tokens.spacing.m) {
                                     stateGlyph(row)
                                         .frame(width: DesignTokens.Size.glyphSlot)
-                                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                                    VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                                         Text(row.title).fontWeight(.medium).lineLimit(1)
                                         Text(row.workspace).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Spacer()
                                     Text(row.age).font(.caption).foregroundStyle(.secondary)
                                 }
-                                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: tokens.row, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -64,7 +65,7 @@ struct HomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(DesignTokens.Spacing.xl)
+            .padding(tokens.spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

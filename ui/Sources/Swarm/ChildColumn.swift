@@ -106,6 +106,7 @@ final class ChildColumnModel {
 
 /// A child agent's column: its chat as rows, its question when it waits, and a composer.
 struct ChildColumnView: View {
+    @Environment(\.designTokens) private var tokens
     let session: SwarmSession
     let agent: SwarmAgent
     let model: ChildColumnModel
@@ -134,7 +135,7 @@ struct ChildColumnView: View {
             onTap: onFocused,
             focus: $transcriptFocused
         ) {
-            VStack(spacing: DesignTokens.Spacing.s) {
+            VStack(spacing: tokens.spacing.s) {
                 if let readOnlyReason {
                     Text(verbatim: readOnlyReason).font(.caption).foregroundStyle(.secondary)
                 } else if let prompt = agent.prompt {

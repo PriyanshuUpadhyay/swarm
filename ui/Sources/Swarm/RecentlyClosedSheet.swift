@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct RecentlyClosedSheet: View {
+    @Environment(\.designTokens) private var tokens
     let chats: [RecentlyClosedChat]
     let notice: String?
     let loading: Bool
@@ -11,7 +12,7 @@ struct RecentlyClosedSheet: View {
     @State private var restoring = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text("Recently closed").font(.title2)
             if loading {
                 ProgressView("Loading closed chats…")
@@ -23,7 +24,7 @@ struct RecentlyClosedSheet: View {
                         selection = row.id
                         restoreSelected()
                     } label: {
-                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                             Text(row.title).lineLimit(1)
                             Text("\(row.workspace) · \(row.age)").font(.caption).foregroundStyle(.secondary)
                         }
@@ -44,7 +45,7 @@ struct RecentlyClosedSheet: View {
                     .disabled(loading || selection == nil || restoring)
             }
         }
-        .padding(DesignTokens.Spacing.l)
+        .padding(tokens.spacing.l)
         .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
         .onChange(of: chats.map(\.id), initial: true) {
             if !chats.contains(where: { $0.id == selection }) { selection = chats.first?.id }

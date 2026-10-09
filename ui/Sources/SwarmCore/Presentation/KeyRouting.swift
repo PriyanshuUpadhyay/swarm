@@ -87,7 +87,7 @@ public enum AppKey: Sendable, Hashable {
         (.moveFocus(.right), KeyChord(.right, [.option, .command])),
         (.moveFocus(.up), KeyChord(.up, [.option, .command])),
         (.moveFocus(.down), KeyChord(.down, [.option, .command])),
-        (.zoom, KeyChord(.returnKey, .command)),
+        (.zoom, KeyChord(.returnKey, [.shift, .command])),
         (.focusComposer, KeyChord("l", .command)),
         (.toggleSidebar, KeyChord("b", .command)),
         (.moveSidebar, KeyChord("b", [.command, .shift])),

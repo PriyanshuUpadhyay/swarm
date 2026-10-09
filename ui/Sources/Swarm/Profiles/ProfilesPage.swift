@@ -5,6 +5,7 @@ import SwarmCore
 /// A row shows its runners, health and actions. The list shows at once
 /// from the config; the chip marks and health fill in when the slower launch check returns.
 struct ProfilesPage: View {
+    @Environment(\.designTokens) private var tokens
     let cachedProfiles: () async -> SwarmProfileList?
     let loadProfiles: () async throws -> SwarmProfileList
     let loadProviders: () async throws -> [SwarmProvider]
@@ -79,7 +80,7 @@ struct ProfilesPage: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             header
             actionControls
             if let imported = list?.imported, imported.from != dismissedImport {
@@ -104,7 +105,7 @@ struct ProfilesPage: View {
                 }
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
             if list == nil { list = await cachedProfiles() }
@@ -135,7 +136,7 @@ struct ProfilesPage: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             HStack {
                 Text("Agent profiles").font(.largeTitle.bold())
                 Spacer()
@@ -169,7 +170,7 @@ struct ProfilesPage: View {
     }
 
     private var actionControls: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack {
                 Button("New…") { startNameAction(.new) }
                 Button("Reset to bundled") {
@@ -178,7 +179,7 @@ struct ProfilesPage: View {
                 }
             }
             if let nameAction {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                     HStack {
                         TextField(nameAction.title, text: $profileName)
                             .textFieldStyle(.roundedBorder)
@@ -193,7 +194,7 @@ struct ProfilesPage: View {
                 }
             }
             if let confirmation {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                     switch confirmation {
                     case .delete(let name): Text("Delete profile '\(name)'?")
                     case .reset:
@@ -205,7 +206,7 @@ struct ProfilesPage: View {
                     }
                 }
             }
-            HStack(spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: tokens.spacing.xs) {
                 Text("Skip a runner when its usage left is below")
                 TextField("Usage left", text: $usagePct, onEditingChanged: { editing in
                     if !editing { commitUsage() }
@@ -280,7 +281,7 @@ struct ProfilesPage: View {
             Button {
                 withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(name) }
             } label: {
-                HStack(spacing: DesignTokens.Spacing.xs) {
+                HStack(spacing: tokens.spacing.xs) {
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isOpen ? 90 : 0))
                         .frame(width: DesignTokens.Size.glyphSlot)
@@ -288,7 +289,7 @@ struct ProfilesPage: View {
                     Text("\(rows.count)").font(.caption).foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: tokens.row, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -341,9 +342,9 @@ struct ProfilesPage: View {
     }
 
     private func importNotice(_ imported: SwarmProfileImport) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+        HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
             Image(systemName: "info.circle").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                 Text("Imported \(list?.profiles.count ?? 0) profiles from \(imported.from). The old file is not changed.")
                     .foregroundStyle(.secondary)
                 if !imported.unmapped.isEmpty {
@@ -422,6 +423,7 @@ struct ProfilesPage: View {
 }
 
 private struct ProfileRow: View {
+    @Environment(\.designTokens) private var tokens
     let profile: SwarmProfile
     let check: SwarmProfileCheck?
     let status: ProfileStatus?
@@ -434,7 +436,7 @@ private struct ProfileRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             row
             HStack {
                 Spacer()
@@ -445,7 +447,7 @@ private struct ProfileRow: View {
             .buttonStyle(.borderless)
             .controlSize(.small)
         }
-        .padding(DesignTokens.Spacing.s)
+        .padding(tokens.spacing.s)
         .background(status?.fill ?? .clear)
         .background(isHovered ? DesignTokens.selectionFill : .clear)
         .onHover { isHovered = $0 }
@@ -455,7 +457,7 @@ private struct ProfileRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: DesignTokens.Spacing.m) {
+        HStack(spacing: tokens.spacing.m) {
             Text(profile.name)
                 .fontWeight(.medium)
                 .lineLimit(1)
@@ -471,8 +473,8 @@ private struct ProfileRow: View {
             ProfileHealthPill(status: status)
                 .frame(width: DesignTokens.Size.healthPill, alignment: .leading)
         }
-        .padding(.horizontal, DesignTokens.Spacing.s)
-        .frame(minHeight: DesignTokens.Size.row + DesignTokens.Spacing.xs)
+        .padding(.horizontal, tokens.spacing.s)
+        .frame(minHeight: tokens.row + tokens.spacing.xs)
         .contentShape(Rectangle())
         .onTapGesture { onEdit(nil) }
     }

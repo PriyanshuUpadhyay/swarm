@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct NewWorkspaceSheet: View {
+    @Environment(\.designTokens) private var tokens
     let projectName: String
     let projectPath: String
     let seedFolder: String
@@ -59,10 +60,10 @@ struct NewWorkspaceSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text("New workspace in \(projectName)").font(.title2)
             Text(verbatim: projectPath).foregroundStyle(.secondary).lineLimit(2)
-            Grid(alignment: .leading, horizontalSpacing: DesignTokens.Spacing.m, verticalSpacing: DesignTokens.Spacing.m) {
+            Grid(alignment: .leading, horizontalSpacing: tokens.spacing.m, verticalSpacing: tokens.spacing.m) {
                 GridRow {
                     Text("Name")
                     TextField("Workspace name", text: $name)
@@ -74,15 +75,15 @@ struct NewWorkspaceSheet: View {
                 }
                 GridRow {
                     Text("Branch")
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Text(verbatim: NewWorkspaceForm.preview(request) ?? "—")
-                            .font(DesignTokens.mono).textSelection(.enabled).lineLimit(2)
+                            .font(tokens.mono).textSelection(.enabled).lineLimit(2)
                     }
                 }
             }
             .disabled(isCreating)
             DisclosureGroup("Project defaults") {
-                Grid(alignment: .leading, horizontalSpacing: DesignTokens.Spacing.m, verticalSpacing: DesignTokens.Spacing.m) {
+                Grid(alignment: .leading, horizontalSpacing: tokens.spacing.m, verticalSpacing: tokens.spacing.m) {
                     GridRow {
                         Text("Worktree folder")
                         TextField("Worktree folder", text: $worktreeFolder)
@@ -92,7 +93,7 @@ struct NewWorkspaceSheet: View {
                         TextField("Branch prefix", text: $branchPrefix)
                     }
                 }
-                .padding(.top, DesignTokens.Spacing.s)
+                .padding(.top, tokens.spacing.s)
             }
             .disabled(isCreating)
             if let error {
@@ -112,7 +113,7 @@ struct NewWorkspaceSheet: View {
                     .disabled(!canCreate)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.sheet)
         .interactiveDismissDisabled(isCreating)
         .task { await reloadReferences() }
@@ -138,8 +139,8 @@ struct NewWorkspaceSheet: View {
 
     @ViewBuilder private var startFields: some View {
         if let references {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
-                HStack(spacing: DesignTokens.Spacing.s) {
+            VStack(alignment: .leading, spacing: tokens.spacing.s) {
+                HStack(spacing: tokens.spacing.s) {
                     modeButton("New branch on", mode: .newBranch)
                     if references.defaultBranch != nil {
                         Picker("Base branch", selection: $base) {
@@ -153,7 +154,7 @@ struct NewWorkspaceSheet: View {
                     Text("The first workspace starts an orphan branch (no commit yet)")
                         .font(.callout).foregroundStyle(.secondary)
                 } else {
-                    HStack(spacing: DesignTokens.Spacing.s) {
+                    HStack(spacing: tokens.spacing.s) {
                         modeButton("Existing branch", mode: .existingBranch)
                             .disabled(references.availableBranches.isEmpty)
                         Picker("Existing branch", selection: $existingBranch) {
@@ -166,7 +167,7 @@ struct NewWorkspaceSheet: View {
                         Text("Every branch is already checked out in a worktree.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
-                    HStack(spacing: DesignTokens.Spacing.s) {
+                    HStack(spacing: tokens.spacing.s) {
                         modeButton("Pull request", mode: .pullRequest)
                         Text("#")
                         TextField("42", text: $pullRequest)
@@ -182,7 +183,7 @@ struct NewWorkspaceSheet: View {
 
     private func modeButton(_ title: String, mode choice: StartMode) -> some View {
         Button { mode = choice } label: {
-            HStack(spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: tokens.spacing.xs) {
                 Image(systemName: mode == choice ? "largecircle.fill.circle" : "circle")
                 Text(title)
             }

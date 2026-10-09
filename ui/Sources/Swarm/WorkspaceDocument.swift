@@ -10,6 +10,7 @@ struct WorkspaceDocument: Identifiable {
 }
 
 struct WorkspaceDocumentView: View {
+    @Environment(\.designTokens) private var tokens
     let document: WorkspaceDocument
     @Environment(\.splitDiff) private var split
     @State private var text: String?
@@ -20,7 +21,7 @@ struct WorkspaceDocumentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                     Text(verbatim: document.title).font(.headline).lineLimit(1).truncationMode(.middle)
                     Text(verbatim: document.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
@@ -32,7 +33,7 @@ struct WorkspaceDocumentView: View {
                     }.pickerStyle(.segmented).labelsHidden().frame(width: DesignTokens.Size.segmentedPicker)
                         .onChange(of: split.wrappedValue) { _, _ in rendered = false; renderError = nil }
                 }
-            }.padding(DesignTokens.Spacing.m)
+            }.padding(tokens.spacing.m)
             Divider()
             if let error {
                 Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled).padding()
