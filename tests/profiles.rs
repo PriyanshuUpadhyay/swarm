@@ -64,6 +64,58 @@ fn profiles_file(home: &Path) -> PathBuf {
 }
 
 #[test]
+fn profile_actions_dispatch_with_revisions_and_store_the_returned_revision() {
+    let home = scratch("actions");
+    let initial = json(&swarm(&home, &[], &["roles", "--json"]));
+    let mut revision = initial["revision"].as_str().unwrap().to_owned();
+    for arguments in [
+        vec!["new", "custom"],
+        vec!["rename", "custom", "renamed"],
+        vec!["copy", "renamed", "copied"],
+        vec!["delete", "renamed"],
+        vec!["set-min-usage", "41"],
+        vec!["reset"],
+    ] {
+        let mut command = vec!["roles"];
+        command.extend(arguments);
+        command.extend(["--revision", revision.as_str()]);
+        let saved = json(&swarm(&home, &[], &command));
+        let listing = json(&swarm(&home, &[], &["roles", "--json"]));
+        assert_eq!(saved["revision"], listing["revision"]);
+        assert_ne!(saved["revision"], revision);
+        revision = saved["revision"].as_str().unwrap().to_owned();
+    }
+    let reset = json(&swarm(&home, &[], &["roles", "--json"]));
+    assert_eq!(reset["profiles"], initial["profiles"]);
+    assert_eq!(reset["min_usage_left_pct"], 41);
+    let stale = swarm(
+        &home,
+        &[],
+        &[
+            "roles",
+            "new",
+            "stale",
+            "--revision",
+            initial["revision"].as_str().unwrap(),
+        ],
+    );
+    assert!(!stale.status.success());
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("reload and try again"));
+    for pct in ["-1", "101", "not-a-number"] {
+        let refused = swarm(
+            &home,
+            &[],
+            &["roles", "set-min-usage", pct, "--revision", &revision],
+        );
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("0 to 100"));
+    }
+    let missing_revision = swarm(&home, &[], &["roles", "new", "unsaved"]);
+    assert!(!missing_revision.status.success());
+    assert_eq!(json(&swarm(&home, &[], &["roles", "--json"])), reset);
+}
+
+#[test]
 fn the_first_read_imports_the_old_config_once_and_never_writes_it() {
     let home = scratch("import");
     let old = old_config(&home, OLD_CONFIG);

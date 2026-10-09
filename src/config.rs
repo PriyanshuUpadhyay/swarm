@@ -516,21 +516,105 @@ pub fn listing() -> Result<Listing, String> {
 /// Replaces one profile by name when the file still has `expected` as its revision, and returns
 /// the new revision.
 pub fn save(profile: Profile, expected: &str) -> Result<String, String> {
-    let (mut config, bytes) = load()?;
-    if revision(&bytes) != expected {
+    update(expected, |config| {
+        let slot = config
+            .profiles
+            .iter_mut()
+            .find(|slot| slot.name == profile.name)
+            .ok_or_else(|| format!("profile '{}' is not defined", profile.name))?;
+        *slot = profile;
+        Ok(())
+    })
+}
+
+pub enum ProfileAction<'a> {
+    New(&'a str),
+    Rename(&'a str, &'a str),
+    Copy(&'a str, &'a str),
+    Delete(&'a str),
+    Reset,
+    SetMinUsage(i64),
+}
+
+pub fn profile_action(action: ProfileAction<'_>, expected: &str) -> Result<String, String> {
+    update(expected, |config| apply_action(config, action))
+}
+
+fn apply_action(config: &mut Config, action: ProfileAction<'_>) -> Result<(), String> {
+    let unused_name = |name: &str| {
+        if config.profiles.iter().any(|profile| profile.name == name) {
+            Err(format!("profile '{name}' already exists"))
+        } else {
+            Ok(())
+        }
+    };
+    match action {
+        ProfileAction::New(name) => {
+            unused_name(name)?;
+            let runner = config.profile("chat")?.runners[0].clone();
+            config.profiles.push(Profile {
+                name: name.into(),
+                runners: vec![runner],
+            });
+        }
+        ProfileAction::Rename(from, to) => {
+            config.profile(from)?;
+            unused_name(to)?;
+            let profile = config
+                .profiles
+                .iter_mut()
+                .find(|profile| profile.name == from)
+                .unwrap();
+            profile.name = to.into();
+        }
+        ProfileAction::Copy(from, to) => {
+            let mut profile = config.profile(from)?.clone();
+            unused_name(to)?;
+            profile.name = to.into();
+            config.profiles.push(profile);
+        }
+        ProfileAction::Delete(name) => {
+            config.profile(name)?;
+            if name == "chat" {
+                return Err("the chat profile cannot be deleted".into());
+            }
+            config.profiles.retain(|profile| profile.name != name);
+        }
+        ProfileAction::Reset => config.profiles = parse(DEFAULT)?.profiles,
+        ProfileAction::SetMinUsage(pct) => {
+            config.min_usage_left_pct = u8::try_from(pct)
+                .ok()
+                .filter(|pct| *pct <= 100)
+                .ok_or("min_usage_left_pct must be 0 to 100.")?;
+        }
+    }
+    Ok(())
+}
+
+fn update(
+    expected: &str,
+    change: impl FnOnce(&mut Config) -> Result<(), String>,
+) -> Result<String, String> {
+    let (config, bytes) = load()?;
+    update_at(&path()?, config, &bytes, expected, change)
+}
+
+fn update_at(
+    path: &Path,
+    mut config: Config,
+    bytes: &[u8],
+    expected: &str,
+    change: impl FnOnce(&mut Config) -> Result<(), String>,
+) -> Result<String, String> {
+    if revision(bytes) != expected {
         return Err("profiles changed on disk; reload and try again".into());
     }
-    let slot = config
-        .profiles
-        .iter_mut()
-        .find(|slot| slot.name == profile.name)
-        .ok_or_else(|| format!("profile '{}' is not defined", profile.name))?;
-    *slot = profile;
+    change(&mut config)?;
     let errors = validate(&config);
     if !errors.is_empty() {
         return Err(errors.join("\n"));
     }
-    write(&path()?, &config).map(|bytes| revision(&bytes))
+    write(path, &config).map(|bytes| revision(&bytes))
 }
 
 /// Writes `config`: a timestamped backup beside an existing file, then an atomic rename onto the
@@ -590,6 +674,224 @@ mod tests {
         Profile {
             name: "chat".into(),
             runners: vec![runner(Provider::Claude, "opus")],
+        }
+    }
+
+    struct ActionFixture {
+        path: PathBuf,
+        config: Config,
+        bytes: Vec<u8>,
+    }
+
+    impl ActionFixture {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "swarm-profile-action-{name}-{}.json",
+                std::process::id()
+            ));
+            let config = built_in();
+            let bytes = write(&path, &config).unwrap();
+            Self {
+                path,
+                config,
+                bytes,
+            }
+        }
+
+        fn apply(
+            &mut self,
+            action: ProfileAction<'_>,
+            expected: Option<&str>,
+        ) -> Result<String, String> {
+            let expected = expected
+                .map(str::to_owned)
+                .unwrap_or_else(|| revision(&self.bytes));
+            let result = update_at(
+                &self.path,
+                self.config.clone(),
+                &self.bytes,
+                &expected,
+                |config| apply_action(config, action),
+            );
+            let stored = std::fs::read(&self.path).unwrap();
+            if let Ok(saved) = &result {
+                assert_eq!(*saved, revision(&stored));
+                self.config = parse(std::str::from_utf8(&stored).unwrap()).unwrap();
+                self.bytes = stored;
+            } else {
+                assert_eq!(
+                    stored, self.bytes,
+                    "a refused action must leave the file unchanged"
+                );
+            }
+            result
+        }
+    }
+
+    impl Drop for ActionFixture {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.path).unwrap();
+        }
+    }
+
+    #[test]
+    fn new_copies_only_the_first_chat_runner_and_rejects_existing_or_invalid_names() {
+        let mut fixture = ActionFixture::new("new");
+        let primary = fixture.config.profile("chat").unwrap().runners[0].clone();
+        fixture.apply(ProfileAction::New("custom"), None).unwrap();
+        assert_eq!(
+            fixture.config.profile("custom").unwrap().runners,
+            vec![primary]
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::New("custom"), None)
+                .unwrap_err()
+                .contains("already exists")
+        );
+        for invalid in ["", "two words", "path/name", "Uppercase"] {
+            assert!(fixture.apply(ProfileAction::New(invalid), None).is_err());
+        }
+    }
+
+    #[test]
+    fn rename_keeps_runners_and_order_and_rejects_missing_or_taken_names() {
+        let mut fixture = ActionFixture::new("rename");
+        let original = fixture.config.profiles[1].clone();
+        fixture
+            .apply(ProfileAction::Rename(&original.name, "renamed"), None)
+            .unwrap();
+        assert_eq!(fixture.config.profiles[1].name, "renamed");
+        assert_eq!(fixture.config.profiles[1].runners, original.runners);
+        assert!(fixture.config.profile(&original.name).is_err());
+        assert!(
+            fixture
+                .apply(ProfileAction::Rename("missing", "other"), None)
+                .unwrap_err()
+                .contains("not defined")
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Rename("renamed", "chat"), None)
+                .unwrap_err()
+                .contains("already exists")
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Rename("renamed", "path/name"), None)
+                .is_err()
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Rename("chat", "other"), None)
+                .unwrap_err()
+                .contains("first profile")
+        );
+    }
+
+    #[test]
+    fn copy_keeps_every_runner_and_rejects_missing_taken_or_invalid_names() {
+        let mut fixture = ActionFixture::new("copy");
+        let original = fixture.config.profile("chat").unwrap().clone();
+        fixture
+            .apply(ProfileAction::Copy("chat", "copied"), None)
+            .unwrap();
+        assert_eq!(
+            fixture.config.profile("copied").unwrap().runners,
+            original.runners
+        );
+        assert_eq!(fixture.config.profile("chat").unwrap(), &original);
+        assert!(
+            fixture
+                .apply(ProfileAction::Copy("missing", "other"), None)
+                .unwrap_err()
+                .contains("not defined")
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Copy("chat", "copied"), None)
+                .unwrap_err()
+                .contains("already exists")
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Copy("chat", "two words"), None)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn delete_removes_one_profile_and_refuses_chat_and_missing_names() {
+        let mut fixture = ActionFixture::new("delete");
+        let removed = fixture.config.profiles[1].name.clone();
+        let count = fixture.config.profiles.len();
+        fixture
+            .apply(ProfileAction::Delete(&removed), None)
+            .unwrap();
+        assert!(fixture.config.profile(&removed).is_err());
+        assert_eq!(fixture.config.profiles.len(), count - 1);
+        assert!(
+            fixture
+                .apply(ProfileAction::Delete("chat"), None)
+                .unwrap_err()
+                .contains("cannot be deleted")
+        );
+        assert!(
+            fixture
+                .apply(ProfileAction::Delete("missing"), None)
+                .unwrap_err()
+                .contains("not defined")
+        );
+    }
+
+    #[test]
+    fn reset_replaces_all_profiles_with_bundled_and_keeps_min_usage() {
+        let mut fixture = ActionFixture::new("reset");
+        fixture.apply(ProfileAction::New("custom"), None).unwrap();
+        fixture.apply(ProfileAction::SetMinUsage(42), None).unwrap();
+        fixture.apply(ProfileAction::Reset, None).unwrap();
+        assert_eq!(fixture.config.profiles, built_in().profiles);
+        assert_eq!(fixture.config.min_usage_left_pct, 42);
+    }
+
+    #[test]
+    fn min_usage_accepts_zero_to_100_and_refuses_values_outside_it() {
+        let mut fixture = ActionFixture::new("min-usage");
+        for pct in [0, 37, 100] {
+            let profiles = fixture.config.profiles.clone();
+            fixture
+                .apply(ProfileAction::SetMinUsage(pct), None)
+                .unwrap();
+            assert_eq!(i64::from(fixture.config.min_usage_left_pct), pct);
+            assert_eq!(fixture.config.profiles, profiles);
+        }
+        for pct in [-1, 101, 256, i64::MAX] {
+            assert!(
+                fixture
+                    .apply(ProfileAction::SetMinUsage(pct), None)
+                    .unwrap_err()
+                    .contains("0 to 100")
+            );
+        }
+    }
+
+    #[test]
+    fn every_action_refuses_a_stale_revision_before_changing_the_file() {
+        let mut fixture = ActionFixture::new("stale");
+        let stale = revision(&fixture.bytes);
+        fixture.apply(ProfileAction::New("custom"), None).unwrap();
+        for action in [
+            ProfileAction::New("other"),
+            ProfileAction::Rename("custom", "other"),
+            ProfileAction::Copy("custom", "other"),
+            ProfileAction::Delete("custom"),
+            ProfileAction::Reset,
+            ProfileAction::SetMinUsage(50),
+        ] {
+            assert_eq!(
+                fixture.apply(action, Some(&stale)).unwrap_err(),
+                "profiles changed on disk; reload and try again"
+            );
         }
     }
 
