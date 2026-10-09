@@ -8,6 +8,39 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
+#[derive(Debug)]
+pub enum NativeReadError {
+    CliUnavailable,
+    Failed(String),
+}
+
+impl std::fmt::Display for NativeReadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CliUnavailable => formatter.write_str("provider CLI is unavailable"),
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl From<&str> for NativeReadError {
+    fn from(message: &str) -> Self {
+        Self::Failed(message.into())
+    }
+}
+
+impl From<String> for NativeReadError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+
+impl From<NativeReadError> for String {
+    fn from(error: NativeReadError) -> Self {
+        error.to_string()
+    }
+}
+
 fn resolved(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
@@ -110,14 +143,13 @@ fn load_inner(
                 })
                 .and_then(|result| {
                     let api_key = result["account"]["type"] == "apiKey";
-                    codex_identity(result).map(|(state, email)| (state, email, api_key))
+                    codex_identity(result)
+                        .map(|(state, email)| (state, email, api_key))
+                        .map_err(NativeReadError::from)
                 }),
             _ => claude_identity(&env, deadline).map(|(state, email)| (state, email, false)),
         };
-        if identity
-            .as_ref()
-            .is_err_and(|error| error == "provider CLI is unavailable")
-        {
+        if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
         }
         let (auth_state, email, api_key) =
@@ -174,7 +206,7 @@ pub fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), Stri
 fn claude_identity(
     env: &BTreeMap<String, String>,
     deadline: Instant,
-) -> Result<(AuthState, Option<String>), String> {
+) -> Result<(AuthState, Option<String>), NativeReadError> {
     let executable = std::env::var("SWARM_CLAUDE_CMD").unwrap_or_else(|_| "claude".into());
     let value = read_json(&executable, &["auth", "status"], env, deadline)?;
     match value["loggedIn"].as_bool() {
@@ -195,7 +227,7 @@ pub fn read_json(
     args: &[&str],
     env: &BTreeMap<String, String>,
     deadline: Instant,
-) -> Result<Value, String> {
+) -> Result<Value, NativeReadError> {
     if Instant::now() >= deadline {
         return Err("provider read timed out".into());
     }
@@ -214,7 +246,7 @@ pub fn read_json(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|_| "provider CLI is unavailable")?;
+        .map_err(|_| NativeReadError::CliUnavailable)?;
     let stdout = child
         .stdout
         .take()
@@ -253,7 +285,10 @@ pub struct AppServer {
 }
 
 impl AppServer {
-    pub fn start(env: &BTreeMap<String, String>, deadline: Instant) -> Result<Self, String> {
+    pub fn start(
+        env: &BTreeMap<String, String>,
+        deadline: Instant,
+    ) -> Result<Self, NativeReadError> {
         if Instant::now() >= deadline {
             return Err("Codex read timed out".into());
         }
@@ -265,7 +300,7 @@ impl AppServer {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|_| "provider CLI is unavailable")?;
+            .map_err(|_| NativeReadError::CliUnavailable)?;
         let stdout = child.stdout.take().ok_or("Codex stdout is unavailable")?;
         let (sender, responses) = channel();
         std::thread::spawn(move || {
@@ -295,7 +330,7 @@ impl AppServer {
         Ok(server)
     }
 
-    fn send(&mut self, value: Value) -> Result<(), String> {
+    fn send(&mut self, value: Value) -> Result<(), NativeReadError> {
         let stdin = self
             .child
             .stdin
@@ -306,7 +341,12 @@ impl AppServer {
             .map_err(|_| "Codex request write failed".into())
     }
 
-    pub fn request(&mut self, id: u64, method: &str, params: Value) -> Result<Value, String> {
+    pub fn request(
+        &mut self,
+        id: u64,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, NativeReadError> {
         if Instant::now() >= self.deadline {
             return Err("Codex read timed out".into());
         }

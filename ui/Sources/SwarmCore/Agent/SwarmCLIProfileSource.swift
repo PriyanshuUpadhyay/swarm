@@ -85,7 +85,7 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
             arguments += ["--cwd", directory]
         }
         return try await read(
-            arguments + ["--json"], environment: ["SWARM_ADAPTER": "tmux-solo"],
+            arguments + ["--json"], environment: ["SWARM_ADAPTER": SwarmSessionInteraction.defaultAdapter],
             as: SwarmAccountLoginResult.self
         )
     }

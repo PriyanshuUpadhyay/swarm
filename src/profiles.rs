@@ -185,11 +185,7 @@ pub fn translate_usage(
             reset_time_seconds: None,
             state: state.into(),
             source: Some("yelo".into()),
-            reason: match state {
-                "failed" => Some("Claude usage read failed".into()),
-                "missing" => Some("No cached Claude usage".into()),
-                _ => None,
-            },
+            reason: None,
             as_of_seconds: row.as_of,
         };
         meters.push(crate::usage::normalize_meter(&meter, now));

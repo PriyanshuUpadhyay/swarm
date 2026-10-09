@@ -19,6 +19,7 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
 
     public init?(name: String, provider: String, environment: [String: String]) {
         guard let key = Self.environmentKey(for: provider) else { return nil }
+        // Chair decision 1709: default sets no override, so Claude uses its native store.
         if !(provider == "claude" && name == "default" && environment.isEmpty) {
             guard let value = environment[key], !value.isEmpty else { return nil }
         }

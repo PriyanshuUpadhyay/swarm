@@ -172,7 +172,7 @@ struct AccountContractTests {
         let login = try fixtureText("work-login")
         let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, environment in
             #expect(args.first == "accounts")
-            #expect(environment["SWARM_ADAPTER"] == "tmux-solo")
+            #expect(environment["SWARM_ADAPTER"] == SwarmSessionInteraction.defaultAdapter)
             return ShellResult(status: 0, stdout: login, stderr: "")
         }
         _ = try await source.openLogin(.init(provider: "codex", name: "work", revision: "opaque"))

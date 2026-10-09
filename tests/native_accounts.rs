@@ -198,3 +198,17 @@ esac"#,
     let unavailable = accounts(&home, "claude", &[]);
     assert_eq!(unavailable["state"], "unavailable");
 }
+
+#[test]
+fn missing_cli_has_a_typed_native_read_error() {
+    use swarm::profiles::native::{NativeReadError, read_json};
+    let error = read_json(
+        "/missing/provider-work",
+        &["auth", "status"],
+        &std::collections::BTreeMap::new(),
+        swarm::profiles::native::deadline(2),
+    )
+    .unwrap_err();
+    assert!(matches!(error, NativeReadError::CliUnavailable));
+    assert_eq!(error.to_string(), "provider CLI is unavailable");
+}

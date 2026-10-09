@@ -790,7 +790,9 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
     let root = swarm::paths::root_dir()?;
     let adapter = swarm::adapter::Adapter {
-        deadline: Some(swarm::profiles::native::deadline(20)),
+        deadline: Some(swarm::profiles::native::deadline(
+            LOGIN_ADAPTER_TIMEOUT_SECONDS,
+        )),
         ..swarm::adapter::load(&root, &adapter_name())
             .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
     };
@@ -3042,6 +3044,7 @@ fn all_agent_listings(
 const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
 // Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
 const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
 
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let account_deadline = swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS);
@@ -4035,6 +4038,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_adapter_returns_before_the_swift_process_limit() {
+        let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+        assert!(
+            deadline.duration_since(std::time::Instant::now())
+                <= std::time::Duration::from_secs(18)
+        );
+    }
 
     #[test]
     fn rering_finishes_after_the_session_deadline() {

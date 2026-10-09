@@ -8,6 +8,7 @@ use std::io::Write;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_AGE_SECONDS: i64 = 300;
+const REFRESH_FAILED_REASON: &str = "Usage refresh failed; old reading";
 
 #[derive(Serialize, Deserialize, Default)]
 struct Cache {
@@ -84,6 +85,7 @@ pub(crate) fn claude_snapshot(deadline: Instant) -> Result<Value, String> {
         &BTreeMap::new(),
         deadline,
     )
+    .map_err(String::from)
 }
 
 pub(crate) fn window_minutes(window: &str) -> Option<i64> {
@@ -95,6 +97,15 @@ pub(crate) fn window_minutes(window: &str) -> Option<i64> {
             })?;
     let number = number.parse::<i64>().ok().filter(|number| *number > 0)?;
     number.checked_mul(multiplier)
+}
+
+fn source_for(provider: &str, state: &str) -> Option<String> {
+    match (provider, state) {
+        (_, "no_source") => None,
+        ("codex", _) => Some("codex_app_server".into()),
+        ("claude", _) => Some("yelo".into()),
+        _ => None,
+    }
 }
 
 fn status_meter(
@@ -114,12 +125,7 @@ fn status_meter(
         used_pct: None,
         reset_time_seconds: None,
         state: state.into(),
-        source: match (provider, state) {
-            (_, "no_source") => None,
-            ("codex", _) => Some("codex_app_server".into()),
-            ("claude", _) => Some("yelo".into()),
-            _ => None,
-        },
+        source: source_for(provider, state),
         reason: Some(reason.into()),
         as_of_seconds: None,
     }
@@ -257,12 +263,7 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
 
 pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
     let mut meter = stored.clone();
-    meter.source = match (meter.provider.as_str(), meter.state.as_str()) {
-        (_, "no_source") => None,
-        ("codex", _) => Some("codex_app_server".into()),
-        ("claude", _) => Some("yelo".into()),
-        _ => None,
-    };
+    meter.source = source_for(&meter.provider, &meter.state);
     let invalid_value = stored
         .used_pct
         .is_some_and(|percent| !(0..=100).contains(&percent))
@@ -290,10 +291,7 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         );
         return meter;
     }
-    meter.reason = stored
-        .reason
-        .as_ref()
-        .map(|_| "Usage refresh failed; old reading".into());
+    meter.reason = stored.reason.as_ref().map(|_| REFRESH_FAILED_REASON.into());
     if meter
         .as_of_seconds
         .is_none_or(|time| time < 0 || time > now || now - time > MAX_AGE_SECONDS)
@@ -340,7 +338,7 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
                         .map(|meter| {
                             let mut meter = meter.clone();
                             meter.state = "stale".into();
-                            meter.reason = Some("Usage refresh failed; old reading".into());
+                            meter.reason = Some(REFRESH_FAILED_REASON.into());
                             meter
                         })
                         .collect();
