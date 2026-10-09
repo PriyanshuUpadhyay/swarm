@@ -13,6 +13,48 @@ final class SessionsTreeModel {
     private let ownerChoices = OwnerChoicesStore()
     private let projects: SwarmProjectStore
     private let navigationStore: WorkspaceNavigationStore
+    private var noticeSettings: SettingsSelection?
+    private var noticeCenter: NoticeCenter?
+    var noticeAction: ((SwarmSessionID) -> Void)?
+    private(set) var chatWindows: [SwarmSessionID: Int] = [:]
+
+    func startNotices(settings: SettingsSelection) {
+        guard noticeCenter == nil else { return }
+        noticeSettings = settings
+        noticeCenter = NoticeCenter { [weak self] id in self?.noticeAction?(id) }
+        // One app-owned subscription keeps notices current when every window is closed.
+        attachWindow()
+        updateDockBadge()
+    }
+
+    func attachChatWindow(_ id: SwarmSessionID) {
+        chatWindows[id, default: 0] += 1
+    }
+
+    func detachChatWindow(_ id: SwarmSessionID) {
+        let remaining = (chatWindows[id] ?? 1) - 1
+        chatWindows[id] = remaining > 0 ? remaining : nil
+    }
+
+    func updateDockBadge() {
+        guard let settings = noticeSettings else { return }
+        let count = DockBadge.count(tree: tree, prefs: settings.prefs.notices)
+        NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
+    }
+
+    private func postTransitions(previous: SessionsTree) {
+        updateDockBadge()
+        guard hasLoaded, let settings = noticeSettings, let noticeCenter else { return }
+        for event in NoticeRule.transitions(previous: previous, current: tree) {
+            guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
+                  var notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices, project: project) else { continue }
+            notice.title = "Swarm — \(navigation.title(for: event.chat))"
+            Task { [notice] in
+                do { try await noticeCenter.post(notice) }
+                catch { settings.setError(error.localizedDescription) }
+            }
+        }
+    }
     var navigation = WorkspaceNavigation() {
         didSet {
             if navigation != oldValue {
@@ -374,10 +416,12 @@ final class SessionsTreeModel {
             }
             refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
             navigation = refreshed
+            let previousTree = tree
             sourceTree = loaded
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
             tree = visibleTree
+            postTransitions(previous: previousTree)
             navigation.recordTabFirstSight(workspaces)
             for chat in settled {
                 if let id = chat.session, let row = tree.session(id),
@@ -2309,13 +2353,17 @@ private struct GitInitRequest {
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
 }
 
+enum SwarmWindows {
+    static let sessionsFrameName = "SwarmSessionsWindow"
+}
+
 private struct WindowFrameRestorer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { WindowFrameView() }
     func updateNSView(_ view: NSView, context: Context) {}
 }
 
 private final class WindowFrameView: NSView {
-    private let frameName = "SwarmSessionsWindow"
+    private let frameName = SwarmWindows.sessionsFrameName
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -2354,6 +2402,14 @@ struct SwarmApp: App {
     }
     init() {
         SwarmPerformance.event("AppStarted")
+        let model = model
+        let settings = settings
+        Task {
+            do {
+                try await AppLock.hold()
+                model.startNotices(settings: settings)
+            } catch { settings.setError(error.localizedDescription) }
+        }
     }
 
     var body: some Scene {
@@ -2361,7 +2417,8 @@ struct SwarmApp: App {
         // each build, so a new build restores no window and opens none.
         WindowGroup(id: "sessions") {
             Group {
-                if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow(model: model) }
+                if SwarmPaneStress.count > 0 { PaneStressWindow() }
+                else { SessionsWindow(model: model).modifier(NoticeWindowRouting(model: model)) }
             }
             .modifier(AppearancePreferences(prefs: settings.prefs))
         }
@@ -2374,6 +2431,7 @@ struct SwarmApp: App {
         WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
             if let sessionID {
                 ChatWindow(sessionID: sessionID, model: model)
+                    .modifier(NoticeWindowRouting(model: model))
                     .modifier(AppearancePreferences(prefs: settings.prefs))
             }
         }
@@ -2381,7 +2439,8 @@ struct SwarmApp: App {
             .environment(\.splitDiff, splitDiff)
             .commandsRemoved()
         Settings {
-            SettingsWindow().environment(settings).environment(\.splitDiff, splitDiff)
+            SettingsWindow().environment(settings).environment(model).environment(\.splitDiff, splitDiff)
+                .modifier(NoticeWindowRouting(model: model))
                 .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)

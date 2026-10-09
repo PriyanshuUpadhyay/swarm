@@ -39,7 +39,7 @@ struct HomeSettingsTests {
         #expect(SettingsPage.skills.placeholder == "Comes with slice 2")
         #expect(SettingsPage.accounts.placeholder == "Comes with slice 3")
         #expect(SettingsPage.appearance.placeholder == nil)
-        #expect(SettingsPage.notifications.placeholder == "Comes with step 25")
+        #expect(SettingsPage.notifications.placeholder == nil)
         #expect(SettingsPage.keys.placeholder == nil)
         #expect(SettingsPage.profiles.placeholder == nil)
         #expect(SettingsPage.paletteItems.map(\.title) == ["Setup", "Managed Changes", "Profiles"])

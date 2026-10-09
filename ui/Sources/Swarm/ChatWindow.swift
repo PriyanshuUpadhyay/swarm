@@ -68,6 +68,7 @@ struct ChatWindow: View {
         .task {
             LoginShellPath.begin()
             model.attachWindow()
+            model.attachChatWindow(state.selection)
         }
         .onChange(of: row?.id, initial: true) { _, id in
             details.activate(id)
@@ -77,6 +78,7 @@ struct ChatWindow: View {
             panes.stopAll()
             details.activate(nil)
             model.detachWindow()
+            model.detachChatWindow(state.selection)
         }
         .sheet(isPresented: $switching) {
             if let row {

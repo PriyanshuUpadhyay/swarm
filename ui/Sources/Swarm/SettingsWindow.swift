@@ -4,6 +4,7 @@ import SwarmCore
 struct SettingsWindow: View {
     @Environment(\.designTokens) private var tokens
     @Environment(SettingsSelection.self) private var selection
+    @Environment(SessionsTreeModel.self) private var model
     @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
     @AppStorage("performanceLogging") private var performanceLogging = false
@@ -38,6 +39,7 @@ struct SettingsWindow: View {
         }
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
         .task { selection.reload() }
+        .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
     }
 
     @ViewBuilder
@@ -169,6 +171,29 @@ struct SettingsWindow: View {
                 }
             }
             .padding(tokens.spacing.xl)
+        case .notifications:
+            ScrollView {
+                VStack(alignment: .leading, spacing: tokens.spacing.l) {
+                    Text("Notifications").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                    Toggle("Post notices while Swarm runs", isOn: noticeBinding(\.post))
+                    Toggle("Play a sound", isOn: noticeBinding(\.sound))
+                    Toggle("Notify when a chat is done", isOn: noticeBinding(\.done))
+                    Toggle("Badge the Dock with chats that need input", isOn: noticeBinding(\.badge))
+                    Divider()
+                    Text("Mute projects").font(.headline).accessibilityAddTraits(.isHeader)
+                    if model.tree.projects.isEmpty {
+                        Text("Import a project to set its mute choice.").foregroundStyle(.secondary)
+                    }
+                    ForEach(model.tree.projects, id: \.path) { project in
+                        Toggle(model.navigation.projectTitle(for: project), isOn: Binding(
+                            get: { selection.prefs.notices.mutedProjects.contains(project.path) },
+                            set: { selection.setProjectMuted(project.path, to: $0) }
+                        ))
+                    }
+                }
+                .toggleStyle(.switch)
+                .padding(tokens.spacing.xl)
+            }
         default:
             VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text(selection.page.title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
@@ -176,5 +201,10 @@ struct SettingsWindow: View {
             }
             .padding(tokens.spacing.xl)
         }
+    }
+
+    private func noticeBinding(_ field: WritableKeyPath<NoticePrefs, Bool>) -> Binding<Bool> {
+        Binding(get: { selection.prefs.notices[keyPath: field] },
+                set: { selection.setNotice(field, to: $0) })
     }
 }

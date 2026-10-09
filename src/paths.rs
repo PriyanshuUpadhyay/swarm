@@ -4,6 +4,8 @@ const SWARM_DB: &str = "swarm.db";
 const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
+/// The app's live pid, which makes the CLI leave owner notices to the app (ADR 0058).
+pub const APP_LOCK: &str = "app.lock";
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
 /// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
@@ -160,6 +162,27 @@ pub fn sqlite_db() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::{branch_folder, branch_home};
+
+    #[test]
+    fn app_lock_paths_match_the_shared_swift_vectors() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/app-lock-paths.json")).unwrap();
+        for vector in vectors.as_array().unwrap() {
+            let home = vector["explicit"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    branch_home(
+                        vector["home"].as_str().unwrap(),
+                        vector["branch"].as_str().unwrap(),
+                    )
+                });
+            let lock = std::path::Path::new(&home)
+                .join(super::SWARM_DIR)
+                .join(super::APP_LOCK);
+            assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+        }
+    }
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
     const VECTORS: [(&str, Option<&str>); 15] = [

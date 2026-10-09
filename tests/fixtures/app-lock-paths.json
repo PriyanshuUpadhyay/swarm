@@ -1,0 +1,6 @@
+[
+  {"home":"/owner","branch":"","explicit":null,"lock":"/owner/.swarm/app.lock"},
+  {"home":"/owner","branch":"main","explicit":null,"lock":"/owner/.swarm-main/.swarm/app.lock"},
+  {"home":"/owner","branch":"feat/login","explicit":null,"lock":"/owner/.swarm-feat-login+407712bf7898fb7f/.swarm/app.lock"},
+  {"home":"/owner","branch":"main","explicit":"/scratch/home","lock":"/scratch/home/.swarm/app.lock"}
+]

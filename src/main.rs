@@ -493,7 +493,7 @@ fn send_notice(
 /// ADR 0058: the app owns notices while its pid is alive; an invalid or stale lock keeps
 /// the adapter path. Positive pids only, because zero and negative values name process groups.
 fn app_is_running(root: &std::path::Path) -> bool {
-    let Some(pid) = std::fs::read_to_string(root.join("app.lock"))
+    let Some(pid) = std::fs::read_to_string(root.join(swarm::paths::APP_LOCK))
         .ok()
         .and_then(|text| text.trim().parse::<i32>().ok())
         .filter(|pid| *pid > 0)

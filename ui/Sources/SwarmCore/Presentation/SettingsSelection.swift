@@ -68,4 +68,25 @@ public final class SettingsSelection {
             self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
         }
     }
+
+    public func setNotice(_ field: WritableKeyPath<NoticePrefs, Bool>, to value: Bool) {
+        saveNotices { $0[keyPath: field] = value }
+    }
+
+    public func setProjectMuted(_ path: String, to muted: Bool) {
+        saveNotices {
+            if muted { $0.mutedProjects.insert(path) }
+            else { $0.mutedProjects.remove(path) }
+        }
+    }
+
+    private func saveNotices(_ change: (inout NoticePrefs) -> Void) {
+        change(&prefs.notices)
+        do {
+            prefs = try choices.update { change(&$0.prefs.notices) }.prefs
+            error = nil
+        } catch {
+            self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
+        }
+    }
 }
