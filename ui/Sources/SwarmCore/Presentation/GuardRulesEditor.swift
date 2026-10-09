@@ -1,17 +1,27 @@
 import Foundation
 
-public struct GuardRuleFields: Sendable, Equatable {
+public struct GuardField: Identifiable, Sendable, Equatable {
+    public let id = UUID()
+    public var text: String
+
+    public init(text: String) { self.text = text }
+}
+
+public struct GuardRuleFields: Identifiable, Sendable, Equatable {
+    public let id = UUID()
     public var name: String
     public var event: String
-    public var tools: [String]?
-    public var command: [String]
+    public var allTools: Bool
+    public var tools: [GuardField]
+    public var command: [GuardField]
     public var timeout: String
 
     public init(rule: GuardRules.Rule) {
         name = rule.name
         event = rule.event
-        tools = rule.tools
-        command = rule.command
+        allTools = rule.tools == nil
+        tools = (rule.tools ?? []).map { GuardField(text: $0) }
+        command = rule.command.map { GuardField(text: $0) }
         timeout = rule.timeout.map(String.init) ?? ""
     }
 
@@ -20,10 +30,11 @@ public struct GuardRuleFields: Sendable, Equatable {
         if timeout.isEmpty { seconds = nil }
         else if let parsed = UInt64(timeout) { seconds = parsed }
         else { throw GuardListError(reason: "Rule '\(name)' needs a whole timeout in seconds, or an empty field") }
-        guard let executable = command.first, !executable.isEmpty else {
+        guard let executable = command.first, !executable.text.isEmpty else {
             throw GuardListError(reason: "Rule '\(name)' needs a command")
         }
-        return .init(name: name, event: event, tools: tools, command: command, timeout: seconds)
+        return .init(name: name, event: event, tools: allTools ? nil : tools.map(\.text),
+                     command: command.map(\.text), timeout: seconds)
     }
 }
 
@@ -57,9 +68,9 @@ public struct GuardRulesEditor: Sendable, Equatable {
         drafts.append(GuardRuleFields(rule: .init(name: "New guard", command: [""])))
     }
 
-    public mutating func delete(at index: Int) {
-        guard loadError == nil, drafts.indices.contains(index) else { return }
-        drafts.remove(at: index)
+    public mutating func delete(id: UUID) {
+        guard loadError == nil else { return }
+        drafts.removeAll { $0.id == id }
     }
 
     public func list() throws -> GuardRules {

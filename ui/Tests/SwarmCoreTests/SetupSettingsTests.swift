@@ -89,8 +89,9 @@ struct SetupSettingsTests {
         editor.add()
         #expect(!editor.canSave)
         editor.drafts[0].name = "Policy"
-        editor.drafts[0].command = ["/tools/path with spaces", "argument with spaces", "$(literal)"]
-        editor.drafts[0].tools = ["Bash"]
+        editor.drafts[0].command = ["/tools/path with spaces", "argument with spaces", "$(literal)"].map { GuardField(text: $0) }
+        editor.drafts[0].allTools = false
+        editor.drafts[0].tools = [GuardField(text: "Bash")]
         editor.drafts[0].timeout = "5"
         #expect(editor.canSave)
         try editor.save(to: file)
@@ -98,7 +99,7 @@ struct SetupSettingsTests {
         #expect(saved.command == ["/tools/path with spaces", "argument with spaces", "$(literal)"])
         #expect(saved.tools == ["Bash"])
         #expect(saved.timeout == 5)
-        editor.drafts[0].tools = nil
+        editor.drafts[0].allTools = true
         editor.drafts[0].timeout = ""
         try editor.save(to: file)
         #expect(try GuardRules.load(url: file).get().rules[0].tools == nil)
@@ -112,12 +113,50 @@ struct SetupSettingsTests {
         editor.drafts[0].event = "PostToolUse"
         #expect(!editor.canSave)
         editor.drafts[0].event = "PreToolUse"
+        editor.drafts[0].allTools = false
         editor.drafts[0].tools = []
         #expect(!editor.canSave)
-        editor.delete(at: 0)
+        editor.delete(id: editor.drafts[0].id)
         #expect(editor.canSave)
         try editor.save(to: file)
         #expect(try GuardRules.load(url: file).get().rules.isEmpty)
+    }
+
+    @Test("Guard fields convert optional tools and preserve row identities after removal")
+    func guardFieldIdentity() throws {
+        let rule = GuardRules.Rule(name: "Policy", tools: ["Bash", "Bash"],
+                                   command: ["/tools/path with spaces", "same", "same"], timeout: 5)
+        var draft = GuardRuleFields(rule: rule)
+        let draftID = draft.id
+        #expect(try draft.rule() == rule)
+        #expect(Set(draft.tools.map(\.id)).count == 2)
+        #expect(Set(draft.command.map(\.id)).count == 3)
+        let remainingToolID = draft.tools[1].id
+        let remainingArgumentID = draft.command[2].id
+        draft.tools.removeFirst()
+        draft.command.remove(at: 1)
+        #expect(draft.id == draftID)
+        #expect(draft.tools.first?.id == remainingToolID)
+        #expect(draft.command.last?.id == remainingArgumentID)
+        #expect(try draft.rule().command == ["/tools/path with spaces", "same"])
+        #expect(try draft.rule().tools == ["Bash"])
+        draft.allTools = true
+        #expect(try draft.rule().tools == nil)
+        draft.allTools = false
+        #expect(try draft.rule().tools == ["Bash"])
+        let allTools = GuardRuleFields(rule: .init(name: "All", command: ["/bin/true"]))
+        #expect(allTools.allTools)
+        #expect(try allTools.rule().tools == nil)
+        let noTools = GuardRuleFields(rule: .init(name: "Empty", tools: [], command: ["/bin/true"]))
+        #expect(!noTools.allTools)
+        #expect(try noTools.rule().tools == [])
+        var editor = GuardRulesEditor()
+        editor.load(.success(.init(rules: [rule, .init(name: "Next", command: ["/bin/true"])])))
+        let remainingDraftID = editor.drafts[1].id
+        editor.delete(id: editor.drafts[0].id)
+        #expect(editor.drafts.map(\.id) == [remainingDraftID])
+        editor.delete(id: UUID())
+        #expect(editor.drafts.map(\.id) == [remainingDraftID])
     }
 
     @Test("A broken guard list disables Save until a valid replacement is loaded")

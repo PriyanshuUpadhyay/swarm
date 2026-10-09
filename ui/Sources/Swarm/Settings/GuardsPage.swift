@@ -7,7 +7,7 @@ struct GuardsPage: View {
     let save: (inout GuardRulesEditor) throws -> Void
     let onError: (String?) -> Void
     @State private var editor = GuardRulesEditor()
-    @State private var editing: Int?
+    @State private var editing: UUID?
 
     var body: some View {
         GroupBox("Guards") {
@@ -15,7 +15,7 @@ struct GuardsPage: View {
                 HStack {
                     Button("Add") {
                         editor.add()
-                        editing = editor.drafts.indices.last
+                        editing = editor.drafts.last?.id
                     }.disabled(editor.loadError != nil)
                     Button("Reload", action: reload)
                     Spacer()
@@ -30,26 +30,26 @@ struct GuardsPage: View {
                 if editor.drafts.isEmpty && editor.loadError == nil {
                     Text("No guard rules").foregroundStyle(.secondary)
                 }
-                ForEach(editor.drafts.indices, id: \.self) { index in
+                ForEach($editor.drafts) { $draft in
                     VStack(alignment: .leading, spacing: tokens.spacing.s) {
                         HStack {
-                            Text(editor.drafts[index].name).font(.headline)
+                            Text(draft.name).font(.headline)
                             Spacer()
-                            Button(editing == index ? "Finish editing" : "Edit") {
-                                editing = editing == index ? nil : index
+                            Button(editing == draft.id ? "Finish editing" : "Edit") {
+                                editing = editing == draft.id ? nil : draft.id
                             }
                             Button("Delete", role: .destructive) {
-                                editor.delete(at: index)
+                                editor.delete(id: draft.id)
                                 editing = nil
                             }
                         }
-                        if editing == index {
-                            GuardFields(fields: $editor.drafts[index])
+                        if editing == draft.id {
+                            GuardFields(fields: $draft)
                         } else {
-                            Text(verbatim: "Event: \(editor.drafts[index].event)")
-                            Text(verbatim: "Tools: \(editor.drafts[index].tools?.joined(separator: ", ") ?? "All tools")")
-                            Text(verbatim: "Command: \(editor.drafts[index].command.joined(separator: " "))")
-                            Text(verbatim: "Timeout: \(editor.drafts[index].timeout.isEmpty ? "3 (default)" : editor.drafts[index].timeout) seconds")
+                            Text(verbatim: "Event: \(draft.event)")
+                            Text(verbatim: "Tools: \(draft.allTools ? "All tools" : draft.tools.map(\.text).joined(separator: ", "))")
+                            Text(verbatim: "Command: \(draft.command.map(\.text).joined(separator: " "))")
+                            Text(verbatim: "Timeout: \(draft.timeout.isEmpty ? "3 (default)" : draft.timeout) seconds")
                         }
                         Divider()
                     }
@@ -82,29 +82,25 @@ private struct GuardFields: View {
         VStack(alignment: .leading, spacing: tokens.spacing.s) {
             TextField("Name", text: $fields.name)
             TextField("Event", text: $fields.event)
-            Toggle("All tools", isOn: Binding(
-                get: { fields.tools == nil },
-                set: { fields.tools = $0 ? nil : [""] }
-            ))
-            if let tools = fields.tools {
-                ForEach(tools.indices, id: \.self) { index in
+            Toggle("All tools", isOn: $fields.allTools)
+            if !fields.allTools {
+                ForEach($fields.tools) { $tool in
                     HStack {
-                        TextField("Tool", text: Binding(
-                            get: { fields.tools?[index] ?? "" },
-                            set: { fields.tools?[index] = $0 }
-                        ))
-                        Button("Remove tool") { fields.tools?.remove(at: index) }
+                        TextField("Tool", text: $tool.text)
+                        Button("Remove tool") { fields.tools.removeAll { $0.id == tool.id } }
+                            .accessibilityLabel("Remove tool \(tool.text)")
                     }
                 }
-                Button("Add tool") { fields.tools?.append("") }
+                Button("Add tool") { fields.tools.append(GuardField(text: "")) }
             }
-            ForEach(fields.command.indices, id: \.self) { index in
+            ForEach($fields.command) { $argument in
                 HStack {
-                    TextField(index == 0 ? "Command" : "Argument", text: $fields.command[index])
-                    Button("Remove argument") { fields.command.remove(at: index) }
+                    TextField(fields.command.first?.id == argument.id ? "Command" : "Argument", text: $argument.text)
+                    Button("Remove argument") { fields.command.removeAll { $0.id == argument.id } }
+                        .accessibilityLabel("Remove argument \(argument.text)")
                 }
             }
-            Button("Add argument") { fields.command.append("") }
+            Button("Add argument") { fields.command.append(GuardField(text: "")) }
             Text("Each field is one command argument. A path with spaces stays in one field.")
                 .font(.caption).foregroundStyle(.secondary)
             TextField("Timeout in seconds (empty uses 3)", text: $fields.timeout)
