@@ -71,18 +71,27 @@ public struct SwarmSetupStatus: Sendable, Hashable, Codable {
     public var hooks: Bool
     public var trust: Bool
     public var herdr: Bool
+    public var skills: Bool
 
-    public init(hooks: Bool, trust: Bool, herdr: Bool) {
+    public init(hooks: Bool, trust: Bool, herdr: Bool, skills: Bool) {
         self.hooks = hooks
         self.trust = trust
         self.herdr = herdr
+        self.skills = skills
     }
 
-    /// Whether the app asks on start. A hooks "Not now", or a group the owner left unchecked when
-    /// they applied the rest, covers only that group, so a Mac that updates still sees the sheet
-    /// once for folder trust (Q3).
-    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool) -> Bool {
-        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined)
+    /// A declined or unchecked group affects only that group. Other pending groups can still
+    /// open the first-run sheet.
+    public func needsSheet(declined: Set<SetupGroup>) -> Bool {
+        SetupGroup.allCases.contains { group in
+            let ready = switch group {
+            case .hooks: hooks
+            case .trust: trust
+            case .herdr: herdr
+            case .skills: skills
+            }
+            return !ready && (group.declineFlagKey == nil || !declined.contains(group))
+        }
     }
 }
 
@@ -108,7 +117,18 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
     public static func trustOnly(standing: Bool) -> Self {
-        Self(groups: ["hooks", "trust", "herdr"], unchecked: ["hooks", "herdr"], standing: standing)
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .trust }.map(\.rawValue)),
+            standing: standing
+        )
+    }
+
+    public static func skillsOnly() -> Self {
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .skills }.map(\.rawValue))
+        )
     }
 
     /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
@@ -253,12 +273,7 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     }
     /// A `swarm setup` group's name; a group this build does not know shows by its id (ADR 0043).
     public static func groupTitle(_ id: String) -> String {
-        switch id {
-        case "hooks": "Agent hooks"
-        case "trust": "Folder trust"
-        case "herdr": "Herdr"
-        default: id
-        }
+        SetupGroup(rawValue: id)?.title ?? id
     }
     /// Each `swarm setup` group with a file or a conflict, in plan order.
     public var groupIDs: [String] {

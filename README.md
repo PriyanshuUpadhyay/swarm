@@ -88,14 +88,19 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Link the swarm skills.** The chair and the workers learn the protocol from `skills/`. Clone
-   this repo and run the script from the `main` checkout. It links each skill into
-   `~/.claude/skills`, `~/.agents/skills` (Codex), and `~/.gemini/config/skills` (AGY):
+2. **Prepare the bundled skills.** The app refreshes its skills copy on start. To prepare it
+   from a terminal, use the helper shipped with Swarm.app:
 
    ```sh
-   git clone https://github.com/PriyanshuUpadhyay/swarm ~/swarm
-   sh ~/swarm/scripts/install.sh
+   swarm skills refresh
+   swarm setup --plan --only skills
    ```
+
+   Apply the displayed digest with `swarm setup --digest <digest> --only skills` after you
+   review the links. Setup records 23 links in each of `~/.claude/skills`, `~/.agents/skills`
+   (Codex), and `~/.gemini/config/skills` (AGY). A foreign link is a conflict. If dotfiles manages
+   it, remove that link from dotfiles first so a later sync cannot create it again. Keep the
+   dotfiles support references and scripts. Setup never adopts or replaces a foreign link.
 
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
@@ -103,7 +108,7 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
    `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
 4. **Approve the setup plan.** On first launch the app asks "Let swarm set up this Mac?" and
    shows each file it would change, under its group: the Codex and AGY hooks, so worker columns
-   show their chat and state, and folder trust, so a seat in a git repo or a swarm scratch folder
+   show their chat and state, Skills for the bundled workflows, and folder trust, so a seat in a git repo or a swarm scratch folder
    starts with no trust dialog. Clear a group's box to leave it as it is, and pick under folder
    trust whether swarm trusts each folder that passes the safety check or asks in the agent's
    column. Click **Approve and apply**. Until you approve folder trust, a seat
@@ -136,10 +141,10 @@ claude --profile work auth login
 
 Without yelo, each CLI uses its own login. AGY has no account source yet.
 
-### Optional: workflow skills from agent-kit
+### Bundled workflow skills
 
-[agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit) has workflow skills that run their
-workers as visible swarm panes:
+Swarm bundles the workflow skills from [agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit).
+These skills run workers in visible swarm panes:
 
 | Skill | What it does with swarm |
 |---|---|
@@ -150,8 +155,10 @@ workers as visible swarm panes:
 | [`orchestrate-claude`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-claude), [`-codex`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-codex), [`-agy`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-agy) | Bind a skill's worker needs to each agent CLI |
 
 The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
-profile names in `default-profiles.json`. The
-[agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit#install) shows how to link the skills.
+profile names in `default-profiles.json`. The Skills group in Setup records their links.
+Some workflows also need the dotfiles references, scripts, or private expert packs described in
+the [agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit). These support files are
+not bundled or linked by Setup.
 
 ## Use it
 
@@ -275,11 +282,12 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
 | `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
-| `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), and `herdr` (always true until a Herdr writer ships). More groups may come (ADR 0043). |
-| `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
+| `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. The command requires the helper shipped with Swarm.app. Setup uses this copy for link targets. |
+| `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
+| `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
 | `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. With a rule list at `~/.swarm/guards.json`, also register `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). Each item it adds is recorded, so `managed list` shows it and `managed revert` removes it (ADR 0042). |
-| `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, or a JSON array item) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
+| `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, a JSON array item, or a skill link) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
 | `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `hooks setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
 | `guard <claude\|codex\|agy> PreToolUse` | a CLI hook | Read the CLI's hook payload on stdin, run each matching rule of `~/.swarm/guards.json` (`SWARM_GUARDS` overrides the path), and print that CLI's allow or deny. A guard rule that crashes, times out, or does not start, a bad list, or a missing list blocks the call (ADR 0040). |
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
@@ -331,7 +339,8 @@ pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
 `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code finds them through
 `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads `AGENTS.md`.
-`sh scripts/install.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
+`swarm skills refresh` prepares the bundled copy. `swarm setup --plan --only skills` shows
+the managed links for each CLI. Review and apply the displayed digest. `demo/herdr.sh` and
 `demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
 `VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 

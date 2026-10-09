@@ -16,8 +16,7 @@ struct ManagedChangesPage: View {
     @State private var sheet: Sheet?
     /// The newest load; an older load that answers late writes nothing.
     @State private var loads = 0
-    /// A hooks item the owner removed is not offered again at launch.
-    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
+    @Environment(SettingsSelection.self) private var selection
     /// Closed group names, joined by newlines; a group is open by default.
     @AppStorage("managed.collapsedGroups") private var collapsedGroups = ""
     @Environment(\.controlActiveState) private var activeState
@@ -25,13 +24,13 @@ struct ManagedChangesPage: View {
     private let bus = SwarmCLIBus()
 
     private enum Sheet: Identifiable {
-        case undo(ids: [String], hooks: Bool)
-        case setUp
+        case undo(ids: [String], groups: Set<SetupGroup>)
+        case setUp(group: SetupGroup)
 
         var id: String {
             switch self {
             case .undo(let ids, _): ids.joined(separator: ",")
-            case .setUp: "setUp"
+            case .setUp(let group): "setUp-" + group.rawValue
             }
         }
     }
@@ -85,23 +84,39 @@ struct ManagedChangesPage: View {
         }
         .sheet(item: $sheet, onDismiss: { Task { await load() } }) { kind in
             switch kind {
-            case .undo(let ids, let hooks):
+            case .undo(let ids, let groups):
                 HooksSetupSheet(
                     loadPlan: { _ in try await bus.managedRevertPlan(ids: ids) },
                     setUp: { digest, _ in
                         try await bus.revertManaged(ids: ids, digest: digest)
-                        if hooks { hooksSetupDeclined = true }
+                        for key in groups.compactMap(\.declineFlagKey) {
+                            UserDefaults.standard.set(true, forKey: key)
+                        }
                     },
                     notNow: { _ in sheet = nil },
                     done: { sheet = nil },
                     copy: .undo
                 )
-            case .setUp:
+            case .setUp(let group):
                 HooksSetupSheet(
-                    loadPlan: { _ in try await bus.hooksPlan() },
-                    setUp: { digest, _ in try await bus.setUpHooks(digest: digest) },
+                    loadPlan: { _ in
+                        if group == .skills {
+                            _ = await selection.waitForSkillsRefresh()
+                        }
+                        return try await group.restorePlan(using: bus)
+                    },
+                    setUp: { digest, _ in
+                        if group == .skills {
+                            _ = await selection.waitForSkillsRefresh()
+                        }
+                        try await group.restore(using: bus, digest: digest)
+                        if group == .skills, let key = group.declineFlagKey {
+                            UserDefaults.standard.set(false, forKey: key)
+                        }
+                    },
                     notNow: { _ in sheet = nil },
-                    done: { sheet = nil }
+                    done: { sheet = nil },
+                    copy: group == .skills ? .skills : .hooks
                 )
             }
         }
@@ -172,9 +187,16 @@ struct ManagedChangesPage: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(row.file)
-                Text(row.entry).foregroundStyle(.secondary)
+                if row.writer != "skills" { Text(row.entry).foregroundStyle(.secondary) }
                 Spacer()
                 stateControl(row, label: label)
+            }
+            if row.writer == "skills" {
+                Text(verbatim: row.entry)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
             if case .changed(let found, let wrote) = row.state {
                 Text(verbatim: "Found: \(found) · Swarm wrote: \(wrote) · Swarm leaves it.")
@@ -202,7 +224,7 @@ struct ManagedChangesPage: View {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if row.state == .off, !row.isHooks {
+            } else if row.state == .off, row.restoreGroup == nil {
                 Text("Swarm adds it again the next time it needs it, after you agree.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -213,7 +235,7 @@ struct ManagedChangesPage: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// A switch while the row can be turned off or, for hooks, on again; else its state.
+    /// A switch while the row can be turned off or its writer can restore it; else its state.
     @ViewBuilder
     private func stateControl(_ row: SwarmManagedList.Row, label: String) -> some View {
         let on = switch row.state {
@@ -226,12 +248,12 @@ struct ManagedChangesPage: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .disabled(true)
-        } else if on || (row.state == .off && row.isHooks) {
+        } else if on || (row.state == .off && row.restoreGroup != nil) {
             Toggle(label, isOn: Binding(
                 get: { on },
                 set: { on in
                     if on {
-                        sheet = .setUp
+                        if let group = row.restoreGroup { sheet = .setUp(group: group) }
                     } else {
                         undo(row.presentIDs, in: row.entries)
                     }
@@ -264,8 +286,9 @@ struct ManagedChangesPage: View {
 
     private func undo(_ ids: [String], in entries: [SwarmManagedList.Entry]) {
         guard !ids.isEmpty else { return }
-        let hooks = entries.contains { ids.contains($0.id) && $0.isHooks }
-        sheet = .undo(ids: ids, hooks: hooks)
+        let selected = SwarmManagedList(entries: entries.filter { ids.contains($0.id) })
+        let groups = Set(selected.groups.flatMap(\.rows).compactMap(\.restoreGroup))
+        sheet = .undo(ids: ids, groups: groups)
     }
 
     /// `retry`: the owner pressed Retry, so a failure is announced even when its text is the same.

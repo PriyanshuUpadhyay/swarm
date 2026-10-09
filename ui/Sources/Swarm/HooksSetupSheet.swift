@@ -72,13 +72,23 @@ struct HooksSetupSheet: View {
 
         static let setupSheet = Copy(
             question: "Let swarm set up this Mac?",
-            body: "Swarm changes only the lines below; your other entries stay. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start without a trust dialog. Clear a group to leave it as it is. You can undo each change in Swarm › Managed Changes.",
+            body: "Swarm applies the changes below. Agent hooks let Codex and AGY agents report their chat and state to the app. Folder trust lets a seat start without a trust dialog. Skills give Claude, Codex, and AGY the bundled workflows. Clear a group to leave it as it is. You can undo each change in Swarm › Managed Changes.",
             loading: "Reading your config…",
             unchanged: "Swarm is already set up.",
             blocked: "Swarm cannot set up. Your config has entries where swarm needs its own.",
             apply: "Approve and apply",
             cancel: "Not now",
             choosesGroups: true
+        )
+
+        static let skills = Copy(
+            question: "Let Swarm set up its skill links?",
+            body: "Claude, Codex, and AGY use these links to read the bundled skills. You can undo each link in Managed Changes.",
+            loading: "Reading skill links…",
+            unchanged: "Swarm's skill links are already set up.",
+            blocked: "Swarm cannot set up its skill links. Resolve the conflicts below.",
+            apply: "Approve and apply",
+            cancel: "Not now"
         )
 
         static let setup: Copy = {
@@ -89,8 +99,8 @@ struct HooksSetupSheet: View {
         }()
 
         static let undo = Copy(
-            question: "Remove swarm's entries from these files?",
-            body: "Swarm removes only what it wrote. Your other entries stay.",
+            question: "Remove swarm's entries and links?",
+            body: "Swarm removes only the entries and links it recorded.",
             loading: "Reading the files…",
             unchanged: "Swarm has nothing to remove.",
             blocked: "Swarm cannot remove these yet. Each one below says what is in the way.",

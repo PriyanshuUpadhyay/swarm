@@ -8,9 +8,7 @@ struct SettingsWindow: View {
     @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
     @AppStorage("performanceLogging") private var performanceLogging = false
-    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     @AppStorage("setupDeclined") private var setupDeclined = false
-    @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
     @State private var helperVersion = "Reading helper version…"
     @State private var drift: PathSwarmDrift?
     @State private var dependencies: [DependencyRow] = []
@@ -48,9 +46,18 @@ struct SettingsWindow: View {
                         .textSelection(.enabled).padding(tokens.spacing.m)
                 }
                 if let error = selection.pageError {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled).padding(tokens.spacing.m)
+                    HStack {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .textSelection(.enabled)
+                        if selection.page == .setup, selection.skillsRefreshError != nil {
+                            Spacer()
+                            Button("Retry") {
+                                Task { _ = await selection.retrySkillsRefresh() }
+                            }
+                            .disabled(selection.skillsRefreshing)
+                        }
+                    }
+                    .foregroundStyle(.red).padding(tokens.spacing.m)
                 }
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -178,14 +185,19 @@ struct SettingsWindow: View {
                             dependencies = Dependencies.check(lookup: Shell.which)
                         }
                     HooksSetupSheet(
-                        loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                        loadPlan: {
+                            _ = await selection.waitForSkillsRefresh()
+                            return try await SwarmCLIBus().setupPlan($0)
+                        },
                         setUp: { digest, choice in
+                            _ = await selection.waitForSkillsRefresh()
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
                         notNow: { _ in }, done: {}, copy: .setup,
                         onError: setSetupError,
                         canAnnounceSummary: { setupError == nil }
                     )
+                    .id(selection.skillsReady)
                     GuardsPage(
                         load: {
                             do {
@@ -207,9 +219,10 @@ struct SettingsWindow: View {
             AdvancedSettingsPage(
                 showRawData: $showRawData, performanceLogging: $performanceLogging,
                 resetDeclinedPrompts: {
-                    hooksSetupDeclined = false
                     setupDeclined = false
-                    trustSetupDeclined = false
+                    for key in SetupGroup.allCases.compactMap(\.declineFlagKey) {
+                        UserDefaults.standard.set(false, forKey: key)
+                    }
                 },
                 dataHome: SwarmHome.dataFolder?.path,
                 revealDataHome: {

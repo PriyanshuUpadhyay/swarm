@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "workflow_kind": "review-walk",
+  "required_operations": [
+    "resolve_roles",
+    "validate_host_capabilities",
+    "create_owned_visible_leaves",
+    "dispatch",
+    "accept_durable_results",
+    "report_degradation",
+    "close_owned_leaves"
+  ],
+  "roles": [
+    "review.check",
+    "review.deep"
+  ],
+  "seat_template": {
+    "isolation": "review-check's seats do step 03; review-walk adds no seat of its own",
+    "visibility": "host-visible owned leaf",
+    "permission": "reads the repository and the run folder; writes only its own step file; no repository edits, no GitHub writes, no commits",
+    "artifact": "the review-check run that 03-check.md names",
+    "deadline": "bounded by the chair"
+  },
+  "refusals": [
+    {
+      "condition": "runtime-adapter-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "host-capability-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "role-unresolved",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "degrade-and-report"
+    },
+    {
+      "condition": "route-capability-mismatch",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "completion-artifact-invalid",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "teardown-target-unowned",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "quarantine-and-escalate"
+    }
+  ],
+  "result_routing": {
+    "check": "03-check.md names the review-check run and copies line 3 of its 03-verdict.md",
+    "comments": "04-comments.md, then the pending review after the user says yes"
+  },
+  "trace_cases": [
+    {
+      "id": "happy-path",
+      "events": [
+        "start:01-scope",
+        "map:02-map",
+        "review-check:03-check",
+        "draft:04-comments",
+        "user-yes",
+        "post",
+        "walk:05-walk"
+      ]
+    },
+    {
+      "id": "new-round",
+      "events": [
+        "start:01-scope",
+        "previous-run-viewed-read",
+        "remark-offered",
+        "review-check --patch since-view.patch"
+      ]
+    }
+  ],
+  "role_policy": {
+    "disposition": "report-only"
+  }
+}
