@@ -5,6 +5,27 @@ import Testing
 @Suite("Settings selection")
 @MainActor
 struct SettingsSelectionTests {
+    @Test("Repeated page and app errors change one joined announcement value")
+    func repeatedErrorsAnnounceAgain() {
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        selection.setError("Guards failed. Setup failed.")
+        selection.setAppError("Notices are off.")
+        let first = ErrorAnnouncement(messages: [selection.appError, selection.error], revision: selection.errorRevision)
+        #expect(first.text == "Notices are off. Guards failed. Setup failed.")
+        selection.setError("Guards failed. Setup failed.")
+        let repeatedPage = ErrorAnnouncement(messages: [selection.appError, selection.error], revision: selection.errorRevision)
+        #expect(repeatedPage.text == first.text)
+        #expect(repeatedPage.revision == first.revision + 1)
+        #expect(repeatedPage != first)
+        selection.setAppError("Notices are off.")
+        let repeatedApp = ErrorAnnouncement(messages: [selection.appError, selection.error], revision: selection.errorRevision)
+        #expect(repeatedApp.revision == repeatedPage.revision + 1)
+        #expect(repeatedApp != repeatedPage)
+        selection.setError(nil)
+        selection.setAppError(nil)
+        #expect(ErrorAnnouncement(messages: [selection.appError, selection.error], revision: selection.errorRevision).text == nil)
+    }
+
     @Test("Opening a page saves it in choices and another selection reads it")
     func savedPage() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -18,11 +18,14 @@ struct HooksSetupSheet: View {
     let done: () -> Void
     var copy = Copy.hooks
     var onError: (String?) -> Void = { _ in }
+    var canAnnounceSummary: () -> Bool = { true }
 
     /// The words and layout for hooks setup, full setup, and undo.
     struct Copy {
         enum Layout {
             case sheet, page
+
+            var announcesFailures: Bool { self == .sheet }
 
             var width: CGFloat? {
                 switch self {
@@ -201,16 +204,20 @@ struct HooksSetupSheet: View {
                 reloading = false
                 phase = .ready(plan)
                 onError(failure)
-                // The Settings banner announces page failures; the sheet keeps one joined announcement.
+                // A page summary must not interrupt the banner's failure announcement.
                 let summary = plan.isSetUp ? plan.unchangedText(copy.unchanged) : plan.summary
-                Self.announce(copy.layout == .page ? summary : [failure, summary].compactMap { $0 }.joined(separator: " "))
+                if copy.layout.announcesFailures {
+                    Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
+                } else if failure == nil && canAnnounceSummary() {
+                    Self.announce(summary)
+                }
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
             } catch {
                 reloading = false
                 phase = .failed(Self.message(error))
                 onError(Self.message(error))
-                if copy.layout == .sheet { Self.announce(Self.message(error)) }
+                if copy.layout.announcesFailures { Self.announce(Self.message(error)) }
             }
         }
     }

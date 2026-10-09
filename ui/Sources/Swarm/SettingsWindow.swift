@@ -48,17 +48,19 @@ struct SettingsWindow: View {
         }
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
         .task { selection.reload() }
-        .onChange(of: selection.appError, initial: true) { _, message in
-            if let message { AccessibilityNotification.Announcement(message).post() }
-        }
-        .onChange(of: errorMessage, initial: true) { _, message in
-            if let message { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: ErrorAnnouncement(messages: [selection.appError, errorMessage], revision: selection.errorRevision),
+                  initial: true) { _, announcement in
+            if let message = announcement.text { AccessibilityNotification.Announcement(message).post() }
         }
         .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
     }
 
     private var errorMessage: String? {
-        selection.error ?? (selection.page == .setup ? guardsError : nil)
+        selection.error ?? (selection.page == .setup ? setupErrorMessage : nil)
+    }
+
+    private var setupErrorMessage: String? {
+        ErrorAnnouncement(messages: [guardsError, setupError], revision: 0).text
     }
 
     @ViewBuilder
@@ -103,8 +105,9 @@ struct SettingsWindow: View {
                         notNow: { _ in }, done: {}, copy: .setup,
                         onError: {
                             setupError = $0
-                            selection.setError(guardsError ?? setupError)
-                        }
+                            selection.setError(setupErrorMessage)
+                        },
+                        canAnnounceSummary: { selection.appError == nil && errorMessage == nil }
                     )
                     GuardsPage(
                         load: {
@@ -119,7 +122,7 @@ struct SettingsWindow: View {
                         },
                         onError: {
                             guardsError = $0
-                            selection.setError(guardsError ?? setupError)
+                            selection.setError(setupErrorMessage)
                         }
                     )
                     .padding([.horizontal, .bottom], tokens.spacing.xl)

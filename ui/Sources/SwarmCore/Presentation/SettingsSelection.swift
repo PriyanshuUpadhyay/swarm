@@ -10,6 +10,7 @@ public final class SettingsSelection {
     // App errors stay until the owner presses their Dismiss button.
     public private(set) var appError: String?
     public private(set) var error: String?
+    public private(set) var errorRevision = 0
     private enum ErrorSource { case load, save }
     private var errorSource: ErrorSource?
     private let choices: OwnerChoicesStore
@@ -44,10 +45,12 @@ public final class SettingsSelection {
     public func setError(_ message: String?) {
         error = message
         errorSource = message == nil ? nil : .save
+        errorRevision += 1
     }
 
     public func setAppError(_ message: String?) {
         appError = message
+        errorRevision += 1
     }
 
     public func setSplitDiff(_ split: Bool) {

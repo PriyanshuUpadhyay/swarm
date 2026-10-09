@@ -8,6 +8,8 @@ struct ChatWindow: View {
     @State private var details = SessionDetailStore()
     @State private var panes = AgentPaneStore()
     @State private var error: String?
+    @State private var errorRevision = 0
+    // Dismiss hides the current model error until its text changes.
     @State private var dismissedModelError: String?
     @State private var confirmingChild: SwarmAgentID?
     @State private var switching = false
@@ -85,8 +87,8 @@ struct ChatWindow: View {
             details.activate(id)
             panes.stop(keepingSession: id)
         }
-        .onChange(of: errorMessage, initial: true) { _, message in
-            if let message { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: ErrorAnnouncement(messages: [errorMessage], revision: errorRevision), initial: true) { _, announcement in
+            if let message = announcement.text { AccessibilityNotification.Announcement(message).post() }
         }
         .onChange(of: model.error) { _, _ in dismissedModelError = nil }
         .onDisappear {
@@ -105,8 +107,8 @@ struct ChatWindow: View {
                     }
                 ) { _ in
                     Task {
-                        do { try await model.refresh(); error = nil }
-                        catch { self.error = error.localizedDescription }
+                        do { try await model.refresh(); setError(nil) }
+                        catch { setError(error.localizedDescription) }
                     }
                 }
             }
@@ -125,14 +127,20 @@ struct ChatWindow: View {
         }
     }
 
+    private func setError(_ message: String?) {
+        error = message
+        errorRevision += 1
+    }
+
+    // Only the Dismiss button may hide a model error.
     private func clearError() {
-        error = nil
+        setError(nil)
         dismissedModelError = model.error
     }
 
     private func childActions(in session: SwarmSession) -> ChildAgentActions {
         ChildAgentActions(bus: SwarmCLIBus(), session: session,
-                          confirm: { confirmingChild = $0 }, error: { error = $0 })
+                          confirm: { confirmingChild = $0 }, error: setError)
     }
 
     private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
