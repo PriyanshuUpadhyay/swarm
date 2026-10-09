@@ -33,20 +33,20 @@ public struct NoticeEvent: Sendable, Hashable {
 }
 
 public struct Notice: Sendable, Hashable {
-    public var title: String
+    public let title: String
     public let body: String
     public let sessionID: SwarmSessionID
     public let sound: Bool
 }
 
 public enum NoticeRule {
-    public static func shouldPost(event: NoticeEvent, prefs: NoticePrefs, project: ProjectNode) -> Notice? {
+    public static func shouldPost(event: NoticeEvent, prefs: NoticePrefs, project: ProjectNode, title: String) -> Notice? {
         guard prefs.post, !prefs.mutedProjects.contains(project.path),
               event.kind != .done || prefs.done else { return nil }
         let body = event.kind == .needsInput
             ? "\(project.name): waiting on a permission or a question"
             : "\(project.name): chat is done"
-        return Notice(title: "Swarm — \(ChatTitle.title(event.chat))", body: body,
+        return Notice(title: "Swarm — \(title)", body: body,
                       sessionID: event.chat.id, sound: prefs.sound)
     }
 

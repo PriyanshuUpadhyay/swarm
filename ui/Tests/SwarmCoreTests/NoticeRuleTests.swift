@@ -27,14 +27,15 @@ struct NoticeRuleTests {
         let waiting = chat("waiting", status: .waiting)
         let project = project(chats: [waiting])
         let event = NoticeEvent(kind: .needsInput, chat: waiting, projectPath: project.path)
-        let notice = try #require(NoticeRule.shouldPost(event: event, prefs: NoticePrefs(), project: project))
-        #expect(notice.title == "Swarm — Chat waiting")
+        let notice = try #require(NoticeRule.shouldPost(event: event, prefs: NoticePrefs(), project: project, title: "Owner renamed chat"))
+        #expect(notice.title == "Swarm — Owner renamed chat")
         #expect(notice.body == "project: waiting on a permission or a question")
         #expect(notice.sessionID == waiting.id && notice.sound)
         var silent = NoticePrefs()
         silent.sound = false
         let done = NoticeEvent(kind: .done, chat: waiting, projectPath: project.path)
-        let completion = try #require(NoticeRule.shouldPost(event: done, prefs: silent, project: project))
+        let completion = try #require(NoticeRule.shouldPost(event: done, prefs: silent, project: project, title: "Owner renamed chat"))
+        #expect(completion.title == "Swarm — Owner renamed chat")
         #expect(completion.body == "project: chat is done")
         #expect(!completion.sound)
     }
@@ -47,16 +48,16 @@ struct NoticeRuleTests {
         let done = NoticeEvent(kind: .done, chat: waiting, projectPath: project.path)
         var prefs = NoticePrefs()
         prefs.post = false
-        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project) == nil)
-        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project) == nil)
+        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project, title: "Owner renamed chat") == nil)
+        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project, title: "Owner renamed chat") == nil)
         prefs.post = true
         prefs.mutedProjects = [project.path]
-        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project) == nil)
-        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project) == nil)
+        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project, title: "Owner renamed chat") == nil)
+        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project, title: "Owner renamed chat") == nil)
         prefs.mutedProjects = ["/other"]
         prefs.done = false
-        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project) == nil)
-        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project) != nil)
+        #expect(NoticeRule.shouldPost(event: done, prefs: prefs, project: project, title: "Owner renamed chat") == nil)
+        #expect(NoticeRule.shouldPost(event: input, prefs: prefs, project: project, title: "Owner renamed chat") != nil)
     }
 
     @Test("Snapshots post once per change and can post again after work resumes")

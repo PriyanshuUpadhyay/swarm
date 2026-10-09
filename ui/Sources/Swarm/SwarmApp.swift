@@ -21,7 +21,9 @@ final class SessionsTreeModel {
     func startNotices(settings: SettingsSelection) {
         guard noticeCenter == nil else { return }
         noticeSettings = settings
-        noticeCenter = NoticeCenter { [weak self] id in self?.noticeAction?(id) }
+        noticeCenter = NoticeCenter(selectChat: { [weak self] id in self?.noticeAction?(id) }, onDenied: {
+            settings.setError("Notifications are off for Swarm in System Settings, so no notice is shown while the app runs.")
+        })
         // One app-owned subscription keeps notices current when every window is closed.
         attachWindow()
         updateDockBadge()
@@ -47,8 +49,8 @@ final class SessionsTreeModel {
         guard hasLoaded, let settings = noticeSettings, let noticeCenter else { return }
         for event in NoticeRule.transitions(previous: previous, current: tree) {
             guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
-                  var notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices, project: project) else { continue }
-            notice.title = "Swarm — \(navigation.title(for: event.chat))"
+                  let notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices,
+                                                     project: project, title: navigation.title(for: event.chat)) else { continue }
             Task { [notice] in
                 do { try await noticeCenter.post(notice) }
                 catch { settings.setError(error.localizedDescription) }

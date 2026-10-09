@@ -1,22 +1,48 @@
 import Foundation
 
-/// Concurrent state changes share one authorization request, including a denied or failed one.
+/// Concurrent posts share an in-flight request. Only a granted request stays cached.
 public actor NoticeDelivery {
+    private struct Authorization {
+        let id = UUID()
+        let task: Task<Bool, Error>
+    }
+
     private let authorize: @Sendable () async throws -> Bool
     private let deliver: @Sendable (Notice) async throws -> Void
-    private var authorization: Task<Bool, Error>?
+    private let onDenied: @Sendable () async -> Void
+    private var authorization: Authorization?
+    private var reportedDenial = false
 
     public init(authorize: @escaping @Sendable () async throws -> Bool,
-                deliver: @escaping @Sendable (Notice) async throws -> Void) {
+                deliver: @escaping @Sendable (Notice) async throws -> Void,
+                onDenied: @escaping @Sendable () async -> Void) {
         self.authorize = authorize
         self.deliver = deliver
+        self.onDenied = onDenied
     }
 
     public func post(_ notice: Notice) async throws {
-        if authorization == nil {
-            authorization = Task { [authorize] in try await authorize() }
+        let request: Authorization
+        if let cached = authorization { request = cached }
+        else {
+            request = Authorization(task: Task { [authorize] in try await authorize() })
+            authorization = request
         }
-        guard let authorization, try await authorization.value else { return }
+        let granted: Bool
+        do { granted = try await request.task.value }
+        catch {
+            if authorization?.id == request.id { authorization = nil }
+            throw error
+        }
+        guard granted else {
+            // An older waiter must not clear a newer request started during actor suspension.
+            if authorization?.id == request.id { authorization = nil }
+            if !reportedDenial {
+                reportedDenial = true
+                await onDenied()
+            }
+            return
+        }
         try await deliver(notice)
     }
 }

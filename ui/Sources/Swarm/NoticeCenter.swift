@@ -8,27 +8,29 @@ final class NoticeCenter: NSObject, UNUserNotificationCenterDelegate {
     nonisolated private static let category = "swarm.chat"
     private let center = UNUserNotificationCenter.current()
     private let selectChat: @MainActor (SwarmSessionID) -> Void
-    private let delivery = NoticeDelivery(authorize: {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
-        case .notDetermined: return try await center.requestAuthorization(options: [.alert, .sound, .badge])
-        case .authorized, .provisional: return true
-        default: return false
-        }
-    }, deliver: { notice in
-        let center = UNUserNotificationCenter.current()
-        let content = UNMutableNotificationContent()
-        content.title = notice.title
-        content.body = notice.body
-        content.categoryIdentifier = NoticeCenter.category
-        content.userInfo = ["sessionID": notice.sessionID.rawValue]
-        content.sound = notice.sound ? .default : nil
-        try await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-    })
+    private let delivery: NoticeDelivery
 
-    init(selectChat: @escaping @MainActor (SwarmSessionID) -> Void) {
+    init(selectChat: @escaping @MainActor (SwarmSessionID) -> Void,
+         onDenied: @escaping @MainActor @Sendable () -> Void) {
         self.selectChat = selectChat
+        delivery = NoticeDelivery(authorize: {
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .notDetermined: return try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            case .authorized, .provisional: return true
+            default: return false
+            }
+        }, deliver: { notice in
+            let center = UNUserNotificationCenter.current()
+            let content = UNMutableNotificationContent()
+            content.title = notice.title
+            content.body = notice.body
+            content.categoryIdentifier = NoticeCenter.category
+            content.userInfo = ["sessionID": notice.sessionID.rawValue]
+            content.sound = notice.sound ? .default : nil
+            try await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }, onDenied: { await onDenied() })
         super.init()
         center.delegate = self
         center.setNotificationCategories([UNNotificationCategory(identifier: Self.category, actions: [],
