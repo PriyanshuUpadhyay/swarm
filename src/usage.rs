@@ -158,12 +158,28 @@ pub(crate) fn for_accounts(
         return cached_codex(&list.accounts, now);
     }
     let claude = list;
-    let mut meters = Vec::new();
+    let mut meters: Vec<_> = claude
+        .accounts
+        .iter()
+        .filter(|account| account.invalid_home())
+        .map(|account| {
+            status_meter(
+                "claude",
+                Some(account),
+                "no_source",
+                account.summary.as_deref().unwrap_or("No usage source"),
+            )
+        })
+        .collect();
     match claude_snapshot(deadline).and_then(|value| {
         crate::profiles::translate_usage(&value.to_string(), std::slice::from_ref(claude), now)
     }) {
         Ok((usage, skipped)) => {
-            for account in &claude.accounts {
+            for account in claude
+                .accounts
+                .iter()
+                .filter(|account| !account.invalid_home())
+            {
                 if !usage
                     .meters
                     .iter()
@@ -187,14 +203,20 @@ pub(crate) fn for_accounts(
             }
             meters.extend(usage.meters);
         }
-        Err(_) => meters.extend(claude.accounts.iter().map(|account| {
-            status_meter(
-                "claude",
-                Some(account),
-                "failed",
-                "Claude usage source is unavailable",
-            )
-        })),
+        Err(_) => meters.extend(
+            claude
+                .accounts
+                .iter()
+                .filter(|account| !account.invalid_home())
+                .map(|account| {
+                    status_meter(
+                        "claude",
+                        Some(account),
+                        "failed",
+                        "Claude usage source is unavailable",
+                    )
+                }),
+        ),
     }
     Ok(meters)
 }

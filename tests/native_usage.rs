@@ -140,6 +140,119 @@ fn distinct_limit_buckets_and_windows_remain_distinct() {
 }
 
 #[test]
+fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_yelo() {
+    let home = fixture("personal-invalid-usage");
+    std::fs::create_dir_all(home.join(".claude/.profiles/Personal")).unwrap();
+    for snapshot in [
+        r#"echo '[{"provider":"claude","label":"cl·Personal","window":"5h","pct":30,"state":"ok"}]'"#,
+        "echo '[]'",
+        "exit 1",
+    ] {
+        tool(&home, "yelo", snapshot);
+        let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
+        let account = list["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "Personal")
+            .unwrap();
+        let usage = json(run(&home, &["usage", "--json"]));
+        let claude: Vec<_> = usage["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["provider"] == "claude")
+            .collect();
+        let invalid: Vec<_> = claude
+            .iter()
+            .filter(|row| row["account"] == "Personal")
+            .collect();
+        assert_eq!(invalid.len(), 1, "{snapshot}");
+        assert_eq!(invalid[0]["state"], "no_source", "{snapshot}");
+        assert_eq!(invalid[0]["reason"], account["summary"], "{snapshot}");
+        assert!(
+            invalid[0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("lowercase ASCII")
+        );
+        assert!(invalid[0]["source"].is_null());
+        assert!(
+            claude.iter().all(|row| row["used_pct"].is_null()),
+            "{snapshot}"
+        );
+    }
+}
+
+fn assert_invalid_alias_keeps_work_usage(home: &Path, alias: &str) {
+    json(run(
+        home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let list = json(run(home, &["accounts", "--provider", "codex", "--json"]));
+    let accounts = list["accounts"].as_array().unwrap();
+    let work = accounts.iter().find(|row| row["name"] == "work").unwrap();
+    assert_eq!(work["usage_state"], "fresh");
+    assert_eq!(work["remaining_pct"], 70);
+    assert!(accounts.iter().all(|row| row["name"] != alias));
+    let usage = json(run(home, &["usage", "--json"]));
+    let work_meter = usage["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["provider"] == "codex" && row["account"] == "work")
+        .unwrap();
+    assert_eq!(work_meter["state"], "fresh");
+    assert_eq!(work_meter["used_pct"], 30);
+    let cache: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join(".swarm/codex-usage.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        cache["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["home"] == work["home"])
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn invalid_symlinked_codex_home_does_not_replace_work_cached_usage() {
+    let home = fixture("work-invalid-symlink");
+    std::os::unix::fs::symlink(home.join(".codex-work"), home.join(".codex-Spare")).unwrap();
+    assert_invalid_alias_keeps_work_usage(&home, "Spare");
+}
+
+#[test]
+fn invalid_case_alias_of_registered_codex_home_keeps_work_cached_usage() {
+    let home = fixture("work-invalid-case-alias");
+    let work = home.join(".codex-work");
+    std::fs::rename(&work, home.join(".codex-Work")).unwrap();
+    if !work.exists() {
+        eprintln!("Skipped case-alias fixture because the temp volume is case-sensitive");
+        return;
+    }
+    tool(
+        &home,
+        "codex",
+        &include_str!("fixtures/accounts/work-usage-app-server.sh")
+            .replace("*/.codex-work)", "*/.codex-work|*/.codex-Work)"),
+    );
+    json(run(&home, &["accounts", "--provider", "codex", "--json"]));
+    std::fs::write(
+        home.join(".swarm/accounts.toml"),
+        format!(
+            "version = 1\n[[accounts]]\nprovider = \"codex\"\nname = \"work\"\nhome = \"{}\"\n",
+            work.display()
+        ),
+    )
+    .unwrap();
+    assert_invalid_alias_keeps_work_usage(&home, "Work");
+}
+
+#[test]
 fn cached_claude_usage_uses_yelo_and_missing_sources_never_become_zero() {
     let home = fixture("spare");
     tool(

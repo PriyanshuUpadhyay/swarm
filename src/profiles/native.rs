@@ -189,6 +189,14 @@ fn load_inner(
         super::apply_usage(&mut list, &meters);
     }
     for (name, path) in discovery.skipped {
+        let canonical = resolved(path.clone());
+        if list
+            .accounts
+            .iter()
+            .any(|account| Path::new(&account.home) == canonical)
+        {
+            continue;
+        }
         let path = path.to_string_lossy().into_owned();
         let display_path = path.escape_debug();
         let reason = format!(
@@ -196,8 +204,8 @@ fn load_inner(
             crate::config::MAX_ACCOUNT_NAME_LENGTH
         );
         eprintln!("swarm: {reason}");
-        // Reserved labels cannot share the default/current row's stable name.
-        let name = if matches!(name.as_str(), "auto" | "default" | "current") {
+        // Empty and reserved labels use the path to avoid missing or duplicate row names.
+        let name = if name.is_empty() || matches!(name.as_str(), "auto" | "default" | "current") {
             path.clone()
         } else {
             name

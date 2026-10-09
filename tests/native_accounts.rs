@@ -303,6 +303,30 @@ fn an_upper_case_claude_home_stays_visible_with_one_named_rule_warning() {
 }
 
 #[test]
+fn empty_codex_home_name_uses_the_folder_path_and_rule_reason() {
+    let home = fixture("spare-empty-name");
+    let folder = home.join(".codex-");
+    std::fs::create_dir(&folder).unwrap();
+    tool(
+        &home,
+        "codex",
+        include_str!("fixtures/accounts/work-app-server.sh"),
+    );
+    let list = accounts(&home, "codex", &[]);
+    let row = list["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["home"] == folder.to_string_lossy().as_ref())
+        .unwrap();
+    assert_eq!(row["name"], folder.to_string_lossy().as_ref());
+    assert_eq!(row["usage_state"], "no_source");
+    let reason = row["summary"].as_str().unwrap();
+    assert!(reason.contains(folder.to_str().unwrap()), "{reason}");
+    assert!(reason.contains("invalid account name"), "{reason}");
+}
+
+#[test]
 fn invalid_codex_homes_are_not_read_during_usage_refresh() {
     let home = fixture("spare-invalid-refresh");
     let folder = home.join(".codex-Personal");

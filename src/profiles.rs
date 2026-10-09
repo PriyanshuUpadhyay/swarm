@@ -172,6 +172,9 @@ pub fn translate_usage(
                         .or_else(|| list.accounts.iter().find(|account| account.name == tail))
                 })
         });
+        if account.is_some_and(Account::invalid_home) {
+            continue;
+        }
         let state = match row.state.as_str() {
             "ok" => "fresh",
             "logged_out" => "missing",
