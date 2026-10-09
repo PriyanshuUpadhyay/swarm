@@ -24,12 +24,98 @@ struct SettingsSelectionTests {
         #expect(try choices.load().prefs.settingsPage == "future-page")
     }
 
+    @Test("Reload keeps an app error through good and failed reads")
+    func reloadPreservesAppError() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        let selection = SettingsSelection(choices: choices)
+        selection.setError("Notifications are off for Swarm.")
+        selection.reload()
+        #expect(selection.error == "Notifications are off for Swarm.")
+        let lock = folder.appendingPathComponent("choices.lock")
+        try FileManager.default.removeItem(at: lock)
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        selection.reload()
+        #expect(selection.error == "Notifications are off for Swarm.")
+        try FileManager.default.removeItem(at: lock)
+        selection.reload()
+        #expect(selection.error == "Notifications are off for Swarm.")
+        selection.setError(nil)
+        selection.reload()
+        #expect(selection.error == nil)
+    }
+
+    @Test("A recovered load clears its own error, but keeps a later app error")
+    func recoveredLoadError() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        let lock = folder.appendingPathComponent("choices.lock")
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        let selection = SettingsSelection(choices: choices)
+        #expect(selection.error?.hasPrefix("Could not load") == true)
+        try FileManager.default.removeItem(at: lock)
+        selection.reload()
+        #expect(selection.error == nil)
+        try FileManager.default.removeItem(at: lock)
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        selection.reload()
+        #expect(selection.error?.hasPrefix("Could not load") == true)
+        selection.setError("App lock failed.")
+        try FileManager.default.removeItem(at: lock)
+        selection.reload()
+        #expect(selection.error == "App lock failed.")
+    }
+
+    @Test("A failed preference save restores live values and keeps the persisted bytes")
+    func failedPreferenceSave() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        try choices.update {
+            $0.prefs.theme = .dark
+            $0.prefs.textSize = .large
+            $0.prefs.density = .compact
+            $0.prefs.sendKey = .commandReturn
+            $0.prefs.splitDiff = true
+            $0.prefs.notices.sound = false
+        }
+        let selection = SettingsSelection(choices: choices)
+        let previous = selection.prefs
+        let file = folder.appendingPathComponent("choices.json")
+        let saved = try Data(contentsOf: file)
+        let lock = folder.appendingPathComponent("choices.lock")
+        try FileManager.default.removeItem(at: lock)
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        selection.setTheme(.light)
+        #expect(selection.prefs == previous)
+        selection.setTextSize(.small)
+        #expect(selection.prefs == previous)
+        selection.setDensity(.comfortable)
+        #expect(selection.prefs == previous)
+        selection.setSendKey(.return)
+        #expect(selection.prefs == previous)
+        selection.setSplitDiff(false)
+        #expect(selection.prefs == previous)
+        selection.setNotice(\.post, to: false)
+        #expect(selection.prefs == previous)
+        selection.setProjectMuted("/project", to: true)
+        #expect(selection.prefs == previous)
+        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
+        #expect(try Data(contentsOf: file) == saved)
+        try FileManager.default.removeItem(at: lock)
+        selection.reload()
+        #expect(selection.prefs == previous)
+        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
+    }
+
     @Test("A failed save reports the error and keeps the selected page visible")
     func failedSave() {
         let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         selection.select(.setup)
         #expect(selection.page == .setup)
-        #expect(selection.error?.contains("Could not save") == true)
+        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
     }
 
     @Test("Notice switches and project mutes save one field and keep other choices")
@@ -56,14 +142,14 @@ struct SettingsSelectionTests {
         #expect(try choices.load().prefs.notices.sound)
     }
 
-    @Test("A failed notice save keeps the switch choice and reports its error")
+    @Test("A failed notice save restores the switch and reports a settings error")
     func failedNoticeSave() {
         let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         selection.setNotice(\.post, to: false)
-        #expect(!selection.prefs.notices.post)
-        #expect(selection.error?.contains("Could not save") == true)
+        #expect(selection.prefs.notices.post)
+        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
         selection.setProjectMuted("/project", to: true)
-        #expect(selection.prefs.notices.mutedProjects == ["/project"])
-        #expect(selection.error?.contains("Could not save") == true)
+        #expect(selection.prefs.notices.mutedProjects.isEmpty)
+        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
     }
 }

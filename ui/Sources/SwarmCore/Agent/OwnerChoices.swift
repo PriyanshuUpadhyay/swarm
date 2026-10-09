@@ -83,7 +83,7 @@ public struct OwnerChoices: Codable, Equatable, Sendable {
 }
 
 public struct OwnerChoicesFailure: Hashable, Sendable {
-    public enum Operation: String, Sendable { case load, save, saveViewState }
+    public enum Operation: String, Sendable { case load, save, saveSettings, saveViewState }
     public let operation: Operation
     public let message: String
 
@@ -92,6 +92,8 @@ public struct OwnerChoicesFailure: Hashable, Sendable {
         switch operation {
         case .load, .save:
             message = "Could not \(operation.rawValue) sidebar choices. \(description)"
+        case .saveSettings:
+            message = "Could not save your settings. \(description)"
         case .saveViewState:
             message = "Could not save sidebar view state. \(description)"
         }

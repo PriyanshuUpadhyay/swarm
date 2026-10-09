@@ -30,7 +30,7 @@ struct SetupSettingsTests {
         #expect(settings.prefs.sendKey == .commandReturn)
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setTheme(.light)
-        #expect(unavailable.prefs.theme == .light)
+        #expect(unavailable.prefs.theme == .system)
         #expect(unavailable.error?.contains("Could not save") == true)
     }
 
@@ -64,7 +64,7 @@ struct SetupSettingsTests {
         #expect(try choices.load().prefs.settingsPage == "appearance")
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setSplitDiff(true)
-        #expect(unavailable.prefs.splitDiff)
+        #expect(!unavailable.prefs.splitDiff)
         #expect(unavailable.error?.contains("Could not save") == true)
     }
 

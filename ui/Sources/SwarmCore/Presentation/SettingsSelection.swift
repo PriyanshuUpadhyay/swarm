@@ -8,6 +8,7 @@ public final class SettingsSelection {
     public private(set) var prefs = Prefs()
     public private(set) var error: String?
     private let choices: OwnerChoicesStore
+    private var loadFailed = false
 
     public init(choices: OwnerChoicesStore = OwnerChoicesStore()) {
         self.choices = choices
@@ -19,9 +20,12 @@ public final class SettingsSelection {
             let saved = try choices.load(waitForLock: true)
             prefs = saved.prefs
             page = saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles
-            error = nil
+            if loadFailed { setError(nil) }
         } catch {
-            self.error = OwnerChoicesFailure(error.localizedDescription, operation: .load).message
+            if self.error == nil || loadFailed {
+                self.error = OwnerChoicesFailure(error.localizedDescription, operation: .load).message
+                loadFailed = true
+            }
         }
     }
 
@@ -29,14 +33,15 @@ public final class SettingsSelection {
         self.page = page
         do {
             prefs = try choices.update { $0.prefs.settingsPage = page.rawValue }.prefs
-            error = nil
+            setError(nil)
         } catch {
-            self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
+            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
         }
     }
 
     public func setError(_ message: String?) {
         error = message
+        loadFailed = false
     }
 
     public func setSplitDiff(_ split: Bool) {
@@ -60,12 +65,14 @@ public final class SettingsSelection {
     }
 
     private func updatePrefs(_ update: (inout Prefs) -> Void) {
+        let previous = prefs
         update(&prefs)
         do {
             prefs = try choices.update { update(&$0.prefs) }.prefs
-            error = nil
+            setError(nil)
         } catch {
-            self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
+            prefs = previous
+            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
         }
     }
 
@@ -81,12 +88,14 @@ public final class SettingsSelection {
     }
 
     private func saveNotices(_ change: (inout NoticePrefs) -> Void) {
+        let previous = prefs
         change(&prefs.notices)
         do {
             prefs = try choices.update { change(&$0.prefs.notices) }.prefs
-            error = nil
+            setError(nil)
         } catch {
-            self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
+            prefs = previous
+            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
         }
     }
 }
