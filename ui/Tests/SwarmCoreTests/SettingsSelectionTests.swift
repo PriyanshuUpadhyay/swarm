@@ -24,29 +24,38 @@ struct SettingsSelectionTests {
         #expect(try choices.load().prefs.settingsPage == "future-page")
     }
 
-    @Test("Reload keeps an app error through good and failed reads")
-    func reloadPreservesAppError() throws {
+    @Test("Page clears, selection, saves, and reloads keep the app error until Dismiss")
+    func appErrorPersists() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
         let selection = SettingsSelection(choices: choices)
-        selection.setError("Notifications are off for Swarm.")
+        let denial = "Notifications are off for Swarm."
+        selection.setAppError(denial)
+        selection.setError("Page failed.")
+        selection.setError(nil)
+        #expect(selection.appError == denial && selection.error == nil)
+        selection.select(.setup)
+        selection.setTheme(.dark)
+        selection.setNotice(\.sound, to: false)
+        selection.setProjectMuted("/project", to: true)
         selection.reload()
-        #expect(selection.error == "Notifications are off for Swarm.")
+        #expect(selection.appError == denial && selection.error == nil)
         let lock = folder.appendingPathComponent("choices.lock")
         try FileManager.default.removeItem(at: lock)
         try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
         selection.reload()
-        #expect(selection.error == "Notifications are off for Swarm.")
+        #expect(selection.appError == denial)
+        #expect(selection.error?.hasPrefix("Could not load") == true)
+        selection.setAppError(nil)
+        #expect(selection.appError == nil)
+        #expect(selection.error?.hasPrefix("Could not load") == true)
         try FileManager.default.removeItem(at: lock)
-        selection.reload()
-        #expect(selection.error == "Notifications are off for Swarm.")
-        selection.setError(nil)
         selection.reload()
         #expect(selection.error == nil)
     }
 
-    @Test("A recovered load clears its own error, but keeps a later app error")
+    @Test("A recovered load clears the page error and keeps a later app error")
     func recoveredLoadError() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -55,17 +64,11 @@ struct SettingsSelectionTests {
         try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
         let selection = SettingsSelection(choices: choices)
         #expect(selection.error?.hasPrefix("Could not load") == true)
+        selection.setAppError("App lock failed.")
         try FileManager.default.removeItem(at: lock)
         selection.reload()
         #expect(selection.error == nil)
-        try FileManager.default.removeItem(at: lock)
-        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
-        selection.reload()
-        #expect(selection.error?.hasPrefix("Could not load") == true)
-        selection.setError("App lock failed.")
-        try FileManager.default.removeItem(at: lock)
-        selection.reload()
-        #expect(selection.error == "App lock failed.")
+        #expect(selection.appError == "App lock failed.")
     }
 
     @Test("A failed preference save restores live values and keeps the persisted bytes")
@@ -107,7 +110,7 @@ struct SettingsSelectionTests {
         try FileManager.default.removeItem(at: lock)
         selection.reload()
         #expect(selection.prefs == previous)
-        #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
+        #expect(selection.error == nil)
     }
 
     @Test("A failed save reports the error and keeps the selected page visible")

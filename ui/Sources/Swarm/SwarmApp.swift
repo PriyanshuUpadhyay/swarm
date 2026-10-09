@@ -22,7 +22,7 @@ final class SessionsTreeModel {
         guard noticeCenter == nil else { return }
         noticeSettings = settings
         noticeCenter = NoticeCenter(selectChat: { [weak self] id in self?.noticeAction?(id) }, onDenied: {
-            settings.setError("Notifications are off for Swarm in System Settings, so no notice is shown while the app runs.")
+            settings.setAppError("Notifications are off for Swarm in System Settings, so no notice is shown while the app runs.")
         })
         // One app-owned subscription keeps notices current when every window is closed.
         attachWindow()
@@ -53,7 +53,7 @@ final class SessionsTreeModel {
                                                      project: project, title: navigation.title(for: event.chat)) else { continue }
             Task { [notice] in
                 do { try await noticeCenter.post(notice) }
-                catch { settings.setError(error.localizedDescription) }
+                catch { settings.setAppError(error.localizedDescription) }
             }
         }
     }
@@ -2403,7 +2403,7 @@ struct SwarmApp: App {
             do {
                 try await AppLock.hold()
                 model.startNotices(settings: settings)
-            } catch { settings.setError(error.localizedDescription) }
+            } catch { settings.setAppError(error.localizedDescription) }
         }
     }
 

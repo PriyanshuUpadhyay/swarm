@@ -201,16 +201,16 @@ struct HooksSetupSheet: View {
                 reloading = false
                 phase = .ready(plan)
                 onError(failure)
-                // One announcement, so a setup failure is not cut off by the plan that follows it.
+                // The Settings banner announces page failures; the sheet keeps one joined announcement.
                 let summary = plan.isSetUp ? plan.unchangedText(copy.unchanged) : plan.summary
-                Self.announce([failure, summary].compactMap { $0 }.joined(separator: " "))
+                Self.announce(copy.layout == .page ? summary : [failure, summary].compactMap { $0 }.joined(separator: " "))
             } catch is CancellationError {
                 // The sheet closed or a newer plan run replaced this one.
             } catch {
                 reloading = false
                 phase = .failed(Self.message(error))
                 onError(Self.message(error))
-                Self.announce(Self.message(error))
+                if copy.layout == .sheet { Self.announce(Self.message(error)) }
             }
         }
     }

@@ -6,9 +6,11 @@ import Observation
 public final class SettingsSelection {
     public private(set) var page = SettingsPage.profiles
     public private(set) var prefs = Prefs()
+    // Page loads and saves clear only the page error.
+    // App errors stay until the owner presses their Dismiss button.
+    public private(set) var appError: String?
     public private(set) var error: String?
     private let choices: OwnerChoicesStore
-    private var loadFailed = false
 
     public init(choices: OwnerChoicesStore = OwnerChoicesStore()) {
         self.choices = choices
@@ -20,12 +22,9 @@ public final class SettingsSelection {
             let saved = try choices.load(waitForLock: true)
             prefs = saved.prefs
             page = saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles
-            if loadFailed { setError(nil) }
+            setError(nil)
         } catch {
-            if self.error == nil || loadFailed {
-                self.error = OwnerChoicesFailure(error.localizedDescription, operation: .load).message
-                loadFailed = true
-            }
+            setError(OwnerChoicesFailure(error.localizedDescription, operation: .load).message)
         }
     }
 
@@ -41,7 +40,10 @@ public final class SettingsSelection {
 
     public func setError(_ message: String?) {
         error = message
-        loadFailed = false
+    }
+
+    public func setAppError(_ message: String?) {
+        appError = message
     }
 
     public func setSplitDiff(_ split: Bool) {
@@ -65,10 +67,14 @@ public final class SettingsSelection {
     }
 
     private func updatePrefs(_ update: (inout Prefs) -> Void) {
+        save(update)
+    }
+
+    private func save(_ change: (inout Prefs) -> Void) {
         let previous = prefs
-        update(&prefs)
+        change(&prefs)
         do {
-            prefs = try choices.update { update(&$0.prefs) }.prefs
+            prefs = try choices.update { change(&$0.prefs) }.prefs
             setError(nil)
         } catch {
             prefs = previous
@@ -88,14 +94,6 @@ public final class SettingsSelection {
     }
 
     private func saveNotices(_ change: (inout NoticePrefs) -> Void) {
-        let previous = prefs
-        change(&prefs.notices)
-        do {
-            prefs = try choices.update { change(&$0.prefs.notices) }.prefs
-            setError(nil)
-        } catch {
-            prefs = previous
-            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
-        }
+        save { change(&$0.notices) }
     }
 }
