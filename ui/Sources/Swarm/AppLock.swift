@@ -11,7 +11,7 @@ final class AppLock: NSObject {
         await LoginShellPath.ready()
         try await SwarmCLIBus().initializeHome()
         guard let folder = SwarmHome.dataFolder else { throw OwnerChoicesError.emptyHome }
-        shared.lock = try AppRunLock(folder: folder)
+        shared.lock = try await AppRunLock.acquire(folder: folder, attempts: 3, delay: .milliseconds(20))
         NotificationCenter.default.addObserver(shared, selector: #selector(releaseLock),
                                                name: NSApplication.willTerminateNotification, object: nil)
     }

@@ -2403,7 +2403,10 @@ struct SwarmApp: App {
             do {
                 try await AppLock.hold()
                 model.startNotices(settings: settings)
-            } catch { settings.setAppError(error.localizedDescription) }
+            } catch {
+                let path = SwarmHome.dataFolder.map { AppRunLock.file(in: $0).path } ?? "an unset Swarm home"
+                settings.setAppError("Swarm could not take its app lock at \(path). Another Swarm may hold this folder, so this run shows no app notices.")
+            }
         }
     }
 

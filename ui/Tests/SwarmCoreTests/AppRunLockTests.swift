@@ -55,6 +55,7 @@ struct AppRunLockTests {
     }
 
     @Test("A short CLI shared-lock probe does not prevent the app from acquiring its lock")
+    @MainActor
     func transientProbe() async throws {
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: scratch) }
@@ -63,15 +64,39 @@ struct AppRunLockTests {
         #expect(probe >= 0)
         defer { close(probe) }
         #expect(flock(probe, LOCK_SH | LOCK_NB) == 0)
-        let releaseProbe = Task.detached {
-            try await Task.sleep(for: .milliseconds(10))
+        let retryDelay: Duration = .milliseconds(20)
+        let releaseProbe = Task { @MainActor in
+            try await Task.sleep(for: retryDelay / 2)
             return flock(probe, LOCK_UN)
         }
-        let acquired = Result { try AppRunLock(folder: folder) }
+        let acquired: Result<AppRunLock, Error>
+        do { acquired = .success(try await AppRunLock.acquire(folder: folder, delay: retryDelay)) }
+        catch { acquired = .failure(error) }
         #expect(try await releaseProbe.value == 0)
         let lock = try acquired.get()
         #expect(try String(contentsOf: lock.file, encoding: .utf8) == "\(ProcessInfo.processInfo.processIdentifier)\n")
         try lock.release()
+    }
+
+    @Test("Async acquisition stops on held locks, invalid attempts, and cancellation")
+    @MainActor
+    func acquisitionFailures() async throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let folder = try claimedChoicesFolder(scratch)
+        await #expect(throws: POSIXError(.EINVAL)) {
+            try await AppRunLock.acquire(folder: folder, attempts: 0)
+        }
+        let cancelled = Task { try await AppRunLock.acquire(folder: folder) }
+        cancelled.cancel()
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+        #expect(!FileManager.default.fileExists(atPath: AppRunLock.file(in: folder).path))
+        let held = try AppRunLock(folder: folder)
+        defer { try? held.release() }
+        await #expect(throws: POSIXError(.EWOULDBLOCK)) {
+            try await AppRunLock.acquire(folder: folder, attempts: 3, delay: .zero)
+        }
+        #expect(try String(contentsOf: held.file, encoding: .utf8) == "\(ProcessInfo.processInfo.processIdentifier)\n")
     }
 
     @Test("Dropping the app lock closes its descriptor without removing the file")

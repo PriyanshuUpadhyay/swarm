@@ -10,6 +10,21 @@ public final class AppRunLock: Sendable {
         folder.appendingPathComponent("app.lock")
     }
 
+    /// A CLI probe briefly holds a shared lock, so retry contention without blocking the caller's thread.
+    public static func acquire(folder: URL, attempts: Int = 3, delay: Duration = .milliseconds(20)) async throws -> AppRunLock {
+        guard attempts > 0 else { throw POSIXError(.EINVAL) }
+        var attempted = 0
+        while true {
+            try Task.checkCancellation()
+            attempted += 1
+            do { return try AppRunLock(folder: folder) }
+            catch let error as POSIXError {
+                guard error.code == .EWOULDBLOCK, attempted < attempts else { throw error }
+                try await Task.sleep(for: delay)
+            }
+        }
+    }
+
     /// The caller first initializes the home through the CLI. The pid is informational only.
     public init(folder: URL, pid: Int32 = ProcessInfo.processInfo.processIdentifier) throws {
         guard pid > 0 else { throw CocoaError(.fileWriteInvalidFileName) }
@@ -17,17 +32,10 @@ public final class AppRunLock: Sendable {
         let descriptor = open(file.path, O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         let opened = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        var retries = 0
-        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
-            let code = errno
-            guard code == EWOULDBLOCK, retries < 3 else {
-                let error = POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
-                try? opened.close()
-                throw error
-            }
-            // The CLI briefly holds LOCK_SH while probing; let that probe finish at app launch.
-            retries += 1
-            usleep(20_000)
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            try? opened.close()
+            throw error
         }
         do {
             // Keep the inode while locked; atomic replacement would leave the lock on the old file.
