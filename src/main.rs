@@ -785,12 +785,11 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err("swarm: --cwd must be an existing absolute directory".into());
     }
     let cwd = std::fs::canonicalize(cwd).map_err(|_| "swarm: --cwd is unavailable")?;
+    let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
     let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
     let root = swarm::paths::root_dir()?;
     let adapter = swarm::adapter::Adapter {
-        deadline: Some(swarm::profiles::native::deadline(
-            LOGIN_ADAPTER_TIMEOUT_SECONDS,
-        )),
+        deadline: Some(deadline),
         ..swarm::adapter::load(&root, &adapter_name())
             .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
     };
@@ -852,7 +851,12 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             )),
             ..adapter
         };
-        let _ = closer.run("close", &[("pane", &pane)]);
+        if closer.run("close", &[("pane", &pane)]).is_err() {
+            return Err(format!(
+                "swarm: account registered; cannot start native login; pane {pane} stayed open because close failed"
+            )
+            .into());
+        }
         return Err("swarm: account registered; cannot start native login in pane".into());
     }
     print_json(

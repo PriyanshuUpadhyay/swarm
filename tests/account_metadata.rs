@@ -614,6 +614,7 @@ capture = true
 
 #[test]
 fn a_timed_out_ring_still_closes_its_spawned_pane_before_the_process_limit() {
+    const SWIFT_PROCESS_LIMIT_SECONDS: u64 = 20;
     let home = fixture("spare-ring-timeout");
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -626,13 +627,40 @@ capture = true
 "#,
     )
     .unwrap();
+    let initial = revision(&home);
+    let holder = std::fs::File::create(home.join(".swarm/accounts.lock")).unwrap();
+    holder.lock().unwrap();
+    let lock_wait = std::time::Duration::from_secs(3);
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(lock_wait);
+        holder.unlock().unwrap();
+    });
     let started = std::time::Instant::now();
-    let output = run(&home, &login("codex", "spare", &revision(&home)));
+    let output = run(&home, &login("codex", "spare", &initial));
+    release.join().unwrap();
     assert!(!output.status.success());
-    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    assert!(started.elapsed() >= lock_wait);
+    assert!(started.elapsed() < std::time::Duration::from_secs(SWIFT_PROCESS_LIMIT_SECONDS));
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot start native login"));
     assert_eq!(
         std::fs::read_to_string(home.join("closed-pane")).unwrap(),
         "pane-spare"
     );
+}
+
+#[test]
+fn a_failed_ring_and_close_names_the_pane_that_stayed_open() {
+    let home = fixture("personal-close-failure");
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = true\nspawn = printf pane-personal\nring = echo private-ring-error >&2; exit 8\nlist = true\nclose = echo private-close-error >&2; exit 9\ncapture = true\n",
+    )
+    .unwrap();
+    let output = run(&home, &login("codex", "personal", &revision(&home)));
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("pane-personal"), "{error}");
+    assert!(error.contains("stayed open"), "{error}");
+    assert!(!error.contains("private-ring-error"), "{error}");
+    assert!(!error.contains("private-close-error"), "{error}");
 }
