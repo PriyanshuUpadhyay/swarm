@@ -221,3 +221,67 @@ fn recorded_present_link_is_kept_and_a_missing_recorded_link_is_planned_again() 
     assert!(f.apply(plan["digest"].as_str().unwrap()).status.success());
     assert_eq!(f.status()["skills"], true);
 }
+
+#[test]
+fn every_host_skill_path_names_a_catalog_skill_and_a_planned_cli_destination() {
+    let f = Fixture::new("host-agreement", true);
+    let plan = f.plan();
+    let catalog = swarm::skills::link_catalog();
+    for provider in ["claude", "codex", "agy"] {
+        for (host, worker) in [
+            ("herdr", false),
+            ("herdr", true),
+            ("app", false),
+            ("app", true),
+        ] {
+            let context = swarm::host::context(provider, |name| match (host, name) {
+                ("herdr", "HERDR_ENV") => Some("1".into()),
+                ("herdr", "HERDR_PANE_ID") => Some("fixture-pane".into()),
+                ("app", "SWARM_ADAPTER") => Some("tmux-solo".into()),
+                ("app", "SWARM_SESSION_ID") => Some("fixture-session".into()),
+                ("app", "TMUX_PANE") => Some("fixture-pane".into()),
+                (_, "SWARM_AGENT_ID") if worker => Some("fixture-worker".into()),
+                _ => None,
+            })
+            .unwrap();
+            let paths: Vec<_> = context
+                .split('`')
+                .filter_map(|text| {
+                    text.strip_prefix("~/")
+                        .and_then(|path| path.strip_suffix("/SKILL.md"))
+                })
+                .collect();
+            assert!(!paths.is_empty(), "{provider} {host} worker={worker}");
+            for path in paths {
+                let (root, name) = path.rsplit_once('/').unwrap();
+                assert!(
+                    [".claude/skills", ".agents/skills", ".gemini/config/skills"].contains(&root),
+                    "{path}"
+                );
+                let link = catalog
+                    .iter()
+                    .find(|link| link.name == name)
+                    .unwrap_or_else(|| panic!("host names absent catalog skill {path}"));
+                let destination = f.home.join(path);
+                let file = plan["files"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|file| file["path"] == destination.to_string_lossy().as_ref())
+                    .unwrap_or_else(|| {
+                        panic!("host destination absent from real Skills plan: {path}")
+                    });
+                assert_eq!(file["group"], "skills");
+                assert!(
+                    file["diff"].as_str().unwrap().contains(
+                        f.build_home
+                            .join(".swarm/skills")
+                            .join(&link.path)
+                            .to_str()
+                            .unwrap()
+                    )
+                );
+            }
+        }
+    }
+}
