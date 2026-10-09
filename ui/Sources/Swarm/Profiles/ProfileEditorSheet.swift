@@ -12,6 +12,8 @@ struct ProfileEditorSheet: View {
     let check: SwarmProfileCheck?
     let save: (SwarmProfile) async throws -> Void
     let onSaved: () -> Void
+    let onError: (String?) -> Void
+    let fetchModels: (String) async throws -> [SwarmModel]
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ProfileDraft
@@ -28,13 +30,17 @@ struct ProfileEditorSheet: View {
 
     init(
         profile: SwarmProfile, providers: [SwarmProvider], providersError: String?,
-        check: SwarmProfileCheck?, focus: Int?, save: @escaping (SwarmProfile) async throws -> Void, onSaved: @escaping () -> Void
+        check: SwarmProfileCheck?, focus: Int?, models: @escaping (String) async throws -> [SwarmModel],
+        save: @escaping (SwarmProfile) async throws -> Void,
+        onSaved: @escaping () -> Void, onError: @escaping (String?) -> Void
     ) {
         self.providers = providers
         self.providersError = providersError
         self.check = check
         self.save = save
         self.onSaved = onSaved
+        self.onError = onError
+        self.fetchModels = models
         _pendingFocus = State(initialValue: focus)
         // A one-time seed: the sheet owns the edits from here until Save or Cancel.
         _draft = State(initialValue: ProfileDraft(profile))
@@ -189,10 +195,11 @@ struct ProfileEditorSheet: View {
     private func loadModels(_ provider: String, retry: Bool = false) async {
         if !retry, models[provider] != nil { return }
         do {
-            models[provider] = try await SwarmModelCatalog.shared.models(for: provider)
+            models[provider] = try await fetchModels(provider)
             catalogErrors[provider] = nil
         } catch {
             catalogErrors[provider] = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            onError(catalogErrors[provider])
         }
     }
 
@@ -200,6 +207,7 @@ struct ProfileEditorSheet: View {
         guard !isSaving else { return }
         isSaving = true
         error = nil
+        onError(nil)
         let profile = draft.profile
         Task {
             defer { isSaving = false }
@@ -209,6 +217,7 @@ struct ProfileEditorSheet: View {
                 dismiss()
             } catch {
                 self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                onError(self.error)
             }
         }
     }

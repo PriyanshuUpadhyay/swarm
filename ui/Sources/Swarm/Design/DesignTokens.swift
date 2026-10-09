@@ -50,6 +50,7 @@ enum DesignTokens {
         static let setupGroupList: CGFloat = 420
         /// The profile name column on the Agent profiles page.
         static let profileName: CGFloat = 150
+        static let usagePctField: CGFloat = 48
         /// The health pill column, so every row's chain ends at the same place.
         static let healthPill: CGFloat = 110
         /// The round letter mark of a provider in a runner chip.

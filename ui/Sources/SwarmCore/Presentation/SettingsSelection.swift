@@ -32,4 +32,8 @@ public final class SettingsSelection {
             self.error = OwnerChoicesFailure(error.localizedDescription, operation: .save).message
         }
     }
+
+    public func setError(_ message: String?) {
+        error = message
+    }
 }

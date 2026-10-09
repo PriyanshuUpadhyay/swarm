@@ -38,7 +38,23 @@ struct SettingsWindow: View {
     private var page: some View {
         switch selection.page {
         case .profiles:
-            ProfilesPage()
+            ProfilesPage(
+                cachedProfiles: { await SwarmProfileCatalog.shared.cachedProfiles },
+                loadProfiles: {
+                    await LoginShellPath.ready()
+                    return try await SwarmProfileCatalog.shared.profiles()
+                },
+                loadProviders: { try await SwarmProfileCatalog.shared.providers() },
+                checkProfiles: { try await SwarmCLIProfileSource().check() },
+                loadModels: { try await SwarmModelCatalog.shared.models(for: $0) },
+                saveProfile: { profile, revision in
+                    try await SwarmCLIProfileSource().save(profile, revision: revision)
+                },
+                profileAction: { action, revision in
+                    try await SwarmCLIBus().profileAction(action, revision: revision)
+                },
+                onError: { selection.setError($0) }
+            )
         case .managedChanges:
             ManagedChangesPage()
         case .setup:

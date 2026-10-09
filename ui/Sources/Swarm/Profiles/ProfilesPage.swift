@@ -1,27 +1,76 @@
 import SwiftUI
 import SwarmCore
 
-/// Every agent profile, one line each, grouped by the name before the first dot, `chat` first.
-/// A line shows the runners in order as chips and the profile's health. The list shows at once
+/// Every agent profile, grouped by the name before the first dot, `chat` first.
+/// A row shows its runners, health and actions. The list shows at once
 /// from the config; the chip marks and health fill in when the slower launch check returns.
 struct ProfilesPage: View {
+    let cachedProfiles: () async -> SwarmProfileList?
+    let loadProfiles: () async throws -> SwarmProfileList
+    let loadProviders: () async throws -> [SwarmProvider]
+    let checkProfiles: () async throws -> [SwarmProfileCheck]
+    let loadModels: (String) async throws -> [SwarmModel]
+    let saveProfile: (SwarmProfile, String) async throws -> String
+    let profileAction: (ProfileAction, String) async throws -> String
+    let onError: (String?) -> Void
     @State private var list: SwarmProfileList?
     @State private var checks: [String: SwarmProfileCheck] = [:]
     @State private var checkedAt: Date?
     @State private var providers: [SwarmProvider] = []
     @State private var providersError: String?
     @State private var isLoading = true
-    @State private var error: String?
     @State private var editing: EditTarget?
     @State private var problemsOnly = false
+    @State private var isActing = false
+    @State private var nameAction: NameAction?
+    @State private var profileName = ""
+    @State private var confirmation: Confirmation?
+    @State private var usagePct = ""
     /// The newest load; an older load that answers late writes nothing.
     @State private var loads = 0
     @AppStorage("profiles.importBanner.dismissedFrom") private var dismissedImport = ""
     /// Closed group names, joined by commas; a group is open by default.
     @AppStorage("profiles.collapsedGroups") private var collapsedGroups = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let source = SwarmCLIProfileSource()
-    private let catalog = SwarmProfileCatalog.shared
+
+    private enum NameAction {
+        case new, rename(String), copy(String)
+
+        var title: String {
+            switch self {
+            case .new: "New profile"
+            case .rename(let name): "Rename \(name)"
+            case .copy(let name): "Copy \(name)"
+            }
+        }
+
+        var button: String {
+            switch self {
+            case .new: "Create"
+            case .rename: "Rename"
+            case .copy: "Copy"
+            }
+        }
+
+        func action(name: String) -> ProfileAction {
+            switch self {
+            case .new: .new(name)
+            case .rename(let from): .rename(from: from, to: name)
+            case .copy(let from): .copy(from: from, to: name)
+            }
+        }
+    }
+
+    private enum Confirmation {
+        case delete(String), reset
+
+        var action: ProfileAction {
+            switch self {
+            case .delete(let name): .delete(name)
+            case .reset: .reset
+            }
+        }
+    }
 
     private struct EditTarget: Identifiable {
         let profile: SwarmProfile
@@ -32,12 +81,7 @@ struct ProfilesPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
             header
-            if let error {
-                HStack {
-                    Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
-                    Button("Retry") { Task { await load() } }
-                }
-            }
+            actionControls
             if let imported = list?.imported, imported.from != dismissedImport {
                 importNotice(imported)
             }
@@ -63,7 +107,7 @@ struct ProfilesPage: View {
         .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
-            if list == nil { list = await catalog.cachedProfiles }
+            if list == nil { list = await cachedProfiles() }
             await load()
         }
         .sheet(item: $editing) { target in
@@ -73,13 +117,15 @@ struct ProfilesPage: View {
                 providersError: providersError,
                 check: checks[target.profile.name],
                 focus: target.focus,
+                models: loadModels,
                 save: { edited in
                     guard let revision = list?.revision else {
                         throw SwarmProfileError.failed("Profiles are not loaded yet")
                     }
-                    _ = try await source.save(edited, revision: revision)
+                    _ = try await saveProfile(edited, revision)
                 },
-                onSaved: { Task { await load() } }
+                onSaved: { Task { await load() } },
+                onError: onError
             )
         }
     }
@@ -102,7 +148,7 @@ struct ProfilesPage: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .disabled(isLoading)
+                .disabled(isLoading || isActing)
                 .help("Check the profiles again")
                 .accessibilityLabel("Refresh")
             }
@@ -118,6 +164,112 @@ struct ProfilesPage: View {
                         .toggleStyle(.checkbox)
                         .disabled(health.fallback + health.blocked == 0 && !problemsOnly)
                 }
+            }
+        }
+    }
+
+    private var actionControls: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+            HStack {
+                Button("New…") { startNameAction(.new) }
+                Button("Reset to bundled") {
+                    nameAction = nil
+                    confirmation = .reset
+                }
+            }
+            if let nameAction {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    HStack {
+                        TextField(nameAction.title, text: $profileName)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { submitName() }
+                        Button(nameAction.button) { submitName() }
+                            .disabled(nameError != nil)
+                        Button("Cancel") { self.nameAction = nil }
+                    }
+                    if let nameError {
+                        Text(nameError).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let confirmation {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    switch confirmation {
+                    case .delete(let name): Text("Delete profile '\(name)'?")
+                    case .reset:
+                        Text("Reset to bundled will replace these profiles: \(profileNames.joined(separator: ", ")).")
+                    }
+                    HStack {
+                        Button("Cancel") { self.confirmation = nil }
+                        Button(confirmationButton, role: .destructive) { perform(confirmation.action) }
+                    }
+                }
+            }
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Text("Skip a runner when its usage left is below")
+                TextField("Usage left", text: $usagePct, onEditingChanged: { editing in
+                    if !editing { commitUsage() }
+                })
+                .textFieldStyle(.roundedBorder)
+                .frame(width: DesignTokens.Size.usagePctField)
+                .onSubmit { commitUsage() }
+                Text("%")
+            }
+        }
+        .disabled(list == nil || isLoading || isActing)
+    }
+
+    private var profileNames: [String] { list?.profiles.map(\.name) ?? [] }
+
+    private var nameError: String? {
+        ProfileNameRule.check(profileName, existing: Set(profileNames))
+    }
+
+    private var confirmationButton: String {
+        if case .delete = confirmation { return "Delete" }
+        return "Reset to bundled"
+    }
+
+    private func startNameAction(_ action: NameAction) {
+        confirmation = nil
+        nameAction = action
+        switch action {
+        case .new: profileName = ""
+        case .rename(let name): profileName = name
+        case .copy(let name): profileName = name + ".copy"
+        }
+    }
+
+    private func submitName() {
+        guard let nameAction, nameError == nil else { return }
+        perform(nameAction.action(name: profileName))
+    }
+
+    private func commitUsage() {
+        guard let list, !isLoading, !isActing else { return }
+        guard let pct = Int(usagePct) else {
+            onError("Enter a whole number from 0 to 100 for usage left.")
+            return
+        }
+        guard pct != list.minUsageLeftPct else { return }
+        perform(.setMinUsage(pct))
+    }
+
+    private func perform(_ action: ProfileAction) {
+        guard let revision = list?.revision, !isLoading, !isActing else { return }
+        isActing = true
+        onError(nil)
+        Task {
+            defer { isActing = false }
+            do {
+                _ = try await profileAction(action, revision)
+                nameAction = nil
+                confirmation = nil
+                await load()
+            } catch {
+                let message = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                await load()
+                onError(message)
             }
         }
     }
@@ -149,8 +301,15 @@ struct ProfilesPage: View {
                         check: checks[profile.name],
                         status: status(profile),
                         providers: providers,
-                        onEdit: { editing = EditTarget(profile: profile, focus: $0) }
+                        onEdit: { editing = EditTarget(profile: profile, focus: $0) },
+                        onRename: { startNameAction(.rename(profile.name)) },
+                        onCopy: { startNameAction(.copy(profile.name)) },
+                        onDelete: {
+                            nameAction = nil
+                            confirmation = .delete(profile.name)
+                        }
                     )
+                    .disabled(isLoading || isActing)
                     Divider()
                 }
             }
@@ -212,8 +371,7 @@ struct ProfilesPage: View {
         isLoading = true
         defer { if generation == loads { isLoading = false } }
         do {
-            await LoginShellPath.ready()
-            let loaded = try await catalog.profiles()
+            let loaded = try await loadProfiles()
             try Task.checkCancellation()
             guard generation == loads else { return }
             // A check marks runners by index, so an old check on a changed file marks wrong chips.
@@ -222,32 +380,44 @@ struct ProfilesPage: View {
                 checkedAt = nil
             }
             list = loaded
-            error = nil
+            usagePct = String(loaded.minUsageLeftPct)
+            onError(nil)
         } catch is CancellationError {
             return
         } catch {
             guard generation == loads else { return }
-            self.error = (error as? SwarmProfileError)?.message ?? String(describing: error)
+            onError((error as? SwarmProfileError)?.message ?? String(describing: error))
             return
         }
         if providers.isEmpty {
             do {
-                providers = try await catalog.providers()
+                let loaded = try await loadProviders()
+                try Task.checkCancellation()
+                guard generation == loads else { return }
+                providers = loaded
                 providersError = nil
+            } catch is CancellationError {
+                return
             } catch {
+                guard generation == loads else { return }
                 providersError = (error as? SwarmProfileError)?.message ?? String(describing: error)
+                onError(providersError)
             }
         }
         // A failed or slow check leaves the health unknown rather than showing a wrong one.
-        let checked = try? await source.check()
-        guard generation == loads else { return }
-        guard let checked else {
+        do {
+            let checked = try await checkProfiles()
+            guard generation == loads else { return }
+            checks = Dictionary(checked.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+            checkedAt = .now
+        } catch {
+            guard generation == loads else { return }
             checks = [:]
             checkedAt = nil
-            return
+            if !(error is CancellationError) {
+                onError((error as? SwarmProfileError)?.message ?? String(describing: error))
+            }
         }
-        checks = Dictionary(checked.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-        checkedAt = .now
     }
 }
 
@@ -258,9 +428,33 @@ private struct ProfileRow: View {
     let providers: [SwarmProvider]
     /// Opens the editor, focused on a runner when a chip was clicked.
     let onEdit: (Int?) -> Void
+    let onRename: () -> Void
+    let onCopy: () -> Void
+    let onDelete: () -> Void
     @State private var isHovered = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            row
+            HStack {
+                Spacer()
+                Button("Rename", action: onRename).disabled(profile.name == "chat")
+                Button("Copy", action: onCopy)
+                Button("Delete", role: .destructive, action: onDelete).disabled(profile.name == "chat")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+        }
+        .padding(DesignTokens.Spacing.s)
+        .background(status?.fill ?? .clear)
+        .background(isHovered ? DesignTokens.selectionFill : .clear)
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAction(named: "Edit") { onEdit(nil) }
+    }
+
+    private var row: some View {
         HStack(spacing: DesignTokens.Spacing.m) {
             Text(profile.name)
                 .fontWeight(.medium)
@@ -279,14 +473,8 @@ private struct ProfileRow: View {
         }
         .padding(.horizontal, DesignTokens.Spacing.s)
         .frame(minHeight: DesignTokens.Size.row + DesignTokens.Spacing.xs)
-        .background(status?.fill ?? .clear)
-        .background(isHovered ? DesignTokens.selectionFill : .clear)
         .contentShape(Rectangle())
         .onTapGesture { onEdit(nil) }
-        .onHover { isHovered = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAction(named: "Edit") { onEdit(nil) }
     }
 
     private var accessibilityText: String {
