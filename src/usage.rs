@@ -525,6 +525,7 @@ mod tests {
             usage_state: "missing".into(),
             usage_source: Some("codex_app_server".into()),
             summary: None,
+            invalid_home: false,
         }
     }
 

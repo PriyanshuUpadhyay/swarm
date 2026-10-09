@@ -23,11 +23,13 @@ pub struct Account {
     pub usage_source: Option<String>,
     pub remaining_pct: Option<i64>,
     pub summary: Option<String>,
+    #[serde(skip)]
+    pub invalid_home: bool,
 }
 
 impl Account {
     pub fn invalid_home(&self) -> bool {
-        self.auth_state == AuthState::Unavailable && self.usage_state == "no_source"
+        self.invalid_home
     }
 }
 
@@ -247,6 +249,7 @@ mod tests {
             usage_source: None,
             remaining_pct: remaining,
             summary: None,
+            invalid_home: false,
         }
     }
 

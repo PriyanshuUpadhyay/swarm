@@ -1580,6 +1580,53 @@ fn invalid_codex_home_keeps_real_auth_read_failure_fail_open() {
 }
 
 #[test]
+fn cached_api_key_no_source_keeps_real_auth_read_failure_fail_open() {
+    let home = scratch("personal-cached-auth-read-failure");
+    let env = trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-personal")).unwrap();
+    std::fs::create_dir_all(home.join(".codex-work")).unwrap();
+    let cli = include_str!("fixtures/accounts/work-usage-app-server.sh")
+        .replace("*/.codex-work)", "*/.codex-spare)");
+    tool(&home, "codex", &cli);
+    let refresh = swarm(
+        &home,
+        &[],
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    );
+    assert!(refresh.status.success(), "{}", stderr(&refresh));
+    tool(
+        &home,
+        "codex",
+        &cli.replace(
+            "echo '{\"id\":2,\"result\":{\"account\":{\"type\":\"apiKey\"}}}'",
+            "exit 1",
+        ),
+    );
+    let accounts = swarm(&home, &[], &["accounts", "--provider", "codex", "--json"]);
+    assert!(accounts.status.success(), "{}", stderr(&accounts));
+    let list: serde_json::Value = serde_json::from_slice(&accounts.stdout).unwrap();
+    let rows = list["accounts"].as_array().unwrap();
+    let personal = rows.iter().find(|row| row["name"] == "personal").unwrap();
+    assert_eq!(personal["auth_state"], "unavailable");
+    assert_eq!(personal["usage_state"], "no_source");
+    let work = rows.iter().find(|row| row["name"] == "work").unwrap();
+    assert_eq!(work["auth_state"], "signed_out");
+    assert!(rows.iter().all(|row| row.get("invalid_home").is_none()));
+    let env: Vec<_> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let output = swarm(&home, &env, &["launch", "personal", "review.deep"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("swarm: review.deep: running codex/gpt-6-luna/high"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!stderr(&output).contains("no codex account is signed in"));
+}
+
+#[test]
 fn named_launch_reuses_the_role_probe_deadline() {
     let home = scratch("work-account-deadline");
     std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();

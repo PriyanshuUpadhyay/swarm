@@ -182,6 +182,7 @@ fn load_inner(
                 .into(),
             ),
             summary: None,
+            invalid_home: false,
         });
     }
     if include_usage {
@@ -220,6 +221,7 @@ fn load_inner(
             usage_state: "no_source".into(),
             usage_source: None,
             summary: Some(reason),
+            invalid_home: true,
         });
     }
     list.accounts

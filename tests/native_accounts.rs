@@ -150,6 +150,7 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
         usage_state: "missing".into(),
         usage_source: Some("codex_app_server".into()),
         summary: None,
+        invalid_home: false,
     });
     let mut meters: Vec<swarm::profiles::UsageMeter> = serde_json::from_value(serde_json::json!([
         {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":700},
