@@ -37,7 +37,12 @@ struct SettingsWindow: View {
                     }
                     .foregroundStyle(.red).padding(tokens.spacing.m)
                 }
-                if let error = selection.storeError {
+                if let error = selection.loadError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled).padding(tokens.spacing.m)
+                }
+                if let error = selection.saveError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .textSelection(.enabled).padding(tokens.spacing.m)
@@ -56,8 +61,11 @@ struct SettingsWindow: View {
         .onChange(of: selection.appErrorRevision, initial: true) { _, _ in
             if let message = selection.appError { AccessibilityNotification.Announcement(message).post() }
         }
-        .onChange(of: selection.storeErrorRevision, initial: true) { _, _ in
-            if let message = selection.storeError { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: selection.loadErrorRevision, initial: true) { _, _ in
+            if let message = selection.loadError { AccessibilityNotification.Announcement(message).post() }
+        }
+        .onChange(of: selection.saveErrorRevision, initial: true) { _, _ in
+            if let message = selection.saveError { AccessibilityNotification.Announcement(message).post() }
         }
         .onChange(of: selection.pageErrorRevision, initial: true) { _, _ in
             if let message = selection.pageError { AccessibilityNotification.Announcement(message).post() }
@@ -88,7 +96,7 @@ struct SettingsWindow: View {
                 profileAction: { action, revision in
                     try await SwarmCLIBus().profileAction(action, revision: revision)
                 },
-                onError: { selection.setError($0) }
+                onError: { selection.setPageError($0) }
             )
         case .managedChanges:
             ManagedChangesPage()
@@ -111,9 +119,9 @@ struct SettingsWindow: View {
                         notNow: { _ in }, done: {}, copy: .setup,
                         onError: {
                             setupError = $0
-                            selection.setError(setupErrorMessage)
+                            selection.setPageError(setupErrorMessage)
                         },
-                        canAnnounceSummary: { selection.pageError == nil && selection.storeError == nil }
+                        canAnnounceSummary: { selection.pageError == nil && selection.loadError == nil && selection.saveError == nil }
                     )
                     GuardsPage(
                         load: {
@@ -128,7 +136,7 @@ struct SettingsWindow: View {
                         },
                         onError: {
                             guardsError = $0
-                            selection.setError(setupErrorMessage)
+                            selection.setPageError(setupErrorMessage)
                         }
                     )
                     .padding([.horizontal, .bottom], tokens.spacing.xl)

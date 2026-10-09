@@ -20,7 +20,7 @@ struct SetupSettingsTests {
         let expected = Prefs(settingsPage: "appearance", splitDiff: true, theme: .dark,
                              textSize: .large, density: .compact, sendKey: .commandReturn)
         #expect(settings.prefs == expected)
-        #expect(settings.storeError == nil)
+        #expect(settings.saveError == nil)
         #expect(try choices.load().prefs == expected)
         #expect(try choices.load().pinned == ["/project"])
         #expect(SettingsSelection(choices: choices).prefs == expected)
@@ -31,7 +31,7 @@ struct SetupSettingsTests {
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setTheme(.light)
         #expect(unavailable.prefs.theme == .system)
-        #expect(unavailable.storeError?.contains("Could not save") == true)
+        #expect(unavailable.saveError?.contains("Could not save") == true)
     }
 
     @Test("Reading default preferences does not create choices.json")
@@ -65,7 +65,7 @@ struct SetupSettingsTests {
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setSplitDiff(true)
         #expect(!unavailable.prefs.splitDiff)
-        #expect(unavailable.storeError?.contains("Could not save") == true)
+        #expect(unavailable.saveError?.contains("Could not save") == true)
     }
 
     @Test("The guards path is global across builds and SWARM_HOME, with an explicit override")
@@ -348,11 +348,11 @@ struct SetupSettingsTests {
         editor.drafts[0].name = "First rule"
         editor.add()
         editor.drafts[1].name = "Second rule"
-        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a command")
+        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a command.")
         editor.drafts[1].timeout = "invalid"
-        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a whole timeout in seconds, or an empty field")
+        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a whole timeout in seconds, or an empty field.")
         editor.drafts[0].command[0].text = "/bin/true"
-        #expect(editor.error == editor.drafts[1].error)
+        #expect(editor.error == editor.drafts[1].error.map(ErrorText.sentence))
     }
 
     @Test("A failed guard write reaches the editor error and clears after a good save")
@@ -382,7 +382,7 @@ struct SetupSettingsTests {
         #expect(editor.canEdit)
         editor.add()
         #expect(!editor.canSave)
-        #expect(editor.error == "Rule 'New guard' needs a command")
+        #expect(editor.error == "Rule 'New guard' needs a command.")
         editor.drafts[0].command[0].text = "/bin/true"
         #expect(editor.canSave)
         #expect(editor.error == nil)

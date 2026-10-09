@@ -1,17 +1,12 @@
-public struct ErrorAnnouncement: Equatable, Sendable {
-    public let text: String?
-    public let revision: Int
-
-    public init(messages: [String?], revision: Int) {
-        self.text = Self.joined(messages)
-        self.revision = revision
+public enum ErrorText {
+    public static func sentence(_ text: String) -> String {
+        (text.hasSuffix(".") ? String(text.dropLast()) : text) + "."
     }
+}
 
+public enum ErrorAnnouncement {
     public static func joined(_ messages: [String?]) -> String? {
-        let text = messages.compactMap { $0 }.filter { !$0.isEmpty }.reduce("") { previous, message in
-            guard !previous.isEmpty else { return message }
-            return previous + (previous.hasSuffix(".") ? " " : ". ") + message
-        }
-        return text.isEmpty ? nil : text
+        let sentences = messages.compactMap { $0 }.filter { !$0.isEmpty }.map(ErrorText.sentence)
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 }
