@@ -26,9 +26,13 @@ struct ChatWindow: View {
             .flatMap { model.navigation.readOnlyReason(in: $0.id) }
     }
 
+    private var errorMessage: String? {
+        error ?? (model.error == dismissedModelError ? nil : model.error)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if let message = error ?? (model.error == dismissedModelError ? nil : model.error) {
+            if let message = errorMessage {
                 HStack {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red).textSelection(.enabled)
@@ -81,6 +85,9 @@ struct ChatWindow: View {
             details.activate(id)
             panes.stop(keepingSession: id)
         }
+        .onChange(of: errorMessage, initial: true) { _, message in
+            if let message { AccessibilityNotification.Announcement(message).post() }
+        }
         .onChange(of: model.error) { _, _ in dismissedModelError = nil }
         .onDisappear {
             panes.stopAll()
@@ -98,7 +105,7 @@ struct ChatWindow: View {
                     }
                 ) { _ in
                     Task {
-                        do { try await model.refresh(); clearError() }
+                        do { try await model.refresh(); error = nil }
                         catch { self.error = error.localizedDescription }
                     }
                 }
@@ -125,9 +132,7 @@ struct ChatWindow: View {
 
     private func childActions(in session: SwarmSession) -> ChildAgentActions {
         ChildAgentActions(bus: SwarmCLIBus(), session: session,
-                          confirm: { confirmingChild = $0 }, error: {
-            if let message = $0 { error = message } else { clearError() }
-        })
+                          confirm: { confirmingChild = $0 }, error: { error = $0 })
     }
 
     private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
