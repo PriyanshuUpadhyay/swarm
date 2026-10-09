@@ -1186,12 +1186,14 @@ fn hook_plans(files: &HookFiles, has_list: bool) -> Vec<swarm::managed::FilePlan
 
 /// The groups of `swarm setup`, in plan order (ADR 0043). The list may grow, so the app shows a
 /// group it does not know by its name.
-const SETUP_GROUPS: [&str; 3] = ["hooks", "trust", "herdr"];
+const SETUP_GROUPS: [&str; 4] = ["hooks", "trust", "herdr", "skills"];
 
 /// One `swarm setup` plan: each file's plan in apply order, the group of each, and each group
 /// part that was left out with its reason.
 struct SetupPlan {
-    plans: Vec<swarm::managed::FilePlan>,
+    plans: Vec<swarm::managed::Plan>,
+    selected: Vec<String>,
+    skills_content: Option<String>,
     groups: Vec<&'static str>,
     /// For each trust plan, how to plan that one file again when it is written (L-4), so a write
     /// under the trust lock reads no other file and runs no `git` (L-1).
@@ -1217,6 +1219,8 @@ impl SetupPlan {
         let files = HookFiles::of(&user_home)?;
         let mut setup = Self {
             plans: Vec::new(),
+            selected: groups.iter().map(|group| group.to_string()).collect(),
+            skills_content: None,
             groups: Vec::new(),
             replans: Vec::new(),
             skipped: Vec::new(),
@@ -1248,6 +1252,10 @@ impl SetupPlan {
                             .plans
                             .iter()
                             .rev()
+                            .filter_map(|plan| match plan {
+                                swarm::managed::Plan::File(plan) => Some(plan),
+                                _ => None,
+                            })
                             .find(|plan| canonical(&plan.path) == canonical(path));
                         // A file the earlier plan cannot edit has no planned text to build on.
                         if let Some(conflict) = earlier.and_then(|plan| plan.conflicts.first()) {
@@ -1306,12 +1314,19 @@ impl SetupPlan {
         }
         // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (its ADR,
         // PR #30) adds its plans here; this build has none, so the group is always set up.
+        if groups.contains(&"skills") {
+            let (plans, content_id) = skills_setup_plans()?;
+            setup.skills_content = content_id;
+            for plan in plans {
+                setup.push("skills", plan);
+            }
+        }
         Ok(setup)
     }
 
-    fn push(&mut self, group: &'static str, plan: swarm::managed::FilePlan) {
+    fn push(&mut self, group: &'static str, plan: impl Into<swarm::managed::Plan>) {
         self.groups.push(group);
-        self.plans.push(plan);
+        self.plans.push(plan.into());
         self.replans.push(None);
     }
 
@@ -1321,7 +1336,7 @@ impl SetupPlan {
     }
 
     /// Each plan with its group.
-    fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::FilePlan)> {
+    fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::Plan)> {
         self.groups.iter().copied().zip(&self.plans)
     }
 
@@ -1332,14 +1347,22 @@ impl SetupPlan {
     fn digest(&self) -> String {
         use sha2::Digest;
         let mut digest = sha2::Sha256::new();
+        digest.update(serde_json::to_vec(&self.selected).unwrap());
+        digest.update([0]);
+        digest.update(serde_json::to_vec(&self.skills_content).unwrap());
+        digest.update([0]);
         for (group, plan) in self.grouped() {
-            let mut parts = vec![plan.path.to_string_lossy().into_owned()];
-            if group != "trust" {
-                parts.extend([plan.before.clone(), plan.after.clone()]);
-            }
-            for edit in plan.edits.iter().filter(|_| group == "trust") {
-                let before = edit.before.as_ref().map(serde_json::Value::to_string);
-                parts.extend([edit.id(), edit.wrote.to_string(), format!("{before:?}")]);
+            let mut parts = vec![
+                group.to_string(),
+                plan.path().to_string_lossy().into_owned(),
+            ];
+            if group == "trust" {
+                for edit in plan.edits() {
+                    let before = edit.before.as_ref().map(serde_json::Value::to_string);
+                    parts.extend([edit.id(), edit.wrote.to_string(), format!("{before:?}")]);
+                }
+            } else {
+                parts.push(swarm::managed::digest(std::slice::from_ref(plan)));
             }
             for part in parts {
                 digest.update(part.as_bytes());
@@ -1352,6 +1375,55 @@ impl SetupPlan {
             .map(|byte| format!("{byte:02x}"))
             .collect()
     }
+}
+
+/// Read managed ownership without creating a database or changing its schema.
+fn skills_setup_plans()
+-> Result<(Vec<swarm::managed::Plan>, Option<String>), Box<dyn std::error::Error>> {
+    use swarm::managed::{FilePlan, LinkPlan};
+    let home = std::path::PathBuf::from(env_var("HOME")?);
+    let root = std::path::PathBuf::from(swarm::paths::home()?).join(".swarm");
+    let copy = root.join("skills");
+    let manifest = match swarm::skills::Manifest::read(&copy) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            let mut plan = FilePlan::unreadable(copy, error.to_string());
+            plan.conflicts[0].entry = "the default skills copy".into();
+            plan.conflicts[0].wanted = "a complete default skills copy".into();
+            plan.conflicts[0].fix =
+                "run `swarm skills refresh`, then check the Skills plan again".into();
+            return Ok((vec![plan.into()], None));
+        }
+    };
+    let database = root.join("swarm.db");
+    let store = if database.try_exists()? {
+        rusqlite::Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?
+    } else {
+        swarm::store::open(std::path::Path::new(":memory:"))?
+    };
+    let mut plans = Vec::new();
+    for cli_root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
+        for link in &manifest.catalog {
+            plans.push(
+                LinkPlan::create(
+                    &store,
+                    home.join(cli_root).join(&link.name),
+                    copy.join(&link.path),
+                )?
+                .into(),
+            );
+        }
+    }
+    Ok((plans, Some(manifest.content_id)))
+}
+
+fn skills_setup_status() -> bool {
+    skills_setup_plans().is_ok_and(|(plans, content)| {
+        content.is_some()
+            && plans
+                .iter()
+                .all(|plan| !plan.changes() && plan.conflicts().is_empty())
+    })
 }
 
 /// The key of `~/.swarm/consent.json` that holds the owner's answer for launch folder trust, and
@@ -1419,7 +1491,7 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 /// its home, in one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup`
 /// writes them, `trust`, the launch consent (`--consent`, by default the recorded answer, else
 /// standing) and the trust entries a launch in `--cwd` would write, for a resuming seat with
-/// `--resume`, and `herdr`. Running it, or applying the plan's digest, is the owner's consent, as
+/// `--resume`, and `herdr`, followed by `skills`. Running it, or applying the plan's digest, is the owner's consent, as
 /// for `hooks setup`, so a child pane may plan but not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1432,6 +1504,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             // The owner answered, standing or ask, so the app does not ask again.
             "trust": trust_answer().is_some(),
             "herdr": true,
+            "skills": skills_setup_status(),
         }));
     }
     let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
@@ -1492,15 +1565,15 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "digest": plan_digest,
                 "consent": answer,
                 "files": setup.grouped()
-                    .filter(|(_, plan)| plan.after != plan.before)
+                    .filter(|(_, plan)| plan.changes())
                     .map(|(group, plan)| serde_json::json!({
                         "group": group,
-                        "path": plan.path.to_string_lossy(),
-                        "diff": swarm::managed::diff(&plan.clone().into()),
+                        "path": plan.path().to_string_lossy(),
+                        "diff": swarm::managed::diff(plan),
                     }))
                     .collect::<Vec<_>>(),
                 "conflicts": setup.grouped()
-                    .flat_map(|(group, plan)| plan.conflicts.iter().map(move |conflict| (group, conflict)))
+                    .flat_map(|(group, plan)| plan.conflicts().iter().map(move |conflict| (group, conflict)))
                     .map(|(group, conflict)| group_of(serde_json::json!(conflict), group))
                     .collect::<Vec<_>>(),
                 "skipped": setup.skipped.iter()
@@ -1527,12 +1600,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         print!(
             "{}",
             swarm::managed::plan_text(
-                &setup
-                    .plans
-                    .iter()
-                    .cloned()
-                    .map(Into::into)
-                    .collect::<Vec<_>>(),
+                &setup.plans,
                 &apply,
                 "Swarm is already set up. No file changes."
             )
@@ -1554,7 +1622,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A retry after a timeout finds nothing to do, and that is not a failure.
         if plans
             .iter()
-            .all(|plan| plan.after == plan.before && plan.conflicts.is_empty())
+            .all(|plan| !plan.changes() && plan.conflicts().is_empty())
         {
             println!("swarm: already set up. No file changes.");
             return Ok(());
@@ -1564,9 +1632,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("swarm: a file changed after the plan; check the plan again".into());
         }
-        if let Some(conflicts) = swarm::managed::conflicts_text(
-            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
-        ) {
+        if let Some(conflicts) = swarm::managed::conflicts_text(plans) {
             return Err(conflicts);
         }
         // A running CLI may rewrite its trust file at any moment, such as `~/.claude.json`, and
@@ -1576,7 +1642,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let written = match replan {
                 Some(replan) => swarm::bus::write_trust(&store, replan)
                     .map(|written| written.into_iter().map(|plan| plan.path).collect()),
-                None => swarm::managed::apply(&store, &[plan.clone().into()]),
+                None => swarm::managed::apply(&store, std::slice::from_ref(plan)),
             };
             match written {
                 Ok(changed) => {

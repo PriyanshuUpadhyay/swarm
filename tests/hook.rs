@@ -606,6 +606,10 @@ fn swarm_guards_names_the_rule_list() {
 fn setup(home: &Path, args: &[&str]) -> Output {
     let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
     command.current_dir(home).arg("setup").args(args);
+    // These fixtures cover the original groups without requiring a bundled skills copy.
+    if args.first() != Some(&"status") && !args.contains(&"--only") {
+        command.args(["--only", "hooks,trust,herdr"]);
+    }
     piped(command, "")
 }
 
@@ -640,7 +644,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     };
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true})
+        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true, "skills": false})
     );
 
     let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
@@ -699,7 +703,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let digest = plan["digest"].as_str().unwrap();
     assert!(
         text.ends_with(&format!(
-            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}'` to apply.\n"
+            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}' --only hooks,trust,herdr` to apply.\n"
         )),
         "{text}"
     );
@@ -708,7 +712,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     assert!(applied.status.success(), "{applied:?}");
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true})
+        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true, "skills": false})
     );
     let config = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
     assert!(config.contains("[hooks.state.") && config.contains(&format!("[projects.\"{cwd}\"]")));
