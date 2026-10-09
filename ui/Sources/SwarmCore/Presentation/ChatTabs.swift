@@ -5,7 +5,7 @@ public struct ChatTab: Sendable, Hashable, Identifiable {
     public let id: String
     public let title: String
     public let status: AgentStatus?
-    /// One letter for the chat's provider, such as C for Claude or X for Codex.
+    /// The fallback letter when ProviderGlyph has no symbol for the chat's provider.
     public let badge: String?
     /// A live chat can be closed; an ended one or one already closing cannot.
     public let canClose: Bool

@@ -1,25 +1,22 @@
 import SwiftUI
 import SwarmCore
 
-/// A provider as a round letter mark. The repo ships no provider logos.
+/// A provider symbol, with a letter for a provider the app does not know.
 struct ProviderMark: View {
     let provider: String
+    var fallback: String?
 
     var body: some View {
-        Text(Self.letter(provider))
-            .font(.caption2.weight(.bold))
-            .frame(width: DesignTokens.Size.providerMark, height: DesignTokens.Size.providerMark)
-            .overlay(Circle().strokeBorder(.secondary, lineWidth: DesignTokens.Size.hairline))
-            .accessibilityHidden(true)
-    }
-
-    static func letter(_ provider: String) -> String {
-        switch provider {
-        // Codex takes X so it does not read as a second Claude.
-        case "codex": "X"
-        case "agy": "G"
-        default: String(provider.prefix(1)).uppercased()
+        Group {
+            if let symbol = ProviderGlyph.symbol(provider: provider) {
+                Image(systemName: symbol)
+            } else {
+                Text(fallback ?? ChatTab.badge(provider))
+            }
         }
+        .font(.caption2.weight(.bold))
+        .frame(width: DesignTokens.Size.providerMark, height: DesignTokens.Size.providerMark)
+        .accessibilityLabel(provider)
     }
 }
 

@@ -44,6 +44,9 @@ struct AppearanceTests {
 
     @Test("Known providers have distinct symbols and unknown providers keep their letter")
     func providers() {
+        #expect(ProviderGlyph.symbol(provider: "claude") == "sparkles")
+        #expect(ProviderGlyph.symbol(provider: "codex") == "terminal")
+        #expect(ProviderGlyph.symbol(provider: "agy") == "globe")
         let symbols = ["claude", "codex", "agy"].compactMap { ProviderGlyph.symbol(provider: $0) }
         #expect(symbols.count == 3 && Set(symbols).count == 3)
         #expect(ProviderGlyph.symbol(provider: "CLAUDE") == ProviderGlyph.symbol(provider: "claude"))

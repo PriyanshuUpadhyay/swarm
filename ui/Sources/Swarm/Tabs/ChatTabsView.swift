@@ -208,8 +208,9 @@ private struct ChatTabView: View {
                         Text(tab.title).lineLimit(1).truncationMode(.tail)
                     } else {
                         ForEach(Array(tab.fields.enumerated()), id: \.offset) { _, value in
-                            if value.field == .provider, let badge = tab.badge {
-                                Text(badge).font(.caption2).foregroundStyle(.secondary).fixedSize()
+                            if value.field == .provider {
+                                ProviderMark(provider: value.text, fallback: tab.badge)
+                                    .foregroundStyle(.secondary).fixedSize()
                             } else {
                                 RowFieldLabel(value: value)
                             }

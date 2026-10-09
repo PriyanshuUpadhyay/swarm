@@ -53,7 +53,7 @@ enum DesignTokens {
         static let usagePctField: CGFloat = 48
         /// The health pill column, so every row's chain ends at the same place.
         static let healthPill: CGFloat = 110
-        /// The round letter mark of a provider in a runner chip.
+        /// The provider symbol or fallback letter in a row or runner chip.
         static let providerMark: CGFloat = 15
         /// One runner card's height before it is measured, and the card list's least height.
         static let runnerCard: CGFloat = 104

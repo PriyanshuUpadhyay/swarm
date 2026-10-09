@@ -500,6 +500,7 @@ private struct WorkspaceDrag: Codable, Transferable {
 }
 
 struct RowFieldLabel: View {
+    @Environment(\.designTokens) private var tokens
     let value: RowFieldValue
     var dimmed = false
 
@@ -511,6 +512,16 @@ struct RowFieldLabel: View {
             Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.tint)
                 .accessibilityLabel("Unread")
                 .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
+        } else if value.field == .provider {
+            HStack(spacing: tokens.spacing.xs) {
+                ForEach(value.text.components(separatedBy: " · "), id: \.self) { provider in
+                    ProviderMark(provider: provider)
+                }
+            }
+            .foregroundStyle(dimmed ? .tertiary : .secondary)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(value.text)
         } else {
             Text(verbatim: value.text).lineLimit(1)
                 .truncationMode(value.field == .title ? .tail : .middle)
