@@ -87,10 +87,13 @@ struct ChatWindow: View {
             details.activate(id)
             panes.stop(keepingSession: id)
         }
-        .onChange(of: ErrorAnnouncement(messages: [errorMessage], revision: errorRevision), initial: true) { _, announcement in
-            if let message = announcement.text { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: errorRevision, initial: true) { _, _ in
+            if let error { AccessibilityNotification.Announcement(error).post() }
         }
-        .onChange(of: model.error) { _, _ in dismissedModelError = nil }
+        .onChange(of: model.error, initial: true) { _, message in
+            dismissedModelError = nil
+            if error == nil, let message { AccessibilityNotification.Announcement(message).post() }
+        }
         .onDisappear {
             panes.stopAll()
             details.activate(nil)
@@ -129,7 +132,7 @@ struct ChatWindow: View {
 
     private func setError(_ message: String?) {
         error = message
-        errorRevision += 1
+        if message != nil { errorRevision += 1 }
     }
 
     // Only the Dismiss button may hide a model error.

@@ -37,7 +37,12 @@ struct SettingsWindow: View {
                     }
                     .foregroundStyle(.red).padding(tokens.spacing.m)
                 }
-                if let error = errorMessage {
+                if let error = selection.storeError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled).padding(tokens.spacing.m)
+                }
+                if let error = selection.pageError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .textSelection(.enabled).padding(tokens.spacing.m)
@@ -48,15 +53,16 @@ struct SettingsWindow: View {
         }
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
         .task { selection.reload() }
-        .onChange(of: ErrorAnnouncement(messages: [selection.appError, errorMessage], revision: selection.errorRevision),
-                  initial: true) { _, announcement in
-            if let message = announcement.text { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: selection.appErrorRevision, initial: true) { _, _ in
+            if let message = selection.appError { AccessibilityNotification.Announcement(message).post() }
+        }
+        .onChange(of: selection.storeErrorRevision, initial: true) { _, _ in
+            if let message = selection.storeError { AccessibilityNotification.Announcement(message).post() }
+        }
+        .onChange(of: selection.pageErrorRevision, initial: true) { _, _ in
+            if let message = selection.pageError { AccessibilityNotification.Announcement(message).post() }
         }
         .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
-    }
-
-    private var errorMessage: String? {
-        selection.error ?? (selection.page == .setup ? setupErrorMessage : nil)
     }
 
     private var setupErrorMessage: String? {
@@ -107,7 +113,7 @@ struct SettingsWindow: View {
                             setupError = $0
                             selection.setError(setupErrorMessage)
                         },
-                        canAnnounceSummary: { selection.appError == nil && errorMessage == nil }
+                        canAnnounceSummary: { selection.pageError == nil && selection.storeError == nil }
                     )
                     GuardsPage(
                         load: {

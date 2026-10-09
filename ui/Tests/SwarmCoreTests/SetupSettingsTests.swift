@@ -20,7 +20,7 @@ struct SetupSettingsTests {
         let expected = Prefs(settingsPage: "appearance", splitDiff: true, theme: .dark,
                              textSize: .large, density: .compact, sendKey: .commandReturn)
         #expect(settings.prefs == expected)
-        #expect(settings.error == nil)
+        #expect(settings.storeError == nil)
         #expect(try choices.load().prefs == expected)
         #expect(try choices.load().pinned == ["/project"])
         #expect(SettingsSelection(choices: choices).prefs == expected)
@@ -31,7 +31,7 @@ struct SetupSettingsTests {
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setTheme(.light)
         #expect(unavailable.prefs.theme == .system)
-        #expect(unavailable.error?.contains("Could not save") == true)
+        #expect(unavailable.storeError?.contains("Could not save") == true)
     }
 
     @Test("Reading default preferences does not create choices.json")
@@ -65,7 +65,7 @@ struct SetupSettingsTests {
         let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         unavailable.setSplitDiff(true)
         #expect(!unavailable.prefs.splitDiff)
-        #expect(unavailable.error?.contains("Could not save") == true)
+        #expect(unavailable.storeError?.contains("Could not save") == true)
     }
 
     @Test("The guards path is global across builds and SWARM_HOME, with an explicit override")

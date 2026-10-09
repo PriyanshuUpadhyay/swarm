@@ -6,13 +6,13 @@ import Observation
 public final class SettingsSelection {
     public private(set) var page = SettingsPage.profiles
     public private(set) var prefs = Prefs()
-    // A recovered load clears only its own error; a save error survives reload.
-    // App errors stay until the owner presses their Dismiss button.
+    // Each source clears and announces only its own error.
     public private(set) var appError: String?
-    public private(set) var error: String?
-    public private(set) var errorRevision = 0
-    private enum ErrorSource { case load, save }
-    private var errorSource: ErrorSource?
+    public private(set) var storeError: String?
+    public private(set) var pageError: String?
+    public private(set) var appErrorRevision = 0
+    public private(set) var storeErrorRevision = 0
+    public private(set) var pageErrorRevision = 0
     private let choices: OwnerChoicesStore
 
     public init(choices: OwnerChoicesStore = OwnerChoicesStore()) {
@@ -25,10 +25,9 @@ public final class SettingsSelection {
             let saved = try choices.load(waitForLock: true)
             prefs = saved.prefs
             page = saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles
-            if errorSource == .load { setError(nil) }
+            setStoreError(nil)
         } catch {
-            setError(OwnerChoicesFailure(error.localizedDescription, operation: .load).message)
-            errorSource = .load
+            setStoreError(OwnerChoicesFailure(error.localizedDescription, operation: .load).message)
         }
     }
 
@@ -36,21 +35,25 @@ public final class SettingsSelection {
         self.page = page
         do {
             prefs = try choices.update { $0.prefs.settingsPage = page.rawValue }.prefs
-            setError(nil)
+            setStoreError(nil)
         } catch {
-            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
+            setStoreError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
         }
     }
 
     public func setError(_ message: String?) {
-        error = message
-        errorSource = message == nil ? nil : .save
-        errorRevision += 1
+        pageError = message
+        if message != nil { pageErrorRevision += 1 }
     }
 
     public func setAppError(_ message: String?) {
         appError = message
-        errorRevision += 1
+        if message != nil { appErrorRevision += 1 }
+    }
+
+    private func setStoreError(_ message: String?) {
+        storeError = message
+        if message != nil { storeErrorRevision += 1 }
     }
 
     public func setSplitDiff(_ split: Bool) {
@@ -78,10 +81,10 @@ public final class SettingsSelection {
         change(&prefs)
         do {
             prefs = try choices.update { change(&$0.prefs) }.prefs
-            setError(nil)
+            setStoreError(nil)
         } catch {
             prefs = previous
-            setError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
+            setStoreError(OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message)
         }
     }
 
