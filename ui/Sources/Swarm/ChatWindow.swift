@@ -96,7 +96,8 @@ struct ChatWindow: View {
         }
         .sheet(isPresented: $showingUsage) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                UsageDetails(usage: details.entries.first?.model.usage, hasChat: row != nil)
+                UsageDetails(usage: details.entries.first?.model.usage, chainUsage: row.map(model.chainUsage),
+                             hasChat: row != nil)
                 Button("Close") { showingUsage = false }
             }
             .padding(DesignTokens.Spacing.xl)

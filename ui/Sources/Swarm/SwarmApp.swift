@@ -151,8 +151,9 @@ final class SessionsTreeModel {
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
-    var selectedChainUsage: ChainUsage? {
-        guard let chat = selectedSession else { return nil }
+    var selectedChainUsage: ChainUsage? { selectedSession.map(chainUsage) }
+
+    func chainUsage(of chat: SwarmProjectSession) -> ChainUsage {
         var chairs: [SwarmSessionID: SwarmAgent] = [:]
         for session in chat.sessions {
             chairs[session.id] = (tree.agentsBySession[session.id] ?? []).first {
