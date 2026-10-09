@@ -50,6 +50,7 @@ final class SessionsTreeModel {
     var selectedWorkspace: WorkspaceEntry? {
         workspaces.first { $0.id == navigation.selectedWorkspace }
     }
+    var hasProject: Bool { !navigationStore.savedChoices.projectPaths.isEmpty }
 
     func workspace(containingChat id: SwarmSessionID) -> WorkspaceEntry? {
         workspaces.first { $0.chats.contains { $0.sessions.contains { $0.id == id } } }
@@ -745,6 +746,7 @@ private struct SessionsWindow: View {
     @State private var workspaceActions: [String: WorkspaceAction] = [:]
     @State private var createSheet: CreateSheet?
     @State private var showingHooksSetup = false
+    @State private var homeIsSetUp = false
     /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
     /// the setup sheet opens once for folder trust (ADR 0029, 0043).
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
@@ -926,9 +928,6 @@ private struct SessionsWindow: View {
                 return
             }
             await askForSetup()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
-            openSettings(on: .setup)
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
@@ -1210,11 +1209,34 @@ private struct SessionsWindow: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            AgentProfilesHome(
+            HomeView(
+                recentWork: HomeModel.recentWork(
+                    tree: model.tree, navigation: model.navigation, now: Int(Date().timeIntervalSince1970)
+                ),
+                firstRunSteps: HomeModel.firstRunSteps(
+                    hasProject: model.hasProject, isSetUp: homeIsSetUp,
+                    hasChat: model.tree.projects.contains { !$0.chats.isEmpty }
+                ),
                 sessionsError: model.error,
+                startChatDisabledReason: HomeModel.startChatDirectory(tree: model.tree, navigation: model.navigation) == nil
+                    ? "Import a project with an available workspace first." : nil,
                 onOpenProject: importProject,
-                onCreateProject: createProject
+                onCreateProject: createProject,
+                onRunSetup: { openSettings(on: .setup) },
+                onStartChat: {
+                    if let directory = HomeModel.startChatDirectory(tree: model.tree, navigation: model.navigation) {
+                        startChat(in: directory)
+                    }
+                },
+                onSelectChat: { id in
+                    ownerMoves += 1
+                    model.select(SwarmSessionID(id))
+                }
             )
+            .task { await refreshHomeSetup() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                Task { await refreshHomeSetup() }
+            }
         }
     }
 
@@ -1229,6 +1251,11 @@ private struct SessionsWindow: View {
 
     private var sidebarMode: WorkspaceSidebarMode {
         WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
+    }
+
+    private func refreshHomeSetup() async {
+        guard let status = try? await SwarmCLIBus().setupStatus() else { return }
+        homeIsSetUp = status.hooks && status.trust && status.herdr
     }
 
     /// Asked once, on the owner's first run with swarm's hooks not set up.

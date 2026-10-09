@@ -23,7 +23,7 @@ stores='SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail'
 typeset -A surfaces=(
   Composer ComposerView PaneStrip 'PaneStrip\b' Sidebar SidebarView
   Tabs ChatTabsView Transcript TranscriptView Palette CommandPalette Prompt PromptCard Design '^$'
-  Profiles AgentProfilesHome Managed ManagedChangesPage Runs StepRunsView Settings AdvancedSettingsPage
+  Profiles ProfilesPage Managed ManagedChangesPage Runs StepRunsView Settings AdvancedSettingsPage Home HomeView
 )
 for folder entry in ${(kv)surfaces}; do
   others=(${(v)surfaces:#$entry})

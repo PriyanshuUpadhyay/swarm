@@ -38,7 +38,7 @@ struct SettingsWindow: View {
     private var page: some View {
         switch selection.page {
         case .profiles:
-            AgentProfilesHome(sessionsError: nil, onOpenProject: {}, onCreateProject: {}, showsProjectActions: false)
+            ProfilesPage()
         case .managedChanges:
             ManagedChangesPage()
         case .setup:

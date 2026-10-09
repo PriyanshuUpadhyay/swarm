@@ -101,6 +101,34 @@ struct HomeSettingsTests {
         #expect(rows.map(\.id.rawValue) == (0..<8).map { "chat-\($0)" })
     }
 
+    @Test("Home starts a chat in sidebar order, skips unusable workspaces, and disables an empty list")
+    func startChatDirectory() {
+        let workspaces = [
+            WorkspaceNode(path: "/project/archived", name: "archived", sessions: []),
+            WorkspaceNode(path: "/project/missing", name: "missing", sessions: [], missing: true),
+            WorkspaceNode(path: "/project/removed", name: "removed", sessions: [], isRemoved: true),
+            WorkspaceNode(path: "/project/first", name: "first", sessions: []),
+            WorkspaceNode(path: "/project/second", name: "second", sessions: []),
+        ]
+        let firstProject = ProjectNode(id: .folder("/project"), path: "/project",
+                                      launchDirectory: "/project", workspaces: workspaces)
+        let pinnedProject = project("/other-project", chats: [])
+        let tree = SessionsTree(projects: [firstProject, pinnedProject])
+        var navigation = WorkspaceNavigation()
+        navigation.archived = ["/project/archived"]
+        navigation.workspaceOrder["/project"] = workspaces.map(\.path)
+        #expect(HomeModel.startChatDirectory(tree: tree, navigation: navigation) == "/project/first")
+        navigation.workspaceOrder["/project"] = ["/project/second", "/project/first"]
+        #expect(HomeModel.startChatDirectory(tree: tree, navigation: navigation) == "/project/second")
+        navigation.pinned = ["/other-project"]
+        #expect(HomeModel.startChatDirectory(tree: tree, navigation: navigation) == "/other-project")
+        navigation.archived.insert("/other-project")
+        #expect(HomeModel.startChatDirectory(tree: tree, navigation: navigation) == "/project/second")
+        navigation.archived.formUnion(["/project/first", "/project/second"])
+        #expect(HomeModel.startChatDirectory(tree: tree, navigation: navigation) == nil)
+        #expect(HomeModel.startChatDirectory(tree: SessionsTree(projects: []), navigation: navigation) == nil)
+    }
+
     private func chat(
         _ name: String, directory: String, activity: Int, running: Bool, agents: Int = 1
     ) -> SwarmProjectSession {

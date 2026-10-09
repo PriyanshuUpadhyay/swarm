@@ -4,11 +4,7 @@ import SwarmCore
 /// Every agent profile, one line each, grouped by the name before the first dot, `chat` first.
 /// A line shows the runners in order as chips and the profile's health. The list shows at once
 /// from the config; the chip marks and health fill in when the slower launch check returns.
-struct AgentProfilesHome: View {
-    let sessionsError: String?
-    let onOpenProject: () -> Void
-    let onCreateProject: () -> Void
-    var showsProjectActions = true
+struct ProfilesPage: View {
     @State private var list: SwarmProfileList?
     @State private var checks: [String: SwarmProfileCheck] = [:]
     @State private var checkedAt: Date?
@@ -35,16 +31,7 @@ struct AgentProfilesHome: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            if showsProjectActions {
-                HStack {
-                    Button("Import Project…", action: onOpenProject)
-                    Button("Create Project…", action: onCreateProject)
-                }
-            }
             header
-            if let sessionsError {
-                Text("Chats unavailable: \(sessionsError)").foregroundStyle(.red)
-            }
             if let error {
                 HStack {
                     Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)

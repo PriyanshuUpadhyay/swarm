@@ -18,6 +18,15 @@ public struct FirstRunStep: Sendable, Hashable, Identifiable {
 }
 
 public enum HomeModel {
+    public static func startChatDirectory(tree: SessionsTree, navigation: WorkspaceNavigation) -> String? {
+        let workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder)
+        let sections = SidebarRows.sections(
+            projects: tree.projects, workspaces: workspaces, navigation: navigation,
+            search: "", showingArchive: false, now: 0
+        )
+        return sections.lazy.flatMap(\.rows).first { $0.kind == .workspace && $0.newChatEnabled }?.id
+    }
+
     public static func recentWork(
         tree: SessionsTree, navigation: WorkspaceNavigation, now: Int, limit: Int = 8
     ) -> [RecentWorkRow] {

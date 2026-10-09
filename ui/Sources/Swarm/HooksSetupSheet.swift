@@ -1,11 +1,6 @@
 import SwiftUI
 import SwarmCore
 
-extension Notification.Name {
-    /// Older setup callers ask the window to open Settings on Setup.
-    static let showHooksSetup = Notification.Name("SwarmShowHooksSetup")
-}
-
 /// The one consent question before swarm changes the owner's Codex and AGY config (ADR 0029). It
 /// shows the plan first: each file's diff and each entry of the owner's that is in swarm's way.
 /// "Set up" is open only while no conflict stands, and it sends the plan's digest, so a file that
