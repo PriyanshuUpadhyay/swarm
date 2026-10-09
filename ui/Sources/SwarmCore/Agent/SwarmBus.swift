@@ -71,18 +71,19 @@ public struct SwarmSetupStatus: Sendable, Hashable, Codable {
     public var hooks: Bool
     public var trust: Bool
     public var herdr: Bool
+    public var skills: Bool
 
-    public init(hooks: Bool, trust: Bool, herdr: Bool) {
+    public init(hooks: Bool, trust: Bool, herdr: Bool, skills: Bool) {
         self.hooks = hooks
         self.trust = trust
         self.herdr = herdr
+        self.skills = skills
     }
 
-    /// Whether the app asks on start. A hooks "Not now", or a group the owner left unchecked when
-    /// they applied the rest, covers only that group, so a Mac that updates still sees the sheet
-    /// once for folder trust (Q3).
-    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool) -> Bool {
-        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined)
+    /// A declined or unchecked group affects only that group. Other pending groups can still
+    /// open the first-run sheet.
+    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool, skillsDeclined: Bool) -> Bool {
+        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined) || (!skills && !skillsDeclined)
     }
 }
 
@@ -108,7 +109,11 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
     public static func trustOnly(standing: Bool) -> Self {
-        Self(groups: ["hooks", "trust", "herdr"], unchecked: ["hooks", "herdr"], standing: standing)
+        Self(groups: ["hooks", "trust", "herdr", "skills"], unchecked: ["hooks", "herdr", "skills"], standing: standing)
+    }
+
+    public static func skillsOnly() -> Self {
+        Self(groups: ["hooks", "trust", "herdr", "skills"], unchecked: ["hooks", "trust", "herdr"])
     }
 
     /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
@@ -257,6 +262,7 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
         case "hooks": "Agent hooks"
         case "trust": "Folder trust"
         case "herdr": "Herdr"
+        case "skills": "Skills"
         default: id
         }
     }

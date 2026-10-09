@@ -11,6 +11,7 @@ struct SettingsWindow: View {
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     @AppStorage("setupDeclined") private var setupDeclined = false
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
+    @AppStorage("skillsSetupDeclined") private var skillsSetupDeclined = false
     @State private var helperVersion = "Reading helper version…"
     @State private var drift: PathSwarmDrift?
     @State private var dependencies: [DependencyRow] = []
@@ -168,6 +169,7 @@ struct SettingsWindow: View {
                         onError: setSetupError,
                         canAnnounceSummary: { setupError == nil }
                     )
+                    .id(selection.skillsReady)
                     GuardsPage(
                         load: {
                             do {
@@ -192,6 +194,7 @@ struct SettingsWindow: View {
                     hooksSetupDeclined = false
                     setupDeclined = false
                     trustSetupDeclined = false
+                    skillsSetupDeclined = false
                 },
                 dataHome: SwarmHome.dataFolder?.path,
                 revealDataHome: {

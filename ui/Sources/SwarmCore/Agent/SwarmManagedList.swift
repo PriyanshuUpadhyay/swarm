@@ -7,10 +7,10 @@ import TranscriptTool
 public struct SwarmManagedList: Sendable, Hashable, Codable {
     public struct Entry: Sendable, Hashable, Codable, Identifiable {
         public var id: String
-        /// Open set: `hooks.state`, `hooks.guard`, `launch.trust`, `herdr`, and later ones.
+        /// Open set: `hooks.state`, `hooks.guard`, `launch.trust`, `herdr`, `skills`, and later ones.
         public var writer: String
         public var file: String
-        /// Open set: `toml_key`, `json_key`, `json_array_item`, and later ones.
+        /// Open set: `toml_key`, `json_key`, `json_array_item`, `symlink`, and later ones.
         public var kind: String
         public var path: [String]
         public var wrote: JSONElement
@@ -65,6 +65,12 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         public var id: String { writer + "\u{0}" + file }
         /// `Entry.isHooks` of the row's one writer.
         public var isHooks: Bool { entries.contains(where: \.isHooks) }
+        /// The setup group that restores this row after managed undo.
+        public var restoreGroup: String? {
+            if isHooks { return "hooks" }
+            if writer == "skills" && entries.allSatisfy({ $0.kind == "symlink" }) { return "skills" }
+            return nil
+        }
         public var ids: [String] { entries.map(\.id) }
         /// The ids that a revert of this row removes now.
         public var presentIDs: [String] { entries.filter { $0.state == "present" }.map(\.id) }
@@ -73,6 +79,13 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         public var entry: String {
             if entries.allSatisfy({ $0.kind == "toml_key" && $0.path.last == "trusted_hash" }) {
                 return entries.count == 1 ? "1 trust key" : "\(entries.count) trust keys"
+            }
+            if entries.count == 1, let first = entries.first, first.kind == "symlink" {
+                if case .string(let target) = first.wrote { return "Link to \(target)" }
+                return "Link to \(first.wrote.compactJSON)"
+            }
+            if let unknown = entries.first(where: { !["toml_key", "json_key", "json_array_item"].contains($0.kind) }) {
+                return unknown.kind
             }
             guard entries.count == 1, let first = entries.first, let last = first.path.last else {
                 return "\(entries.count) entries"
@@ -138,6 +151,7 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
             ("hooks.guard", "Guard", "hooks setup"),
             ("launch.trust", "Folder trust", "launch"),
             ("herdr", "Herdr notices", "notify"),
+            ("skills", "Skills", "setup --only skills"),
         ]
         let recorded = entries.filter(\.recorded)
         var writers = known.map(\.writer)

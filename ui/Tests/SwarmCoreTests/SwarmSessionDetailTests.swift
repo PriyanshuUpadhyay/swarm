@@ -316,18 +316,18 @@ struct SwarmSessionDetailTests {
             _, arguments, _, environment, _, _ in
             _ = await calls.reply(arguments: arguments, environment: environment)
             let stdout = arguments.contains("--plan")
-                ? plan : #"{"hooks":true,"guard":false,"trust":false,"herdr":true}"#
+                ? plan : #"{"hooks":true,"guard":false,"trust":false,"herdr":true,"skills":true}"#
             return ShellResult(status: 0, stdout: stdout, stderr: "")
         }
         let status = try await bus.setupStatus()
-        #expect(status == SwarmSetupStatus(hooks: true, trust: false, herdr: true))
+        #expect(status == SwarmSetupStatus(hooks: true, trust: false, herdr: true, skills: true))
         // A Mac that updates has no consent yet, so the sheet opens once even after a hooks
         // "Not now" (Q3).
-        #expect(status.needsSheet(hooksDeclined: true, trustDeclined: false))
-        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: true, trustDeclined: false))
-        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true).needsSheet(hooksDeclined: false, trustDeclined: false))
+        #expect(status.needsSheet(hooksDeclined: true, trustDeclined: false, skillsDeclined: false))
+        #expect(!SwarmSetupStatus(hooks: false, trust: true, herdr: true, skills: true).needsSheet(hooksDeclined: true, trustDeclined: false, skillsDeclined: false))
+        #expect(SwarmSetupStatus(hooks: false, trust: true, herdr: true, skills: true).needsSheet(hooksDeclined: false, trustDeclined: false, skillsDeclined: false))
         // A group the owner left unchecked when they applied the rest is not asked again.
-        #expect(!status.needsSheet(hooksDeclined: false, trustDeclined: true))
+        #expect(!status.needsSheet(hooksDeclined: false, trustDeclined: true, skillsDeclined: false))
 
         let decoded = try await bus.setupPlan()
         #expect(decoded.files.map(\.group) == ["trust", nil])
@@ -376,8 +376,8 @@ struct SwarmSessionDetailTests {
         choice.unchecked = ["trust"]
         #expect(choice.notNowDeclines == ["trust"])
         // Hooks stay undeclined, so the next start asks for them again.
-        let pending = SwarmSetupStatus(hooks: false, trust: false, herdr: true)
-        #expect(pending.needsSheet(hooksDeclined: false, trustDeclined: true))
+        let pending = SwarmSetupStatus(hooks: false, trust: false, herdr: true, skills: true)
+        #expect(pending.needsSheet(hooksDeclined: false, trustDeclined: true, skillsDeclined: false))
     }
 
     @Test("A plan with only skipped items names each with its reason, not 'already set up' (02-design)")

@@ -848,6 +848,7 @@ private struct SessionsWindow: View {
     /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
     /// setup sheet.
     @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
+    @AppStorage("skillsSetupDeclined") private var skillsSetupDeclined = false
     @State private var createAction: (() -> Void)?
     @State private var renameTarget: RenameTarget?
     @State private var renameName = ""
@@ -1356,7 +1357,7 @@ private struct SessionsWindow: View {
     private func refreshHomeSetup() async {
         _ = await settings.waitForSkillsRefresh()
         guard let status = try? await SwarmCLIBus().setupStatus() else { return }
-        homeIsSetUp = status.hooks && status.trust && status.herdr
+        homeIsSetUp = status.hooks && status.trust && status.herdr && status.skills
     }
 
     /// Asked once, on the owner's first run with swarm's hooks not set up.
@@ -1365,7 +1366,8 @@ private struct SessionsWindow: View {
         guard !setupDeclined,
               let status = try? await SwarmCLIBus().setupStatus(),
               status.needsSheet(
-                  hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
+                  hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined,
+                  skillsDeclined: skillsSetupDeclined
               ) else { return }
         showingHooksSetup = true
     }
@@ -1375,6 +1377,7 @@ private struct SessionsWindow: View {
     private func decline(_ groups: Set<String>) {
         if groups.contains("hooks") { hooksSetupDeclined = true }
         if groups.contains("trust") { trustSetupDeclined = true }
+        if groups.contains("skills") { skillsSetupDeclined = true }
     }
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
