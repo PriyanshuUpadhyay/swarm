@@ -8,6 +8,7 @@ private enum WorkspaceDetailsTab: String {
 struct WorkspaceDetails: View {
     let directory: String
     let usage: ChatUsage?
+    let chainUsage: ChainUsage?
     let hasChat: Bool
     let mode: WorkspaceSidebarMode
     var isActive = true
@@ -83,7 +84,7 @@ struct WorkspaceDetails: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                     if tab == .usage {
-                        UsageDetails(usage: usage, hasChat: hasChat)
+                        UsageDetails(usage: usage, chainUsage: chainUsage, hasChat: hasChat)
                     } else {
                         if loadingWorkspace || loadingDetail ||
                            (workspaceDirectory != directory && workspaceErrorDirectory != directory) {
@@ -294,52 +295,81 @@ struct WorkspaceDetails: View {
 
 struct UsageDetails: View {
     let usage: ChatUsage?
+    let chainUsage: ChainUsage?
     let hasChat: Bool
 
     var body: some View {
         if !hasChat {
             Text("Select a chat to see usage.").foregroundStyle(.secondary)
-        } else if let usage {
-            Text("Current agent session").font(.headline)
-            Text("Earlier model sessions have separate usage.").font(.caption).foregroundStyle(.secondary)
-            if let context = usage.context {
-                if let used = context.contextTokens {
-                    if let capacity = context.contextCapacityTokens, let remaining = usage.remainingPercent {
-                        Text("~\(remaining)% left · ~\(100 - remaining)% used").font(.title3)
-                        ProgressView(value: min(Double(used), Double(capacity)), total: Double(capacity))
-                        Text("\(used.formatted()) / \(capacity.formatted()) tokens").font(.callout.monospacedDigit())
-                        if used > capacity { Text("Reported use exceeds the reported window.").foregroundStyle(.orange) }
-                        Text("Uses the full reported window. The provider can reserve space and compact earlier.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("\(used.formatted()) context tokens").font(.title3)
-                        Text("Capacity not reported; percentage unavailable.").font(.caption).foregroundStyle(.secondary)
-                    }
-                } else { Text(usage.contextNotice).foregroundStyle(.secondary) }
-                Divider()
-                Text("Last reported call · \(context.source.capitalized)").font(.subheadline.weight(.semibold))
-                metric("Input, including cache", context.inputTokens)
-                metric("Cache read", context.cacheReadTokens)
-                metric("Cache write", context.cacheWriteTokens)
-                metric("Output", context.outputTokens)
-                Text(context.source == "codex" ? "Context includes input and output." : "Context includes input and cache; output is shown separately.")
+        } else {
+            if let chainUsage {
+                Text("Chat chain total").font(.headline)
+                metric("Tokens", chainUsage.tokens)
+                cost("Estimated cost", chainUsage.costUsd)
+                if chainUsage.sessions.contains(where: { $0.tokens == nil || $0.costUsd == nil }) {
+                    Text("Some session values are not reported. Totals include reported values only.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Provider estimates in USD. Your bill can differ. Account limits are separate.")
                     .font(.caption).foregroundStyle(.secondary)
-                timestamp(usage.contextTimestamp)
-                if context.sessionInputTokens != nil || context.sessionOutputTokens != nil {
-                    Divider()
-                    Text("Provider session totals").font(.subheadline.weight(.semibold))
-                    metric("Input", context.sessionInputTokens)
-                    metric("Output", context.sessionOutputTokens)
+                Divider()
+                Text("Session shares").font(.headline)
+                ForEach(chainUsage.sessions) { session in
+                    Text("\(session.provider?.capitalized ?? "Agent") · \(session.id.rawValue.prefix(8))")
+                        .font(.subheadline.weight(.semibold))
+                        .help(session.id.rawValue)
+                    if session.tokens == nil && session.costUsd == nil {
+                        Text("Usage not reported yet.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    metric("Tokens", session.tokens)
+                    cost("Estimated cost", session.costUsd)
+                }
+                Divider()
+            }
+            if let usage { currentContext(usage) }
+            else { Text("Waiting for current context data…").foregroundStyle(.secondary) }
+        }
+    }
+
+    @ViewBuilder private func currentContext(_ usage: ChatUsage) -> some View {
+        Text("Current agent context").font(.headline)
+        if let context = usage.context {
+            if let used = context.contextTokens {
+                if let capacity = context.contextCapacityTokens, let remaining = usage.remainingPercent {
+                    Text("~\(remaining)% left · ~\(100 - remaining)% used").font(.title3)
+                    ProgressView(value: min(Double(used), Double(capacity)), total: Double(capacity))
+                    Text("\(used.formatted()) / \(capacity.formatted()) tokens").font(.callout.monospacedDigit())
+                    if used > capacity { Text("Reported use exceeds the reported window.").foregroundStyle(.orange) }
+                    Text("Uses the full reported window. The provider can reserve space and compact earlier.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("\(used.formatted()) context tokens").font(.title3)
+                    Text("Capacity not reported; percentage unavailable.").font(.caption).foregroundStyle(.secondary)
                 }
             } else { Text(usage.contextNotice).foregroundStyle(.secondary) }
             Divider()
-            LabeledContent("Session cost", value: usage.costLabel ?? "Not reported")
-            Text("Provider estimate in USD. Your bill can differ. Account limits are separate.")
+            Text("Last reported call · \(context.source.capitalized)").font(.subheadline.weight(.semibold))
+            metric("Input, including cache", context.inputTokens)
+            metric("Cache read", context.cacheReadTokens)
+            metric("Cache write", context.cacheWriteTokens)
+            metric("Output", context.outputTokens)
+            Text(context.source == "codex" ? "Context includes input and output." : "Context includes input and cache; output is shown separately.")
                 .font(.caption).foregroundStyle(.secondary)
-            if usage.cost != nil { timestamp(usage.costTimestamp) }
-            Text("Values update when the provider writes a report. They do not include the draft you are typing.")
-                .font(.caption).foregroundStyle(.secondary)
-        } else { Text("Waiting for usage data…").foregroundStyle(.secondary) }
+            timestamp(usage.contextTimestamp)
+            if context.sessionInputTokens != nil || context.sessionOutputTokens != nil {
+                Divider()
+                Text("Provider session totals").font(.subheadline.weight(.semibold))
+                metric("Input", context.sessionInputTokens)
+                metric("Output", context.sessionOutputTokens)
+            }
+        } else { Text(usage.contextNotice).foregroundStyle(.secondary) }
+        Text("Values update when the provider writes a report. They do not include the draft you are typing.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    private func cost(_ label: String, _ value: Double?) -> some View {
+        LabeledContent(label, value: value?.formatted(.currency(code: "USD")) ?? "Not reported")
+            .font(.callout.monospacedDigit())
     }
 
     private func metric(_ label: String, _ value: Int64?) -> some View {

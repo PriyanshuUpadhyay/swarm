@@ -485,7 +485,8 @@ struct SessionDetailView: View {
             cells: agentCells.map { cell in
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
-                    model: cell.model, status: cell.agent.status
+                    model: cell.model, status: cell.agent.status,
+                    stateTooltip: AgentStateText.tooltip(agent: cell.agent, now: Int(Date().timeIntervalSince1970))
                 )
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,

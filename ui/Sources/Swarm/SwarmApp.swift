@@ -151,6 +151,17 @@ final class SessionsTreeModel {
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
+    var selectedChainUsage: ChainUsage? {
+        guard let chat = selectedSession else { return nil }
+        var chairs: [SwarmSessionID: SwarmAgent] = [:]
+        for session in chat.sessions {
+            chairs[session.id] = (tree.agentsBySession[session.id] ?? []).first {
+                SwarmPanePolicy.isChair($0, in: session)
+            }
+        }
+        return UsageSummary.chain(sessions: chat.sessions, usageBySession: chairs)
+    }
+
     func select(_ id: SwarmSessionID?, recordingHistory: Bool = true) {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         selectionRevision += 1
@@ -824,6 +835,7 @@ private struct SessionsWindow: View {
                         WorkspacePanels(
                             directory: directory, mode: sidebarMode, visible: sidebarVisible,
                             usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
+                            chainUsage: model.selectedChainUsage,
                             hasChat: model.selectedSession != nil, open: openDocument,
                             runRequest: runRequestWorkspace == directory ? runRequest : nil,
                             openedRun: { runRequest = nil }, chatTitles: runChatTitles(in: directory),
@@ -2178,6 +2190,7 @@ private struct WorkspacePanels: View {
     let mode: WorkspaceSidebarMode
     let visible: Bool
     let usage: ChatUsage?
+    let chainUsage: ChainUsage?
     let hasChat: Bool
     let open: (WorkspaceDocument) -> Void
     let runRequest: StepRunRequest?
@@ -2202,7 +2215,7 @@ private struct WorkspacePanels: View {
             }
             if visitedDetails || mode.isDetails {
                 WorkspaceDetails(
-                    directory: directory, usage: usage, hasChat: hasChat,
+                    directory: directory, usage: usage, chainUsage: chainUsage, hasChat: hasChat,
                     mode: mode.isDetails ? mode : detailsMode, isActive: visible && mode.isDetails, open: open
                 )
                 .retainedVisibility(mode.isDetails)
