@@ -158,6 +158,50 @@ struct SkillDraftTests {
         #expect(value.validate().isEmpty)
     }
 
+    @Test("Added and renamed steps use their current display name in field issues")
+    func issueDisplayNames() throws {
+        var value = try draft()
+        let added = try value.add(name: "check", body: "Check text\n")
+        let display = try #require(value.steps.first { $0.id == added }?.stem)
+        #expect(throws: SkillDraftIssue.invalidHolds(id: display)) { try value.setHolds(id: added, holds: "a|b") }
+        #expect(throws: SkillDraftIssue.invalidBody(id: display)) { try value.setBody(id: added, body: "## New\n") }
+        #expect(throws: SkillDraftIssue.unknownNeed(id: display, need: "missing")) { try value.setNeeds(id: added, needs: ["missing"]) }
+        #expect(throws: SkillDraftIssue.selfNeed(id: display)) { try value.setNeeds(id: added, needs: [added]) }
+        #expect(throws: SkillDraftIssue.duplicateNeed(id: display)) { try value.setNeeds(id: added, needs: ["01-question", "01-question"]) }
+        try value.rename(id: "01-question", name: "ask")
+        #expect(throws: SkillDraftIssue.invalidHolds(id: "01-ask")) { try value.setHolds(id: "01-question", holds: "a|b") }
+        #expect(throws: SkillDraftIssue.invalidBody(id: "01-ask")) { try value.setBody(id: "01-question", body: "## New\n") }
+        #expect(throws: SkillDraftIssue.selfNeed(id: "01-ask")) { try value.setNeeds(id: "01-question", needs: ["01-question"]) }
+        try value.add(name: "report-extra")
+        #expect(throws: SkillDraftIssue.ambiguousNeeds(id: display, word: "report")) { try value.setNeeds(id: added, needs: ["02-report"]) }
+    }
+
+    @Test("Holds padding and one outer backtick pair round-trip without a render mismatch")
+    func normalizedHolds() throws {
+        for input in ["  Ready to save  ", "`Ready to save`", "  `Ready to save`  "] {
+            var value = try draft()
+            try value.setHolds(id: "01-question", holds: input)
+            #expect(value.steps.first?.holds == "Ready to save")
+            let candidate = try #require(try value.render())
+            #expect(SkillDocument.parse(data: candidate, key: "normalized-holds").rows.first?.holds == "Ready to save")
+        }
+    }
+
+    @Test("Holds that still lose text in parsing fail with a field issue")
+    func unrepresentableHolds() throws {
+        var value = try draft()
+        for input in ["``Ready``", "`Ready", "Ready`", "` Ready `"] {
+            do {
+                try value.setHolds(id: "01-question", holds: input)
+                Issue.record("Holds that changes during parsing must be rejected")
+            } catch {
+                #expect(error.localizedDescription.contains("Holds for 01-question"))
+                #expect(error.localizedDescription.contains("spaces or backticks"))
+            }
+        }
+        #expect(!value.isChanged)
+    }
+
     @Test("Rendered output agrees with kit table and need_files")
     func parity() throws {
         var value = try draft()

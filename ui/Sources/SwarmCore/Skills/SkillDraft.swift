@@ -8,6 +8,7 @@ public enum SkillDraftIssue: Error, Equatable, Sendable, LocalizedError {
     case duplicateName(name: String)
     case rowCount
     case invalidHolds(id: String)
+    case invalidHoldsFormat(id: String)
     case invalidBody(id: String)
     case missingSection(id: String)
     case unknownNeed(id: String, need: String)
@@ -29,6 +30,7 @@ public enum SkillDraftIssue: Error, Equatable, Sendable, LocalizedError {
         case .duplicateName(let name): "Step name \(name) is already used."
         case .rowCount: "A skill needs 1-99 steps."
         case .invalidHolds(let id): "Holds for \(id) must be one line without pipes or control characters."
+        case .invalidHoldsFormat(let id): "Holds for \(id) cannot keep spaces or backticks at its edges. Remove them and try again."
         case .invalidBody(let id): "Step text for \(id) cannot add a level-one or level-two heading outside a fence."
         case .missingSection: "no step section in SKILL.md"
         case .unknownNeed(let id, let need): "Needs for \(id) refers to missing step \(need)."
@@ -88,8 +90,8 @@ public struct SkillDraft: Sendable {
         try requireStructure()
         let index = try index(of: id)
         let dependents = steps.filter { $0.needs.contains(id) }.map(\.stem)
-        guard dependents.isEmpty else { throw SkillDraftIssue.dependentSteps(id: id, dependents: dependents) }
-        guard steps[index].body == nil || removeSection else { throw SkillDraftIssue.sectionRemovalConfirmation(id: id) }
+        guard dependents.isEmpty else { throw SkillDraftIssue.dependentSteps(id: steps[index].stem, dependents: dependents) }
+        guard steps[index].body == nil || removeSection else { throw SkillDraftIssue.sectionRemovalConfirmation(id: steps[index].stem) }
         try change { $0.steps.remove(at: index); $0.renumber() }
     }
 
@@ -119,12 +121,19 @@ public struct SkillDraft: Sendable {
 
     public mutating func setHolds(id: String, holds: String) throws {
         let index = try index(of: id)
-        try change { $0.steps[index].holds = holds }
+        guard !holds.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || $0 == "\u{2028}" || $0 == "\u{2029}" }) else {
+            throw SkillDraftIssue.invalidHolds(id: steps[index].stem)
+        }
+        var normalized = holds.trimmingCharacters(in: .whitespaces)
+        if normalized.count >= 2, normalized.hasPrefix("`"), normalized.hasSuffix("`") {
+            normalized = String(normalized.dropFirst().dropLast())
+        }
+        try change { $0.steps[index].holds = normalized }
     }
 
     public mutating func setBody(id: String, body: String) throws {
         let index = try index(of: id)
-        guard steps[index].body != nil else { throw SkillDraftIssue.missingSection(id: id) }
+        guard steps[index].body != nil else { throw SkillDraftIssue.missingSection(id: steps[index].stem) }
         let normalized = body.normalizedLineEndings(ending: document.lineEnding)
         try change { $0.steps[index].body = normalized }
     }
@@ -142,28 +151,31 @@ public struct SkillDraft: Sendable {
         for step in steps {
             if step.name.range(of: #"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"#, options: .regularExpression) == nil
                 || step.name == "none" || step.name == "and" {
-                issues.append(.invalidName(id: step.id, name: step.name))
+                issues.append(.invalidName(id: step.stem, name: step.name))
             }
             if !names.insert(step.name).inserted || !stems.insert(step.stem).inserted { issues.append(.duplicateName(name: step.name)) }
             if step.holds.contains("|") || step.holds.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || $0 == "\u{2028}" || $0 == "\u{2029}" }) {
-                issues.append(.invalidHolds(id: step.id))
+                issues.append(.invalidHolds(id: step.stem))
+            }
+            if step.holds != step.holds.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "`")) {
+                issues.append(.invalidHoldsFormat(id: step.stem))
             }
             if let body = step.body {
                 let lines = SkillLine.scan(Data(body.utf8), frontMatter: false)
                 if lines.contains(where: { ($0.heading?.level ?? 7) <= 2 }) {
-                    issues.append(.invalidBody(id: step.id))
+                    issues.append(.invalidBody(id: step.stem))
                 }
                 // A fence that stays open would absorb the next section after splicing.
                 if SkillLine.scan(Data((body + "\n## boundary\n").utf8), frontMatter: false).last?.inFence == true {
-                    issues.append(.invalidBody(id: step.id))
+                    issues.append(.invalidBody(id: step.stem))
                 }
             }
-            for need in step.needs where !ids.contains(need) { issues.append(.unknownNeed(id: step.id, need: need)) }
-            if step.needs.contains(step.id) { issues.append(.selfNeed(id: step.id)) }
-            if Set(step.needs).count != step.needs.count { issues.append(.duplicateNeed(id: step.id)) }
+            for need in step.needs where !ids.contains(need) { issues.append(.unknownNeed(id: step.stem, need: need)) }
+            if step.needs.contains(step.id) { issues.append(.selfNeed(id: step.stem)) }
+            if Set(step.needs).count != step.needs.count { issues.append(.duplicateNeed(id: step.stem)) }
             let resolved = SkillNeeds.resolve(step.needsText, names: targets)
             if !resolved.errors.isEmpty || resolved.ids != step.needs {
-                issues.append(.ambiguousNeeds(id: step.id, word: step.needsText))
+                issues.append(.ambiguousNeeds(id: step.stem, word: step.needsText))
             }
         }
         if SkillNeeds.hasCycle(steps.map { ($0.id, $0.needs) }) { issues.append(.cycle) }
