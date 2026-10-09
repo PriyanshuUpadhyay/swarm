@@ -9,6 +9,8 @@ struct ChatWindow: View {
     @State private var panes = AgentPaneStore()
     @State private var error: String?
     @State private var errorRevision = 0
+    @State private var refreshError: String?
+    @State private var refreshErrorRevision = 0
     // Dismiss hides the current model error until its text changes.
     @State private var dismissedModelError: String?
     @State private var confirmingChild: SwarmAgentID?
@@ -29,7 +31,7 @@ struct ChatWindow: View {
     }
 
     private var errorMessage: String? {
-        error ?? (model.error == dismissedModelError ? nil : model.error)
+        error ?? refreshError ?? (model.error == dismissedModelError ? nil : model.error)
     }
 
     var body: some View {
@@ -39,6 +41,9 @@ struct ChatWindow: View {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red).textSelection(.enabled)
                     Spacer()
+                    if error == nil, refreshError != nil {
+                        Button("Retry") { Task { await refreshAfterSwitch() } }
+                    }
                     Button("Dismiss") { clearError() }
                 }
                 .padding(tokens.spacing.m)
@@ -90,9 +95,12 @@ struct ChatWindow: View {
         .onChange(of: errorRevision, initial: true) { _, _ in
             if let error { AccessibilityNotification.Announcement(error).post() }
         }
+        .onChange(of: refreshErrorRevision, initial: true) { _, _ in
+            if error == nil, let refreshError { AccessibilityNotification.Announcement(refreshError).post() }
+        }
         .onChange(of: model.error, initial: true) { _, message in
             dismissedModelError = nil
-            if error == nil, let message { AccessibilityNotification.Announcement(message).post() }
+            if error == nil, refreshError == nil, let message { AccessibilityNotification.Announcement(message).post() }
         }
         .onDisappear {
             panes.stopAll()
@@ -109,10 +117,7 @@ struct ChatWindow: View {
                         return try await SwarmChatHandoff.start(plan, after: row, bus: SwarmCLIBus(), onProgress: progress)
                     }
                 ) { _ in
-                    Task {
-                        do { try await model.refresh(); setError(nil) }
-                        catch { setError(error.localizedDescription) }
-                    }
+                    Task { await refreshAfterSwitch() }
                 }
             }
         }
@@ -130,6 +135,16 @@ struct ChatWindow: View {
         }
     }
 
+    private func refreshAfterSwitch() async {
+        do {
+            try await model.refresh()
+            refreshError = nil
+        } catch {
+            refreshError = "The chat switched, but the chat list did not refresh: \(error.localizedDescription)."
+            refreshErrorRevision += 1
+        }
+    }
+
     private func setError(_ message: String?) {
         error = message
         if message != nil { errorRevision += 1 }
@@ -138,6 +153,7 @@ struct ChatWindow: View {
     // Only the Dismiss button may hide a model error.
     private func clearError() {
         setError(nil)
+        refreshError = nil
         dismissedModelError = model.error
     }
 
