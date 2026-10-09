@@ -2,9 +2,17 @@ import Foundation
 
 public struct Prefs: Codable, Sendable, Hashable {
     public var settingsPage: String?
+    public var splitDiff: Bool
 
-    public init(settingsPage: String? = nil) {
+    public init(settingsPage: String? = nil, splitDiff: Bool = false) {
         self.settingsPage = settingsPage
+        self.splitDiff = splitDiff
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settingsPage = try container.decodeIfPresent(String.self, forKey: .settingsPage)
+        splitDiff = try container.decodeIfPresent(Bool.self, forKey: .splitDiff) ?? false
     }
 }
 
