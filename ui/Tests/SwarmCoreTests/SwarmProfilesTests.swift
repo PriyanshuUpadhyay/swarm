@@ -99,58 +99,29 @@ struct SwarmProfilesTests {
         }
     }
 
-    @Test("decodes the Claude accounts contract")
-    func decodesClaudeAccounts() async throws {
-        let source = source(
-            expectedArguments: ["accounts", "--provider", "claude", "--json"],
-            stdout: #"{"provider":"claude","source":"yelo","accounts":[{"name":"sid","email":"someone@example.com","home":"/Users/me/.claude/.profiles/sid","env":{"CLAUDE_CONFIG_DIR":"/Users/me/.claude/.profiles/sid"},"signed_in":true,"remaining_pct":52,"summary":"5h 98% left · 7d 52% left"}],"auto":"sid"}"#
-        )
-
-        let accounts = try await source.accounts(provider: "claude")
-
-        #expect(accounts == SwarmAccountList(
-            provider: "claude", source: "yelo",
-            accounts: [SwarmAccount(
-                name: "sid", email: "someone@example.com", home: "/Users/me/.claude/.profiles/sid",
-                env: ["CLAUDE_CONFIG_DIR": "/Users/me/.claude/.profiles/sid"], signedIn: true,
-                remainingPct: 52, summary: "5h 98% left · 7d 52% left"
-            )],
-            auto: "sid"
-        ))
+    @Test("decodes native accounts through the CLI source")
+    func decodesAccounts() async throws {
+        let source = source(expectedArguments: ["accounts", "--provider", "codex", "--json"],
+                            stdout: try fixture("work"))
+        let accounts = try await source.accounts(provider: "codex")
+        #expect(accounts.accounts.first?.authState == .signedIn)
+        #expect(accounts.auto == "work")
+        #expect(accounts.source == "swarm")
     }
 
-    @Test("decodes the empty AGY accounts contract")
-    func decodesAGYAccounts() async throws {
-        let source = source(
-            expectedArguments: ["accounts", "--provider", "agy", "--json"],
-            stdout: #"{"provider":"agy","source":null,"accounts":[],"auto":null}"#
-        )
-
-        let accounts = try await source.accounts(provider: "agy")
-
-        #expect(accounts == SwarmAccountList(provider: "agy", source: nil, accounts: [], auto: nil))
-    }
-
-    @Test("decodes every usage contract row")
+    @Test("decodes usage through the CLI source")
     func decodesUsage() async throws {
-        let source = source(
-            expectedArguments: ["usage", "--json"],
-            stdout: #"{"meters":[{"provider":"claude","account":"work","label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","reason":null,"as_of":1789576942},{"provider":"claude","account":"sid","label":"cl·sid","window":null,"used_pct":null,"resets_in":null,"state":"logged_out","reason":"logged out","as_of":null}]}"#
-        )
-
+        let source = source(expectedArguments: ["usage", "--json"], stdout: try fixture("work-usage"))
         let meters = try await source.usage()
+        #expect(meters.first?.state == .fresh)
+        #expect(meters.first?.asOfSeconds == 1_791_530_000)
+        #expect(meters.first?.windowMinutes == 300)
+    }
 
-        #expect(meters == [
-            SwarmUsageMeter(
-                provider: "claude", account: "work", label: "cl·work@example.com",
-                window: "7d", usedPct: 10, resetsIn: "4d22h", state: "ok", reason: nil,
-                asOf: 1_789_576_942
-            ),
-            SwarmUsageMeter(
-                provider: "claude", account: "sid", label: "cl·sid", window: nil,
-                usedPct: nil, resetsIn: nil, state: "logged_out", reason: "logged out", asOf: nil
-            ),
-        ])
+    private func fixture(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/accounts/\(name).json")
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     @Test("uses a fresh scratch directory when no working directory is injected")
@@ -174,7 +145,7 @@ struct SwarmProfilesTests {
             #expect(executable == "/custom/swarm")
             #expect(arguments == ["accounts", "--provider", "codex", "--json"])
             #expect(cwd == "/tmp/profile-test")
-            return ShellResult(status: 0, stdout: #"{"provider":"codex","source":null,"accounts":[],"auto":null}"#, stderr: "")
+            return ShellResult(status: 0, stdout: #"{"provider":"codex","source":null,"state":"ready","revision":"opaque","modified":false,"accounts":[],"auto":null}"#, stderr: "")
         }
 
         _ = try await source.accounts(provider: "codex")

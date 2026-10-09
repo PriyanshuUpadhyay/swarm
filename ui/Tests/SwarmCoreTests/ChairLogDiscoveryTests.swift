@@ -481,7 +481,7 @@ struct ChairLogDiscoveryTests {
 
     private func account(_ name: String, home: URL) -> SwarmAccount {
         SwarmAccount(
-            name: name, email: nil, home: home.path, env: [:], signedIn: true,
+            name: name, email: nil, home: home.path, env: [:], authState: .signedIn,
             remainingPct: nil, summary: nil
         )
     }

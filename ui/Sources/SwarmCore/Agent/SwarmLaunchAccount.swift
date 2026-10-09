@@ -22,7 +22,11 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
               let value = environment[key], !value.isEmpty else { return nil }
         self.name = name
         self.provider = provider
-        self.environment = [key: value]
+        let allowed: Set<String> = provider == "claude"
+            ? ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR", "AGENT_PROFILE_LABEL"] : ["CODEX_HOME"]
+        guard environment.keys.allSatisfy(allowed.contains),
+              environment.values.allSatisfy({ !$0.contains("\0") && !$0.contains("\n") && !$0.contains("\r") }) else { return nil }
+        self.environment = environment
     }
 
     public static func resolve(
@@ -37,8 +41,8 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
         case .named(let chosen):
             name = chosen
         }
-        guard let account = list.accounts.first(where: { $0.name == name }),
-              account.signedIn else { return nil }
+        guard list.state == .ready, let account = list.accounts.first(where: { $0.name == name }),
+              account.authState == .signedIn else { return nil }
         return Self(name: account.name, provider: list.provider, environment: account.env)
     }
 
@@ -61,6 +65,7 @@ public struct SwarmAccountLoadDecision: Sendable, Hashable {
     public var fallbackCaption: String?
 
     public static func loaded(_ list: SwarmAccountList) -> Self {
+        guard list.state != .unavailable else { return fallback("Account status unavailable") }
         guard !list.accounts.isEmpty else {
             return Self(options: [], selection: nil, fallbackCaption: nil)
         }
@@ -113,7 +118,9 @@ public struct SwarmAccountOption: Identifiable, Sendable, Hashable {
         }
         result += list.accounts.map { account in
             let resolved = SwarmLaunchAccount.resolve(.named(account.name), from: list)
-            let disabledReason: String? = if !account.signedIn {
+            let disabledReason: String? = if account.authState == .unavailable {
+                "Status unavailable"
+            } else if account.authState == .signedOut {
                 "Not signed in"
             } else if resolved == nil {
                 "Account cannot launch in Swarm"
@@ -143,7 +150,14 @@ public struct SwarmAccountOption: Identifiable, Sendable, Hashable {
         }?.account
     }
 
-    private static func remainingLabel(_ remaining: Int?) -> String {
-        remaining.map { ", \($0)% left" } ?? ""
+    /// Pin the displayed Auto result so Switch Model starts the home that the picker showed.
+    public static func launchSelection(
+        for selection: SwarmAccountSelection?, in choices: [Self]
+    ) -> SwarmAccountSelection? {
+        account(for: selection, in: choices).map { .named($0.name) } ?? selection
+    }
+
+    private static func remainingLabel(_ remaining: Double?) -> String {
+        remaining.map { ", \($0.formatted(.number.precision(.fractionLength(0...1))))% left" } ?? ""
     }
 }

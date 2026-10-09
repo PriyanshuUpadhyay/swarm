@@ -341,7 +341,7 @@ private struct EmptyProfiles: SwarmProfileSource {
     var homes: [URL] = []
     func accounts(provider: String) async throws -> SwarmAccountList {
         SwarmAccountList(provider: provider, source: "fixture", accounts: homes.map {
-            SwarmAccount(name: $0.lastPathComponent, email: nil, home: $0.path, env: [:], signedIn: true, remainingPct: nil, summary: nil)
+            SwarmAccount(name: $0.lastPathComponent, email: nil, home: $0.path, env: [:], authState: .signedIn, remainingPct: nil, summary: nil)
         }, auto: nil)
     }
     func usage() async throws -> [SwarmUsageMeter] { [] }

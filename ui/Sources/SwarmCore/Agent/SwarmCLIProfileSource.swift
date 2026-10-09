@@ -63,6 +63,24 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         try await read(["usage", "--json"], as: SwarmUsage.self).meters
     }
 
+    public func refreshUsage(provider: String) async throws -> SwarmUsage {
+        try await read(["usage", "--refresh", "--provider", provider, "--json"], as: SwarmUsage.self)
+    }
+
+    public func openLogin(_ request: SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult {
+        guard ["claude", "codex"].contains(request.provider), SwarmAccountLoginRequest.validName(request.name) else {
+            throw SwarmProfileError.failed("Use a valid account name and a supported provider")
+        }
+        return try await read(
+            ["accounts", "login", "--provider", request.provider, "--name", request.name,
+             "--revision", request.revision, "--json"], as: SwarmAccountLoginResult.self
+        )
+    }
+
+    public func resetAccounts(revision: String) async throws -> SwarmAccountMetadataAction {
+        try await read(["accounts", "reset", "--revision", revision, "--json"], as: SwarmAccountMetadataAction.self)
+    }
+
     private func read<Value: Decodable>(_ arguments: [String], as type: Value.Type) async throws -> Value {
         try decode(try await call(arguments), as: type)
     }

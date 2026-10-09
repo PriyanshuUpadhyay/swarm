@@ -1,0 +1,1 @@
+{"meters": [{"provider": "codex", "account": "work", "label": "work", "window": "primary", "window_minutes": 300, "used_pct": 30, "reset_time_seconds": 1791540000, "state": "failed", "source": "codex_app_server", "reason": "Provider read failed", "as_of_seconds": 1791530000}]}
