@@ -1,0 +1,6 @@
+[submodule "vendor/taste-skill"]
+	path = vendor/taste-skill
+	url = https://github.com/Leonxlnx/taste-skill
+[submodule "vendor/emil-skills"]
+	path = vendor/emil-skills
+	url = https://github.com/emilkowalski/skills
