@@ -69,7 +69,7 @@ struct SkillLine {
     var inFrontMatter = false
     var inFence = false
 
-    static func scan(_ data: Data) -> [SkillLine] {
+    static func scan(_ data: Data, frontMatter: Bool = true) -> [SkillLine] {
         let bytes = Array(data)
         var result: [SkillLine] = []
         var start = 0
@@ -83,7 +83,7 @@ struct SkillLine {
             result.append(SkillLine(text: String(decoding: bytes[start...], as: UTF8.self),
                                     range: start..<bytes.count, contentRange: start..<bytes.count))
         }
-        var frontMatter = result.first?.text == "---"
+        var frontMatter = frontMatter && result.first?.text == "---"
         var fence: (Character, Int)?
         for index in result.indices {
             let text = result[index].text
@@ -118,7 +118,8 @@ struct SkillLine {
         guard indent <= 3 else { return nil }
         let rest = text.dropFirst(indent)
         let level = rest.prefix { $0 == "#" }.count
-        guard (1...6).contains(level), rest.dropFirst(level).first.map({ $0 == " " || $0 == "\t" }) == true else { return nil }
+        guard (1...6).contains(level), rest.dropFirst(level).isEmpty
+            || rest.dropFirst(level).first.map({ $0 == " " || $0 == "\t" }) == true else { return nil }
         return (level, rest.dropFirst(level).trimmingCharacters(in: .whitespaces))
     }
 }
