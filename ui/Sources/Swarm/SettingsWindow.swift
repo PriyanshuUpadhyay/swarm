@@ -61,7 +61,7 @@ struct SettingsWindow: View {
         .onChange(of: selection.appErrorRevision, initial: true) { _, _ in
             if let message = selection.appError { AccessibilityNotification.Announcement(message).post() }
         }
-        .onChange(of: selection.loadErrorRevision, initial: true) { _, _ in
+        .onChange(of: selection.loadErrorRevision) { _, _ in
             if let message = selection.loadError { AccessibilityNotification.Announcement(message).post() }
         }
         .onChange(of: selection.saveErrorRevision, initial: true) { _, _ in
@@ -70,11 +70,41 @@ struct SettingsWindow: View {
         .onChange(of: selection.pageErrorRevision, initial: true) { _, _ in
             if let message = selection.pageError { AccessibilityNotification.Announcement(message).post() }
         }
+        .onChange(of: selection.page) { _, page in
+            if page != .setup {
+                setupError = nil
+                guardsError = nil
+            }
+        }
         .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
     }
 
     private var setupErrorMessage: String? {
         ErrorAnnouncement.joined([guardsError, setupError])
+    }
+
+    private func setSetupError(_ message: String?) {
+        guard selection.page == .setup else { return }
+        let previous = setupErrorMessage
+        setupError = message
+        if message != nil, let joined = setupErrorMessage {
+            selection.reportPageError(joined)
+        } else if setupErrorMessage != previous {
+            selection.setPageError(setupErrorMessage)
+        }
+    }
+
+    private func setGuardsError(_ message: String?) {
+        guard selection.page == .setup else { return }
+        let previous = setupErrorMessage
+        guardsError = message
+        if setupErrorMessage != previous { selection.setPageError(setupErrorMessage) }
+    }
+
+    private func reportGuardsError(_ message: String) {
+        guard selection.page == .setup else { return }
+        guardsError = message
+        if let joined = setupErrorMessage { selection.reportPageError(joined) }
     }
 
     @ViewBuilder
@@ -117,11 +147,8 @@ struct SettingsWindow: View {
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
                         notNow: { _ in }, done: {}, copy: .setup,
-                        onError: {
-                            setupError = $0
-                            selection.setPageError(setupErrorMessage)
-                        },
-                        canAnnounceSummary: { selection.pageError == nil && selection.loadError == nil && selection.saveError == nil }
+                        onError: setSetupError,
+                        canAnnounceSummary: { setupError == nil }
                     )
                     GuardsPage(
                         load: {
@@ -134,10 +161,8 @@ struct SettingsWindow: View {
                         save: { editor in
                             try editor.save(to: GuardRules.fileURL(environment: ProcessInfo.processInfo.environment))
                         },
-                        onError: {
-                            guardsError = $0
-                            selection.setPageError(setupErrorMessage)
-                        }
+                        onError: setGuardsError,
+                        reportError: reportGuardsError
                     )
                     .padding([.horizontal, .bottom], tokens.spacing.xl)
                 }
