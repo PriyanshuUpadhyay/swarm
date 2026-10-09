@@ -18,7 +18,7 @@ struct GuardsPage: View {
                         editor.add()
                         editing = editor.drafts.last?.id
                     }.disabled(!editor.canEdit)
-                    Button("Reload") { reload(reportFailure: true) }
+                    Button("Reload") { reload() }
                     Spacer()
                     Button("Save") {
                         do {
@@ -75,10 +75,10 @@ struct GuardsPage: View {
         }
     }
 
-    private func reload(reportFailure: Bool = false) {
+    private func reload() {
         editor.load(load())
         editing = nil
-        if reportFailure, let error = editor.loadError, !error.isMissing, let message = editor.error {
+        if let message = editor.error {
             reportError(message)
         }
     }

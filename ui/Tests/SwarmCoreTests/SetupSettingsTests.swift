@@ -353,14 +353,14 @@ struct SetupSettingsTests {
         editor.drafts[0].name = "First rule"
         editor.add()
         editor.drafts[1].name = "Second rule"
-        settings.setPageError(editor.error)
+        settings.setPageError(editor.error, on: .setup)
         #expect(editor.error == nil && settings.pageError == nil)
         #expect(editor.drafts[0].error == "Rule 'First rule' needs a command")
         #expect(editor.drafts[1].error == "Rule 'Second rule' needs a command")
         let revision = settings.pageErrorRevision
         for name in ["B", "Bl", "Block", "Block rm"] {
             editor.drafts[1].name = name
-            settings.setPageError(editor.error)
+            settings.setPageError(editor.error, on: .setup)
             #expect(editor.error == nil && settings.pageError == nil)
             #expect(settings.pageErrorRevision == revision)
             #expect(editor.drafts[1].error == "Rule '\(name)' needs a command")
@@ -405,7 +405,7 @@ struct SetupSettingsTests {
         #expect(missingMessage == "guards.json is missing. Every tool call is blocked until it exists; press Save to create it.")
         let settings = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         settings.select(.setup)
-        settings.setPageError(missingMessage)
+        settings.setPageError(missingMessage, on: .setup)
         let revision = settings.pageErrorRevision
         editor.add()
         #expect(!editor.canSave)
@@ -413,7 +413,7 @@ struct SetupSettingsTests {
         #expect(editor.error == missingMessage)
         for name in ["B", "Bl", "Block rm"] {
             editor.drafts[0].name = name
-            settings.setPageError(editor.error)
+            settings.setPageError(editor.error, on: .setup)
             #expect(settings.pageErrorRevision == revision)
             #expect(editor.error == missingMessage)
         }
@@ -421,7 +421,7 @@ struct SetupSettingsTests {
         #expect(editor.canSave && editor.error == missingMessage)
         try editor.save(to: file)
         #expect(try GuardRules.load(url: file).get().rules[0].name == "Block rm")
-        settings.setPageError(editor.error)
+        settings.setPageError(editor.error, on: .setup)
         #expect(editor.error == nil && settings.pageError == nil)
         #expect(settings.pageErrorRevision == revision)
     }

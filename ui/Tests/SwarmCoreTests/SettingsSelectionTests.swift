@@ -13,9 +13,10 @@ struct SettingsSelectionTests {
         let saveRevision = selection.saveErrorRevision
         #expect(saveError != nil)
         selection.reload()
+        #expect(selection.page == .setup)
         #expect(selection.saveError == saveError && selection.loadError == nil)
         #expect(selection.saveErrorRevision == saveRevision)
-        selection.setPageError("Setup failed.")
+        selection.setPageError("Setup failed.", on: selection.page)
         let pageRevision = selection.pageErrorRevision
         selection.select(.appearance)
         #expect(selection.pageError == nil)
@@ -24,33 +25,79 @@ struct SettingsSelectionTests {
         #expect(selection.pageError == nil)
     }
 
-    @Test("Page state announces a change, page events always announce, and clears do not announce")
+    @Test("Page state stays silent, page events always announce, and clears do not announce")
     func independentAnnouncements() {
         let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
         selection.setAppError("Notices are off.")
-        selection.setPageError("Guards failed")
+        selection.setPageError("Guards failed", on: selection.page)
         let appRevision = selection.appErrorRevision
         let pageRevision = selection.pageErrorRevision
-        selection.setPageError("Guards failed")
+        #expect(pageRevision == 0)
+        selection.setPageError("Guards failed", on: selection.page)
         #expect(selection.pageErrorRevision == pageRevision)
-        selection.reportPageError("Guards failed")
+        selection.reportPageError("Guards failed", on: selection.page)
         #expect(selection.pageErrorRevision == pageRevision + 1)
-        selection.reportPageError("Guards failed")
+        selection.reportPageError("Guards failed", on: selection.page)
         #expect(selection.pageErrorRevision == pageRevision + 2)
-        selection.setPageError("Setup failed")
-        #expect(selection.pageErrorRevision == pageRevision + 3)
+        selection.setPageError("Setup failed", on: selection.page)
+        #expect(selection.pageErrorRevision == pageRevision + 2)
         selection.setAppError("Notices are off.")
         #expect(selection.appErrorRevision == appRevision + 1)
         selection.select(.profiles)
         #expect(selection.pageError == "Setup failed")
-        #expect(selection.pageErrorRevision == pageRevision + 3)
-        selection.setPageError(nil)
+        #expect(selection.pageErrorRevision == pageRevision + 2)
+        selection.setPageError(nil, on: selection.page)
         selection.setAppError(nil)
-        selection.setPageError(nil)
-        #expect(selection.pageErrorRevision == pageRevision + 3)
+        selection.setPageError(nil, on: selection.page)
+        #expect(selection.pageErrorRevision == pageRevision + 2)
         #expect(selection.appErrorRevision == appRevision + 1)
         #expect(selection.loadErrorRevision == 0 && selection.saveErrorRevision == 1)
         #expect(selection.pageError == nil && selection.appError == nil)
+    }
+
+    @Test("Late page failures and clears stay on the page that sent them")
+    func latePageError() {
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        selection.select(.setup)
+        selection.reportPageError("Guards failed.", on: .setup)
+        let revision = selection.pageErrorRevision
+        selection.reportPageError("Profiles failed.", on: .profiles)
+        #expect(selection.pageError == "Guards failed.")
+        #expect(selection.pageErrorRevision == revision)
+        selection.setPageError(nil, on: .profiles)
+        #expect(selection.pageError == "Guards failed.")
+        selection.reportPageError("Profiles failed again.", on: .profiles)
+        selection.select(.profiles)
+        #expect(selection.pageError == "Profiles failed again.")
+        selection.select(.setup)
+        #expect(selection.pageError == nil)
+        selection.select(.profiles)
+        #expect(selection.pageError == nil)
+    }
+
+    @Test("A hidden-page report stores text without announcing it on a later page switch")
+    func hiddenPageReportStaysSilent() {
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        let revision = selection.pageErrorRevision
+        selection.reportPageError("Setup failed.", on: .setup)
+        #expect(selection.pageErrorRevision == revision && selection.pageError == nil)
+        selection.select(.setup)
+        #expect(selection.pageError == "Setup failed.")
+        #expect(selection.pageErrorRevision == revision)
+    }
+
+    @Test("Clearing either joined source changes text without repeating the other failure")
+    func quietJoinedState() {
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        selection.select(.setup)
+        selection.reportPageError("Guards failed. Setup failed.", on: .setup)
+        let revision = selection.pageErrorRevision
+        selection.setPageError("Guards failed.", on: .setup)
+        #expect(selection.pageError == "Guards failed." && selection.pageErrorRevision == revision)
+        selection.setPageError("Setup failed.", on: .setup)
+        #expect(selection.pageError == "Setup failed." && selection.pageErrorRevision == revision)
+        selection.setPageError(nil, on: .setup)
+        #expect(selection.pageError == nil && selection.pageErrorRevision == revision)
     }
 
     @Test("Message sentences and joins add exactly one final period")
@@ -69,7 +116,7 @@ struct SettingsSelectionTests {
         let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
         let selection = SettingsSelection(choices: choices)
         selection.setAppError("App failed.")
-        selection.setPageError("Page failed.")
+        selection.setPageError("Page failed.", on: selection.page)
         let appRevision = selection.appErrorRevision
         let pageRevision = selection.pageErrorRevision
         let lock = folder.appendingPathComponent("choices.lock")
@@ -84,7 +131,7 @@ struct SettingsSelectionTests {
         let saveRevision = selection.saveErrorRevision
         #expect(saveError?.hasPrefix("Could not save") == true)
         #expect(selection.loadError == loadError && selection.loadErrorRevision == loadRevision)
-        selection.setPageError(nil)
+        selection.setPageError(nil, on: selection.page)
         #expect(selection.loadError == loadError && selection.saveError == saveError)
         selection.reload()
         #expect(selection.loadErrorRevision == loadRevision + 1)
@@ -94,7 +141,7 @@ struct SettingsSelectionTests {
         #expect(selection.loadErrorRevision == loadRevision + 1)
         #expect(selection.appErrorRevision == appRevision && selection.pageErrorRevision == pageRevision)
         try FileManager.default.removeItem(at: lock)
-        selection.setPageError("Page failed again.")
+        selection.setPageError("Page failed again.", on: selection.page)
         selection.setTheme(.dark)
         #expect(selection.saveError == nil && selection.loadError == loadError)
         #expect(selection.saveErrorRevision == saveRevision + 1)
@@ -131,8 +178,8 @@ struct SettingsSelectionTests {
         let selection = SettingsSelection(choices: choices)
         let denial = "Notifications are off for Swarm."
         selection.setAppError(denial)
-        selection.setPageError("Page failed.")
-        selection.setPageError(nil)
+        selection.setPageError("Page failed.", on: selection.page)
+        selection.setPageError(nil, on: selection.page)
         #expect(selection.appError == denial && selection.loadError == nil)
         #expect(selection.pageError == nil)
         selection.select(.setup)
@@ -166,7 +213,7 @@ struct SettingsSelectionTests {
         let selection = SettingsSelection(choices: choices)
         #expect(selection.loadError?.hasPrefix("Could not load") == true)
         selection.setAppError("App lock failed.")
-        selection.setPageError("Page failed.")
+        selection.setPageError("Page failed.", on: selection.page)
         try FileManager.default.removeItem(at: lock)
         selection.reload()
         #expect(selection.loadError == nil)
@@ -212,8 +259,8 @@ struct SettingsSelectionTests {
         #expect(try Data(contentsOf: file) == saved)
         let saveError = selection.saveError
         let saveRevision = selection.saveErrorRevision
-        selection.setPageError("Page failed.")
-        selection.setPageError(nil)
+        selection.setPageError("Page failed.", on: selection.page)
+        selection.setPageError(nil, on: selection.page)
         #expect(selection.saveError == saveError)
         #expect(selection.saveErrorRevision == saveRevision)
         try FileManager.default.removeItem(at: lock)
@@ -221,7 +268,7 @@ struct SettingsSelectionTests {
         #expect(selection.prefs == previous)
         #expect(selection.saveError == saveError)
         #expect(selection.saveErrorRevision == saveRevision)
-        selection.setPageError("Page failed.")
+        selection.setPageError("Page failed.", on: selection.page)
         selection.setTheme(.light)
         #expect(selection.saveError == nil)
         #expect(selection.pageError == "Page failed.")

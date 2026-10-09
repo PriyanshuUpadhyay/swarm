@@ -10,9 +10,8 @@ public final class SettingsSelection {
     public private(set) var appError: String?
     public private(set) var loadError: String?
     public private(set) var saveError: String?
-    private var pageErrorMessage: String?
-    private var pageErrorPage: SettingsPage?
-    public var pageError: String? { pageErrorPage == page ? pageErrorMessage : nil }
+    private var pageErrors: [SettingsPage: String] = [:]
+    public var pageError: String? { pageErrors[page] }
     public private(set) var appErrorRevision = 0
     public private(set) var loadErrorRevision = 0
     public private(set) var saveErrorRevision = 0
@@ -28,7 +27,9 @@ public final class SettingsSelection {
         do {
             let saved = try choices.load(waitForLock: true)
             prefs = saved.prefs
-            changePage(saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles)
+            if saveError == nil {
+                changePage(saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles)
+            }
             loadError = nil
         } catch {
             loadError = OwnerChoicesFailure(error.localizedDescription, operation: .load).message
@@ -48,21 +49,19 @@ public final class SettingsSelection {
     }
 
     private func changePage(_ page: SettingsPage) {
-        if self.page != page { setPageError(nil) }
+        if self.page != page { setPageError(nil, on: self.page) }
         self.page = page
     }
 
-    public func setPageError(_ message: String?) {
-        guard pageError != message else { return }
-        pageErrorMessage = message
-        pageErrorPage = message == nil ? nil : page
-        if message != nil { pageErrorRevision += 1 }
+    /// Updates a page's stored text without announcing a state change or clear.
+    public func setPageError(_ message: String?, on page: SettingsPage) {
+        pageErrors[page] = message
     }
 
-    public func reportPageError(_ message: String) {
-        pageErrorMessage = message
-        pageErrorPage = page
-        pageErrorRevision += 1
+    /// Reports a new failure, including an identical one, on its source page.
+    public func reportPageError(_ message: String, on page: SettingsPage) {
+        pageErrors[page] = message
+        if self.page == page { pageErrorRevision += 1 }
     }
 
     public func setAppError(_ message: String?) {

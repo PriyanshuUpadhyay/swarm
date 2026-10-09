@@ -57,6 +57,11 @@ struct SettingsWindow: View {
             }
         }
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
+        .onAppear {
+            setupError = nil
+            guardsError = nil
+            selection.setPageError(nil, on: .setup)
+        }
         .task { selection.reload() }
         .onChange(of: selection.appErrorRevision, initial: true) { _, _ in
             if let message = selection.appError { AccessibilityNotification.Announcement(message).post() }
@@ -84,27 +89,24 @@ struct SettingsWindow: View {
     }
 
     private func setSetupError(_ message: String?) {
-        guard selection.page == .setup else { return }
         let previous = setupErrorMessage
         setupError = message
         if message != nil, let joined = setupErrorMessage {
-            selection.reportPageError(joined)
+            selection.reportPageError(joined, on: .setup)
         } else if setupErrorMessage != previous {
-            selection.setPageError(setupErrorMessage)
+            selection.setPageError(setupErrorMessage, on: .setup)
         }
     }
 
     private func setGuardsError(_ message: String?) {
-        guard selection.page == .setup else { return }
         let previous = setupErrorMessage
         guardsError = message
-        if setupErrorMessage != previous { selection.setPageError(setupErrorMessage) }
+        if setupErrorMessage != previous { selection.setPageError(setupErrorMessage, on: .setup) }
     }
 
     private func reportGuardsError(_ message: String) {
-        guard selection.page == .setup else { return }
         guardsError = message
-        if let joined = setupErrorMessage { selection.reportPageError(joined) }
+        if let joined = setupErrorMessage { selection.reportPageError(joined, on: .setup) }
     }
 
     @ViewBuilder
@@ -126,7 +128,10 @@ struct SettingsWindow: View {
                 profileAction: { action, revision in
                     try await SwarmCLIBus().profileAction(action, revision: revision)
                 },
-                onError: { selection.setPageError($0) }
+                onError: { message in
+                    if let message { selection.reportPageError(message, on: .profiles) }
+                    else { selection.setPageError(nil, on: .profiles) }
+                }
             )
         case .managedChanges:
             ManagedChangesPage()
