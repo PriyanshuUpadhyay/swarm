@@ -124,6 +124,21 @@ struct SettingsWindow: View {
                 helperVersion = await PathSwarmCheck.helperVersion() ?? "Helper version unavailable"
                 drift = await PathSwarmCheck.current(dismissed: [])
             }
+        case .keys:
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                Text("Keys").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Grid(alignment: .leading, horizontalSpacing: DesignTokens.Spacing.xl,
+                     verticalSpacing: DesignTokens.Spacing.s) {
+                    ForEach(KeysPage.rows, id: \.shortcut) { row in
+                        GridRow {
+                            Text(row.shortcut).monospaced()
+                            Text(row.title)
+                        }
+                    }
+                }
+                Text("A custom keymap comes later (ADR 0060)").foregroundStyle(.secondary)
+            }
+            .padding(DesignTokens.Spacing.xl)
         case .appearance:
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                 Text("Appearance").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)

@@ -28,7 +28,7 @@ struct TabHistoryTests {
             "⌘T", "⌘W", "⇧⌘W", "⇧⌘T", "⌃Tab", "⌃⇧Tab", "⌘1–8", "⌘9", "⌘K", "⌘N", "⇧⌘N", "⌘,",
         ])
         #expect(KeysPage.rows.map(\.title) == [
-            "New Chat", "Close tab", "Close Window", "Recently closed…", "Previous Recent Chat", "Next Recent Chat",
+            "New Chat", "Close Tab", "Close Window", "Recently closed…", "Previous Recent Chat", "Next Recent Chat",
             "Select chat 1–8", "Last Chat", "Command Palette…", "New Workspace", "New Project…", "Settings…",
         ])
     }

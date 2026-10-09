@@ -51,6 +51,9 @@ extension KeyChord {
 /// Window actions for the menu. A window publishes them with `focusedSceneValue`.
 struct WindowKeyActions {
     var newChat: (() -> Void)?
+    var closeTab: () -> Void
+    var lastTab: () -> Void
+    var stepRecentChat: (Int) -> Void
     var recentlyClosed: () -> Void
     var newWorkspace: () -> Void
     var newProject: () -> Void
@@ -87,6 +90,7 @@ struct AppKeyTarget {
 
     func canPerform(_ key: AppKey) -> Bool {
         switch key {
+        case .closeWindow: NSApp.keyWindow != nil
         case .find, .findNext, .findPrevious, .moveFocus, .zoom, .focusComposer, .stop: chat != nil
         default: window != nil
         }
@@ -104,7 +108,11 @@ struct AppKeyTarget {
         case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
-        case .closeTab, .closeWindow, .previousRecentChat, .nextRecentChat, .lastTab: break
+        case .closeTab: window?.closeTab()
+        case .closeWindow: NSApp.keyWindow?.performClose(nil)
+        case .previousRecentChat: window?.stepRecentChat(-1)
+        case .nextRecentChat: window?.stepRecentChat(1)
+        case .lastTab: window?.lastTab()
         case .selectTab(let number): window?.selectTab(number)
         case .nextTab: window?.stepTab(1)
         case .previousTab: window?.stepTab(-1)
@@ -146,6 +154,10 @@ struct AppKeyCommands: Commands {
             item("New Project…", .newProject)
             item("Recently closed…", .recentlyClosed)
         }
+        CommandGroup(replacing: .saveItem) {
+            item("Close Tab", .closeTab)
+            item("Close Window", .closeWindow)
+        }
         CommandGroup(after: .textEditing) {
             Divider()
             item("Find…", .find)
@@ -171,10 +183,13 @@ struct AppKeyCommands: Commands {
             Divider()
             item("Next Chat", .nextTab)
             item("Previous Chat", .previousTab)
-            ForEach(1...9, id: \.self) { index in
+            item("Previous Recent Chat", .previousRecentChat)
+            item("Next Recent Chat", .nextRecentChat)
+            ForEach(1...8, id: \.self) { index in
                 item("Chat \(index)", .selectTab(index))
             }
             Divider()
+            item("Last Chat", .lastTab)
             item("Focus Composer", .focusComposer)
             item("Focus Left", .moveFocus(.left))
             item("Focus Right", .moveFocus(.right))

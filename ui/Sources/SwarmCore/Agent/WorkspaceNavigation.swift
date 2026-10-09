@@ -357,13 +357,16 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return true
     }
 
-    public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil, now: Int = Int(Date().timeIntervalSince1970)) {
+    public mutating func select(
+        _ entry: WorkspaceEntry, chat: SwarmSessionID? = nil,
+        now: Int = Int(Date().timeIntervalSince1970), recordingHistory: Bool = true
+    ) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {
             selectedChats[entry.id] = id.rawValue
             if let selected = SwarmSessionListing.chat(id, in: entry.chats) {
                 markSeen(selected, now: now)
-                recordTabSelection(ChatTitle.key(selected), in: entry.id)
+                if recordingHistory { recordTabSelection(ChatTitle.key(selected), in: entry.id) }
             }
         }
     }

@@ -40,7 +40,7 @@ struct HomeSettingsTests {
         #expect(SettingsPage.accounts.placeholder == "Comes with slice 3")
         #expect(SettingsPage.appearance.placeholder == nil)
         #expect(SettingsPage.notifications.placeholder == "Comes with step 25")
-        #expect(SettingsPage.keys.placeholder == "Comes with step 23")
+        #expect(SettingsPage.keys.placeholder == nil)
         #expect(SettingsPage.profiles.placeholder == nil)
         #expect(SettingsPage.paletteItems.map(\.title) == ["Setup", "Managed Changes", "Profiles"])
         #expect(SettingsPage.paletteItems.compactMap { SettingsPage.openable(from: $0) }

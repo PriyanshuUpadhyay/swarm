@@ -151,7 +151,7 @@ final class SessionsTreeModel {
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
-    func select(_ id: SwarmSessionID?) {
+    func select(_ id: SwarmSessionID?, recordingHistory: Bool = true) {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         selectionRevision += 1
         pendingSelection = nil
@@ -161,7 +161,7 @@ final class SessionsTreeModel {
             // Only a move to another workspace opens its project; a tab switch keeps a collapse.
             let moved = navigation.selectedWorkspace != entry.id
             if let chat = tree.session(id) { navigation.openTab(chat, in: entry) }
-            navigation.select(entry, chat: id)
+            navigation.select(entry, chat: id, recordingHistory: recordingHistory)
             if moved { expandProject(of: entry) }
         }
         agents = selectedSessionID.flatMap { tree.agentsBySession[$0] } ?? []
@@ -394,7 +394,7 @@ final class SessionsTreeModel {
             self.selectedSessionID = row.id
             if let entry = workspace(containingChat: row.id) {
                 if selectingPending { navigation.openTab(row, in: entry) }
-                navigation.select(entry, chat: row.id, now: row.lastActivity)
+                navigation.select(entry, chat: row.id, now: row.lastActivity, recordingHistory: false)
             }
             do {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
@@ -1573,6 +1573,23 @@ private struct SessionsWindow: View {
         WindowKeyActions(
             newChat: model.selectedWorkspace.map({ model.navigation.canStartChat(in: $0) }) == false
                 ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
+            closeTab: {
+                guard let directory = tabsDirectory,
+                      stripTabs(in: directory).contains(where: { $0.id == selectedTabID && $0.canHide }) else { return }
+                model.hideTab(selectedTabID, in: directory)
+            },
+            lastTab: {
+                if let tab = tabsDirectory.flatMap({ stripTabs(in: $0).last }) { showTab(tab.id) }
+            },
+            stepRecentChat: { step in
+                guard let directory = tabsDirectory,
+                      let key = TabHistory.flip(
+                        history: model.navigation.tabHistory[directory] ?? [],
+                        open: model.navigation.tabs[directory]?.open ?? [], current: selectedTabID, step: step
+                      ) else { return }
+                // Cycling must keep history order, or repeated presses only toggle two chats.
+                showTab(key, recordingHistory: false)
+            },
             recentlyClosed: {
                 guard !showingClosedChats else { return }
                 closedChats = nil
@@ -1788,7 +1805,7 @@ private struct SessionsWindow: View {
             ?? model.selectedSession.map(ChatTitle.key) ?? ""
     }
 
-    private func showTab(_ id: String) {
+    private func showTab(_ id: String, recordingHistory: Bool = true) {
         // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
         // not hide a file preview; hide it here.
         documentVisible = false
@@ -1796,7 +1813,7 @@ private struct SessionsWindow: View {
         if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
             model.selectPending(start.id)
         } else {
-            model.select(SwarmSessionID(id))
+            model.select(SwarmSessionID(id), recordingHistory: recordingHistory)
         }
     }
 
@@ -1818,7 +1835,7 @@ private struct SessionsWindow: View {
             canStartChat: model.navigation.readOnlyReason(in: directory) == nil
                 && (model.workspaces.first { $0.id == directory }.map { model.navigation.canStartChat(in: $0) } ?? true),
             actions: ChatTabActions(
-                select: showTab,
+                select: { showTab($0) },
                 selectChildren: { showTabChildren($0, in: directory) },
                 newChat: { startChat(in: directory) },
                 end: { requestChatEnd(SwarmSessionID($0), archive: false) },

@@ -8,7 +8,7 @@ public enum KeysPage {
 
     public static let rows: [Row] = [
         Row(shortcut: AppKey.newChat.chord.displayText, title: "New Chat"),
-        Row(shortcut: AppKey.closeTab.chord.displayText, title: "Close tab"),
+        Row(shortcut: AppKey.closeTab.chord.displayText, title: "Close Tab"),
         Row(shortcut: AppKey.closeWindow.chord.displayText, title: "Close Window"),
         Row(shortcut: AppKey.recentlyClosed.chord.displayText, title: "Recently closed…"),
         Row(shortcut: AppKey.previousRecentChat.chord.displayText, title: "Previous Recent Chat"),

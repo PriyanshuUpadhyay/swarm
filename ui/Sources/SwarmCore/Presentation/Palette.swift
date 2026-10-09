@@ -165,7 +165,7 @@ public enum PaletteChatAction: String, Sendable, CaseIterable {
 
     public var title: String {
         switch self {
-        case .closeTab: "Close tab"
+        case .closeTab: "Close Tab"
         case .endChat: "End chat"
         case .archiveChat: "Archive chat"
         case .renameChat: "Rename chat"
@@ -251,7 +251,7 @@ extension AppKey {
         case .nextWorkspace: "Next Workspace"
         case .previousWorkspace: "Previous Workspace"
         case .selectTab(let number): "Chat \(number)"
-        case .closeTab: "Close tab"
+        case .closeTab: "Close Tab"
         case .closeWindow: "Close Window"
         case .previousRecentChat: "Previous Recent Chat"
         case .nextRecentChat: "Next Recent Chat"

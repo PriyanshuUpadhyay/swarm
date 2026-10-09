@@ -21,7 +21,7 @@ struct PaletteTests {
         let selected = PaletteItems.build(sidebarViews: [], workspaces: [], chats: [], agents: [],
                                           selectedChat: true, switchModelDisabledReason: "Wait for the reply.")
         let actions = selected.filter { $0.id.hasPrefix("chatAction:") }
-        #expect(actions.map(\.title) == ["Close tab", "End chat", "Archive chat", "Rename chat",
+        #expect(actions.map(\.title) == ["Close Tab", "End chat", "Archive chat", "Rename chat",
                                          "Reopen closed chat", "Switch model"])
         #expect(actions.map(\.id) == PaletteChatAction.allCases.map { "chatAction:" + $0.rawValue })
         #expect(actions.last?.disabledReason == "Wait for the reply.")

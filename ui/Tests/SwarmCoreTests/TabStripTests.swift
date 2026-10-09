@@ -516,6 +516,23 @@ struct TabStripTests {
         #expect(navigation.tabs[entry.id]?.open == ["ended"])
     }
 
+    @Test("Recent chat cycling preserves order across repeated presses")
+    func recentChatCycle() throws {
+        let entry = try #require(WorkspaceEntry.list(in: tree()).first)
+        var navigation = WorkspaceNavigation()
+        navigation.tabs[entry.id] = .init(open: ["design", "review", "ended"])
+        for key in ["design", "review", "ended"] { navigation.select(entry, chat: .init(key)) }
+        for expected in ["review", "design", "ended"] {
+            let key = try #require(TabHistory.flip(
+                history: navigation.tabHistory[entry.id] ?? [], open: navigation.tabs[entry.id]?.open ?? [],
+                current: navigation.selectedChats[entry.id], step: -1
+            ))
+            #expect(key == expected)
+            navigation.select(entry, chat: .init(key), recordingHistory: false)
+        }
+        #expect(navigation.tabHistory[entry.id] == ["design", "review", "ended"])
+    }
+
     private func tree() -> SessionsTree {
         let chats = [("design", true), ("review", true), ("ended", false)].map { key, running in
             SwarmProjectSession(
