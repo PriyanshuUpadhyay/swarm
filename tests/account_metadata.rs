@@ -172,6 +172,7 @@ fn invalid_name_cwd_and_stale_revision_never_open_a_pane() {
         "",
         "auto",
         "default",
+        "current",
         ".",
         "..",
         "work..personal",

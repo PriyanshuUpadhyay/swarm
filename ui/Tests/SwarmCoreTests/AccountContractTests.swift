@@ -144,7 +144,7 @@ struct AccountContractTests {
         #expect(try await reset.resetAccounts(revision: "opaque").revision == "bundled")
     }
 
-    @Test("invalid new names never invoke the CLI", arguments: ["", "auto", "default", "../work", "two words", "WORK", "work;touch", "work\n", "é", ".."])
+    @Test("invalid new names never invoke the CLI", arguments: ["", "auto", "default", "current", "../work", "two words", "WORK", "work;touch", "work\n", "é", ".."])
     func invalidName(_ name: String) async {
         let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             Issue.record("Invalid input reached the CLI")

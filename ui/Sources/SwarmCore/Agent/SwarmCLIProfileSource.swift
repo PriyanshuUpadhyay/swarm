@@ -12,8 +12,8 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         self.init(
             environment: SwarmCLIBus.appEnvironment(),
             run: { executable, arguments, cwd, environment in
-                // Usage can wait on a network quota read, so it gets the same bounded wait as
-                // sibling CLI reads instead of leaving a menu bar refresh alive forever.
+                // Rust main::NATIVE_READ_TIMEOUT_SECONDS ends quota reads at 18 seconds,
+                // leaving time to return the CLI result before this 20-second process limit.
                 try await Shell.run(
                     executable, arguments, cwd: cwd,
                     replacingEnvironment: ChildProcessEnvironment.swarmCall(

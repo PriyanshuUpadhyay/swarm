@@ -1532,3 +1532,65 @@ fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
     let err = launch("seat-2");
     assert!(!err.contains("trust-pending claude"), "{err}");
 }
+
+#[test]
+fn named_launch_reuses_the_role_probe_deadline() {
+    let home = scratch("work-account-deadline");
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    tool(
+        &home,
+        "claude",
+        "echo probe >> \"$HOME/native-reads\"; exec /bin/sleep 25",
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    ).unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let start = std::time::Instant::now();
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("authentication is unavailable"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(3),
+        "{:?}",
+        start.elapsed()
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("native-reads"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}

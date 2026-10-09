@@ -89,27 +89,7 @@ fn agy_has_the_contract_no_source_shape() {
     list["revision"] = "opaque".into();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/spare-no-source.json")).unwrap();
-    assert_eq!(sorted_json(list), sorted_json(expected));
-}
-
-fn sorted_json(value: serde_json::Value) -> String {
-    fn sort(value: serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Object(fields) => serde_json::Value::Object(
-                fields
-                    .into_iter()
-                    .map(|(key, value)| (key, sort(value)))
-                    .collect::<std::collections::BTreeMap<_, _>>()
-                    .into_iter()
-                    .collect(),
-            ),
-            serde_json::Value::Array(values) => {
-                serde_json::Value::Array(values.into_iter().map(sort).collect())
-            }
-            value => value,
-        }
-    }
-    serde_json::to_string(&sort(value)).unwrap()
+    assert_eq!(list, expected);
 }
 
 #[test]
@@ -179,10 +159,7 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
     list.auto = pick_auto(&list.accounts, None);
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/work-list.json")).unwrap();
-    assert_eq!(
-        sorted_json(serde_json::to_value(&list).unwrap()),
-        sorted_json(expected)
-    );
+    assert_eq!(serde_json::to_value(&list).unwrap(), expected);
     for meter in &mut meters {
         meter.state = "stale".into();
     }

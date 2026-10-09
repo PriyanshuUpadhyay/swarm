@@ -575,9 +575,13 @@ struct Probe {
 }
 
 impl Probe {
-    fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
+    fn new(
+        config: &swarm::config::Config,
+        account: Option<&str>,
+        deadline: std::time::Instant,
+    ) -> Probe {
         Probe {
-            deadline: swarm::profiles::native::deadline(2),
+            deadline,
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -647,6 +651,7 @@ fn resolve_role(
     provider: Option<&str>,
     account: Option<&str>,
     running: bool,
+    deadline: std::time::Instant,
 ) -> Result<serde_json::Value, String> {
     let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
     let profile = config
@@ -663,7 +668,7 @@ fn resolve_role(
             only.id()
         ));
     }
-    let probe = Probe::new(&config, account);
+    let probe = Probe::new(&config, account, deadline);
     let selection = swarm::config::select(profile, only, |runner| probe.check(runner));
     let id = |index: usize| format!("{role}#{}", index + 1);
     let Some(index) = selection.pick else {
@@ -731,11 +736,11 @@ fn installed(provider: &str) -> bool {
 
 fn load_accounts(
     provider: &str,
-    _with_pick: bool,
+    deadline: std::time::Instant,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
     let provider =
         Provider::parse(provider).ok_or_else(|| format!("swarm: unknown provider {provider}"))?;
-    swarm::profiles::native::load(provider, swarm::profiles::native::deadline(2))
+    swarm::profiles::native::load(provider, deadline)
         .map_err(|error| format!("swarm: {error}").into())
 }
 
@@ -2128,6 +2133,7 @@ fn spawn_agent(
     agent_id: &str,
     role: &str,
     options: SpawnOptions<'_>,
+    account_deadline: std::time::Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Before any pane, file, or bus work: the id names a pane, a bus row, and a run script.
     if !swarm::bus::valid_agent_id(agent_id) {
@@ -2146,7 +2152,7 @@ fn spawn_agent(
                 })
                 .map_err(|error| format!("swarm: {error}"))?,
         };
-        let accounts = load_accounts(&provider, true)?;
+        let accounts = load_accounts(&provider, account_deadline)?;
         Some(
             swarm::profiles::resolve_account(&accounts, requested)
                 .map_err(|error| format!("swarm: {error}"))?
@@ -3033,7 +3039,12 @@ fn all_agent_listings(
     Ok(listings)
 }
 
+const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
+// Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
+const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let account_deadline = swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS);
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
     if let [flag] = args
@@ -3132,7 +3143,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let resolved = resolve_role(role, provider, None, false)?;
+        let resolved = resolve_role(role, provider, None, false, account_deadline)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
@@ -3142,7 +3153,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
-        let probe = Probe::new(&config, None);
+        let probe = Probe::new(&config, None, account_deadline);
         let profiles: Vec<swarm::config::ProfileCheck> = config
             .profiles
             .iter()
@@ -3234,14 +3245,16 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let provider = Provider::parse(provider).ok_or("swarm: unknown provider")?;
         return print_json(&swarm::profiles::native::load(
             provider,
-            swarm::profiles::native::deadline(20),
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
         )?);
     }
     if let [cmd, json] = args
         && cmd == "usage"
         && json == "--json"
     {
-        return print_json(&swarm::usage::read(swarm::profiles::native::deadline(20))?);
+        return print_json(&swarm::usage::read(swarm::profiles::native::deadline(
+            NATIVE_READ_TIMEOUT_SECONDS,
+        ))?);
     }
     if let [cmd, refresh, provider_flag, provider, json] = args
         && cmd == "usage"
@@ -3256,7 +3269,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         return print_json(&swarm::usage::refresh_codex(
-            swarm::profiles::native::deadline(20),
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
         )?);
     }
     let root = swarm::paths::root_dir()?;
@@ -3510,8 +3523,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(|error| format!("swarm: {error}"))?;
                 serde_json::from_value(serde_json::to_value(runner)?)?
             }
-            None => serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
-                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
+            None => serde_json::from_value(resolve_role(
+                role,
+                requested_provider,
+                account,
+                true,
+                account_deadline,
+            )?)
+            .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
         };
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
@@ -3536,7 +3555,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => match load_accounts(kind.id(), true)
+            (Some(requested), true) => match load_accounts(kind.id(), account_deadline)
                 .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
                 .and_then(|accounts| {
                     swarm::profiles::resolve_account(&accounts, requested).cloned()
@@ -3670,6 +3689,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 command: &command,
                 runner: Some(&runner),
             },
+            account_deadline,
         );
     }
     if let [cmd, agent_id, role, rest @ ..] = args
@@ -3682,7 +3702,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Err(reason.into());
         }
         let options = parse_spawn_options(rest)?;
-        return spawn_agent(&connection, &root, agent_id, role, options);
+        return spawn_agent(
+            &connection,
+            &root,
+            agent_id,
+            role,
+            options,
+            account_deadline,
+        );
     }
     if let [cmd] = args
         && cmd == "drain"

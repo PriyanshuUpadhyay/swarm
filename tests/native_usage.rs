@@ -72,10 +72,7 @@ fn refresh_reads_native_windows_and_caches_only_nonsecret_usage() {
     work["as_of_seconds"] = 1791530000i64.into();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/work-usage.json")).unwrap();
-    assert_eq!(
-        sort_json(serde_json::json!({"meters":[work]})),
-        sort_json(expected)
-    );
+    assert_eq!(serde_json::json!({"meters":[work]}), expected);
     let personal = rows
         .iter()
         .find(|row| row["account"] == "personal")
@@ -167,26 +164,6 @@ echo '[{"provider":"claude","label":"cl·owner@example.test","window":"7d","pct"
             .filter(|row| row["provider"] == "codex")
             .all(|row| row["used_pct"].is_null())
     );
-}
-
-fn sort_json(value: serde_json::Value) -> String {
-    fn sort(value: serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Object(fields) => serde_json::Value::Object(
-                fields
-                    .into_iter()
-                    .map(|(key, value)| (key, sort(value)))
-                    .collect::<std::collections::BTreeMap<_, _>>()
-                    .into_iter()
-                    .collect(),
-            ),
-            serde_json::Value::Array(values) => {
-                serde_json::Value::Array(values.into_iter().map(sort).collect())
-            }
-            value => value,
-        }
-    }
-    serde_json::to_string(&sort(value)).unwrap()
 }
 
 #[test]
@@ -284,7 +261,7 @@ fn invalid_percentages_rpc_errors_and_empty_limits_are_unknown() {
 }
 
 #[test]
-fn refresh_uses_one_twenty_second_deadline_and_reaps_its_process() {
+fn refresh_finishes_before_the_swift_timeout_and_reaps_its_process() {
     let home = fixture("spare-deadline");
     tool(
         &home,
@@ -298,14 +275,16 @@ exec /bin/sleep 25"#,
         &home,
         &["usage", "--refresh", "--provider", "codex", "--json"],
     ));
-    assert!(start.elapsed() >= std::time::Duration::from_secs(19));
-    assert!(start.elapsed() < std::time::Duration::from_secs(23));
+    assert!(start.elapsed() >= std::time::Duration::from_secs(17));
+    assert!(start.elapsed() < std::time::Duration::from_secs(20));
     assert!(
         usage["meters"]
             .as_array()
             .unwrap()
             .iter()
-            .all(|row| row["state"] == "failed" && row["used_pct"].is_null())
+            .all(|row| row["state"] == "failed"
+                && row["used_pct"].is_null()
+                && row["reason"] == "Codex usage read failed")
     );
     assert_eq!(
         std::fs::read_to_string(home.join("processes"))

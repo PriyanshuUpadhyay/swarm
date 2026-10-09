@@ -133,7 +133,7 @@ struct AccountsPage: View {
             TextField("Account name", text: $accountName)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { login(section.provider) }
-            Text("Use a–z, 0–9, '.', '_' or '-'. Auto and default are reserved.")
+            Text("Use a–z, 0–9, '.', '_' or '-'. Auto, default and current are reserved.")
                 .font(.caption).foregroundStyle(.secondary)
             if !accountName.isEmpty && !SwarmAccountLoginRequest.validName(accountName) {
                 Text("Enter a valid account name without spaces or path parts.")
