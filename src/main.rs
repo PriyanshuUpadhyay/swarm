@@ -1323,10 +1323,34 @@ impl SetupPlan {
                     }
                 }
                 Err(error) => {
-                    setup.push(
-                        "skills",
-                        FilePlan::unreadable(user_home.join(".agents/skills"), error.to_string()),
-                    );
+                    let home = swarm::paths::home().map(std::path::PathBuf::from);
+                    let plan = match home {
+                        Ok(home) if home.is_absolute() => {
+                            let store = home.join(".swarm/swarm.db");
+                            let mut plan = FilePlan::unreadable(store.clone(), error.to_string());
+                            plan.conflicts[0].entry = "the managed skills records".into();
+                            plan.conflicts[0].wanted =
+                                "a readable swarm store with valid managed skills records".into();
+                            plan.conflicts[0].fix = format!(
+                                "repair the swarm store {}, then check the Skills plan again",
+                                store.display()
+                            );
+                            plan
+                        }
+                        home => {
+                            let path = home.unwrap_or_else(|_| {
+                                std::env::var_os("SWARM_HOME")
+                                    .map(std::path::PathBuf::from)
+                                    .unwrap_or_else(|| "SWARM_HOME".into())
+                            });
+                            let mut plan = FilePlan::unreadable(path, error.to_string());
+                            plan.conflicts[0].entry = "the swarm home".into();
+                            plan.conflicts[0].wanted = "an absolute swarm home path".into();
+                            plan.conflicts[0].fix = "set SWARM_HOME to an absolute path, then check the Skills plan again".into();
+                            plan
+                        }
+                    };
+                    setup.push("skills", plan);
                 }
             }
         }
@@ -1391,7 +1415,11 @@ fn skills_setup_plans()
 -> Result<(Vec<swarm::managed::Plan>, Option<String>), Box<dyn std::error::Error>> {
     use swarm::managed::{FilePlan, LinkPlan};
     let home = std::path::PathBuf::from(env_var("HOME")?);
-    let root = std::path::PathBuf::from(swarm::paths::home()?).join(".swarm");
+    let swarm_home = std::path::PathBuf::from(swarm::paths::home()?);
+    if !swarm_home.is_absolute() {
+        return Err("swarm: SWARM_HOME must be an absolute path".into());
+    }
+    let root = swarm_home.join(".swarm");
     let copy = root.join("skills");
     let manifest = match swarm::skills::Manifest::read(&copy) {
         Ok(manifest) => manifest,

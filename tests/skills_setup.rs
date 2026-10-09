@@ -103,13 +103,23 @@ fn shared_cli_roots_plan_and_apply_each_canonical_leaf_once() {
 
 #[test]
 fn unreadable_store_is_a_skills_conflict_and_status_names_the_error() {
-    for role in ["store-directory", "store-corrupt"] {
+    for role in ["store-directory", "store-corrupt", "store-bad-row"] {
         let f = Fixture::new(role, true);
         let database = f.build_home.join(".swarm/swarm.db");
         if role == "store-directory" {
             fs::create_dir(&database).unwrap();
-        } else {
+        } else if role == "store-corrupt" {
             fs::write(&database, "invalid database").unwrap();
+        } else {
+            let plan = f.plan();
+            assert!(f.apply(plan["digest"].as_str().unwrap()).status.success());
+            let store = rusqlite::Connection::open(&database).unwrap();
+            store
+                .execute(
+                    "UPDATE managed_edit SET wrote = 'invalid target' WHERE writer = 'skills'",
+                    [],
+                )
+                .unwrap();
         }
         let plan = f.json(&["setup", "--plan", "--json"]);
         let conflict = plan["conflicts"]
@@ -119,6 +129,19 @@ fn unreadable_store_is_a_skills_conflict_and_status_names_the_error() {
             .find(|c| c["group"] == "skills")
             .unwrap();
         assert_eq!(conflict["kind"], "unreadable");
+        assert_eq!(conflict["file"], database.to_string_lossy().as_ref());
+        assert_eq!(conflict["entry"], "the managed skills records");
+        assert_eq!(
+            conflict["wanted"],
+            "a readable swarm store with valid managed skills records"
+        );
+        assert_eq!(
+            conflict["fix"],
+            format!(
+                "repair the swarm store {}, then check the Skills plan again",
+                database.display()
+            )
+        );
         assert!(
             conflict["found"]
                 .as_str()
@@ -171,12 +194,19 @@ fn relative_skills_home_is_a_conflict_and_status_names_the_error() {
     let output = run(&["setup", "--plan", "--json"]);
     assert!(output.status.success(), "{output:?}");
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(
-        plan["conflicts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|c| c["group"] == "skills" && c["found"].as_str().unwrap().contains("absolute"))
+    let conflict = plan["conflicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["group"] == "skills")
+        .unwrap();
+    assert!(conflict["found"].as_str().unwrap().contains("absolute"));
+    assert_eq!(conflict["file"], "relative");
+    assert_eq!(conflict["entry"], "the swarm home");
+    assert_eq!(conflict["wanted"], "an absolute swarm home path");
+    assert_eq!(
+        conflict["fix"],
+        "set SWARM_HOME to an absolute path, then check the Skills plan again"
     );
     assert!(
         plan["files"]
