@@ -1,27 +1,42 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import SwarmCore
 
 @Suite("Notice delivery")
 struct NoticeDeliveryTests {
-    @Test("Concurrent posts carry every notice and the next post reads permission again")
-    func authorizationOnce() async throws {
+    @Test("Each sequential post reads permission again")
+    func eachPostReadsPermissionAgain() async throws {
         let calls = DeliveryCalls()
         let delivery = NoticeDelivery(authorize: { await calls.authorize(granted: true) },
                                       deliver: { await calls.deliver($0) }, onDenied: { await calls.denied() })
-        #expect(await calls.authorizationCount == 0)
+        let notice = notice()
+        let postCount = 3
+        for expectedCount in 1...postCount {
+            try await delivery.post(notice)
+            #expect(await calls.authorizationCount == expectedCount)
+        }
+        #expect(await calls.notices == Array(repeating: notice, count: postCount))
+    }
+
+    @Test("Six posts queued during authorization share exactly one request")
+    func inFlightAuthorizationIsShared() async throws {
+        let postCount = 6
+        let gate = AuthorizationGate(posts: postCount)
+        let calls = DeliveryCalls()
+        let delivery = NoticeDelivery(authorize: {
+            await gate.wait()
+            return await calls.authorize(granted: true)
+        }, deliver: { await calls.deliver($0) }, onDenied: { await calls.denied() })
         let notice = notice()
         try await withThrowingTaskGroup(of: Void.self) { group in
-            for _ in 0..<6 { group.addTask { try await delivery.post(notice) } }
+            for _ in 0..<postCount { group.addTask { try await delivery.post(notice, queuedOn: gate) } }
             try await group.waitForAll()
         }
-        // Posts that start after a request finishes need a fresh read, even within this task group.
-        let requests = await calls.authorizationCount
-        #expect((1...6).contains(requests))
-        #expect(await calls.notices == Array(repeating: notice, count: 6))
+        #expect(await calls.authorizationCount == 1)
+        #expect(await calls.notices == Array(repeating: notice, count: postCount))
         try await delivery.post(notice)
-        #expect(await calls.authorizationCount == requests + 1)
-        #expect(await calls.notices.count == 7)
+        #expect(await calls.authorizationCount == 2)
     }
 
     @Test("Denial never posts and is checked again on the next post")
@@ -149,4 +164,45 @@ private actor DeliveryCalls {
         return granted
     }
     func deliver(_ notice: Notice) { notices.append(notice) }
+}
+
+private final class AuthorizationGate: Sendable {
+    private struct State {
+        var queued = 0
+        var waiters: [CheckedContinuation<Void, Never>] = []
+    }
+    private let state = Mutex(State())
+    private let posts: Int
+
+    init(posts: Int) { self.posts = posts }
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let released = state.withLock {
+                if $0.queued == posts { return true }
+                $0.waiters.append(continuation)
+                return false
+            }
+            if released { continuation.resume() }
+        }
+    }
+
+    func queued() {
+        let waiters = state.withLock {
+            $0.queued += 1
+            guard $0.queued == posts else { return [CheckedContinuation<Void, Never>]() }
+            let waiters = $0.waiters
+            $0.waiters = []
+            return waiters
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+}
+
+private extension NoticeDelivery {
+    func post(_ notice: Notice, queuedOn gate: AuthorizationGate) async throws {
+        // Stay on the delivery actor until post registers its waiter, so the last signal cannot race it.
+        gate.queued()
+        try await post(notice)
+    }
 }

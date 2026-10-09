@@ -6,10 +6,12 @@ import Observation
 public final class SettingsSelection {
     public private(set) var page = SettingsPage.profiles
     public private(set) var prefs = Prefs()
-    // Page loads and saves clear only the page error.
+    // A recovered load clears only its own error; a save error survives reload.
     // App errors stay until the owner presses their Dismiss button.
     public private(set) var appError: String?
     public private(set) var error: String?
+    private enum ErrorSource { case load, save }
+    private var errorSource: ErrorSource?
     private let choices: OwnerChoicesStore
 
     public init(choices: OwnerChoicesStore = OwnerChoicesStore()) {
@@ -22,9 +24,10 @@ public final class SettingsSelection {
             let saved = try choices.load(waitForLock: true)
             prefs = saved.prefs
             page = saved.prefs.settingsPage.flatMap(SettingsPage.init(rawValue:)) ?? .profiles
-            setError(nil)
+            if errorSource == .load { setError(nil) }
         } catch {
             setError(OwnerChoicesFailure(error.localizedDescription, operation: .load).message)
+            errorSource = .load
         }
     }
 
@@ -40,6 +43,7 @@ public final class SettingsSelection {
 
     public func setError(_ message: String?) {
         error = message
+        errorSource = message == nil ? nil : .save
     }
 
     public func setAppError(_ message: String?) {
@@ -47,27 +51,23 @@ public final class SettingsSelection {
     }
 
     public func setSplitDiff(_ split: Bool) {
-        updatePrefs { $0.splitDiff = split }
+        save { $0.splitDiff = split }
     }
 
     public func setTheme(_ theme: Theme) {
-        updatePrefs { $0.theme = theme }
+        save { $0.theme = theme }
     }
 
     public func setTextSize(_ textSize: TextSize) {
-        updatePrefs { $0.textSize = textSize }
+        save { $0.textSize = textSize }
     }
 
     public func setDensity(_ density: Density) {
-        updatePrefs { $0.density = density }
+        save { $0.density = density }
     }
 
     public func setSendKey(_ sendKey: SendKey) {
-        updatePrefs { $0.sendKey = sendKey }
-    }
-
-    private func updatePrefs(_ update: (inout Prefs) -> Void) {
-        save(update)
+        save { $0.sendKey = sendKey }
     }
 
     private func save(_ change: (inout Prefs) -> Void) {

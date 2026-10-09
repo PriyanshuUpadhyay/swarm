@@ -107,9 +107,12 @@ struct SettingsSelectionTests {
         #expect(selection.prefs == previous)
         #expect(selection.error?.hasPrefix("Could not save your settings.") == true)
         #expect(try Data(contentsOf: file) == saved)
+        let saveError = selection.error
         try FileManager.default.removeItem(at: lock)
         selection.reload()
         #expect(selection.prefs == previous)
+        #expect(selection.error == saveError)
+        selection.setTheme(.light)
         #expect(selection.error == nil)
     }
 
