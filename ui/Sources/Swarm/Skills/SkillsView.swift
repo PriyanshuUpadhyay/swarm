@@ -27,7 +27,9 @@ struct SkillsView: View {
             else { editor }
         }
         .task(id: isActive) {
-            guard isActive, model.entries.isEmpty else { return }
+            guard isActive else { return }
+            await model.changeCheckout(settings.prefs.skillsCheckout, loadError: settings.loadError)
+            guard model.entries.isEmpty else { return }
             _ = await settings.waitForSkillsRefresh()
             await model.loadList()
         }

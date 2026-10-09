@@ -281,6 +281,42 @@ struct SkillsPageModelTests {
         }
     }
 
+    @Test("A checkout change preserves close, sidebar and Back actions until Save or Discard completes",
+          arguments: [SkillsNavigationAction.leave, .list], [false, true])
+    func checkoutDuringLeave(action: SkillsNavigationAction, discard: Bool) async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let source = SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document)
+        let model = SkillsPageModel(source: source, checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        model.setHolds("unsaved draft")
+        if action == .leave { await model.requestLeave() }
+        else { await model.back() }
+        await model.changeCheckout("/different/checkout", loadError: nil)
+        #expect(model.pendingAction == action)
+        let capturedAction = model.pendingAction
+        let completed = await model.resolveNavigation(discard ? .discard : .save)
+        #expect(completed)
+        if action == .leave { #expect(completed && capturedAction == .leave) }
+        else { #expect(model.selectedKey == nil) }
+        #expect(model.pendingAction == nil)
+        #expect(!model.isDirty)
+        #expect(model.checkoutChangePending)
+        #expect(model.checkoutPath == "/fixture/checkout")
+        #expect(await source.loadedPaths == ["/fixture/checkout"])
+        #expect(await source.savedPaths == (discard ? [] : ["/fixture/checkout"]))
+        if action == .leave {
+            await model.changeCheckout("/different/checkout", loadError: nil)
+            #expect(model.checkoutPath == "/different/checkout")
+            #expect(await source.loadedPaths.last == .some("/different/checkout"))
+        }
+        await model.open(key: fixture.key)
+        #expect(model.checkoutPath == "/different/checkout")
+        #expect(!model.checkoutChangePending)
+        #expect(await source.loadedPaths.last == .some("/different/checkout"))
+    }
+
     @Test("A checkout request during a load or save applies when the busy operation ends")
     func busyCheckoutChange() async throws {
         for operation in [SkillsPageSourceFixture.Operation.load, .save] {

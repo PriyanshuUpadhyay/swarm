@@ -166,6 +166,10 @@ public final class SkillsPageModel {
     }
 
     public func discard() async {
+        await discard(applyingCheckout: true)
+    }
+
+    private func discard(applyingCheckout: Bool) async {
         guard !busy, let document else { return }
         let stem = document.rows.first { $0.id == selectedID }?.stem
         let hadConflict = conflict
@@ -174,7 +178,7 @@ public final class SkillsPageModel {
             conflict = true
             operationError = "This skill changed on disk. Reload before saving."
         }
-        _ = await applyPendingCheckout()
+        if applyingCheckout { _ = await applyPendingCheckout() }
     }
 
     @discardableResult
@@ -229,7 +233,9 @@ public final class SkillsPageModel {
         }
         pendingCheckout = .checkout(path)
         guard !busy else { return }
-        if isDirty { pendingAction = pendingCheckout }
+        if isDirty {
+            if pendingAction == nil { pendingAction = pendingCheckout }
+        }
         else { _ = await applyPendingCheckout() }
     }
 
@@ -238,10 +244,13 @@ public final class SkillsPageModel {
         pendingAction = nil
         switch choice {
         case .cancel: return false
-        case .save: guard await save() else { return false }
+        case .save: guard await saveDraft() else { return false }
         case .discard:
-            if action == .list || action == .leave || action == .discard || pendingCheckout != nil { await discard() }
+            if action == .list || action == .leave || action == .discard || pendingCheckout != nil {
+                await discard(applyingCheckout: false)
+            }
         }
+        if action != .list && action != .leave { _ = await applyPendingCheckout() }
         if case .checkout = action { return pendingCheckout == nil && retryKey == nil }
         return await perform(action)
     }
