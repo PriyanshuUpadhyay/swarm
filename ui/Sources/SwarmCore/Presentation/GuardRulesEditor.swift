@@ -25,6 +25,11 @@ public struct GuardRuleFields: Identifiable, Sendable, Equatable {
         timeout = rule.timeout.map(String.init) ?? ""
     }
 
+    public var error: String? {
+        do { try GuardRules(rules: [rule()]).validate(); return nil }
+        catch { return error.localizedDescription }
+    }
+
     public func rule() throws -> GuardRules.Rule {
         let seconds: UInt64?
         if timeout.isEmpty { seconds = nil }
@@ -41,23 +46,27 @@ public struct GuardRuleFields: Identifiable, Sendable, Equatable {
 public struct GuardRulesEditor: Sendable, Equatable {
     public var drafts: [GuardRuleFields] = []
     public private(set) var loadError: GuardListError?
+    private var saveError: String?
 
     public init() {}
 
     public var error: String? {
-        if let loadError, !loadError.isMissing || drafts.isEmpty {
-            return loadError.isMissing
-                ? "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list."
-                : "guards.json could not be read: \(loadError.reason). Every tool call is blocked until it is fixed."
+        if let loadError, !loadError.isMissing {
+            return "guards.json could not be read: \(loadError.reason). Every tool call is blocked until it is fixed."
         }
-        do { _ = try list(); return nil }
-        catch { return error.localizedDescription }
+        if let validation = ErrorAnnouncement.joined(drafts.map(\.error)) { return validation }
+        if let saveError { return saveError }
+        if loadError?.isMissing == true, drafts.isEmpty {
+            return "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list."
+        }
+        return nil
     }
 
     public var canSave: Bool { (try? list()) != nil }
     public var canEdit: Bool { loadError == nil || loadError?.isMissing == true }
 
     public mutating func load(_ result: Result<GuardRules, GuardListError>) {
+        saveError = nil
         switch result {
         case .success(let list):
             drafts = list.rules.map(GuardRuleFields.init)
@@ -85,10 +94,19 @@ public struct GuardRulesEditor: Sendable, Equatable {
         return list
     }
 
+    public mutating func recordSaveFailure(_ error: Error) {
+        saveError = error.localizedDescription
+    }
+
     public mutating func save(to url: URL) throws {
-        try list().save(to: url)
-        let result = GuardRules.load(url: url)
-        load(result)
-        _ = try result.get()
+        do {
+            try list().save(to: url)
+            let result = GuardRules.load(url: url)
+            load(result)
+            _ = try result.get()
+        } catch {
+            recordSaveFailure(error)
+            throw error
+        }
     }
 }

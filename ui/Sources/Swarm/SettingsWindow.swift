@@ -66,7 +66,7 @@ struct SettingsWindow: View {
     }
 
     private var setupErrorMessage: String? {
-        ErrorAnnouncement(messages: [guardsError, setupError], revision: 0).text
+        ErrorAnnouncement.joined([guardsError, setupError])
     }
 
     @ViewBuilder

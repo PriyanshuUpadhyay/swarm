@@ -316,6 +316,65 @@ struct SetupSettingsTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: second.path) == "guards.json")
     }
 
+    @Test("Inline guard errors belong to their draft and exclude file load errors")
+    func perDraftGuardErrors() {
+        var editor = GuardRulesEditor()
+        editor.load(.failure(.init(reason: "Missing", isMissing: true)))
+        #expect(editor.drafts.isEmpty)
+        editor.add()
+        #expect(editor.drafts[0].error == "Rule 'New guard' needs a command")
+        editor.drafts[0].command[0].text = "/bin/true"
+        #expect(editor.drafts[0].error == nil)
+        editor.drafts[0].event = "OtherEvent"
+        #expect(editor.drafts[0].error?.contains("needs event PreToolUse") == true)
+        editor.drafts[0].event = "PreToolUse"
+        editor.drafts[0].timeout = "invalid"
+        #expect(editor.drafts[0].error?.contains("needs a whole timeout") == true)
+        editor.drafts[0].timeout = ""
+        editor.add()
+        #expect(editor.drafts[0].error == nil)
+        #expect(editor.drafts[1].error == "Rule 'New guard' needs a command")
+        editor.delete(id: editor.drafts[1].id)
+        #expect(editor.error == nil)
+        editor.load(.failure(.init(reason: "Invalid JSON")))
+        #expect(editor.drafts.isEmpty && !editor.canEdit)
+        #expect(editor.error?.contains("could not be read") == true)
+    }
+
+    @Test("The banner includes each invalid draft so each changed line can be announced")
+    func joinedDraftValidation() {
+        var editor = GuardRulesEditor()
+        editor.add()
+        editor.drafts[0].name = "First rule"
+        editor.add()
+        editor.drafts[1].name = "Second rule"
+        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a command")
+        editor.drafts[1].timeout = "invalid"
+        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a whole timeout in seconds, or an empty field")
+        editor.drafts[0].command[0].text = "/bin/true"
+        #expect(editor.error == editor.drafts[1].error)
+    }
+
+    @Test("A failed guard write reaches the editor error and clears after a good save")
+    func guardSaveFailureIsInEditor() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let blocked = folder.appendingPathComponent("blocked-folder")
+        try Data("occupied".utf8).write(to: blocked)
+        var editor = GuardRulesEditor()
+        editor.load(.failure(.init(reason: "Missing", isMissing: true)))
+        #expect(throws: (any Error).self) { try editor.save(to: blocked.appendingPathComponent("guards.json")) }
+        #expect(editor.error != nil)
+        #expect(editor.error?.contains("press Save to create an empty list") == false)
+        let valid = folder.appendingPathComponent("guards.json")
+        try editor.save(to: valid)
+        #expect(editor.error == nil)
+        editor.recordSaveFailure(GuardListError(reason: "SWARM_GUARDS is set but empty"))
+        #expect(editor.error == "SWARM_GUARDS is set but empty")
+        editor.load(.success(GuardRules()))
+        #expect(editor.error == nil)
+    }
+
     @Test("A missing guard file shows draft validation when Save cannot run")
     func missingGuardDraftValidation() {
         var editor = GuardRulesEditor()

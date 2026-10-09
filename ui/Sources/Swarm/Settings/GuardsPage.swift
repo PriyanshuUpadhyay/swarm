@@ -23,8 +23,7 @@ struct GuardsPage: View {
                         do {
                             try save(&editor)
                             editing = nil
-                            onError(nil)
-                        } catch { onError(error.localizedDescription) }
+                        } catch { editor.recordSaveFailure(error) }
                     }.disabled(!editor.canSave)
                 }
                 if editor.drafts.isEmpty && editor.loadError == nil {
@@ -51,24 +50,30 @@ struct GuardsPage: View {
                             Text(verbatim: "Command: \(draft.command.map(\.text).joined(separator: " "))")
                             Text(verbatim: "Timeout: \(draft.timeout.isEmpty ? "3 (default)" : draft.timeout) \(draft.timeout == "1" ? "second" : "seconds")")
                         }
+                        if let error = draft.error {
+                            Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                        }
                         Divider()
                     }
                     .textSelection(.enabled)
                 }
-                if editor.canEdit, let error = editor.error {
-                    Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                if !editor.canEdit {
+                    Text("Guards cannot be edited until guards.json is fixed.")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(tokens.spacing.s)
         }
         .task { reload() }
+        .onChange(of: editor.error, initial: true) { _, error in
+            onError(error)
+        }
     }
 
     private func reload() {
         editor.load(load())
         editing = nil
-        onError(editor.loadError == nil ? nil : editor.error)
     }
 }
 
