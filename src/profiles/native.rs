@@ -114,6 +114,12 @@ fn load_inner(
                 }),
             _ => claude_identity(&env, deadline).map(|(state, email)| (state, email, false)),
         };
+        if identity
+            .as_ref()
+            .is_err_and(|error| error == "provider CLI is unavailable")
+        {
+            list.state = "unavailable".into();
+        }
         let (auth_state, email, api_key) =
             identity.unwrap_or((AuthState::Unavailable, None, false));
         list.accounts.push(Account {
@@ -136,31 +142,9 @@ fn load_inner(
     }
     list.accounts
         .sort_by(|left, right| left.name.cmp(&right.name));
-    let usage = if include_usage {
-        match provider {
-            Provider::Claude => crate::usage::claude_snapshot(deadline).ok(),
-            Provider::Codex => crate::paths::root_dir()
-                .ok()
-                .and_then(|root| std::fs::read(root.join("codex-usage.json")).ok())
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
-            Provider::Agy => None,
-        }
-    } else {
-        None
-    };
-    if let Some(usage) = usage {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        super::apply_cached_usage(&mut list, &usage, now);
-    }
-    if list
-        .accounts
-        .iter()
-        .any(|account| account.auth_state == AuthState::Unavailable)
-    {
-        list.state = "unavailable".into();
+    if include_usage {
+        let meters = crate::usage::for_accounts(&list, deadline, crate::usage::now_seconds())?;
+        super::apply_usage(&mut list, &meters);
     }
     list.auto = super::pick_auto(&list.accounts, current.to_str());
     Ok(list)
@@ -192,7 +176,7 @@ fn claude_identity(
     deadline: Instant,
 ) -> Result<(AuthState, Option<String>), String> {
     let executable = std::env::var("SWARM_CLAUDE_CMD").unwrap_or_else(|_| "claude".into());
-    let value = read_json(&executable, &["auth", "status", "--json"], env, deadline)?;
+    let value = read_json(&executable, &["auth", "status"], env, deadline)?;
     match value["loggedIn"].as_bool() {
         Some(logged_in) => Ok((
             if logged_in {
@@ -216,7 +200,9 @@ pub fn read_json(
         return Err("provider read timed out".into());
     }
     let mut command = Command::new(executable);
-    if args == ["auth", "status", "--json"] {
+    let claude_auth = args == ["auth", "status"];
+    if claude_auth {
+        // Native status must not inherit a different profile from the caller shell.
         for key in Provider::Claude.account_env_keys() {
             command.env_remove(key);
         }
@@ -228,7 +214,7 @@ pub fn read_json(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|_| "provider read is unavailable")?;
+        .map_err(|_| "provider CLI is unavailable")?;
     let stdout = child
         .stdout
         .take()
@@ -248,7 +234,10 @@ pub fn read_json(
     }
     let _ = child.kill();
     let _ = child.wait();
-    if !status.is_some_and(|status| status.success()) {
+    if response.is_err() || status.is_none() {
+        return Err("provider read timed out".into());
+    }
+    if !status.is_some_and(|status| status.success() || (claude_auth && status.code() == Some(1))) {
         return Err("provider read is unavailable".into());
     }
     let bytes = response
@@ -276,7 +265,7 @@ impl AppServer {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|_| "Codex app-server is unavailable")?;
+            .map_err(|_| "provider CLI is unavailable")?;
         let stdout = child.stdout.take().ok_or("Codex stdout is unavailable")?;
         let (sender, responses) = channel();
         std::thread::spawn(move || {

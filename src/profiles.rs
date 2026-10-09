@@ -65,68 +65,39 @@ pub fn pick_auto(accounts: &[Account], current_home: Option<&str>) -> Option<Str
         .map(|account| account.name.clone())
 }
 
-pub fn apply_cached_usage(list: &mut AccountList, usage: &serde_json::Value, now: i64) {
+pub fn apply_usage(list: &mut AccountList, meters: &[UsageMeter]) {
     for account in &mut list.accounts {
         if account.usage_state == "no_source" {
             continue;
         }
-        let rows: Vec<&serde_json::Value> = if list.provider == "codex" {
-            usage["accounts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|entry| entry["home"].as_str() == Some(account.home.as_str()))
-                .flat_map(|entry| entry["meters"].as_array().into_iter().flatten())
-                .collect()
+        let rows: Vec<_> = meters
+            .iter()
+            .filter(|meter| {
+                meter.provider == list.provider && meter.account.as_deref() == Some(&account.name)
+            })
+            .collect();
+        account.remaining_pct = None;
+        account.summary = None;
+        account.usage_state = if rows.iter().any(|meter| meter.state == "failed") {
+            "failed"
+        } else if rows.iter().any(|meter| meter.state == "missing") || rows.is_empty() {
+            "missing"
+        } else if rows.iter().any(|meter| meter.state == "no_source") {
+            "no_source"
+        } else if rows.iter().any(|meter| meter.state == "stale") {
+            "stale"
         } else {
-            usage
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|row| {
-                    row["provider"] == "claude"
-                        && row["label"]
-                            .as_str()
-                            .and_then(|label| label.split_once('·').map(|(_, tail)| tail))
-                            .is_some_and(|tail| {
-                                tail == account.name || account.email.as_deref() == Some(tail)
-                            })
-                })
-                .collect()
-        };
-        let mut remaining = Vec::new();
-        let mut fresh = true;
-        for row in rows {
-            let state = row["state"].as_str().unwrap_or("missing");
-            if !matches!(state, "fresh" | "ok" | "stale") {
-                account.usage_state = match state {
-                    "failed" | "no_source" => state,
-                    _ => "missing",
-                }
-                .into();
-                continue;
-            }
-            let percent = row
-                .get("used_pct")
-                .or_else(|| row.get("pct"))
-                .and_then(serde_json::Value::as_i64);
-            let Some(percent) = percent.filter(|percent| (0..=100).contains(percent)) else {
-                continue;
-            };
-            let time = row
-                .get("as_of_seconds")
-                .or_else(|| row.get("asOf"))
-                .and_then(serde_json::Value::as_i64);
-            fresh &= matches!(state, "fresh" | "ok")
-                && time.is_some_and(|time| {
-                    time >= 0 && time <= now && now - time <= crate::usage::MAX_AGE_SECONDS
-                });
-            remaining.push(100 - percent);
+            "fresh"
         }
-        if let Some(remaining) = remaining.into_iter().min() {
-            account.remaining_pct = Some(remaining);
-            account.usage_state = if fresh { "fresh" } else { "stale" }.into();
-            account.summary = Some(format!("{remaining}% left"));
+        .into();
+        if matches!(account.usage_state.as_str(), "fresh" | "stale") {
+            account.remaining_pct = rows
+                .iter()
+                .filter_map(|meter| meter.used_pct.map(|used| 100 - used))
+                .min();
+            account.summary = account
+                .remaining_pct
+                .map(|remaining| format!("{remaining}% left"));
         }
     }
 }
@@ -171,11 +142,17 @@ pub fn translate_usage(
     let mut skipped = Vec::new();
     let mut meters = Vec::new();
     for value in input.into_iter().filter(|row| row["provider"] == "claude") {
-        let row: YeloUsageMeter = match serde_json::from_value(value) {
+        let row = match YeloUsageMeter::deserialize(&value) {
             Ok(row) => row,
             Err(_) => {
                 skipped.push("invalid Claude usage row".into());
-                continue;
+                YeloUsageMeter {
+                    label: value["label"].as_str().unwrap_or_default().into(),
+                    window: value["window"].as_str().map(str::to_string),
+                    pct: None,
+                    state: "failed".into(),
+                    as_of: None,
+                }
             }
         };
         let account = row.label.split_once('·').and_then(|(_, tail)| {
@@ -189,27 +166,14 @@ pub fn translate_usage(
                         .or_else(|| list.accounts.iter().find(|account| account.name == tail))
                 })
         });
-        let as_of = row.as_of.filter(|time| *time >= 0 && *time <= now);
-        let valid_percent = row.pct.is_none_or(|percent| (0..=100).contains(&percent));
-        let state = if !valid_percent {
-            "failed"
-        } else {
-            match row.state.as_str() {
-                "ok" | "fresh" if row.pct.is_some() => {
-                    if as_of.is_some_and(|time| now - time <= crate::usage::MAX_AGE_SECONDS) {
-                        "fresh"
-                    } else {
-                        "stale"
-                    }
-                }
-                "stale" if row.pct.is_some() => "stale",
-                "missing" | "logged_out" => "missing",
-                _ => "failed",
-            }
+        let state = match row.state.as_str() {
+            "ok" => "fresh",
+            "logged_out" => "missing",
+            state => state,
         };
         let window_minutes = row.window.as_deref().and_then(crate::usage::window_minutes);
         let window = row.window.filter(|_| window_minutes.is_some());
-        meters.push(UsageMeter {
+        let meter = UsageMeter {
             provider: "claude".into(),
             account: account.map(|account| account.name.clone()),
             label: account
@@ -217,9 +181,7 @@ pub fn translate_usage(
                 .unwrap_or_else(|| "Claude".into()),
             window,
             window_minutes,
-            used_pct: matches!(state, "fresh" | "stale")
-                .then_some(row.pct)
-                .flatten(),
+            used_pct: row.pct,
             reset_time_seconds: None,
             state: state.into(),
             source: Some("yelo".into()),
@@ -228,8 +190,9 @@ pub fn translate_usage(
                 "missing" => Some("No cached Claude usage".into()),
                 _ => None,
             },
-            as_of_seconds: as_of,
-        });
+            as_of_seconds: row.as_of,
+        };
+        meters.push(crate::usage::normalize_meter(&meter, now));
     }
     Ok((Usage { meters }, skipped))
 }

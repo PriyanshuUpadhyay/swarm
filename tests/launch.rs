@@ -93,7 +93,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     tool(
         &home,
         "claude",
-        r#"if [ "$*" = 'auth status --json' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
+        r#"if [ "$*" = 'auth status' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
     );
     tool(
         &home,
@@ -1042,7 +1042,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     tool(
         &home,
         "claude",
-        "if [ \"$*\" = 'auth status --json' ]; then exec /bin/sleep 8; fi",
+        "if [ \"$*\" = 'auth status' ]; then exec /bin/sleep 8; fi",
     );
     let started = std::time::Instant::now();
     let stuck = swarm(

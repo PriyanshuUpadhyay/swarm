@@ -46,9 +46,9 @@ fn native_claude_discovery_keeps_default_and_deduplicates_active_home() {
     tool(
         &home,
         "claude",
-        r#"test "$*" = 'auth status --json' || exit 9
+        r#"test "$*" = 'auth status' || exit 9
 case "$CLAUDE_CONFIG_DIR" in
-  */personal) echo '{"loggedIn":false}' ;;
+  */personal) echo '{"loggedIn":false}'; exit 1 ;;
   *) echo '{"loggedIn":true,"email":"owner@example.test"}' ;;
 esac"#,
     );
@@ -63,7 +63,7 @@ esac"#,
     assert_eq!(rows[1]["auth_state"], "signed_out");
     assert_eq!(rows[2]["name"], "work");
     assert_eq!(rows[2]["env"]["AGENT_PROFILE_LABEL"], "work");
-    assert_eq!(rows[2]["usage_state"], "missing");
+    assert_eq!(rows[2]["usage_state"], "failed");
     assert_eq!(rows[2]["remaining_pct"], serde_json::Value::Null);
 }
 
@@ -76,7 +76,7 @@ fn an_unavailable_auth_read_is_not_signed_out() {
         "echo 'secret must not reach the result' >&2; exit 1",
     );
     let list = accounts(&home, "claude", &[]);
-    assert_eq!(list["state"], "unavailable");
+    assert_eq!(list["state"], "ready");
     assert_eq!(list["accounts"][0]["auth_state"], "unavailable");
     assert_eq!(list["auto"], serde_json::Value::Null);
     assert!(!list.to_string().contains("secret"));
@@ -136,8 +136,8 @@ fn codex_identity_uses_the_protocol_and_active_named_home_without_yelo() {
         .unwrap()
         .as_secs();
     let cache = serde_json::json!({"accounts":[{"home":work,"meters":[
-        {"used_pct":10,"state":"fresh","as_of_seconds":now},
-        {"used_pct":30,"state":"fresh","as_of_seconds":now}
+        {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now},
+        {"provider":"codex","account":"work","label":"work","used_pct":30,"state":"fresh","as_of_seconds":now}
     ]}]});
     std::fs::write(home.join(".swarm/codex-usage.json"), cache.to_string()).unwrap();
     let cached = accounts(&home, "codex", &[]);
@@ -152,7 +152,7 @@ fn codex_identity_uses_the_protocol_and_active_named_home_without_yelo() {
 
 #[test]
 fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
-    use swarm::profiles::{Account, AuthState, apply_cached_usage, empty_accounts, pick_auto};
+    use swarm::profiles::{Account, AuthState, apply_usage, empty_accounts, pick_auto};
     let mut list = empty_accounts("codex");
     list.state = "ready".into();
     list.source = Some("swarm".into());
@@ -171,11 +171,11 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
         usage_source: Some("codex_app_server".into()),
         summary: None,
     });
-    let cache = serde_json::json!({"accounts":[{"home":"/tmp/demo/.codex-work","meters":[
-        {"used_pct":10,"state":"fresh","as_of_seconds":700},
-        {"used_pct":30,"state":"fresh","as_of_seconds":700}
-    ]}]});
-    apply_cached_usage(&mut list, &cache, 1000);
+    let mut meters: Vec<swarm::profiles::UsageMeter> = serde_json::from_value(serde_json::json!([
+        {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":700},
+        {"provider":"codex","account":"work","label":"work","used_pct":30,"state":"fresh","as_of_seconds":700}
+    ])).unwrap();
+    apply_usage(&mut list, &meters);
     list.auto = pick_auto(&list.accounts, None);
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/accounts/work-list.json")).unwrap();
@@ -183,15 +183,41 @@ fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
         sorted_json(serde_json::to_value(&list).unwrap()),
         sorted_json(expected)
     );
-    apply_cached_usage(&mut list, &cache, 1001);
+    for meter in &mut meters {
+        meter.state = "stale".into();
+    }
+    apply_usage(&mut list, &meters);
     assert_eq!(list.accounts[0].usage_state, "stale");
     assert_eq!(pick_auto(&list.accounts, None), None);
     assert_eq!(
         pick_auto(&list.accounts, Some("/tmp/demo/.codex-work")).as_deref(),
         Some("work")
     );
-    let bad = serde_json::json!({"accounts":[{"home":"/tmp/demo/.codex-work","meters":[{"used_pct":200,"state":"fresh","as_of_seconds":1000}]}]});
-    list.accounts[0].remaining_pct = None;
-    apply_cached_usage(&mut list, &bad, 1000);
+    meters[0].state = "failed".into();
+    meters[0].used_pct = None;
+    apply_usage(&mut list, &meters);
+    assert_eq!(list.accounts[0].usage_state, "failed");
     assert_eq!(list.accounts[0].remaining_pct, None);
+}
+
+#[test]
+fn an_unavailable_row_keeps_other_native_accounts_visible() {
+    let home = fixture("spare-partial-auth");
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"test "$*" = 'auth status' || exit 9
+case "$CLAUDE_CONFIG_DIR" in
+  */work) echo '{"loggedIn":true}' ;;
+  *) echo '{"loggedIn":false}'; exit 2 ;;
+esac"#,
+    );
+    let list = accounts(&home, "claude", &[]);
+    assert_eq!(list["state"], "ready");
+    assert_eq!(list["accounts"][0]["auth_state"], "unavailable");
+    assert_eq!(list["accounts"][1]["auth_state"], "signed_in");
+    std::fs::remove_file(home.join("bin/claude")).unwrap();
+    let unavailable = accounts(&home, "claude", &[]);
+    assert_eq!(unavailable["state"], "unavailable");
 }

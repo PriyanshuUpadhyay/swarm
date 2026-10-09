@@ -345,3 +345,145 @@ fn cache_home_inside_a_provider_home_is_rejected_before_a_write() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside provider homes"));
     assert!(!provider_home.join(".swarm").exists());
 }
+
+#[test]
+fn account_and_usage_reads_share_validation_and_keep_failed_windows() {
+    let home = fixture("work-validation");
+    json(run(
+        &home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let path = home.join(".swarm/codex-usage.json");
+    let original: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    for (field, value) in [
+        ("state", serde_json::json!("unknown-state")),
+        ("used_pct", serde_json::json!(150)),
+        ("window_minutes", serde_json::json!(0)),
+        ("reset_time_seconds", serde_json::json!(-1)),
+    ] {
+        let mut cache = original.clone();
+        let work = cache["accounts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["home"].as_str().unwrap().ends_with("/.codex-work"))
+            .unwrap();
+        work["meters"][0][field] = value;
+        let mut ok = work["meters"][0].clone();
+        ok["state"] = "fresh".into();
+        ok["used_pct"] = 20.into();
+        ok["window_minutes"] = 300.into();
+        ok["reset_time_seconds"] = 1791540000i64.into();
+        ok["window"] = "secondary".into();
+        work["meters"].as_array_mut().unwrap().push(ok);
+        std::fs::write(&path, serde_json::to_vec(&cache).unwrap()).unwrap();
+        let list = json(run(&home, &["accounts", "--provider", "codex", "--json"]));
+        let account = list["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "work")
+            .unwrap();
+        assert_eq!(account["usage_state"], "failed", "field {field}");
+        assert!(account["remaining_pct"].is_null(), "field {field}");
+        assert_ne!(list["auto"], "work");
+        let usage = json(run(&home, &["usage", "--json"]));
+        let windows: Vec<_> = usage["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["provider"] == "codex" && row["account"] == "work")
+            .collect();
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0]["state"], "failed");
+        assert_eq!(windows[1]["state"], "fresh");
+    }
+    std::fs::write(&path, "invalid cache").unwrap();
+    let list = json(run(&home, &["accounts", "--provider", "codex", "--json"]));
+    assert!(
+        list["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["name"] == "work" && row["usage_state"] == "failed")
+    );
+}
+
+#[test]
+fn claude_failed_window_and_missing_source_match_account_reads() {
+    let home = fixture("personal-validation");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for bad in [
+        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"failed"}),
+        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"unknown","pct":20}),
+        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"ok","pct":150}),
+        serde_json::json!({"provider":"claude","label":"cl·owner@example.test","window":"7d","state":"ok","pct":2.5}),
+    ] {
+        let input = serde_json::json!([bad, {"provider":"claude","label":"cl·owner@example.test","window":"5h","pct":20,"state":"ok","asOf":now}]);
+        tool(&home, "yelo", &format!("echo '{input}'"));
+        let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
+        assert_eq!(list["accounts"][0]["usage_state"], "failed", "{input}");
+        assert!(list["accounts"][0]["remaining_pct"].is_null());
+        let usage = json(run(&home, &["usage", "--json"]));
+        let windows: Vec<_> = usage["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["provider"] == "claude")
+            .collect();
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0]["state"], "failed");
+        assert_eq!(windows[1]["state"], "fresh");
+    }
+    std::fs::remove_file(home.join("bin/yelo")).unwrap();
+    let list = json(run(&home, &["accounts", "--provider", "claude", "--json"]));
+    assert_eq!(list["accounts"][0]["usage_state"], "failed");
+}
+
+#[test]
+fn failed_refresh_retains_good_samples_and_their_age_as_stale() {
+    let home = fixture("spare-retained-cache");
+    let first = json(run(
+        &home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let before = first["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["account"] == "work")
+        .unwrap();
+    std::fs::write(
+        home.join("limits.json"),
+        r#"{"id":3,"error":{"message":"secret error"}}"#,
+    )
+    .unwrap();
+    let failed = json(run(
+        &home,
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    ));
+    let stale = failed["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["account"] == "work")
+        .unwrap();
+    assert_eq!(stale["state"], "stale");
+    assert_eq!(stale["used_pct"], before["used_pct"]);
+    assert_eq!(stale["as_of_seconds"], before["as_of_seconds"]);
+    assert!(!stale.to_string().contains("secret error"));
+    let cached = json(run(&home, &["usage", "--json"]));
+    assert!(
+        cached["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["account"] == "work"
+                && row["state"] == "stale"
+                && row["used_pct"] == 30)
+    );
+}

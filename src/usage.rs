@@ -1,5 +1,5 @@
 use crate::profiles::native::{AppServer, read_json};
-use crate::profiles::{Account, AuthState, Usage, UsageMeter};
+use crate::profiles::{Account, AccountList, AuthState, Usage, UsageMeter};
 use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -20,7 +20,7 @@ struct CachedAccount {
     meters: Vec<UsageMeter>,
 }
 
-fn now_seconds() -> i64 {
+pub(crate) fn now_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -130,9 +130,29 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
     let now = now_seconds();
     let codex = crate::profiles::native::identities(Provider::Codex, deadline)?;
     let claude = crate::profiles::native::identities(Provider::Claude, deadline)?;
-    let mut meters = cached_codex(&codex.accounts, now)?;
+    let mut meters = for_accounts(&codex, deadline, now)?;
+    meters.extend(for_accounts(&claude, deadline, now)?);
+    meters.push(status_meter(
+        "agy",
+        None,
+        "no_source",
+        "No Swarm usage source",
+    ));
+    Ok(Usage { meters })
+}
+
+pub(crate) fn for_accounts(
+    list: &AccountList,
+    deadline: Instant,
+    now: i64,
+) -> Result<Vec<UsageMeter>, String> {
+    if list.provider == "codex" {
+        return cached_codex(&list.accounts, now);
+    }
+    let claude = list;
+    let mut meters = Vec::new();
     match claude_snapshot(deadline).and_then(|value| {
-        crate::profiles::translate_usage(&value.to_string(), std::slice::from_ref(&claude), now)
+        crate::profiles::translate_usage(&value.to_string(), std::slice::from_ref(claude), now)
     }) {
         Ok((usage, skipped)) => {
             for account in &claude.accounts {
@@ -168,13 +188,7 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
             )
         })),
     }
-    meters.push(status_meter(
-        "agy",
-        None,
-        "no_source",
-        "No Swarm usage source",
-    ));
-    Ok(Usage { meters })
+    Ok(meters)
 }
 
 fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, String> {
@@ -203,12 +217,13 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
                 .find(|entry| entry.home == account.home)
             {
                 Some(entry) if !entry.meters.is_empty() => {
-                    meters.extend(
-                        entry
-                            .meters
-                            .iter()
-                            .map(|meter| normalize_cached(account, meter, now)),
-                    );
+                    meters.extend(entry.meters.iter().map(|meter| {
+                        let mut meter = meter.clone();
+                        meter.provider = "codex".into();
+                        meter.account = Some(account.name.clone());
+                        meter.label = account.name.clone();
+                        normalize_meter(&meter, now)
+                    }));
                 }
                 Some(_) => meters.push(status_meter(
                     "codex",
@@ -240,28 +255,45 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
     Ok(meters)
 }
 
-fn normalize_cached(account: &Account, stored: &UsageMeter, now: i64) -> UsageMeter {
-    if !matches!(stored.state.as_str(), "fresh" | "stale") {
-        let state = match stored.state.as_str() {
-            "missing" | "no_source" => stored.state.as_str(),
-            _ => "failed",
-        };
-        return status_meter("codex", Some(account), state, "Codex quota is unavailable");
-    }
-    if stored
-        .used_pct
-        .is_none_or(|percent| !(0..=100).contains(&percent))
-        || stored.window_minutes.is_some_and(|minutes| minutes <= 0)
-        || stored.reset_time_seconds.is_some_and(|time| time < 0)
-    {
-        return status_meter("codex", Some(account), "failed", "Codex cache is invalid");
-    }
+pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
     let mut meter = stored.clone();
-    meter.provider = "codex".into();
-    meter.account = Some(account.name.clone());
-    meter.label = account.name.clone();
-    meter.source = Some("codex_app_server".into());
-    meter.reason = None;
+    meter.source = match (meter.provider.as_str(), meter.state.as_str()) {
+        (_, "no_source") => None,
+        ("codex", _) => Some("codex_app_server".into()),
+        ("claude", _) => Some("yelo".into()),
+        _ => None,
+    };
+    let invalid_value = stored
+        .used_pct
+        .is_some_and(|percent| !(0..=100).contains(&percent))
+        || stored.window_minutes.is_some_and(|minutes| minutes <= 0)
+        || stored.reset_time_seconds.is_some_and(|time| time < 0);
+    if !matches!(stored.state.as_str(), "fresh" | "stale")
+        || stored.used_pct.is_none()
+        || invalid_value
+    {
+        meter.state = match stored.state.as_str() {
+            "missing" | "no_source" if !invalid_value => stored.state.clone(),
+            _ => "failed".into(),
+        };
+        meter.used_pct = None;
+        meter.window_minutes = meter.window_minutes.filter(|minutes| *minutes > 0);
+        meter.reset_time_seconds = None;
+        meter.as_of_seconds = None;
+        meter.reason = Some(
+            match meter.state.as_str() {
+                "missing" => "No cached usage",
+                "no_source" => "No usage source",
+                _ => "Usage read failed",
+            }
+            .into(),
+        );
+        return meter;
+    }
+    meter.reason = stored
+        .reason
+        .as_ref()
+        .map(|_| "Usage refresh failed; old reading".into());
     if meter
         .as_of_seconds
         .is_none_or(|time| time < 0 || time > now || now - time > MAX_AGE_SECONDS)
@@ -279,6 +311,7 @@ fn normalize_cached(account: &Account, stored: &UsageMeter, now: i64) -> UsageMe
 pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
     let path = cache_path()?;
     let accounts = crate::profiles::native::identities(Provider::Codex, deadline)?.accounts;
+    let previous = cached_codex(&accounts, now_seconds())?;
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
         resolved_cache.starts_with(resolved_parent(std::path::Path::new(&account.home)))
@@ -297,12 +330,31 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
             )],
             _ => match fresh_codex(&account, deadline) {
                 Ok(meters) => meters,
-                Err(_) => vec![status_meter(
-                    "codex",
-                    Some(&account),
-                    "failed",
-                    "Codex usage read failed",
-                )],
+                Err(_) => {
+                    let retained: Vec<_> = previous
+                        .iter()
+                        .filter(|meter| {
+                            meter.account.as_deref() == Some(&account.name)
+                                && matches!(meter.state.as_str(), "fresh" | "stale")
+                        })
+                        .map(|meter| {
+                            let mut meter = meter.clone();
+                            meter.state = "stale".into();
+                            meter.reason = Some("Usage refresh failed; old reading".into());
+                            meter
+                        })
+                        .collect();
+                    if retained.is_empty() {
+                        vec![status_meter(
+                            "codex",
+                            Some(&account),
+                            "failed",
+                            "Codex usage read failed",
+                        )]
+                    } else {
+                        retained
+                    }
+                }
             },
         };
         cache.accounts.push(CachedAccount {
@@ -446,14 +498,14 @@ mod tests {
         )
         .unwrap()
         .remove(0);
-        assert_eq!(normalize_cached(&account, &meter, 1300).state, "fresh");
-        assert_eq!(normalize_cached(&account, &meter, 1301).state, "stale");
-        assert_eq!(normalize_cached(&account, &meter, 999).state, "stale");
+        assert_eq!(normalize_meter(&meter, 1300).state, "fresh");
+        assert_eq!(normalize_meter(&meter, 1301).state, "stale");
+        assert_eq!(normalize_meter(&meter, 999).state, "stale");
         meter.as_of_seconds = Some(i64::MIN);
-        assert_eq!(normalize_cached(&account, &meter, 1000).state, "stale");
+        assert_eq!(normalize_meter(&meter, 1000).state, "stale");
         meter.state = "new-provider-state".into();
         meter.reason = Some("private server diagnostics".into());
-        let unknown = normalize_cached(&account, &meter, 1000);
+        let unknown = normalize_meter(&meter, 1000);
         assert_eq!(unknown.state, "failed");
         assert_eq!(unknown.used_pct, None);
         assert!(!unknown.reason.unwrap().contains("private"));
