@@ -164,9 +164,9 @@ mod tests {
     use super::{branch_folder, branch_home};
 
     #[test]
-    fn app_lock_paths_match_the_shared_swift_vectors() {
+    fn settings_paths_match_the_shared_swift_vectors() {
         let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/app-lock-paths.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/settings-paths.json")).unwrap();
         for vector in vectors.as_array().unwrap() {
             let home = vector["explicit"]
                 .as_str()
@@ -181,7 +181,30 @@ mod tests {
                 .join(super::SWARM_DIR)
                 .join(super::APP_LOCK);
             assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+            let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
+            probe
+                .env_clear()
+                .env("HOME", vector["home"].as_str().unwrap())
+                .env("SWARM_TEST_GUARDS_EXPECTED", vector["guards"].as_str().unwrap())
+                .args(["--exact", "paths::tests::guards_path_probe"]);
+            if let Some(explicit) = vector["explicit"].as_str() {
+                probe.env("SWARM_HOME", explicit);
+            }
+            if let Some(guards) = vector["guardsOverride"].as_str() {
+                probe.env("SWARM_GUARDS", guards);
+            }
+            let output = probe.output().unwrap();
+            assert!(output.status.success(), "{vector}: {output:?}");
         }
+    }
+
+    // A subprocess keeps each vector's environment separate from concurrent tests.
+    #[test]
+    fn guards_path_probe() {
+        let Ok(expected) = std::env::var("SWARM_TEST_GUARDS_EXPECTED") else {
+            return;
+        };
+        assert_eq!(super::guards_file().unwrap(), std::path::PathBuf::from(expected));
     }
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.

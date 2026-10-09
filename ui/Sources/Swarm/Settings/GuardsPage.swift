@@ -68,9 +68,7 @@ struct GuardsPage: View {
     private func reload() {
         editor.load(load())
         editing = nil
-        onError(editor.loadError.map {
-            "guards.json could not be read: \($0.reason). Every tool call is blocked until it is fixed."
-        })
+        onError(editor.loadError == nil ? nil : editor.error)
     }
 }
 

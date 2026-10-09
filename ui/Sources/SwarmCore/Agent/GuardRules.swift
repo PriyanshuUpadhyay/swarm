@@ -2,8 +2,12 @@ import Foundation
 
 public struct GuardListError: LocalizedError, Sendable, Equatable {
     public let reason: String
+    public let isMissing: Bool
     public var errorDescription: String? { reason }
-    public init(reason: String) { self.reason = reason }
+    public init(reason: String, isMissing: Bool = false) {
+        self.reason = reason
+        self.isMissing = isMissing
+    }
 }
 
 public struct GuardRules: Codable, Sendable, Equatable {
@@ -58,7 +62,9 @@ public struct GuardRules: Codable, Sendable, Equatable {
         do {
             let data: Data
             do { data = try Data(contentsOf: url) }
-            catch CocoaError.fileReadNoSuchFile { return .success(Self()) }
+            catch CocoaError.fileReadNoSuchFile {
+                return .failure(GuardListError(reason: "guards.json is missing", isMissing: true))
+            }
             let list = try JSONDecoder().decode(Self.self, from: data)
             try list.validate()
             return .success(list)
@@ -80,8 +86,9 @@ public struct GuardRules: Codable, Sendable, Equatable {
         try validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try encoder.encode(self).write(to: url, options: .atomic)
+        let destination = url.resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(self).write(to: destination, options: .atomic)
     }
 
     public func validate() throws {

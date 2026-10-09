@@ -10,17 +10,23 @@ struct AppRunLockTests {
         let branch: String
         let explicit: String?
         let lock: String
+        let guardsOverride: String?
+        let guards: String
     }
 
-    @Test("Swift and Rust read the same shared app-lock paths")
+    @Test("Swift and Rust read the same shared app-lock and guards paths")
     func paths() throws {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let fixture = repository.appendingPathComponent("tests/fixtures/app-lock-paths.json")
+        let fixture = repository.appendingPathComponent("tests/fixtures/settings-paths.json")
         for vector in try JSONDecoder().decode([PathVector].self, from: Data(contentsOf: fixture)) {
             let home = SwarmHome.resolve(swarmHome: vector.explicit, home: { vector.home }, branch: vector.branch)
             let folder = try #require(SwarmHome.dataFolder(home: home))
             #expect(AppRunLock.file(in: folder).path == vector.lock)
+            var environment = ["HOME": vector.home]
+            environment["SWARM_HOME"] = vector.explicit
+            environment["SWARM_GUARDS"] = vector.guardsOverride
+            #expect(try GuardRules.fileURL(environment: environment).path == vector.guards)
         }
     }
 

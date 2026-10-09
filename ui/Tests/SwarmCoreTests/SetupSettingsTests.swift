@@ -170,6 +170,7 @@ struct SetupSettingsTests {
             var editor = GuardRulesEditor()
             editor.load(GuardRules.load(url: file))
             #expect(editor.loadError != nil)
+            #expect(editor.error?.contains("Every tool call is blocked until it is fixed.") == true)
             #expect(!editor.canSave)
             editor.add()
             #expect(editor.drafts.isEmpty)
@@ -229,6 +230,20 @@ struct SetupSettingsTests {
         #expect(Dependencies.check { "/tools/\($0)" }.allSatisfy { $0.path != nil })
     }
 
+    @Test("Saving a linked guard list updates dotfiles and keeps the link")
+    func guardSymlinkSave() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("dotfiles/guards.json")
+        try GuardRules().save(to: target)
+        let link = folder.appendingPathComponent("guards.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let updated = GuardRules(rules: [.init(name: "policy", command: ["/bin/true"])])
+        try updated.save(to: link)
+        #expect(try GuardRules.load(url: target).get() == updated)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
+    }
+
     @Test("Guard lists decode required and optional fields and round trip through the real file")
     func guardRoundTrip() throws {
         let folder = try temporaryFolder()
@@ -247,11 +262,24 @@ struct SetupSettingsTests {
         #expect(try GuardRules.load(url: file).get().rules.isEmpty)
     }
 
-    @Test("Missing guard files give an empty editor and broken files retain a reason")
+    @Test("Missing guard files report blocked calls and broken files retain a reason")
     func guardFailures() throws {
         let folder = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("guards.json")
+        guard case .failure(let missing) = GuardRules.load(url: file) else {
+            Issue.record("Expected a missing-file failure"); return
+        }
+        #expect(missing.reason == "guards.json is missing")
+        #expect(missing.isMissing)
+        var editor = GuardRulesEditor()
+        editor.load(.failure(missing))
+        #expect(editor.drafts.isEmpty)
+        #expect(editor.canSave)
+        #expect(editor.error == "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list.")
+        try editor.save(to: file)
+        #expect(editor.error == nil)
+        #expect(editor.loadError == nil)
         #expect(try GuardRules.load(url: file).get() == GuardRules())
         for fixture in ["broken", "{}", #"{"rules":"wrong"}"#,
                         #"{"rules":[{"name":"policy","event":"PreToolUse","command":["/bin/true"],"timeout":-1}]}"#] {
