@@ -7,13 +7,8 @@ struct ChatWindow: View {
     @State private var state: ChatWindowState
     @State private var details = SessionDetailStore()
     @State private var panes = AgentPaneStore()
-    @State private var error: String?
-    @State private var errorRevision = 0
-    @State private var refreshError: String?
-    @State private var refreshErrorRevision = 0
-    @State private var announcedRefreshErrorRevision = 0
-    // Dismiss hides the current model error until its text changes.
-    @State private var dismissedModelError: String?
+    @State private var banner = ChatBanner()
+    @State private var refreshRunning = false
     @State private var confirmingChild: SwarmAgentID?
     @State private var switching = false
     @State private var showingUsage = false
@@ -31,21 +26,18 @@ struct ChatWindow: View {
             .flatMap { model.navigation.readOnlyReason(in: $0.id) }
     }
 
-    private var errorMessage: String? {
-        error ?? refreshError ?? (model.error == dismissedModelError ? nil : model.error)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            if let message = errorMessage {
+            if let message = banner.visible {
                 HStack {
-                    Label(message, systemImage: "exclamationmark.triangle")
+                    Label(message.text, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red).textSelection(.enabled)
                     Spacer()
-                    if error == nil, refreshError != nil {
+                    if message.source == .refresh {
                         Button("Retry") { Task { await refreshAfterSwitch() } }
+                            .disabled(refreshRunning || model.activeRefreshes > 0)
                     }
-                    Button("Dismiss") { clearError() }
+                    Button("Dismiss") { updateBanner { $0.dismiss() } }
                 }
                 .padding(tokens.spacing.m)
             }
@@ -93,18 +85,11 @@ struct ChatWindow: View {
             details.activate(id)
             panes.stop(keepingSession: id)
         }
-        .onChange(of: errorRevision, initial: true) { _, _ in
-            if let error { AccessibilityNotification.Announcement(error).post() }
+        .onChange(of: model.refreshSuccessToken, initial: true) { _, _ in
+            syncBanner()
         }
-        .onChange(of: refreshErrorRevision, initial: true) { _, _ in
-            announceRefreshError()
-        }
-        .onChange(of: model.refreshSuccesses) { _, _ in
-            if model.error == nil { refreshError = nil }
-        }
-        .onChange(of: model.error, initial: true) { _, message in
-            dismissedModelError = nil
-            if error == nil, refreshError == nil, let message { AccessibilityNotification.Announcement(message).post() }
+        .onChange(of: model.error, initial: true) { _, _ in
+            syncBanner()
         }
         .onDisappear {
             panes.stopAll()
@@ -140,39 +125,37 @@ struct ChatWindow: View {
     }
 
     private func refreshAfterSwitch() async {
+        guard !refreshRunning else { return }
+        refreshRunning = true
+        defer { refreshRunning = false }
+        let token = model.refreshRevision + 1
         do {
-            if try await model.refresh() { refreshError = nil }
+            if try await model.refresh() {
+                syncBanner()
+            }
         } catch {
-            refreshError = ErrorText.sentence("The chat switched, but the chat list did not refresh: \(error.localizedDescription)")
-            refreshErrorRevision += 1
+            // Read the latest success directly even if SwiftUI has not delivered its observer yet.
+            syncBanner()
+            let message = ErrorText.sentence("The chat switched, but the chat list did not refresh: \(error.localizedDescription)")
+            updateBanner { $0.refreshFailed(message, token: token) }
         }
     }
 
-    private func setError(_ message: String?) {
-        let hadError = error != nil
-        error = message
-        if message != nil { errorRevision += 1 }
-        else if hadError { announceRefreshError() }
+    private func syncBanner() {
+        // Sync model recovery before a refresh clear can reveal its old failure.
+        updateBanner { $0.setModel(model.error) }
+        updateBanner { $0.refreshSucceeded(token: model.refreshSuccessToken) }
     }
 
-    // A failure hidden by an action error is spoken once when it becomes visible.
-    private func announceRefreshError() {
-        guard error == nil, let refreshError,
-              announcedRefreshErrorRevision != refreshErrorRevision else { return }
-        AccessibilityNotification.Announcement(refreshError).post()
-        announcedRefreshErrorRevision = refreshErrorRevision
-    }
-
-    // Only the Dismiss button may hide a model error.
-    private func clearError() {
-        if error != nil { setError(nil) }
-        else if refreshError != nil { refreshError = nil }
-        else { dismissedModelError = model.error }
+    private func updateBanner(_ update: (inout ChatBanner) -> Void) {
+        update(&banner)
+        if let message = banner.announcement { AccessibilityNotification.Announcement(message).post() }
     }
 
     private func childActions(in session: SwarmSession) -> ChildAgentActions {
         ChildAgentActions(bus: SwarmCLIBus(), session: session,
-                          confirm: { confirmingChild = $0 }, error: setError)
+                          confirm: { confirmingChild = $0 },
+                          error: { message in updateBanner { $0.setAction(message) } })
     }
 
     private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {

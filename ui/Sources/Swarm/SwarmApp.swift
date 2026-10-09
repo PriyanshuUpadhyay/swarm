@@ -148,9 +148,10 @@ final class SessionsTreeModel {
 
     private var sourceTree = SessionsTree(projects: [])
     private var archives = ChatArchives()
-    private var refreshRevision = 0
+    private(set) var refreshRevision = 0
     // A good refresh can return the same tree, so tree changes cannot signal every recovery.
-    private(set) var refreshSuccesses = 0
+    private(set) var refreshSuccessToken = 0
+    private(set) var activeRefreshes = 0
     private(set) var selectionRevision = 0
     var tree = SessionsTree(projects: []) {
         didSet { workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder) }
@@ -387,12 +388,15 @@ final class SessionsTreeModel {
 
     @discardableResult
     func refresh() async throws -> Bool {
+        activeRefreshes += 1
+        defer { activeRefreshes -= 1 }
         refreshRevision += 1
         let revision = refreshRevision
         func finishRefresh() -> Bool {
+            // An overtaken refresh cannot clear errors or publish a success token.
             guard revision == refreshRevision else { return false }
             error = nil
-            refreshSuccesses += 1
+            refreshSuccessToken = revision
             return true
         }
         let timing = SwarmPerformance.begin("UIRefresh")
