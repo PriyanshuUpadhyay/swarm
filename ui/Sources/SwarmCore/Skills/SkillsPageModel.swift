@@ -108,7 +108,7 @@ public final class SkillsPageModel {
         guard canEdit, let id = selectedID else { return }
         holdsInputs[id] = text
         edit(field: "holds:" + id) { try $0.setHolds(id: id, holds: text) }
-        if fieldErrors["holds:" + id] == nil { holdsInputs[id] = nil }
+        if fieldErrors["holds:" + id] == nil, selectedStep?.holds == text { holdsInputs[id] = nil }
     }
 
     public func setBody(_ text: String) {

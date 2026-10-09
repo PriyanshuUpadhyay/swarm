@@ -87,6 +87,38 @@ struct SkillsPageModelTests {
         #expect(model.error == nil)
     }
 
+    @Test("Holds keeps typed padding while the draft normalizes valid text and rejects controls")
+    func holdsTyping() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let model = SkillsPageModel(source: SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document),
+                                    checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        model.setHolds("one ")
+        #expect(model.holdsText == "one ")
+        #expect(model.selectedStep?.holds == "one")
+        model.select("02-local")
+        model.select("01-question")
+        #expect(model.holdsText == "one ")
+        model.setHolds("one two")
+        #expect(model.holdsText == "one two")
+        #expect(model.selectedStep?.holds == "one two")
+        model.setHolds(" `one two` ")
+        #expect(model.holdsText == " `one two` ")
+        #expect(model.selectedStep?.holds == "one two")
+        #expect(model.canSave)
+        model.setHolds("one\ttwo")
+        #expect(model.holdsText == "one\ttwo")
+        #expect(model.selectedStep?.holds == "one two")
+        #expect(model.error == SkillDraftIssue.invalidHolds(id: "01-question").localizedDescription)
+        #expect(!model.canSave)
+        model.setHolds("one two")
+        #expect(model.holdsText == "one two")
+        #expect(model.error == nil)
+        #expect(model.canSave)
+    }
+
     @Test("Save reloads the bytes, keeps selection and clears the changed state")
     func saveTransition() async throws {
         let fixture = try SkillsPageFixture()
