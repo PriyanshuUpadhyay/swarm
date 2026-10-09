@@ -1,6 +1,6 @@
 import Foundation
 
-/// Concurrent posts share an in-flight request. Only a granted request stays cached.
+/// Concurrent posts share an in-flight request; each later post reads permission again.
 public actor NoticeDelivery {
     private struct Authorization {
         let id = UUID()
@@ -34,9 +34,9 @@ public actor NoticeDelivery {
             if authorization?.id == request.id { authorization = nil }
             throw error
         }
+        // An older waiter must not clear a newer request started during actor suspension.
+        if authorization?.id == request.id { authorization = nil }
         guard granted else {
-            // An older waiter must not clear a newer request started during actor suspension.
-            if authorization?.id == request.id { authorization = nil }
             if !reportedDenial {
                 reportedDenial = true
                 await onDenied()

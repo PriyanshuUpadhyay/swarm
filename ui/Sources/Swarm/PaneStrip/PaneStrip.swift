@@ -331,7 +331,7 @@ private struct PaneView<Content: View>: View {
                 Image(systemName: zoomed
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
-            .help(zoomed ? "Return to the strip (⇧⌘↩)" : "Zoom pane (⇧⌘↩)")
+            .help(zoomed ? "Return to the strip (\(AppKey.zoom.chord.displayText))" : "Zoom pane (\(AppKey.zoom.chord.displayText))")
             // ⇧⌘↩ zooms from the keyboard; this button must not be the window's first key view.
             .focusable(false)
             .accessibilityLabel(zoomed ? "Unzoom \(cell.title)" : "Zoom \(cell.title)")

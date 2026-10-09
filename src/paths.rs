@@ -4,7 +4,7 @@ const SWARM_DB: &str = "swarm.db";
 const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
-/// The app's live pid, which makes the CLI leave owner notices to the app (ADR 0058).
+/// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
 pub const APP_LOCK: &str = "app.lock";
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
@@ -195,6 +195,10 @@ mod tests {
             }
             let output = probe.output().unwrap();
             assert!(output.status.success(), "{vector}: {output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "guard path probe did not run: {vector}: {output:?}"
+            );
         }
     }
 

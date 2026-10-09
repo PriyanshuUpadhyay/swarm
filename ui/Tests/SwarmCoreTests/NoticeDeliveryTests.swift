@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Notice delivery")
 struct NoticeDeliveryTests {
-    @Test("Concurrent posts ask once at the first post and carry every notice")
+    @Test("Concurrent posts carry every notice and the next post reads permission again")
     func authorizationOnce() async throws {
         let calls = DeliveryCalls()
         let delivery = NoticeDelivery(authorize: { await calls.authorize(granted: true) },
@@ -15,10 +15,12 @@ struct NoticeDeliveryTests {
             for _ in 0..<6 { group.addTask { try await delivery.post(notice) } }
             try await group.waitForAll()
         }
-        #expect(await calls.authorizationCount == 1)
+        // Posts that start after a request finishes need a fresh read, even within this task group.
+        let requests = await calls.authorizationCount
+        #expect((1...6).contains(requests))
         #expect(await calls.notices == Array(repeating: notice, count: 6))
         try await delivery.post(notice)
-        #expect(await calls.authorizationCount == 1)
+        #expect(await calls.authorizationCount == requests + 1)
         #expect(await calls.notices.count == 7)
     }
 
@@ -65,8 +67,23 @@ struct NoticeDeliveryTests {
         await calls.setAuthorization(granted: true)
         try await delivery.post(notice())
         try await delivery.post(notice())
-        #expect(await calls.authorizationCount == 2)
+        #expect(await calls.authorizationCount == 3)
         #expect(await calls.notices.count == 2)
+        #expect(await calls.denialCount == 1)
+    }
+
+    @Test("Revoking a granted permission is read on the next post and denial is reported once")
+    func revokedAuthorization() async throws {
+        let calls = DeliveryCalls()
+        await calls.setAuthorization(granted: true)
+        let delivery = NoticeDelivery(authorize: { try await calls.authorizeCurrent() },
+                                      deliver: { await calls.deliver($0) }, onDenied: { await calls.denied() })
+        try await delivery.post(notice())
+        await calls.setAuthorization(granted: false)
+        try await delivery.post(notice())
+        try await delivery.post(notice())
+        #expect(await calls.authorizationCount == 3)
+        #expect(await calls.notices == [notice()])
         #expect(await calls.denialCount == 1)
     }
 

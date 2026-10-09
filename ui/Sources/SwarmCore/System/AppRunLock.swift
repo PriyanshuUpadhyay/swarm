@@ -17,10 +17,17 @@ public final class AppRunLock: Sendable {
         let descriptor = open(file.path, O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         let opened = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
-            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            try? opened.close()
-            throw error
+        var retries = 0
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            let code = errno
+            guard code == EWOULDBLOCK, retries < 3 else {
+                let error = POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+                try? opened.close()
+                throw error
+            }
+            // The CLI briefly holds LOCK_SH while probing; let that probe finish at app launch.
+            retries += 1
+            usleep(20_000)
         }
         do {
             // Keep the inode while locked; atomic replacement would leave the lock on the old file.

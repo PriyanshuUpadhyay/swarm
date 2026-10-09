@@ -54,6 +54,26 @@ struct AppRunLockTests {
         #expect(throws: CocoaError.self) { try AppRunLock(folder: folder, pid: 0) }
     }
 
+    @Test("A short CLI shared-lock probe does not prevent the app from acquiring its lock")
+    func transientProbe() async throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let folder = try claimedChoicesFolder(scratch)
+        let probe = open(AppRunLock.file(in: folder).path, O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        #expect(probe >= 0)
+        defer { close(probe) }
+        #expect(flock(probe, LOCK_SH | LOCK_NB) == 0)
+        let releaseProbe = Task.detached {
+            try await Task.sleep(for: .milliseconds(10))
+            return flock(probe, LOCK_UN)
+        }
+        let acquired = Result { try AppRunLock(folder: folder) }
+        #expect(try await releaseProbe.value == 0)
+        let lock = try acquired.get()
+        #expect(try String(contentsOf: lock.file, encoding: .utf8) == "\(ProcessInfo.processInfo.processIdentifier)\n")
+        try lock.release()
+    }
+
     @Test("Dropping the app lock closes its descriptor without removing the file")
     func drop() throws {
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
