@@ -132,15 +132,13 @@ struct SwarmManagedListTests {
         #expect(SwarmManagedList.changes(from: before.groups, to: before.groups).isEmpty)
     }
 
-    @Test("Only a hooks writer's items can be set up again")
+    @Test("Hooks rows restore through Hooks and trust rows have no restore route")
     func hooksWriter() throws {
         let list = try SwarmManagedList.decode(Data(Self.listing.utf8))
-        #expect(list.entries.allSatisfy { $0.isHooks })
-        #expect(list.groups.flatMap(\.rows).allSatisfy { $0.isHooks })
+        #expect(list.groups.flatMap(\.rows).allSatisfy { $0.restoreGroup == .hooks })
         var trust = list.entries[0]
         trust.writer = "launch.trust"
-        #expect(!trust.isHooks)
-        #expect(!SwarmManagedList.Row(writer: "launch.trust", file: trust.file, entries: [trust]).isHooks)
+        #expect(SwarmManagedList.Row(writer: "launch.trust", file: trust.file, entries: [trust]).restoreGroup == nil)
     }
 
     @Test("A load after a failed one or a shown spinner announces what it loaded; a fast first load is silent")

@@ -24,9 +24,6 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         public var atS: Int?
         public var with: String?
 
-        /// Whether `hooks setup` wrote it, so On runs that setup again and an undo marks the
-        /// setup declined.
-        public var isHooks: Bool { writer.hasPrefix("hooks.") }
     }
 
     /// One row's state. A row is on while each of its items equals what swarm wrote.
@@ -63,13 +60,9 @@ public struct SwarmManagedList: Sendable, Hashable, Codable {
         public var entries: [Entry]
 
         public var id: String { writer + "\u{0}" + file }
-        /// `Entry.isHooks` of the row's one writer.
-        public var isHooks: Bool { entries.contains(where: \.isHooks) }
         /// The setup group that restores this row after managed undo.
-        public var restoreGroup: String? {
-            if isHooks { return "hooks" }
-            if writer == "skills" && entries.allSatisfy({ $0.kind == "symlink" }) { return "skills" }
-            return nil
+        public var restoreGroup: SetupGroup? {
+            SetupGroup.restoreGroup(writer: writer, kinds: entries.map(\.kind))
         }
         public var ids: [String] { entries.map(\.id) }
         /// The ids that a revert of this row removes now.

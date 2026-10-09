@@ -82,8 +82,16 @@ public struct SwarmSetupStatus: Sendable, Hashable, Codable {
 
     /// A declined or unchecked group affects only that group. Other pending groups can still
     /// open the first-run sheet.
-    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool, skillsDeclined: Bool) -> Bool {
-        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined) || (!skills && !skillsDeclined)
+    public func needsSheet(declined: Set<SetupGroup>) -> Bool {
+        SetupGroup.allCases.contains { group in
+            let ready = switch group {
+            case .hooks: hooks
+            case .trust: trust
+            case .herdr: herdr
+            case .skills: skills
+            }
+            return !ready && (group.declineFlagKey == nil || !declined.contains(group))
+        }
     }
 }
 
@@ -109,11 +117,18 @@ public struct SwarmSetupChoice: Sendable, Hashable {
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
 
     public static func trustOnly(standing: Bool) -> Self {
-        Self(groups: ["hooks", "trust", "herdr", "skills"], unchecked: ["hooks", "herdr", "skills"], standing: standing)
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .trust }.map(\.rawValue)),
+            standing: standing
+        )
     }
 
     public static func skillsOnly() -> Self {
-        Self(groups: ["hooks", "trust", "herdr", "skills"], unchecked: ["hooks", "trust", "herdr"])
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .skills }.map(\.rawValue))
+        )
     }
 
     /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
@@ -258,13 +273,7 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     }
     /// A `swarm setup` group's name; a group this build does not know shows by its id (ADR 0043).
     public static func groupTitle(_ id: String) -> String {
-        switch id {
-        case "hooks": "Agent hooks"
-        case "trust": "Folder trust"
-        case "herdr": "Herdr"
-        case "skills": "Skills"
-        default: id
-        }
+        SetupGroup(rawValue: id)?.title ?? id
     }
     /// Each `swarm setup` group with a file or a conflict, in plan order.
     public var groupIDs: [String] {

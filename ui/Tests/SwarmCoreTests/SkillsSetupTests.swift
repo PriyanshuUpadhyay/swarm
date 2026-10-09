@@ -21,12 +21,12 @@ struct SkillsSetupTests {
             #"{"hooks":true,"trust":true,"herdr":true,"skills":false}"#.utf8
         ))
         #expect(!status.skills)
-        #expect(status.needsSheet(hooksDeclined: true, trustDeclined: true, skillsDeclined: false))
-        #expect(!status.needsSheet(hooksDeclined: false, trustDeclined: false, skillsDeclined: true))
+        #expect(status.needsSheet(declined: [.hooks, .trust]))
+        #expect(!status.needsSheet(declined: [.skills]))
         var hooksPending = status
         hooksPending.hooks = false
-        #expect(hooksPending.needsSheet(hooksDeclined: false, trustDeclined: true, skillsDeclined: true))
-        #expect(!hooksPending.needsSheet(hooksDeclined: true, trustDeclined: true, skillsDeclined: true))
+        #expect(hooksPending.needsSheet(declined: [.trust, .skills]))
+        #expect(!hooksPending.needsSheet(declined: [.hooks, .trust, .skills]))
         for fixture in [#"{"hooks":true,"trust":true,"herdr":true}"#,
                         #"{"hooks":true,"trust":true,"herdr":true,"skills":null}"#] {
             #expect(throws: DecodingError.self) {
@@ -57,7 +57,7 @@ struct SkillsSetupTests {
         #expect(row.file == "/owner/.agents/skills/flow")
         #expect(row.entry == "Link to /build/.swarm/skills/kit/skills/flow")
         #expect(row.state == .off)
-        #expect(row.restoreGroup == "skills")
+        #expect(row.restoreGroup == .skills)
         let unknown = list.groups[1].rows[0]
         #expect(unknown.entry.contains("future_kind"))
         #expect(unknown.state == .unknown(state: "future_state"))

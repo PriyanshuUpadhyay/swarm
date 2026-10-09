@@ -8,10 +8,7 @@ struct SettingsWindow: View {
     @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
     @AppStorage("performanceLogging") private var performanceLogging = false
-    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
     @AppStorage("setupDeclined") private var setupDeclined = false
-    @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
-    @AppStorage("skillsSetupDeclined") private var skillsSetupDeclined = false
     @State private var helperVersion = "Reading helper version…"
     @State private var drift: PathSwarmDrift?
     @State private var dependencies: [DependencyRow] = []
@@ -191,10 +188,10 @@ struct SettingsWindow: View {
             AdvancedSettingsPage(
                 showRawData: $showRawData, performanceLogging: $performanceLogging,
                 resetDeclinedPrompts: {
-                    hooksSetupDeclined = false
                     setupDeclined = false
-                    trustSetupDeclined = false
-                    skillsSetupDeclined = false
+                    for key in SetupGroup.allCases.compactMap(\.declineFlagKey) {
+                        UserDefaults.standard.set(false, forKey: key)
+                    }
                 },
                 dataHome: SwarmHome.dataFolder?.path,
                 revealDataHome: {
