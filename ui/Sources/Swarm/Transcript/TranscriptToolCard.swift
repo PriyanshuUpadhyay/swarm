@@ -255,7 +255,7 @@ struct TranscriptDiffView: View {
     let diff: TranscriptDiff
     var revealForSearch = false
     @State private var expanded = false
-    @State private var split = false
+    @Environment(\.splitDiff) private var split
     @State private var showFull = false
     @State private var preparedDiff: TranscriptDiff?
     @State private var limited: TranscriptDiffPreview?
@@ -277,7 +277,7 @@ struct TranscriptDiffView: View {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
                     Text(verbatim: diff.path).font(.caption).textSelection(.enabled)
                     HStack {
-                        Picker("Diff layout", selection: $split) {
+                        Picker("Diff layout", selection: split) {
                             Text("Unified").tag(false)
                             Text("Split").tag(true)
                         }.pickerStyle(.segmented).frame(width: DesignTokens.Size.segmentedPicker)
@@ -309,7 +309,7 @@ struct TranscriptDiffView: View {
                             Text(verbatim: notice).font(.caption).foregroundStyle(.secondary)
                         }
                         ZStack {
-                            DiffWebView(text: preview.patch, isDiff: true, split: split) { success in
+                            DiffWebView(text: preview.patch, isDiff: true, split: split.wrappedValue) { success in
                                 rendered = true
                                 renderError = !success
                             }
@@ -317,7 +317,7 @@ struct TranscriptDiffView: View {
                             if renderError { Text("The patch view could not load.").foregroundStyle(.red) }
                         }
                         .frame(height: DesignTokens.Size.outputPreview)
-                        .onChange(of: split) { _, _ in rendered = false; renderError = false }
+                        .onChange(of: split.wrappedValue) { _, _ in rendered = false; renderError = false }
                         .onChange(of: preview.patch) { _, _ in rendered = false; renderError = false }
                     } else {
                         DelayedProgress("Preparing patch…")

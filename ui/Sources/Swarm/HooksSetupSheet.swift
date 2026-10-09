@@ -82,7 +82,7 @@ struct HooksSetupSheet: View {
     @State private var reloading = false
     @State private var failure: String?
     @State private var openFile: String?
-    @State private var split = false
+    @Environment(\.splitDiff) private var split
     @State private var diffFailed = false
     /// The groups and the consent the owner picked; each change runs the plan again.
     @State private var choice = SwarmSetupChoice()
@@ -246,7 +246,7 @@ struct HooksSetupSheet: View {
                     ? "Swarm will change these files. Nothing else changes."
                     : "After you fix each conflict, swarm will change these files:")
                 Spacer()
-                Picker("Diff layout", selection: $split) {
+                Picker("Diff layout", selection: split) {
                     Text("Unified").tag(false)
                     Text("Split").tag(true)
                 }
@@ -282,7 +282,7 @@ struct HooksSetupSheet: View {
             HStack {
                 Text("Swarm changes the files of each checked group. Nothing else changes.")
                 Spacer()
-                Picker("Diff layout", selection: $split) {
+                Picker("Diff layout", selection: split) {
                     Text("Unified").tag(false)
                     Text("Split").tag(true)
                 }
@@ -365,7 +365,7 @@ struct HooksSetupSheet: View {
             }
             .frame(height: DesignTokens.Size.outputPreview)
         } else {
-            DiffWebView(text: file.patch, isDiff: true, split: split) { rendered in
+            DiffWebView(text: file.patch, isDiff: true, split: split.wrappedValue) { rendered in
                 diffFailed = !rendered
             }
             .frame(height: DesignTokens.Size.outputPreview)

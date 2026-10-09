@@ -11,7 +11,7 @@ struct WorkspaceDocument: Identifiable {
 
 struct WorkspaceDocumentView: View {
     let document: WorkspaceDocument
-    @AppStorage("splitDiff") private var split = false
+    @Environment(\.splitDiff) private var split
     @State private var text: String?
     @State private var error: String?
     @State private var rendered = false
@@ -26,11 +26,11 @@ struct WorkspaceDocumentView: View {
                 }
                 Spacer()
                 if document.isDiff {
-                    Picker("Diff layout", selection: $split) {
+                    Picker("Diff layout", selection: split) {
                         Text("Unified").tag(false)
                         Text("Split").tag(true)
                     }.pickerStyle(.segmented).labelsHidden().frame(width: DesignTokens.Size.segmentedPicker)
-                        .onChange(of: split) { _, _ in rendered = false; renderError = nil }
+                        .onChange(of: split.wrappedValue) { _, _ in rendered = false; renderError = nil }
                 }
             }.padding(DesignTokens.Spacing.m)
             Divider()
@@ -39,7 +39,7 @@ struct WorkspaceDocumentView: View {
                 Spacer()
             } else if let text {
                 ZStack {
-                    DiffWebView(text: text, isDiff: document.isDiff, split: split) { success in
+                    DiffWebView(text: text, isDiff: document.isDiff, split: split.wrappedValue) { success in
                         rendered = true
                         renderError = success ? nil : "The file view could not load. Close this preview and try again."
                     }

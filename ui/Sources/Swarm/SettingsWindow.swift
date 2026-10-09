@@ -3,6 +3,7 @@ import SwarmCore
 
 struct SettingsWindow: View {
     @Environment(SettingsSelection.self) private var selection
+    @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
     @AppStorage("performanceLogging") private var performanceLogging = false
     @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
@@ -25,7 +26,7 @@ struct SettingsWindow: View {
             .navigationSplitViewColumnWidth(DesignTokens.Size.settingsSidebar)
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
-                if let error = selection.error {
+                if let error = selection.error ?? (selection.page == .setup ? guardsError : nil) {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .textSelection(.enabled).padding(DesignTokens.Spacing.m)
@@ -123,6 +124,17 @@ struct SettingsWindow: View {
                 helperVersion = await PathSwarmCheck.helperVersion() ?? "Helper version unavailable"
                 drift = await PathSwarmCheck.current(dismissed: [])
             }
+        case .appearance:
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                Text("Appearance").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Picker("Diff layout", selection: splitDiff) {
+                    Text("Unified").tag(false)
+                    Text("Split").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: DesignTokens.Size.segmentedPicker)
+            }
+            .padding(DesignTokens.Spacing.xl)
         default:
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
                 Text(selection.page.title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)

@@ -38,7 +38,7 @@ struct HomeSettingsTests {
         #expect(SettingsPage.allCases.allSatisfy { !$0.symbol.isEmpty })
         #expect(SettingsPage.skills.placeholder == "Comes with slice 2")
         #expect(SettingsPage.accounts.placeholder == "Comes with slice 3")
-        #expect(SettingsPage.appearance.placeholder == "Comes with step 24")
+        #expect(SettingsPage.appearance.placeholder == nil)
         #expect(SettingsPage.notifications.placeholder == "Comes with step 25")
         #expect(SettingsPage.keys.placeholder == "Comes with step 23")
         #expect(SettingsPage.profiles.placeholder == nil)

@@ -2274,6 +2274,9 @@ private struct SwitchTarget: Identifiable {
 
 struct SwarmApp: App {
     @State private var settings = SettingsSelection()
+    private var splitDiff: Binding<Bool> {
+        Binding(get: { settings.prefs.splitDiff }, set: { settings.setSplitDiff($0) })
+    }
     init() {
         SwarmPerformance.event("AppStarted")
         // Screenshot aid: SWARM_APPEARANCE=dark or light fixes this app's appearance only.
@@ -2291,11 +2294,14 @@ struct SwarmApp: App {
             if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
         }
             .environment(settings)
+            .environment(\.splitDiff, splitDiff)
             .commands {
                 SetupCommands(selection: settings)
                 AppKeyCommands()
             }
-        Settings { SettingsWindow().environment(settings) }
+        Settings {
+            SettingsWindow().environment(settings).environment(\.splitDiff, splitDiff)
+        }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)
     }
 }

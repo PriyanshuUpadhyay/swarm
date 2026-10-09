@@ -4,6 +4,40 @@ import Testing
 
 @Suite("Setup settings")
 struct SetupSettingsTests {
+    @Test("Reading default preferences does not create choices.json")
+    @MainActor
+    func readDefaultDiffPreference() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        #expect(try choices.load().prefs.splitDiff == false)
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("choices.json").path))
+    }
+
+    @Test("The shared diff preference updates now, persists, and preserves other choices")
+    @MainActor
+    func sharedDiffPreference() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let choices = OwnerChoicesStore(folder: try claimedChoicesFolder(folder))
+        try choices.update { $0.pinned = ["/project"] }
+        let settings = SettingsSelection(choices: choices)
+        settings.setSplitDiff(true)
+        #expect(settings.prefs.splitDiff)
+        #expect(try choices.load().prefs.splitDiff)
+        #expect(SettingsSelection(choices: choices).prefs.splitDiff)
+        settings.select(.appearance)
+        #expect(settings.prefs.splitDiff)
+        #expect(try choices.load().pinned == ["/project"])
+        settings.setSplitDiff(false)
+        #expect(!settings.prefs.splitDiff)
+        #expect(try choices.load().prefs.settingsPage == "appearance")
+        let unavailable = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        unavailable.setSplitDiff(true)
+        #expect(unavailable.prefs.splitDiff)
+        #expect(unavailable.error?.contains("Could not save") == true)
+    }
+
     @Test("The guards path is global across builds and SWARM_HOME, with an explicit override")
     func guardPath() throws {
         #expect(try GuardRules.fileURL(environment: ["HOME": "/owner", "SWARM_HOME": "/branch"])

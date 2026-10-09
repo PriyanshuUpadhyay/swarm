@@ -53,10 +53,9 @@ public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable
         switch self {
         case .skills: "Comes with slice 2"
         case .accounts: "Comes with slice 3"
-        case .appearance: "Comes with step 24"
         case .notifications: "Comes with step 25"
         case .keys: "Comes with step 23"
-        case .profiles, .setup, .managedChanges, .advanced: nil
+        case .profiles, .setup, .managedChanges, .appearance, .advanced: nil
         }
     }
 
