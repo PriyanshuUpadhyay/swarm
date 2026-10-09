@@ -8,6 +8,9 @@ struct ProfileActionTests {
     func actionArguments() async throws {
         let actions: [(ProfileAction, [String])] = [
             (.new("custom"), ["new", "custom"]),
+            (.new("Uppercase"), ["new", "Uppercase"]),
+            (.new("two words"), ["new", "two words"]),
+            (.new(""), ["new", ""]),
             (.rename(from: "custom", to: "renamed"), ["rename", "custom", "renamed"]),
             (.copy(from: "renamed", to: "copied"), ["copy", "renamed", "copied"]),
             (.delete("copied"), ["delete", "copied"]),
@@ -51,17 +54,6 @@ struct ProfileActionTests {
         let bus: any SwarmBus = UnavailableSwarmBus()
         await #expect(throws: SwarmProfileError.unavailable("swarm is not connected")) {
             try await bus.profileAction(.new("custom"), revision: "current")
-        }
-    }
-
-    @Test("The name field rejects empty, slash, whitespace and taken names before submission")
-    func nameRule() {
-        let existing: Set<String> = ["chat", "code.simple"]
-        for name in ["", "path/name", "two words", "line\nbreak", "tab\tname", "\u{00A0}", "chat", "code.simple"] {
-            #expect(ProfileNameRule.check(name, existing: existing) != nil)
-        }
-        for name in ["custom", "review.new", "code-simple_2"] {
-            #expect(ProfileNameRule.check(name, existing: existing) == nil)
         }
     }
 }

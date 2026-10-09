@@ -185,11 +185,7 @@ struct ProfilesPage: View {
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { submitName() }
                         Button(nameAction.button) { submitName() }
-                            .disabled(nameError != nil)
                         Button("Cancel") { self.nameAction = nil }
-                    }
-                    if let nameError {
-                        Text(nameError).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -222,10 +218,6 @@ struct ProfilesPage: View {
 
     private var profileNames: [String] { list?.profiles.map(\.name) ?? [] }
 
-    private var nameError: String? {
-        ProfileNameRule.check(profileName, existing: Set(profileNames))
-    }
-
     private var confirmationButton: String {
         if case .delete = confirmation { return "Delete" }
         return "Reset to bundled"
@@ -242,7 +234,7 @@ struct ProfilesPage: View {
     }
 
     private func submitName() {
-        guard let nameAction, nameError == nil else { return }
+        guard let nameAction else { return }
         perform(nameAction.action(name: profileName))
     }
 

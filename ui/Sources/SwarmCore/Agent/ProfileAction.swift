@@ -19,15 +19,3 @@ public enum ProfileAction: Sendable, Equatable {
         }
     }
 }
-
-/// A field hint; the CLI owns the complete profile validation and checks names again on save.
-public enum ProfileNameRule {
-    public static func check(_ name: String, existing: Set<String>) -> String? {
-        if name.isEmpty { return "Enter a profile name." }
-        if name.contains("/") || name.contains(where: \.isWhitespace) {
-            return "A profile name cannot contain '/' or whitespace."
-        }
-        if existing.contains(name) { return "A profile named '\(name)' already exists." }
-        return nil
-    }
-}

@@ -685,10 +685,12 @@ mod tests {
 
     impl ActionFixture {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "swarm-profile-action-{name}-{}.json",
-                std::process::id()
+            let folder = std::env::temp_dir().join(format!(
+                "swarm-profile-action-{name}-{}",
+                uuid::Uuid::now_v7()
             ));
+            std::fs::create_dir(&folder).unwrap();
+            let path = folder.join("profiles.json");
             let config = built_in();
             let bytes = write(&path, &config).unwrap();
             Self {
@@ -730,8 +732,26 @@ mod tests {
 
     impl Drop for ActionFixture {
         fn drop(&mut self) {
-            std::fs::remove_file(&self.path).unwrap();
+            std::fs::remove_dir_all(self.path.parent().unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn action_fixture_removes_its_directory_and_backups() {
+        let folder;
+        {
+            let mut fixture = ActionFixture::new("cleanup");
+            folder = fixture.path.parent().unwrap().to_path_buf();
+            fixture.apply(ProfileAction::New("custom"), None).unwrap();
+            assert!(std::fs::read_dir(&folder).unwrap().any(|entry| {
+                entry
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "bak")
+            }));
+        }
+        assert!(!folder.exists());
     }
 
     #[test]
