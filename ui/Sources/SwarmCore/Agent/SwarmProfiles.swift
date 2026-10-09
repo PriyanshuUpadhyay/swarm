@@ -350,8 +350,10 @@ public struct SwarmAccountLoginRequest: Sendable, Hashable {
         self.directory = directory
     }
 
+    public static let maximumNameLength = 64
+
     public static func validName(_ name: String) -> Bool {
-        !name.isEmpty && !["auto", "default", ".", ".."].contains(name)
+        (1...maximumNameLength).contains(name.utf8.count) && !["auto", "default", ".", ".."].contains(name)
             && !name.contains("..") && name.utf8.allSatisfy {
                 (97...122).contains($0) || (48...57).contains($0) || [46, 95, 45].contains($0)
             }

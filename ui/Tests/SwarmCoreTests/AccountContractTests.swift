@@ -96,7 +96,7 @@ struct AccountContractTests {
     @Test("typed mutation calls pass fixed argv and decode their replies")
     func actions() async throws {
         let login = try fixtureText("work-login")
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, _ in
             #expect(args == ["accounts", "login", "--provider", "codex", "--name", "work", "--revision", "opaque", "--json"])
             return ShellResult(status: 0, stdout: login, stderr: "")
         }
@@ -104,12 +104,12 @@ struct AccountContractTests {
         #expect(result.state == .opened)
         #expect(result.pane == "pane-work")
         let usage = try fixtureText("work-usage")
-        let refresh = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _ in
+        let refresh = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, _ in
             #expect(args == ["usage", "--refresh", "--provider", "codex", "--json"])
             return ShellResult(status: 0, stdout: usage, stderr: "")
         }
         #expect(try await refresh.refreshUsage(provider: "codex").meters[0].usedPct == 30)
-        let reset = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _ in
+        let reset = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, _ in
             #expect(args == ["accounts", "reset", "--revision", "opaque", "--json"])
             return ShellResult(status: 0, stdout: #"{"revision":"bundled"}"#, stderr: "")
         }
@@ -118,7 +118,7 @@ struct AccountContractTests {
 
     @Test("invalid new names never invoke the CLI", arguments: ["", "auto", "default", "../work", "two words", "WORK", "work;touch", "work\n", "é", ".."])
     func invalidName(_ name: String) async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             Issue.record("Invalid input reached the CLI")
             return ShellResult(status: 1, stdout: "", stderr: "")
         }
@@ -130,13 +130,40 @@ struct AccountContractTests {
     @Test("login passes the pane directory as one fixed argv value")
     func loginDirectory() async throws {
         let login = try fixtureText("work-login")
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp/scratch") { _, args, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp/scratch") { _, args, _, _ in
             #expect(args == ["accounts", "login", "--provider", "codex", "--name", "work",
                              "--revision", "opaque", "--cwd", "/tmp/work project", "--json"])
             return ShellResult(status: 0, stdout: login, stderr: "")
         }
         let request = SwarmAccountLoginRequest(provider: "codex", name: "work", revision: "opaque", directory: "/tmp/work project")
         #expect(try await source.openLogin(request).pane == "pane-work")
+    }
+
+    @Test("login uses the same app pane adapter environment as chat launches")
+    func loginAdapterEnvironment() async throws {
+        let login = try fixtureText("work-login")
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, args, _, environment in
+            #expect(args.first == "accounts")
+            #expect(environment["SWARM_ADAPTER"] == "tmux-solo")
+            return ShellResult(status: 0, stdout: login, stderr: "")
+        }
+        _ = try await source.openLogin(.init(provider: "codex", name: "work", revision: "opaque"))
+    }
+
+    @Test("app calls replace inherited pane identity with their requested adapter")
+    func loginChildEnvironment() {
+        let child = ChildProcessEnvironment.swarmCall(
+            overrides: ["SWARM_ADAPTER": "tmux-solo"],
+            inherited: ["PATH": "/usr/bin", "SWARM_ADAPTER": "herdr", "HERDR_PANE_ID": "work",
+                        "TMUX_PANE": "%1", "SWARM_AGENT_ID": "work", "SWARM_SESSION_ID": "work"]
+        )
+        #expect(child == ["PATH": "/usr/bin", "SWARM_ADAPTER": "tmux-solo"])
+    }
+
+    @Test("new account names have a 64-character bound")
+    func nameLengthBound() {
+        #expect(SwarmAccountLoginRequest.validName(String(repeating: "w", count: 64)))
+        #expect(!SwarmAccountLoginRequest.validName(String(repeating: "w", count: 65)))
     }
 
     private func wire<T: Decodable>(_ type: T.Type, _ text: String) throws -> T {

@@ -76,7 +76,7 @@ struct SwarmProfilesTests {
         let profile = SwarmProfile(name: "code.complex", runners: [
             SwarmRunner(provider: "claude", model: "opus", effort: "high", permission: "auto"),
         ])
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _, _ in
             #expect(arguments.count == 5)
             #expect(Array(arguments.prefix(4)) == ["roles", "save", "--revision", "a1b2c3d4e5f6"])
             let sent = try JSONDecoder().decode(SwarmProfile.self, from: Data(arguments[4].utf8))
@@ -90,7 +90,7 @@ struct SwarmProfilesTests {
 
     @Test("a refused save keeps every broken rule")
     func failedSave() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             ShellResult(status: 1, stdout: "", stderr: "swarm: chat: runner 1 has no model\nchat: runner 2 has no effort\n")
         }
 
@@ -126,7 +126,7 @@ struct SwarmProfilesTests {
 
     @Test("uses a fresh scratch directory when no working directory is injected")
     func usesFreshScratchDirectory() async throws {
-        let source = SwarmCLIProfileSource(environment: [:]) { _, arguments, cwd in
+        let source = SwarmCLIProfileSource(environment: [:]) { _, arguments, cwd, _ in
             #expect(arguments == ["roles", "--json"])
             #expect(cwd == AgentScratchDirectory.current())
             #expect(cwd != NSHomeDirectory())
@@ -141,7 +141,7 @@ struct SwarmProfilesTests {
     func usesConfiguredBinary() async throws {
         let source = SwarmCLIProfileSource(
             environment: ["SWARM_BIN": "/custom/swarm"], cwd: "/tmp/profile-test"
-        ) { executable, arguments, cwd in
+        ) { executable, arguments, cwd, _ in
             #expect(executable == "/custom/swarm")
             #expect(arguments == ["accounts", "--provider", "codex", "--json"])
             #expect(cwd == "/tmp/profile-test")
@@ -167,7 +167,7 @@ struct SwarmProfilesTests {
 
     @Test("maps a missing swarm binary to unavailable")
     func mapsMissingBinary() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { executable, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { executable, _, _, _ in
             throw ShellError(command: executable, status: 127, stderr: "swarm not found on PATH")
         }
 
@@ -211,7 +211,7 @@ struct SwarmProfilesTests {
 
     @Test("preserves cancellation")
     func preservesCancellation() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             throw CancellationError()
         }
 
@@ -222,7 +222,7 @@ struct SwarmProfilesTests {
 
     @Test("maps another runner error to failed")
     func mapsRunnerError() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             throw RunnerFailure.lost
         }
 
@@ -243,7 +243,7 @@ struct SwarmProfilesTests {
     private func source(
         expectedArguments: [String], status: Int32 = 0, stdout: String = "", stderr: String = ""
     ) -> SwarmCLIProfileSource {
-        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _, _ in
             #expect(arguments == expectedArguments)
             return ShellResult(status: status, stdout: stdout, stderr: stderr)
         }

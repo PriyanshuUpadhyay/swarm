@@ -122,7 +122,7 @@ fn encode(accounts: &[Entry]) -> String {
 
 fn update(
     expected: &str,
-    change: impl FnOnce(&mut Vec<Entry>) -> Result<(), String>,
+    change: impl FnOnce(&mut Vec<Entry>) -> Result<bool, String>,
 ) -> Result<String, String> {
     let path = path()?;
     crate::managed::with_lock(&path.with_extension("lock"), || {
@@ -130,7 +130,9 @@ fn update(
         if metadata.revision != expected {
             return Err("Swarm accounts changed on disk; reload and try again".into());
         }
-        change(&mut metadata.accounts)?;
+        if !change(&mut metadata.accounts)? {
+            return Ok(metadata.revision);
+        }
         let text = encode(&metadata.accounts);
         crate::managed::write_text(&path, &metadata.before, &text)?;
         Ok(crate::config::revision(text.as_bytes()))
@@ -163,17 +165,21 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
         home,
     };
     let revision = update(expected, |accounts| {
-        if accounts
+        if let Some(account) = accounts
             .iter()
-            .any(|account| account.provider == provider && account.name == name)
+            .find(|account| account.provider == provider && account.name == name)
         {
-            return Err("This account name is already registered".into());
+            return if account.home == entry.home {
+                Ok(false)
+            } else {
+                Err("This account name is already registered".into())
+            };
         }
         accounts.push(entry.clone());
         accounts.sort_by(|left, right| {
             (left.provider.id(), &left.name).cmp(&(right.provider.id(), &right.name))
         });
-        Ok(())
+        Ok(true)
     })?;
     Ok((entry, revision))
 }
@@ -183,7 +189,7 @@ pub fn register(provider: Provider, name: &str, expected: &str) -> Result<(Entry
 pub fn reset(expected: &str) -> Result<String, String> {
     update(expected, |accounts| {
         accounts.clear();
-        Ok(())
+        Ok(true)
     })
 }
 

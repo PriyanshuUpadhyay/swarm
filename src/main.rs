@@ -827,7 +827,7 @@ fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|arg| arg.to_string()),
     );
-    let text = swarm::adapter::shell_line(&command);
+    let text = format!("{}; exit", swarm::adapter::shell_line(&command));
     adapter
         .run("ring", &[("pane", &pane), ("text", &text)])
         .map_err(|_| "swarm: account registered; cannot start native login in pane")?;

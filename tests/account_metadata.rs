@@ -488,3 +488,72 @@ fn a_failed_login_start_keeps_metadata_and_worker_cannot_open_login() {
     assert!(!home.join(".codex-work").exists());
     assert!(!home.join(".swarm/swarm.db").exists());
 }
+
+#[test]
+fn login_retry_after_pane_failure_reuses_equal_registration() {
+    let home = fixture("work-retry");
+    let adapter_path = home.join(".swarm/adapters/fake.conf");
+    let adapter = std::fs::read(&adapter_path).unwrap();
+    std::fs::write(
+        &adapter_path,
+        "self = true\nspawn = exit 8\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    assert!(
+        !run(&home, &login("codex", "work", &revision(&home)))
+            .status
+            .success()
+    );
+    let before = std::fs::read(home.join(".swarm/accounts.toml")).unwrap();
+    let retry_revision = revision(&home);
+    std::fs::write(&adapter_path, adapter).unwrap();
+    let opened = json(run(&home, &login("codex", "work", &retry_revision)));
+    assert_eq!(opened["state"], "opened");
+    assert_eq!(opened["revision"], retry_revision);
+    assert_eq!(
+        std::fs::read(home.join(".swarm/accounts.toml")).unwrap(),
+        before
+    );
+    let again = json(run(&home, &login("codex", "work", &retry_revision)));
+    assert_eq!(again["revision"], retry_revision);
+    let different = home.join("different-native-home");
+    let text = format!(
+        "version = 1\n[[accounts]]\nprovider = 'codex'\nname = 'work'\nhome = '{}'\n",
+        different.display()
+    );
+    std::fs::write(home.join(".swarm/accounts.toml"), &text).unwrap();
+    let conflict = run(&home, &login("codex", "work", &revision(&home)));
+    assert!(!conflict.status.success());
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("already registered"));
+    assert_eq!(
+        std::fs::read_to_string(home.join(".swarm/accounts.toml")).unwrap(),
+        text
+    );
+}
+
+#[test]
+fn login_typed_line_closes_the_shell_after_native_command_exit() {
+    let home = fixture("personal-pane-exit");
+    for provider in ["codex", "claude"] {
+        json(run(&home, &login(provider, "personal", &revision(&home))));
+        let text = std::fs::read_to_string(home.join("login-line")).unwrap();
+        assert!(text.ends_with("; exit"), "{text}");
+        assert_eq!(text.matches("; exit").count(), 1);
+    }
+}
+
+#[test]
+fn account_name_length_accepts_64_and_refuses_65_before_registration() {
+    let home = fixture("spare-name-bound");
+    let maximum = "w".repeat(64);
+    let too_long = "w".repeat(65);
+    assert!(
+        !run(&home, &login("codex", &too_long, &revision(&home)))
+            .status
+            .success()
+    );
+    assert!(!home.join(".swarm/accounts.toml").exists());
+    assert!(!home.join("pane-cwd").exists());
+    let opened = json(run(&home, &login("codex", &maximum, &revision(&home))));
+    assert_eq!(opened["account"], maximum);
+}

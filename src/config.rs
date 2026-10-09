@@ -100,9 +100,11 @@ pub fn valid_name(value: &str) -> bool {
             .any(|ch| ch.is_whitespace() || ch.is_control())
 }
 
+pub const MAX_ACCOUNT_NAME_LENGTH: usize = 64;
+
 /// An account name becomes one native directory component; reserved names cannot be registered.
 pub fn valid_account_name(name: &str) -> bool {
-    !name.is_empty()
+    (1..=MAX_ACCOUNT_NAME_LENGTH).contains(&name.len())
         && name.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })
