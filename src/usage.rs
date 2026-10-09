@@ -52,9 +52,11 @@ fn cache_path() -> Result<std::path::PathBuf, String> {
         let active = std::env::var_os(variable)
             .filter(|value| !value.is_empty())
             .map(std::path::PathBuf::from);
-        let (homes, _) = crate::profiles::native::discover(provider, &home, active);
-        if homes
+        let discovery = crate::profiles::native::discover(provider, &home, active);
+        if discovery
+            .homes
             .iter()
+            .chain(&discovery.skipped)
             .any(|(_, path)| resolved_root.starts_with(resolved_parent(path)))
         {
             return Err("Swarm usage cache must be outside provider homes".into());
@@ -215,7 +217,10 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
                 "codex",
                 Some(account),
                 "no_source",
-                "API-key mode has no plan-quota source",
+                account
+                    .summary
+                    .as_deref()
+                    .unwrap_or("API-key mode has no plan-quota source"),
             ));
             continue;
         }
@@ -387,6 +392,15 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
 }
 
 fn fresh_codex(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, String> {
+    // Invalid-name rows have no provider environment; do not read the default home for them.
+    if account.auth_state == AuthState::Unavailable && account.usage_state == "no_source" {
+        return Ok(vec![status_meter(
+            "codex",
+            Some(account),
+            "no_source",
+            account.summary.as_deref().unwrap_or("No usage source"),
+        )]);
+    }
     let mut server = AppServer::start(&account.env, deadline)?;
     let identity = server.request(2, "account/read", json!({"refreshToken":false}))?;
     if identity["account"]["type"] == "apiKey" {

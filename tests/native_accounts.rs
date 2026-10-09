@@ -214,7 +214,7 @@ fn missing_cli_has_a_typed_native_read_error() {
 }
 
 #[test]
-fn reserved_discovered_names_are_skipped_so_external_current_keeps_its_name() {
+fn invalid_discovered_homes_stay_visible_and_external_current_keeps_its_name() {
     let home = fixture("spare-reserved-discovery");
     for name in ["current", "auto", "default"] {
         std::fs::create_dir_all(home.join(format!(".codex-{name}"))).unwrap();
@@ -241,8 +241,121 @@ fn reserved_discovered_names_are_skipped_so_external_current_keeps_its_name() {
     assert!(output.status.success());
     let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let rows = list["accounts"].as_array().unwrap();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 5);
     let current = rows.iter().find(|row| row["name"] == "current").unwrap();
     assert_eq!(current["home"], external.to_string_lossy().as_ref());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid account name"));
+    let warnings = String::from_utf8_lossy(&output.stderr);
+    for name in ["current", "auto", "default"] {
+        let folder = home.join(format!(".codex-{name}"));
+        let row = rows
+            .iter()
+            .find(|row| row["home"] == folder.to_string_lossy().as_ref())
+            .unwrap();
+        assert_eq!(row["auth_state"], "unavailable");
+        assert!(row["summary"].as_str().unwrap().contains("reserved"));
+        assert_eq!(warnings.matches(folder.to_str().unwrap()).count(), 1);
+    }
+}
+
+#[test]
+fn an_upper_case_claude_home_stays_visible_with_one_named_rule_warning() {
+    let home = fixture("personal-invalid-name");
+    let folder = home.join(".claude/.profiles/Personal");
+    std::fs::create_dir_all(&folder).unwrap();
+    tool(
+        &home,
+        "claude",
+        "printf '%s\\n' \"$CLAUDE_CONFIG_DIR\" >> \"$HOME/identity-homes\"; echo '{\"loggedIn\":true}'",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("CLAUDE_CONFIG_DIR", &folder)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .args(["accounts", "--provider", "claude", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let rows = list["accounts"].as_array().unwrap();
+    let row = rows
+        .iter()
+        .find(|row| row["home"] == folder.to_string_lossy().as_ref())
+        .expect("the invalid folder must remain visible");
+    assert_eq!(row["name"], "Personal");
+    assert_eq!(row["auth_state"], "unavailable");
+    assert_eq!(row["remaining_pct"], serde_json::Value::Null);
+    assert_ne!(list["auto"], row["name"]);
+    let reason = row["summary"].as_str().unwrap();
+    assert!(reason.contains(folder.to_str().unwrap()), "{reason}");
+    assert!(reason.contains("lowercase ASCII"), "{reason}");
+    let warnings = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(warnings.matches(folder.to_str().unwrap()).count(), 1);
+    assert!(
+        !std::fs::read_to_string(home.join("identity-homes"))
+            .unwrap()
+            .contains("Personal")
+    );
+}
+
+#[test]
+fn invalid_codex_homes_are_not_read_during_usage_refresh() {
+    let home = fixture("spare-invalid-refresh");
+    let folder = home.join(".codex-Personal");
+    std::fs::create_dir_all(&folder).unwrap();
+    tool(
+        &home,
+        "codex",
+        &format!(
+            "printf '%s\\n' \"$CODEX_HOME\" >> \"$HOME/identity-homes\"\n{}",
+            include_str!("fixtures/accounts/work-app-server.sh")
+                .replace("\"type\":\"chatgpt\"", "\"type\":\"apiKey\"")
+        ),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("SWARM_HOME", &home)
+        .env("CODEX_HOME", &folder)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .args(["usage", "--refresh", "--provider", "codex", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let usage: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let meter = usage["meters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|meter| meter["account"] == "Personal")
+        .unwrap();
+    assert_eq!(meter["state"], "no_source");
+    assert!(
+        meter["reason"]
+            .as_str()
+            .unwrap()
+            .contains(folder.to_str().unwrap())
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr)
+            .matches(folder.to_str().unwrap())
+            .count(),
+        1
+    );
+    assert!(
+        !std::fs::read_to_string(home.join("identity-homes"))
+            .unwrap()
+            .contains("Personal")
+    );
 }

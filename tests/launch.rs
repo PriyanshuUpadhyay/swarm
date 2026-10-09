@@ -1629,7 +1629,7 @@ fn slow_working_auth_is_read_once_by_role_and_named_launch() {
     tool(
         &home,
         "claude",
-        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.5; echo '{"loggedIn":true}'"#,
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.1; echo '{"loggedIn":true}'"#,
     );
     let output = swarm(
         &home,

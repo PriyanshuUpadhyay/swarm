@@ -45,17 +45,20 @@ fn resolved(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
-pub fn discover(
-    provider: Provider,
-    home: &Path,
-    active: Option<PathBuf>,
-) -> (Vec<(String, PathBuf)>, PathBuf) {
+pub struct Discovery {
+    pub homes: Vec<(String, PathBuf)>,
+    pub current: PathBuf,
+    pub skipped: Vec<(String, PathBuf)>,
+}
+
+pub fn discover(provider: Provider, home: &Path, active: Option<PathBuf>) -> Discovery {
     let default = home.join(match provider {
         Provider::Codex => ".codex",
         _ => ".claude",
     });
     let current = resolved(active.clone().unwrap_or_else(|| default.clone()));
     let mut candidates = vec![("default".to_string(), default)];
+    let mut skipped = Vec::new();
     let directory = match provider {
         Provider::Codex => home.to_path_buf(),
         _ => home.join(".claude/.profiles"),
@@ -74,7 +77,7 @@ pub fn discover(
                 if crate::config::valid_account_name(&name) {
                     candidates.push((name, entry.path()));
                 } else {
-                    eprintln!("swarm: skipped native home: invalid account name");
+                    skipped.push((name, entry.path()));
                 }
             }
         }
@@ -90,6 +93,7 @@ pub fn discover(
     if let Some(active) = active
         && !candidates
             .iter()
+            .chain(&skipped)
             .any(|(_, path)| resolved(path.clone()) == current)
     {
         candidates.push(("current".into(), active));
@@ -102,7 +106,11 @@ pub fn discover(
             seen.insert(path.clone()).then_some((name, path))
         })
         .collect();
-    (homes, current)
+    Discovery {
+        homes,
+        current,
+        skipped,
+    }
 }
 
 pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String> {
@@ -133,8 +141,8 @@ fn load_inner(
     let active = std::env::var_os(variable)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
-    let (homes, current) = discover(provider, &home, active);
-    let homes = crate::accounts::merge(provider, homes, &metadata.accounts);
+    let discovery = discover(provider, &home, active);
+    let homes = crate::accounts::merge(provider, discovery.homes, &metadata.accounts);
     list.source = Some("swarm".into());
     list.state = "ready".into();
     for (name, path) in homes {
@@ -176,13 +184,39 @@ fn load_inner(
             summary: None,
         });
     }
-    list.accounts
-        .sort_by(|left, right| left.name.cmp(&right.name));
     if include_usage {
         let meters = crate::usage::for_accounts(&list, deadline, crate::usage::now_seconds())?;
         super::apply_usage(&mut list, &meters);
     }
-    list.auto = super::pick_auto(&list.accounts, current.to_str());
+    for (name, path) in discovery.skipped {
+        let path = path.to_string_lossy().into_owned();
+        let display_path = path.escape_debug();
+        let reason = format!(
+            "Skipped native home {display_path}: invalid account name; use 1-{} lowercase ASCII letters, digits, '.', '_' or '-'; no '..' or reserved auto, default, current, '.', '..' names",
+            crate::config::MAX_ACCOUNT_NAME_LENGTH
+        );
+        eprintln!("swarm: {reason}");
+        // Reserved labels cannot share the default/current row's stable name.
+        let name = if matches!(name.as_str(), "auto" | "default" | "current") {
+            path.clone()
+        } else {
+            name
+        };
+        list.accounts.push(Account {
+            name,
+            home: path,
+            env: BTreeMap::new(),
+            email: None,
+            auth_state: AuthState::Unavailable,
+            remaining_pct: None,
+            usage_state: "no_source".into(),
+            usage_source: None,
+            summary: Some(reason),
+        });
+    }
+    list.accounts
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    list.auto = super::pick_auto(&list.accounts, discovery.current.to_str());
     Ok(list)
 }
 
