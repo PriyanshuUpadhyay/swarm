@@ -2,11 +2,13 @@ import SwiftUI
 import SwarmCore
 
 struct ChatWindow: View {
+    @Environment(\.designTokens) private var tokens
     let model: SessionsTreeModel
     @State private var state: ChatWindowState
     @State private var details = SessionDetailStore()
     @State private var panes = AgentPaneStore()
     @State private var error: String?
+    @State private var dismissedModelError: String?
     @State private var confirmingChild: SwarmAgentID?
     @State private var switching = false
     @State private var showingUsage = false
@@ -26,9 +28,14 @@ struct ChatWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let error = error ?? model.error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red).textSelection(.enabled).padding(DesignTokens.Spacing.m)
+            if let message = error ?? (model.error == dismissedModelError ? nil : model.error) {
+                HStack {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red).textSelection(.enabled)
+                    Spacer()
+                    Button("Dismiss") { clearError() }
+                }
+                .padding(tokens.spacing.m)
             }
             if let child = confirmingChild {
                 HStack {
@@ -39,7 +46,7 @@ struct ChatWindow: View {
                         if let row { performChildAction(child, in: row.session, close: true) }
                     }
                 }
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
             if let row, let detail = details.entries.first(where: { $0.id == row.id })?.model {
                 SessionDetailView(
@@ -74,6 +81,7 @@ struct ChatWindow: View {
             details.activate(id)
             panes.stop(keepingSession: id)
         }
+        .onChange(of: model.error) { _, _ in dismissedModelError = nil }
         .onDisappear {
             panes.stopAll()
             details.activate(nil)
@@ -90,41 +98,45 @@ struct ChatWindow: View {
                     }
                 ) { _ in
                     Task {
-                        do { try await model.refresh() }
+                        do { try await model.refresh(); clearError() }
                         catch { self.error = error.localizedDescription }
                     }
                 }
             }
         }
         .sheet(isPresented: $showingUsage) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
-                UsageDetails(usage: details.entries.first?.model.usage, chainUsage: row.map(model.chainUsage),
-                             hasChat: row != nil)
+            VStack(alignment: .leading, spacing: tokens.spacing.m) {
+                ScrollView {
+                    UsageDetails(usage: details.entries.first?.model.usage, chainUsage: row.map(model.chainUsage),
+                                 hasChat: row != nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: DesignTokens.Size.settingsHeight)
                 Button("Close") { showingUsage = false }
             }
-            .padding(DesignTokens.Spacing.xl)
+            .padding(tokens.spacing.xl)
         }
+    }
+
+    private func clearError() {
+        error = nil
+        dismissedModelError = model.error
+    }
+
+    private func childActions(in session: SwarmSession) -> ChildAgentActions {
+        ChildAgentActions(bus: SwarmCLIBus(), session: session,
+                          confirm: { confirmingChild = $0 }, error: {
+            if let message = $0 { error = message } else { clearError() }
+        })
     }
 
     private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
         guard readOnlyReason == nil else { return }
-        Task {
-            do {
-                let agents = try await SwarmCLIBus().agents(in: session)
-                guard let agent = agents.first(where: { $0.id == id }), agent.status != .ended else { return }
-                if SwarmAgentCell(agent: agent).requiresCloseConfirmation { confirmingChild = id }
-                else { performChildAction(id, in: session, close: true) }
-            } catch { self.error = error.localizedDescription }
-        }
+        Task { await childActions(in: session).requestChildClose(id) }
     }
 
     private func performChildAction(_ id: SwarmAgentID, in session: SwarmSession, close: Bool) {
         guard readOnlyReason == nil else { return }
-        Task {
-            do {
-                if close { try await SwarmCLIBus().close(id, in: session) }
-                else { try await SwarmCLIBus().interrupt(id, in: session) }
-            } catch { self.error = error.localizedDescription }
-        }
+        Task { await childActions(in: session).performChildAction(id, close: close) }
     }
 }

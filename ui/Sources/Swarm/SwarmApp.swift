@@ -1842,26 +1842,19 @@ private struct SessionsWindow: View {
         )
     }
 
+    private func childActions(in session: SwarmSession) -> ChildAgentActions {
+        ChildAgentActions(bus: SwarmCLIBus(), session: session,
+                          confirm: { showAlert(.closeAgent($0, session)) }, error: {
+            if let message = $0 { showAlert(.error(message)) }
+        })
+    }
+
     private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
-        Task {
-            do {
-                let agents = try await SwarmCLIBus().agents(in: session)
-                guard let agent = agents.first(where: { $0.id == id }), agent.status != .ended else { return }
-                if SwarmAgentCell(agent: agent).requiresCloseConfirmation {
-                    showAlert(.closeAgent(id, session))
-                } else { performChildAction(id, in: session, close: true) }
-            } catch { showAlert(.error(error.localizedDescription)) }
-        }
+        Task { await childActions(in: session).requestChildClose(id) }
     }
 
     private func performChildAction(_ id: SwarmAgentID, in session: SwarmSession, close: Bool) {
-        Task {
-            do {
-                let bus = SwarmCLIBus()
-                if close { try await bus.close(id, in: session) }
-                else { try await bus.interrupt(id, in: session) }
-            } catch { showAlert(.error(error.localizedDescription)) }
-        }
+        Task { await childActions(in: session).performChildAction(id, close: close) }
     }
 
     /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
