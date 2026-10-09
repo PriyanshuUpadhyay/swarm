@@ -76,6 +76,128 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn setup_usage_lists_the_skills_group() {
+    let f = Fixture::new("usage-skills", false);
+    let output = f.run(&["setup", "--invalid"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--only <hooks|trust|herdr|skills>"));
+}
+
+#[test]
+fn shared_cli_roots_plan_and_apply_each_canonical_leaf_once() {
+    let f = Fixture::new("shared-cli-root", true);
+    fs::create_dir_all(f.home.join(".agents/skills")).unwrap();
+    fs::create_dir_all(f.home.join(".gemini/config")).unwrap();
+    symlink(
+        f.home.join(".agents/skills"),
+        f.home.join(".gemini/config/skills"),
+    )
+    .unwrap();
+    let plan = f.plan();
+    assert_eq!(plan["files"].as_array().unwrap().len(), 46);
+    let output = f.apply(plan["digest"].as_str().unwrap());
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(f.status()["skills"], true);
+    assert_eq!(f.plan()["files"], serde_json::json!([]));
+}
+
+#[test]
+fn unreadable_store_is_a_skills_conflict_and_status_names_the_error() {
+    for role in ["store-directory", "store-corrupt"] {
+        let f = Fixture::new(role, true);
+        let database = f.build_home.join(".swarm/swarm.db");
+        if role == "store-directory" {
+            fs::create_dir(&database).unwrap();
+        } else {
+            fs::write(&database, "invalid database").unwrap();
+        }
+        let plan = f.json(&["setup", "--plan", "--json"]);
+        let conflict = plan["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["group"] == "skills")
+            .unwrap();
+        assert_eq!(conflict["kind"], "unreadable");
+        assert!(
+            conflict["found"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty())
+        );
+        assert!(
+            plan["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|file| file["group"] == "hooks")
+        );
+        let status = f.status();
+        assert_eq!(status["skills"], false);
+        assert!(
+            status["skills_error"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty())
+        );
+        assert!(status["hooks"].is_boolean() && status["trust"].is_boolean());
+    }
+}
+
+#[test]
+fn relative_skills_home_is_a_conflict_and_status_names_the_error() {
+    let f = Fixture::new("relative-build-home", false);
+    let installed = f.home.join("relative/.swarm/skills");
+    fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    assert!(
+        Command::new("cp")
+            .arg("-Rp")
+            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/skills"))
+            .arg(&installed)
+            .status()
+            .unwrap()
+            .success()
+    );
+    swarm::skills::write_manifest(&installed, &installed.join("manifest.json")).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_swarm"))
+            .env_clear()
+            .env("HOME", &f.home)
+            .env("SWARM_HOME", "relative")
+            .env("PATH", "/usr/bin:/bin")
+            .current_dir(&f.home)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let output = run(&["setup", "--plan", "--json"]);
+    assert!(output.status.success(), "{output:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        plan["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["group"] == "skills" && c["found"].as_str().unwrap().contains("absolute"))
+    );
+    assert!(
+        plan["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|file| file["group"] == "hooks")
+    );
+    let output = run(&["setup", "status", "--json"]);
+    assert!(output.status.success(), "{output:?}");
+    let status: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(status["skills"], false);
+    assert!(
+        status["skills_error"]
+            .as_str()
+            .unwrap()
+            .contains("absolute")
+    );
+}
+
+#[test]
 fn runtime_python_cache_keeps_the_installed_copy_available() {
     let f = Fixture::new("runtime-python-cache", true);
     let plan = f.plan();
@@ -101,6 +223,7 @@ fn runtime_python_cache_keeps_the_installed_copy_available() {
 fn clean_home_plans_and_records_all_69_links_in_the_selected_build_home() {
     let f = Fixture::new("clean-owner", true);
     assert_eq!(f.status()["skills"], false);
+    assert!(f.status().get("skills_error").is_none());
     let plan = f.plan();
     assert_eq!(plan["files"].as_array().unwrap().len(), 69);
     assert_eq!(plan["conflicts"], serde_json::json!([]));
@@ -169,6 +292,7 @@ fn missing_default_copy_has_a_refresh_fix_and_other_groups_work() {
             .contains("swarm skills refresh")
     );
     assert_eq!(f.status()["skills"], false);
+    assert!(f.status().get("skills_error").is_none());
     assert!(!f.build_home.join(".swarm/skills").exists());
     let other = f.run(&["setup", "--only", "hooks,herdr"]);
     assert!(other.status.success(), "{other:?}");

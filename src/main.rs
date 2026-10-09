@@ -271,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -1315,10 +1315,19 @@ impl SetupPlan {
         // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (its ADR,
         // PR #30) adds its plans here; this build has none, so the group is always set up.
         if groups.contains(&"skills") {
-            let (plans, content_id) = skills_setup_plans()?;
-            setup.skills_content = content_id;
-            for plan in plans {
-                setup.push("skills", plan);
+            match skills_setup_plans() {
+                Ok((plans, content_id)) => {
+                    setup.skills_content = content_id;
+                    for plan in plans {
+                        setup.push("skills", plan);
+                    }
+                }
+                Err(error) => {
+                    setup.push(
+                        "skills",
+                        FilePlan::unreadable(user_home.join(".agents/skills"), error.to_string()),
+                    );
+                }
             }
         }
         Ok(setup)
@@ -1402,23 +1411,24 @@ fn skills_setup_plans()
         swarm::store::open(std::path::Path::new(":memory:"))?
     };
     let mut plans = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for cli_root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
         for link in &manifest.catalog {
-            plans.push(
-                LinkPlan::create(
-                    &store,
-                    home.join(cli_root).join(&link.name),
-                    copy.join(&link.path),
-                )?
-                .into(),
-            );
+            let plan = LinkPlan::create(
+                &store,
+                home.join(cli_root).join(&link.name),
+                copy.join(&link.path),
+            )?;
+            if seen.insert(plan.edits[0].file.clone()) {
+                plans.push(plan.into());
+            }
         }
     }
     Ok((plans, Some(manifest.content_id)))
 }
 
-fn skills_setup_status() -> bool {
-    skills_setup_plans().is_ok_and(|(plans, content)| {
+fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
+    skills_setup_plans().map(|(plans, content)| {
         content.is_some()
             && plans
                 .iter()
@@ -1498,14 +1508,19 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args == ["status", "--json"] {
         let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
         let has_list = swarm::paths::guards_file()?.exists();
-        return print_json(&serde_json::json!({
+        let skills = skills_setup_status();
+        let mut status = serde_json::json!({
             "hooks": files.hooks_status(),
             "guard": files.guard_status(has_list),
             // The owner answered, standing or ask, so the app does not ask again.
             "trust": trust_answer().is_some(),
             "herdr": true,
-            "skills": skills_setup_status(),
-        }));
+            "skills": skills.as_ref().is_ok_and(|ready| *ready),
+        });
+        if let Err(error) = skills {
+            status["skills_error"] = error.to_string().into();
+        }
+        return print_json(&status);
     }
     let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
     let (mut consent, mut resume) = (None, false);
