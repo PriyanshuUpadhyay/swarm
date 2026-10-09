@@ -70,7 +70,7 @@ public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable
 
     public var placeholder: String? {
         switch self {
-        case .skills: "Coming soon."
+        case .skills: nil
         case .accounts: "Coming soon."
         case .notifications, .keys: nil
         case .profiles, .setup, .managedChanges, .appearance, .advanced: nil

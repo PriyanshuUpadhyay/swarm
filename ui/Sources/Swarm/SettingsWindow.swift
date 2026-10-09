@@ -140,6 +140,11 @@ struct SettingsWindow: View {
                     else { selection.setPageError(nil, on: .profiles) }
                 }
             )
+        case .skills:
+            SkillsSettingsPage(source: PendingSkillsCheckoutSettings()) { message in
+                if let message { selection.reportPageError(message, on: .skills) }
+                else { selection.setPageError(nil, on: .skills) }
+            }
         case .managedChanges:
             ManagedChangesPage()
         case .setup:
