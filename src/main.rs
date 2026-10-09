@@ -478,6 +478,9 @@ fn send_notice(
     title: &str,
     body: &str,
 ) {
+    if swarm::paths::root_dir().is_ok_and(|root| app_is_running(&root)) {
+        return;
+    }
     let adapter = swarm::adapter::Adapter {
         deadline: Some(deadline),
         ..adapter.clone()
@@ -485,6 +488,23 @@ fn send_notice(
     if let Err(error) = adapter.run("notify", &[("title", title), ("body", body)]) {
         eprintln!("swarm: {error}");
     }
+}
+
+/// ADR 0058: the app owns notices while its pid is alive; an invalid or stale lock keeps
+/// the adapter path. Positive pids only, because zero and negative values name process groups.
+fn app_is_running(root: &std::path::Path) -> bool {
+    let Some(pid) = std::fs::read_to_string(root.join("app.lock"))
+        .ok()
+        .and_then(|text| text.trim().parse::<i32>().ok())
+        .filter(|pid| *pid > 0)
+    else {
+        return false;
+    };
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    // SAFETY: signal zero checks a positive pid without sending a signal or touching memory.
+    unsafe { kill(pid, 0) == 0 }
 }
 
 fn adapter_name() -> String {
@@ -3037,9 +3057,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .into(),
             );
         }
+        let root = swarm::paths::root_dir()?;
+        if app_is_running(&root) {
+            return Ok(());
+        }
         let adapter = swarm::adapter::Adapter {
             deadline: Some(std::time::Instant::now() + NOTIFY_TIMEOUT),
-            ..swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?
+            ..swarm::adapter::load(&root, &adapter_name())?
         };
         adapter.run("notify", &[("title", title), ("body", body)])?;
         return Ok(());

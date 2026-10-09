@@ -1286,6 +1286,49 @@ fn swarm_notify_refuses_a_worker() {
 }
 
 #[test]
+fn swarm_notify_skips_a_live_app_lock_and_keeps_the_fallback_for_other_locks() {
+    let mut departed = Command::new("/usr/bin/true").spawn().unwrap();
+    let dead_pid = departed.id();
+    assert!(departed.wait().unwrap().success());
+    for (role, lock, expected) in [
+        ("missing", None, true),
+        ("live", Some(std::process::id().to_string()), false),
+        ("dead", Some(dead_pid.to_string()), true),
+        ("garbage", Some("not a pid".into()), true),
+        ("zero", Some("0".into()), true),
+        ("negative", Some("-1".into()), true),
+    ] {
+        let home = scratch(&format!("notify-app-{role}"));
+        assert!(swarm(&home, &[], &["init"], "").status.success());
+        let sent_to = stand_in_notify(&home);
+        if let Some(pid) = lock {
+            std::fs::write(home.join(".swarm/app.lock"), format!("{pid}\n")).unwrap();
+        }
+        let output = swarm(
+            &home,
+            &[],
+            &["notify", "Swarm — chat", "--body", "done"],
+            "",
+        );
+        assert!(output.status.success(), "{role}: {output:?}");
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{role}: {output:?}"
+        );
+        assert_eq!(
+            notices(&sent_to),
+            if expected {
+                "Swarm — chat|done\n"
+            } else {
+                ""
+            },
+            "{role}"
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+}
+
+#[test]
 fn swarm_notify_names_the_missing_verb() {
     let home = scratch("notify-no-verb");
     assert!(swarm(&home, &[], &["init"], "").status.success());
@@ -1389,6 +1432,16 @@ fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
     hook(r#"{"hook_event_name":"PreToolUse"}"#);
     hook(r#"{"hook_event_name":"PermissionRequest"}"#);
     assert_eq!(notices(&sent_to), notice.repeat(2));
+
+    let app_lock = home.join(".swarm/app.lock");
+    std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
+    hook(r#"{"hook_event_name":"PreToolUse"}"#);
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice.repeat(2));
+    std::fs::remove_file(app_lock).unwrap();
+    hook(r#"{"hook_event_name":"PreToolUse"}"#);
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice.repeat(3));
     std::fs::remove_dir_all(&home).unwrap();
 }
 
