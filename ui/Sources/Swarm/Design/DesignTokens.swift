@@ -77,6 +77,8 @@ enum DesignTokens {
         static let paletteTop: CGFloat = 72
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
+        static let skillNode: CGFloat = 180
+        static let skillText: CGFloat = 150
     }
 
     /// Body text is 13 pt; this spacing gives it about 1.45 line height.

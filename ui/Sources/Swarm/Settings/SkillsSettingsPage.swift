@@ -50,16 +50,21 @@ struct SkillsSettingsPage: View {
     }
 }
 
-/// Removed when the source-setting owner lands in unit 3.
-struct PendingSkillsCheckoutSettings: SkillsCheckoutSettingsSource {
-    var checkoutPath: String? { nil }
-    var loadError: String? { nil }
+@MainActor
+struct OwnerSkillsCheckoutSettings: SkillsCheckoutSettingsSource {
+    let selection: SettingsSelection
+    var checkoutPath: String? { selection.prefs.skillsCheckout }
+    var loadError: String? { selection.loadError }
 
     func setCheckout(_ path: String?) async throws -> String? {
-        throw PendingCheckoutError()
+        guard selection.setSkillsCheckout(path) else {
+            throw CheckoutSettingsError(message: selection.pageError ?? selection.saveError ?? "Could not save your settings.")
+        }
+        return selection.prefs.skillsCheckout
     }
 }
 
-private struct PendingCheckoutError: LocalizedError {
-    var errorDescription: String? { "Checkout validation is not available yet." }
+private struct CheckoutSettingsError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

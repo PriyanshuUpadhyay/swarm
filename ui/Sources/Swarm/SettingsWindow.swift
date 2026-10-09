@@ -141,9 +141,12 @@ struct SettingsWindow: View {
                 }
             )
         case .skills:
-            SkillsSettingsPage(source: PendingSkillsCheckoutSettings()) { message in
-                if let message { selection.reportPageError(message, on: .skills) }
-                else { selection.setPageError(nil, on: .skills) }
+            SkillsSettingsPage(source: OwnerSkillsCheckoutSettings(selection: selection)) { message in
+                if let message {
+                    if selection.pageError != message && selection.loadError != message {
+                        selection.reportPageError(message, on: .skills)
+                    }
+                } else { selection.setPageError(nil, on: .skills) }
             }
         case .managedChanges:
             ManagedChangesPage()

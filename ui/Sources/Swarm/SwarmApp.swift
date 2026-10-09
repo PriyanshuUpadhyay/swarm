@@ -870,7 +870,10 @@ private struct SessionsWindow: View {
                 actions: sidebarActions
             ) {
                 ZStack {
-                    SkillsView().retainedVisibility(sidebarMode == .skills)
+                    SkillsView(mode: sidebarMode.rawValue,
+                               keepOpen: { storedSidebarMode = WorkspaceSidebarMode.skills.rawValue; sidebarVisible = true },
+                               leave: { storedSidebarMode = $0 })
+                        .retainedVisibility(sidebarMode == .skills)
                     Group {
                         if let directory = workspaceDirectory {
                             VStack(spacing: 0) {
