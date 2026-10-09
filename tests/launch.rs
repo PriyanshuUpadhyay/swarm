@@ -84,28 +84,22 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     let home = scratch("trust");
     // The owner gave standing consent for folder trust (ADR 0043).
     std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
-    let profiles = ["a", "b"].map(|name| home.join(".claude/.profiles").join(name));
+    let profiles = ["work", "personal"].map(|name| home.join(".claude/.profiles").join(name));
     for dir in &profiles {
         std::fs::create_dir_all(dir).unwrap();
     }
-    // yelo keeps its own data next to the profiles, in hidden dirs that no pane reads.
     let hidden = home.join(".claude/.profiles/.session-map");
     std::fs::create_dir_all(&hidden).unwrap();
-    let rows: Vec<_> = profiles
-        .iter()
-        .zip(["a", "b"])
-        .map(|(dir, name)| {
-            serde_json::json!({"name": name, "dir": dir, "signed_in": true, "remaining": 50})
-        })
-        .collect();
-    let list = serde_json::Value::from(rows);
+    tool(
+        &home,
+        "claude",
+        r#"if [ "$*" = 'auth status --json' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
+    );
     tool(
         &home,
         "yelo",
-        &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
+        r#"echo '[{"provider":"claude","label":"cl·work","pct":30,"state":"ok","asOf":'"$(/bin/date +%s)"'},{"provider":"claude","label":"cl·personal","pct":75,"state":"ok","asOf":'"$(/bin/date +%s)"'}]'"#,
     );
-    // Launch starts only a runner whose CLI is on PATH (ADR 0032).
-    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
         home.join(".config/agent-routing/roles.json"),
@@ -155,22 +149,32 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         );
     }
 
-    // --account b: the pane gets b's CLAUDE_CONFIG_DIR, so only b's config needs the entry.
-    let only_b = launch("seat-b", "only-b", Some("b"));
+    // A named account trusts only the config that its pane reads.
+    let only_b = launch("seat-personal", "only-personal", Some("personal"));
     assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
     assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
     assert!(!trusted(&home.join(".claude.json"), &only_b));
 
-    // --account auto: yelo picks a, then b on every later call, as when usage moves in between.
-    // The pane must get the account whose config got the entry.
-    tool(
-        &home,
-        "yelo",
-        &format!(
-            "case \"$*\" in *pick*) if [ -e \"$HOME/picked\" ]; then echo '{{\"name\":\"b\"}}'; \
-             else touch \"$HOME/picked\"; echo '{{\"name\":\"a\"}}'; fi ;; *) echo '{list}' ;; esac"
-        ),
+    let native_default = launch("seat-default", "only-default", Some("default"));
+    assert!(trusted(&home.join(".claude.json"), &native_default));
+    assert!(!trusted(
+        &home.join(".claude/.claude.json"),
+        &native_default
+    ));
+    let default_script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-default.sh")))
+            .unwrap();
+    assert!(
+        default_script.contains("'-u' 'CLAUDE_CONFIG_DIR'"),
+        "{default_script}"
     );
+    assert!(
+        !default_script.contains("CLAUDE_CONFIG_DIR="),
+        "{default_script}"
+    );
+
+    // Auto and the pane use the same native account home.
+    std::fs::write(home.join("native-reads"), "").unwrap();
     let cwd = git_repo(&home, "auto");
     let output = swarm(
         &home,
@@ -186,7 +190,17 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         ],
     );
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stderr(&output).contains("account a"), "{}", stderr(&output));
+    let native_reads = std::fs::read_to_string(home.join("native-reads")).unwrap();
+    assert_eq!(
+        native_reads.lines().count(),
+        6,
+        "the pane must reuse the resolved account"
+    );
+    assert!(
+        stderr(&output).contains("account work"),
+        "{}",
+        stderr(&output)
+    );
     // The app shows the role's model before the chair writes its first log.
     assert!(
         stderr(&output).contains("model opus"),
@@ -1024,8 +1038,12 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(stderr(&no_yelo).contains("claude uses its own login"));
     assert!(script("chat-no-yelo").contains("'--model' 'opus' '--effort' 'high'"));
 
-    // A stuck yelo costs `auto` its 2 s read limit, not the whole launch.
-    tool(&home, "yelo", "sleep 8");
+    // An unavailable native read keeps the scheduler fail-open and Auto on the CLI login.
+    tool(
+        &home,
+        "claude",
+        "if [ \"$*\" = 'auth status --json' ]; then exec /bin/sleep 8; fi",
+    );
     let started = std::time::Instant::now();
     let stuck = swarm(
         &home,
@@ -1043,7 +1061,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(stuck.status.success(), "{}", stderr(&stuck));
     assert!(started.elapsed() < std::time::Duration::from_secs(8));
     assert!(
-        stderr(&stuck).contains("yelo did not answer within 2 s; claude uses its own login"),
+        stderr(&stuck).contains("no automatic account for claude; claude uses its own login"),
         "{}",
         stderr(&stuck)
     );

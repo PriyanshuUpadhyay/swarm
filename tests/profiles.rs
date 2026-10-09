@@ -442,16 +442,44 @@ fn the_owners_config_imports_with_no_route_lost() {
     );
 }
 
-/// A yelo stand-in that prints `claude_rows` for Claude and one healthy account for any other CLI.
+/// Native auth fixtures and the retained Claude cached-usage source.
 fn yelo(bin: &Path, claude_rows: &str) {
     use std::os::unix::fs::PermissionsExt;
-    let healthy = r#"[{"name":"spare","dir":"/p/spare","signed_in":true,"remaining":60}]"#;
+    let home = bin.parent().unwrap();
+    let profiles = home.join(".claude/.profiles");
+    if profiles.exists() {
+        std::fs::remove_dir_all(&profiles).unwrap();
+    }
+    std::fs::create_dir_all(&profiles).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(claude_rows).unwrap();
+    let mut auth = String::from("#!/bin/sh\ncase \"$CLAUDE_CONFIG_DIR\" in\n");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut meters = Vec::new();
+    for row in rows {
+        let name = row["name"].as_str().unwrap();
+        std::fs::create_dir_all(profiles.join(name)).unwrap();
+        auth.push_str(&format!(
+            "  */{name}) echo '{{\"loggedIn\":{}}}' ;;\n",
+            row["signed_in"]
+        ));
+        meters.push(serde_json::json!({"provider":"claude","label":format!("cl·{name}"),"pct":100-row["remaining"].as_i64().unwrap(),"state":"ok","asOf":now}));
+    }
+    auth.push_str("  *) echo '{\"loggedIn\":false}' ;;\nesac\n");
+    std::fs::write(bin.join("claude"), auth).unwrap();
     std::fs::write(
         bin.join("yelo"),
-        format!("#!/bin/sh\ncase \"$*\" in *claude*) echo '{claude_rows}' ;; *) echo '{healthy}' ;; esac\n"),
+        format!(
+            "#!/bin/sh\necho '{}'\n",
+            serde_json::to_string(&meters).unwrap()
+        ),
     )
     .unwrap();
-    std::fs::set_permissions(bin.join("yelo"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    for name in ["claude", "yelo"] {
+        std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 const CLAUDE_FIRST: &str = r#"{
@@ -519,8 +547,8 @@ fn a_usage_read_that_hangs_counts_as_can_run_after_its_deadline() {
     old_config(&home, CLAUDE_FIRST);
     let bin = clis(&home, &["claude", "codex"]);
     // A full path: a copy of /bin/sleep in the test's bin dir is killed by code signing.
-    std::fs::write(bin.join("yelo"), "#!/bin/sh\n/bin/sleep 30\n").unwrap();
-    std::fs::set_permissions(bin.join("yelo"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(bin.join("claude"), "#!/bin/sh\nexec /bin/sleep 30\n").unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let started = std::time::Instant::now();
     let resolved = json(&swarm(&home, &[("PATH", &bin)], &["roles", "get", "code"]));

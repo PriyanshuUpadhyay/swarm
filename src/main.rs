@@ -544,47 +544,6 @@ fn run_tool(
         .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
 }
 
-/// `run_tool` that stops the tool after `limit`, for a read that a launch waits on.
-fn run_tool_within(
-    executable: &str,
-    args: &[&str],
-    limit: std::time::Duration,
-) -> Result<std::process::Output, Box<dyn std::error::Error>> {
-    let mut child = std::process::Command::new(executable)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("swarm: cannot run {executable}: {error}"))?;
-    let stdout = read_within(child.stdout.take().ok_or("no stdout")?, limit);
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-    let status = match stdout.as_ref().map(|_| child.try_wait()) {
-        Some(Ok(Some(status))) => Some(status),
-        // stdout closed, so the tool is exiting; a short wait lets it finish.
-        Some(_) => {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            child.try_wait().ok().flatten()
-        }
-        None => None,
-    };
-    let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "swarm: {executable} did not answer within {} s",
-            limit.as_secs()
-        )
-        .into());
-    };
-    let stderr = read_within(stderr, std::time::Duration::from_millis(100)).unwrap_or_default();
-    Ok(std::process::Output {
-        status,
-        stdout: stdout.unwrap_or_default().into_bytes(),
-        stderr: stderr.into_bytes(),
-    })
-}
-
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     checked_stdout(executable, run_tool(executable, args)?)
 }
@@ -610,6 +569,7 @@ fn yelo_command() -> String {
 
 /// Whether each runner can start now (ADR 0032). Each provider's accounts are read at most once.
 struct Probe {
+    deadline: std::time::Instant,
     min_usage_left_pct: u8,
     /// `--account <name>`: only that account counts. None or `auto` counts every account.
     account: Option<String>,
@@ -621,6 +581,7 @@ struct Probe {
 impl Probe {
     fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
         Probe {
+            deadline: swarm::profiles::native::deadline(2),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -641,7 +602,7 @@ impl Probe {
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
-            .or_insert_with(|| read_accounts(provider, self.account.as_deref()));
+            .or_insert_with(|| read_accounts(provider, self.account.as_deref(), self.deadline));
         // A named account belongs to one provider; another provider's runner cannot use it.
         if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
             return Some((
@@ -653,37 +614,31 @@ impl Probe {
     }
 }
 
-/// yelo's accounts for `provider`, or None when yelo is missing, fails, or takes over 2 s. The
-/// read took 0.08 s on the owner's Mac; a launch must not wait on a stuck one.
+/// Native authentication uncertainty remains a read failure for ADR 0032.
 fn read_accounts(
     provider: Provider,
     only: Option<&str>,
+    deadline: std::time::Instant,
 ) -> Option<Vec<swarm::config::AccountState>> {
-    let mut child = std::process::Command::new(yelo_command())
-        .args([
-            "profile",
-            "list",
-            "--cli",
-            provider.id(),
-            "--usage",
-            "--json",
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let text = read_within(child.stdout.take()?, std::time::Duration::from_secs(2));
-    let _ = child.kill();
-    let _ = child.wait();
-    let list = swarm::profiles::translate_accounts(provider.id(), &text?, None).ok()?;
+    let list = swarm::profiles::native::load(provider, deadline).ok()?;
+    let rows: Vec<_> = list
+        .accounts
+        .iter()
+        .filter(|account| only.is_none_or(|name| account.name == name))
+        .collect();
+    if rows
+        .iter()
+        .any(|account| account.auth_state == swarm::profiles::AuthState::Unavailable)
+    {
+        return None;
+    }
     Some(
-        list.accounts
-            .iter()
-            .filter(|account| only.is_none_or(|name| account.name == name))
+        rows.into_iter()
             .map(|account| swarm::config::AccountState {
-                signed_in: account.signed_in,
-                remaining_pct: account.remaining_pct,
+                signed_in: account.auth_state == swarm::profiles::AuthState::SignedIn,
+                remaining_pct: (account.usage_state == "fresh")
+                    .then_some(account.remaining_pct)
+                    .flatten(),
             })
             .collect(),
     )
@@ -780,41 +735,11 @@ fn installed(provider: &str) -> bool {
 
 fn load_accounts(
     provider: &str,
-    with_pick: bool,
+    _with_pick: bool,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    match Provider::parse(provider) {
-        None => return Err(format!("swarm: unknown provider {provider}").into()),
-        Some(kind) if !kind.has_accounts() => {
-            return Ok(swarm::profiles::empty_accounts(provider));
-        }
-        Some(_) => {}
-    }
-    // A launch waits on these reads, so a stuck yelo fails them rather than the launch hanging.
-    let limit = std::time::Duration::from_secs(2);
-    let command = yelo_command();
-    let list = checked_stdout(
-        &command,
-        run_tool_within(
-            &command,
-            &["profile", "list", "--cli", provider, "--usage", "--json"],
-            limit,
-        )?,
-    )?;
-    let pick_json = if with_pick {
-        let pick = run_tool_within(
-            &command,
-            &["profile", "pick", "--cli", provider, "--json"],
-            limit,
-        )?;
-        pick.status
-            .success()
-            .then(|| String::from_utf8(pick.stdout))
-            .transpose()
-            .map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?
-    } else {
-        None
-    };
-    swarm::profiles::translate_accounts(provider, &list, pick_json.as_deref())
+    let provider =
+        Provider::parse(provider).ok_or_else(|| format!("swarm: unknown provider {provider}"))?;
+    swarm::profiles::native::load(provider, swarm::profiles::native::deadline(2))
         .map_err(|error| format!("swarm: {error}").into())
 }
 
@@ -1820,6 +1745,7 @@ fn resolved_agent_log(log: String) -> String {
 struct SpawnOptions<'a> {
     provider: Option<&'a str>,
     account: Option<&'a str>,
+    resolved_account: Option<&'a swarm::profiles::Account>,
     command: &'a [String],
     runner: Option<&'a swarm::config::Runner>,
 }
@@ -1834,6 +1760,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
                 return Ok(SpawnOptions {
                     provider,
                     account,
+                    resolved_account: None,
                     command: &args[index + 1..],
                     runner: None,
                 });
@@ -1855,6 +1782,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     Ok(SpawnOptions {
         provider,
         account,
+        resolved_account: None,
         command: &[],
         runner: None,
     })
@@ -2112,7 +2040,9 @@ fn spawn_agent(
     if !swarm::bus::valid_agent_id(agent_id) {
         return Err(format!("swarm: bad agent id {agent_id}").into());
     }
-    let account = if let Some(requested) = options.account {
+    let account = if let Some(account) = options.resolved_account {
+        Some(account.clone())
+    } else if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
             None => swarm::config::load()
@@ -2190,7 +2120,13 @@ fn spawn_agent(
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
-            let mut args = vec!["env".to_string(), "--".to_string()];
+            let mut args = vec!["env".to_string()];
+            if let Some(provider) = provider {
+                for key in provider.account_env_keys() {
+                    args.extend(["-u".into(), key.to_string()]);
+                }
+            }
+            args.push("--".into());
             args.extend(
                 account
                     .env
@@ -3188,7 +3124,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && provider_flag == "--provider"
         && json == "--json"
     {
-        return print_json(&load_accounts(provider, true)?);
+        let provider = Provider::parse(provider).ok_or("swarm: unknown provider")?;
+        return print_json(&swarm::profiles::native::load(
+            provider,
+            swarm::profiles::native::deadline(20),
+        )?);
     }
     if let [cmd, json] = args
         && cmd == "usage"
@@ -3481,8 +3421,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             permission: resolved.permission.clone(),
         };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
-        // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
-        // both use this one answer.
+        // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
@@ -3492,8 +3431,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     swarm::profiles::resolve_account(&accounts, requested).cloned()
                 }) {
                 Ok(account) => Some(account),
-                // `auto` is a preference. With no yelo or no automatic account the CLI's own
-                // login runs, as the probe already counts a missing yelo as can run (ADR 0032).
+                // Auto without a known native account retains the CLI login (ADR 0032).
                 Err(error) if requested == "auto" => {
                     eprintln!("swarm: {error}; {} uses its own login", kind.id());
                     None
@@ -3589,7 +3527,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     // yelo's `claude` in the pane points that at the profile it picks, and a pane
                     // with no yelo reads ~/.claude.json, so each of them needs the entry.
                     let configs = if let Some(account) = &picked {
-                        vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        if account.env.is_empty() {
+                            vec![user_home.join(".claude.json")]
+                        } else {
+                            vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        }
                     } else {
                         claude_configs(&user_home)
                     };
@@ -3613,6 +3555,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             SpawnOptions {
                 provider: provider.as_deref(),
                 account: picked.as_ref().map(|picked| picked.name.as_str()),
+                resolved_account: picked.as_ref(),
                 command: &command,
                 runner: Some(&runner),
             },

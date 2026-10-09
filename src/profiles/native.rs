@@ -1,0 +1,335 @@
+use super::{Account, AccountList, AuthState};
+use crate::providers::Provider;
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{Receiver, channel};
+use std::time::{Duration, Instant};
+
+fn resolved(path: PathBuf) -> PathBuf {
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
+pub fn discover(
+    provider: Provider,
+    home: &Path,
+    active: Option<PathBuf>,
+) -> (Vec<(String, PathBuf)>, PathBuf) {
+    let default = home.join(match provider {
+        Provider::Codex => ".codex",
+        _ => ".claude",
+    });
+    let current = resolved(active.clone().unwrap_or_else(|| default.clone()));
+    let mut candidates = vec![("default".to_string(), default)];
+    let directory = match provider {
+        Provider::Codex => home.to_path_buf(),
+        _ => home.join(".claude/.profiles"),
+    };
+    if let Ok(entries) = std::fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let name = match provider {
+                Provider::Codex => name.strip_prefix(".codex-").map(str::to_string),
+                _ => (!name.starts_with('.')).then_some(name),
+            };
+            if let Some(name) = name.filter(|name| !name.is_empty()) {
+                candidates.push((name, entry.path()));
+            }
+        }
+    }
+    candidates.sort_by_key(|(name, path)| {
+        (
+            name != "default",
+            resolved(path.clone()) != *path,
+            name.clone(),
+        )
+    });
+    // A named native home keeps its name when it is also the active home.
+    if let Some(active) = active
+        && !candidates
+            .iter()
+            .any(|(_, path)| resolved(path.clone()) == current)
+    {
+        candidates.push(("current".into(), active));
+    }
+    let mut seen = BTreeSet::new();
+    let homes = candidates
+        .into_iter()
+        .filter_map(|(name, path)| {
+            let path = resolved(path);
+            seen.insert(path.clone()).then_some((name, path))
+        })
+        .collect();
+    (homes, current)
+}
+
+pub fn load(provider: Provider, deadline: Instant) -> Result<AccountList, String> {
+    if !provider.has_accounts() {
+        return Ok(super::empty_accounts(provider.id()));
+    }
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+    let variable = match provider {
+        Provider::Codex => "CODEX_HOME",
+        _ => "CLAUDE_CONFIG_DIR",
+    };
+    let active = std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let (homes, current) = discover(provider, &home, active);
+    let mut list = super::empty_accounts(provider.id());
+    list.source = Some("swarm".into());
+    list.state = "ready".into();
+    for (name, path) in homes {
+        let path = path.to_string_lossy().into_owned();
+        let env = provider.account_env(&name, &path, |variable| std::env::var_os(variable));
+        let identity = match provider {
+            Provider::Codex => AppServer::start(&env, deadline)
+                .and_then(|mut server| {
+                    server.request(2, "account/read", json!({"refreshToken":false}))
+                })
+                .and_then(codex_identity),
+            _ => claude_identity(&env, deadline),
+        };
+        let (auth_state, email) = identity.unwrap_or((AuthState::Unavailable, None));
+        list.accounts.push(Account {
+            name,
+            email,
+            home: path,
+            env,
+            auth_state,
+            remaining_pct: None,
+            usage_state: "missing".into(),
+            usage_source: Some(
+                match provider {
+                    Provider::Codex => "codex_app_server",
+                    _ => "yelo",
+                }
+                .into(),
+            ),
+            summary: None,
+        });
+    }
+    list.accounts
+        .sort_by(|left, right| left.name.cmp(&right.name));
+    let usage = match provider {
+        Provider::Claude => {
+            let executable = std::env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".into());
+            read_json(
+                &executable,
+                &["usage", "show", "--json"],
+                &BTreeMap::new(),
+                deadline,
+            )
+            .ok()
+        }
+        Provider::Codex => crate::paths::root_dir()
+            .ok()
+            .and_then(|root| std::fs::read(root.join("codex-usage.json")).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+        Provider::Agy => None,
+    };
+    if let Some(usage) = usage {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        super::apply_cached_usage(&mut list, &usage, now);
+    }
+    if list
+        .accounts
+        .iter()
+        .any(|account| account.auth_state == AuthState::Unavailable)
+    {
+        list.state = "unavailable".into();
+    }
+    list.auto = super::pick_auto(&list.accounts, current.to_str());
+    Ok(list)
+}
+
+pub fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), String> {
+    match &result["account"] {
+        Value::Null if result.get("account").is_some() => Ok((AuthState::SignedOut, None)),
+        Value::Object(account)
+            if matches!(
+                account.get("type").and_then(Value::as_str),
+                Some("chatgpt" | "apiKey")
+            ) =>
+        {
+            Ok((
+                AuthState::SignedIn,
+                account
+                    .get("email")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            ))
+        }
+        _ => Err("Codex identity is unavailable".into()),
+    }
+}
+
+fn claude_identity(
+    env: &BTreeMap<String, String>,
+    deadline: Instant,
+) -> Result<(AuthState, Option<String>), String> {
+    let executable = std::env::var("SWARM_CLAUDE_CMD").unwrap_or_else(|_| "claude".into());
+    let value = read_json(&executable, &["auth", "status", "--json"], env, deadline)?;
+    match value["loggedIn"].as_bool() {
+        Some(logged_in) => Ok((
+            if logged_in {
+                AuthState::SignedIn
+            } else {
+                AuthState::SignedOut
+            },
+            value["email"].as_str().map(str::to_string),
+        )),
+        None => Err("Claude identity is unavailable".into()),
+    }
+}
+
+pub fn read_json(
+    executable: &str,
+    args: &[&str],
+    env: &BTreeMap<String, String>,
+    deadline: Instant,
+) -> Result<Value, String> {
+    if Instant::now() >= deadline {
+        return Err("provider read timed out".into());
+    }
+    let mut command = Command::new(executable);
+    if args == ["auth", "status", "--json"] {
+        for key in Provider::Claude.account_env_keys() {
+            command.env_remove(key);
+        }
+    }
+    let mut child = command
+        .args(args)
+        .envs(env)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "provider read is unavailable")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("provider stdout is unavailable")?;
+    let (sender, receiver) = channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result =
+            std::io::Read::read_to_end(&mut BufReader::new(stdout), &mut bytes).map(|_| bytes);
+        let _ = sender.send(result);
+    });
+    let response = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    let mut status = child.try_wait().ok().flatten();
+    while response.is_ok() && status.is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+        status = child.try_wait().ok().flatten();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    if !status.is_some_and(|status| status.success()) {
+        return Err("provider read is unavailable".into());
+    }
+    let bytes = response
+        .map_err(|_| "provider read timed out")?
+        .map_err(|_| "provider read failed")?;
+    serde_json::from_slice(&bytes).map_err(|_| "provider response JSON is invalid".into())
+}
+
+pub struct AppServer {
+    child: Child,
+    responses: Receiver<Result<Value, String>>,
+    deadline: Instant,
+}
+
+impl AppServer {
+    pub fn start(env: &BTreeMap<String, String>, deadline: Instant) -> Result<Self, String> {
+        if Instant::now() >= deadline {
+            return Err("Codex read timed out".into());
+        }
+        let executable = std::env::var("SWARM_CODEX_CMD").unwrap_or_else(|_| "codex".into());
+        let mut child = Command::new(executable)
+            .args(["app-server", "--listen", "stdio://"])
+            .envs(env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| "Codex app-server is unavailable")?;
+        let stdout = child.stdout.take().ok_or("Codex stdout is unavailable")?;
+        let (sender, responses) = channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let value = line
+                    .map_err(|_| "Codex response read failed".into())
+                    .and_then(|line| {
+                        serde_json::from_str(&line)
+                            .map_err(|_| "Codex response JSON is invalid".into())
+                    });
+                if sender.send(value).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut server = Self {
+            child,
+            responses,
+            deadline,
+        };
+        server.request(
+            1,
+            "initialize",
+            json!({"clientInfo":{"name":"swarm","title":"Swarm","version":env!("CARGO_PKG_VERSION")}}),
+        )?;
+        server.send(json!({"method":"initialized","params":{}}))?;
+        Ok(server)
+    }
+
+    fn send(&mut self, value: Value) -> Result<(), String> {
+        let stdin = self
+            .child
+            .stdin
+            .as_mut()
+            .ok_or("Codex stdin is unavailable")?;
+        writeln!(stdin, "{value}")
+            .and_then(|_| stdin.flush())
+            .map_err(|_| "Codex request write failed".into())
+    }
+
+    pub fn request(&mut self, id: u64, method: &str, params: Value) -> Result<Value, String> {
+        self.send(json!({"id":id,"method":method,"params":params}))?;
+        loop {
+            let value = self
+                .responses
+                .recv_timeout(self.deadline.saturating_duration_since(Instant::now()))
+                .map_err(|_| "Codex read timed out")??;
+            if value["id"] != id {
+                continue;
+            }
+            if value.get("error").is_some() {
+                return Err("Codex request failed".into());
+            }
+            return value
+                .get("result")
+                .cloned()
+                .ok_or_else(|| "Codex response has no result".into());
+        }
+    }
+}
+
+impl Drop for AppServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub fn deadline(seconds: u64) -> Instant {
+    Instant::now() + Duration::from_secs(seconds)
+}

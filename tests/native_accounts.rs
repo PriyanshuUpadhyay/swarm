@@ -1,0 +1,197 @@
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn fixture(role: &str) -> PathBuf {
+    let home = std::env::temp_dir().join(format!("swarm-native-{role}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(home.join("bin")).unwrap();
+    std::fs::canonicalize(home).unwrap()
+}
+
+fn tool(home: &Path, name: &str, body: &str) {
+    let path = home.join("bin").join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn accounts(home: &Path, provider: &str, extra: &[(&str, &Path)]) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        .env_clear()
+        .env("HOME", home)
+        .env("SWARM_HOME", home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", home.join("bin").display()),
+        )
+        .envs(extra.iter().copied())
+        .args(["accounts", "--provider", provider, "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn native_claude_discovery_keeps_default_and_deduplicates_active_home() {
+    let home = fixture("work");
+    let work = home.join(".claude/.profiles/work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::create_dir_all(home.join(".claude/.profiles/personal")).unwrap();
+    std::os::unix::fs::symlink(&work, home.join(".claude/.profiles/spare")).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"test "$*" = 'auth status --json' || exit 9
+case "$CLAUDE_CONFIG_DIR" in
+  */personal) echo '{"loggedIn":false}' ;;
+  *) echo '{"loggedIn":true,"email":"owner@example.test"}' ;;
+esac"#,
+    );
+    let list = accounts(&home, "claude", &[("CLAUDE_CONFIG_DIR", &work)]);
+    assert_eq!(list["source"], "swarm");
+    assert_eq!(list["state"], "ready");
+    assert_eq!(list["auto"], "work");
+    let rows = list["accounts"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0]["name"], "default");
+    assert_eq!(rows[0]["env"], serde_json::json!({}));
+    assert_eq!(rows[1]["auth_state"], "signed_out");
+    assert_eq!(rows[2]["name"], "work");
+    assert_eq!(rows[2]["env"]["AGENT_PROFILE_LABEL"], "work");
+    assert_eq!(rows[2]["usage_state"], "missing");
+    assert_eq!(rows[2]["remaining_pct"], serde_json::Value::Null);
+}
+
+#[test]
+fn an_unavailable_auth_read_is_not_signed_out() {
+    let home = fixture("personal");
+    tool(
+        &home,
+        "claude",
+        "echo 'secret must not reach the result' >&2; exit 1",
+    );
+    let list = accounts(&home, "claude", &[]);
+    assert_eq!(list["state"], "unavailable");
+    assert_eq!(list["accounts"][0]["auth_state"], "unavailable");
+    assert_eq!(list["auto"], serde_json::Value::Null);
+    assert!(!list.to_string().contains("secret"));
+}
+
+#[test]
+fn agy_has_the_contract_no_source_shape() {
+    let home = fixture("spare");
+    let mut list = accounts(&home, "agy", &[]);
+    list["revision"] = "opaque".into();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/accounts/spare-no-source.json")).unwrap();
+    assert_eq!(sorted_json(list), sorted_json(expected));
+}
+
+fn sorted_json(value: serde_json::Value) -> String {
+    fn sort(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(fields) => serde_json::Value::Object(
+                fields
+                    .into_iter()
+                    .map(|(key, value)| (key, sort(value)))
+                    .collect::<std::collections::BTreeMap<_, _>>()
+                    .into_iter()
+                    .collect(),
+            ),
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.into_iter().map(sort).collect())
+            }
+            value => value,
+        }
+    }
+    serde_json::to_string(&sort(value)).unwrap()
+}
+
+#[test]
+fn codex_identity_uses_the_protocol_and_active_named_home_without_yelo() {
+    let home = fixture("codex-work");
+    let work = home.join(".codex-work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::create_dir_all(home.join(".codex-personal")).unwrap();
+    tool(
+        &home,
+        "codex",
+        include_str!("fixtures/accounts/work-app-server.sh"),
+    );
+    let list = accounts(&home, "codex", &[("CODEX_HOME", &work)]);
+    assert_eq!(list["state"], "ready");
+    assert_eq!(list["auto"], "work");
+    assert_eq!(list["accounts"][0]["name"], "default");
+    assert_eq!(list["accounts"][1]["auth_state"], "signed_out");
+    assert_eq!(list["accounts"][2]["email"], "owner@example.test");
+    let unchanged = accounts(&home, "codex", &[]);
+    assert_eq!(unchanged["auto"], "default");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let cache = serde_json::json!({"accounts":[{"home":work,"meters":[
+        {"used_pct":10,"state":"fresh","as_of_seconds":now},
+        {"used_pct":30,"state":"fresh","as_of_seconds":now}
+    ]}]});
+    std::fs::write(home.join(".swarm/codex-usage.json"), cache.to_string()).unwrap();
+    let cached = accounts(&home, "codex", &[]);
+    assert_eq!(cached["auto"], "work");
+    assert_eq!(cached["accounts"][2]["remaining_pct"], 70);
+    std::os::unix::fs::symlink(&work, home.join(".codex")).unwrap();
+    let deduplicated = accounts(&home, "codex", &[("CODEX_HOME", &work)]);
+    assert_eq!(deduplicated["accounts"].as_array().unwrap().len(), 2);
+    assert_eq!(deduplicated["accounts"][0]["name"], "default");
+    assert_eq!(deduplicated["auto"], "default");
+}
+
+#[test]
+fn cached_windows_choose_least_left_and_match_the_shared_account_fixture() {
+    use swarm::profiles::{Account, AuthState, apply_cached_usage, empty_accounts, pick_auto};
+    let mut list = empty_accounts("codex");
+    list.state = "ready".into();
+    list.source = Some("swarm".into());
+    list.revision = "opaque".into();
+    list.accounts.push(Account {
+        name: "work".into(),
+        email: Some("owner@example.test".into()),
+        home: "/tmp/demo/.codex-work".into(),
+        env: std::collections::BTreeMap::from([(
+            "CODEX_HOME".into(),
+            "/tmp/demo/.codex-work".into(),
+        )]),
+        auth_state: AuthState::SignedIn,
+        remaining_pct: None,
+        usage_state: "missing".into(),
+        usage_source: Some("codex_app_server".into()),
+        summary: None,
+    });
+    let cache = serde_json::json!({"accounts":[{"home":"/tmp/demo/.codex-work","meters":[
+        {"used_pct":10,"state":"fresh","as_of_seconds":700},
+        {"used_pct":30,"state":"fresh","as_of_seconds":700}
+    ]}]});
+    apply_cached_usage(&mut list, &cache, 1000);
+    list.auto = pick_auto(&list.accounts, None);
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/accounts/work-list.json")).unwrap();
+    assert_eq!(
+        sorted_json(serde_json::to_value(&list).unwrap()),
+        sorted_json(expected)
+    );
+    apply_cached_usage(&mut list, &cache, 1001);
+    assert_eq!(list.accounts[0].usage_state, "stale");
+    assert_eq!(pick_auto(&list.accounts, None), None);
+    assert_eq!(
+        pick_auto(&list.accounts, Some("/tmp/demo/.codex-work")).as_deref(),
+        Some("work")
+    );
+    let bad = serde_json::json!({"accounts":[{"home":"/tmp/demo/.codex-work","meters":[{"used_pct":200,"state":"fresh","as_of_seconds":1000}]}]});
+    list.accounts[0].remaining_pct = None;
+    apply_cached_usage(&mut list, &bad, 1000);
+    assert_eq!(list.accounts[0].remaining_pct, None);
+}

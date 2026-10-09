@@ -1,4 +1,3 @@
-use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -6,6 +5,9 @@ use std::collections::BTreeMap;
 pub struct AccountList {
     pub provider: String,
     pub source: Option<String>,
+    pub state: String,
+    pub revision: String,
+    pub modified: bool,
     pub accounts: Vec<Account>,
     pub auto: Option<String>,
 }
@@ -16,78 +18,112 @@ pub struct Account {
     pub email: Option<String>,
     pub home: String,
     pub env: BTreeMap<String, String>,
-    pub signed_in: bool,
+    pub auth_state: AuthState,
+    pub usage_state: String,
+    pub usage_source: Option<String>,
     pub remaining_pct: Option<i64>,
     pub summary: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct YeloAccount {
-    name: Option<String>,
-    dir: String,
-    email: Option<String>,
-    signed_in: bool,
-    remaining: Option<i64>,
-    usage: Option<String>,
-}
+pub mod native;
 
-#[derive(Deserialize)]
-struct YeloPick {
-    name: Option<String>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthState {
+    SignedIn,
+    SignedOut,
+    Unavailable,
 }
 
 pub fn empty_accounts(provider: &str) -> AccountList {
     AccountList {
         provider: provider.to_string(),
         source: None,
+        state: "no_source".into(),
+        revision: crate::config::revision(b"version = 1\n"),
+        modified: false,
         accounts: Vec::new(),
         auto: None,
     }
 }
 
-pub fn translate_accounts(
-    provider: &str,
-    list_json: &str,
-    pick_json: Option<&str>,
-) -> Result<AccountList, String> {
-    let input: Vec<YeloAccount> =
-        serde_json::from_str(list_json).map_err(|error| format!("yelo account JSON: {error}"))?;
-    let Some(kind) = Provider::parse(provider).filter(|kind| kind.has_accounts()) else {
-        return Err(format!("unknown provider {provider}"));
-    };
-    let accounts: Vec<Account> = input
-        .into_iter()
-        .filter_map(|row| {
-            let name = row.name?;
-            Some(Account {
-                env: kind.account_env(&name, &row.dir, |variable| std::env::var_os(variable)),
-                name,
-                email: row.email,
-                home: row.dir,
-                signed_in: row.signed_in,
-                remaining_pct: row.remaining,
-                summary: row.usage,
-            })
-        })
-        .collect();
-    let auto = pick_json
-        .map(|json| serde_json::from_str::<YeloPick>(json).map(|row| row.name))
-        .transpose()
-        .map_err(|error| format!("yelo pick JSON: {error}"))?
-        .flatten();
-    if let Some(name) = &auto
-        && !accounts
+pub fn pick_auto(accounts: &[Account], current_home: Option<&str>) -> Option<String> {
+    let signed_in = || {
+        accounts
             .iter()
-            .any(|account| account.name == *name && account.signed_in)
-    {
-        return Err(format!("yelo picked unknown or signed-out account {name}"));
+            .filter(|account| account.auth_state == AuthState::SignedIn)
+    };
+    signed_in()
+        .filter(|account| account.usage_state == "fresh" && account.remaining_pct.is_some())
+        .min_by(|left, right| {
+            right
+                .remaining_pct
+                .cmp(&left.remaining_pct)
+                .then(left.name.cmp(&right.name))
+        })
+        .or_else(|| signed_in().find(|account| Some(account.home.as_str()) == current_home))
+        .map(|account| account.name.clone())
+}
+
+pub fn apply_cached_usage(list: &mut AccountList, usage: &serde_json::Value, now: i64) {
+    for account in &mut list.accounts {
+        let rows: Vec<&serde_json::Value> = if list.provider == "codex" {
+            usage["accounts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["home"].as_str() == Some(account.home.as_str()))
+                .flat_map(|entry| entry["meters"].as_array().into_iter().flatten())
+                .collect()
+        } else {
+            usage
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|row| {
+                    row["provider"] == "claude"
+                        && row["label"]
+                            .as_str()
+                            .and_then(|label| label.split_once('·').map(|(_, tail)| tail))
+                            .is_some_and(|tail| {
+                                tail == account.name || account.email.as_deref() == Some(tail)
+                            })
+                })
+                .collect()
+        };
+        let mut remaining = Vec::new();
+        let mut fresh = true;
+        for row in rows {
+            let state = row["state"].as_str().unwrap_or("missing");
+            if !matches!(state, "fresh" | "ok" | "stale") {
+                account.usage_state = match state {
+                    "failed" | "no_source" => state,
+                    _ => "missing",
+                }
+                .into();
+                continue;
+            }
+            let percent = row
+                .get("used_pct")
+                .or_else(|| row.get("pct"))
+                .and_then(serde_json::Value::as_i64);
+            let Some(percent) = percent.filter(|percent| (0..=100).contains(percent)) else {
+                continue;
+            };
+            let time = row
+                .get("as_of_seconds")
+                .or_else(|| row.get("asOf"))
+                .and_then(serde_json::Value::as_i64);
+            fresh &= matches!(state, "fresh" | "ok")
+                && time.is_some_and(|time| time <= now && now - time <= 300);
+            remaining.push(100 - percent);
+        }
+        if let Some(remaining) = remaining.into_iter().min() {
+            account.remaining_pct = Some(remaining);
+            account.usage_state = if fresh { "fresh" } else { "stale" }.into();
+            account.summary = Some(format!("{remaining}% left"));
+        }
     }
-    Ok(AccountList {
-        provider: provider.to_string(),
-        source: Some("yelo".to_string()),
-        accounts,
-        auto,
-    })
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -181,104 +217,84 @@ pub fn resolve_account<'a>(
     } else {
         requested
     };
-    accounts
+    let account = accounts
         .accounts
         .iter()
         .find(|account| account.name == name)
-        .ok_or_else(|| format!("unknown {} account {name}", accounts.provider))
+        .ok_or_else(|| format!("unknown {} account {name}", accounts.provider))?;
+    match account.auth_state {
+        AuthState::SignedIn => Ok(account),
+        AuthState::SignedOut => Err(format!(
+            "{} account {name} is signed out",
+            accounts.provider
+        )),
+        AuthState::Unavailable => Err(format!(
+            "{} account {name} authentication is unavailable",
+            accounts.provider
+        )),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const ACCOUNT_LIST: &str = r#"[
-        {"name":"work","dir":"/profiles/work","email":"work@example.com","signed_in":true,"remaining":52,"usage":"5h 98% left · 7d 52% left"},
-        {"name":"away","dir":"/profiles/away","email":null,"signed_in":false,"remaining":null,"usage":null},
-        {"name":null,"dir":"/profiles/nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}
-    ]"#;
+    fn account(name: &str, state: AuthState, usage: &str, remaining: Option<i64>) -> Account {
+        Account {
+            name: name.into(),
+            email: None,
+            home: format!("/profiles/{name}"),
+            env: BTreeMap::new(),
+            auth_state: state,
+            usage_state: usage.into(),
+            usage_source: None,
+            remaining_pct: remaining,
+            summary: None,
+        }
+    }
 
     #[test]
-    fn translates_accounts_and_resolves_auto() {
-        let result = translate_accounts(
-            "claude",
-            ACCOUNT_LIST,
-            Some(r#"{"name":"work","dir":"/profiles/work"}"#),
-        )
-        .unwrap();
-
-        assert_eq!(result.source.as_deref(), Some("yelo"));
+    fn auto_uses_fresh_most_left_then_names_and_keeps_current_without_fresh_quota() {
+        let mut rows = vec![
+            account("work", AuthState::SignedIn, "fresh", Some(70)),
+            account("personal", AuthState::SignedIn, "fresh", Some(25)),
+            account("spare", AuthState::SignedOut, "fresh", Some(100)),
+        ];
         assert_eq!(
-            result.accounts[0].env["CLAUDE_CONFIG_DIR"],
-            "/profiles/work"
+            pick_auto(&rows, Some("/profiles/personal")).as_deref(),
+            Some("work")
         );
-        // Without the credential tree the pane starts at "Not logged in".
+        rows[1].remaining_pct = Some(70);
+        assert_eq!(pick_auto(&rows, None).as_deref(), Some("personal"));
+        rows[0].usage_state = "stale".into();
+        rows[0].remaining_pct = Some(100);
+        assert_eq!(pick_auto(&rows, None).as_deref(), Some("personal"));
+        rows[1].usage_state = "missing".into();
+        rows[1].remaining_pct = None;
+        assert_eq!(
+            pick_auto(&rows, Some("/profiles/work")).as_deref(),
+            Some("work")
+        );
+        assert_eq!(pick_auto(&rows, None), None);
+        rows[0].auth_state = AuthState::Unavailable;
+        assert_eq!(pick_auto(&rows, Some("/profiles/work")), None);
+    }
+
+    #[test]
+    fn named_resolution_rejects_known_signed_out_and_unavailable_authentication() {
+        let mut list = empty_accounts("codex");
+        list.accounts
+            .push(account("work", AuthState::SignedOut, "missing", None));
         assert!(
-            result.accounts[0].env["CLAUDE_SECURESTORAGE_CONFIG_DIR"].ends_with("/.claude-work")
+            resolve_account(&list, "work")
+                .unwrap_err()
+                .contains("signed out")
         );
-        assert_eq!(result.accounts[0].remaining_pct, Some(52));
-        assert_eq!(result.accounts.len(), 2);
-        assert_eq!(resolve_account(&result, "auto").unwrap().name, "work");
-        assert_eq!(
-            resolve_account(&result, "missing").unwrap_err(),
-            "unknown claude account missing"
-        );
-    }
-
-    #[test]
-    fn a_nameless_pick_has_no_auto_account() {
-        let result = translate_accounts(
-            "codex",
-            ACCOUNT_LIST,
-            Some(
-                r#"{"name":null,"dir":"/profiles/nameless","email":null,"signed_in":true,"remaining":90,"usage":"7d 90% left"}"#,
-            ),
-        )
-        .unwrap();
-
-        assert_eq!(result.auto, None);
-        assert_eq!(
-            resolve_account(&result, "auto").unwrap_err(),
-            "no automatic account for codex"
-        );
-    }
-
-    #[test]
-    fn translates_usage_status_rows_and_matches_email_then_name() {
-        let accounts =
-            translate_accounts("codex", ACCOUNT_LIST, Some(r#"{"name":"work"}"#)).unwrap();
-        let json = r#"[
-            {"label":"cx·work@example.com","provider":"codex","window":"7d","pct":10,"reset":"4d22h","state":"ok","asOf":1789576942},
-            {"label":"cx·unknown@example.com","provider":"codex","window":"5h","pct":20,"reset":null,"state":"stale","asOf":null},
-            {"label":"cx","provider":"codex","state":"logged_out","reason":"logged out"},
-            {"label":"cx·away","provider":"codex","state":"missing","reason":"no data"},
-            {"provider":"codex"}
-        ]"#;
-
-        let (result, skipped) = translate_usage(json, &[accounts]).unwrap();
-
-        assert_eq!(result.meters[0].account.as_deref(), Some("work"));
-        assert_eq!(result.meters[1].account, None);
-        assert_eq!(result.meters[1].resets_in, None);
-        assert_eq!(result.meters[2].account, None);
-        assert_eq!(result.meters[2].window, None);
-        assert_eq!(result.meters[2].used_pct, None);
-        assert_eq!(result.meters[2].reason.as_deref(), Some("logged out"));
-        assert_eq!(result.meters[3].account.as_deref(), Some("away"));
-        assert_eq!(result.meters.len(), 4);
-        assert_eq!(skipped, ["missing field `label`"]);
-    }
-
-    #[test]
-    fn agy_has_no_account_source() {
-        assert_eq!(
-            empty_accounts("agy"),
-            AccountList {
-                provider: "agy".into(),
-                source: None,
-                accounts: vec![],
-                auto: None
-            }
+        list.accounts[0].auth_state = AuthState::Unavailable;
+        assert!(
+            resolve_account(&list, "work")
+                .unwrap_err()
+                .contains("unavailable")
         );
     }
 }
