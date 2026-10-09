@@ -51,6 +51,10 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["init"])
     }
 
+    public func refreshSkills() async throws {
+        _ = try await call(["skills", "refresh"])
+    }
+
     public func startChairSession(
         chair: SwarmChair?, directory: String
     ) async throws -> SwarmSessionID {

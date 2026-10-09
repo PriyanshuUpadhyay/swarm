@@ -11,7 +11,15 @@ public final class SettingsSelection {
     public private(set) var loadError: String?
     public private(set) var saveError: String?
     private var pageErrors: [SettingsPage: String] = [:]
-    public var pageError: String? { pageErrors[page] }
+    public var pageError: String? {
+        page == .setup ? ErrorAnnouncement.joined([skillsRefreshError, pageErrors[page]]) : pageErrors[page]
+    }
+    public private(set) var skillsRefreshError: String?
+    public private(set) var skillsReady = false
+    public private(set) var skillsRefreshing = false
+    @ObservationIgnored private var skillsRefreshTask: Task<Bool, Never>?
+    @ObservationIgnored private var skillsRefreshOperation: (@Sendable () async throws -> Void)?
+    @ObservationIgnored private var skillsStartupReady = false
     public private(set) var appErrorRevision = 0
     public private(set) var loadErrorRevision = 0
     public private(set) var saveErrorRevision = 0
@@ -67,6 +75,51 @@ public final class SettingsSelection {
     public func setAppError(_ message: String?) {
         appError = message
         if message != nil { appErrorRevision += 1 }
+    }
+
+    /// One startup task lets every setup reader wait for the same home refresh.
+    public func beginSkillsRefresh(
+        after: @escaping @MainActor () async -> Bool,
+        refresh: @escaping @Sendable () async throws -> Void
+    ) {
+        guard skillsRefreshTask == nil else { return }
+        skillsRefreshOperation = refresh
+        skillsRefreshing = true
+        skillsRefreshTask = Task {
+            guard await after() else {
+                skillsRefreshing = false
+                return false
+            }
+            skillsStartupReady = true
+            return await performSkillsRefresh(refresh)
+        }
+    }
+
+    public func waitForSkillsRefresh() async -> Bool {
+        await skillsRefreshTask?.value ?? false
+    }
+
+    public func retrySkillsRefresh() async -> Bool {
+        if skillsRefreshing { return await waitForSkillsRefresh() }
+        guard skillsStartupReady, let refresh = skillsRefreshOperation else { return false }
+        skillsRefreshing = true
+        skillsRefreshTask = Task { await performSkillsRefresh(refresh) }
+        return await waitForSkillsRefresh()
+    }
+
+    private func performSkillsRefresh(_ refresh: @Sendable () async throws -> Void) async -> Bool {
+        defer { skillsRefreshing = false }
+        do {
+            try await refresh()
+            skillsRefreshError = nil
+            skillsReady = true
+            return true
+        } catch {
+            skillsReady = false
+            skillsRefreshError = "Could not refresh skills. " + ErrorText.sentence(error.localizedDescription)
+            if page == .setup { pageErrorRevision += 1 }
+            return false
+        }
     }
 
     public func setSplitDiff(_ split: Bool) {

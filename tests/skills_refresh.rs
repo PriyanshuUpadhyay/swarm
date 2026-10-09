@@ -289,3 +289,44 @@ fn skills_path_uses_the_claimed_build_home() {
         .unwrap();
     assert!(result.status.success(), "{result:?}");
 }
+
+#[test]
+fn refresh_command_uses_no_flags_and_reports_source_errors() {
+    let f = Fixture::new("command");
+    fs::copy(env!("CARGO_BIN_EXE_swarm"), &f.helper).unwrap();
+    let call = |helper: &Path, args: &[&str]| {
+        Command::new(helper)
+            .env_clear()
+            .env("HOME", f.root.join("owner-home"))
+            .env("SWARM_HOME", f.home.parent().unwrap())
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    for _ in 0..2 {
+        let output = call(&f.helper, &["skills", "refresh"]);
+        assert!(output.status.success(), "{output:?}");
+        f.installed();
+    }
+    let before = f.installed().content_id;
+    let flags = call(&f.helper, &["skills", "refresh", "--force"]);
+    assert!(!flags.status.success());
+    assert!(String::from_utf8_lossy(&flags.stderr).contains("usage"));
+    fs::remove_dir_all(&f.source).unwrap();
+    let missing = call(&f.helper, &["skills", "refresh"]);
+    assert!(!missing.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("missing bundle source"),
+        "{missing:?}"
+    );
+    assert_eq!(f.installed().content_id, before);
+    let bare = call(
+        Path::new(env!("CARGO_BIN_EXE_swarm")),
+        &["skills", "refresh"],
+    );
+    assert!(!bare.status.success());
+    assert!(
+        String::from_utf8_lossy(&bare.stderr).contains("missing bundle source"),
+        "{bare:?}"
+    );
+}

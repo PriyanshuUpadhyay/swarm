@@ -1023,8 +1023,12 @@ private struct SessionsWindow: View {
         }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                loadPlan: {
+                    _ = await settings.waitForSkillsRefresh()
+                    return try await SwarmCLIBus().setupPlan($0)
+                },
                 setUp: { digest, choice in
+                    _ = await settings.waitForSkillsRefresh()
                     try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                     // A group left unchecked is that group's "Not now".
                     decline(choice.unchecked)
@@ -1350,12 +1354,14 @@ private struct SessionsWindow: View {
     }
 
     private func refreshHomeSetup() async {
+        _ = await settings.waitForSkillsRefresh()
         guard let status = try? await SwarmCLIBus().setupStatus() else { return }
         homeIsSetUp = status.hooks && status.trust && status.herdr
     }
 
     /// Asked once, on the owner's first run with swarm's hooks not set up.
     private func askForSetup() async {
+        _ = await settings.waitForSkillsRefresh()
         guard !setupDeclined,
               let status = try? await SwarmCLIBus().setupStatus(),
               status.needsSheet(
@@ -2410,15 +2416,17 @@ struct SwarmApp: App {
         SwarmPerformance.event("AppStarted")
         let model = model
         let settings = settings
-        Task {
+        settings.beginSkillsRefresh(after: {
             do {
                 try await AppLock.hold()
                 model.startNotices(settings: settings)
+                return true
             } catch {
                 let path = SwarmHome.dataFolder.map { AppRunLock.file(in: $0).path } ?? "an unset Swarm home"
                 settings.setAppError(AppLockFailure.message(for: error, path: path))
+                return false
             }
-        }
+        }, refresh: { try await SwarmCLIBus().refreshSkills() })
     }
 
     var body: some Scene {

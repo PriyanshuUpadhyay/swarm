@@ -48,9 +48,18 @@ struct SettingsWindow: View {
                         .textSelection(.enabled).padding(tokens.spacing.m)
                 }
                 if let error = selection.pageError {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled).padding(tokens.spacing.m)
+                    HStack {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .textSelection(.enabled)
+                        if selection.page == .setup, selection.skillsRefreshError != nil {
+                            Spacer()
+                            Button("Retry") {
+                                Task { _ = await selection.retrySkillsRefresh() }
+                            }
+                            .disabled(selection.skillsRefreshing)
+                        }
+                    }
+                    .foregroundStyle(.red).padding(tokens.spacing.m)
                 }
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -147,8 +156,12 @@ struct SettingsWindow: View {
                             dependencies = Dependencies.check(lookup: Shell.which)
                         }
                     HooksSetupSheet(
-                        loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                        loadPlan: {
+                            _ = await selection.waitForSkillsRefresh()
+                            return try await SwarmCLIBus().setupPlan($0)
+                        },
                         setUp: { digest, choice in
+                            _ = await selection.waitForSkillsRefresh()
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
                         notNow: { _ in }, done: {}, copy: .setup,
