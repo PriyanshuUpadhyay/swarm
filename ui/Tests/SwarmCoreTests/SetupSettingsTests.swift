@@ -107,6 +107,7 @@ struct SetupSettingsTests {
         for timeout in ["-1", "1.5", "letters", "18446744073709551616"] {
             editor.drafts[0].timeout = timeout
             #expect(!editor.canSave)
+            #expect(editor.canEdit)
         }
         editor.drafts[0].timeout = "0"
         #expect(editor.canSave)
@@ -172,6 +173,7 @@ struct SetupSettingsTests {
             #expect(editor.loadError != nil)
             #expect(editor.error?.contains("Every tool call is blocked until it is fixed.") == true)
             #expect(!editor.canSave)
+            #expect(!editor.canEdit)
             editor.add()
             #expect(editor.drafts.isEmpty)
             #expect(throws: GuardListError.self) { try editor.save(to: file) }
@@ -180,6 +182,7 @@ struct SetupSettingsTests {
             editor.load(GuardRules.load(url: file))
             #expect(editor.loadError == nil)
             #expect(editor.canSave)
+            #expect(editor.canEdit)
             try editor.save(to: file)
         }
     }
@@ -256,6 +259,55 @@ struct SetupSettingsTests {
         try updated.save(to: link)
         #expect(try GuardRules.load(url: target).get() == updated)
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == destination)
+    }
+
+    @Test("Saving through a linked parent updates the file that load reads", arguments: [true, false])
+    func linkedParentGuardSave(targetExists: Bool) throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let parent = folder.appendingPathComponent("dotfiles/swarm")
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let homeLink = folder.appendingPathComponent(".swarm")
+        try FileManager.default.createSymbolicLink(at: homeLink, withDestinationURL: parent)
+        let target = folder.appendingPathComponent("dotfiles/shared/guards.json")
+        if targetExists { try GuardRules().save(to: target) }
+        let guardLink = parent.appendingPathComponent("guards.json")
+        try FileManager.default.createSymbolicLink(atPath: guardLink.path, withDestinationPath: "../shared/guards.json")
+        let loadedPath = homeLink.appendingPathComponent("guards.json")
+        let updated = GuardRules(rules: [.init(name: "policy", command: ["/bin/true"])])
+        try updated.save(to: loadedPath)
+        #expect(try GuardRules.load(url: loadedPath).get() == updated)
+        #expect(try GuardRules.load(url: target).get() == updated)
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("shared").path))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: guardLink.path) == "../shared/guards.json")
+    }
+
+    @Test("A guard link loop fails without replacing either link")
+    func guardSymlinkLoop() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = folder.appendingPathComponent("guards.json")
+        let second = folder.appendingPathComponent("policy.json")
+        try FileManager.default.createSymbolicLink(atPath: first.path, withDestinationPath: "policy.json")
+        try FileManager.default.createSymbolicLink(atPath: second.path, withDestinationPath: "guards.json")
+        #expect(throws: GuardListError.self) { try GuardRules().save(to: first) }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: first.path) == "policy.json")
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: second.path) == "guards.json")
+    }
+
+    @Test("A missing guard file shows draft validation when Save cannot run")
+    func missingGuardDraftValidation() {
+        var editor = GuardRulesEditor()
+        editor.load(.failure(.init(reason: "guards.json is missing", isMissing: true)))
+        #expect(editor.canEdit)
+        editor.add()
+        #expect(!editor.canSave)
+        #expect(editor.error == "Rule 'New guard' needs a command")
+        editor.drafts[0].command[0].text = "/bin/true"
+        #expect(editor.canSave)
+        #expect(editor.error == nil)
+        editor.delete(id: editor.drafts[0].id)
+        #expect(editor.error?.contains("press Save to create an empty list") == true)
     }
 
     @Test("Guard lists decode required and optional fields and round trip through the real file")

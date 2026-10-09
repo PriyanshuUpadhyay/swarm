@@ -45,7 +45,7 @@ public struct GuardRulesEditor: Sendable, Equatable {
     public init() {}
 
     public var error: String? {
-        if let loadError {
+        if let loadError, !loadError.isMissing || drafts.isEmpty {
             return loadError.isMissing
                 ? "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list."
                 : "guards.json could not be read: \(loadError.reason). Every tool call is blocked until it is fixed."
@@ -55,6 +55,7 @@ public struct GuardRulesEditor: Sendable, Equatable {
     }
 
     public var canSave: Bool { (try? list()) != nil }
+    public var canEdit: Bool { loadError == nil || loadError?.isMissing == true }
 
     public mutating func load(_ result: Result<GuardRules, GuardListError>) {
         switch result {
@@ -68,12 +69,12 @@ public struct GuardRulesEditor: Sendable, Equatable {
     }
 
     public mutating func add() {
-        guard loadError == nil || loadError?.isMissing == true else { return }
+        guard canEdit else { return }
         drafts.append(GuardRuleFields(rule: .init(name: "New guard", command: [""])))
     }
 
     public mutating func delete(id: UUID) {
-        guard loadError == nil || loadError?.isMissing == true else { return }
+        guard canEdit else { return }
         drafts.removeAll { $0.id == id }
     }
 

@@ -16,7 +16,7 @@ struct GuardsPage: View {
                     Button("Add") {
                         editor.add()
                         editing = editor.drafts.last?.id
-                    }.disabled(editor.loadError != nil && editor.loadError?.isMissing != true)
+                    }.disabled(!editor.canEdit)
                     Button("Reload", action: reload)
                     Spacer()
                     Button("Save") {
@@ -41,7 +41,7 @@ struct GuardsPage: View {
                             Button("Delete", role: .destructive) {
                                 editor.delete(id: draft.id)
                                 editing = nil
-                            }
+                            }.disabled(!editor.canEdit)
                         }
                         if editing == draft.id {
                             GuardFields(fields: $draft)
@@ -55,7 +55,7 @@ struct GuardsPage: View {
                     }
                     .textSelection(.enabled)
                 }
-                if editor.loadError == nil, let error = editor.error {
+                if editor.canEdit, let error = editor.error {
                     Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 }
             }

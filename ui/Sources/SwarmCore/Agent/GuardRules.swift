@@ -86,14 +86,18 @@ public struct GuardRules: Codable, Sendable, Equatable {
         try validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var destination = url.standardizedFileURL
+        var destination = url
         var links: Set<String> = []
         // Foundation leaves a dangling link unresolved, so read its target before atomic replacement.
-        while let target = try? FileManager.default.destinationOfSymbolicLink(atPath: destination.path) {
+        while true {
+            // Resolve the link's folder before joining a target that contains "..".
+            let parent = destination.deletingLastPathComponent().resolvingSymlinksInPath()
+            destination = parent.appendingPathComponent(destination.lastPathComponent)
+            guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: destination.path) else { break }
             guard links.insert(destination.path).inserted else {
                 throw GuardListError(reason: "The guard list has a symbolic link loop")
             }
-            destination = URL(fileURLWithPath: target, relativeTo: destination.deletingLastPathComponent()).standardizedFileURL
+            destination = URL(fileURLWithPath: target, relativeTo: parent)
         }
         destination = destination.resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
