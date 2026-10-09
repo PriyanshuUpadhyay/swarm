@@ -81,8 +81,12 @@ fn load_inner(
     deadline: Instant,
     include_usage: bool,
 ) -> Result<AccountList, String> {
+    let metadata = crate::accounts::load()?;
+    let mut list = super::empty_accounts(provider.id());
+    list.revision = metadata.revision;
+    list.modified = !metadata.accounts.is_empty();
     if !provider.has_accounts() {
-        return Ok(super::empty_accounts(provider.id()));
+        return Ok(list);
     }
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
     let variable = match provider {
@@ -93,7 +97,7 @@ fn load_inner(
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
     let (homes, current) = discover(provider, &home, active);
-    let mut list = super::empty_accounts(provider.id());
+    let homes = crate::accounts::merge(provider, homes, &metadata.accounts);
     list.source = Some("swarm".into());
     list.state = "ready".into();
     for (name, path) in homes {

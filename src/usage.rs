@@ -59,6 +59,14 @@ fn cache_path() -> Result<std::path::PathBuf, String> {
             return Err("Swarm usage cache must be outside provider homes".into());
         }
     }
+    let metadata = crate::accounts::load()?;
+    if metadata
+        .accounts
+        .iter()
+        .any(|entry| resolved_root.starts_with(resolved_parent(&entry.home)))
+    {
+        return Err("Swarm usage cache must be outside provider homes".into());
+    }
     crate::paths::root_dir()
         .map(|root| root.join("codex-usage.json"))
         .map_err(|error| error.to_string())
@@ -271,6 +279,12 @@ fn normalize_cached(account: &Account, stored: &UsageMeter, now: i64) -> UsageMe
 pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
     let path = cache_path()?;
     let accounts = crate::profiles::native::identities(Provider::Codex, deadline)?.accounts;
+    let resolved_cache = resolved_parent(&path);
+    if accounts.iter().any(|account| {
+        resolved_cache.starts_with(resolved_parent(std::path::Path::new(&account.home)))
+    }) {
+        return Err("Swarm usage cache must be outside provider homes".into());
+    }
     let mut cache = Cache::default();
     let mut meters = Vec::new();
     for account in accounts {

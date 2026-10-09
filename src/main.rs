@@ -271,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | usage --refresh --provider codex --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --refresh --provider codex --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -737,6 +737,103 @@ fn load_accounts(
         Provider::parse(provider).ok_or_else(|| format!("swarm: unknown provider {provider}"))?;
     swarm::profiles::native::load(provider, swarm::profiles::native::deadline(2))
         .map_err(|error| format!("swarm: {error}").into())
+}
+
+fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if swarm::host::is_worker(|name| env::var(name).ok()) {
+        return Err("swarm: only the owner or orchestrator can open a login pane".into());
+    }
+    let mut options = std::collections::BTreeMap::new();
+    let mut json = false;
+    let mut arguments = args.iter();
+    while let Some(flag) = arguments.next() {
+        if flag == "--json" && !json {
+            json = true;
+            continue;
+        }
+        if !["--provider", "--name", "--revision", "--cwd"].contains(&flag.as_str()) {
+            return Err("swarm: invalid accounts login option".into());
+        }
+        let value = arguments
+            .next()
+            .ok_or("swarm: missing accounts login value")?;
+        if options.insert(flag.as_str(), value.as_str()).is_some() {
+            return Err("swarm: duplicate accounts login option".into());
+        }
+    }
+    if !json {
+        return Err("swarm: accounts login requires --json".into());
+    }
+    let provider = options
+        .get("--provider")
+        .and_then(|name| Provider::parse(name))
+        .filter(|provider| provider.has_accounts())
+        .ok_or("swarm: login needs claude or codex")?;
+    let name = options.get("--name").ok_or("swarm: login needs --name")?;
+    let expected = options
+        .get("--revision")
+        .ok_or("swarm: login needs --revision")?;
+    let cwd = options
+        .get("--cwd")
+        .map_or_else(env::current_dir, |value| {
+            Ok(std::path::PathBuf::from(value))
+        })?;
+    if !cwd.is_absolute() || !cwd.is_dir() {
+        return Err("swarm: --cwd must be an existing absolute directory".into());
+    }
+    let cwd = std::fs::canonicalize(cwd).map_err(|_| "swarm: --cwd is unavailable")?;
+    let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
+    let root = swarm::paths::root_dir()?;
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(swarm::profiles::native::deadline(20)),
+        ..swarm::adapter::load(&root, &adapter_name())
+            .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
+    };
+    env::set_current_dir(cwd)?;
+    let pane_name = format!("login-{}-{name}", provider.id());
+    let session = env::var("SWARM_SESSION_ID").unwrap_or_default();
+    let home = swarm::paths::home()?;
+    let pane = adapter
+        .run(
+            "spawn",
+            &[
+                ("agent_id", &pane_name),
+                ("session_id", &session),
+                ("home", &home),
+                ("adapter", &adapter.name),
+            ],
+        )
+        .map_err(|_| "swarm: account registered; cannot open login pane")?;
+    if pane.is_empty() || pane.chars().any(|ch| ch.is_whitespace() || ch.is_control()) {
+        return Err("swarm: account registered; login pane has no valid ID".into());
+    }
+    let native_env = provider.account_env(name, &entry.home.to_string_lossy(), |variable| {
+        env::var_os(variable)
+    });
+    let mut command = vec!["env".to_string()];
+    for key in provider.account_env_keys() {
+        command.extend(["-u".into(), key.to_string()]);
+    }
+    command.push("--".into());
+    command.extend(
+        native_env
+            .iter()
+            .map(|(key, value)| format!("{key}={value}")),
+    );
+    command.extend(
+        provider
+            .login_argv()
+            .ok_or("swarm: native login is unavailable")?
+            .iter()
+            .map(|arg| arg.to_string()),
+    );
+    let text = swarm::adapter::shell_line(&command);
+    adapter
+        .run("ring", &[("pane", &pane), ("text", &text)])
+        .map_err(|_| "swarm: account registered; cannot start native login in pane")?;
+    print_json(
+        &serde_json::json!({"provider":provider.id(), "account":entry.name, "pane":pane, "state":"opened", "revision":revision}),
+    )
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), Box<dyn std::error::Error>> {
@@ -3114,6 +3211,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         && json == "--json"
     {
         return print_json(&list_models(provider)?);
+    }
+    if let [cmd, sub, rest @ ..] = args
+        && cmd == "accounts"
+        && sub == "login"
+    {
+        return account_login(rest);
+    }
+    if let [cmd, sub, revision_flag, revision, json] = args
+        && cmd == "accounts"
+        && sub == "reset"
+        && revision_flag == "--revision"
+        && json == "--json"
+    {
+        return print_json(&serde_json::json!({"revision":swarm::accounts::reset(revision)?}));
     }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "accounts"

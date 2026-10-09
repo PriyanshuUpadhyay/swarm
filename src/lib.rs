@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod adapter;
 pub mod bus;
 pub mod config;

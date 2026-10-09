@@ -100,6 +100,16 @@ pub fn valid_name(value: &str) -> bool {
             .any(|ch| ch.is_whitespace() || ch.is_control())
 }
 
+/// An account name becomes one native directory component; reserved names cannot be registered.
+pub fn valid_account_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
+        && !matches!(name, "auto" | "default" | "." | "..")
+        && !name.contains("..")
+}
+
 /// Every rule the config breaks.
 pub fn validate(config: &Config) -> Vec<String> {
     let mut errors = Vec::new();
@@ -649,6 +659,38 @@ fn write(path: &Path, config: &Config) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_names_match_the_native_directory_rule() {
+        for name in [
+            "work",
+            "personal-2",
+            "spare.account",
+            "work_profile",
+            "-work",
+            ".work",
+        ] {
+            assert!(valid_account_name(name), "rejected {name:?}");
+        }
+        for name in [
+            "",
+            "auto",
+            "default",
+            ".",
+            "..",
+            "work..personal",
+            "Work",
+            "../work",
+            "work/personal",
+            "work\\personal",
+            "work personal",
+            "work\n",
+            "é",
+            "work$(id)",
+        ] {
+            assert!(!valid_account_name(name), "accepted {name:?}");
+        }
+    }
 
     fn runner(provider: Provider, model: &str) -> Runner {
         Runner {

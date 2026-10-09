@@ -40,7 +40,7 @@ pub fn empty_accounts(provider: &str) -> AccountList {
         provider: provider.to_string(),
         source: None,
         state: "no_source".into(),
-        revision: crate::config::revision(b"version = 1\n"),
+        revision: crate::config::revision(crate::accounts::BUNDLED.as_bytes()),
         modified: false,
         accounts: Vec::new(),
         auto: None,

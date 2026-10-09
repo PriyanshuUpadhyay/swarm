@@ -138,6 +138,14 @@ impl Provider {
         !matches!(self, Provider::Agy)
     }
 
+    pub fn login_argv(self) -> Option<&'static [&'static str]> {
+        match self {
+            Provider::Codex => Some(&["codex", "login"]),
+            Provider::Claude => Some(&["claude", "auth", "login"]),
+            Provider::Agy => None,
+        }
+    }
+
     /// Clear inherited keys before applying an account, including the native default.
     pub fn account_env_keys(self) -> &'static [&'static str] {
         match self {
