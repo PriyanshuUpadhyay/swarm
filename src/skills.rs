@@ -110,7 +110,11 @@ fn files_in(root: &Path, directory: &Path, paths: &mut Vec<(String, bool)>) -> R
         let entry = entry?;
         let name = entry.file_name();
         let name = name.to_str().ok_or("skills: non-UTF-8 path")?;
-        if name.starts_with(".git") || (directory == root && name == "manifest.json") {
+        if name.starts_with(".git")
+            || name == "__pycache__"
+            || name.ends_with(".pyc")
+            || (directory == root && name == "manifest.json")
+        {
             continue;
         }
         let path = entry.path();
@@ -341,8 +345,6 @@ fn recover(root: &Path) -> Result<()> {
             fs::rename(&stage, &destination)?;
             write_version(root, &manifest.content_id)?;
             remove_leaf(&previous)?;
-        } else if fs::symlink_metadata(&previous)?.is_dir() {
-            return Err("skills: interrupted promotion has no complete copy to recover".into());
         } else {
             remove_leaf(&previous)?;
         }

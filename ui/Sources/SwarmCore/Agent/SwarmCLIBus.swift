@@ -52,7 +52,7 @@ public struct SwarmCLIBus: SwarmBus {
     }
 
     public func refreshSkills() async throws {
-        _ = try await call(["skills", "refresh"])
+        _ = try await call(["skills", "refresh"], timeout: .seconds(120))
     }
 
     public func startChairSession(

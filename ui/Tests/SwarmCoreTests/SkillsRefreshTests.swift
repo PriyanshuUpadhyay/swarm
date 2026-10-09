@@ -19,7 +19,9 @@ struct SkillsRefreshTests {
     func busCommand() async throws {
         let calls = Calls()
         let bus = SwarmCLIBus(environment: [:], cwd: "/fixture", resolveExecutable: { $0 }) {
-            _, arguments, _, _, _, _ in await calls.call(arguments)
+            _, arguments, _, _, _, timeout in
+            #expect(timeout == .seconds(120))
+            return await calls.call(arguments)
         }
         try await bus.refreshSkills()
         #expect(await calls.values == [["skills", "refresh"]])

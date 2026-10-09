@@ -76,6 +76,28 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn runtime_python_cache_keeps_the_installed_copy_available() {
+    let f = Fixture::new("runtime-python-cache", true);
+    let plan = f.plan();
+    assert!(f.apply(plan["digest"].as_str().unwrap()).status.success());
+    let cache = f
+        .build_home
+        .join(".swarm/skills/kit/references/__pycache__");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("x.pyc"), "runtime cache").unwrap();
+    fs::write(cache.parent().unwrap().join("loose.pyc"), "runtime cache").unwrap();
+    assert_eq!(f.status()["skills"], true);
+    let plan = f.json(&["setup", "--plan", "--json"]);
+    assert!(
+        plan["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["group"] != "skills")
+    );
+}
+
+#[test]
 fn clean_home_plans_and_records_all_69_links_in_the_selected_build_home() {
     let f = Fixture::new("clean-owner", true);
     assert_eq!(f.status()["skills"], false);

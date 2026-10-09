@@ -62,6 +62,45 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn refresh_ignores_python_cache_and_never_copies_it() {
+    let f = Fixture::new("source-python-cache");
+    let cache = f.source.join("kit/references/__pycache__");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("x.pyc"), "runtime cache").unwrap();
+    fs::write(f.source.join("kit/references/loose.pyc"), "runtime cache").unwrap();
+    assert_eq!(f.refresh().unwrap(), swarm::skills::RefreshOutcome::Updated);
+    assert!(!f.home.join("skills/kit/references/__pycache__").exists());
+    assert!(!f.home.join("skills/kit/references/loose.pyc").exists());
+    let manifest = f.installed();
+    let cache = f.home.join("skills/kit/references/__pycache__");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("x.pyc"), "runtime cache").unwrap();
+    assert_eq!(f.installed().content_id, manifest.content_id);
+    assert_eq!(
+        f.refresh().unwrap(),
+        swarm::skills::RefreshOutcome::Unchanged
+    );
+}
+
+#[test]
+fn incomplete_previous_copy_does_not_block_a_valid_source() {
+    for state in ["missing", "incomplete"] {
+        let f = Fixture::new(&format!("incomplete-previous-{state}"));
+        f.refresh().unwrap();
+        fs::rename(f.home.join("skills"), f.home.join(".skills-previous")).unwrap();
+        fs::remove_file(f.home.join(".skills-previous/swarm-voice/SKILL.md")).unwrap();
+        if state == "incomplete" {
+            fs::create_dir(f.home.join("skills")).unwrap();
+            fs::write(f.home.join("skills/partial"), "interrupted copy").unwrap();
+        }
+        assert_eq!(f.refresh().unwrap(), swarm::skills::RefreshOutcome::Updated);
+        f.installed();
+        assert!(!f.home.join(".skills-previous").exists());
+        assert!(!f.home.join(".skills-stage").exists());
+    }
+}
+
+#[test]
 fn first_copy_noop_and_whole_replacement_use_cask_source() {
     let f = Fixture::new("first-copy");
     let cask = f.root.join("cask/swarm");
