@@ -13,7 +13,11 @@ struct KeyRoutingTests {
             (KeyChord(.down, [.control, .command]), .nextWorkspace),
             (KeyChord(.up, [.control, .command]), .previousWorkspace),
             (KeyChord("1", .command), .selectTab(1)),
-            (KeyChord("9", .command), .selectTab(9)),
+            (KeyChord("9", .command), .lastTab),
+            (KeyChord("w", .command), .closeTab),
+            (KeyChord("w", [.shift, .command]), .closeWindow),
+            (KeyChord(.tab, .control), .previousRecentChat),
+            (KeyChord(.tab, [.control, .shift]), .nextRecentChat),
             (KeyChord("]", [.command, .shift]), .nextTab),
             (KeyChord("[", [.command, .shift]), .previousTab),
             (KeyChord(.left, [.option, .command]), .moveFocus(.left)),
@@ -46,6 +50,8 @@ struct KeyRoutingTests {
     func script() {
         #expect(KeyChord(script: "opt+cmd+right") == KeyChord(.right, [.option, .command]))
         #expect(KeyChord(script: "cmd+1") == KeyChord("1", .command))
+        #expect(KeyChord(script: "ctrl+tab") == KeyChord(.tab, .control))
+        #expect(KeyChord(script: "ctrl+shift+tab") == KeyChord(.tab, [.control, .shift]))
         #expect(KeyChord(script: "cmd+return") == KeyChord(.returnKey, .command))
         #expect(KeyChord(script: "cmd") == nil)
         #expect(KeyChord(script: "hyper+x") == nil)

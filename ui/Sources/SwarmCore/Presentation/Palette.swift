@@ -251,6 +251,11 @@ extension AppKey {
         case .nextWorkspace: "Next Workspace"
         case .previousWorkspace: "Previous Workspace"
         case .selectTab(let number): "Chat \(number)"
+        case .closeTab: "Close tab"
+        case .closeWindow: "Close Window"
+        case .previousRecentChat: "Previous Recent Chat"
+        case .nextRecentChat: "Next Recent Chat"
+        case .lastTab: "Last Chat"
         case .nextTab: "Next Chat"
         case .previousTab: "Previous Chat"
         case .moveFocus(let direction): "Focus \(String(describing: direction).capitalized)"
@@ -281,6 +286,7 @@ extension KeyChord {
         switch key {
         case .character(let character): text += String(character).uppercased()
         case .returnKey: text += "↩"
+        case .tab: text += "Tab"
         case .escape: text += "⎋"
         case .left: text += "←"
         case .right: text += "→"

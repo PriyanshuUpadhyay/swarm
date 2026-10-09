@@ -13,6 +13,7 @@ extension KeyChord {
         if flags.contains(.control) { modifiers.insert(.control) }
         switch event.keyCode {
         case 36, 76: self.init(.returnKey, modifiers)
+        case 48: self.init(.tab, modifiers)
         case 53: self.init(.escape, modifiers)
         case 123: self.init(.left, modifiers)
         case 124: self.init(.right, modifiers)
@@ -31,6 +32,7 @@ extension KeyChord {
         let equivalent: KeyEquivalent = switch key {
         case .character(let character): KeyEquivalent(character)
         case .returnKey: .return
+        case .tab: .tab
         case .escape: .escape
         case .left: .leftArrow
         case .right: .rightArrow
@@ -102,6 +104,7 @@ struct AppKeyTarget {
         case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
+        case .closeTab, .closeWindow, .previousRecentChat, .nextRecentChat, .lastTab: break
         case .selectTab(let number): window?.selectTab(number)
         case .nextTab: window?.stepTab(1)
         case .previousTab: window?.stepTab(-1)

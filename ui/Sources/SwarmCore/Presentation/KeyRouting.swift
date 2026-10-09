@@ -4,7 +4,7 @@ import Foundation
 public struct KeyChord: Sendable, Hashable {
     public enum Key: Sendable, Hashable {
         case character(Character)
-        case returnKey, escape, left, right, up, down
+        case returnKey, tab, escape, left, right, up, down
     }
 
     public struct Modifiers: OptionSet, Sendable, Hashable {
@@ -41,6 +41,7 @@ extension KeyChord {
             case "opt": modifiers.insert(.option)
             case "ctrl": modifiers.insert(.control)
             case "return": key = .returnKey
+            case "tab": key = .tab
             case "esc": key = .escape
             case "left": key = .left
             case "right": key = .right
@@ -62,7 +63,8 @@ public enum FocusDirection: Sendable, Hashable, CaseIterable {
 /// Every app action that has a key (docs/decisions/0023). The menu takes its keys from `chord`.
 public enum AppKey: Sendable, Hashable {
     case newWorkspace, newChat, newProject, recentlyClosed, nextWorkspace, previousWorkspace
-    case selectTab(Int), nextTab, previousTab
+    case selectTab(Int), nextTab, previousTab, lastTab
+    case closeTab, closeWindow, previousRecentChat, nextRecentChat
     case moveFocus(FocusDirection), zoom, focusComposer
     case toggleSidebar, moveSidebar, sidebarView(Int), showChanges
     case search, find, findNext, findPrevious, stop
@@ -70,6 +72,11 @@ public enum AppKey: Sendable, Hashable {
     public static let table: [(AppKey, KeyChord)] = [
         (.newWorkspace, KeyChord("n", .command)),
         (.newChat, KeyChord("t", .command)),
+        (.closeTab, KeyChord("w", .command)),
+        (.closeWindow, KeyChord("w", [.shift, .command])),
+        (.previousRecentChat, KeyChord(.tab, .control)),
+        (.nextRecentChat, KeyChord(.tab, [.control, .shift])),
+        (.lastTab, KeyChord("9", .command)),
         (.recentlyClosed, KeyChord("t", [.shift, .command])),
         (.newProject, KeyChord("n", [.command, .shift])),
         (.nextWorkspace, KeyChord(.down, [.control, .command])),
@@ -90,7 +97,7 @@ public enum AppKey: Sendable, Hashable {
         (.findNext, KeyChord("g", .command)),
         (.findPrevious, KeyChord("g", [.command, .shift])),
         (.stop, KeyChord(".", .command)),
-    ] + (1...9).map { (.selectTab($0), KeyChord(Character(String($0)), .command)) }
+    ] + (1...8).map { (.selectTab($0), KeyChord(Character(String($0)), .command)) }
       + (1...6).map { (.sidebarView($0), KeyChord(Character(String($0)), [.option, .command])) }
 
     public var chord: KeyChord { Self.table.first { $0.0 == self }!.1 }

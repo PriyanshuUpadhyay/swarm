@@ -119,6 +119,7 @@ extension PaneStressWindow {
         let code: UInt16
         switch chord.key {
         case .returnKey: code = 36
+        case .tab: code = 48
         case .escape: code = 53
         case .left: code = 123
         case .right: code = 124
