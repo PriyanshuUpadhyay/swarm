@@ -292,7 +292,7 @@ struct WorkspaceDetails: View {
     }
 }
 
-private struct UsageDetails: View {
+struct UsageDetails: View {
     let usage: ChatUsage?
     let hasChat: Bool
 

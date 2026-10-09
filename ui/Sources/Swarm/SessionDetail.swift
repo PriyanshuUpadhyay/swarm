@@ -274,6 +274,8 @@ struct SessionDetailView: View {
     /// The folder trust the chair's launch wrote, shown so it is never silent (owner answer I1).
     let launchedTrust: [SwarmTrustWrite]
     let panes: AgentPaneStore
+    let paneWidths: PaneWidths
+    let onPaneWidthsChanged: (PaneWidths) -> Void
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
     let isCurrentSession: () -> Bool
@@ -501,7 +503,8 @@ struct SessionDetailView: View {
             },
             readOnlyReason: readOnlyReason,
             onStop: { onStopChild(SwarmAgentID($0)) },
-            onClose: { onCloseChild(SwarmAgentID($0)) }
+            onClose: { onCloseChild(SwarmAgentID($0)) },
+            widths: paneWidths, onWidthsChanged: onPaneWidthsChanged
         ) {
             VStack(spacing: 0) {
                 waitingChildren(SwarmPanePolicy.liveCells(session: session, agents: agents).map(\.agent))

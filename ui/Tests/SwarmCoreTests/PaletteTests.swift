@@ -16,17 +16,18 @@ struct PaletteTests {
         agents: [PaletteSource.Agent(id: "reviewer", name: "reviewer", role: "review", status: .failed)]
     )
 
-    @Test("The selected chat offers all six actions and Home keeps Reopen")
+    @Test("The selected chat offers all seven actions and Home keeps Reopen")
     func chatActions() {
         let selected = PaletteItems.build(sidebarViews: [], workspaces: [], chats: [], agents: [],
                                           selectedChat: true, switchModelDisabledReason: "Wait for the reply.")
         let actions = selected.filter { $0.id.hasPrefix("chatAction:") }
         #expect(actions.map(\.title) == ["Close Tab", "End chat", "Archive chat", "Rename chat",
-                                         "Reopen closed chat", "Switch model"])
+                                         "Reopen closed chat", "Open in New Window", "Switch model"])
         #expect(actions.map(\.id) == PaletteChatAction.allCases.map { "chatAction:" + $0.rawValue })
         #expect(actions.last?.disabledReason == "Wait for the reply.")
         #expect(actions.dropLast().allSatisfy { $0.disabledReason == nil })
         #expect(actions.first { $0.id == "chatAction:reopenChat" }?.shortcut == "⇧⌘T")
+        #expect(actions.first { $0.id == "chatAction:openInNewWindow" }?.shortcut == nil)
         #expect(items.filter { $0.id.hasPrefix("chatAction:") }.map(\.id) == ["chatAction:reopenChat"])
     }
 

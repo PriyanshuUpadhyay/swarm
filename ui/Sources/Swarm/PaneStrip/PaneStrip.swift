@@ -31,13 +31,10 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let readOnlyReason: String?
     let onStop: (String) -> Void
     let onClose: (String) -> Void
+    let widths: PaneWidths
+    let onWidthsChanged: (PaneWidths) -> Void
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let pane: (PaneCell) -> Pane
-
-    /// nil is the default width, a third of the main area.
-    @AppStorage("paneColumnWidth") private var storedColumnWidth: Double?
-    @AppStorage("chatPageWidth") private var storedChatWidth: Double?
-    @AppStorage("paneColumnSplits") private var storedSplits = ""
     @State private var main = CGSize.zero
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollOffset = ScrollOffset()
@@ -49,8 +46,8 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         let hasPanes = !cells.isEmpty
         let hasFinished = cells.contains(where: \.ended)
         let zoomed = cells.first { $0.id == zoomedID }
-        let preferredWidth = storedColumnWidth.map { CGFloat($0) }
-        let splits = PaneStripLayout.splits(from: storedSplits, scope: splitScope)
+        let preferredWidth = widths.column.map { CGFloat($0) }
+        let splits = PaneStripLayout.splits(from: widths.splits, scope: splitScope)
         ZStack {
             // The chat stays in the scroll view with no panes, so it keeps its identity and state.
             ScrollViewReader { proxy in
@@ -60,7 +57,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                             .padding(.trailing, hasPanes ? DesignTokens.Size.dragHandle : 0)
                             .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
                                 axis == .horizontal && hasPanes
-                                    ? PaneStripLayout.widths(main: length, chat: storedChatWidth.map { CGFloat($0) }).chat
+                                    ? PaneStripLayout.widths(main: length, chat: widths.chat.map { CGFloat($0) }).chat
                                     : length
                             }
                             .overlay(alignment: .trailing) {
@@ -116,7 +113,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     private static var chatID: String { "pane-strip-chat" }
 
     private var columnWidth: CGFloat {
-        PaneStripLayout.columnWidth(main: main.width, preferred: storedColumnWidth.map { CGFloat($0) })
+        PaneStripLayout.columnWidth(main: main.width, preferred: widths.column.map { CGFloat($0) })
     }
 
     @ViewBuilder
@@ -152,7 +149,7 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     }
 
     private var chatWidth: CGFloat {
-        PaneStripLayout.widths(main: main.width, chat: storedChatWidth.map { CGFloat($0) }).chat
+        PaneStripLayout.widths(main: main.width, chat: widths.chat.map { CGFloat($0) }).chat
     }
 
     private var chatWidthHandle: some View {
@@ -169,7 +166,9 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     }
 
     private func resizeChat(to preferred: CGFloat?) {
-        storedChatWidth = preferred.map { Double(PaneStripLayout.widths(main: main.width, chat: $0).chat) }
+        var updated = widths
+        updated.chat = preferred.map { Double(PaneStripLayout.widths(main: main.width, chat: $0).chat) }
+        onWidthsChanged(updated)
     }
 
     private func widthHandle(column index: Int) -> some View {
@@ -191,15 +190,19 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     private func resizeColumns(to preferred: CGFloat?, keeping index: Int,
                                from start: (width: CGFloat, offset: CGFloat)) {
         let width = PaneStripLayout.columnWidth(main: main.width, preferred: preferred)
-        storedColumnWidth = preferred.map { _ in Double(width) }
+        var updated = widths
+        updated.column = preferred.map { _ in Double(width) }
+        onWidthsChanged(updated)
         scrollPosition.scrollTo(x: start.offset + CGFloat(index) * (width - start.width))
     }
 
     private func saveSplit(_ split: Double?, column id: String, splits: [String: Double]) {
         var splits = splits
         splits[id] = split
-        storedSplits = PaneStripLayout.text(saving: splits, scope: splitScope,
-                                            keeping: Set(columns.map { $0[0].id }), in: storedSplits)
+        var updated = widths
+        updated.splits = PaneStripLayout.text(saving: splits, scope: splitScope,
+                                             keeping: Set(columns.map { $0[0].id }), in: widths.splits)
+        onWidthsChanged(updated)
     }
 
     private var columns: [[PaneCell]] {

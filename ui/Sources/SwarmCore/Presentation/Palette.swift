@@ -161,7 +161,7 @@ extension PaletteSource {
 }
 
 public enum PaletteChatAction: String, Sendable, CaseIterable {
-    case closeTab, endChat, archiveChat, renameChat, reopenChat, switchModel
+    case closeTab, endChat, archiveChat, renameChat, reopenChat, openInNewWindow, switchModel
 
     public var title: String {
         switch self {
@@ -170,6 +170,7 @@ public enum PaletteChatAction: String, Sendable, CaseIterable {
         case .archiveChat: "Archive chat"
         case .renameChat: "Rename chat"
         case .reopenChat: "Reopen closed chat"
+        case .openInNewWindow: "Open in New Window"
         case .switchModel: "Switch model"
         }
     }

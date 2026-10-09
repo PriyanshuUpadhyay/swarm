@@ -662,6 +662,24 @@ final class SessionsTreeModel {
         try await refresh()
     }
 
+    private var windowCount = 0
+    private var windowTasks: [Task<Void, Never>] = []
+
+    func attachWindow() {
+        windowCount += 1
+        guard windowCount == 1 else { return }
+        windowTasks = [
+            Task { await run() }, Task { await runSidebarRuns() }, Task { await runRowFields() },
+        ]
+    }
+
+    func detachWindow() {
+        windowCount -= 1
+        guard windowCount == 0 else { return }
+        for task in windowTasks { task.cancel() }
+        windowTasks = []
+    }
+
     func run() async {
         // Account homes load beside the first refresh, not after it: the first chat can open as
         // soon as the tree arrives, and a lookup still running then cost that open about 120 ms.
@@ -719,10 +737,14 @@ final class SessionsTreeModel {
 }
 
 private struct SessionsWindow: View {
-    @State private var model = SessionsTreeModel()
+    let model: SessionsTreeModel
     @Environment(SettingsSelection.self) private var settings
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var panes = AgentPaneStore()
+    @AppStorage("paneColumnWidth") private var columnWidth: Double?
+    @AppStorage("chatPageWidth") private var chatWidth: Double?
+    @AppStorage("paneColumnSplits") private var paneSplits = ""
     @State private var expandedLists: Set<String> = []
     /// Applied after the chat switch releases its old columns.
     @State private var sidebarFocus: SidebarSelection?
@@ -907,10 +929,9 @@ private struct SessionsWindow: View {
         .task {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
-            await model.run()
+            model.detailModels.activate(model.selectedSessionID)
+            model.attachWindow()
         }
-        .task { await model.runSidebarRuns() }
-        .task { await model.runRowFields() }
         .task {
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
@@ -945,7 +966,11 @@ private struct SessionsWindow: View {
                 copy: .setup
             )
         }
-        .onDisappear { panes.stopAll() }
+        .onDisappear {
+            panes.stopAll()
+            model.detailModels.activate(nil)
+            model.detachWindow()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             panes.stopAll()
         }
@@ -1363,6 +1388,10 @@ private struct SessionsWindow: View {
                 if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
                    let chat = target.chatID { beginRenameChat(chat) }
             },
+            openChatInNewWindow: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { openChatWindow(chat) }
+            },
             renameProject: { id in
                 guard let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) else { return }
                 renameName = model.navigation.projectTitle(for: project)
@@ -1491,6 +1520,7 @@ private struct SessionsWindow: View {
             case .endChat: requestChatEnd(chat.id, archive: false)
             case .archiveChat: archiveChat(chat.id)
             case .renameChat: beginRenameChat(chat.id)
+            case .openInNewWindow: openChatWindow(chat.id)
             case .switchModel: requestModelSwitch(chat.id)
             case .reopenChat: break
             }
@@ -1727,7 +1757,12 @@ private struct SessionsWindow: View {
                 .flatMap { model.navigation.readOnlyReason(in: $0.id) },
             launchedModel: model.launchedModels[row.id],
             launchedTrust: model.launchedTrust[row.id] ?? [],
-            panes: panes, commandSource: active ? model.commandSource : nil,
+            panes: panes,
+            paneWidths: PaneWidths(column: columnWidth, chat: chatWidth, splits: paneSplits),
+            onPaneWidthsChanged: {
+                columnWidth = $0.column; chatWidth = $0.chat; paneSplits = $0.splits
+            },
+            commandSource: active ? model.commandSource : nil,
             onSwitchModel: { currentModel in
                 switchTarget = SwitchTarget(row: row, model: currentModel)
             },
@@ -1805,6 +1840,11 @@ private struct SessionsWindow: View {
             ?? model.selectedSession.map(ChatTitle.key) ?? ""
     }
 
+    private func openChatWindow(_ id: SwarmSessionID) {
+        guard let chat = model.tree.session(id) else { return }
+        openWindow(id: "chat", value: ChatWindowState.id(for: chat))
+    }
+
     private func showTab(_ id: String, recordingHistory: Bool = true) {
         // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
         // not hide a file preview; hide it here.
@@ -1859,7 +1899,8 @@ private struct SessionsWindow: View {
                         do { try await AppFolderActions.openInTerminal(chat.session.cwd) }
                         catch { showAlert(.error(error.localizedDescription)) }
                     }
-                }
+                },
+                openInNewWindow: { openChatWindow(SwarmSessionID($0)) }
             )
         )
     }
@@ -2290,6 +2331,7 @@ private struct SwitchTarget: Identifiable {
 }
 
 struct SwarmApp: App {
+    @State private var model = SessionsTreeModel()
     @State private var settings = SettingsSelection()
     private var splitDiff: Binding<Bool> {
         Binding(get: { settings.prefs.splitDiff }, set: { settings.setSplitDiff($0) })
@@ -2308,7 +2350,7 @@ struct SwarmApp: App {
         // A fixed id: without one, SwiftUI names the scene by a type address that changes with
         // each build, so a new build restores no window and opens none.
         WindowGroup(id: "sessions") {
-            if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
+            if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow(model: model) }
         }
             .environment(settings)
             .environment(\.splitDiff, splitDiff)
@@ -2316,6 +2358,12 @@ struct SwarmApp: App {
                 SetupCommands(selection: settings)
                 AppKeyCommands()
             }
+        WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
+            if let sessionID { ChatWindow(sessionID: sessionID, model: model) }
+        }
+            .environment(settings)
+            .environment(\.splitDiff, splitDiff)
+            .commandsRemoved()
         Settings {
             SettingsWindow().environment(settings).environment(\.splitDiff, splitDiff)
         }

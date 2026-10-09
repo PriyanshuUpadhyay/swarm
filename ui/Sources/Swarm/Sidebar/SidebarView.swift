@@ -44,6 +44,7 @@ struct SidebarActions {
     var workspaceMoveTarget: (String, Int) -> String?
     var rename: (String) -> Void
     var renameChat: (String) -> Void
+    var openChatInNewWindow: (String) -> Void
     var renameProject: (String) -> Void
     var archive: (String) -> Void
     var endChat: (String) -> Void
@@ -266,6 +267,7 @@ struct SidebarView<Details: View>: View {
     @ViewBuilder
     private func menu(for row: SidebarRow) -> some View {
         if row.kind == .chat, !row.archived {
+            Button("Open in New Window") { actions.openChatInNewWindow(row.id) }
             Button("Rename chat…") { actions.renameChat(row.id) }
             Button("End chat…") { actions.endChat(row.id) }
             Button("Archive chat") { actions.archiveChat(row.id) }

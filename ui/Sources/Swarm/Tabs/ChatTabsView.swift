@@ -17,6 +17,7 @@ struct ChatTabActions {
     var copySessionID: (String) -> Void
     var revealFolder: (String) -> Void
     var openTerminal: (String) -> Void
+    var openInNewWindow: (String) -> Void
 }
 
 /// The workspace's chats as tabs: status glyph, title, and provider badge. A tab fits its title
@@ -272,6 +273,7 @@ private struct ChatTabView: View {
                         Button("Remove from group") { _ = actions.group(.remove(tab.id)) }
                     }
                 }
+                Button("Open in New Window") { actions.openInNewWindow(tab.id) }
                 Button("Copy session id") { actions.copySessionID(tab.id) }
                 Button("Reveal folder in Finder") { actions.revealFolder(tab.id) }
                 Button("Open in Terminal") { actions.openTerminal(tab.id) }
