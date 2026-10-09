@@ -1304,12 +1304,22 @@ fn swarm_notify_skips_a_held_app_lock_and_sends_after_release() {
     let app_lock = home.join(".swarm/app.lock");
     let held = hold_app_lock(&app_lock);
     std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
-    let skipped = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
+    let skipped = swarm(
+        &home,
+        &[],
+        &["notify", "Swarm — chat", "--body", "done"],
+        "",
+    );
     assert!(skipped.status.success(), "{skipped:?}");
     assert!(skipped.stdout.is_empty() && skipped.stderr.is_empty());
     assert_eq!(notices(&sent_to), "");
     drop(held);
-    let sent = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
+    let sent = swarm(
+        &home,
+        &[],
+        &["notify", "Swarm — chat", "--body", "done"],
+        "",
+    );
     assert!(sent.status.success(), "{sent:?}");
     assert_eq!(notices(&sent_to), "Swarm — chat|done\n");
     std::fs::remove_dir_all(&home).unwrap();
@@ -1328,7 +1338,12 @@ fn swarm_notify_sends_for_missing_and_unlocked_pid_files() {
         if let Some(content) = content {
             std::fs::write(home.join(".swarm/app.lock"), content).unwrap();
         }
-        let output = swarm(&home, &[], &["notify", "Swarm — chat", "--body", "done"], "");
+        let output = swarm(
+            &home,
+            &[],
+            &["notify", "Swarm — chat", "--body", "done"],
+            "",
+        );
         assert!(output.status.success(), "{role}: {output:?}");
         assert_eq!(notices(&sent_to), "Swarm — chat|done\n", "{role}");
         std::fs::remove_dir_all(&home).unwrap();
