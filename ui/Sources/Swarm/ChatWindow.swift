@@ -11,6 +11,7 @@ struct ChatWindow: View {
     @State private var errorRevision = 0
     @State private var refreshError: String?
     @State private var refreshErrorRevision = 0
+    @State private var announcedRefreshErrorRevision = 0
     // Dismiss hides the current model error until its text changes.
     @State private var dismissedModelError: String?
     @State private var confirmingChild: SwarmAgentID?
@@ -96,7 +97,10 @@ struct ChatWindow: View {
             if let error { AccessibilityNotification.Announcement(error).post() }
         }
         .onChange(of: refreshErrorRevision, initial: true) { _, _ in
-            if error == nil, let refreshError { AccessibilityNotification.Announcement(refreshError).post() }
+            announceRefreshError()
+        }
+        .onChange(of: model.refreshSuccesses) { _, _ in
+            if model.error == nil { refreshError = nil }
         }
         .onChange(of: model.error, initial: true) { _, message in
             dismissedModelError = nil
@@ -137,24 +141,33 @@ struct ChatWindow: View {
 
     private func refreshAfterSwitch() async {
         do {
-            try await model.refresh()
-            refreshError = nil
+            if try await model.refresh() { refreshError = nil }
         } catch {
-            refreshError = "The chat switched, but the chat list did not refresh: \(error.localizedDescription)."
+            refreshError = ErrorText.sentence("The chat switched, but the chat list did not refresh: \(error.localizedDescription)")
             refreshErrorRevision += 1
         }
     }
 
     private func setError(_ message: String?) {
+        let hadError = error != nil
         error = message
         if message != nil { errorRevision += 1 }
+        else if hadError { announceRefreshError() }
+    }
+
+    // A failure hidden by an action error is spoken once when it becomes visible.
+    private func announceRefreshError() {
+        guard error == nil, let refreshError,
+              announcedRefreshErrorRevision != refreshErrorRevision else { return }
+        AccessibilityNotification.Announcement(refreshError).post()
+        announcedRefreshErrorRevision = refreshErrorRevision
     }
 
     // Only the Dismiss button may hide a model error.
     private func clearError() {
-        setError(nil)
-        refreshError = nil
-        dismissedModelError = model.error
+        if error != nil { setError(nil) }
+        else if refreshError != nil { refreshError = nil }
+        else { dismissedModelError = model.error }
     }
 
     private func childActions(in session: SwarmSession) -> ChildAgentActions {

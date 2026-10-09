@@ -149,6 +149,8 @@ final class SessionsTreeModel {
     private var sourceTree = SessionsTree(projects: [])
     private var archives = ChatArchives()
     private var refreshRevision = 0
+    // A good refresh can return the same tree, so tree changes cannot signal every recovery.
+    private(set) var refreshSuccesses = 0
     private(set) var selectionRevision = 0
     var tree = SessionsTree(projects: []) {
         didSet { workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder) }
@@ -387,6 +389,12 @@ final class SessionsTreeModel {
     func refresh() async throws -> Bool {
         refreshRevision += 1
         let revision = refreshRevision
+        func finishRefresh() -> Bool {
+            guard revision == refreshRevision else { return false }
+            error = nil
+            refreshSuccesses += 1
+            return true
+        }
         let timing = SwarmPerformance.begin("UIRefresh")
         defer { timing.end(count: tree.projects.count) }
         let sessions: [SwarmSession]
@@ -458,7 +466,7 @@ final class SessionsTreeModel {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
                 defer { agentTiming.end() }
                 let loaded = try await bus.agents(in: row.session)
-                guard revision == refreshRevision, self.selectedSessionID == row.id else { return true }
+                guard revision == refreshRevision, self.selectedSessionID == row.id else { return finishRefresh() }
                 agents = loaded
             }
             let provider = row.provider ?? agents.first {
@@ -484,8 +492,7 @@ final class SessionsTreeModel {
             // The selected chat closed while its workspace still has starts; the newest one shows.
             if selectedSessionID == nil, selectedPendingID == nil { _ = selectNewestStart() }
         }
-        error = nil
-        return true
+        return finishRefresh()
     }
 
     /// `initializeGit` runs `git init` in a plain folder first, after the owner agreed to it.
