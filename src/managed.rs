@@ -41,12 +41,23 @@ pub struct FilePlan {
 }
 
 /// A link leaf's exact state. Other leaf types are conflicts, not absent links.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub enum LinkState {
     Absent,
     Link(std::path::PathBuf),
 }
 
+impl PartialEq for LinkState {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Absent, Self::Absent) => true,
+            (Self::Link(left), Self::Link(right)) => left.as_os_str() == right.as_os_str(),
+            _ => false,
+        }
+    }
+}
+
+/// A conflicted leaf stays in conflicts; no operation uses its before/after states.
 #[derive(Clone, Debug)]
 pub struct LinkPlan {
     pub path: std::path::PathBuf,
@@ -73,6 +84,283 @@ impl From<LinkPlan> for Plan {
     fn from(plan: LinkPlan) -> Self {
         Self::Link(plan)
     }
+}
+
+impl Plan {
+    pub fn path(&self) -> &std::path::Path {
+        match self {
+            Self::File(plan) => &plan.path,
+            Self::Link(plan) => &plan.path,
+        }
+    }
+    pub fn conflicts(&self) -> &[Conflict] {
+        match self {
+            Self::File(plan) => &plan.conflicts,
+            Self::Link(plan) => &plan.conflicts,
+        }
+    }
+    pub fn edits(&self) -> &[Edit] {
+        match self {
+            Self::File(plan) => &plan.edits,
+            Self::Link(plan) => &plan.edits,
+        }
+    }
+    pub fn changes(&self) -> bool {
+        match self {
+            Self::File(plan) => plan.before != plan.after,
+            Self::Link(plan) => plan.before != plan.after,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum LinkLeaf {
+    Absent,
+    Link(std::path::PathBuf),
+    Other(&'static str),
+}
+
+/// Read only the leaf and its stored target, including broken links.
+fn link_leaf(path: &std::path::Path) -> Result<LinkLeaf, String> {
+    let fail = |error| format!("swarm: cannot read link {}: {error}", path.display());
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(LinkLeaf::Absent),
+        Err(error) => Err(fail(error)),
+        Ok(meta) if meta.is_symlink() => {
+            let target = std::fs::read_link(path).map_err(fail)?;
+            if target.to_str().is_none() {
+                return Err(format!(
+                    "swarm: {} has a link target that is not UTF-8",
+                    path.display()
+                ));
+            }
+            Ok(LinkLeaf::Link(target))
+        }
+        Ok(meta) if meta.is_dir() => Ok(LinkLeaf::Other("directory")),
+        Ok(meta) if meta.is_file() => Ok(LinkLeaf::Other("regular file")),
+        Ok(_) => Ok(LinkLeaf::Other("other leaf type")),
+    }
+}
+
+fn recorded_link(store: &rusqlite::Connection, edit: &Edit) -> Result<bool, String> {
+    store
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM managed_edit WHERE id = ?1 AND writer = ?2
+         AND file = ?3 AND kind = 'symlink' AND path = '[]' AND wrote = ?4
+         AND before IS NULL AND created = 0 AND with_id IS NULL)",
+            rusqlite::params![
+                edit.id(),
+                wire(&edit.writer),
+                edit.file.to_string_lossy(),
+                edit.wrote.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("swarm: cannot read managed edits: {error}"))
+}
+
+impl LinkPlan {
+    /// Plan one skill link. A matching unrecorded link belongs to its existing owner.
+    pub fn create(
+        store: &rusqlite::Connection,
+        path: std::path::PathBuf,
+        target: std::path::PathBuf,
+    ) -> Result<Self, String> {
+        let target_text = target
+            .to_str()
+            .filter(|_| target.is_absolute())
+            .ok_or_else(|| "swarm: a skill link target must be an absolute UTF-8 path".to_string())?
+            .to_string();
+        let edit = Edit::new(
+            Writer::Skills,
+            &path,
+            Kind::Symlink,
+            &[],
+            target_text.clone().into(),
+        );
+        let recorded = recorded_link(store, &edit)?;
+        let mut plan = Self {
+            path,
+            before: LinkState::Absent,
+            after: LinkState::Link(target),
+            conflicts: Vec::new(),
+            edits: vec![edit],
+        };
+        let conflict = match link_leaf(&plan.path) {
+            Ok(LinkLeaf::Absent) => None,
+            Ok(LinkLeaf::Link(live))
+                if recorded && live.to_str() == plan.edits[0].wrote.as_str() =>
+            {
+                plan.before = LinkState::Link(live);
+                None
+            }
+            Ok(leaf) => {
+                let kind = if recorded {
+                    ConflictKind::Changed
+                } else {
+                    ConflictKind::Taken
+                };
+                let found = match leaf {
+                    LinkLeaf::Link(target) => {
+                        plan.before = LinkState::Link(target.clone());
+                        format!("link -> {}", target.display())
+                    }
+                    LinkLeaf::Other(kind) => kind.into(),
+                    LinkLeaf::Absent => unreachable!(),
+                };
+                Some((kind, found))
+            }
+            Err(error) => Some((ConflictKind::Unreadable, error)),
+        };
+        if let Some((kind, found)) = conflict {
+            plan.after = plan.before.clone();
+            plan.conflicts.push(Conflict {
+                kind,
+                file: plan.path.display().to_string(),
+                entry: "the symlink".into(),
+                found,
+                wanted: format!("link -> {}", target_text),
+                fix: format!(
+                    "swarm leaves it; move or repair {} and check the plan again",
+                    plan.path.display()
+                ),
+            });
+        }
+        Ok(plan)
+    }
+}
+
+fn validate_link(store: &rusqlite::Connection, plan: &LinkPlan, off: bool) -> Result<(), String> {
+    let invalid = || format!("swarm: invalid link plan for {}", plan.path.display());
+    let [edit] = plan.edits.as_slice() else {
+        return Err(invalid());
+    };
+    let target = edit
+        .wrote
+        .as_str()
+        .map(std::path::Path::new)
+        .filter(|target| target.is_absolute())
+        .ok_or_else(invalid)?;
+    if edit.kind != Kind::Symlink
+        || edit.writer != Writer::Skills
+        || !edit.path.is_empty()
+        || edit.before.is_some()
+        || edit.created != 0
+        || edit.with.is_some()
+        || edit.last
+    {
+        return Err(invalid());
+    }
+    let requires_record = match (&plan.before, &plan.after, off) {
+        (LinkState::Absent, LinkState::Link(after), false)
+            if after.as_os_str() == target.as_os_str() =>
+        {
+            false
+        }
+        (LinkState::Link(before), LinkState::Link(after), false)
+            if before.as_os_str() == target.as_os_str()
+                && after.as_os_str() == target.as_os_str() =>
+        {
+            true
+        }
+        (LinkState::Link(before), LinkState::Absent, true)
+            if before.as_os_str() == target.as_os_str() =>
+        {
+            true
+        }
+        (LinkState::Absent, LinkState::Absent, true) => true,
+        _ => return Err(invalid()),
+    };
+    if requires_record && !recorded_link(store, edit)? {
+        return Err(format!(
+            "swarm: {} is not the recorded link; swarm leaves it",
+            plan.path.display()
+        ));
+    }
+    validate_link_leaf(plan)
+}
+
+fn validate_link_leaf(plan: &LinkPlan) -> Result<(), String> {
+    if link_place(&plan.path) != plan.edits[0].file {
+        return Err(format!(
+            "swarm: the parent of {} changed after the plan",
+            plan.path.display()
+        ));
+    }
+    match (link_leaf(&plan.path)?, &plan.before) {
+        (LinkLeaf::Absent, LinkState::Absent) => Ok(()),
+        (LinkLeaf::Link(live), LinkState::Link(before))
+            if live.as_os_str() == before.as_os_str() =>
+        {
+            Ok(())
+        }
+        _ => Err(format!(
+            "swarm: {} changed after the link plan; swarm leaves it",
+            plan.path.display()
+        )),
+    }
+}
+
+fn write_link(plan: &LinkPlan) -> Result<(), String> {
+    let fail = |error| format!("swarm: cannot write link {}: {error}", plan.path.display());
+    match &plan.after {
+        LinkState::Link(target) => {
+            let parent = plan
+                .path
+                .parent()
+                .ok_or_else(|| format!("swarm: {} has no parent", plan.path.display()))?;
+            std::fs::create_dir_all(parent).map_err(fail)?;
+            validate_link_leaf(plan)?;
+            std::os::unix::fs::symlink(target, &plan.path).map_err(fail)
+        }
+        LinkState::Absent => {
+            validate_link_leaf(plan)?;
+            std::fs::remove_file(&plan.path).map_err(fail)
+        }
+    }
+}
+
+fn link_removal(store: &rusqlite::Connection, entry: &Entry) -> Result<LinkPlan, String> {
+    let edit = &entry.edit;
+    let mut plan = LinkPlan {
+        path: edit.file.clone(),
+        before: LinkState::Absent,
+        after: LinkState::Absent,
+        conflicts: Vec::new(),
+        edits: vec![edit.clone()],
+    };
+    let conflict = match link_leaf(&plan.path) {
+        Ok(LinkLeaf::Absent) => None,
+        Ok(LinkLeaf::Link(target)) => {
+            plan.before = LinkState::Link(target.clone());
+            if entry.recorded
+                && recorded_link(store, edit)?
+                && edit.wrote.as_str() == target.to_str()
+            {
+                None
+            } else {
+                Some((
+                    ConflictKind::Changed,
+                    format!("link -> {}", target.display()),
+                ))
+            }
+        }
+        Ok(LinkLeaf::Other(kind)) => Some((ConflictKind::Changed, kind.into())),
+        Err(error) => Some((ConflictKind::Unreadable, error)),
+    };
+    if let Some((kind, found)) = conflict {
+        plan.after = plan.before.clone();
+        plan.conflicts.push(Conflict {
+            kind,
+            file: plan.path.display().to_string(),
+            entry: "the symlink".into(),
+            found,
+            wanted: edit.wrote.to_string(),
+            fix: "swarm leaves it; restore the recorded link target and check the plan again"
+                .into(),
+        });
+    }
+    Ok(plan)
 }
 
 impl FilePlan {
@@ -252,15 +540,17 @@ fn commit(
     plans: &[Plan],
     off: bool,
 ) -> Result<Vec<std::path::PathBuf>, String> {
-    let plans = plans
-        .iter()
-        .map(|plan| match plan {
-            Plan::File(plan) => Ok(plan.clone()),
-            Plan::Link(_) => Err("swarm: this write boundary cannot apply links yet".to_string()),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if let Some(conflicts) = conflicts_text(&plans) {
+    if let Some(conflicts) = conflicts_text(plans) {
         return Err(conflicts);
+    }
+    for plan in plans {
+        match plan {
+            Plan::Link(plan) => validate_link(store, plan, off)?,
+            Plan::File(plan) if plan.edits.iter().any(|edit| edit.kind == Kind::Symlink) => {
+                return Err("swarm: a symlink edit requires a link plan".into());
+            }
+            _ => {}
+        }
     }
     let failed = |error: rusqlite::Error| format!("swarm: cannot record a managed edit: {error}");
     let now = std::time::SystemTime::now()
@@ -268,9 +558,9 @@ fn commit(
         .map_or(0, |since| since.as_secs() as i64);
     let mut changed = Vec::new();
     let result = (|| {
-        for plan in &plans {
-            let writes = plan.after != plan.before;
-            if !writes && plan.edits.is_empty() {
+        for plan in plans {
+            let writes = plan.changes();
+            if !writes && plan.edits().is_empty() {
                 continue;
             }
             let tx = rusqlite::Transaction::new_unchecked(
@@ -278,6 +568,9 @@ fn commit(
                 rusqlite::TransactionBehavior::Immediate,
             )
             .map_err(failed)?;
+            if let Plan::Link(link) = plan {
+                validate_link(&tx, link, off)?;
+            }
             // A revert keeps a row, also for a found item, so `list` shows it off and the app can
             // offer On; a recorded row keeps its time of the last apply.
             let upsert = match off {
@@ -290,7 +583,7 @@ fn commit(
                      at_s = excluded.at_s, off = 0"
                 }
             };
-            for edit in &plan.edits {
+            for edit in plan.edits() {
                 tx.execute(
                     &format!(
                         "INSERT INTO managed_edit
@@ -314,22 +607,23 @@ fn commit(
                 .map_err(failed)?;
             }
             if writes {
-                write_text(&plan.path, &plan.before, &plan.after)?;
+                match plan {
+                    Plan::File(plan) => write_text(&plan.path, &plan.before, &plan.after)?,
+                    Plan::Link(plan) => write_link(plan)?,
+                }
+                changed.push(plan.path().to_path_buf());
             }
             tx.commit().map_err(|error| match (writes, off) {
                 (true, false) => format!(
-                    "swarm: wrote {} but could not record it: {error}; swarm managed list shows it as found",
-                    plan.path.display()
+                    "swarm: wrote {} but could not record it: {error}; check `swarm managed list` and the destination before retrying",
+                    plan.path().display()
                 ),
                 (true, true) => format!(
                     "swarm: set back {} but could not record it: {error}; swarm managed list shows its items as gone or changed",
-                    plan.path.display()
+                    plan.path().display()
                 ),
                 (false, _) => failed(error),
             })?;
-            if writes {
-                changed.push(plan.path.clone());
-            }
         }
         Ok(())
     })();
@@ -352,16 +646,36 @@ fn commit(
 
 /// A digest of each planned file's path, text, and planned text, so apply refuses a file that
 /// changed after the owner saw the plan, and a swarm whose entries differ from the plan's.
-pub fn digest(plans: &[FilePlan]) -> String {
+pub fn digest(plans: &[Plan]) -> String {
     use sha2::Digest;
     let mut digest = sha2::Sha256::new();
     for plan in plans {
-        digest.update(plan.path.to_string_lossy().as_bytes());
-        digest.update([0]);
-        digest.update(plan.before.as_bytes());
-        digest.update([0]);
-        digest.update(plan.after.as_bytes());
-        digest.update([0]);
+        match plan {
+            Plan::File(plan) => {
+                digest.update(plan.path.to_string_lossy().as_bytes());
+                digest.update([0]);
+                digest.update(plan.before.as_bytes());
+                digest.update([0]);
+                digest.update(plan.after.as_bytes());
+                digest.update([0]);
+            }
+            Plan::Link(plan) => {
+                for part in [
+                    "symlink".into(),
+                    plan.path.to_string_lossy().into_owned(),
+                    plan.edits
+                        .first()
+                        .map(|edit| edit.file.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    link_text(&plan.before),
+                    link_text(&plan.after),
+                    serde_json::to_string(&plan.conflicts).unwrap(),
+                ] {
+                    digest.update(part.as_bytes());
+                    digest.update([0]);
+                }
+            }
+        }
     }
     digest
         .finalize()
@@ -401,6 +715,19 @@ impl State {
 
 /// Read `edit`'s place in its file now. `off` says swarm set it back.
 pub fn state(edit: &Edit, off: bool) -> State {
+    if edit.kind == Kind::Symlink {
+        return match link_leaf(&edit.file) {
+            Ok(LinkLeaf::Absent) if off => State::Off,
+            Ok(LinkLeaf::Absent) => State::Gone,
+            Ok(LinkLeaf::Link(target)) => match target.to_str().map(serde_json::Value::from) {
+                Some(value) if value == edit.wrote => State::Present,
+                Some(value) => State::Changed(value),
+                None => unreachable!(),
+            },
+            Ok(LinkLeaf::Other(kind)) => State::Changed(kind.into()),
+            Err(error) => State::Unreadable(error),
+        };
+    }
     match read_optional(&edit.file) {
         Ok(text) => state_in(edit, off, text.as_deref()),
         Err(error) => State::Unreadable(error),
@@ -592,7 +919,10 @@ pub fn list(store: &rusqlite::Connection, found: &[Edit]) -> Result<Vec<Entry>, 
     let mut ids: std::collections::HashSet<String> =
         entries.iter().map(|entry| entry.edit.id()).collect();
     for edit in found {
-        if state(edit, false) == State::Present && ids.insert(edit.id()) {
+        if edit.kind != Kind::Symlink
+            && state(edit, false) == State::Present
+            && ids.insert(edit.id())
+        {
             entries.push(Entry {
                 edit: edit.clone(),
                 state: State::Present,
@@ -617,7 +947,7 @@ pub fn revert_plan(
     store: &rusqlite::Connection,
     found: &[Edit],
     target: &Target,
-) -> Result<Vec<FilePlan>, String> {
+) -> Result<Vec<Plan>, String> {
     let entries = list(store, found)?;
     let mut ids: Vec<String> = match target {
         Target::All => entries
@@ -666,7 +996,7 @@ pub fn revert_plan(
     let mut files: Vec<&std::path::PathBuf> = chosen.iter().map(|entry| &entry.edit.file).collect();
     files.sort();
     files.dedup();
-    Ok(files
+    files
         .into_iter()
         .map(|file| {
             let items: Vec<&Entry> = chosen
@@ -674,9 +1004,14 @@ pub fn revert_plan(
                 .copied()
                 .filter(|entry| entry.edit.file == *file)
                 .collect();
-            removal(file, &items).unwrap_or_else(|error| FilePlan::unreadable(file.clone(), error))
+            if let Some(entry) = items.iter().find(|entry| entry.edit.kind == Kind::Symlink) {
+                return link_removal(store, entry).map(Plan::Link);
+            }
+            Ok(removal(file, &items)
+                .unwrap_or_else(|error| FilePlan::unreadable(file.clone(), error))
+                .into())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()
 }
 
 /// The plan for one file that removes each present item of `items`. Each item's state is read
@@ -1148,13 +1483,32 @@ pub(crate) fn write_text(path: &std::path::Path, before: &str, text: &str) -> Re
 }
 
 /// The unified diff of one planned file.
-pub fn diff(plan: &FilePlan) -> String {
-    crate::diff::unified(&plan.path.to_string_lossy(), &plan.before, &plan.after)
+fn link_text(state: &LinkState) -> String {
+    match state {
+        LinkState::Absent => "absent\n".into(),
+        LinkState::Link(target) => format!(
+            "link -> {}\n",
+            serde_json::Value::from(target.to_str().unwrap())
+        ),
+    }
+}
+
+pub fn diff(plan: &Plan) -> String {
+    match plan {
+        Plan::File(plan) => {
+            crate::diff::unified(&plan.path.to_string_lossy(), &plan.before, &plan.after)
+        }
+        Plan::Link(plan) => crate::diff::unified(
+            &plan.path.to_string_lossy(),
+            &link_text(&plan.before),
+            &link_text(&plan.after),
+        ),
+    }
 }
 
 /// Each conflict with its fix, and a last line that says no file was written; None without one.
-pub fn conflicts_text(plans: &[FilePlan]) -> Option<String> {
-    let conflicts: Vec<_> = plans.iter().flat_map(|plan| &plan.conflicts).collect();
+pub fn conflicts_text(plans: &[Plan]) -> Option<String> {
+    let conflicts: Vec<_> = plans.iter().flat_map(Plan::conflicts).collect();
     if conflicts.is_empty() {
         return None;
     }
@@ -1174,7 +1528,7 @@ pub fn conflicts_text(plans: &[FilePlan]) -> Option<String> {
 
 /// Each diff, then the conflicts, or else `unchanged` when no file changes, or else the line that
 /// names `apply`, the command that writes the plan.
-pub fn plan_text(plans: &[FilePlan], apply: &str, unchanged: &str) -> String {
+pub fn plan_text(plans: &[Plan], apply: &str, unchanged: &str) -> String {
     let diffs: String = plans.iter().map(diff).collect();
     let last = match conflicts_text(plans) {
         Some(conflicts) => format!("\n{conflicts}"),
@@ -1186,21 +1540,360 @@ pub fn plan_text(plans: &[FilePlan], apply: &str, unchanged: &str) -> String {
 
 /// The plan for the app: the digest that apply checks, each file that changes with its diff, and
 /// each conflict.
-pub fn plan_json(plans: &[FilePlan]) -> serde_json::Value {
+pub fn plan_json(plans: &[Plan]) -> serde_json::Value {
     serde_json::json!({
         "digest": digest(plans),
         "files": plans
             .iter()
-            .filter(|plan| plan.after != plan.before)
-            .map(|plan| serde_json::json!({"path": plan.path.to_string_lossy(), "diff": diff(plan)}))
+            .filter(|plan| plan.changes())
+            .map(|plan| serde_json::json!({"path": plan.path().to_string_lossy(), "diff": diff(plan)}))
             .collect::<Vec<_>>(),
-        "conflicts": plans.iter().flat_map(|plan| &plan.conflicts).collect::<Vec<_>>(),
+        "conflicts": plans.iter().flat_map(Plan::conflicts).collect::<Vec<_>>(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct LinkFixture {
+        root: std::path::PathBuf,
+        link: std::path::PathBuf,
+        target: std::path::PathBuf,
+        store: rusqlite::Connection,
+    }
+
+    impl LinkFixture {
+        fn new(role: &str) -> Self {
+            let root =
+                std::env::temp_dir().join(format!("swarm-link-{role}-{}", std::process::id()));
+            std::fs::create_dir_all(root.join("home/skills")).unwrap();
+            std::fs::create_dir_all(root.join("swarm/default-skill")).unwrap();
+            let store = crate::store::open(&root.join("swarm/managed.db")).unwrap();
+            Self {
+                link: root.join("home/skills/skill-link"),
+                target: root.join("swarm/default-skill"),
+                root,
+                store,
+            }
+        }
+        fn plan(&self) -> Plan {
+            LinkPlan::create(&self.store, self.link.clone(), self.target.clone())
+                .unwrap()
+                .into()
+        }
+        fn edit(&self) -> Edit {
+            Edit::new(
+                Writer::Skills,
+                &self.link,
+                Kind::Symlink,
+                &[],
+                self.target.to_str().unwrap().into(),
+            )
+        }
+    }
+
+    impl Drop for LinkFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn a_recorded_link_uses_leaf_state_and_undo_keeps_the_target() {
+        let fixture = LinkFixture::new("states-and-undo");
+        let edit = fixture.edit();
+        assert_eq!(state(&edit, false), State::Gone);
+        assert_eq!(state(&edit, true), State::Off);
+        let plan = fixture.plan();
+        assert!(plan.conflicts().is_empty());
+        assert_eq!(
+            apply(&fixture.store, &[plan]).unwrap(),
+            vec![fixture.link.clone()]
+        );
+        assert_eq!(std::fs::read_link(&fixture.link).unwrap(), fixture.target);
+        assert_eq!(state(&edit, false), State::Present);
+        let rows = list(&fixture.store, &[]).unwrap();
+        assert!(rows[0].recorded);
+        assert_eq!(rows[0].json()["wrote"], fixture.target.to_str().unwrap());
+        assert!(apply(&fixture.store, &[fixture.plan()]).unwrap().is_empty());
+        // A missing target does not change ownership of the exact recorded link.
+        std::fs::remove_dir(&fixture.target).unwrap();
+        assert_eq!(state(&edit, false), State::Present);
+        std::fs::create_dir(&fixture.target).unwrap();
+        let target_file = fixture.target.join("SKILL.md");
+        std::fs::write(&target_file, "owner bytes").unwrap();
+        let plans = revert_plan(&fixture.store, &[], &Target::Ids(vec![edit.id()])).unwrap();
+        revert(&fixture.store, &plans).unwrap();
+        assert!(std::fs::symlink_metadata(&fixture.link).is_err());
+        assert_eq!(std::fs::read_to_string(target_file).unwrap(), "owner bytes");
+        assert!(fixture.link.parent().unwrap().is_dir());
+        assert_eq!(list(&fixture.store, &[]).unwrap()[0].state, State::Off);
+        apply(&fixture.store, &[fixture.plan()]).unwrap();
+        std::fs::remove_file(&fixture.link).unwrap();
+        assert_eq!(list(&fixture.store, &[]).unwrap()[0].state, State::Gone);
+        revert(
+            &fixture.store,
+            &revert_plan(&fixture.store, &[], &Target::All).unwrap(),
+        )
+        .unwrap();
+        let plans = revert_plan(&fixture.store, &[], &Target::Ids(vec![edit.id()])).unwrap();
+        revert(&fixture.store, &plans).unwrap();
+        assert_eq!(list(&fixture.store, &[]).unwrap()[0].state, State::Off);
+    }
+
+    #[test]
+    fn foreign_leaf_types_and_links_are_taken_even_with_the_same_target() {
+        for role in [
+            "foreign-file",
+            "foreign-dir",
+            "identical-link",
+            "broken-link",
+            "foreign-link",
+        ] {
+            let fixture = LinkFixture::new(role);
+            match role {
+                "foreign-file" => std::fs::write(&fixture.link, "owner bytes").unwrap(),
+                "foreign-dir" => std::fs::create_dir(&fixture.link).unwrap(),
+                "identical-link" => {
+                    std::os::unix::fs::symlink(&fixture.target, &fixture.link).unwrap()
+                }
+                _ => std::os::unix::fs::symlink(fixture.root.join(role), &fixture.link).unwrap(),
+            }
+            let plan = fixture.plan();
+            assert_eq!(plan.conflicts()[0].kind, ConflictKind::Taken, "{role}");
+            assert!(apply(&fixture.store, &[plan]).is_err());
+            assert!(std::fs::symlink_metadata(&fixture.link).is_ok());
+            assert!(
+                list(&fixture.store, &[fixture.edit()])
+                    .unwrap()
+                    .iter()
+                    .all(|entry| entry.recorded)
+            );
+        }
+    }
+
+    #[test]
+    fn changed_and_unreadable_links_refuse_undo() {
+        use std::os::unix::ffi::OsStrExt;
+        for role in [
+            "changed-target",
+            "changed-file",
+            "changed-dir",
+            "unreadable-target",
+        ] {
+            let fixture = LinkFixture::new(role);
+            apply(&fixture.store, &[fixture.plan()]).unwrap();
+            std::fs::remove_file(&fixture.link).unwrap();
+            match role {
+                "changed-file" => std::fs::write(&fixture.link, "owner bytes").unwrap(),
+                "changed-dir" => std::fs::create_dir(&fixture.link).unwrap(),
+                "unreadable-target" => {
+                    std::os::unix::fs::symlink(std::ffi::OsStr::from_bytes(b"\xff"), &fixture.link)
+                        .unwrap()
+                }
+                _ => std::os::unix::fs::symlink(fixture.root.join("owner-target"), &fixture.link)
+                    .unwrap(),
+            }
+            let entries = list(&fixture.store, &[]).unwrap();
+            let plans =
+                revert_plan(&fixture.store, &[], &Target::Ids(vec![fixture.edit().id()])).unwrap();
+            assert_eq!(plans[0].conflicts().len(), 1);
+            assert!(revert(&fixture.store, &plans).is_err());
+            assert!(std::fs::symlink_metadata(&fixture.link).is_ok());
+            if role == "unreadable-target" {
+                assert!(matches!(entries[0].state, State::Unreadable(_)));
+            } else {
+                assert!(matches!(entries[0].state, State::Changed(_)));
+            }
+            assert!(entries[0].recorded);
+            assert!(
+                !fixture
+                    .store
+                    .query_row("SELECT off FROM managed_edit", [], |row| row
+                        .get::<_, bool>(0))
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn a_link_insert_failure_leaves_the_leaf_absent() {
+        let fixture = LinkFixture::new("insert-failure");
+        fixture.store.execute_batch("CREATE TRIGGER refuse_link BEFORE INSERT ON managed_edit BEGIN SELECT RAISE(ABORT, 'fixture insert failure'); END;").unwrap();
+        let error = apply(&fixture.store, &[fixture.plan()]).unwrap_err();
+        assert!(error.contains("fixture insert failure"), "{error}");
+        assert!(std::fs::symlink_metadata(&fixture.link).is_err());
+        assert!(list(&fixture.store, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_link_commit_failure_reports_the_written_leaf_and_never_adopts_it() {
+        let fixture = LinkFixture::new("commit-failure");
+        fixture.store.execute_batch("CREATE TABLE commit_fault (edit TEXT REFERENCES managed_edit(id) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER fail_commit AFTER INSERT ON managed_edit BEGIN INSERT INTO commit_fault VALUES ('missing-edit'); END;").unwrap();
+        let original = fixture.plan();
+        let error = apply(&fixture.store, std::slice::from_ref(&original)).unwrap_err();
+        assert!(error.contains("could not record"), "{error}");
+        assert!(
+            error.contains(&format!("already wrote {}", fixture.link.display())),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_link(&fixture.link).unwrap(), fixture.target);
+        assert!(list(&fixture.store, &[]).unwrap().is_empty());
+        fixture
+            .store
+            .execute_batch("DROP TRIGGER fail_commit")
+            .unwrap();
+        assert_eq!(fixture.plan().conflicts()[0].kind, ConflictKind::Taken);
+        assert!(apply(&fixture.store, &[original]).is_err());
+        assert!(list(&fixture.store, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_later_link_write_failure_reports_the_first_written_destination() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = LinkFixture::new("partial-write");
+        let refused_parent = fixture.root.join("home/refused-skills");
+        std::fs::create_dir(&refused_parent).unwrap();
+        let refused_link = refused_parent.join("second-link");
+        let second =
+            LinkPlan::create(&fixture.store, refused_link.clone(), fixture.target.clone()).unwrap();
+        std::fs::set_permissions(&refused_parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = apply(&fixture.store, &[fixture.plan(), second.into()]);
+        std::fs::set_permissions(&refused_parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = result.unwrap_err();
+        assert!(
+            error.contains(&refused_link.display().to_string()),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!("already wrote {}", fixture.link.display())),
+            "{error}"
+        );
+        assert_eq!(list(&fixture.store, &[]).unwrap().len(), 1);
+        assert!(std::fs::symlink_metadata(refused_link).is_err());
+    }
+
+    #[test]
+    fn link_conflicts_are_preflighted_and_a_replaced_parent_is_refused() {
+        let fixture = LinkFixture::new("preflight");
+        let foreign = fixture.root.join("home/skills/foreign-link");
+        std::fs::write(&foreign, "owner bytes").unwrap();
+        let conflict = LinkPlan::create(&fixture.store, foreign, fixture.target.clone()).unwrap();
+        assert!(apply(&fixture.store, &[fixture.plan(), conflict.into()]).is_err());
+        assert!(std::fs::symlink_metadata(&fixture.link).is_err());
+        let parent_alias = fixture.root.join("home/skill-alias");
+        std::os::unix::fs::symlink(fixture.link.parent().unwrap(), &parent_alias).unwrap();
+        let alias_link = parent_alias.join("skill-link");
+        let plan =
+            LinkPlan::create(&fixture.store, alias_link.clone(), fixture.target.clone()).unwrap();
+        let previous_digest = digest(&[plan.clone().into()]);
+        let other_parent = fixture.root.join("home/other-skills");
+        std::fs::create_dir(&other_parent).unwrap();
+        std::fs::remove_file(&parent_alias).unwrap();
+        std::os::unix::fs::symlink(&other_parent, &parent_alias).unwrap();
+        let next = LinkPlan::create(&fixture.store, alias_link, fixture.target.clone()).unwrap();
+        assert_ne!(previous_digest, digest(&[next.into()]));
+        assert!(apply(&fixture.store, &[plan.into()]).is_err());
+        assert!(std::fs::symlink_metadata(other_parent.join("skill-link")).is_err());
+    }
+
+    #[test]
+    fn link_diffs_and_digests_use_target_strings_and_never_target_bytes() {
+        let fixture = LinkFixture::new("plan-output");
+        let first = fixture.plan();
+        let proof = digest(std::slice::from_ref(&first));
+        let json = plan_json(std::slice::from_ref(&first));
+        assert_eq!(json["files"][0]["path"], fixture.link.to_str().unwrap());
+        assert!(
+            json["files"][0]["diff"]
+                .as_str()
+                .unwrap()
+                .contains(fixture.target.to_str().unwrap())
+        );
+        assert!(
+            plan_text(std::slice::from_ref(&first), "apply", "unchanged").contains("Plan only")
+        );
+        std::fs::write(fixture.target.join("SKILL.md"), "target bytes change").unwrap();
+        assert_eq!(proof, digest(&[fixture.plan()]));
+        apply(&fixture.store, &[first]).unwrap();
+        let undo = revert_plan(&fixture.store, &[], &Target::All).unwrap();
+        assert!(diff(&undo[0]).contains(fixture.target.to_str().unwrap()));
+        std::fs::remove_file(&fixture.link).unwrap();
+        std::os::unix::fs::symlink(fixture.root.join("other-target"), &fixture.link).unwrap();
+        assert_ne!(proof, digest(&[fixture.plan()]));
+    }
+
+    #[test]
+    fn equivalent_target_paths_are_still_different_link_text() {
+        let fixture = LinkFixture::new("exact-target-text");
+        apply(&fixture.store, &[fixture.plan()]).unwrap();
+        let undo = revert_plan(&fixture.store, &[], &Target::All).unwrap();
+        std::fs::remove_file(&fixture.link).unwrap();
+        let different = format!("{}/.", fixture.target.display());
+        std::os::unix::fs::symlink(&different, &fixture.link).unwrap();
+        assert!(matches!(state(&fixture.edit(), false), State::Changed(_)));
+        assert!(revert(&fixture.store, &undo).is_err());
+        assert_eq!(fixture.plan().conflicts()[0].kind, ConflictKind::Changed);
+        let next =
+            revert_plan(&fixture.store, &[], &Target::Ids(vec![fixture.edit().id()])).unwrap();
+        assert_eq!(next[0].conflicts()[0].kind, ConflictKind::Changed);
+        assert!(revert(&fixture.store, &next).is_err());
+        assert_eq!(
+            std::fs::read_link(&fixture.link).unwrap().as_os_str(),
+            std::ffi::OsStr::new(&different)
+        );
+    }
+
+    #[test]
+    fn an_unreadable_parent_is_unreadable_and_a_changed_parent_refuses_undo() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = LinkFixture::new("undo-parent-checks");
+        apply(&fixture.store, &[fixture.plan()]).unwrap();
+        let parent = fixture.link.parent().unwrap();
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let unreadable = state(&fixture.edit(), false);
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(matches!(unreadable, State::Unreadable(_)), "{unreadable:?}");
+        let undo = revert_plan(&fixture.store, &[], &Target::All).unwrap();
+        let saved_parent = fixture.root.join("home/saved-skills");
+        let owner_parent = fixture.root.join("home/owner-skills");
+        std::fs::create_dir(&owner_parent).unwrap();
+        std::os::unix::fs::symlink(&fixture.target, owner_parent.join("skill-link")).unwrap();
+        std::fs::rename(parent, &saved_parent).unwrap();
+        std::os::unix::fs::symlink(&owner_parent, parent).unwrap();
+        assert!(
+            revert(&fixture.store, &undo)
+                .unwrap_err()
+                .contains("parent")
+        );
+        assert!(std::fs::read_link(owner_parent.join("skill-link")).is_ok());
+        assert!(std::fs::read_link(saved_parent.join("skill-link")).is_ok());
+    }
+
+    #[test]
+    fn a_later_insert_failure_and_a_read_only_store_never_claim_missing_links() {
+        let fixture = LinkFixture::new("later-insert-failure");
+        let second_path = fixture.root.join("home/skills/second-link");
+        let second =
+            LinkPlan::create(&fixture.store, second_path.clone(), fixture.target.clone()).unwrap();
+        let readonly = rusqlite::Connection::open_with_flags(
+            fixture.root.join("swarm/managed.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        assert!(apply(&readonly, &[fixture.plan()]).is_err());
+        assert!(std::fs::symlink_metadata(&fixture.link).is_err());
+        fixture.store.execute_batch("CREATE TRIGGER refuse_second BEFORE INSERT ON managed_edit WHEN NEW.file LIKE '%second-link' BEGIN SELECT RAISE(ABORT, 'later insert failure'); END;").unwrap();
+        let error = apply(&fixture.store, &[fixture.plan(), second.into()]).unwrap_err();
+        assert!(error.contains("later insert failure"), "{error}");
+        assert!(
+            error.contains(&format!("already wrote {}", fixture.link.display())),
+            "{error}"
+        );
+        assert!(std::fs::symlink_metadata(second_path).is_err());
+        assert_eq!(list(&fixture.store, &[]).unwrap().len(), 1);
+    }
 
     #[test]
     fn a_skill_link_row_keeps_the_existing_columns_and_wire_fields() {
@@ -1386,12 +2079,8 @@ mod tests {
         assert_eq!(entries[0].json()["before"], true);
 
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
-        assert!(plans[0].conflicts.is_empty());
-        revert(
-            &store,
-            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
-        )
-        .unwrap();
+        assert!(plans[0].conflicts().is_empty());
+        revert(&store, &plans).unwrap();
         let back = std::fs::read_to_string(&file).unwrap();
         assert_eq!(back, owners);
         assert_eq!(state(&edit, true), State::Off);
@@ -1448,14 +2137,8 @@ mod tests {
         );
         assert!(entry.json()["found"].is_null());
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
-        assert_eq!(plans[0].conflicts.len(), 1);
-        assert!(
-            revert(
-                &store,
-                &plans.iter().cloned().map(Into::into).collect::<Vec<_>>()
-            )
-            .is_err()
-        );
+        assert_eq!(plans[0].conflicts().len(), 1);
+        assert!(revert(&store, &plans).is_err());
         let off: bool = store
             .query_row("SELECT off FROM managed_edit", [], |row| row.get(0))
             .unwrap();
@@ -1493,8 +2176,16 @@ mod tests {
         apply(&store, &[plan.into()]).unwrap();
 
         let plans = revert_plan(&store, &[], &Target::Ids(vec![edit.id()])).unwrap();
-        assert!(plans[0].conflicts.is_empty(), "{:?}", plans[0].conflicts);
-        let after: serde_json::Value = serde_json::from_str(&plans[0].after).unwrap();
+        assert!(
+            plans[0].conflicts().is_empty(),
+            "{:?}",
+            plans[0].conflicts()
+        );
+        let after: serde_json::Value = serde_json::from_str(&match &plans[0] {
+            Plan::File(plan) => plan.after.clone(),
+            _ => panic!("expected file plan"),
+        })
+        .unwrap();
         assert_eq!(after["hooks"]["Stop"], serde_json::json!([owners]));
 
         let entry = Entry {

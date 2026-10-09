@@ -1607,8 +1607,8 @@ mod tests {
             edits: Vec::new(),
         };
         assert_ne!(
-            crate::managed::digest(&[planned("{}")]),
-            crate::managed::digest(&[planned("{\"swarm\": {}}")])
+            crate::managed::digest(&[planned("{}").into()]),
+            crate::managed::digest(&[planned("{\"swarm\": {}}").into()])
         );
 
         std::fs::write(&hooks, "{ not json").unwrap();

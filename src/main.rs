@@ -902,7 +902,12 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // with no list never gets a hook that would block every call.
     let has_list = swarm::paths::guards_file()?.exists();
     let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
-    let plan = || hook_plans(&files, has_list);
+    let plan = || {
+        hook_plans(&files, has_list)
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<swarm::managed::Plan>>()
+    };
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["status", "--json"] => print_json(&serde_json::json!({
@@ -935,10 +940,7 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         "swarm: a hook file changed after the plan; check the plan again".into(),
                     );
                 }
-                for path in swarm::managed::apply(
-                    &store,
-                    &plans.into_iter().map(Into::into).collect::<Vec<_>>(),
-                )? {
+                for path in swarm::managed::apply(&store, &plans)? {
                     println!("swarm: set up swarm's hooks in {}", path.display());
                 }
                 Ok(())
@@ -1085,10 +1087,7 @@ fn managed(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         {
                             return Err("swarm: a managed file changed after the plan; check the plan again".into());
                         }
-                        for path in swarm::managed::revert(
-                            &store,
-                            &plans.into_iter().map(Into::into).collect::<Vec<_>>(),
-                        )? {
+                        for path in swarm::managed::revert(&store, &plans)? {
                             println!("swarm: removed swarm's entries from {}", path.display());
                         }
                         Ok(())
@@ -1497,7 +1496,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .map(|(group, plan)| serde_json::json!({
                         "group": group,
                         "path": plan.path.to_string_lossy(),
-                        "diff": swarm::managed::diff(plan),
+                        "diff": swarm::managed::diff(&plan.clone().into()),
                     }))
                     .collect::<Vec<_>>(),
                 "conflicts": setup.grouped()
@@ -1528,7 +1527,12 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         print!(
             "{}",
             swarm::managed::plan_text(
-                &setup.plans,
+                &setup
+                    .plans
+                    .iter()
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
                 &apply,
                 "Swarm is already set up. No file changes."
             )
@@ -1560,7 +1564,9 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("swarm: a file changed after the plan; check the plan again".into());
         }
-        if let Some(conflicts) = swarm::managed::conflicts_text(plans) {
+        if let Some(conflicts) = swarm::managed::conflicts_text(
+            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
+        ) {
             return Err(conflicts);
         }
         // A running CLI may rewrite its trust file at any moment, such as `~/.claude.json`, and
@@ -1680,7 +1686,7 @@ impl LaunchTrust<'_> {
             let mut diffs = String::new();
             for file in files {
                 match plan(file, dir) {
-                    Ok(plan) => diffs += &swarm::managed::diff(&plan),
+                    Ok(plan) => diffs += &swarm::managed::diff(&plan.into()),
                     Err(error) => eprintln!("swarm: skipped {}: {error}", file.display()),
                 }
             }
@@ -1715,7 +1721,7 @@ impl LaunchTrust<'_> {
         }
         for plan in &written {
             if self.consent == TrustConsent::Picked {
-                eprint!("{}", swarm::managed::diff(plan));
+                eprint!("{}", swarm::managed::diff(&plan.clone().into()));
             }
             eprintln!(
                 "swarm: trusted {} for {provider} in {}",
