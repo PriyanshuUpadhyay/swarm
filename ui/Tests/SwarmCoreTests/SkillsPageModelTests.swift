@@ -177,6 +177,47 @@ struct SkillsPageModelTests {
         #expect(model.selectedStep?.holds == "unsaved draft")
     }
 
+    @Test("Discard asks only for a changed draft, and Cancel preserves the edits")
+    func discardConfirmation() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let model = SkillsPageModel(source: SkillsPageSourceFixture(inventory: fixture.inventory, document: fixture.document),
+                                    checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        await model.requestDiscard()
+        #expect(model.pendingAction == nil)
+        model.setHolds("unsaved draft")
+        await model.requestDiscard()
+        #expect(model.pendingAction == .discard)
+        #expect(await model.resolveNavigation(.cancel) == false)
+        #expect(model.selectedStep?.holds == "unsaved draft")
+        await model.requestDiscard()
+        #expect(await model.resolveNavigation(.discard))
+        #expect(!model.isDirty)
+        #expect(model.pendingAction == nil)
+    }
+
+    @Test("A render mismatch keeps the draft and has no Retry action")
+    func renderFailureHasNoRetry() async throws {
+        let fixture = try SkillsPageFixture()
+        defer { fixture.clean() }
+        let original = fixture.document
+        let malformed = SkillDocument(key: original.key, bytes: original.bytes, sourceURL: original.sourceURL,
+                                      revision: original.revision, lineEnding: original.lineEnding,
+                                      tableRange: original.tableRange, rows: original.rows, sections: [:],
+                                      state: original.state, capability: original.capability)
+        let model = SkillsPageModel(source: SkillsPageSourceFixture(inventory: fixture.inventory, document: malformed),
+                                    checkoutPath: "/fixture/checkout")
+        await model.loadList()
+        await model.open(key: fixture.key)
+        model.setHolds("changed in fixture")
+        #expect(await model.save() == false)
+        #expect(model.error == SkillDraftIssue.renderMismatch.localizedDescription)
+        #expect(model.isDirty)
+        #expect(!model.canRetry)
+    }
+
     @Test("IO failure keeps the draft; Retry saves it, and failed Save cancels a skill change")
     func retryAndNavigation() async throws {
         let fixture = try SkillsPageFixture()

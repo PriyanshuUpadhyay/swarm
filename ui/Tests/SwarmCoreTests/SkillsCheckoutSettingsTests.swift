@@ -58,6 +58,11 @@ struct SkillsCheckoutSettingsTests {
         await model.save()
         #expect(source.requests.isEmpty)
         #expect(model.error == "Could not read owner choices.")
+        source.loadError = nil
+        model.refresh()
+        #expect(model.error == nil)
+        #expect(model.canSave)
+        #expect(model.path == "/selected/swarm")
     }
 }
 

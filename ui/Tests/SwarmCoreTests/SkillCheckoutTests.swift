@@ -267,7 +267,12 @@ struct SkillsCheckoutSettingTests {
         let lock = home.appendingPathComponent("choices.lock")
         try FileManager.default.removeItem(at: lock)
         try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        let saveRevision = selection.saveErrorRevision
+        let pageRevision = selection.pageErrorRevision
         #expect(!selection.setSkillsCheckout(nil))
+        #expect(selection.saveError == nil)
+        #expect(selection.saveErrorRevision == saveRevision)
+        #expect(selection.pageErrorRevision == pageRevision + 1)
         #expect(selection.prefs == previous)
         #expect(selection.pageError?.contains("Could not save your settings") == true)
         #expect(try Data(contentsOf: home.appendingPathComponent("choices.json")) == bytes)

@@ -8,7 +8,7 @@ public protocol SkillsPageSource: Sendable {
 }
 
 public enum SkillsNavigationAction: Equatable, Sendable {
-    case open(String), list, reload, checkout(String?), leave
+    case open(String), list, reload, discard, checkout(String?), leave
 }
 
 public enum SkillsNavigationChoice: Sendable { case save, discard, cancel }
@@ -181,6 +181,9 @@ public final class SkillsPageModel {
             case .conflict: conflict = true; operationError = "This skill changed on disk. Reload before saving."
             case .io, .path: operationError = failure.localizedDescription; retrySave = true
             }
+        } catch let issue as SkillDraftIssue {
+            operationError = issue.localizedDescription
+            retrySave = false
         } catch { operationError = error.localizedDescription; retrySave = true }
         announce()
         return false
@@ -195,6 +198,7 @@ public final class SkillsPageModel {
     public func open(key: String) async { await request(.open(key)) }
     public func back() async { await request(.list) }
     public func reload() async { await request(.reload) }
+    public func requestDiscard() async { await request(.discard) }
     public func requestLeave() async { await request(.leave) }
     public func changeCheckout(_ path: String?, loadError: String?) async {
         settingsError = loadError
@@ -226,6 +230,7 @@ public final class SkillsPageModel {
         case .reload:
             guard let selectedKey else { return false }
             return await load(key: selectedKey, keepingStem: selectedStep?.stem)
+        case .discard: discard(); return true
         case .checkout(let path):
             let previousPath = checkoutPath
             checkoutPath = path

@@ -50,19 +50,21 @@ struct SkillsView: View {
             keepOpen()
             Task { await model.requestLeave() }
         })
-        .confirmationDialog(model.pendingAction == .reload ? "Reload and discard your changes?" : "Save your changes before leaving this skill?",
+        .confirmationDialog(navigationTitle,
                             isPresented: Binding(get: { model.pendingAction != nil }, set: { shown in
                                 if !shown && !resolvingNavigation { Task { _ = await model.resolveNavigation(.cancel) } }
                             }), titleVisibility: .visible) {
             if model.pendingAction == .reload {
                 Button("Reload", role: .destructive) { resolve(.discard) }
+            } else if model.pendingAction == .discard {
+                Button("Discard", role: .destructive) { resolve(.discard) }
             } else {
                 Button("Save") { resolve(.save) }.disabled(!model.canSave)
                 Button("Discard", role: .destructive) { resolve(.discard) }
             }
             Button("Cancel", role: .cancel) { resolve(.cancel) }
         }
-        .alert("Remove this step and its text?", isPresented: $confirmRemoval) {
+        .confirmationDialog("Remove this step and its text?", isPresented: $confirmRemoval, titleVisibility: .visible) {
             Button("Remove step", role: .destructive) { remove(confirmSection: true) }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -73,6 +75,14 @@ struct SkillsView: View {
         }
         .onChange(of: model.document?.state) { _, state in
             if let reason = state?.reason { AccessibilityNotification.Announcement(reason).post() }
+        }
+    }
+
+    private var navigationTitle: String {
+        switch model.pendingAction {
+        case .reload: "Reload and discard your changes?"
+        case .discard: "Discard your changes?"
+        default: "Save your changes before leaving this skill?"
         }
     }
 
@@ -150,7 +160,7 @@ struct SkillsView: View {
                 Button("Save") { Task { _ = await model.save() } }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.canSave || !isActive)
-                Button("Discard") { model.discard() }.disabled(!model.isDirty || model.busy)
+                Button("Discard", role: .destructive) { Task { await model.requestDiscard() } }.disabled(!model.isDirty || model.busy)
                 if model.busy { DelayedProgress("Saving or reading…") }
             }.padding(tokens.spacing.m)
             if let notice = model.notice {

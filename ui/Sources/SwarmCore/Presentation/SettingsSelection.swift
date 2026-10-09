@@ -151,16 +151,15 @@ public final class SettingsSelection {
             reportPageError(error.localizedDescription, on: .skills)
             return false
         }
-        if save({ $0.skillsCheckout = canonical }) {
+        if save(on: .skills, { $0.skillsCheckout = canonical }) {
             setPageError(nil, on: .skills)
             return true
         }
-        reportPageError(saveError ?? "Could not save your settings.", on: .skills)
         return false
     }
 
     @discardableResult
-    private func save(_ change: (inout Prefs) -> Void) -> Bool {
+    private func save(on page: SettingsPage? = nil, _ change: (inout Prefs) -> Void) -> Bool {
         let previous = prefs
         change(&prefs)
         do {
@@ -169,8 +168,9 @@ public final class SettingsSelection {
             return true
         } catch {
             prefs = previous
-            saveError = OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message
-            saveErrorRevision += 1
+            let message = OwnerChoicesFailure(error.localizedDescription, operation: .saveSettings).message
+            if let page { reportPageError(message, on: page) }
+            else { saveError = message; saveErrorRevision += 1 }
             return false
         }
     }

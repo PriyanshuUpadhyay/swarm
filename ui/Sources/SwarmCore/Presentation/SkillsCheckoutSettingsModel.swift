@@ -29,7 +29,7 @@ public final class SkillsCheckoutSettingsModel {
     public func refresh() {
         if path == savedPath ?? "" { path = source.checkoutPath ?? "" }
         savedPath = source.checkoutPath
-        if let loadError = source.loadError { error = loadError }
+        error = source.loadError
     }
 
     public func save() async {
