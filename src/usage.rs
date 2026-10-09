@@ -217,10 +217,11 @@ fn cached_codex(accounts: &[Account], now: i64) -> Result<Vec<UsageMeter>, Strin
                 "codex",
                 Some(account),
                 "no_source",
-                account
-                    .summary
-                    .as_deref()
-                    .unwrap_or("API-key mode has no plan-quota source"),
+                if account.invalid_home() {
+                    account.summary.as_deref().unwrap_or("No usage source")
+                } else {
+                    "API-key mode has no plan-quota source"
+                },
             ));
             continue;
         }
@@ -393,7 +394,7 @@ pub fn refresh_codex(deadline: Instant) -> Result<Usage, String> {
 
 fn fresh_codex(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, String> {
     // Invalid-name rows have no provider environment; do not read the default home for them.
-    if account.auth_state == AuthState::Unavailable && account.usage_state == "no_source" {
+    if account.invalid_home() {
         return Ok(vec![status_meter(
             "codex",
             Some(account),

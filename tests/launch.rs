@@ -1534,6 +1534,52 @@ fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
 }
 
 #[test]
+fn invalid_codex_home_does_not_disable_signed_out_or_named_launch_skips() {
+    let home = scratch("personal-invalid-home");
+    let env = trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-personal")).unwrap();
+    std::fs::create_dir_all(home.join(".codex-Spare")).unwrap();
+    tool(
+        &home,
+        "codex",
+        &include_str!("fixtures/accounts/work-app-server.sh")
+            .replace("*/.codex-personal)", "*/.codex-personal|*/.codex)"),
+    );
+    let env: Vec<_> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    for (seat, account, reason) in [
+        ("personal", None, "no codex account is signed in"),
+        ("spare", Some("Spare"), "no codex account named Spare"),
+    ] {
+        let mut args = vec!["launch", seat, "review.deep"];
+        if let Some(account) = account {
+            args.extend(["--account", account]);
+        }
+        let output = swarm(&home, &env, &args);
+        let text = stderr(&output);
+        assert!(!output.status.success(), "{text}");
+        assert!(text.contains(reason), "{text}");
+        assert!(text.contains("no runner can run"), "{text}");
+        assert!(!text.contains("running"), "{text}");
+    }
+}
+
+#[test]
+fn invalid_codex_home_keeps_real_auth_read_failure_fail_open() {
+    let home = scratch("work-invalid-home-read-failure");
+    trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-Work")).unwrap();
+    tool(&home, "codex", "exit 1");
+    let output = swarm(&home, &[], &["roles", "get", "review.deep"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["runnerId"], "review.deep#1");
+    assert_eq!(resolved["skipped"], serde_json::json!([]));
+}
+
+#[test]
 fn named_launch_reuses_the_role_probe_deadline() {
     let home = scratch("work-account-deadline");
     std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();

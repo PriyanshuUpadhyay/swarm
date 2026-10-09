@@ -25,6 +25,12 @@ pub struct Account {
     pub summary: Option<String>,
 }
 
+impl Account {
+    pub fn invalid_home(&self) -> bool {
+        self.auth_state == AuthState::Unavailable && self.usage_state == "no_source"
+    }
+}
+
 pub mod native;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

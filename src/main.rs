@@ -623,6 +623,7 @@ fn account_states(
     let rows: Vec<_> = list
         .accounts
         .iter()
+        .filter(|account| !account.invalid_home())
         .filter(|account| only.is_none_or(|name| account.name == name))
         .collect();
     if rows
