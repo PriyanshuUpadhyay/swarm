@@ -65,12 +65,12 @@ struct AppRunLockTests {
         defer { close(probe) }
         #expect(flock(probe, LOCK_SH | LOCK_NB) == 0)
         let retryDelay: Duration = .milliseconds(20)
-        let releaseProbe = Task { @MainActor in
+        let releaseProbe = Task.detached {
             try await Task.sleep(for: retryDelay / 2)
             return flock(probe, LOCK_UN)
         }
         let acquired: Result<AppRunLock, Error>
-        do { acquired = .success(try await AppRunLock.acquire(folder: folder, delay: retryDelay)) }
+        do { acquired = .success(try await AppRunLock.acquire(folder: folder, attempts: 10, delay: retryDelay)) }
         catch { acquired = .failure(error) }
         #expect(try await releaseProbe.value == 0)
         let lock = try acquired.get()
