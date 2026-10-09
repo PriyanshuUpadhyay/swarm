@@ -244,6 +244,20 @@ struct SetupSettingsTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
     }
 
+    @Test("Saving a dangling guard link creates its target and keeps the link", arguments: ["absolute", "relative"])
+    func danglingGuardSymlinkSave(linkKind: String) throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("dotfiles/guards.json")
+        let link = folder.appendingPathComponent("guards.json")
+        let destination = linkKind == "absolute" ? target.path : "dotfiles/guards.json"
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: destination)
+        let updated = GuardRules(rules: [.init(name: "policy", command: ["/bin/true"])])
+        try updated.save(to: link)
+        #expect(try GuardRules.load(url: target).get() == updated)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == destination)
+    }
+
     @Test("Guard lists decode required and optional fields and round trip through the real file")
     func guardRoundTrip() throws {
         let folder = try temporaryFolder()

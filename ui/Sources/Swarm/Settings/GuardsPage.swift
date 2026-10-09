@@ -16,7 +16,7 @@ struct GuardsPage: View {
                     Button("Add") {
                         editor.add()
                         editing = editor.drafts.last?.id
-                    }.disabled(editor.loadError != nil)
+                    }.disabled(editor.loadError != nil && editor.loadError?.isMissing != true)
                     Button("Reload", action: reload)
                     Spacer()
                     Button("Save") {
@@ -49,7 +49,7 @@ struct GuardsPage: View {
                             Text(verbatim: "Event: \(draft.event)")
                             Text(verbatim: "Tools: \(draft.allTools ? "All tools" : draft.tools.map(\.text).joined(separator: ", "))")
                             Text(verbatim: "Command: \(draft.command.map(\.text).joined(separator: " "))")
-                            Text(verbatim: "Timeout: \(draft.timeout.isEmpty ? "3 (default)" : draft.timeout) seconds")
+                            Text(verbatim: "Timeout: \(draft.timeout.isEmpty ? "3 (default)" : draft.timeout) \(draft.timeout == "1" ? "second" : "seconds")")
                         }
                         Divider()
                     }
