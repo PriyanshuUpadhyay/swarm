@@ -47,6 +47,7 @@ public struct GuardRulesEditor: Sendable, Equatable {
     public var drafts: [GuardRuleFields] = []
     public private(set) var loadError: GuardListError?
     private var saveError: String?
+    private var loadedDrafts: [GuardRuleFields] = []
 
     public init() {}
 
@@ -61,6 +62,7 @@ public struct GuardRulesEditor: Sendable, Equatable {
         return nil
     }
 
+    public var hasUnsavedEdits: Bool { drafts != loadedDrafts }
     public var canSave: Bool { (try? list()) != nil }
     public var canEdit: Bool { loadError == nil || loadError?.isMissing == true }
 
@@ -74,6 +76,7 @@ public struct GuardRulesEditor: Sendable, Equatable {
             drafts = []
             loadError = error
         }
+        loadedDrafts = drafts
     }
 
     public mutating func add() {

@@ -1,6 +1,7 @@
 public enum ErrorText {
     public static func sentence(_ text: String) -> String {
-        (text.hasSuffix(".") ? String(text.dropLast()) : text) + "."
+        guard let last = text.last else { return "" }
+        return ".?!…".contains(last) ? text : text + "."
     }
 }
 

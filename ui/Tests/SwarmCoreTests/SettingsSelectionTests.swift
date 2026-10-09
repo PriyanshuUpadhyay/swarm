@@ -109,6 +109,18 @@ struct SettingsSelectionTests {
         #expect(ErrorAnnouncement.joined([nil, ""]) == nil)
     }
 
+    @Test("Sentence text keeps each final mark and empty text")
+    func sentenceFinalMarks() {
+        for (input, expected) in [
+            ("", ""), ("Timed out", "Timed out."), ("Timed out.", "Timed out."),
+            ("Offline?", "Offline?"), ("Failed!", "Failed!"),
+            ("Loading…", "Loading…"), ("Loading...", "Loading...")
+        ] {
+            #expect(ErrorText.sentence(input) == expected)
+        }
+        #expect(ErrorAnnouncement.joined(["Offline?", "Failed!", "Loading…", ""]) == "Offline? Failed! Loading…")
+    }
+
     @Test("Load and save failures clear only after their own successful operation")
     func separateLoadAndSaveErrors() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

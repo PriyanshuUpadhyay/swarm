@@ -9,6 +9,7 @@ struct GuardsPage: View {
     let reportError: (String) -> Void
     @State private var editor = GuardRulesEditor()
     @State private var editing: UUID?
+    @State private var confirmingReload = false
 
     var body: some View {
         GroupBox("Guards") {
@@ -18,17 +19,28 @@ struct GuardsPage: View {
                         editor.add()
                         editing = editor.drafts.last?.id
                     }.disabled(!editor.canEdit)
-                    Button("Reload") { reload() }
+                    Button("Reload") {
+                        if editor.hasUnsavedEdits { confirmingReload = true }
+                        else { reload() }
+                    }
                     Spacer()
                     Button("Save") {
                         do {
                             try save(&editor)
                             editing = nil
+                            confirmingReload = false
                         } catch {
                             editor.recordSaveFailure(error)
                             if let message = editor.error { reportError(message) }
                         }
                     }.disabled(!editor.canSave)
+                }
+                if confirmingReload {
+                    HStack {
+                        Text("Discard unsaved edits?")
+                        Button("Keep") { confirmingReload = false }
+                        Button("Discard", role: .destructive) { reload() }
+                    }
                 }
                 if editor.drafts.isEmpty && editor.loadError == nil {
                     Text("No guard rules").foregroundStyle(.secondary)
@@ -76,6 +88,7 @@ struct GuardsPage: View {
     }
 
     private func reload() {
+        confirmingReload = false
         editor.load(load())
         editing = nil
         if let message = editor.error {

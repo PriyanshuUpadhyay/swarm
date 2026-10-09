@@ -123,6 +123,56 @@ struct SetupSettingsTests {
         #expect(try GuardRules.load(url: file).get().rules.isEmpty)
     }
 
+    @Test("Reload needs confirmation for changed, new, deleted and invalid guard drafts")
+    func unsavedGuardDrafts() throws {
+        let saved = GuardRules(rules: [.init(name: "Policy", command: ["/bin/true"])])
+        var editor = GuardRulesEditor()
+        editor.load(.success(saved))
+        #expect(!editor.hasUnsavedEdits)
+        let original = editor.drafts
+        editor.drafts[0].name = "Changed policy"
+        #expect(editor.hasUnsavedEdits)
+        editor.drafts = original
+        #expect(!editor.hasUnsavedEdits)
+        editor.drafts[0].timeout = "invalid"
+        #expect(!editor.canSave && editor.hasUnsavedEdits)
+        editor.load(.success(saved))
+        #expect(!editor.hasUnsavedEdits)
+        editor.add()
+        #expect(editor.hasUnsavedEdits && !editor.canSave)
+        editor.load(.success(saved))
+        editor.delete(id: try #require(editor.drafts.first?.id))
+        #expect(editor.hasUnsavedEdits)
+        editor.load(.failure(.init(reason: "Broken list")))
+        #expect(!editor.hasUnsavedEdits && !editor.canEdit)
+        editor.load(.failure(.init(reason: "Missing list", isMissing: true)))
+        #expect(!editor.hasUnsavedEdits)
+        editor.add()
+        #expect(editor.hasUnsavedEdits)
+    }
+
+    @Test("Failed Saves keep unsaved drafts and good Saves reset the loaded baseline")
+    func unsavedGuardSave() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("guards.json")
+        let blocked = folder.appendingPathComponent("blocked-folder")
+        try Data("occupied".utf8).write(to: blocked)
+        var editor = GuardRulesEditor()
+        editor.load(.success(GuardRules(rules: [.init(name: "Policy", command: ["/bin/true"])])))
+        editor.drafts[0].name = "Edited policy"
+        let edited = editor.drafts
+        #expect(throws: (any Error).self) { try editor.save(to: blocked.appendingPathComponent("guards.json")) }
+        #expect(editor.hasUnsavedEdits && editor.drafts == edited)
+        try editor.save(to: file)
+        #expect(!editor.hasUnsavedEdits)
+        #expect(try GuardRules.load(url: file).get().rules.first?.name == "Edited policy")
+        editor.drafts[0].name = "Another edit"
+        #expect(editor.hasUnsavedEdits)
+        editor.load(GuardRules.load(url: file))
+        #expect(!editor.hasUnsavedEdits && editor.drafts.first?.name == "Edited policy")
+    }
+
     @Test("Guard fields convert optional tools and preserve row identities after removal")
     func guardFieldIdentity() throws {
         let rule = GuardRules.Rule(name: "Policy", tools: ["Bash", "Bash"],
