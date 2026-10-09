@@ -11,6 +11,8 @@ struct SettingsWindow: View {
     @State private var helperVersion = "Reading helper version…"
     @State private var drift: PathSwarmDrift?
     @State private var dependencies: [DependencyRow] = []
+    @State private var setupError: String?
+    @State private var guardsError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -25,6 +27,7 @@ struct SettingsWindow: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let error = selection.error {
                     Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
                         .textSelection(.enabled).padding(DesignTokens.Spacing.m)
                 }
                 page
@@ -75,8 +78,28 @@ struct SettingsWindow: View {
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
                         notNow: { _ in }, done: {}, copy: .setup, isPage: true,
-                        onError: { selection.setError($0) }
+                        onError: {
+                            setupError = $0
+                            selection.setError(guardsError ?? setupError)
+                        }
                     )
+                    GuardsPage(
+                        load: {
+                            do {
+                                return GuardRules.load(url: try GuardRules.fileURL(environment: ProcessInfo.processInfo.environment))
+                            } catch {
+                                return .failure(GuardListError(reason: error.localizedDescription))
+                            }
+                        },
+                        save: { editor in
+                            try editor.save(to: GuardRules.fileURL(environment: ProcessInfo.processInfo.environment))
+                        },
+                        onError: {
+                            guardsError = $0
+                            selection.setError(guardsError ?? setupError)
+                        }
+                    )
+                    .padding([.horizontal, .bottom], DesignTokens.Spacing.xl)
                 }
             }
         case .advanced:

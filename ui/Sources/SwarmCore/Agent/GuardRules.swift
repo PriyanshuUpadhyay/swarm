@@ -3,6 +3,7 @@ import Foundation
 public struct GuardListError: LocalizedError, Sendable, Equatable {
     public let reason: String
     public var errorDescription: String? { reason }
+    public init(reason: String) { self.reason = reason }
 }
 
 public struct GuardRules: Codable, Sendable, Equatable {
@@ -42,12 +43,25 @@ public struct GuardRules: Codable, Sendable, Equatable {
         rules = try container.decode([Rule].self, forKey: .rules)
     }
 
+    public static func fileURL(environment: [String: String]) throws -> URL {
+        if let path = environment["SWARM_GUARDS"] {
+            guard !path.isEmpty else { throw GuardListError(reason: "SWARM_GUARDS is set but empty") }
+            return URL(fileURLWithPath: path)
+        }
+        guard let home = environment["HOME"], !home.isEmpty else {
+            throw GuardListError(reason: "HOME is not set")
+        }
+        return URL(fileURLWithPath: home).appendingPathComponent(".swarm/guards.json")
+    }
+
     public static func load(url: URL) -> Result<Self, GuardListError> {
         do {
             let data: Data
             do { data = try Data(contentsOf: url) }
             catch CocoaError.fileReadNoSuchFile { return .success(Self()) }
-            return .success(try JSONDecoder().decode(Self.self, from: data))
+            let list = try JSONDecoder().decode(Self.self, from: data)
+            try list.validate()
+            return .success(list)
         } catch let error as DecodingError {
             let reason: String
             switch error {
@@ -63,9 +77,19 @@ public struct GuardRules: Codable, Sendable, Equatable {
     }
 
     public func save(to url: URL) throws {
+        try validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encoder.encode(self).write(to: url, options: .atomic)
+    }
+
+    public func validate() throws {
+        for rule in rules {
+            guard rule.event == "PreToolUse", rule.tools?.isEmpty != true else {
+                throw GuardListError(reason: "Rule '\(rule.name)' needs event PreToolUse and, when it has tools, at least one")
+            }
+        }
     }
 
     private struct FieldKey: CodingKey {

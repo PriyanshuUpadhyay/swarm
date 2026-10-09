@@ -4,6 +4,82 @@ import Testing
 
 @Suite("Setup settings")
 struct SetupSettingsTests {
+    @Test("The guards path is global across builds and SWARM_HOME, with an explicit override")
+    func guardPath() throws {
+        #expect(try GuardRules.fileURL(environment: ["HOME": "/owner", "SWARM_HOME": "/branch"])
+            .path == "/owner/.swarm/guards.json")
+        #expect(try GuardRules.fileURL(environment: ["SWARM_GUARDS": "/fixtures/rules.json"])
+            .path == "/fixtures/rules.json")
+        #expect(throws: GuardListError.self) { try GuardRules.fileURL(environment: [:]) }
+        #expect(throws: GuardListError.self) { try GuardRules.fileURL(environment: ["SWARM_GUARDS": ""]) }
+    }
+
+    @Test("Guard edits preserve argument boundaries and optional tool and timeout fields")
+    func guardEdits() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("new-home/guards.json")
+        var editor = GuardRulesEditor()
+        editor.load(.success(GuardRules()))
+        #expect(editor.canSave)
+        editor.add()
+        #expect(!editor.canSave)
+        editor.drafts[0].name = "Policy"
+        editor.drafts[0].command = ["/tools/path with spaces", "argument with spaces", "$(literal)"]
+        editor.drafts[0].tools = ["Bash"]
+        editor.drafts[0].timeout = "5"
+        #expect(editor.canSave)
+        try editor.save(to: file)
+        let saved = try GuardRules.load(url: file).get().rules[0]
+        #expect(saved.command == ["/tools/path with spaces", "argument with spaces", "$(literal)"])
+        #expect(saved.tools == ["Bash"])
+        #expect(saved.timeout == 5)
+        editor.drafts[0].tools = nil
+        editor.drafts[0].timeout = ""
+        try editor.save(to: file)
+        #expect(try GuardRules.load(url: file).get().rules[0].tools == nil)
+        #expect(try GuardRules.load(url: file).get().rules[0].timeout == nil)
+        for timeout in ["-1", "1.5", "letters", "18446744073709551616"] {
+            editor.drafts[0].timeout = timeout
+            #expect(!editor.canSave)
+        }
+        editor.drafts[0].timeout = "0"
+        #expect(editor.canSave)
+        editor.drafts[0].event = "PostToolUse"
+        #expect(!editor.canSave)
+        editor.drafts[0].event = "PreToolUse"
+        editor.drafts[0].tools = []
+        #expect(!editor.canSave)
+        editor.delete(at: 0)
+        #expect(editor.canSave)
+        try editor.save(to: file)
+        #expect(try GuardRules.load(url: file).get().rules.isEmpty)
+    }
+
+    @Test("A broken guard list disables Save until a valid replacement is loaded")
+    func brokenGuardEditing() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("guards.json")
+        for fixture in ["broken", #"{"rules":[{"name":"bad-event","event":"PostToolUse","command":["/bin/true"]}]}"#,
+                        #"{"rules":[{"name":"no-tools","event":"PreToolUse","tools":[],"command":["/bin/true"]}]}"#] {
+            try Data(fixture.utf8).write(to: file)
+            var editor = GuardRulesEditor()
+            editor.load(GuardRules.load(url: file))
+            #expect(editor.loadError != nil)
+            #expect(!editor.canSave)
+            editor.add()
+            #expect(editor.drafts.isEmpty)
+            #expect(throws: GuardListError.self) { try editor.save(to: file) }
+            #expect(try String(contentsOf: file, encoding: .utf8) == fixture)
+            try GuardRules().save(to: file)
+            editor.load(GuardRules.load(url: file))
+            #expect(editor.loadError == nil)
+            #expect(editor.canSave)
+            try editor.save(to: file)
+        }
+    }
+
     @Test("Changing trust plans and applies only trust, even after setup is complete")
     func trustChoice() async throws {
         actor RecordedCalls {
