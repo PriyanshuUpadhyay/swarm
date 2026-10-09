@@ -321,6 +321,7 @@ struct SetupSettingsTests {
         var editor = GuardRulesEditor()
         editor.load(.failure(.init(reason: "Missing", isMissing: true)))
         #expect(editor.drafts.isEmpty)
+        let missingMessage = editor.error
         editor.add()
         #expect(editor.drafts[0].error == "Rule 'New guard' needs a command")
         editor.drafts[0].command[0].text = "/bin/true"
@@ -335,24 +336,40 @@ struct SetupSettingsTests {
         #expect(editor.drafts[0].error == nil)
         #expect(editor.drafts[1].error == "Rule 'New guard' needs a command")
         editor.delete(id: editor.drafts[1].id)
-        #expect(editor.error == nil)
+        #expect(editor.error == missingMessage)
         editor.load(.failure(.init(reason: "Invalid JSON")))
         #expect(editor.drafts.isEmpty && !editor.canEdit)
         #expect(editor.error?.contains("could not be read") == true)
     }
 
-    @Test("The banner includes each invalid draft so each changed line can be announced")
-    func joinedDraftValidation() {
+    @Test("Typing invalid guard drafts keeps validation inline and does not change the page banner")
+    @MainActor
+    func draftValidationStaysInline() {
         var editor = GuardRulesEditor()
+        editor.load(.success(GuardRules()))
+        let settings = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        settings.select(.setup)
         editor.add()
         editor.drafts[0].name = "First rule"
         editor.add()
         editor.drafts[1].name = "Second rule"
-        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a command.")
+        settings.setPageError(editor.error)
+        #expect(editor.error == nil && settings.pageError == nil)
+        #expect(editor.drafts[0].error == "Rule 'First rule' needs a command")
+        #expect(editor.drafts[1].error == "Rule 'Second rule' needs a command")
+        let revision = settings.pageErrorRevision
+        for name in ["B", "Bl", "Block", "Block rm"] {
+            editor.drafts[1].name = name
+            settings.setPageError(editor.error)
+            #expect(editor.error == nil && settings.pageError == nil)
+            #expect(settings.pageErrorRevision == revision)
+            #expect(editor.drafts[1].error == "Rule '\(name)' needs a command")
+        }
         editor.drafts[1].timeout = "invalid"
-        #expect(editor.error == "Rule 'First rule' needs a command. Rule 'Second rule' needs a whole timeout in seconds, or an empty field.")
+        #expect(editor.drafts[1].error?.contains("needs a whole timeout") == true)
+        #expect(editor.error == nil)
         editor.drafts[0].command[0].text = "/bin/true"
-        #expect(editor.error == editor.drafts[1].error.map(ErrorText.sentence))
+        #expect(editor.drafts[0].error == nil && editor.error == nil)
     }
 
     @Test("A failed guard write reaches the editor error and clears after a good save")
@@ -365,7 +382,7 @@ struct SetupSettingsTests {
         editor.load(.failure(.init(reason: "Missing", isMissing: true)))
         #expect(throws: (any Error).self) { try editor.save(to: blocked.appendingPathComponent("guards.json")) }
         #expect(editor.error != nil)
-        #expect(editor.error?.contains("press Save to create an empty list") == false)
+        #expect(editor.error?.contains("press Save to create it") == false)
         let valid = folder.appendingPathComponent("guards.json")
         try editor.save(to: valid)
         #expect(editor.error == nil)
@@ -375,19 +392,38 @@ struct SetupSettingsTests {
         #expect(editor.error == nil)
     }
 
-    @Test("A missing guard file shows draft validation when Save cannot run")
-    func missingGuardDraftValidation() {
+    @Test("A missing guard file keeps its banner while drafts change until Save creates it")
+    @MainActor
+    func missingGuardDraftValidation() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("guards.json")
         var editor = GuardRulesEditor()
-        editor.load(.failure(.init(reason: "guards.json is missing", isMissing: true)))
+        editor.load(GuardRules.load(url: file))
         #expect(editor.canEdit)
+        let missingMessage = editor.error
+        #expect(missingMessage == "guards.json is missing. Every tool call is blocked until it exists; press Save to create it.")
+        let settings = SettingsSelection(choices: OwnerChoicesStore(folder: nil))
+        settings.select(.setup)
+        settings.setPageError(missingMessage)
+        let revision = settings.pageErrorRevision
         editor.add()
         #expect(!editor.canSave)
-        #expect(editor.error == "Rule 'New guard' needs a command.")
+        #expect(editor.drafts[0].error == "Rule 'New guard' needs a command")
+        #expect(editor.error == missingMessage)
+        for name in ["B", "Bl", "Block rm"] {
+            editor.drafts[0].name = name
+            settings.setPageError(editor.error)
+            #expect(settings.pageErrorRevision == revision)
+            #expect(editor.error == missingMessage)
+        }
         editor.drafts[0].command[0].text = "/bin/true"
-        #expect(editor.canSave)
-        #expect(editor.error == nil)
-        editor.delete(id: editor.drafts[0].id)
-        #expect(editor.error?.contains("press Save to create an empty list") == true)
+        #expect(editor.canSave && editor.error == missingMessage)
+        try editor.save(to: file)
+        #expect(try GuardRules.load(url: file).get().rules[0].name == "Block rm")
+        settings.setPageError(editor.error)
+        #expect(editor.error == nil && settings.pageError == nil)
+        #expect(settings.pageErrorRevision == revision)
     }
 
     @Test("Guard lists decode required and optional fields and round trip through the real file")
@@ -422,7 +458,7 @@ struct SetupSettingsTests {
         editor.load(.failure(missing))
         #expect(editor.drafts.isEmpty)
         #expect(editor.canSave)
-        #expect(editor.error == "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list.")
+        #expect(editor.error == "guards.json is missing. Every tool call is blocked until it exists; press Save to create it.")
         try editor.save(to: file)
         #expect(editor.error == nil)
         #expect(editor.loadError == nil)

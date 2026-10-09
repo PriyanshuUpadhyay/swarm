@@ -54,10 +54,9 @@ public struct GuardRulesEditor: Sendable, Equatable {
         if let loadError, !loadError.isMissing {
             return "guards.json could not be read: \(loadError.reason). Every tool call is blocked until it is fixed."
         }
-        if let validation = ErrorAnnouncement.joined(drafts.map(\.error)) { return validation }
         if let saveError { return saveError }
-        if loadError?.isMissing == true, drafts.isEmpty {
-            return "guards.json is missing. Every tool call is blocked until it exists; press Save to create an empty list."
+        if loadError?.isMissing == true {
+            return "guards.json is missing. Every tool call is blocked until it exists; press Save to create it."
         }
         return nil
     }
