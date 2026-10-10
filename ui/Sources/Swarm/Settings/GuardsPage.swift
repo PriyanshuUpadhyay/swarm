@@ -12,7 +12,7 @@ struct GuardsPage: View {
     @State private var confirmingReload = false
 
     var body: some View {
-        GroupBox("Guards") {
+        GroupBox {
             VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 HStack {
                     Button("Add") {

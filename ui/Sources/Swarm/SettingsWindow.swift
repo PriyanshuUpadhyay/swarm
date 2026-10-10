@@ -262,7 +262,7 @@ struct SettingsWindow: View {
                     Text("Compact").tag(Density.compact)
                 }
                 HStack(spacing: tokens.spacing.m) {
-                    Text("Diff layout").fixedSize()
+                    Text("Diff layout").fixedSize().accessibilityHidden(true)
                     Picker("Diff layout", selection: splitDiff) {
                         Text("Unified").tag(false)
                         Text("Split").tag(true)
