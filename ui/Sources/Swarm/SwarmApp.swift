@@ -2415,6 +2415,9 @@ struct SwarmApp: App {
     }
     init() {
         SwarmPerformance.event("AppStarted")
+    }
+
+    private func beginStartup() {
         let model = model
         let settings = settings
         settings.beginSkillsRefresh(after: {
@@ -2439,6 +2442,8 @@ struct SwarmApp: App {
                 else { SessionsWindow(model: model).modifier(NoticeWindowRouting(model: model)) }
             }
             .modifier(AppearancePreferences(prefs: settings.prefs))
+            // Register on the installed state before the window's setup readers start.
+            .onAppear { beginStartup() }
         }
             .environment(settings)
             .environment(\.splitDiff, splitDiff)

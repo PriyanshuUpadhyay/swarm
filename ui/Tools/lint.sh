@@ -18,6 +18,10 @@ check '^import (SwiftUI|AppKit|Cocoa|SwiftTerm)$' \
     "$root/Sources/SwarmCore" "$root/Sources/TranscriptTool"
 check 'Process\(\)|CapturedProcess|Shell\.run' \
     "$root/Sources/Swarm"
+# App state is installed after init; startup must read it from the root scene.
+check --multiline --pcre2 \
+    '(?s)^struct SwarmApp: App \{.*?\n    init\(\) \{(?:(?!\n    \}).)*\b(settings|model)\b' \
+    "$root/Sources/Swarm/SwarmApp.swift"
 # Each surface folder is one module: it names no app store and no other surface's entry view.
 stores='SwarmSession|SessionsTreeModel|AgentPaneStore|SessionDetail'
 typeset -A surfaces=(
