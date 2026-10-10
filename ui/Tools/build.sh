@@ -32,6 +32,12 @@ app="$root/.build/release/Swarm.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp -R "$root/Sources/Swarm/Resources/DiffViewer" "$app/Contents/Resources/DiffViewer"
+skills="$app/Contents/Resources/Skills"
+mkdir -p "$skills"
+tar -c -C "$repo/skills" --exclude='.git*' \
+  swarm-orchestrator swarm-voice kit/skills kit/references kit/scripts kit/contracts \
+  kit/vendor kit/LICENSE kit/README.md | tar -xp -C "$skills"
+"$repo/target/release/swarm" skills manifest "$skills" "$skills/manifest.json"
 cp "$bin_dir/Swarm" "$app/Contents/MacOS/Swarm"
 cp "$repo/packages/transcript/zig-out/bin/transcript" "$app/Contents/MacOS/transcript"
 # Helpers, not MacOS: on a case-insensitive disk MacOS/swarm would overwrite MacOS/Swarm.

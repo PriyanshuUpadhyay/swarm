@@ -29,6 +29,13 @@ public struct SwarmAgent: Sendable, Hashable, Codable, Identifiable {
     public var log: String?
     /// The question the agent's screen shows now; `swarm answer` picks one of its choices.
     public var prompt: SwarmPrompt?
+    public var profile: String?
+    public var runner: String?
+    public var model: String?
+    public var effort: String?
+    public var account: String?
+    public var costUsd: Double?
+    public var tokens: Int64?
 
     public init(
         id: SwarmAgentID, role: String, pane: String?, alive: Bool?,
@@ -64,18 +71,27 @@ public struct SwarmSetupStatus: Sendable, Hashable, Codable {
     public var hooks: Bool
     public var trust: Bool
     public var herdr: Bool
+    public var skills: Bool
 
-    public init(hooks: Bool, trust: Bool, herdr: Bool) {
+    public init(hooks: Bool, trust: Bool, herdr: Bool, skills: Bool) {
         self.hooks = hooks
         self.trust = trust
         self.herdr = herdr
+        self.skills = skills
     }
 
-    /// Whether the app asks on start. A hooks "Not now", or a group the owner left unchecked when
-    /// they applied the rest, covers only that group, so a Mac that updates still sees the sheet
-    /// once for folder trust (Q3).
-    public func needsSheet(hooksDeclined: Bool, trustDeclined: Bool) -> Bool {
-        (!trust && !trustDeclined) || !herdr || (!hooks && !hooksDeclined)
+    /// A declined or unchecked group affects only that group. Other pending groups can still
+    /// open the first-run sheet.
+    public func needsSheet(declined: Set<SetupGroup>) -> Bool {
+        SetupGroup.allCases.contains { group in
+            let ready = switch group {
+            case .hooks: hooks
+            case .trust: trust
+            case .herdr: herdr
+            case .skills: skills
+            }
+            return !ready && (group.declineFlagKey == nil || !declined.contains(group))
+        }
     }
 }
 
@@ -99,6 +115,21 @@ public struct SwarmSetupChoice: Sendable, Hashable {
 
     /// The groups to apply.
     public var checked: [String] { groups.filter { !unchecked.contains($0) } }
+
+    public static func trustOnly(standing: Bool) -> Self {
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .trust }.map(\.rawValue)),
+            standing: standing
+        )
+    }
+
+    public static func skillsOnly() -> Self {
+        Self(
+            groups: SetupGroup.allCases.map(\.rawValue),
+            unchecked: Set(SetupGroup.allCases.filter { $0 != .skills }.map(\.rawValue))
+        )
+    }
 
     /// The groups "Not now" declines, each by its own flag: only the cleared ones, so a checked
     /// group is asked again at the next start. Nil when no box is cleared, which declines the
@@ -242,12 +273,7 @@ public struct SwarmHooksPlan: Sendable, Hashable, Codable {
     }
     /// A `swarm setup` group's name; a group this build does not know shows by its id (ADR 0043).
     public static func groupTitle(_ id: String) -> String {
-        switch id {
-        case "hooks": "Agent hooks"
-        case "trust": "Folder trust"
-        case "herdr": "Herdr"
-        default: id
-        }
+        SetupGroup(rawValue: id)?.title ?? id
     }
     /// Each `swarm setup` group with a file or a conflict, in plan order.
     public var groupIDs: [String] {
@@ -480,6 +506,8 @@ public struct SwarmTrustWrite: Sendable, Hashable {
 /// and previews hand in their own. Failures are `SwarmProfileError`, the same two kinds the
 /// profile source throws.
 public protocol SwarmBus: Sendable {
+    /// Changes the profiles only when their saved revision still matches.
+    func profileAction(_ action: ProfileAction, revision: String) async throws -> String
     /// Creates the session whose chair is the app's interactive CLI. The chair registers from its
     /// tmux pane immediately before that CLI starts.
     func startChairSession(
@@ -504,6 +532,8 @@ public protocol SwarmBus: Sendable {
     func sessions() async throws -> [SwarmSession]
     /// `swarm session archive <id>...`, with no session selected in the environment.
     func archive(_ sessions: [SwarmSessionID]) async throws
+    func archivedSessions() async throws -> [SwarmSession]
+    func unarchive(_ sessions: [SwarmSessionID]) async throws
     /// Save a continuation after the new chair has received its handoff message.
     func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws
     /// `swarm type <agent>` with `text` on stdin.
@@ -551,6 +581,14 @@ public extension SwarmBus {
 
     func archive(_ sessions: [SwarmSessionID]) async throws {
         throw SwarmProfileError.unavailable("swarm session archives are not available")
+    }
+
+    func archivedSessions() async throws -> [SwarmSession] {
+        throw SwarmProfileError.unavailable("swarm archived sessions are not available")
+    }
+
+    func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        throw SwarmProfileError.unavailable("swarm session restore is not available")
     }
 
     func answer(
@@ -636,6 +674,10 @@ public struct UnavailableSwarmBus: SwarmBus {
     public init() {}
 
     private var notConnected: SwarmProfileError { .unavailable("swarm is not connected") }
+
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        throw notConnected
+    }
 
     public func launch(
         _ agent: SwarmAgentID, role: String, provider: String?, model: String?, account: String?,

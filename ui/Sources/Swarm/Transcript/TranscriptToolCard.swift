@@ -4,6 +4,7 @@ import SwarmCore
 import TranscriptTool
 
 struct TranscriptToolCard: View {
+    @Environment(\.designTokens) private var tokens
     let activity: TranscriptToolActivity
     var revealForSearch = false
     @State private var expanded = false
@@ -17,7 +18,7 @@ struct TranscriptToolCard: View {
         return VStack(alignment: .leading, spacing: 0) {
             // One line when closed: status, tool, title, diff size, exit and time. Click or Space opens it.
             Button { expanded.toggle() } label: {
-                HStack(spacing: DesignTokens.Spacing.s) {
+                HStack(spacing: tokens.spacing.s) {
                     TranscriptStatusGlyph(state: activity.state)
                         .help(TranscriptStatusGlyph.label(activity.state)
                             + ". The status describes the tool result; read the output for verification results.")
@@ -26,13 +27,13 @@ struct TranscriptToolCard: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Spacer(minLength: DesignTokens.Spacing.s)
+                    Spacer(minLength: tokens.spacing.s)
                     if let counts {
-                        HStack(spacing: DesignTokens.Spacing.xs) {
+                        HStack(spacing: tokens.spacing.xs) {
                             Text(verbatim: "+\(counts.added)").foregroundStyle(DesignTokens.color(.done))
                             Text(verbatim: "−\(counts.removed)").foregroundStyle(DesignTokens.color(.failed))
                         }
-                        .font(DesignTokens.mono)
+                        .font(tokens.mono)
                     }
                     if !resultLabel.isEmpty {
                         Text(verbatim: resultLabel)
@@ -52,18 +53,18 @@ struct TranscriptToolCard: View {
                     TranscriptBoundedTextView(text: skillBody)
                 }
                 .font(.caption)
-                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.s)
             }
             if expanded {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                VStack(alignment: .leading, spacing: tokens.spacing.m) {
                     if let command = activity.command {
                         TranscriptOutputView(text: command, title: "Command")
                     }
                     if let path = activity.path {
                         HStack {
-                            Text(verbatim: path).font(DesignTokens.mono)
+                            Text(verbatim: path).font(tokens.mono)
                                 .textSelection(.enabled)
-                            Spacer(minLength: DesignTokens.Spacing.s)
+                            Spacer(minLength: tokens.spacing.s)
                             if path.hasPrefix("/") {
                                 Button(revealingFile ? "Opening Finder…" : "Reveal file", systemImage: "folder") {
                                     revealingFile = true
@@ -92,15 +93,15 @@ struct TranscriptToolCard: View {
                     }
                     .font(.caption)
                 }
-                .padding(.top, DesignTokens.Spacing.s)
-                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                .padding(.top, tokens.spacing.s)
+                .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.s)
             }
         }
-        .padding(.horizontal, DesignTokens.Spacing.s)
-        .padding(.vertical, DesignTokens.Spacing.xs)
+        .padding(.horizontal, tokens.spacing.s)
+        .padding(.vertical, tokens.spacing.xs)
         .background(expanded ? DesignTokens.userMessageFill : .clear, in: .rect(cornerRadius: DesignTokens.Radius.control))
         // The fill bleeds past the column so the glyph and the right label share the edges of the other rows.
-        .padding(.horizontal, -DesignTokens.Spacing.s)
+        .padding(.horizontal, -tokens.spacing.s)
         .buttonStyle(.borderless)
         .onAppear {
             if activity.state == .failed || revealForSearch { expanded = true }
@@ -160,6 +161,7 @@ struct TranscriptStatusGlyph: View {
 }
 
 struct TranscriptOutputView: View {
+    @Environment(\.designTokens) private var tokens
     let text: String
     let title: String
     var revealAll = false
@@ -169,7 +171,7 @@ struct TranscriptOutputView: View {
     @State private var copying = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             HStack {
                 Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 Spacer()
@@ -252,10 +254,11 @@ private struct TranscriptToolInputView: View {
 }
 
 struct TranscriptDiffView: View {
+    @Environment(\.designTokens) private var tokens
     let diff: TranscriptDiff
     var revealForSearch = false
     @State private var expanded = false
-    @State private var split = false
+    @Environment(\.splitDiff) private var split
     @State private var showFull = false
     @State private var preparedDiff: TranscriptDiff?
     @State private var limited: TranscriptDiffPreview?
@@ -274,10 +277,10 @@ struct TranscriptDiffView: View {
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             if expanded {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+                VStack(alignment: .leading, spacing: tokens.spacing.s) {
                     Text(verbatim: diff.path).font(.caption).textSelection(.enabled)
                     HStack {
-                        Picker("Diff layout", selection: $split) {
+                        Picker("Diff layout", selection: split) {
                             Text("Unified").tag(false)
                             Text("Split").tag(true)
                         }.pickerStyle(.segmented).frame(width: DesignTokens.Size.segmentedPicker)
@@ -309,7 +312,7 @@ struct TranscriptDiffView: View {
                             Text(verbatim: notice).font(.caption).foregroundStyle(.secondary)
                         }
                         ZStack {
-                            DiffWebView(text: preview.patch, isDiff: true, split: split) { success in
+                            DiffWebView(text: preview.patch, isDiff: true, split: split.wrappedValue) { success in
                                 rendered = true
                                 renderError = !success
                             }
@@ -317,7 +320,7 @@ struct TranscriptDiffView: View {
                             if renderError { Text("The patch view could not load.").foregroundStyle(.red) }
                         }
                         .frame(height: DesignTokens.Size.outputPreview)
-                        .onChange(of: split) { _, _ in rendered = false; renderError = false }
+                        .onChange(of: split.wrappedValue) { _, _ in rendered = false; renderError = false }
                         .onChange(of: preview.patch) { _, _ in rendered = false; renderError = false }
                     } else {
                         DelayedProgress("Preparing patch…")
@@ -328,7 +331,7 @@ struct TranscriptDiffView: View {
                             .font(.caption).buttonStyle(.borderless)
                     }
                 }
-                .padding(.top, DesignTokens.Spacing.s)
+                .padding(.top, tokens.spacing.s)
             }
         } label: {
             Label("\((diff.path as NSString).lastPathComponent) · +\(counts?.added.description ?? "…") −\(counts?.removed.description ?? "…")", systemImage: "doc.text")

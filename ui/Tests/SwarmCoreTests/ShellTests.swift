@@ -80,4 +80,12 @@ struct ShellTests {
         #expect(result.lines.count == 50_000)
         #expect(result.lines.last == "50000")
     }
+
+    @Test("an alert shows the cause of a shell or swarm failure, not the generic text")
+    func failuresHaveAlertText() {
+        let shell: any Error = ShellFailure.incompleteOutput(command: "git worktree add")
+        let swarm: any Error = SwarmProfileError.failed("swarm sessions exited 1")
+        #expect(shell.localizedDescription == "git worktree add exited, but a child process kept its output open.")
+        #expect(swarm.localizedDescription == "swarm sessions exited 1")
+    }
 }

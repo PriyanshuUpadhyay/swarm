@@ -17,6 +17,7 @@ extension FocusedValues {
 /// composer floating over its bottom edge. It gets the snapshot and closures, and owns only its
 /// own scroll and find state.
 struct TranscriptView<Composer: View>: View {
+    @Environment(\.designTokens) private var tokens
     let snapshot: ChairTranscriptSnapshot
     let revision: Int
     let hasOlder: Bool
@@ -76,19 +77,19 @@ struct TranscriptView<Composer: View>: View {
                     Spacer()
                     Text("RAW")
                         .font(.caption2.bold())
-                        .padding(.horizontal, DesignTokens.Spacing.s)
-                        .padding(.vertical, DesignTokens.Spacing.xxs)
+                        .padding(.horizontal, tokens.spacing.s)
+                        .padding(.vertical, tokens.spacing.xxs)
                         .background(Capsule().fill(DesignTokens.rawBadgeFill))
                         .foregroundStyle(.orange)
                 }
-                .padding(.horizontal, DesignTokens.Spacing.m)
-                .padding(.vertical, DesignTokens.Spacing.xs)
+                .padding(.horizontal, tokens.spacing.m)
+                .padding(.vertical, tokens.spacing.xs)
             }
             if findPresented { findBar }
             ScrollViewReader { proxy in
                 scroll(proxy)
                     .overlay(alignment: .bottom) {
-                        VStack(spacing: DesignTokens.Spacing.s) {
+                        VStack(spacing: tokens.spacing.s) {
                             if !atLatest {
                                 Button("Jump to latest", systemImage: "arrow.down") {
                                     // The list is upside down, so its logical top is the bottom edge.
@@ -96,15 +97,15 @@ struct TranscriptView<Composer: View>: View {
                                 }
                                 .buttonStyle(.plain)
                                 .font(.callout)
-                                .padding(.horizontal, DesignTokens.Spacing.m)
-                                .padding(.vertical, DesignTokens.Spacing.s)
+                                .padding(.horizontal, tokens.spacing.m)
+                                .padding(.vertical, tokens.spacing.s)
                                 .chromeSurface(in: Capsule())
                             }
                             composer()
                                 .frame(width: textWidth > 0 ? textWidth : nil)
                                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
                         }
-                        .padding(DesignTokens.Spacing.m)
+                        .padding(tokens.spacing.m)
                     }
             }
             .frame(maxHeight: .infinity)
@@ -138,7 +139,7 @@ struct TranscriptView<Composer: View>: View {
     /// older rows load at its end and new rows land at offset 0: neither moves the rows on screen.
     private func scroll(_ proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            LazyVStack(alignment: .leading, spacing: tokens.spacing.m) {
                 switch snapshot {
                 case .loading:
                     DelayedProgress("Loading chat…").upsideDown()
@@ -165,8 +166,8 @@ struct TranscriptView<Composer: View>: View {
                             case .step(let transcriptRow):
                                 // The list's spacing is m; an open fold keeps its steps xs apart.
                                 rowView(transcriptRow)
-                                    .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
-                                    .padding(.top, DesignTokens.Spacing.xs - DesignTokens.Spacing.m)
+                                    .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.s)
+                                    .padding(.top, tokens.spacing.xs - tokens.spacing.m)
                                     .upsideDown()
                             }
                         }
@@ -190,16 +191,16 @@ struct TranscriptView<Composer: View>: View {
                     .upsideDown()
                 }
             }
-            .font(DesignTokens.body)
-            .lineSpacing(DesignTokens.bodyLineSpacing)
+            .font(tokens.body)
+            .lineSpacing(tokens.bodyLineSpacing)
             .frame(width: textWidth > 0 ? textWidth : nil, alignment: .leading)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, DesignTokens.Spacing.l)
+            .padding(.vertical, tokens.spacing.l)
         }
         .upsideDown()
         // Upside down, the logical top is the bottom edge, where the composer floats over the rows.
-        .contentMargins(.top, composerHeight + DesignTokens.Spacing.l, for: .scrollContent)
-        .contentMargins(.bottom, DesignTokens.Spacing.s, for: .scrollContent)
+        .contentMargins(.top, composerHeight + tokens.spacing.l, for: .scrollContent)
+        .contentMargins(.bottom, tokens.spacing.s, for: .scrollContent)
         .frame(maxHeight: .infinity)
         .simultaneousGesture(TapGesture().onEnded {
             focus.wrappedValue = true
@@ -255,7 +256,7 @@ struct TranscriptView<Composer: View>: View {
             }
         )
         .environment(\.transcriptSearchQuery, currentMatchID == transcriptRow.eventID ? findQuery : "")
-        .padding(DesignTokens.Spacing.xxs)
+        .padding(tokens.spacing.xxs)
         .background(matchBackground(transcriptRow.eventID))
     }
 
@@ -298,7 +299,7 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private var findBar: some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             TextField("Find in loaded messages", text: $findQuery)
                 .textFieldStyle(.roundedBorder)
                 .focused($findFieldFocused)
@@ -324,8 +325,8 @@ struct TranscriptView<Composer: View>: View {
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
-        .padding(.horizontal, DesignTokens.Spacing.m)
-        .padding(.vertical, DesignTokens.Spacing.s)
+        .padding(.horizontal, tokens.spacing.m)
+        .padding(.vertical, tokens.spacing.s)
         .background(.bar)
     }
 
@@ -427,13 +428,13 @@ struct TranscriptView<Composer: View>: View {
     }
 
     private var rawSessionBlock: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             Text("Session and agents").font(.caption).foregroundStyle(.secondary)
             TranscriptBoundedTextView(text: rawSessionJSON)
                 .environment(\.transcriptSearchQuery, currentMatchID == "raw-session" ? findQuery : "")
         }
         .id("raw-session")
-        .padding(DesignTokens.Spacing.s)
+        .padding(tokens.spacing.s)
         .background(matchBackground("raw-session"))
     }
 
@@ -441,7 +442,7 @@ struct TranscriptView<Composer: View>: View {
         TranscriptRawEntryBlock(entry: entry)
             .environment(\.transcriptSearchQuery, currentMatchID == entry.id ? findQuery : "")
             .id(entry.id)
-            .padding(DesignTokens.Spacing.s)
+            .padding(tokens.spacing.s)
             .background(matchBackground(entry.id))
     }
 
@@ -478,6 +479,7 @@ struct TranscriptView<Composer: View>: View {
 }
 
 private struct TranscriptRowView: View {
+    @Environment(\.designTokens) private var tokens
     let row: TranscriptRow
     let chair: String?
     var revealForSearch = false
@@ -492,12 +494,12 @@ private struct TranscriptRowView: View {
             if let activity = row.tool {
                 TranscriptToolCard(activity: activity, revealForSearch: revealForSearch)
             } else if row.kind == .divider {
-                HStack(spacing: DesignTokens.Spacing.m) {
+                HStack(spacing: tokens.spacing.m) {
                     hairline
                     Text(verbatim: row.text).font(.caption).foregroundStyle(.secondary).fixedSize()
                     hairline
                 }
-                .padding(.vertical, DesignTokens.Spacing.s)
+                .padding(.vertical, tokens.spacing.s)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Context cleared at \(row.detail ?? "")")
             } else if row.systemKind == TranscriptSystemKind.swarmRing {
@@ -520,7 +522,7 @@ private struct TranscriptRowView: View {
                 turnEnd
             } else if row.kind == .assistant {
                 // No visible label, so VoiceOver gets the speaker from the group, as "You" above.
-                rowBody.padding(.vertical, DesignTokens.Spacing.xs)
+                rowBody.padding(.vertical, tokens.spacing.xs)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(row.label(chair: chair))
             } else {
@@ -537,7 +539,7 @@ private struct TranscriptRowView: View {
                     .foregroundStyle(.secondary)
                     .help("Copy message")
                     .disabled(copying)
-                    .padding(DesignTokens.Spacing.s)
+                    .padding(tokens.spacing.s)
                     .accessibilityHidden(true)
             }
         }
@@ -560,7 +562,7 @@ private struct TranscriptRowView: View {
     }
 
     private var rowBody: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             // Agent text has no label: the user bubble already sets the two voices apart.
             if row.kind != .assistant {
                 Text(row.label(chair: chair))
@@ -582,14 +584,14 @@ private struct TranscriptRowView: View {
                 DisclosureGroup(isExpanded: $detailExpanded) {
                     TranscriptBoundedTextView(text: row.detail ?? "")
                 } label: {
-                    Text(verbatim: row.text).font(DesignTokens.mono).lineLimit(1)
+                    Text(verbatim: row.text).font(tokens.mono).lineLimit(1)
                 }
             case .system where row.text.split(separator: "\n", maxSplits: 3).count > 3:
                 DisclosureGroup(isExpanded: $detailExpanded) {
                     TranscriptBoundedTextView(text: row.text)
                 } label: {
                     Text(verbatim: String(row.text.prefix(while: { !$0.isNewline })))
-                        .font(DesignTokens.mono)
+                        .font(tokens.mono)
                         .lineLimit(1)
                 }
             case .error:
@@ -618,8 +620,8 @@ private struct TranscriptRowView: View {
     private func userBubble(_ content: some View) -> some View {
         UserBubbleLayout {
             content
-                .padding(.horizontal, DesignTokens.Spacing.m)
-                .padding(.vertical, DesignTokens.Spacing.s)
+                .padding(.horizontal, tokens.spacing.m)
+                .padding(.vertical, tokens.spacing.s)
                 .background(DesignTokens.userMessageFill, in: .rect(cornerRadius: DesignTokens.Radius.panel))
         }
     }
@@ -639,7 +641,7 @@ private struct TranscriptRowView: View {
     private var labelFont: Font {
         switch row.kind {
         case .thought, .toolUse, .toolResult, .result, .system:
-            DesignTokens.mono
+            tokens.mono
         default:
             .caption
         }
@@ -676,10 +678,11 @@ private extension View {
 
 /// One raw event as RAW mode shows it: "[index] kind" and the pretty event JSON.
 private struct TranscriptRawEntryBlock: View {
+    @Environment(\.designTokens) private var tokens
     let entry: RawTranscriptEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             Text(verbatim: "[\(entry.index)] \(entry.rowKind)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
@@ -690,17 +693,18 @@ private struct TranscriptRawEntryBlock: View {
 
 /// Show Source: the translated event JSON of each event behind one row (ADR 0047).
 private struct TranscriptSourceView: View {
+    @Environment(\.designTokens) private var tokens
     let entries: [RawTranscriptEntry]
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+            LazyVStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text(entries.isEmpty ? AttributedString("No source events are loaded for this row.")
                     : AttributedString(localized: "Source, ^[\(entries.count) event](inflect: true)"))
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(entries) { TranscriptRawEntryBlock(entry: $0) }
             }
-            .padding(DesignTokens.Spacing.m)
+            .padding(tokens.spacing.m)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: DesignTokens.Size.profileSheet, height: DesignTokens.Size.sheet)

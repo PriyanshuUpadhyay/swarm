@@ -1,0 +1,228 @@
+import Foundation
+import Observation
+import Testing
+@testable import SwarmCore
+
+@Suite("Recently closed chats")
+struct RecentlyClosedTests {
+    @Test("The list groups archived sessions and sorts archive time, with title, workspace and age")
+    func list() async throws {
+        let current = session("current", archivedAt: 180, createdAt: 20, continuation: "older")
+        let older = session("older", archivedAt: 170, createdAt: 10)
+        let newest = session("newest", archivedAt: 200, createdAt: 1)
+        let active = session("active", archivedAt: nil, createdAt: 30)
+        let discovery = SwarmSessionDiscovery(home: URL(fileURLWithPath: "/missing/fixture-home"))
+        let groups = await discovery.archivedChats([older, newest, active, current])
+        #expect(groups.count == 2)
+        var navigation = WorkspaceNavigation()
+        navigation.chatNames["older"] = "Saved title"
+        navigation.names["/fixture/workspace"] = "Feature workspace"
+        let rows = RecentlyClosed.list(chats: groups, navigation: navigation, workspaces: [], now: 260)
+        #expect(rows.map(\.id) == [.init("newest"), .init("current")])
+        #expect(rows.map(\.age) == ["1m ago", "1m ago"])
+        #expect(rows[1].title == "Saved title")
+        #expect(rows[1].workspace == "Feature workspace")
+        #expect(rows[1].chat.sessions.map(\.id) == [.init("current"), .init("older")])
+        #expect(rows[1].archivedAt == 180)
+        #expect(RecentlyClosed.list(chats: groups, navigation: .init(), workspaces: [], now: 0)
+            .allSatisfy { $0.age == "0s ago" && $0.workspace == "workspace" })
+    }
+
+    @Test("The shared row age keeps seconds, minutes, hours and days")
+    func ageText() {
+        #expect(SessionRowPresentation.ageText(since: 0, now: 45) == "45s")
+        #expect(SessionRowPresentation.ageText(since: 0, now: 180) == "3m")
+        #expect(SessionRowPresentation.ageText(since: 0, now: 7_200) == "2h")
+        #expect(SessionRowPresentation.ageText(since: 0, now: 345_600) == "4d")
+        #expect(SessionRowPresentation.ageText(since: 10, now: 0) == "0s")
+    }
+
+    @Test("Restore calls unarchive once with every id, and a failed call reaches the caller")
+    func restore() async throws {
+        let recorder = ClosedChatCalls()
+        let chat = SwarmProjectSession(sessions: [session("current"), session("older")], title: "Chat")
+        try await RecentlyClosed.restore(chat, bus: bus(recorder))
+        #expect(await recorder.calls == [["session", "unarchive", "current", "older"]])
+        let failed = ClosedChatCalls(fail: true)
+        await #expect(throws: (any Error).self) {
+            try await RecentlyClosed.restore(chat, bus: bus(failed))
+        }
+        #expect(await failed.calls.count == 1)
+    }
+
+    @Test("The CLI listing requests archived rows and filters live rows; empty restores do nothing")
+    func cli() async throws {
+        let recorder = ClosedChatCalls()
+        let value = bus(recorder)
+        #expect(try await value.archivedSessions().map(\.id) == [.init("archived")])
+        try await value.unarchive([])
+        #expect(await recorder.calls == [["sessions", "--json", "--archived"]])
+    }
+
+    @Test("An explicit restore clears archive suppression even before absence was discovered")
+    func suppression() {
+        let chat = SwarmProjectSession(sessions: [session("archived")], title: "Chat")
+        let source = SessionsTree(projects: [ProjectNode(
+            id: .folder("/fixture"), path: "/fixture", launchDirectory: "/fixture",
+            workspaces: [WorkspaceNode(path: "/fixture/workspace", name: "workspace", sessions: [chat])]
+        )])
+        var archives = ChatArchives()
+        _ = archives.begin(chat.id, in: source)
+        archives.finish(chat.id, succeeded: true)
+        #expect(archives.applying(to: source).session(chat.id) == nil)
+        archives.restore(chat.sessions.map(\.id))
+        #expect(archives.applying(to: source).session(chat.id) != nil)
+    }
+
+    @Test("The CLI cap notice counts archived rows before chat grouping")
+    func limitNotice() {
+        let limit = RecentlyClosed.Listing.cliArchivedLimit
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: limit - 1).notice == nil)
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: 0).notice == nil)
+        #expect(RecentlyClosed.Listing(chats: [], archivedSessionCount: limit).notice ==
+                "Showing the newest \(limit) closed sessions.")
+    }
+
+    @Test("A superseded restore refresh retries once and then uses the completed list")
+    @MainActor
+    func refreshSuperseded() async throws {
+        var calls = 0
+        var listed = false
+        let result = try await RecentlyClosed.refreshRestoredChat(refresh: {
+            calls += 1
+            if calls == 1 { return false }
+            listed = true
+            return true
+        }, isListed: { listed })
+        #expect(result)
+        #expect(calls == 2)
+    }
+
+    @Test("Two superseded refreshes leave restore pending without a false missing-chat error")
+    @MainActor
+    func refreshPending() async throws {
+        var calls = 0
+        let result = try await RecentlyClosed.refreshRestoredChat(refresh: {
+            calls += 1
+            return false
+        }, isListed: { false })
+        #expect(!result)
+        #expect(calls == 2)
+    }
+
+    @Test("Only a completed refresh can report a missing restored chat")
+    @MainActor
+    func refreshMissing() async throws {
+        var calls = 0
+        await #expect(throws: (any Error).self) {
+            try await RecentlyClosed.refreshRestoredChat(refresh: {
+                calls += 1
+                return true
+            }, isListed: { false })
+        }
+        #expect(calls == 1)
+        #expect(try await RecentlyClosed.refreshRestoredChat(refresh: { false }, isListed: { true }))
+        #expect(RecentlyClosed.restoredButNotListed ==
+                "The chat was reopened, but it is not in the workspace list. Check the sidebar after the list refreshes.")
+    }
+
+    @Test("A cancelled reopen refresh keeps its cancellation error")
+    @MainActor
+    func refreshCancellation() async {
+        await #expect(throws: CancellationError.self) {
+            try await RecentlyClosed.refreshRestoredChat(refresh: {
+                throw CancellationError()
+            }, isListed: { false })
+        }
+    }
+
+    @Test("A pending restored selection settles on the next completed list and reports absence once")
+    func pendingSelection() {
+        let id = SwarmSessionID("restored")
+        var pending: PendingChatSelection? = .restored(id)
+        #expect(pending?.id == id)
+        #expect(pending?.isRestoring == true)
+        let result = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(result.notice == RecentlyClosed.restoredButNotListed)
+        #expect(result.pending == nil)
+        #expect(result.clearSelection)
+        pending = result.pending
+        let repeated = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(repeated.pending == nil)
+        #expect(!repeated.clearSelection)
+        #expect(repeated.notice == nil)
+        pending = .handoff(id)
+        let handoff = PendingChatSelection.settleMissingAfterRefresh(pending)
+        #expect(handoff.notice == nil)
+        #expect(handoff.pending == .handoff(id))
+        #expect(!handoff.clearSelection)
+    }
+
+    @Test("The selected-id observer sees the settled pending value without overlapping writes")
+    func observedSelection() {
+        let model = ReopenedSelectionFixture()
+        let result = PendingChatSelection.settleMissingAfterRefresh(model.pending)
+        model.pending = result.pending
+        if result.clearSelection { model.selectedID = nil }
+        #expect(model.pending == nil)
+        #expect(model.selectedID == nil)
+        #expect(model.pendingAtSelectionChange == nil)
+    }
+
+    @Test("A refresh failure after restore says the chat was reopened and keeps the cause")
+    @MainActor
+    func refreshFailure() async throws {
+        do {
+            _ = try await RecentlyClosed.refreshRestoredChat(refresh: {
+                throw SwarmProfileError.failed("Read timed out")
+            }, isListed: { false })
+            Issue.record("The failed refresh must reach the caller")
+        } catch {
+            #expect(error.localizedDescription ==
+                    "The chat was reopened, but the list could not refresh. Read timed out")
+        }
+    }
+
+    private func session(
+        _ id: String, archivedAt: Int? = 100, createdAt: Int = 1, continuation: String? = nil
+    ) -> SwarmSession {
+        SwarmSession(id: .init(id), talkMode: "lane", adapter: nil, cwd: "/fixture/workspace",
+                     createdAt: createdAt, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil,
+                     continuationOf: continuation.map(SwarmSessionID.init), archivedAt: archivedAt)
+    }
+
+    private func bus(_ recorder: ClosedChatCalls) -> SwarmCLIBus {
+        SwarmCLIBus(environment: [:], cwd: "/tmp", resolveExecutable: { $0 }) {
+            _, arguments, _, _, _, _ in
+            await recorder.reply(arguments)
+        }
+    }
+}
+
+@Observable
+private final class ReopenedSelectionFixture {
+    var pending: PendingChatSelection? = .restored(.init("reopened"))
+    var pendingAtSelectionChange: PendingChatSelection? = .restored(.init("reopened"))
+    var selectedID: SwarmSessionID? = .init("reopened") {
+        didSet { pendingAtSelectionChange = pending }
+    }
+}
+
+private actor ClosedChatCalls {
+    private(set) var calls: [[String]] = []
+    let fail: Bool
+    init(fail: Bool = false) { self.fail = fail }
+    func reply(_ arguments: [String]) -> ShellResult {
+        calls.append(arguments)
+        if fail { return ShellResult(status: 1, stdout: "", stderr: "Restore refused") }
+        if arguments.first == "sessions" {
+            return ShellResult(status: 0, stdout: """
+                {"sessions":[
+                  {"id":"active","talk_mode":"lane","cwd":"/fixture","created_at":1,"agents":1,"messages":0},
+                  {"id":"archived","talk_mode":"lane","cwd":"/fixture","created_at":1,"agents":1,"messages":0,"archived_at":2}
+                ]}
+                """, stderr: "")
+        }
+        return ShellResult(status: 0, stdout: "", stderr: "")
+    }
+}

@@ -108,7 +108,7 @@ struct SessionsTreeTests {
         let tree = build([older, newer, session("33333333-c", cwd: "/repo/.bare")])
         #expect(tree.projects.count == 1)
         #expect(tree.projects[0].name == "repo")
-        #expect(tree.projects[0].workspaces.map(\.name) == ["feature", "main", ".bare"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "feature", "repo"])
         #expect(tree.projects[0].workspaces.map(\.sessions.count) == [1, 1, 1])
         #expect(tree.projects[0].chats.map(\.id) == [newer.id, older.id, SwarmSessionID("33333333-c")])
         #expect(tree.launchDirectory(for: newer.id) == "/repo/wt/feature")
@@ -144,7 +144,7 @@ struct SessionsTreeTests {
         #expect(repository.projects.map(\.path) == ["/repo"])
         #expect(repository.projects[0].launchDirectory == "/repo/wt/feature")
         #expect(repository.projects[0].chats.isEmpty)
-        #expect(repository.projects[0].workspaces.map(\.name) == ["feature", "main"])
+        #expect(repository.projects[0].workspaces.map(\.name) == ["main", "feature"])
 
         let reopened = build([], projectPaths: ["/repo/wt/feature", "/repo/wt/main"])
         #expect(reopened.projects.count == 1)
@@ -159,8 +159,8 @@ struct SessionsTreeTests {
         let titles = Dictionary(uniqueKeysWithValues: tree.projects[0].workspaces[0].sessions.map {
             ($0.id, $0.title)
         })
-        #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat"])
-        #expect(tree.windowTitle(for: named.id) == "outside · Repair the sidebar")
+        #expect(titles == [named.id: "Repair the sidebar", fallback.id: "Chat fallback"])
+        #expect(tree.windowTitle(for: named.id, navigation: WorkspaceNavigation()) == "outside · Repair the sidebar")
     }
 
     @Test("Session rows have clear titles, captions, and states")
@@ -200,7 +200,7 @@ struct SessionsTreeTests {
         #expect(SessionRowPresentation.make(
             tree.projects[0].chats[0], now: 61
         ).caption == "outside · ended")
-        #expect(tree.text(now: 61).contains("Chat · outside · ended · 1m"))
+        #expect(tree.text(now: 61).contains("Chat dead-ses · outside · ended · 1m"))
 
         let empty = build([dead], agentsBySession: [dead.id: []])
         #expect(empty.projects.isEmpty)
@@ -248,7 +248,7 @@ struct SessionsTreeTests {
         )
         #expect(sections.map(\.title) == ["Pinned", "api", "docs"])
         #expect(sections.map(\.kind) == [.pinned, .project(path: "/api"), .project(path: "/docs")])
-        #expect(sections[0].rows.map(\.id) == ["/docs"])
+        #expect(sections[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
         // A project whose only workspace is pinned keeps its header for its "+".
         #expect(sections[2].rows.isEmpty)
         let apiRow = sections[1].rows[0]
@@ -263,14 +263,14 @@ struct SessionsTreeTests {
             showingArchive: true, now: 61
         )
         #expect(archived.map(\.kind) == [.project(path: "/api")])
-        #expect(archived[0].rows.map(\.id) == ["/api"])
+        #expect(archived[0].rows.filter { $0.kind == .workspace }.map(\.id) == ["/api"])
         #expect(SidebarRows.sections(
             projects: tree.projects, workspaces: workspaces, navigation: navigation, search: "docs",
             showingArchive: false, now: 61
-        ).flatMap(\.rows).map(\.id) == ["/docs"])
+        ).flatMap(\.rows).filter { $0.kind == .workspace }.map(\.id) == ["/docs"])
     }
 
-    @Test("Workspaces sit under their project in activity order, titled without the project name")
+    @Test("Workspaces keep main first under their project, titled without the project name")
     func projectSections() {
         var feature = session("feature-session", cwd: "/repo/wt/feature")
         feature.lastMessageAt = 20
@@ -288,9 +288,9 @@ struct SessionsTreeTests {
         ])
         // A plain folder is its own one workspace.
         #expect(sections[0].rows.map(\.title) == ["empty"])
-        #expect(sections[2].rows.map(\.id) == ["/repo/wt/feature", "/repo/wt/main"])
-        #expect(sections[2].rows.map(\.title) == ["feature", "main"])
-        #expect(sections[1].rows.map(\.title) == ["notes"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.id) == ["/repo/wt/main", "/repo/wt/feature"])
+        #expect(sections[2].rows.filter { $0.kind == .workspace }.map(\.title) == ["main", "feature"])
+        #expect(sections[1].rows.filter { $0.kind == .workspace }.map(\.title) == ["notes"])
 
         // The palette has no headers, so it keeps "project / folder".
         let listed = PaletteSource.workspaces(WorkspaceEntry.list(in: tree), navigation: navigation, now: 61)
@@ -301,7 +301,7 @@ struct SessionsTreeTests {
             projects: tree.projects, workspaces: WorkspaceEntry.list(in: tree), navigation: navigation,
             search: "", showingArchive: false, now: 61
         )
-        let row = renamed[2].rows[1]
+        let row = renamed[2].rows.filter { $0.kind == .workspace }[0]
         #expect(row.title == "Fix login")
         #expect(row.detail == "main · 1 chat")
 
@@ -378,12 +378,12 @@ struct SessionsTreeTests {
             id: .init("orchestrator"), role: "chair", pane: "%1", alive: true, state: "working"
         )]])
         let chats = tree.workspaceChats(for: live.id)
-        let tab = ChatTab.tabs(chats, closing: [], now: 61)[0]
+        let tab = ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [], now: 61)[0]
         #expect(tab.id == "live-session")
         #expect(tab.status == .working)
         #expect(tab.badge == "X")
         #expect(tab.canClose)
-        #expect(!ChatTab.tabs(chats, closing: [live.id], now: 61)[0].canClose)
+        #expect(!ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), closing: [live.id], now: 61)[0].canClose)
         #expect(ChatTab.badge("claude") == "C")
         #expect(ChatTab.badge("agy") == "A")
     }
@@ -401,7 +401,7 @@ struct SessionsTreeTests {
         #expect(SessionRowPresentation.make(
             withChair.projects[0].chats[0], now: 61
         ).caption == "outside · codex")
-        #expect(withChair.windowTitle(for: item.id) == "outside · Chat")
+        #expect(withChair.windowTitle(for: item.id, navigation: WorkspaceNavigation()) == "outside · codex provider")
 
         let withoutChair = build([item], agentsBySession: [item.id: [worker]])
         #expect(SessionRowPresentation.make(
@@ -422,7 +422,7 @@ struct SessionsTreeTests {
             == ["live-new", "live-old", "no-chair", "ended-new", "ended-old"])
     }
 
-    @Test("Workspaces sort by state and then recent activity")
+    @Test("Workspace names keep their order across status and activity changes")
     func workspaceOrdering() {
         let workspaces = [
             WorkspaceNode(path: "/ended", name: "ended", sessions: [
@@ -439,7 +439,7 @@ struct SessionsTreeTests {
             ]),
         ]
         #expect(SessionsTree.ordered(workspaces).map(\.name)
-            == ["live-new", "live-old", "no-chair", "ended"])
+            == ["ended", "live-new", "live-old", "no-chair"])
     }
 
     @Test("Archived sessions and empty worktrees are hidden")
@@ -469,7 +469,7 @@ struct SessionsTreeTests {
         #expect(tree.session(rows[0].id)?.id == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("newer")) == rows[0].id)
         #expect(tree.retainedSelection(SwarmSessionID("gone")) == nil)
-        #expect(tree.windowTitle(for: rows[0].id) == "repo · Chat")
+        #expect(tree.windowTitle(for: rows[0].id, navigation: WorkspaceNavigation()) == "repo · codex \(rows[0].id.rawValue.prefix(8))")
     }
 
     @Test("A provider switch keeps both sessions in one chat")
@@ -514,9 +514,9 @@ struct SessionsTreeTests {
             session("main", cwd: "/repo/wt/main"),
         ])
         #expect(tree.projects.count == 1)
-        #expect(tree.projects[0].workspaces.map(\.name) == [".bare", "main"])
+        #expect(tree.projects[0].workspaces.map(\.name) == ["main", "repo"])
         #expect(tree.projects[0].launchDirectory == "/repo/wt/main")
-        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo/.bare")
+        #expect(tree.launchDirectory(for: SwarmSessionID("hub")) == "/repo")
     }
 
     @Test("Tree text prints project and chat presentation")
@@ -527,8 +527,8 @@ struct SessionsTreeTests {
         ])
         #expect(tree.text(now: 61) == """
             repo
-              Chat · .bare · no chair · 1m
-              Chat · main · no chair · 1m
+              Chat main · main · no chair · 1m
+              Chat hub · repo · no chair · 1m
             """)
     }
 

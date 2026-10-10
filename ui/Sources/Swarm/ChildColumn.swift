@@ -106,9 +106,11 @@ final class ChildColumnModel {
 
 /// A child agent's column: its chat as rows, its question when it waits, and a composer.
 struct ChildColumnView: View {
+    @Environment(\.designTokens) private var tokens
     let session: SwarmSession
     let agent: SwarmAgent
     let model: ChildColumnModel
+    let readOnlyReason: String?
     /// The column has focus, as by a click on it or its Find field.
     let selected: Bool
     /// New on each request for the column, so asking again for the column that has focus still
@@ -133,8 +135,10 @@ struct ChildColumnView: View {
             onTap: onFocused,
             focus: $transcriptFocused
         ) {
-            VStack(spacing: DesignTokens.Spacing.s) {
-                if let prompt = agent.prompt {
+            VStack(spacing: tokens.spacing.s) {
+                if let readOnlyReason {
+                    Text(verbatim: readOnlyReason).font(.caption).foregroundStyle(.secondary)
+                } else if let prompt = agent.prompt {
                     PromptCard(agent: agent.id.rawValue, prompt: prompt) { [model, session, agent] choice in
                         try await model.answer(prompt, choice: choice, to: agent.id, in: session)
                     }
@@ -144,7 +148,7 @@ struct ChildColumnView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                composer
+                if readOnlyReason == nil { composer }
             }
             .animation(.easeOut(duration: 0.15), value: agent.prompt?.id)
         }
@@ -152,7 +156,7 @@ struct ChildColumnView: View {
             await model.poll(log: agent.log, provider: agent.provider)
         }
         .onChange(of: focusRequest, initial: true) {
-            if selected { composerFocused = true }
+            if selected, readOnlyReason == nil { composerFocused = true }
         }
         // Initial, because a column scrolled off screen misses the change while its model lives on.
         .onChange(of: agent.status.isMidTurn, initial: true) { _, running in model.update(isRunning: running) }
@@ -168,9 +172,7 @@ struct ChildColumnView: View {
             pullBack: SwarmSessionInteraction.canPullBack(provider: agent.provider, adapter: session.adapter)
                 ? { [model, session, agent] in try await model.pullBack(agent.id, in: session) }
                 : nil,
-            sendDisabledReason: agent.alive == false
-                ? "This agent has ended."
-                : SwarmSessionInteraction.questionReason(status: agent.status, target: .agent),
+            sendDisabledReason: SwarmSessionInteraction.questionReason(status: agent.status, target: .agent),
             placeholder: "Message \(agent.id.rawValue)",
             commandSource: ComposerCommandSource(
                 provider: agent.provider,

@@ -4,6 +4,7 @@ import SwarmCore
 
 /// Renders a transcript message as structured native SwiftUI blocks.
 struct TranscriptMessageView: View {
+    @Environment(\.designTokens) private var tokens
     let text: String
     @State private var blocks: [TranscriptMessageBlock]?
 
@@ -26,7 +27,7 @@ struct TranscriptMessageView: View {
             : blocks ?? Self.parsed.object(forKey: text as NSString)?.blocks
         return Group {
             if let blocks = displayed, !blocks.isEmpty {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+                VStack(alignment: .leading, spacing: tokens.spacing.s) {
                     ForEach(blocks) { block in
                         TranscriptBlockView(block: block)
                     }
@@ -59,6 +60,7 @@ struct TranscriptMessageView: View {
 }
 
 private struct TranscriptBlockView: View {
+    @Environment(\.designTokens) private var tokens
     let block: TranscriptMessageBlock
 
     var body: some View {
@@ -85,7 +87,7 @@ private struct TranscriptBlockView: View {
             CodeBlockView(language: language, code: code)
 
         case let .blockquote(_, text):
-            HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
+            HStack(alignment: .top, spacing: tokens.spacing.s) {
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
                     .fill(DesignTokens.quoteBar)
                     .frame(width: DesignTokens.Size.quoteBar)
@@ -100,12 +102,12 @@ private struct TranscriptBlockView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.vertical, DesignTokens.Spacing.xxs)
+            .padding(.vertical, tokens.spacing.xxs)
 
         case let .unorderedList(_, items):
-            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            LazyVStack(alignment: .leading, spacing: tokens.spacing.xs) {
                 ForEach(items.indices, id: \.self) { index in
-                    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+                    HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                         Text("•")
                             .font(.body.weight(.bold))
                             .foregroundStyle(.secondary)
@@ -115,10 +117,10 @@ private struct TranscriptBlockView: View {
             }
 
         case let .orderedList(_, startIndex, items):
-            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            LazyVStack(alignment: .leading, spacing: tokens.spacing.xs) {
                 ForEach(items.indices, id: \.self) { index in
                     let itemNumber = startIndex + index
-                    HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+                    HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                         Text("\(itemNumber).")
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -135,7 +137,7 @@ private struct TranscriptBlockView: View {
 
         case .divider:
             Divider()
-                .padding(.vertical, DesignTokens.Spacing.xs)
+                .padding(.vertical, tokens.spacing.xs)
         }
     }
 
@@ -165,6 +167,7 @@ private struct TranscriptListItemText: View {
 }
 
 private struct CodeBlockView: View {
+    @Environment(\.designTokens) private var tokens
     let language: String?
     let code: String
     @State private var copied = false
@@ -198,8 +201,8 @@ private struct CodeBlockView: View {
                 .accessibilityLabel(accessibilityLabelText)
                 .help("Copy code")
             }
-            .padding(.horizontal, DesignTokens.Spacing.s)
-            .padding(.vertical, DesignTokens.Spacing.s)
+            .padding(.horizontal, tokens.spacing.s)
+            .padding(.vertical, tokens.spacing.s)
             .background(DesignTokens.codeHeaderFill)
 
             TranscriptBoundedTextView(text: code)
@@ -220,6 +223,7 @@ private struct CodeBlockView: View {
 }
 
 private struct TableBlockView: View {
+    @Environment(\.designTokens) private var tokens
     let headers: [String]
     let rows: [[String]]
     let rawText: String
@@ -254,8 +258,8 @@ private struct TableBlockView: View {
                 .accessibilityLabel("Copy table")
                 .help("Copy table")
             }
-            .padding(.horizontal, DesignTokens.Spacing.s)
-            .padding(.vertical, DesignTokens.Spacing.s)
+            .padding(.horizontal, tokens.spacing.s)
+            .padding(.vertical, tokens.spacing.s)
             .background(DesignTokens.codeHeaderFill)
 
             if rows.count > 30 || headers.count > 20 || rows.contains(where: { $0.count > 20 }) {
@@ -279,7 +283,7 @@ private struct TableBlockView: View {
                             }
                         }
                     }
-                    .padding(DesignTokens.Spacing.s)
+                    .padding(tokens.spacing.s)
                 }
             }
         }

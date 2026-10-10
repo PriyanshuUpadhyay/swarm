@@ -2,6 +2,7 @@ import SwiftUI
 import SwarmCore
 
 struct WorkspaceFilesView: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     var isActive = true
     let open: (WorkspaceDocument) -> Void
@@ -17,19 +18,20 @@ struct WorkspaceFilesView: View {
                 Button { refreshing = true; refreshID += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).accessibilityLabel("Refresh files")
                     .disabled(refreshing || !isActive)
-            }.padding(DesignTokens.Spacing.m)
+            }.padding(tokens.spacing.m)
             Divider()
             ScrollView {
                 WorkspaceFolder(directory: directory, path: "", refreshID: refreshID, isActive: isActive, open: open) {
                     refreshing = false
                 }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(DesignTokens.Spacing.m)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(tokens.spacing.m)
             }
         }
     }
 }
 
 private struct WorkspaceFolder: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let path: String
     let refreshID: Int
@@ -50,7 +52,7 @@ private struct WorkspaceFolder: View {
     }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        LazyVStack(alignment: .leading, spacing: tokens.spacing.xs) {
             if loading || (listingDirectory != directory && errorDirectory != directory) {
                 DelayedProgress("Reading files…")
             }
@@ -93,6 +95,7 @@ private struct WorkspaceFolder: View {
 }
 
 private struct WorkspaceFileRow: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let entry: WorkspaceFileEntry
     let refreshID: Int
@@ -121,7 +124,7 @@ private struct WorkspaceFileRow: View {
                     .lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs).help(entry.path)
+            .buttonStyle(.plain).padding(.vertical, tokens.spacing.xxs).help(entry.path)
             .accessibilityLabel("Preview \(entry.path)")
         }
     }

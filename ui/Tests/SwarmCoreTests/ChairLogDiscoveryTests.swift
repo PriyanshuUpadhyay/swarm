@@ -5,6 +5,35 @@ import TranscriptTool
 
 @Suite("Chair log discovery")
 struct ChairLogDiscoveryTests {
+    @Test("A cached discovered log supplies activity and is statted again on the next tree build")
+    func cachedLogActivity() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let home = fixture.root.appendingPathComponent(".codex-fixture")
+        let cwd = fixture.root.appendingPathComponent("workspace").path
+        try FileManager.default.createDirectory(atPath: cwd, withIntermediateDirectories: true)
+        let cutoff = 1_790_079_961
+        let source = SwarmSession(id: .init("activity"), talkMode: "lane", adapter: "tmux-solo", cwd: cwd,
+                                  createdAt: cutoff, chairProvider: "codex", chairID: nil, chairLog: nil,
+                                  agents: 1, messages: 0, lastMessageAt: cutoff + 10)
+        let log = try fixture.codexLog(home: home, name: "activity", cwd: cwd, at: "2026-09-22T12:26:05Z")
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(cutoff + 600))],
+                                               ofItemAtPath: log.path)
+        let profiles = FixtureProfiles(accountList: SwarmAccountList(provider: "codex", source: "fixture",
+                                        accounts: [account("fixture", home: home)], auto: "fixture"))
+        let discovery = SwarmSessionDiscovery(profiles: profiles, home: fixture.root)
+        let bus = SwarmCLIBus(environment: [:], cwd: fixture.root.path) { _, arguments, _, _, _, _ in
+            ShellResult(status: 0, stdout: arguments.contains("--all") ? "{}" : #"{"agents":[]}"#, stderr: "")
+        }
+        let before = try await discovery.tree(sessions: [source], bus: bus)
+        #expect(before.session(source.id)?.lastActivity == cutoff + 600)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(cutoff + 900))],
+                                               ofItemAtPath: log.path)
+        let after = try await discovery.tree(sessions: [source], bus: bus)
+        #expect(after.session(source.id)?.lastActivity == cutoff + 900)
+        #expect(before.session(source.id)?.lastActivity == cutoff + 600)
+    }
+
     @Test("Repeated account prefetches share one reader and keep its expiry")
     func prefetchHomesReusesReader() async throws {
         let fixture = try Fixture()
@@ -452,7 +481,7 @@ struct ChairLogDiscoveryTests {
 
     private func account(_ name: String, home: URL) -> SwarmAccount {
         SwarmAccount(
-            name: name, email: nil, home: home.path, env: [:], signedIn: true,
+            name: name, email: nil, home: home.path, env: [:], authState: .signedIn,
             remainingPct: nil, summary: nil
         )
     }

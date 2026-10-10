@@ -1,0 +1,3 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/public-safety.sh" --staged

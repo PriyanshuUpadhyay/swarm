@@ -37,3 +37,7 @@ path = '''(?i)(?:^|/)docs/|\.md$'''
 description = "Herdr pane tag flags in tests, not credentials"
 regexTarget = "line"
 regexes = ['''"--token", "(?:tree|seat)=''']
+
+[[allowlists]]
+description = "Vendored upstream trees at pinned public commits keep their authors' public content (owner, 2026-10-09; ADR 0062)"
+paths = ['''^skills/kit/vendor/''']

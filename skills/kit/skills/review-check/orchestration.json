@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "workflow_kind": "review-check",
+  "required_operations": [
+    "resolve_roles",
+    "validate_host_capabilities",
+    "create_owned_visible_leaves",
+    "dispatch",
+    "accept_durable_results",
+    "report_degradation",
+    "close_owned_leaves"
+  ],
+  "roles": [
+    "review.check",
+    "review.deep"
+  ],
+  "seat_template": {
+    "isolation": "one seat per checklist.json seat-map entry; each answers only its owned unit-rule pairs; review.check holds lens, lang, and repo shards; refs stays one review.deep seat; a seat never reviews a change its own session wrote",
+    "visibility": "host-visible owned leaf",
+    "permission": "reads the repository and the frozen run folder; writes only its own 02-review-<seat>.md; no repository edits, no commits",
+    "artifact": "02-review-<seat>.md under <repo>/tmp/review-check/<run>/, with a result for every unit-rule pair whose owners entry names the seat",
+    "deadline": "bounded by the chair"
+  },
+  "refusals": [
+    {
+      "condition": "runtime-adapter-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "host-capability-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "role-unresolved",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "degrade-and-report"
+    },
+    {
+      "condition": "route-capability-mismatch",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "completion-artifact-invalid",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "teardown-target-unowned",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "quarantine-and-escalate"
+    }
+  ],
+  "result_routing": {
+    "review_files": "the chair runs verdict; it groups gaps by the owner seat in checklist.json",
+    "verdict": "03-verdict.md line 3, written only by the script and read by flow, deliver, and review-walk"
+  },
+  "trace_cases": [
+    {
+      "id": "happy-path",
+      "events": [
+        "start:01-units,checklist,seats-plan",
+        "dispatch:every-seat-in-map",
+        "overlap:build-in-verify-worktree,seat-results",
+        "verdict:03-verdict"
+      ]
+    },
+    {
+      "id": "gap",
+      "events": [
+        "start:01-units,checklist,seats-plan",
+        "dispatch:every-seat-in-map",
+        "overlap:build-in-verify-worktree,seat-results",
+        "verdict:INCOMPLETE,gaps-by-seat",
+        "follow-up:every-seat-with-gaps",
+        "missing-ids-answered",
+        "verdict:03-verdict"
+      ]
+    }
+  ],
+  "role_policy": {
+    "disposition": "report-only"
+  },
+  "fan_out_policy": "references/fan-out.md"
+}

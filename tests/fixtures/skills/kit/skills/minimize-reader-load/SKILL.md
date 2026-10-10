@@ -1,0 +1,1 @@
+# Fixture minimize-reader-load

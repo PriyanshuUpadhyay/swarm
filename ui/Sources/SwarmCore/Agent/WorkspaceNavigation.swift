@@ -12,14 +12,17 @@ public struct WorkspaceEntry: Identifiable, Sendable {
     public var statusCounts: [AgentStatus: Int] {
         chats.reduce(into: [:]) { total, chat in total.merge(chat.statusCounts, uniquingKeysWith: +) }
     }
+    public var canDelete: Bool {
+        if case .folder = project.id { return false }
+        return id != project.mainWorkspacePath && id != project.path && !workspace.missing && !workspace.isRemoved
+    }
     public var folderName: String { URL(fileURLWithPath: id).lastPathComponent }
 
-    public static func list(in tree: SessionsTree) -> [Self] {
+    public static func list(in tree: SessionsTree, workspaceOrder: [String: [String]] = [:]) -> [Self] {
         tree.projects.flatMap { project in
-            project.workspaces.map { Self(project: project, workspace: $0) }
-        }.sorted {
-            if $0.lastActivity != $1.lastActivity { return $0.lastActivity > $1.lastActivity }
-            return $0.id < $1.id
+            SessionsTree.ordered(project.workspaces, order: workspaceOrder[project.path] ?? [],
+                                 mainPath: project.mainWorkspacePath, hubPath: project.path)
+                .map { Self(project: project, workspace: $0) }
         }
     }
 }
@@ -27,35 +30,143 @@ public struct WorkspaceEntry: Identifiable, Sendable {
 public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     public var selectedWorkspace: String?
     public var selectedChats: [String: String] = [:]
-    public var pinned: Set<String> = []
-    public var archived: Set<String> = []
-    public var names: [String: String] = [:]
-    /// Project paths whose sidebar section is collapsed.
+    public var tabHistory: [String: [String]] = [:]
+    public var dismissedChildren: [String: [String]] = [:]
+    var ownerChoices = OwnerChoices()
+    public var pinned: Set<String> {
+        get { ownerChoices.pinned }
+        set { ownerChoices.pinned = newValue }
+    }
+    public var archived: Set<String> {
+        get { ownerChoices.archived }
+        set { ownerChoices.archived = newValue }
+    }
+    public var names: [String: String] {
+        get { ownerChoices.names }
+        set { ownerChoices.names = newValue }
+    }
+    public var chatNames: [String: String] {
+        get { ownerChoices.chatNames }
+        set { ownerChoices.chatNames = newValue }
+    }
+    public var projectNames: [String: String] {
+        get { ownerChoices.projectNames }
+        set { ownerChoices.projectNames = newValue }
+    }
+    public var workspaceOrder: [String: [String]] {
+        get { ownerChoices.workspaceOrder }
+        set { ownerChoices.workspaceOrder = newValue }
+    }
+    public var tabs: [String: TabStrip] {
+        get { ownerChoices.tabs }
+        set { ownerChoices.tabs = newValue }
+    }
+    /// Project and workspace folds have separate keys. Chat children start folded;
+    /// `expanded:<chat row id>` records the exception in the same saved view state.
     public var collapsed: Set<String> = []
+    public var lastSeen: [String: Int] = [:]
+    public var fields: RowFieldLists {
+        get { ownerChoices.fields }
+        set { ownerChoices.fields = newValue }
+    }
 
     public init() {}
 
-    // A synthesized decoder throws for a missing key even when the property has a default, and
-    // `load()` then drops every saved pin and name. A key added later must decode as absent.
+    public func workspaceMoveTarget(_ path: String, by offset: Int, in entries: [WorkspaceEntry]) -> String? {
+        guard offset == -1 || offset == 1,
+              let source = entries.first(where: { $0.id == path }), !archived.contains(path) else { return nil }
+        let siblings = SessionsTree.ordered(source.project.workspaces,
+                                           order: workspaceOrder[source.project.path] ?? [],
+                                           mainPath: source.project.mainWorkspacePath, hubPath: source.project.path)
+            .map(\.path).filter { !archived.contains($0) && pinned.contains($0) == pinned.contains(path) }
+        guard let index = siblings.firstIndex(of: path), siblings.indices.contains(index + offset) else { return nil }
+        return siblings[index + offset]
+    }
+
+    /// A drop can move only a known workspace within the same project.
+    @discardableResult
+    public mutating func moveWorkspace(_ path: String, onto target: String, in entries: [WorkspaceEntry]) -> Bool {
+        guard path != target,
+              let source = entries.first(where: { $0.id == path }),
+              let destination = entries.first(where: { $0.id == target }),
+              source.project.id == destination.project.id,
+              !archived.contains(path), !archived.contains(target) else { return false }
+        var paths = SessionsTree.ordered(source.project.workspaces,
+                                        order: workspaceOrder[source.project.path] ?? [],
+                                        mainPath: source.project.mainWorkspacePath, hubPath: source.project.path).map(\.path)
+        guard let start = paths.firstIndex(of: path), let end = paths.firstIndex(of: target) else { return false }
+        paths.remove(at: start)
+        paths.insert(path, at: end)
+        workspaceOrder[source.project.path] = paths
+        return true
+    }
+
+    @discardableResult
+    public mutating func pinWorkspace(_ path: String, in entries: [WorkspaceEntry]) -> Bool {
+        guard entries.contains(where: { $0.id == path }), !archived.contains(path) else { return false }
+        pinned.insert(path)
+        return true
+    }
+
+    public func title(for chat: SwarmProjectSession) -> String {
+        ChatTitle.title(chat, appName: chatNames[ChatTitle.key(chat)])
+    }
+
+    public mutating func renameChat(_ chat: SwarmProjectSession, to name: String) {
+        chatNames[ChatTitle.key(chat)] = ChatTitle.nonblank(name)
+    }
+
+    public mutating func renameProject(_ project: ProjectNode, to name: String) {
+        projectNames[project.path] = ChatTitle.nonblank(name)
+    }
+
+    public func projectTitle(for project: ProjectNode) -> String {
+        ChatTitle.nonblank(projectNames[project.path]) ?? project.name
+    }
+
+    public static func projectCollapseID(_ path: String) -> String { "project:\(path)" }
+    public static func workspaceCollapseID(_ path: String) -> String { "workspace:\(path)" }
+
+    private static func collapseKey(_ id: String) -> String {
+        if id.hasPrefix(SidebarRows.chatPrefix) { return "expanded:\(id)" }
+        return id.hasPrefix("/") ? workspaceCollapseID(id) : id
+    }
+
+    public func isCollapsed(_ id: String) -> Bool {
+        let stored = collapsed.contains(Self.collapseKey(id))
+        return id.hasPrefix(SidebarRows.chatPrefix) ? !stored : stored
+    }
+
+    public mutating func toggleCollapsed(_ id: String) {
+        let key = Self.collapseKey(id)
+        if collapsed.contains(key) { collapsed.remove(key) }
+        else { collapsed.insert(key) }
+    }
+
+    // Owner choices live in choices.json; defaults contain only view state.
+    private enum CodingKeys: String, CodingKey {
+        case selectedWorkspace, selectedChats, collapsed, lastSeen, tabHistory, dismissedChildren
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         selectedWorkspace = try container.decodeIfPresent(String.self, forKey: .selectedWorkspace)
         selectedChats = try container.decodeIfPresent([String: String].self, forKey: .selectedChats) ?? [:]
-        pinned = try container.decodeIfPresent(Set<String>.self, forKey: .pinned) ?? []
-        archived = try container.decodeIfPresent(Set<String>.self, forKey: .archived) ?? []
-        names = try container.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
+        tabHistory = try container.decodeIfPresent([String: [String]].self, forKey: .tabHistory) ?? [:]
+        dismissedChildren = try container.decodeIfPresent([String: [String]].self, forKey: .dismissedChildren) ?? [:]
         collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
+        lastSeen = try container.decodeIfPresent([String: Int].self, forKey: .lastSeen) ?? [:]
     }
 
     /// Under its project's header (`inProject`) a row drops the project name, and a main
     /// checkout, whose folder is named like the project, shows its branch.
     public func title(for entry: WorkspaceEntry, inProject: Bool = false) -> String {
         if let name = customName(for: entry) { return name }
-        let project = entry.project.name
+        let project = projectTitle(for: entry.project)
         let folder = entry.folderName
         if folder.isEmpty { return entry.id }
-        if inProject { return folder == project ? entry.workspace.branch ?? folder : folder }
-        if project == folder { return folder }
+        if inProject { return folder == entry.project.name ? entry.workspace.branch ?? folder : folder }
+        if entry.project.name == folder { return project }
         return "\(project) / \(folder)"
     }
 
@@ -84,8 +195,9 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         if !duplicates.isEmpty {
             parts.append(pathQualifier(for: entry.id, others: duplicates))
         }
-        if !inProject, customName(for: entry) != nil, !parts.contains(entry.project.name) {
-            parts.append(entry.project.name)
+        let project = projectTitle(for: entry.project)
+        if !inProject, customName(for: entry) != nil, !parts.contains(project) {
+            parts.append(project)
         }
         if let branch = entry.workspace.branch,
            !parts.contains(branch), branch != title,
@@ -115,7 +227,22 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return path
     }
 
+    public func readOnlyReason(in workspace: String) -> String? {
+        archived.contains(workspace) ? "This workspace is archived. Restore it to send messages or start a chat." : nil
+    }
+
+    public func canStartChat(in entry: WorkspaceEntry) -> Bool {
+        readOnlyReason(in: entry.id) == nil && entry.workspace.canStartChat
+    }
+
     public func selectedChat(in entry: WorkspaceEntry) -> SwarmProjectSession? {
+        if let strip = tabs[entry.id] {
+            if let saved = selectedChats[entry.id],
+               let chat = SwarmSessionListing.chat(SwarmSessionID(saved), in: entry.chats),
+               strip.open.contains(ChatTitle.key(chat)) { return chat }
+            let key = TabStrip.selectionAfterClose(history: tabHistory[entry.id] ?? [], open: strip.open)
+            return key.flatMap { key in entry.chats.first { ChatTitle.key($0) == key } }
+        }
         if let saved = selectedChats[entry.id],
            let chat = SwarmSessionListing.chat(SwarmSessionID(saved), in: entry.chats) {
             return chat
@@ -123,10 +250,124 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
         return entry.chats.first
     }
 
-    public mutating func select(_ entry: WorkspaceEntry, chat: SwarmSessionID? = nil) {
+    public func isUnread(_ chat: SwarmProjectSession) -> Bool {
+        guard let seen = lastSeen[ChatTitle.key(chat)] else { return false }
+        return chat.lastActivity > seen
+    }
+
+    /// First sight sets the baseline; only later activity makes a chat unread.
+    public mutating func recordFirstSight(_ chats: [SwarmProjectSession]) {
+        let listed = Set(chats.map(ChatTitle.key))
+        lastSeen = lastSeen.filter { listed.contains($0.key) }
+        dismissedChildren = dismissedChildren.filter { listed.contains($0.key) }
+        for chat in chats where lastSeen[ChatTitle.key(chat)] == nil {
+            lastSeen[ChatTitle.key(chat)] = chat.lastActivity
+        }
+    }
+
+    public mutating func markSeen(_ chat: SwarmProjectSession, now: Int = Int(Date().timeIntervalSince1970)) {
+        let key = ChatTitle.key(chat)
+        lastSeen[key] = max(lastSeen[key] ?? 0, now, chat.lastActivity)
+    }
+
+    public mutating func dismissFinishedChildren(
+        _ ids: [String], in chat: SwarmProjectSession, agents: [SwarmAgent]
+    ) {
+        let key = ChatTitle.key(chat)
+        let finished = SwarmPanePolicy.cells(session: chat.session, agents: agents,
+                                             dismissed: dismissedChildren[key] ?? []).filter {
+            $0.agent.status == .ended && ids.contains($0.id.rawValue)
+        }.map(\.id.rawValue)
+        guard !finished.isEmpty else { return }
+        dismissedChildren[key, default: []] += finished
+    }
+
+    public mutating func recordTabFirstSight(_ entries: [WorkspaceEntry]) {
+        for entry in entries {
+            let rows = entry.project.chats.filter { $0.workspacePath == entry.id }
+            tabs[entry.id] = tabs[entry.id]?.pruned(to: Set(entry.chats.map(ChatTitle.key))) ?? TabStrip.seed(rows)
+        }
+    }
+
+    public mutating func recordTabSelection(_ key: String, in workspace: String) {
+        var history = tabHistory[workspace] ?? []
+        history.removeAll { $0 == key }
+        history.append(key)
+        tabHistory[workspace] = Array(history.suffix(20))
+    }
+
+    public mutating func openTab(_ chat: SwarmProjectSession, in entry: WorkspaceEntry) {
+        let current = selectedChats[entry.id].flatMap { SwarmSessionListing.chat(.init($0), in: entry.chats) }
+        let strip = tabs[entry.id] ?? TabStrip.seed(entry.project.chats.filter { $0.workspacePath == entry.id })
+        tabs[entry.id] = strip.opening(ChatTitle.key(chat), after: current.map(ChatTitle.key))
+    }
+
+    /// Hiding changes only view choices. The listed chat and its agents are untouched.
+    @discardableResult
+    public mutating func closeTab(_ key: String, in entry: WorkspaceEntry) -> SwarmSessionID? {
+        guard let strip = tabs[entry.id], strip.open.contains(key) else { return selectedChat(in: entry)?.id }
+        tabs[entry.id] = strip.closing(key)
+        tabHistory[entry.id]?.removeAll { $0 == key }
+        let selected = selectedChat(in: entry)
+        selectedChats[entry.id] = selected?.id.rawValue
+        return selected?.id
+    }
+
+    @discardableResult
+    public mutating func hideEndedTab(
+        leaving previous: SwarmSessionID?, selecting next: SwarmSessionID?, in entries: [WorkspaceEntry]
+    ) -> Bool {
+        guard let previous, previous != next else { return false }
+        for entry in entries {
+            guard let chat = SwarmSessionListing.chat(previous, in: entry.chats) else { continue }
+            let key = ChatTitle.key(chat)
+            guard chat.isRunning == false, tabs[entry.id]?.open.contains(key) == true else { return false }
+            if let next, let selected = SwarmSessionListing.chat(next, in: entry.chats),
+               ChatTitle.key(selected) == key { return false }
+            closeTab(key, in: entry)
+            return true
+        }
+        return false
+    }
+
+    /// A tab drop can move only two open keys in the same workspace.
+    @discardableResult
+    public mutating func moveTab(_ key: String, onto target: String, in workspace: String) -> Bool {
+        guard key != target, let strip = tabs[workspace], strip.open.contains(key),
+              let index = strip.open.firstIndex(of: target) else { return false }
+        tabs[workspace] = strip.moving(key, to: index)
+        return true
+    }
+
+    @discardableResult
+    public mutating func moveTab(_ key: String, toward target: String, in workspace: String) -> Bool {
+        guard let strip = tabs[workspace] else { return false }
+        let updated = strip.stepping(key, toward: target)
+        guard updated != strip else { return false }
+        tabs[workspace] = updated
+        return true
+    }
+
+    @discardableResult
+    public mutating func groupTab(_ action: TabStrip.Grouping, in workspace: String) -> Bool {
+        guard let strip = tabs[workspace] else { return false }
+        let updated = strip.grouping(action)
+        guard updated != strip else { return false }
+        tabs[workspace] = updated
+        return true
+    }
+
+    public mutating func select(
+        _ entry: WorkspaceEntry, chat: SwarmSessionID? = nil,
+        now: Int = Int(Date().timeIntervalSince1970), recordingHistory: Bool = true
+    ) {
         selectedWorkspace = entry.id
         if let id = chat ?? selectedChat(in: entry)?.id {
             selectedChats[entry.id] = id.rawValue
+            if let selected = SwarmSessionListing.chat(id, in: entry.chats) {
+                markSeen(selected, now: now)
+                if recordingHistory { recordTabSelection(ChatTitle.key(selected), in: entry.id) }
+            }
         }
     }
 
@@ -137,9 +378,9 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
     }
 
     public func matches(_ query: String, entry: WorkspaceEntry) -> Bool {
-        query.isEmpty || [title(for: entry), entry.project.name, entry.workspace.name, entry.id]
+        query.isEmpty || [title(for: entry), projectTitle(for: entry.project), entry.workspace.name, entry.id]
             .contains { $0.localizedCaseInsensitiveContains(query) }
-            || entry.chats.contains { $0.title.localizedCaseInsensitiveContains(query) }
+            || entry.chats.contains { title(for: $0).localizedCaseInsensitiveContains(query) }
     }
 }
 
@@ -147,19 +388,70 @@ public struct WorkspaceNavigation: Codable, Equatable, Sendable {
 public final class WorkspaceNavigationStore {
     private let defaults: UserDefaults
     private let key = "workspaces.navigation"
+    private let choices: OwnerChoicesStore
+    private let encodeViewState: (WorkspaceNavigation) throws -> Data
+    private var lastChoices = OwnerChoices()
+    public private(set) var choicesRevision = 0
+    public var savedChoices: OwnerChoices { lastChoices }
 
-    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
-
-    public func load() -> WorkspaceNavigation {
-        guard let data = defaults.data(forKey: key),
-              let value = try? JSONDecoder().decode(WorkspaceNavigation.self, from: data) else {
-            return WorkspaceNavigation()
-        }
-        return value
+    public convenience init(defaults: UserDefaults = .standard, choicesFolder: URL? = SwarmHome.dataFolder) {
+        self.init(defaults: defaults, choices: OwnerChoicesStore(folder: choicesFolder))
     }
 
-    public func save(_ value: WorkspaceNavigation) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        defaults.set(data, forKey: key)
+    public convenience init(defaults: UserDefaults, choices: OwnerChoicesStore) {
+        self.init(defaults: defaults, choices: choices, encodeViewState: {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            return try encoder.encode($0)
+        })
+    }
+
+    init(defaults: UserDefaults, choices: OwnerChoicesStore,
+         encodeViewState: @escaping (WorkspaceNavigation) throws -> Data) {
+        self.defaults = defaults
+        self.choices = choices
+        self.encodeViewState = encodeViewState
+    }
+
+    public func load() -> WorkspaceNavigation {
+        let value = defaults.data(forKey: key)
+            .flatMap { try? JSONDecoder().decode(WorkspaceNavigation.self, from: $0) } ?? WorkspaceNavigation()
+        do {
+            return adopt(try choices.load(waitForLock: true), into: value)
+        } catch {
+            choices.alerts.report(OwnerChoicesFailure(error.localizedDescription, operation: .load))
+            return value
+        }
+    }
+
+    @discardableResult
+    public func save(_ value: WorkspaceNavigation) -> OwnerChoicesFailure? {
+        let data: Data
+        do { data = try encodeViewState(value) }
+        catch { return OwnerChoicesFailure(error.localizedDescription, operation: .saveViewState) }
+        if data != defaults.data(forKey: key) { defaults.set(data, forKey: key) }
+        choices.resolveAlerts(.saveViewState)
+        guard value.ownerChoices != lastChoices else { return nil }
+        choicesRevision += 1
+        do {
+            try choices.update { $0.applyWorkspaceChanges(from: lastChoices, to: value.ownerChoices) }
+            lastChoices = value.ownerChoices
+        } catch { return OwnerChoicesFailure(error.localizedDescription, operation: .save) }
+        return nil
+    }
+
+    public func adopt(_ saved: OwnerChoices, into value: WorkspaceNavigation) -> WorkspaceNavigation {
+        // Adopt the snapshot as the baseline for the next owner save.
+        lastChoices = saved
+        var refreshed = value
+        refreshed.ownerChoices = saved
+        return refreshed
+    }
+
+}
+
+public enum SidebarDrop {
+    public static func folder(in urls: [URL]) -> URL? {
+        urls.first { $0.isFileURL && OwnerChoices.folderExists($0.path) }
     }
 }

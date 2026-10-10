@@ -34,6 +34,20 @@ pub struct Agent {
     pub log: Option<String>,
     /// The question the agent's screen shows now, if any; `swarm answer` picks a choice.
     pub prompt: Option<crate::screen::Prompt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(rename = "costUsd", skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,6 +88,8 @@ pub struct Session {
     pub agents: i64,
     pub messages: i64,
     pub last_message_at: Option<i64>,
+    #[serde(rename = "archivedAt", skip_serializing_if = "Option::is_none")]
+    pub archived_at_s: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -330,7 +346,7 @@ pub fn write_trust(
         if plan.after == plan.before {
             return Ok(None);
         }
-        crate::managed::apply(store, std::slice::from_ref(&plan))?;
+        crate::managed::apply(store, &[plan.clone().into()])?;
         Ok(Some(plan))
     })
 }
@@ -1392,7 +1408,10 @@ mod tests {
 
     fn apply(plans: &[FilePlan]) -> Result<Vec<std::path::PathBuf>, String> {
         let store = crate::store::open(std::path::Path::new(":memory:")).unwrap();
-        crate::managed::apply(&store, plans)
+        crate::managed::apply(
+            &store,
+            &plans.iter().cloned().map(Into::into).collect::<Vec<_>>(),
+        )
     }
 
     /// A launch's trust write as `write_trust` makes it, with a store of its own; whether the
@@ -1588,8 +1607,8 @@ mod tests {
             edits: Vec::new(),
         };
         assert_ne!(
-            crate::managed::digest(&[planned("{}")]),
-            crate::managed::digest(&[planned("{\"swarm\": {}}")])
+            crate::managed::digest(&[planned("{}").into()]),
+            crate::managed::digest(&[planned("{\"swarm\": {}}").into()])
         );
 
         std::fs::write(&hooks, "{ not json").unwrap();

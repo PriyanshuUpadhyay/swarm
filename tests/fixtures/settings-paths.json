@@ -1,0 +1,42 @@
+[
+  {
+    "home": "/owner",
+    "branch": "",
+    "explicit": null,
+    "lock": "/owner/.swarm/app.lock",
+    "guardsOverride": null,
+    "guards": "/owner/.swarm/guards.json"
+  },
+  {
+    "home": "/owner",
+    "branch": "main",
+    "explicit": null,
+    "lock": "/owner/.swarm-main/.swarm/app.lock",
+    "guardsOverride": null,
+    "guards": "/owner/.swarm/guards.json"
+  },
+  {
+    "home": "/owner",
+    "branch": "feat/login",
+    "explicit": null,
+    "lock": "/owner/.swarm-feat-login+407712bf7898fb7f/.swarm/app.lock",
+    "guardsOverride": null,
+    "guards": "/owner/.swarm/guards.json"
+  },
+  {
+    "home": "/owner",
+    "branch": "main",
+    "explicit": "/scratch/home",
+    "lock": "/scratch/home/.swarm/app.lock",
+    "guardsOverride": null,
+    "guards": "/owner/.swarm/guards.json"
+  },
+  {
+    "home": "/owner",
+    "branch": "feat/login",
+    "explicit": "/scratch/home",
+    "lock": "/scratch/home/.swarm/app.lock",
+    "guardsOverride": "/dotfiles/guards.json",
+    "guards": "/dotfiles/guards.json"
+  }
+]

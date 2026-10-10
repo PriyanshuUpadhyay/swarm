@@ -88,14 +88,19 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
 
 1. **Install an agent CLI and sign in.** Swarm starts [Claude Code](https://docs.claude.com/en/docs/claude-code),
    [Codex](https://github.com/openai/codex), and AGY. A runner whose CLI is not on `PATH` is skipped.
-2. **Link the swarm skills.** The chair and the workers learn the protocol from `skills/`. Clone
-   this repo and run the script from the `main` checkout. It links each skill into
-   `~/.claude/skills`, `~/.agents/skills` (Codex), and `~/.gemini/config/skills` (AGY):
+2. **Prepare the bundled skills.** The app refreshes its skills copy on start. To prepare it
+   from a terminal, use the helper shipped with Swarm.app:
 
    ```sh
-   git clone https://github.com/PriyanshuUpadhyay/swarm ~/swarm
-   sh ~/swarm/scripts/install.sh
+   swarm skills refresh
+   swarm setup --plan --only skills
    ```
+
+   Apply the displayed digest with `swarm setup --digest <digest> --only skills` after you
+   review the links. Setup records 23 links in each of `~/.claude/skills`, `~/.agents/skills`
+   (Codex), and `~/.gemini/config/skills` (AGY). A foreign link is a conflict. If dotfiles manages
+   it, remove that link from dotfiles first so a later sync cannot create it again. Keep the
+   dotfiles support references and scripts. Setup never adopts or replaces a foreign link.
 
 3. **Check your profiles.** A profile maps a role, such as `code.small` or `review.deep`, to an
    ordered list of runners (provider, model, effort). Swarm ships defaults in
@@ -103,7 +108,7 @@ If **Open Anyway** does not show, run `xattr -dr com.apple.quarantine /Applicati
    `swarm roles check --json`. [Profiles](#profiles-and-runners) has the details.
 4. **Approve the setup plan.** On first launch the app asks "Let swarm set up this Mac?" and
    shows each file it would change, under its group: the Codex and AGY hooks, so worker columns
-   show their chat and state, and folder trust, so a seat in a git repo or a swarm scratch folder
+   show their chat and state, Skills for the bundled workflows, and folder trust, so a seat in a git repo or a swarm scratch folder
    starts with no trust dialog. Clear a group's box to leave it as it is, and pick under folder
    trust whether swarm trusts each folder that passes the safety check or asks in the agent's
    column. Click **Approve and apply**. Until you approve folder trust, a seat
@@ -136,10 +141,10 @@ claude --profile work auth login
 
 Without yelo, each CLI uses its own login. AGY has no account source yet.
 
-### Optional: workflow skills from agent-kit
+### Bundled workflow skills
 
-[agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit) has workflow skills that run their
-workers as visible swarm panes:
+Swarm bundles the workflow skills from [agent-kit](https://github.com/PriyanshuUpadhyay/agent-kit).
+These skills run workers in visible swarm panes:
 
 | Skill | What it does with swarm |
 |---|---|
@@ -150,8 +155,10 @@ workers as visible swarm panes:
 | [`orchestrate-claude`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-claude), [`-codex`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-codex), [`-agy`](https://github.com/PriyanshuUpadhyay/agent-kit/tree/main/skills/orchestrate-agy) | Bind a skill's worker needs to each agent CLI |
 
 The roles these skills ask for (`council.gpt`, `search.web`, `review.deep`, and others) are the
-profile names in `default-profiles.json`. The
-[agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit#install) shows how to link the skills.
+profile names in `default-profiles.json`. The Skills group in Setup records their links.
+Some workflows also need the dotfiles references, scripts, or private expert packs described in
+the [agent-kit README](https://github.com/PriyanshuUpadhyay/agent-kit). These support files are
+not bundled or linked by Setup.
 
 ## Use it
 
@@ -169,8 +176,8 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 
 ### From the app
 
-1. Click **Import Project…** and choose a folder. Swarm adds the project and starts a chat in it
-   with the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
+1. Click **Import Project…** and choose a folder. Swarm adds and selects the project without
+   starting an agent. Click **New chat** to start the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
    The **+** on a project's header makes a workspace (a branch in its own worktree) there.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
@@ -181,12 +188,16 @@ The chair follows `swarm-orchestrator`, and the worker pane opens beside it.
 ## Swarm app reference
 
 Swarm.app opens on Home, where routed roles show their models. Import Project adds a folder to the
-project list and starts a chat in it; a folder that is not a Git repository first gets an offer to run
-`git init`, and "Keep as Folder" adds it as a plain project. Create Project makes a folder, runs `git init`
-in it, adds it there, and starts a chat in it.
-New chat starts the chat profile at once with no sheet (ADR 0035): a "New chat" tab shows at once and becomes the
-chat when the chair is up, or shows the launch error with Retry. To use another model, start a chat and use Switch
-model. Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
+project list and selects it; a folder that is not a Git repository first gets an offer to run
+`git init`. **Keep as Folder** adds it as a plain project and remembers that choice.
+Create Project makes a folder, runs `git init`, and makes a first commit with `.gitignore` to keep
+`tmp/` out of Changes. If git has no identity or the commit fails, Swarm keeps the project and
+shows why. It adds and selects the project. Creating or importing a project starts no agent.
+New chat starts the chat profile at once with no sheet (ADR 0059): a "New chat" tab shows at once and becomes the
+chat when the chair is up, or shows the launch error with Retry. Press and hold or right-click a workspace's **+** or
+**New chat**, or click its menu indicator, to open **New chat as…** and choose any profile. The chat profile is first and
+marked as the one-click default; each caption shows its first runner's provider and model.
+Codex and AGY list CLI models; Claude lists aliases and accepts a full model name in Other model. In a chat,
 Switch model asks the live chair
 for a compact summary, starts the chosen Claude or Codex model, and keeps both parts in one chat
 tab. If the old pane has closed, the new chair receives recent messages and makes its own compact
@@ -195,9 +206,14 @@ summary.
 The sidebar shows one header per project, with its workspaces under it in last-activity order, and
 Pinned workspaces in their own section at the top (ADR 0037). A header collapses with its chevron and
 then shows its most urgent status. The **+** at the top makes or imports a project (⇧⌘N). A project's
-**+** makes a workspace there, and ⌘N makes one in the current project: a branch from the default branch in a worktree beside the
-project, then a chat in it. In a repository with no commit yet, the branch starts empty (an orphan
-branch). A plain-folder project offers `git init` first. A workspace row's **+** adds a chat in it
+**+** makes a workspace there, and ⌘N makes one in the current project. The sheet can make a new
+branch from a base, use an existing branch that no worktree holds, or fetch a GitHub pull request.
+Each project can set its worktree folder and branch prefix. The default folder is beside the
+project, or `wt/` in a bare hub, and the default prefix is `swarm/`.
+The new workspace is selected without starting an agent; its empty page shows **New chat**.
+In a repository with no commit yet, the branch starts empty (an orphan
+branch). A plain-folder project offers `git init` first. If **Keep as Folder** was remembered,
+it stays plain until you choose **Run git init…**. A workspace row's **+** adds a chat in it
 (⌘T). Empty task worktrees stay in the sidebar with 0 chats. The command palette (⌘K) finds
 workspace names, projects, branches, and chat titles. Chats in the selected workspace appear as
 underlined tabs above the transcript. The plus button starts another chat in that workspace.
@@ -266,11 +282,12 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 |---|---|---|
 | `--version` | any | Print the package version and build commit. |
 | `init` | any | Claim `.swarm/` (ADR 0036), then create `runs/`, `adapters/`, and the database. Shipped adapters stay in the binary; matching old disk copies are removed. |
-| `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), and `herdr` (always true until a Herdr writer ships). More groups may come (ADR 0043). |
-| `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
+| `skills refresh` | any | Validate and refresh the complete bundled skills copy in this build's swarm home. The command requires the helper shipped with Swarm.app. Setup uses this copy for link targets. |
+| `setup status --json` | any | Print whether each setup group has nothing pending: `hooks` (swarm's Codex and AGY state hooks), `guard` (as for `hooks status`), `trust` (the owner's answer, `standing` or `ask`, for launch folder trust in `~/.swarm/consent.json`), `herdr` (always true until a Herdr writer ships), and `skills` (all catalog links recorded and present, with a complete default copy). More groups may come (ADR 0043). |
+| `setup [--plan [--json] \| --digest <digest>] [--cwd <dir>] [--only <group>,...] [--consent <standing\|ask>] [--resume]` | any | One plan of every write swarm makes outside its home, with one digest: the `hooks` group as `hooks setup` writes it, then the `trust` group, the consent file (set to `--consent`, by default the recorded answer, else `standing`, as a managed edit whose undo means `ask`) and each trust entry a seat launched in `--cwd` (default the current folder) would need, or with `--resume` a resuming seat, whose Claude runs in that folder itself. The `skills` group follows `herdr` and plans links into the current build home. `--plan` prints a unified diff per file, each conflict, and each skipped part with its reason, and with `--json` gives each file and conflict its `group`. Apply writes each file in plan order and records each trust entry and the consent (ADR 0042); with nothing pending it prints `already set up` and exits 0 (ADR 0043). |
 | `hooks status --json` | any | Print whether swarm's own Codex and AGY state hooks are set up, and as `guard` whether the guard registrations match the rule list: all in place while `~/.swarm/guards.json` exists, none left once it is gone (ADR 0040). |
 | `hooks setup [--plan [--json] \| --digest <digest>]` | any | Trust swarm's Codex hooks in `~/.codex` and each `~/.codex-<name>`, and add the `swarm` group to AGY's `hooks.json`. With a rule list at `~/.swarm/guards.json`, also register `swarm guard` in each Claude `settings.json`, each Codex `hooks.json` with its trust, and AGY's `swarm-guard` group (ADR 0040). An entry that swarm needs where the owner already has another one, or a file that swarm cannot read or edit, is a conflict: setup names it with its fix, writes no file, and exits 1. `--plan` prints a unified diff per file and each conflict, writes nothing, and exits 0. With `--json` it also prints the `digest` that `--digest` checks, so apply refuses a file that changed after the plan (ADR 0036). Each item it adds is recorded, so `managed list` shows it and `managed revert` removes it (ADR 0042). |
-| `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, or a JSON array item) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
+| `managed list [--json]` | any | Print each item swarm wrote outside its home (a TOML key, a JSON key, a JSON array item, or a skill link) with its live state: `present` (equals what swarm wrote), `changed` (with the value `found` now), `unreadable` (swarm cannot read the file or the path in it, with the reason as `error`; revert refuses it), `gone`, or `off` (swarm removed it). An item with no record that equals swarm's current hook text is listed with `recorded: false` (ADR 0042). |
 | `managed revert (<id>... \| --all) [--plan [--json] \| --digest <digest>]` | any but a child | Remove each named item, or each `present` one with `--all`, and only while it equals what swarm wrote; a value swarm replaced is set back. A Codex guard trust key goes with its `hooks.json` group. An item with another value is a conflict with its fix, and no file is written. `--plan` and `--digest` work as for `hooks setup`. A child caller is refused, because a revert can remove the guard that blocks its own calls; its `--plan` still prints (ADR 0042). |
 | `guard <claude\|codex\|agy> PreToolUse` | a CLI hook | Read the CLI's hook payload on stdin, run each matching rule of `~/.swarm/guards.json` (`SWARM_GUARDS` overrides the path), and print that CLI's allow or deny. A guard rule that crashes, times out, or does not start, a bad list, or a missing list blocks the call (ADR 0040). |
 | `adapter check <name>` | any | Load the shipped adapter plus any disk overrides. Print the verbs that the disk file overrides. |
@@ -278,9 +295,11 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `session chair <claude\|codex>:<id>` | orchestrator | Set the chair transcript id. Refuse any other agent. |
 | `session continue <new_id> <old_id>` | any | Link a newer session to an older session in the same directory after the new chair receives its context. |
 | `session archive <id>...` | any | Archive one or more UUID v7 sessions. |
+| `session unarchive <id>...` | any | Restore one or more archived UUID v7 sessions. |
 | `sessions --json` | any | List active sessions and resolved chair logs as JSON. |
+| `sessions --json --archived` | any | List all active sessions, then the newest 50 archived sessions in archive order, with `archivedAt` in Unix seconds. |
 | `host-context --provider <claude\|codex\|agy>` | any | Print the session's host contract in that provider's hook format, or nothing outside a visible host. |
-| `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
+| `hook <claude\|codex\|agy> [event]` | any | Read a provider hook's JSON on stdin and record the agent's state (`working`, `waiting`, `done`, `failed`) for `SWARM_AGENT_ID`. A Claude or Codex `Stop` also stores the model and token total. Claude reads at most 8 MiB per Stop and adds new message usage; Codex copies its cumulative total. A cost is stored only from a complete provider record. Does nothing outside a swarm agent. Always prints `{}` and exits 0. AGY sends no event name, so its hook passes it, as in `swarm hook agy Stop`. |
 | `notify <title> [--body <text>]` | orchestrator or owner | Show the owner one notice through the adapter's `notify` verb (osascript on every shipped adapter, ADR 0045), within 5 s. Needs no session. Refuse a worker, and exit 1 when the adapter has no `notify` verb. `hook` and `agents --json` also send one notice when an agent's state changes to `waiting` (ADR 0044). |
 | `herdr-split` | any | Split a child pane right of `HERDR_PANE_ID`, stack it under earlier children at equal height, and print its id. The herdr adapter's spawn verb. |
 | `roles --json` | any | Print every profile, the file's `revision`, and `imported` when the file came from the old routing file. Reads no usage. |
@@ -293,7 +312,7 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `usage --json` | any | List account use meters as JSON. |
 | `drain` | any | Run queued summarize jobs, print `done`, `retry`, or `parked` per job. |
 | `agent add <id> <role>` | session | Register an agent. The `orchestrator` role also records the caller pane and session adapter. |
-| `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `working`, `waiting`, or `done` when the screen shows it and no hook reported in the last 10 s. It re-rings a due message to an idle pane and, while the adapter lists the chair's pane and it reads idle with no question, sends the sweep's reports. None of its rings waits for proof: the next listing or sweep settles it from the hook state and the screen (ADR 0041). |
+| `agents --json` | session | List agents, pane state, agent state, and adapter attach support as JSON. Each row includes `profile`, `runner`, `model`, `effort`, `account`, `costUsd`, and `tokens` when known. Missing values are omitted. For each live agent it reads the pane's bottom rows (the adapter's `screen` verb) and records `working`, `waiting`, or `done` when the screen shows it and no hook reported in the last 10 s. It re-rings a due message to an idle pane and, while the adapter lists the chair's pane and it reads idle with no question, sends the sweep's reports. None of its rings waits for proof: the next listing or sweep settles it from the hook state and the screen (ADR 0041). |
 | `agents --json --all` | any | Print one JSON object that maps a session id to its `agents --json` listing, read with that session's stored adapter. It has a key only for a non-archived session that has agents and a stored adapter and whose read worked; a failed read prints an error on stderr. Adapter work shares an 18 s batch budget, divided across the remaining sessions. A session that exceeds its share is omitted with an error on stderr. The app's sidebar uses it once per refresh. |
 | `messages --json [--after <seq>]` | session | List message metadata and available bodies as JSON. `delivery` is what the last ring proved: `hook`, `screen`, `seen` (the agent read its messages after the ring), `unconfirmed`, `unchecked`, or null until the ring's proof is settled; more values may come (ADR 0041). |
 | `launch <id> <role> [--provider <claude\|codex\|agy>] [--model <name> for chat] [--account <auto\|name>] [--cwd <dir>] [-- <args>...]` | session | Start the first runner of the role's profile that can run, or, with `chat --provider <provider> --model <name>`, exactly that model once with the chat profile's effort for that provider and no fallback (ADR 0033). `--account` is ignored for a provider with no accounts, and without `--model` a `--provider` the profile has no runner of is refused. Register the agent, split a pane in `--cwd`, and start its provider CLI. A child caller is refused. A Claude child runs from `<cwd>/.herdr/workers`. The pane dir is marked trusted for Claude, Codex, and AGY only with standing consent from `swarm setup`, or for a chair, whose folder the owner picked; each write is recorded and printed as a bare `trusted <provider> <dir>` line on stderr. With no consent, launch writes nothing and prints a bare `trust-pending <provider> <dir>` line, the diff, and the `swarm setup --plan --cwd` command that approves it; the pane shows its CLI's own trust question (ADR 0043). |
@@ -320,7 +339,8 @@ pane's own swarm through them (ADR 0034). Claude, Codex, and AGY run
 `skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
 `skills/swarm-orchestrator` is for the parent. Inside the repo, Claude Code finds them through
 `.claude/skills` and AGY through `.agents/skills`, both links to `skills/`; Codex reads `AGENTS.md`.
-`sh scripts/install.sh` links them into every agent CLI on the machine. `demo/herdr.sh` and
+`swarm skills refresh` prepares the bundled copy. `swarm setup --plan --only skills` shows
+the managed links for each CLI. Review and apply the displayed digest. `demo/herdr.sh` and
 `demo/tmux.sh` each run one live voice on that host: `cargo install --path .` then
 `VOICE=claude|codex|agy sh demo/herdr.sh` from a Herdr pane, or `sh demo/tmux.sh` from inside tmux.
 
@@ -360,4 +380,3 @@ timings for a command-line run. In Instruments, use Time Profiler for CPU work a
 Interest for the stage intervals. `AppStarted` and `WindowReady` mark startup.
 `ChatSelected`, `ChatDetailAppeared`, and `ChatRowsShown` mark the visible chat-open path;
 `InitialRefresh`, `WorkspaceTree`, and `TranscriptPoll` show where the time goes before that.
-

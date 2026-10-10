@@ -14,6 +14,7 @@ final class SessionDetailModel {
     var usage = ChatUsage()
     var currentModel: String?
     var snapshot: ChairTranscriptSnapshot
+    private(set) var hasLoaded = false
     private(set) var transcriptRevision = 0
     var draft = ""
     private(set) var queued: [ComposerQueuedRow] = []
@@ -76,6 +77,7 @@ final class SessionDetailModel {
             let pending = await transcript.queuedMessages
             await updateHistoryAvailability(row: row)
             compose(row: row)
+            hasLoaded = true
             sentMessages.confirm(by: rows)
             let nextQueued = ComposerQueuedRow.queued(pending) + sentMessages.rows
             if queued != nextQueued { queued = nextQueued }
@@ -169,6 +171,7 @@ final class SessionDetailModel {
         transcripts.removeAll()
         snapshots.removeAll()
         snapshot = .loading
+        hasLoaded = false
     }
 
     func setDraft(_ value: String, sessionID: String) {
@@ -225,6 +228,7 @@ final class SessionDetailModel {
         guard activeSessionID != sessionID else { return }
         if let activeSessionID { drafts.save(draft, for: activeSessionID) }
         activeSessionID = sessionID
+        hasLoaded = false
         currentModel = nil
         usage = ChatUsage()
         queued = []
@@ -262,13 +266,17 @@ final class SessionDetailStore {
 }
 
 struct SessionDetailView: View {
+    @Environment(\.designTokens) private var tokens
     let row: SwarmProjectSession
     let model: SessionDetailModel
     let agents: [SwarmAgent]
+    let readOnlyReason: String?
     let launchedModel: String?
     /// The folder trust the chair's launch wrote, shown so it is never silent (owner answer I1).
     let launchedTrust: [SwarmTrustWrite]
     let panes: AgentPaneStore
+    let paneWidths: PaneWidths
+    let onPaneWidthsChanged: (PaneWidths) -> Void
     let commandSource: ComposerCommandSource?
     let onSwitchModel: (String?) -> Void
     let isCurrentSession: () -> Bool
@@ -276,6 +284,10 @@ struct SessionDetailView: View {
     let isVisible: Bool
     let onUsageChanged: (ChatUsage) -> Void
     let onShowUsage: () -> Void
+    let dismissedChildren: [String]
+    let onDismissChildren: ([String]) -> Void
+    let onStopChild: (SwarmAgentID) -> Void
+    let onCloseChild: (SwarmAgentID) -> Void
 
     @State private var didShowRows = false
     @FocusState private var composerFocused: Bool
@@ -330,14 +342,11 @@ struct SessionDetailView: View {
     }
 
     private var modelSwitchDisabledReason: String? {
-        if currentModel == nil, model.snapshot == .waiting || model.snapshot == .loading {
-            return "Waiting for this chat's model information."
-        }
-        if model.isSending(sessionID: row.id.rawValue)
-            || (row.isRunning == true && ChairTurn.isActive(model.rows)) {
-            return "Wait for the reply to finish, or stop it before switching model."
-        }
-        return nil
+        ModelSwitchChoice.disabledReason(
+            readOnlyReason: readOnlyReason,
+            waitingForModel: currentModel == nil && (model.snapshot == .waiting || model.snapshot == .loading),
+            isSending: model.isSending(sessionID: row.id.rawValue), isRunning: isRunning
+        )
     }
 
     private var isRunning: Bool {
@@ -402,7 +411,10 @@ struct SessionDetailView: View {
             onTap: { [panes] in panes.clearFocus() },
             focus: $transcriptFocused
         ) {
-            composer
+            if let readOnlyReason {
+                Text(verbatim: readOnlyReason).font(.caption).foregroundStyle(.secondary)
+                    .padding(tokens.spacing.m)
+            } else { composer }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !launchedTrust.isEmpty { trustNotice }
@@ -417,7 +429,7 @@ struct SessionDetailView: View {
 
     /// One line per provider, as one element, so VoiceOver reads the whole notice.
     private var trustNotice: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
             ForEach(launchedTrust, id: \.self) { write in
                 Label(write.notice, systemImage: "checkmark.shield")
                     .fixedSize(horizontal: false, vertical: true)
@@ -426,14 +438,14 @@ struct SessionDetailView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DesignTokens.Spacing.s)
+        .padding(tokens.spacing.s)
         .background(.bar)
         .accessibilityElement(children: .combine)
     }
 
     private var paneKeys: [String] {
         guard isActive else { return [] }
-        return SwarmPanePolicy.cells(session: row.session, agents: agents).map {
+        return SwarmPanePolicy.cells(session: row.session, agents: agents, dismissed: dismissedChildren).map {
             AgentPaneStore.key(session: row.session.id, agent: $0.agent.id.rawValue)
         }
     }
@@ -442,10 +454,12 @@ struct SessionDetailView: View {
         // The menu bar keeps old command closures alive, so these capture only what they use:
         // capturing the view kept every freed chat's model (and its rows) with them.
         let keys = paneKeys
+        let canWrite = readOnlyReason == nil
         let composerFocus = $composerFocused
         let transcriptFocus = $transcriptFocused
         return ChatKeyActions(
             focusComposer: { [panes] in
+                guard canWrite else { return }
                 panes.revealChat()
                 composerFocus.wrappedValue = true
             },
@@ -456,6 +470,7 @@ struct SessionDetailView: View {
             },
             zoom: { [panes] in panes.toggleZoom() },
             stop: { [weak model, session = row.session] in
+                guard canWrite else { return }
                 Task { try? await model?.interrupt(session: session) }
             }
         )
@@ -463,14 +478,16 @@ struct SessionDetailView: View {
 
     private var paneStrip: some View {
         let session = row.session
-        let agentCells = isActive ? SwarmPanePolicy.cells(session: session, agents: agents) : []
+        let agentCells = isActive
+            ? SwarmPanePolicy.cells(session: session, agents: agents, dismissed: dismissedChildren) : []
         let byID = Dictionary(agentCells.map { ($0.agent.id.rawValue, $0) }) { first, _ in first }
         func key(_ id: String) -> String { AgentPaneStore.key(session: session.id, agent: id) }
         return PaneStrip(
             cells: agentCells.map { cell in
                 PaneCell(
                     id: cell.agent.id.rawValue, title: cell.agent.id.rawValue, role: cell.agent.role,
-                    model: cell.agent.provider ?? "unknown", status: cell.agent.status
+                    model: cell.model, status: cell.agent.status,
+                    stateTooltip: AgentStateText.tooltip(agent: cell.agent, now: Int(Date().timeIntervalSince1970))
                 )
             },
             focusedID: agentCells.first { key($0.agent.id.rawValue) == panes.focusedKey }?.agent.id.rawValue,
@@ -479,10 +496,21 @@ struct SessionDetailView: View {
             revealCount: panes.revealCount,
             splitScope: session.id.rawValue,
             onFocus: { panes.focus(key: key($0)) },
-            onZoom: { panes.toggleZoom(key: $0.map(key)) }
+            onZoom: { panes.toggleZoom(key: $0.map(key)) },
+            onDismiss: { ids in
+                if ids.contains(where: { key($0) == panes.focusedKey || key($0) == panes.zoomedKey }) {
+                    panes.revealChat()
+                }
+                onDismissChildren(ids)
+            },
+            readOnlyReason: readOnlyReason,
+            onStop: { onStopChild(SwarmAgentID($0)) },
+            onClose: { onCloseChild(SwarmAgentID($0)) },
+            widths: paneWidths, onWidthsChanged: onPaneWidthsChanged
         ) {
             VStack(spacing: 0) {
-                waitingChildren(agentCells.map(\.agent))
+                waitingChildren(SwarmPanePolicy.liveCells(session: session, agents: agents).map(\.agent))
+                    .disabled(readOnlyReason != nil)
                 transcriptColumn
             }
         } pane: { cell in
@@ -490,6 +518,7 @@ struct SessionDetailView: View {
                 let paneKey = key(cell.id)
                 ChildColumnView(
                     session: session, agent: agent, model: panes.column(key: paneKey),
+                    readOnlyReason: readOnlyReason ?? (agent.status == .ended ? "This agent has ended." : nil),
                     selected: panes.focusedKey == paneKey, focusRequest: panes.revealCount,
                     onFocused: { [panes] in panes.focused(key: paneKey) }
                 )
@@ -505,7 +534,7 @@ struct SessionDetailView: View {
         if !waiting.isEmpty {
             let session = row.session
             ScrollView {
-                VStack(spacing: DesignTokens.Spacing.s) {
+                VStack(spacing: tokens.spacing.s) {
                     ForEach(waiting) { agent in
                         if let prompt = agent.prompt {
                             PromptCard(
@@ -524,7 +553,7 @@ struct SessionDetailView: View {
                         }
                     }
                 }
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
             .frame(maxHeight: DesignTokens.promptListMaxHeight)
             .fixedSize(horizontal: false, vertical: true)

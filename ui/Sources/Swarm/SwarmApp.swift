@@ -1,25 +1,103 @@
 import Foundation
 import Observation
+import OSLog
 import SwiftUI
 import SwarmCore
 
 @MainActor @Observable
 final class SessionsTreeModel {
+    private let logger = Logger(subsystem: "io.github.priyanshuupadhyay.swarm", category: "refresh")
     private let bus = SwarmCLIBus()
     private let discovery = SwarmSessionDiscovery()
     private let drafts = ComposerDraftStore()
-    private let projects = SwarmProjectStore()
-    private let navigationStore = WorkspaceNavigationStore()
-    var navigation = WorkspaceNavigation() {
-        didSet { if navigation != oldValue { navigationStore.save(navigation) } }
+    private let ownerChoices = OwnerChoicesStore()
+    private let projects: SwarmProjectStore
+    private let navigationStore: WorkspaceNavigationStore
+    private var noticeSettings: SettingsSelection?
+    private var noticeCenter: NoticeCenter?
+    var noticeAction: ((SwarmSessionID) -> Void)?
+    private(set) var chatWindows: [SwarmSessionID: Int] = [:]
+
+    func startNotices(settings: SettingsSelection) {
+        guard noticeCenter == nil else { return }
+        noticeSettings = settings
+        noticeCenter = NoticeCenter(selectChat: { [weak self] id in self?.noticeAction?(id) }, onDenied: {
+            settings.setAppError("Notifications are off for Swarm in System Settings, so no notice is shown while the app runs.")
+        })
+        // One app-owned subscription keeps notices current when every window is closed.
+        attachWindow()
+        updateDockBadge()
     }
 
-    init() { navigation = navigationStore.load() }
+    func attachChatWindow(_ id: SwarmSessionID) {
+        chatWindows[id, default: 0] += 1
+    }
+
+    func detachChatWindow(_ id: SwarmSessionID) {
+        let remaining = (chatWindows[id] ?? 1) - 1
+        chatWindows[id] = remaining > 0 ? remaining : nil
+    }
+
+    func updateDockBadge() {
+        guard let settings = noticeSettings else { return }
+        let count = DockBadge.count(tree: tree, prefs: settings.prefs.notices)
+        NSApp.dockTile.badgeLabel = count == 0 ? nil : String(count)
+    }
+
+    private func postTransitions(previous: SessionsTree) {
+        updateDockBadge()
+        guard hasLoaded, let settings = noticeSettings, let noticeCenter else { return }
+        for event in NoticeRule.transitions(previous: previous, current: tree) {
+            guard let project = tree.projects.first(where: { $0.path == event.projectPath }),
+                  let notice = NoticeRule.shouldPost(event: event, prefs: settings.prefs.notices,
+                                                     project: project, title: navigation.title(for: event.chat)) else { continue }
+            Task { [notice] in
+                do { try await noticeCenter.post(notice) }
+                catch { settings.setAppError(error.localizedDescription) }
+            }
+        }
+    }
+    var navigation = WorkspaceNavigation() {
+        didSet {
+            if navigation != oldValue {
+                if let failure = navigationStore.save(navigation) {
+                    reportChoicesError(failure)
+                }
+            }
+            if navigation.workspaceOrder != oldValue.workspaceOrder {
+                workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder)
+            }
+        }
+    }
+
+    var choicesAlerts: OwnerChoicesAlerts {
+        get { ownerChoices.alerts }
+        set { ownerChoices.alerts = newValue }
+    }
+
+    private func reportChoicesError(_ failure: OwnerChoicesFailure) {
+        var reported = choicesAlerts
+        guard reported.report(failure) else { return }
+        choicesAlerts = reported
+        logger.error("\(failure.message)")
+    }
+
+    init() {
+        projects = SwarmProjectStore(choices: ownerChoices)
+        navigationStore = WorkspaceNavigationStore(defaults: .standard, choices: ownerChoices)
+        navigation = navigationStore.load()
+        if let message = choicesAlerts.message { logger.error("\(message)") }
+    }
 
     /// Rebuilt when the tree changes, not on every read.
     private(set) var workspaces: [WorkspaceEntry] = []
     var selectedWorkspace: WorkspaceEntry? {
         workspaces.first { $0.id == navigation.selectedWorkspace }
+    }
+    var hasProject: Bool { !navigationStore.savedChoices.projectPaths.isEmpty }
+
+    func workspace(containingChat id: SwarmSessionID) -> WorkspaceEntry? {
+        workspaces.first { $0.chats.contains { $0.sessions.contains { $0.id == id } } }
     }
 
     func selectWorkspace(_ entry: WorkspaceEntry) {
@@ -37,7 +115,7 @@ final class SessionsTreeModel {
     private func expandProject(of entry: WorkspaceEntry) {
         guard !navigation.pinned.contains(entry.id),
               let project = tree.project(containing: entry.id) else { return }
-        navigation.collapsed.remove(project.path)
+        navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
     }
 
     func showHome() {
@@ -45,7 +123,24 @@ final class SessionsTreeModel {
         select(nil)
     }
 
-    func archiveWorkspace(_ entry: WorkspaceEntry) {
+    func selectProject(at path: String) {
+        guard let project = tree.project(containing: path) else { showHome(); return }
+        navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
+        let entries = workspaces.filter { $0.project.id == project.id }
+        let workspace = entries.filter { path == $0.id || path.hasPrefix($0.id + "/") }
+            .max { $0.id.count < $1.id.count } ?? entries.first
+        if let workspace { selectWorkspace(workspace) }
+        else { showHome() }
+    }
+
+    func workspaceEndConfirmation(_ entry: WorkspaceEntry) async throws -> WorkspaceArchive.Confirmation {
+        let count = try await WorkspaceArchive.liveAgents(in: entry.chats, bus: bus)
+        return WorkspaceArchive.Confirmation(liveAgents: count)
+    }
+
+    func archiveWorkspace(_ entry: WorkspaceEntry) async throws {
+        guard let current = workspaces.first(where: { $0.id == entry.id }) else { return }
+        try await WorkspaceArchive.end(current.chats, bus: bus)
         let wasSelected = navigation.selectedWorkspace == entry.id
         navigation.archive(entry.id)
         if wasSelected { select(nil) }
@@ -53,25 +148,40 @@ final class SessionsTreeModel {
 
     private var sourceTree = SessionsTree(projects: [])
     private var archives = ChatArchives()
-    private var refreshRevision = 0
+    private(set) var refreshRevision = 0
+    // A good refresh can return the same tree, so tree changes cannot signal every recovery.
+    private(set) var refreshSuccessToken = 0
+    private(set) var activeRefreshes = 0
     private(set) var selectionRevision = 0
     var tree = SessionsTree(projects: []) {
-        didSet { workspaces = WorkspaceEntry.list(in: tree) }
+        didSet { workspaces = WorkspaceEntry.list(in: tree, workspaceOrder: navigation.workspaceOrder) }
     }
     /// False until the first tree loads, so the sidebar does not claim "No projects yet" early.
     private(set) var hasLoaded = false
     let detailModels = SessionDetailStore()
     var selectedSessionID: SwarmSessionID? {
         didSet {
-            if selectedSessionID != oldValue { detailModels.activate(selectedSessionID) }
+            if selectedSessionID != oldValue {
+                // A handoff's new session is not listed yet; it still owns the same tab.
+                if pendingID == nil {
+                    navigation.hideEndedTab(leaving: oldValue, selecting: selectedSessionID, in: workspaces)
+                }
+                detailModels.activate(selectedSessionID)
+            }
         }
     }
-    private var pendingID: SwarmSessionID?
+    private var pendingSelection: PendingChatSelection?
+    private var pendingID: SwarmSessionID? { pendingSelection?.id }
+    var isRestoringChat: Bool { pendingSelection?.isRestoring == true }
     /// Chats being started, each shown as its own tab (ADR 0035).
     private(set) var pendingChats = PendingChats()
     /// A pending chat's tab is selected; then `selectedSessionID` is nil.
     private(set) var selectedPendingID: UUID?
     var agents: [SwarmAgent] = []
+    private(set) var runsByWorkspace: [String: [StepRun]] = [:]
+    private(set) var runNoticesByWorkspace: [String: String] = [:]
+    private let rowFieldCache = RowFieldCache()
+    private(set) var workspaceFields: [String: RowWorkspaceFields] = [:]
     /// The model `swarm launch` resolved for each chat this app started, shown until the chair's
     /// log reports one.
     private(set) var launchedModels: [SwarmSessionID: String] = [:]
@@ -80,32 +190,66 @@ final class SessionsTreeModel {
     var commandSource: ComposerCommandSource?
     private var commandSourceKey: String?
     var error: String?
+    /// A create, import or new workspace that went through in part: the list refresh after it failed,
+    /// or a new worktree's save failed. Selecting the new workspace can hide `error`, so
+    /// the view shows this in its alert.
+    var saveNotice: String?
     private(set) var closing: Set<SwarmSessionID> = []
 
     var selectedSession: SwarmProjectSession? { selectedSessionID.flatMap(tree.session) }
 
-    func select(_ id: SwarmSessionID?) {
+    var selectedChainUsage: ChainUsage? { selectedSession.map(chainUsage) }
+
+    func chainUsage(of chat: SwarmProjectSession) -> ChainUsage {
+        var chairs: [SwarmSessionID: SwarmAgent] = [:]
+        for session in chat.sessions {
+            chairs[session.id] = (tree.agentsBySession[session.id] ?? []).first {
+                SwarmPanePolicy.isChair($0, in: session)
+            }
+        }
+        return UsageSummary.chain(sessions: chat.sessions, usageBySession: chairs)
+    }
+
+    func select(_ id: SwarmSessionID?, recordingHistory: Bool = true) {
         if id != nil { SwarmPerformance.event("ChatSelected") }
         selectionRevision += 1
-        pendingID = nil
+        pendingSelection = nil
         selectedPendingID = nil
-        selectedSessionID = id
-        if let id, let entry = workspaces.first(where: {
-            $0.chats.contains { $0.sessions.contains { $0.id == id } }
-        }) {
+        selectedSessionID = id.flatMap { tree.session($0)?.id } ?? id
+        if let id, let entry = workspace(containingChat: id) {
             // Only a move to another workspace opens its project; a tab switch keeps a collapse.
             let moved = navigation.selectedWorkspace != entry.id
-            navigation.select(entry, chat: id)
+            if let chat = tree.session(id) { navigation.openTab(chat, in: entry) }
+            navigation.select(entry, chat: id, recordingHistory: recordingHistory)
             if moved { expandProject(of: entry) }
         }
-        agents = id.flatMap { tree.agentsBySession[$0] } ?? []
+        agents = selectedSessionID.flatMap { tree.agentsBySession[$0] } ?? []
         commandSource = nil
         commandSourceKey = nil
+    }
+
+    func hideTab(_ key: String, in directory: String) {
+        guard let entry = workspaces.first(where: { $0.id == directory }) else { return }
+        let wasSelected = selectedSession.map(ChatTitle.key) == key
+        let next = navigation.closeTab(key, in: entry)
+        if wasSelected, next != nil || !selectNewestStart() { select(next) }
     }
 
     /// Starts the chat profile in `directory` at once, behind a pending tab that is selected now.
     func newChat(in directory: String) {
         guard let plan = SwarmChatLaunchPlan(profileIn: directory) else { return }
+        newChat(plan, profile: nil)
+    }
+
+    func newChat(in directory: String, profile: String) {
+        guard let plan = SwarmChatLaunchPlan(profile: profile, in: directory) else { return }
+        newChat(plan, profile: profile)
+    }
+
+    private func newChat(_ plan: SwarmChatLaunchPlan, profile: String?) {
+        let directory = plan.directory
+        guard navigation.readOnlyReason(in: directory) == nil,
+              workspaces.first(where: { $0.id == directory }).map({ navigation.canStartChat(in: $0) }) != false else { return }
         let previous = selectedPendingID.map(PendingChat.Previous.pending)
             ?? selectedSessionID.map(PendingChat.Previous.session)
         // The deepest workspace that holds the directory; a project opened inside a repository
@@ -113,8 +257,8 @@ final class SessionsTreeModel {
         let workspace = workspaces.map(\.id)
             .filter { directory == $0 || directory.hasPrefix($0 + "/") }
             .max { $0.count < $1.count } ?? Self.hubWorkspace(for: directory) ?? directory
-        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous)
-        navigation.archived.remove(workspace)
+        guard navigation.readOnlyReason(in: workspace) == nil else { return }
+        let id = pendingChats.add(directory: directory, workspace: workspace, previous: previous, profile: profile)
         navigation.selectedWorkspace = workspace
         if let entry = workspaces.first(where: { $0.id == workspace }) { expandProject(of: entry) }
         selectPending(id)
@@ -135,20 +279,19 @@ final class SessionsTreeModel {
         return true
     }
 
-    /// A chat in a hub root (a folder that holds `.bare`) lists under the hub's `.bare` path, as
-    /// `SessionsTree.build` files it; that path is the start's workspace before the tree has it.
+    /// A chat in a hub root uses the hub folder before discovery adds its workspace row.
     private static func hubWorkspace(for directory: String) -> String? {
         // Only the hub root holds `.bare`; a worktree of the hub has a `.git` file instead.
         guard FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".bare")),
               let common = Git.repositoryPaths(in: directory)?.commonDirectory,
               URL(fileURLWithPath: common).lastPathComponent == ".bare" else { return nil }
-        return common
+        return URL(fileURLWithPath: common).deletingLastPathComponent().path
     }
 
     func selectPending(_ id: UUID) {
         guard let chat = pendingChats[id] else { return }
         selectionRevision += 1
-        pendingID = nil
+        pendingSelection = nil
         navigation.selectedWorkspace = chat.workspace
         selectedSessionID = nil
         selectedPendingID = id
@@ -159,8 +302,8 @@ final class SessionsTreeModel {
 
     /// Runs `launch` again, in the session the failed start made if it made one.
     func retryChat(_ id: UUID) {
-        guard let chat = pendingChats[id], case .failed = chat.state,
-              let plan = SwarmChatLaunchPlan(profileIn: chat.directory) else { return }
+        guard let chat = pendingChats[id], navigation.readOnlyReason(in: chat.workspace) == nil, case .failed = chat.state,
+              let plan = chat.launchPlan else { return }
         pendingChats.update(id) { $0.state = .starting }
         runStart(id, plan: plan)
     }
@@ -231,9 +374,11 @@ final class SessionsTreeModel {
         _ plan: SwarmChatLaunchPlan, from row: SwarmProjectSession,
         onProgress: @escaping @Sendable (ChatSwitchPhase) async -> Void
     ) async throws -> SwarmSessionID {
+        if let entry = workspace(containingChat: row.id),
+           let reason = navigation.readOnlyReason(in: entry.id) { throw SwarmProfileError.failed(reason) }
         let id = try await SwarmChatHandoff.start(plan, after: row, bus: bus, onProgress: onProgress)
         selectionRevision += 1
-        pendingID = id
+        pendingSelection = .handoff(id)
         selectedPendingID = nil
         selectedSessionID = id
         if let path = navigation.selectedWorkspace { navigation.selectedChats[path] = id.rawValue }
@@ -241,9 +386,19 @@ final class SessionsTreeModel {
         return id
     }
 
-    func refresh() async throws {
+    @discardableResult
+    func refresh() async throws -> Bool {
+        activeRefreshes += 1
+        defer { activeRefreshes -= 1 }
         refreshRevision += 1
         let revision = refreshRevision
+        func finishRefresh() -> Bool {
+            // An overtaken refresh cannot clear errors or publish a success token.
+            guard revision == refreshRevision else { return false }
+            error = nil
+            refreshSuccessToken = revision
+            return true
+        }
         let timing = SwarmPerformance.begin("UIRefresh")
         defer { timing.end(count: tree.projects.count) }
         let sessions: [SwarmSession]
@@ -252,38 +407,70 @@ final class SessionsTreeModel {
             defer { listTiming.end() }
             sessions = try await bus.sessions()
         }
-        guard revision == refreshRevision else { return }
+        guard revision == refreshRevision else { return false }
         var settled: [PendingChat] = []
         drafts.prune(keeping: Set(sessions.map { $0.id.rawValue }))
         do {
             let treeTiming = SwarmPerformance.begin("WorkspaceTree")
             defer { treeTiming.end(count: sessions.count) }
-            let loaded = try await discovery.tree(sessions: sessions, projectPaths: projects.paths(), bus: bus)
-            guard revision == refreshRevision else { return }
+            let choicesRevision = navigationStore.choicesRevision
+            let saved = projects.loadChoices(reportError: reportChoicesError) ?? navigationStore.savedChoices
+            let choicesLoaded = !projects.choicesLoadFailed
+            let loaded = try await discovery.tree(
+                sessions: sessions, projectPaths: saved.projectPaths, removed: saved.removedProjects, bus: bus
+            )
+            guard revision == refreshRevision else { return false }
+            var refreshed = navigation
+            if choicesLoaded {
+                refreshed = projects.refreshChoices(
+                    shown: loaded.projects, navigation: navigation, saved: saved, loadedAtRevision: choicesRevision,
+                    navigationStore: navigationStore,
+                    reportError: reportChoicesError
+                )
+            }
+            refreshed.recordFirstSight(loaded.projects.flatMap { $0.chats.map(\.session) })
+            navigation = refreshed
+            let previousTree = tree
             sourceTree = loaded
             archives.reconcile(loaded)
             settled = pendingChats.settle(listed: { loaded.session($0) != nil })
             tree = visibleTree
+            postTransitions(previous: previousTree)
+            navigation.recordTabFirstSight(workspaces)
+            for chat in settled {
+                if let id = chat.session, let row = tree.session(id),
+                   let entry = workspace(containingChat: row.id) {
+                    navigation.openTab(row, in: entry)
+                }
+            }
             hasLoaded = true
         }
         // A start that the owner left selected selects its chat; one they moved away from does not.
         for chat in settled where chat.id == selectedPendingID {
             select(chat.session)
         }
+        if let pendingID, tree.session(pendingID) == nil {
+            let result = PendingChatSelection.settleMissingAfterRefresh(pendingSelection)
+            pendingSelection = result.pending
+            if result.clearSelection { selectedSessionID = nil }
+            if let notice = result.notice { addSaveNotice(notice) }
+        }
         if pendingID == nil, selectedPendingID == nil, let entry = selectedWorkspace {
             selectedSessionID = navigation.selectedChat(in: entry)?.id
         }
         if let selectedSessionID, let row = tree.session(selectedSessionID) {
-            pendingID = nil
+            let selectingPending = pendingID != nil
+            pendingSelection = nil
             self.selectedSessionID = row.id
-            if let entry = workspaces.first(where: { $0.chats.contains { $0.id == row.id } }) {
-                navigation.select(entry, chat: row.id)
+            if let entry = workspace(containingChat: row.id) {
+                if selectingPending { navigation.openTab(row, in: entry) }
+                navigation.select(entry, chat: row.id, now: row.lastActivity, recordingHistory: false)
             }
             do {
                 let agentTiming = SwarmPerformance.begin("SelectedAgents")
                 defer { agentTiming.end() }
                 let loaded = try await bus.agents(in: row.session)
-                guard revision == refreshRevision, self.selectedSessionID == row.id else { return }
+                guard revision == refreshRevision, self.selectedSessionID == row.id else { return finishRefresh() }
                 agents = loaded
             }
             let provider = row.provider ?? agents.first {
@@ -309,7 +496,7 @@ final class SessionsTreeModel {
             // The selected chat closed while its workspace still has starts; the newest one shows.
             if selectedSessionID == nil, selectedPendingID == nil { _ = selectNewestStart() }
         }
-        error = nil
+        return finishRefresh()
     }
 
     /// `initializeGit` runs `git init` in a plain folder first, after the owner agreed to it.
@@ -319,20 +506,53 @@ final class SessionsTreeModel {
         if initializeGit {
             try await Git.initialize(at: url.path)
             await discovery.forgetIdentities()
+            try forgetPlainFolder(at: url.path)
         }
         let path = try await projects.add(url)
-        try await refresh()
+        let refreshed = await refreshAfterSave("Project saved")
+        if !refreshed, tree.project(containing: path) == nil { await refreshAfterSave("Project saved") }
         return path
     }
 
     func createProject(at url: URL) async throws -> String {
         let timing = SwarmPerformance.begin("ProjectCreate")
         defer { timing.end() }
-        let path = try await projects.create(at: url)
+        let created = try await projects.create(at: url)
         // A path made again after a delete can still be cached as a plain folder.
         await discovery.forgetIdentities()
-        try await refresh()
-        return path
+        let refreshed = await refreshAfterSave("Project saved")
+        if !refreshed, tree.project(containing: created.path) == nil { await refreshAfterSave("Project saved") }
+        if let notice = created.firstCommit.notice { addSaveNotice(notice) }
+        return created.path
+    }
+
+    func shouldAskForGitInit(at path: String) -> Bool {
+        GitInitPolicy.shouldAsk(path: path, choices: navigationStore.savedChoices)
+    }
+
+    func keepAsFolder(at path: String) throws {
+        let saved = try ownerChoices.update { $0.plainFolders.insert(path) }
+        navigation = navigationStore.adopt(saved, into: navigation)
+    }
+
+    private func forgetPlainFolder(at path: String) throws {
+        let saved = try ownerChoices.update { $0.plainFolders.remove(path) }
+        navigation = navigationStore.adopt(saved, into: navigation)
+    }
+
+    func removeProject(_ project: ProjectNode) throws {
+        let saved = try projects.remove(project.path, workspacePaths: project.workspaces.map(\.path))
+        navigation = navigationStore.adopt(saved, into: navigation)
+        let removedWorkspaces = Set(project.workspaces.map(\.path))
+        navigation.selectedChats = navigation.selectedChats.filter { !removedWorkspaces.contains($0.key) }
+        refreshRevision += 1
+        let wasSelected = selectedWorkspace?.project.path == project.path
+        sourceTree = SessionsTree(
+            projects: sourceTree.projects.filter { $0.path != project.path },
+            agentsBySession: sourceTree.agentsBySession
+        )
+        tree = visibleTree
+        if wasSelected { showHome() }
     }
 
     /// Makes a plain-folder project a git repository and returns it as one. The node comes from
@@ -340,6 +560,7 @@ final class SessionsTreeModel {
     func initializeGit(at path: String) async throws -> ProjectNode {
         try await Git.initialize(at: path)
         await discovery.forgetIdentities()
+        try forgetPlainFolder(at: path)
         try await refresh()
         guard let paths = Git.repositoryPaths(in: path) else { throw GitTaskWorktreeError.notRepository }
         return ProjectNode(
@@ -348,39 +569,106 @@ final class SessionsTreeModel {
         )
     }
 
-    func createTask(named name: String, in project: ProjectNode) async throws -> String {
+    func workspaceDefaults(for project: ProjectNode) -> ProjectDefaults {
+        navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()
+    }
+
+    func workspaceReferences(in project: ProjectNode) async throws -> WorkspaceReferences {
+        guard case .repository(let common) = project.id else { throw GitTaskWorktreeError.notRepository }
+        return try await GitTaskWorktree.references(in: common)
+    }
+
+    func createTask(
+        _ request: WorkspaceRequest, in project: ProjectNode, defaults: ProjectDefaults
+    ) async throws -> String {
+        guard GitTaskWorktree.branchName(request.name, prefix: request.prefix) != nil else {
+            throw GitTaskWorktreeError.invalidBranchName
+        }
         let timing = SwarmPerformance.begin("TaskCreate")
         defer { timing.end() }
         guard case .repository(let common) = project.id else {
             throw GitTaskWorktreeError.notRepository
         }
-        let root = URL(fileURLWithPath: project.path)
-        let parent = URL(fileURLWithPath: common).lastPathComponent == ".bare"
-            ? root.appendingPathComponent("wt", isDirectory: true)
-            : root.deletingLastPathComponent()
-                .appendingPathComponent(project.name + "-worktrees", isDirectory: true)
+        let parent = defaults.resolved(for: project).folder
         let repositoryDirectory = URL(fileURLWithPath: common).lastPathComponent == ".bare"
             ? common : project.path
         let path = try await GitTaskWorktree.create(
-            named: name, in: repositoryDirectory,
-            commonDirectory: common, under: parent.path
+            request, in: repositoryDirectory,
+            commonDirectory: common, under: parent
         )
+        if (navigationStore.savedChoices.projectDefaults[project.path] ?? ProjectDefaults()) != defaults {
+            do {
+                let saved = try ownerChoices.update { $0.projectDefaults[project.path] = defaults }
+                navigation = navigationStore.adopt(saved, into: navigation)
+            } catch {
+                addSaveNotice("The workspace at \(path) exists. Could not save the project defaults. \(error.localizedDescription)")
+            }
+        }
         await discovery.forgetWorktrees(for: common)
-        try await projects.add(URL(fileURLWithPath: path))
-        navigation.names[path] = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // The caller starts a chat there, which selects the workspace. Selecting it here, before the
-        // tree lists it, showed the Agent Profiles page and its availability check for a moment.
-        do { try await refresh() }
-        catch { self.error = String(describing: error) }
+        // Git already made the worktree, so a failed save must not ask the owner to create it again.
+        do { try await projects.add(URL(fileURLWithPath: path)) }
+        catch {
+            // The cause can say "try again", which here would make a second worktree, so it is only the reason.
+            addSaveNotice("The workspace at \(path) exists, so do not create it again. Swarm could not record it."
+                + "\n\nReason: \(error.localizedDescription)")
+        }
+        navigation.names[path] = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The caller selects the workspace after the list refreshes and starts no chat.
+        let refreshed = await refreshAfterSave("Workspace made")
+        if !refreshed, !workspaces.contains(where: { $0.id == path }) { await refreshAfterSave("Workspace made") }
         return path
     }
 
+    /// False means a newer refresh overtook this one. A failure adds one notice and ends the attempt.
+    @discardableResult
+    private func refreshAfterSave(_ subject: String) async -> Bool {
+        do { return try await refresh() }
+        catch {
+            addSaveNotice("\(subject), but the list could not refresh. \(error.localizedDescription)")
+            return true
+        }
+    }
+
+    private func addSaveNotice(_ notice: String) {
+        saveNotice = saveNotice.map { "\($0)\n\n\(notice)" } ?? notice
+    }
+
+    func pruneWorktree(_ entry: WorkspaceEntry) async throws {
+        guard entry.workspace.missing, case .repository(let common) = entry.project.id else { return }
+        try await Git.pruneWorktrees(in: common)
+        await discovery.forgetWorktrees(for: common)
+        try await refresh()
+    }
+
+    func deleteWorkspace(_ entry: WorkspaceEntry) async throws {
+        guard entry.canDelete, case .repository(let common) = entry.project.id else { return }
+        if let blocker = await Git.removalBlocker(worktree: entry.id) {
+            throw SwarmProfileError.failed(blocker)
+        }
+        let current = workspaces.first { $0.id == entry.id } ?? entry
+        try await WorkspaceArchive.end(current.chats, bus: bus)
+        if let blocker = await Git.removalBlocker(worktree: entry.id) {
+            throw SwarmProfileError.failed(blocker)
+        }
+        try await Git.removeWorktree(entry.id, in: common)
+        await discovery.forgetWorktrees(for: common)
+        try await refresh()
+    }
+
     func archive(_ id: SwarmSessionID) async throws {
+        guard let chat = tree.session(id) else { return }
         let ids = archives.begin(id, in: tree)
         guard !ids.isEmpty else { return }
         let previous = selectedSessionID
         let workspace = navigation.selectedWorkspace
-        let next = ChatArchives.selection(afterArchiving: id, selected: previous, in: tree)
+        let entry = self.workspace(containingChat: chat.id)
+        let snapshot = entry.map { ChatArchives.TabSnapshot(key: ChatTitle.key(chat), workspace: $0.id, navigation: navigation) }
+        let next = ChatArchives.selection(
+            afterArchiving: id, selected: previous, in: tree,
+            history: entry.flatMap { navigation.tabHistory[$0.id] } ?? [],
+            open: entry.flatMap { navigation.tabs[$0.id]?.open } ?? []
+        )
+        if let entry { navigation.closeTab(ChatTitle.key(chat), in: entry) }
         refreshRevision += 1
         tree = visibleTree
         // With no chat left, a start in the workspace keeps the strip and its Retry and Close.
@@ -388,11 +676,12 @@ final class SessionsTreeModel {
         let revision = selectionRevision
         SwarmPerformance.event("ChatArchiveApplied")
         do {
-            try await bus.archive(ids)
+            try await SwarmSessionCloser.archive(session: chat, bus: bus)
             archives.finish(id, succeeded: true)
             refreshRevision += 1
         } catch {
             archives.finish(id, succeeded: false)
+            snapshot?.restore(in: &navigation)
             refreshRevision += 1
             tree = visibleTree
             if selectionRevision == revision, navigation.selectedWorkspace == workspace,
@@ -403,11 +692,61 @@ final class SessionsTreeModel {
         }
     }
 
-    func close(_ id: SwarmSessionID) async throws {
-        guard let session = tree.session(id)?.session, closing.insert(id).inserted else { return }
-        defer { closing.remove(id) }
-        try await SwarmSessionCloser.close(session, bus: bus)
+    func recentlyClosed() async throws -> RecentlyClosed.Listing {
+        let sessions = try await bus.archivedSessions()
+        let chats = await discovery.archivedChats(sessions)
+        let rows = RecentlyClosed.list(chats: chats, navigation: navigation, workspaces: workspaces,
+                                       now: Int(Date().timeIntervalSince1970))
+        return RecentlyClosed.Listing(chats: rows, archivedSessionCount: sessions.count)
+    }
+
+    func reopen(_ chat: SwarmProjectSession) async throws {
+        do { try await RecentlyClosed.restore(chat, bus: bus) }
+        catch { throw SwarmProfileError.failed("Could not reopen the chat. \(error.localizedDescription)") }
+        archives.restore(chat.sessions.map(\.id))
+        refreshRevision += 1
+        let listed = try await RecentlyClosed.refreshRestoredChat(
+            refresh: { try await self.refresh() }, isListed: { self.tree.session(chat.id) != nil }
+        )
+        if listed { select(chat.id) }
+        else {
+            // The next completed refresh selects this restored chat through the pending path.
+            selectionRevision += 1
+            pendingSelection = .restored(chat.id)
+            selectedPendingID = nil
+            selectedSessionID = chat.id
+            agents = []
+        }
+    }
+
+    func endConfirmation(_ id: SwarmSessionID) async throws -> SwarmSessionCloser.Confirmation? {
+        guard let session = tree.session(id) else { return nil }
+        return try await SwarmSessionCloser.confirmation(session: session, bus: bus)
+    }
+
+    func end(_ id: SwarmSessionID) async throws {
+        guard let session = tree.session(id), closing.insert(session.id).inserted else { return }
+        defer { closing.remove(session.id) }
+        try await SwarmSessionCloser.end(session: session, bus: bus)
         try await refresh()
+    }
+
+    private var windowCount = 0
+    private var windowTasks: [Task<Void, Never>] = []
+
+    func attachWindow() {
+        windowCount += 1
+        guard windowCount == 1 else { return }
+        windowTasks = [
+            Task { await run() }, Task { await runSidebarRuns() }, Task { await runRowFields() },
+        ]
+    }
+
+    func detachWindow() {
+        windowCount -= 1
+        guard windowCount == 0 else { return }
+        for task in windowTasks { task.cancel() }
+        windowTasks = []
     }
 
     func run() async {
@@ -419,7 +758,7 @@ final class SessionsTreeModel {
         while !Task.isCancelled {
             let timing = SwarmPerformance.begin(first ? "InitialRefresh" : "RefreshTick")
             do { try await refresh() }
-            catch { self.error = String(describing: error) }
+            catch { self.error = error.localizedDescription }
             timing.end()
             await discovery.prefetchHomes()
             first = false
@@ -427,41 +766,85 @@ final class SessionsTreeModel {
         }
     }
 
+    func runRowFields() async {
+        while !Task.isCancelled {
+            let paths = RowFields.requestedPaths(for: .dirty, entries: workspaces, fields: navigation.fields)
+            let githubPaths = Set(RowFields.requestedPaths(for: .pr, entries: workspaces, fields: navigation.fields))
+                .union(RowFields.requestedPaths(for: .ci, entries: workspaces, fields: navigation.fields))
+            let read = await rowFieldCache.refresh(paths: paths, githubPaths: Array(githubPaths))
+            guard !Task.isCancelled else { return }
+            let updated = read.filter { value in workspaces.contains { $0.id == value.key } }
+            if workspaceFields != updated { workspaceFields = updated }
+            try? await Task.sleep(for: .seconds(RowFieldCache.refreshInterval))
+        }
+    }
+
+    func runSidebarRuns() async {
+        while !Task.isCancelled {
+            let paths = SidebarRows.runWorkspaces(workspaces, navigation: navigation)
+            let scan = Task.detached(priority: .utility) {
+                await SidebarRows.scanRuns(in: paths)
+            }
+            let read = await withTaskCancellationHandler {
+                await scan.value
+            } onCancel: {
+                scan.cancel()
+            }
+            guard !Task.isCancelled else { return }
+            let existing = Set(workspaces.map(\.id))
+            var updated = runsByWorkspace.filter { existing.contains($0.key) }
+            updated.merge(read.mapValues(\.runs), uniquingKeysWith: { _, new in new })
+            if runsByWorkspace != updated { runsByWorkspace = updated }
+            var notices = runNoticesByWorkspace.filter { existing.contains($0.key) }
+            for (path, scan) in read { notices[path] = scan.notice }
+            if runNoticesByWorkspace != notices { runNoticesByWorkspace = notices }
+            try? await Task.sleep(for: .seconds(RowFieldCache.refreshInterval))
+        }
+    }
+
 
 }
 
 private struct SessionsWindow: View {
-    @State private var model = SessionsTreeModel()
+    @Environment(\.designTokens) private var tokens
+    let model: SessionsTreeModel
+    @Environment(SettingsSelection.self) private var settings
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var panes = AgentPaneStore()
+    @AppStorage("paneColumnWidth") private var columnWidth: Double?
+    @AppStorage("chatPageWidth") private var chatWidth: Double?
+    @AppStorage("paneColumnSplits") private var paneSplits = ""
+    @State private var expandedLists: Set<String> = []
+    /// Applied after the chat switch releases its old columns.
+    @State private var sidebarFocus: SidebarSelection?
     @State private var newTaskProject: ProjectNode?
     @State private var switchTarget: SwitchTarget?
+    @State private var pendingModelSwitch: SwarmSessionID?
     /// Counts the owner's own moves (a sidebar pick, Home, a tab), so Import Project skips its
-    /// chat only when the owner went elsewhere, not when a refresh changed the selection.
+    /// selection only when the owner went elsewhere, not when a refresh changed the selection.
     @State private var ownerMoves = 0
-    @State private var actionError: String?
+    @State private var newChatMenu = NewChatMenu.State()
+    /// The alert on screen, and the ones waiting for it to close (see `WindowAlert`).
+    @State private var shownAlert: WindowAlert?
+    @State private var pendingAlerts: [WindowAlert] = []
     @State private var projectAction: String?
     @State private var showingPalette = false
-    /// When each palette action last ran, in this window only.
-    @State private var recentActions: [AppKey: Int] = [:]
+    @State private var recentActions = PaletteRecentActions.load()
     @State private var showingArchive = false
+    @State private var closedChats: RecentlyClosed.Listing?
+    @State private var showingClosedChats = false
+    @State private var checkingWorkspaces: Set<String> = []
+    @State private var workspaceActions: [String: WorkspaceAction] = [:]
     @State private var createSheet: CreateSheet?
-    @State private var gitInitRequest: GitInitRequest?
     @State private var showingHooksSetup = false
-    /// "Not now" on the hooks question of an older build; it still covers the hooks alone, so
-    /// the setup sheet opens once for folder trust (ADR 0029, 0043).
-    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
+    @State private var homeIsSetUp = false
     /// "Not now" on the setup sheet with every box checked; the app menu can still open it
     /// (ADR 0043).
     @AppStorage("setupDeclined") private var setupDeclined = false
-    /// Folder trust left unchecked when the owner applied or said "Not now" to the rest of the
-    /// setup sheet.
-    @AppStorage("trustSetupDeclined") private var trustSetupDeclined = false
-    /// The PATH swarm that the launch check names, until its alert closes. Only the first window
-    /// of an app run gets one (ADR 0048).
-    @State private var pathSwarmDrift: PathSwarmDrift?
     @State private var createAction: (() -> Void)?
-    @State private var renameTarget: WorkspaceEntry?
-    @State private var workspaceName = ""
+    @State private var renameTarget: RenameTarget?
+    @State private var renameName = ""
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
     @AppStorage("workspaceSidebarOnRight") private var sidebarOnRight = false
     @AppStorage("workspaceSidebarMode") private var storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
@@ -469,58 +852,81 @@ private struct SessionsWindow: View {
     @State private var document: WorkspaceDocument?
     @State private var documentVisible = false
     @State private var reportedUsage: (sessionID: SwarmSessionID, usage: ChatUsage)?
+    @State private var runRequest: StepRunRequest?
+    @State private var runRequestWorkspace: String?
 
     var body: some View {
-        MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
+        let sections = sidebarSections(showingArchive: showingArchive)
+        return MovableSidebar(visible: sidebarVisible, onRight: sidebarOnRight, minimumContentWidth: minimumContentWidth, width: $sidebarWidth) {
             SidebarView(
                 mode: sidebarMode,
-                sections: sidebarSections(showingArchive: showingArchive),
+                sections: sections,
                 collapsed: model.navigation.collapsed,
                 loaded: model.hasLoaded,
-                selectedID: model.navigation.selectedWorkspace,
+                selectedID: selectedSidebarID(in: sections),
                 showingArchive: showingArchive,
+                archivedStatus: SidebarRows.archivedStatus(model.workspaces, navigation: model.navigation,
+                                                          agentsBySession: model.tree.agentsBySession),
                 actions: sidebarActions
             ) {
-                if let directory = workspaceDirectory {
-                    VStack(spacing: 0) {
-                        Button {
-                            storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
-                            documentVisible = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                                Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                ZStack {
+                    SkillsView(mode: sidebarMode.rawValue,
+                               keepOpen: { storedSidebarMode = WorkspaceSidebarMode.skills.rawValue; sidebarVisible = true },
+                               leave: { storedSidebarMode = $0 })
+                        .retainedVisibility(sidebarMode == .skills)
+                    Group {
+                        if let directory = workspaceDirectory {
+                            VStack(spacing: 0) {
+                                Button {
+                                    storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue
+                                    documentVisible = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
+                                        Text(model.selectedWorkspace.map { model.navigation.title(for: $0) } ?? URL(fileURLWithPath: directory).lastPathComponent)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(verbatim: directory).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    .lineLimit(1).truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(tokens.spacing.m)
+                                }
+                                .buttonStyle(.plain).help("Choose a workspace")
+                                Divider()
+                                WorkspacePanels(
+                                    directory: directory, mode: sidebarMode, visible: sidebarVisible,
+                                    usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
+                                    chainUsage: model.selectedChainUsage,
+                                    hasChat: model.selectedSession != nil, open: openDocument,
+                                    runRequest: runRequestWorkspace == directory ? runRequest : nil,
+                                    openedRun: { runRequest = nil }, chatTitles: runChatTitles(in: directory),
+                                    selectRunChat: { selectRunChat($0, in: directory) }
+                                ).id(directory)
                             }
-                            .lineLimit(1).truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(DesignTokens.Spacing.m)
+                        } else {
+                            VStack {
+                                ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
+                                Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }
+                                    .padding(tokens.spacing.l)
+                            }
                         }
-                        .buttonStyle(.plain).help("Choose a workspace")
-                        Divider()
-                        WorkspacePanels(
-                            directory: directory, mode: sidebarMode, visible: sidebarVisible,
-                            usage: reportedUsage?.sessionID == model.selectedSession?.id ? reportedUsage?.usage : nil,
-                            hasChat: model.selectedSession != nil, open: openDocument
-                        ).id(directory)
-                    }
-                } else {
-                    VStack {
-                        ContentUnavailableView("Select a workspace", systemImage: "folder", description: Text("Choose a workspace to see its files and details."))
-                        Button("Show workspaces") { storedSidebarMode = WorkspaceSidebarMode.workspaces.rawValue }
-                            .padding(DesignTokens.Spacing.l)
-                    }
+                    }.retainedVisibility(sidebarMode != .skills)
                 }
             }
         } content: {
             VStack(spacing: 0) {
                 if let projectAction {
-                    DelayedProgress(projectAction).padding(DesignTokens.Spacing.s)
+                    DelayedProgress(projectAction).padding(tokens.spacing.s)
+                }
+                if checkingWorkspaces.contains(where: { workspaceActions[$0] == nil }) {
+                    DelayedProgress("Checking workspace…").padding(tokens.spacing.s)
+                }
+                ForEach(WorkspaceAction.allCases.filter { workspaceActions.values.contains($0) }) { action in
+                    DelayedProgress(action.progress).padding(tokens.spacing.s)
                 }
                 if !model.closing.isEmpty {
-                    DelayedProgress("Closing chat…").padding(DesignTokens.Spacing.s)
+                    DelayedProgress("Closing chat…").padding(tokens.spacing.s)
                 }
                 if let document {
-                    HStack(spacing: DesignTokens.Spacing.l) {
+                    HStack(spacing: tokens.spacing.l) {
                         Button("Chat") { documentVisible = false }
                             .foregroundStyle(documentVisible ? Color.secondary : Color.primary)
                         Button(document.title) { documentVisible = true }
@@ -529,7 +935,7 @@ private struct SessionsWindow: View {
                         Button { closeDocument() } label: { Image(systemName: "xmark") }
                             .accessibilityLabel("Close file preview")
                         Spacer()
-                    }.buttonStyle(.plain).padding(DesignTokens.Spacing.m)
+                    }.buttonStyle(.plain).padding(tokens.spacing.m)
                     Divider()
                 }
                 ZStack {
@@ -565,12 +971,28 @@ private struct SessionsWindow: View {
                 }
             }
         }
+        .onChange(of: model.choicesAlerts.message, initial: true) { _, _ in scheduleNextAlert() }
+        .onChange(of: model.saveNotice) { _, _ in scheduleNextAlert() }
+        // Each hop starts from an onChange, after the update that closed the last alert
+        // (docs/research/2026-10-08-swiftui-alert-queue.md).
+        .onChange(of: shownAlert == nil) { _, closed in if closed { scheduleNextAlert() } }
+        .onChange(of: pendingAlerts.count) { _, _ in scheduleNextAlert() }
         .onChange(of: workspaceDirectory) { _, _ in closeDocument() }
         .onChange(of: model.selectedSessionID) { oldID, id in
             guard oldID != id else { return }
+            if pendingModelSwitch != id { pendingModelSwitch = nil }
             NSApp.keyWindow?.makeFirstResponder(nil)
             panes.stop(keepingSession: id)
+            if let target = sidebarFocus, target.chatID == id,
+               let session = target.agentSessionID, let agent = target.agentID {
+                panes.focus(key: AgentPaneStore.key(session: session, agent: agent.rawValue))
+            } else {
+                sidebarFocus = nil
+            }
             documentVisible = false
+        }
+        .onChange(of: pendingModelSwitchReady) { _, ready in
+            if ready { finishModelSwitchRequest() }
         }
         .background(WindowFrameRestorer())
         .task {
@@ -580,52 +1002,35 @@ private struct SessionsWindow: View {
         .task {
             SwarmPerformance.event("WindowReady")
             LoginShellPath.begin()
-            await model.run()
+            model.detailModels.activate(model.selectedSessionID)
+            model.attachWindow()
         }
         .task {
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
-            await SwarmProfileCatalog.shared.prefetch()
+            Task { _ = try? await SwarmProfileCatalog.shared.providers() }
+            await loadNewChatProfiles()
             for provider in ModelSwitchChoice.switchable {
                 Task { _ = try? await SwarmModelCatalog.shared.models(for: provider) }
             }
             guard !SwarmOpenScript.isActive else { return }
             if let drift = await PathSwarmNotice.shared.ask(check: { await PathSwarmCheck.current(dismissed: $0) }) {
                 // The setup sheet waits until this alert closes, so the two never show together.
-                pathSwarmDrift = drift
+                // Only the first window of an app run gets one (ADR 0048).
+                showAlert(.pathDrift(drift))
                 return
             }
             await askForSetup()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showHooksSetup)) { _ in
-            showingHooksSetup = true
-        }
-        .alert(
-            "Terminal runs another swarm",
-            isPresented: Binding(
-                get: { pathSwarmDrift != nil },
-                set: {
-                    guard !$0, let drift = pathSwarmDrift else { return }
-                    PathSwarmNotice.shared.answer(drift)
-                    pathSwarmDrift = nil
-                    Task { await askForSetup() }
-                }
-            ),
-            presenting: pathSwarmDrift
-        ) { drift in
-            Button("Copy Command") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(drift.fixCommand, forType: .string)
-            }
-            Button("Not Now", role: .cancel) {}
-        } message: { drift in
-            Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
-        }
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
-                loadPlan: { try await SwarmCLIBus().setupPlan($0) },
+                loadPlan: {
+                    _ = await settings.waitForSkillsRefresh()
+                    return try await SwarmCLIBus().setupPlan($0)
+                },
                 setUp: { digest, choice in
+                    _ = await settings.waitForSkillsRefresh()
                     try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                     // A group left unchecked is that group's "Not now".
                     decline(choice.unchecked)
@@ -635,10 +1040,14 @@ private struct SessionsWindow: View {
                     showingHooksSetup = false
                 },
                 done: { showingHooksSetup = false },
-                copy: .setup
+                copy: .setupSheet
             )
         }
-        .onDisappear { panes.stopAll() }
+        .onDisappear {
+            panes.stopAll()
+            model.detailModels.activate(nil)
+            model.detachWindow()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             panes.stopAll()
         }
@@ -649,32 +1058,57 @@ private struct SessionsWindow: View {
         }) { sheet in
             createSheetView(sheet)
         }
-        .alert(
-            gitInitRequest.map { "“\($0.name)” is not a git repository" } ?? "",
-            isPresented: Binding(get: { gitInitRequest != nil }, set: { if !$0 { gitInitRequest = nil } }),
-            presenting: gitInitRequest
-        ) { request in
-            Button("Run git init") { runGitInit(request) }
-            switch request.reason {
-            case .importFolder(let url):
-                Button("Keep as Folder", role: .cancel) { performProjectAction(url, .open) }
-            case .newWorkspace:
-                Button("Cancel", role: .cancel) {}
-            }
-        } message: { _ in
-            Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
-        }
         .sheet(isPresented: Binding(
             get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
         )) {
             renameWorkspaceSheet
         }
         .sheet(item: $newTaskProject) { project in
-            NewTaskSheet(
-                project: project,
-                create: { try await model.createTask(named: $0, in: project) },
-                onCreated: { startChat(in: $0) }
+            let defaults = model.workspaceDefaults(for: project)
+            NewWorkspaceSheet(
+                projectName: project.name, projectPath: project.path,
+                worktreeFolder: defaults.folderSetting(for: project),
+                branchPrefix: defaults.resolved(for: project).prefix,
+                seedFolder: ProjectDefaults().folderSetting(for: project),
+                seedPrefix: ProjectDefaults().resolved(for: project).prefix,
+                loadReferences: { try await model.workspaceReferences(in: project) },
+                create: { request, defaults in
+                    try await model.createTask(request, in: project, defaults: defaults)
+                },
+                onCreated: { path in
+                    ownerMoves += 1
+                    documentVisible = false
+                    // Keep the path selected even when the extra refresh could not list it yet.
+                    model.navigation.selectedWorkspace = path
+                    model.navigation.collapsed.remove(WorkspaceNavigation.projectCollapseID(project.path))
+                    model.select(nil)
+                }
             )
+        }
+        .sheet(isPresented: $showingClosedChats) {
+            RecentlyClosedSheet(chats: closedChats?.chats ?? [], notice: closedChats?.notice,
+                                loading: closedChats == nil) { chat in
+                do {
+                    try await model.reopen(chat)
+                    ownerMoves += 1
+                    documentVisible = false
+                    showingClosedChats = false
+                } catch {
+                    showingClosedChats = false
+                    showAlert(.error(error.localizedDescription))
+                }
+            }
+            .task {
+                do {
+                    let listing = try await model.recentlyClosed()
+                    guard !Task.isCancelled else { return }
+                    closedChats = listing
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    showingClosedChats = false
+                    showAlert(.error(error.localizedDescription))
+                }
+            }
         }
         .sheet(item: $switchTarget) { target in
             let row = target.row
@@ -685,13 +1119,132 @@ private struct SessionsWindow: View {
                 Task { try? await model.refresh() }
             }
         }
-        .alert("Could not complete action", isPresented: Binding(
-            get: { actionError != nil },
-            set: { if !$0 { actionError = nil } }
-        )) {
-            Button("OK") { actionError = nil }
-        } message: {
-            Text(actionError ?? "")
+        .alert(
+            shownAlert?.title ?? "",
+            isPresented: Binding(get: { shownAlert != nil }, set: { if !$0 { closeAlert() } }),
+            presenting: shownAlert,
+            actions: alertActions,
+            message: alertMessage
+        )
+    }
+
+    private func showAlert(_ alert: WindowAlert) {
+        guard shownAlert?.hasSameTarget(as: alert) != true,
+              !pendingAlerts.contains(where: { $0.hasSameTarget(as: alert) }) else { return }
+        pendingAlerts.append(alert)
+    }
+
+    /// The hop keeps the next alert out of the tick the last one closes in (see `WindowAlert`).
+    private func scheduleNextAlert() {
+        Task { showNextAlert() }
+    }
+
+    private func showNextAlert() {
+        guard shownAlert == nil else { return }
+        if !pendingAlerts.isEmpty {
+            shownAlert = pendingAlerts.removeFirst()
+        } else if let notice = model.saveNotice {
+            model.saveNotice = nil
+            shownAlert = .error(notice)
+        } else if let failure = model.choicesAlerts.message {
+            model.choicesAlerts.dismiss()
+            shownAlert = .error(failure)
+        }
+    }
+
+    private func closeAlert() {
+        if case .pathDrift(let drift) = shownAlert {
+            PathSwarmNotice.shared.answer(drift)
+            Task { await askForSetup() }
+        }
+        shownAlert = nil
+    }
+
+    @ViewBuilder
+    private func alertActions(_ alert: WindowAlert) -> some View {
+        switch alert {
+        case .pathDrift(let drift):
+            Button("Copy Command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(drift.fixCommand, forType: .string)
+            }
+            Button("Not Now", role: .cancel) {}
+        case .gitInit(let request):
+            Button("Run git init") { runGitInit(request) }
+            switch request.reason {
+            case .importFolder(let url):
+                Button("Keep as Folder") {
+                    do {
+                        try model.keepAsFolder(at: request.path)
+                        performProjectAction(url, .open)
+                    } catch { showAlert(.error("Could not remember the folder. \(error.localizedDescription)")) }
+                }
+                Button("Cancel", role: .cancel) {}
+            case .newWorkspace:
+                Button("Cancel", role: .cancel) {}
+            }
+        case .plainFolder(let path):
+            Button("Run git init…") { runGitInit(GitInitRequest(path: path, reason: .newWorkspace)) }
+            Button("Cancel", role: .cancel) {}
+        case .removeProject(let project):
+            Button("Remove Project", role: .destructive) {
+                do { try model.removeProject(project) }
+                catch { showAlert(.error("Could not remove the project. \(error.localizedDescription)")) }
+            }
+            Button("Cancel", role: .cancel) {}
+        case .prune(let entry, _):
+            Button("Prune", role: .destructive) {
+                Task {
+                    do { try await model.pruneWorktree(entry) }
+                    catch { showAlert(.error(error.localizedDescription)) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        case .archiveWorkspace(let entry, _):
+            Button("Archive Workspace", role: .destructive) { performWorkspaceAction(entry, action: .archive) }
+            Button("Cancel", role: .cancel) {}
+        case .deleteWorkspace(let entry, _, _):
+            Button("Delete Workspace", role: .destructive) { performWorkspaceAction(entry, action: .delete) }
+            Button("Cancel", role: .cancel) {}
+        case .endChat(let id, _, _, let archive):
+            Button(archive ? "Archive Chat" : "End Chat", role: .destructive) {
+                performChatEnd(id, archive: archive)
+            }
+            Button("Cancel", role: .cancel) {}
+        case .closeAgent(let agent, let session):
+            Button("Close Agent", role: .destructive) { performChildAction(agent, in: session, close: true) }
+            Button("Cancel", role: .cancel) {}
+        case .error:
+            Button("OK") {}
+        }
+    }
+
+    private func alertMessage(_ alert: WindowAlert) -> Text {
+        switch alert {
+        case .pathDrift(let drift):
+            Text(verbatim: "Terminal runs \(drift.pathLine) from \(drift.path). This app runs \(drift.helperLine). Agents that Swarm starts use the app's copy, but commands in Terminal and agents started elsewhere use the other one.\n\n\(drift.fixCommand)")
+        case .gitInit:
+            Text("Each workspace in a project is a git worktree, so a project needs git. Swarm can run git init in this folder.")
+        case .plainFolder(let path):
+            Text(verbatim: path)
+        case .removeProject(let project):
+            Text("Hide \(model.navigation.projectTitle(for: project)) from the sidebar? Its folder and chats stay on disk.")
+        case .prune(let entry, let paths):
+            Text(verbatim: "Prune removes the worktree records for these missing folders in "
+                 + model.navigation.projectTitle(for: entry.project) + ":\n\n"
+                 + paths.joined(separator: "\n"))
+        case .archiveWorkspace(_, let count):
+            Text(verbatim: "\(CountText.agentsStillRunning(count)). Archiving stops them and keeps the workspace folder.")
+        case .deleteWorkspace(let entry, let ignored, let confirmation):
+            Text(verbatim: "Delete the workspace folder at \(entry.id)? Git refuses uncommitted changes or unpushed commits."
+                 + (confirmation.required ? "\n\n\(CountText.agentsStillRunning(confirmation.liveAgents)). Deleting stops them before the folder is removed." : "")
+                 + (ignored.message.map { "\n\n" + $0 } ?? ""))
+        case .endChat(_, _, let confirmation, let archive):
+            Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
+        case .closeAgent(let agent, _):
+            Text("“\(agent.rawValue)” is in a turn. Closing the agent stops it.")
+        case .error(let message):
+            Text(verbatim: message)
         }
     }
 
@@ -725,32 +1278,67 @@ private struct SessionsWindow: View {
                         close: {
                             Task {
                                 do { try await model.discardChat(id) }
-                                catch { actionError = LaunchFailure(error).message }
+                                catch { showAlert(.error(LaunchFailure(error).message)) }
                             }
                         }
                     )
                 }
+            } else if model.isRestoringChat {
+                ProgressView("Loading restored chat…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.selectedSession == nil {
                 workspaceLanding
             }
         }
-        .navigationTitle(model.selectedSession.flatMap { model.tree.windowTitle(for: $0.id) } ?? "Swarm")
+        .navigationTitle(windowTitle)
     }
 
     @ViewBuilder private var workspaceLanding: some View {
         if let workspace = model.selectedWorkspace {
-            VStack(spacing: DesignTokens.Spacing.l) {
+            VStack(spacing: tokens.spacing.l) {
                 Text(model.navigation.title(for: workspace)).font(.title2)
                 Text("This workspace has no open chats.").foregroundStyle(.secondary)
-                Button("New chat") { startChat(in: workspace.id) }
+                NewChatProfileMenu(
+                    rows: newChatMenu.rows, refresh: refreshNewChatProfiles,
+                    start: { startChat(in: workspace.id, profile: $0) },
+                    primaryAction: { startChat(in: workspace.id) }
+                ) { Text("New chat") }
+                .menuStyle(.button)
+                .disabled(!model.navigation.canStartChat(in: workspace))
+                if let reason = model.navigation.readOnlyReason(in: workspace.id) {
+                    Text(verbatim: reason).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            AgentProfilesHome(
+            HomeView(
+                recentWork: HomeModel.recentWork(
+                    tree: model.tree, navigation: model.navigation, now: Int(Date().timeIntervalSince1970)
+                ),
+                firstRunSteps: HomeModel.firstRunSteps(
+                    hasProject: model.hasProject, isSetUp: homeIsSetUp,
+                    hasChat: model.tree.projects.contains { !$0.chats.isEmpty }
+                ),
                 sessionsError: model.error,
+                startChatDisabledReason: HomeModel.startChatDirectory(tree: model.tree, navigation: model.navigation) == nil
+                    ? "Import a project with an available workspace first." : nil,
                 onOpenProject: importProject,
-                onCreateProject: createProject
+                onCreateProject: createProject,
+                onRunSetup: { openSettings(on: .setup) },
+                onStartChat: {
+                    if let directory = HomeModel.startChatDirectory(tree: model.tree, navigation: model.navigation) {
+                        startChat(in: directory)
+                    }
+                },
+                onSelectChat: { id in
+                    ownerMoves += 1
+                    model.select(SwarmSessionID(id))
+                }
             )
+            .task { await refreshHomeSetup() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                Task { await refreshHomeSetup() }
+            }
         }
     }
 
@@ -767,34 +1355,50 @@ private struct SessionsWindow: View {
         WorkspaceSidebarMode(rawValue: storedSidebarMode) ?? .workspaces
     }
 
+    private func refreshHomeSetup() async {
+        _ = await settings.waitForSkillsRefresh()
+        guard let status = try? await SwarmCLIBus().setupStatus() else { return }
+        homeIsSetUp = status.hooks && status.trust && status.herdr && status.skills
+    }
+
     /// Asked once, on the owner's first run with swarm's hooks not set up.
     private func askForSetup() async {
+        _ = await settings.waitForSkillsRefresh()
         guard !setupDeclined,
               let status = try? await SwarmCLIBus().setupStatus(),
-              status.needsSheet(
-                  hooksDeclined: hooksSetupDeclined, trustDeclined: trustSetupDeclined
-              ) else { return }
+              status.needsSheet(declined: SetupGroup.declined(read: UserDefaults.standard.bool(forKey:))) else { return }
         showingHooksSetup = true
     }
 
     /// Sets each setup group's own decline flag. Herdr has none, because this build plans no
     /// Herdr write (ADR 0043).
     private func decline(_ groups: Set<String>) {
-        if groups.contains("hooks") { hooksSetupDeclined = true }
-        if groups.contains("trust") { trustSetupDeclined = true }
+        for key in groups.compactMap(SetupGroup.init(rawValue:)).compactMap(\.declineFlagKey) {
+            UserDefaults.standard.set(true, forKey: key)
+        }
     }
 
     private func sidebarSections(showingArchive: Bool) -> [SidebarSection] {
         SidebarRows.sections(
             projects: model.tree.projects, workspaces: model.workspaces, navigation: model.navigation, search: "",
-            showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970)
+            showingArchive: showingArchive, now: Int(Date().timeIntervalSince1970),
+            agentsBySession: model.tree.agentsBySession, expandedLists: expandedLists,
+            runsByWorkspace: model.runsByWorkspace, workspaceFields: model.workspaceFields,
+            runNoticesByWorkspace: model.runNoticesByWorkspace
+        )
+    }
+
+    private func selectedSidebarID(in sections: [SidebarSection]) -> String? {
+        SidebarRows.selectedID(
+            in: sections.flatMap(\.rows),
+            workspace: model.navigation.selectedWorkspace, chat: model.selectedSession, child: sidebarFocus
         )
     }
 
     /// Rows in the order the sidebar shows them, without the rows of a collapsed project.
     private var visibleSidebarRows: [SidebarRow] {
         sidebarSections(showingArchive: false).flatMap { section -> [SidebarRow] in
-            if case .project(let path) = section.kind, model.navigation.collapsed.contains(path) { return [] }
+            if model.navigation.collapsed.contains(section.collapseID) { return [] }
             return section.rows
         }
     }
@@ -807,13 +1411,20 @@ private struct SessionsWindow: View {
                 if mode == .workspaces { documentVisible = false }
             },
             select: { id in
-                guard let entry = entry(id) else { return }
-                if model.navigation.archived.contains(id) {
-                    model.navigation.archived.remove(id)
-                    showingArchive = false
-                }
+                guard let target = SidebarRows.selection(
+                    for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession
+                ), let entry = entry(target.workspaceID) else { return }
                 ownerMoves += 1
-                model.selectWorkspace(entry)
+                sidebarFocus = target.agentID == nil ? nil : target
+                if let chat = target.chatID {
+                    let changedChat = model.selectedSessionID != chat
+                    model.select(chat)
+                    if !changedChat, let session = target.agentSessionID, let agent = target.agentID {
+                        panes.focus(key: AgentPaneStore.key(session: session, agent: agent.rawValue))
+                    }
+                } else {
+                    model.selectWorkspace(entry)
+                }
             },
             home: {
                 ownerMoves += 1
@@ -829,70 +1440,189 @@ private struct SessionsWindow: View {
             openPalette: { showingPalette = true },
             toggleArchive: { showingArchive.toggle() },
             importProject: importProject,
+            importFolder: importFolder,
             createProject: createProject,
             toggleCollapsed: { path in
-                if model.navigation.collapsed.contains(path) { model.navigation.collapsed.remove(path) }
-                else { model.navigation.collapsed.insert(path) }
+                model.navigation.toggleCollapsed(path)
             },
+            expandList: { expandedLists.insert($0) },
             newChat: { startChat(in: $0) },
-            togglePin: { id in
-                if model.navigation.pinned.contains(id) { model.navigation.pinned.remove(id) }
-                else { model.navigation.pinned.insert(id) }
+            newChatProfiles: newChatMenu.rows,
+            refreshNewChatProfiles: refreshNewChatProfiles,
+            newChatAs: { startChat(in: $0, profile: $1) },
+            unpinWorkspace: { model.navigation.pinned.remove($0) },
+            pinWorkspace: { model.navigation.pinWorkspace($0, in: model.workspaces) },
+            moveWorkspace: { model.navigation.moveWorkspace($0, onto: $1, in: model.workspaces) },
+            workspaceMoveTarget: {
+                model.navigation.workspaceMoveTarget($0, by: $1, in: model.workspaces)
             },
             rename: { id in
                 guard let entry = entry(id) else { return }
                 // The name the row shows, so Save with no edit keeps it.
-                workspaceName = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
-                renameTarget = entry
+                renameName = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
+                renameTarget = .workspace(entry)
             },
-            archive: { id in entry(id).map(model.archiveWorkspace) },
-            restore: { model.navigation.archived.remove($0) }
+            renameChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { beginRenameChat(chat) }
+            },
+            openChatInNewWindow: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { openChatWindow(chat) }
+            },
+            renameProject: { id in
+                guard let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) else { return }
+                renameName = model.navigation.projectTitle(for: project)
+                renameTarget = .project(project)
+            },
+            archive: { id in
+                if let workspace = entry(id) { requestWorkspaceAction(workspace, action: .archive) }
+            },
+            endChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { requestChatEnd(chat, archive: false) }
+            },
+            archiveChat: { id in
+                if let target = SidebarRows.selection(for: id, in: model.workspaces, agentsBySession: model.tree.agentsBySession),
+                   let chat = target.chatID { archiveChat(chat) }
+            },
+            deleteWorkspace: { id in
+                if let workspace = entry(id), workspace.canDelete { requestWorkspaceAction(workspace, action: .delete) }
+            },
+            canDeleteWorkspace: { entry($0)?.canDelete == true },
+            restore: { model.navigation.archived.remove($0) },
+            removeProject: { id in
+                if let project = model.tree.projects.first(where: { SidebarSection.id(of: $0) == id }) {
+                    showAlert(.removeProject(project))
+                }
+            },
+            pruneWorktree: { id in
+                guard let workspace = entry(id), workspace.workspace.missing,
+                      case .repository(let common) = workspace.project.id else { return }
+                Task {
+                    do {
+                        let paths = try await Git.worktrees(of: common).filter(\.isPrunable).map(\.path)
+                        guard !paths.isEmpty else {
+                            showAlert(.error("No missing worktrees to prune."))
+                            return
+                        }
+                        showAlert(.prune(entry: workspace, paths: paths))
+                    }
+                    catch { showAlert(.error(error.localizedDescription)) }
+                }
+            },
+            showRun: { id in
+                guard let destination = SidebarRows.runDestination(
+                    for: id, in: model.workspaces, runsByWorkspace: model.runsByWorkspace,
+                    agentsBySession: model.tree.agentsBySession
+                ), let workspace = entry(destination.workspaceID) else { return }
+                ownerMoves += 1
+                sidebarFocus = nil
+                documentVisible = false
+                model.selectWorkspace(workspace)
+                runRequestWorkspace = destination.workspaceID
+                runRequest = StepRunRequest(run: destination.run)
+                storedSidebarMode = WorkspaceSidebarMode.runs.rawValue
+                sidebarVisible = true
+            }
         )
+    }
+
+    private func runChatTitles(in directory: String) -> [String: String] {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }) else { return [:] }
+        var titles: [String: String] = [:]
+        for step in (model.runsByWorkspace[directory] ?? []).flatMap(\.steps) {
+            if let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: model.tree.agentsBySession) {
+                titles[step.path] = model.navigation.title(for: chat)
+            }
+        }
+        return titles
+    }
+
+    private func selectRunChat(_ path: String, in directory: String) {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }),
+              let step = (model.runsByWorkspace[directory] ?? []).flatMap(\.steps).first(where: { $0.path == path }),
+              let chat = SidebarRows.chat(for: step, in: entry, agentsBySession: model.tree.agentsBySession) else { return }
+        ownerMoves += 1
+        sidebarFocus = nil
+        documentVisible = false
+        model.select(chat.id)
     }
 
     private var paletteItems: [PaletteItem] {
         let listed = PaletteSource.workspaces(
             model.workspaces, navigation: model.navigation, now: Int(Date().timeIntervalSince1970)
         )
-        let session = model.selectedSession?.session
         return PaletteItems.build(
             sidebarViews: WorkspaceSidebarMode.allCases.map(\.rawValue),
             workspaces: listed.workspaces,
             chats: listed.chats,
-            agents: session.map { session in
-                SwarmPanePolicy.cells(session: session, agents: model.agents).map {
-                    PaletteSource.Agent(
-                        id: $0.agent.id.rawValue, name: $0.agent.id.rawValue, role: $0.agent.role,
-                        status: $0.agent.status
-                    )
-                }
-            } ?? [],
-            recentActions: recentActions
-        )
+            agents: PaletteSource.agents(model.workspaces, agentsBySession: model.tree.agentsBySession,
+                                         navigation: model.navigation),
+            recentActions: recentActions,
+            selectedChat: model.selectedSession != nil,
+            switchModelDisabledReason: model.selectedSessionID.map { modelSwitchState($0).reason } ?? nil
+        ) + SettingsPage.paletteItems.map {
+            PaletteItem(id: $0.id, title: $0.title, group: $0.group, recency: recentActions[$0.id])
+        }
     }
 
     /// Runs a palette item the way its menu command or sidebar row would.
     private func runPaletteItem(_ item: PaletteItem) {
+        guard item.disabledReason == nil else { return }
         showingPalette = false
+        if let page = SettingsPage.openable(from: item) {
+            recordPaletteAction(item.id)
+            openSettings(on: page)
+            return
+        }
         guard let colon = item.id.firstIndex(of: ":") else { return }
         let id = String(item.id[item.id.index(after: colon)...])
         switch item.id[..<colon] {
         case "action":
             guard let key = PaletteItems.actions.first(where: { "\($0)" == id }) else { return }
-            recentActions[key] = Int(Date().timeIntervalSince1970)
+            recordPaletteAction(item.id)
             AppKeyTarget.current.perform(key)
+        case "chatAction":
+            guard let action = PaletteChatAction(rawValue: id) else { return }
+            if action == .reopenChat {
+                recordPaletteAction(item.id)
+                AppKeyTarget.current.perform(.recentlyClosed)
+                return
+            }
+            guard let chat = model.selectedSession else { return }
+            recordPaletteAction(item.id)
+            switch action {
+            case .closeTab:
+                if let entry = model.selectedWorkspace { model.hideTab(ChatTitle.key(chat), in: entry.id) }
+            case .endChat: requestChatEnd(chat.id, archive: false)
+            case .archiveChat: archiveChat(chat.id)
+            case .renameChat: beginRenameChat(chat.id)
+            case .openInNewWindow: openChatWindow(chat.id)
+            case .switchModel: requestModelSwitch(chat.id)
+            case .reopenChat: break
+            }
         case "workspace":
             sidebarActions.select(id)
         case "chat":
             ownerMoves += 1
             model.select(SwarmSessionID(id))
         case "agent":
-            if let session = model.selectedSession?.session {
-                panes.focus(key: AgentPaneStore.key(session: session.id, agent: id))
-            }
+            documentVisible = false
+            sidebarActions.select(id)
         default:
             break
         }
+    }
+
+    private func recordPaletteAction(_ id: String) {
+        recentActions[id] = Int(Date().timeIntervalSince1970)
+        PaletteRecentActions.save(recentActions)
+    }
+
+    private func openSettings(on page: SettingsPage) {
+        settings.select(page)
+        openSettings()
     }
 
     /// `SWARM_OPEN_SCRIPT=N`: selects each workspace, then each of its chats, through the model,
@@ -949,7 +1679,30 @@ private struct SessionsWindow: View {
 
     private var keyActions: WindowKeyActions {
         WindowKeyActions(
-            newChat: workspaceDirectory.map { directory in { startChat(in: directory) } },
+            newChat: model.selectedWorkspace.map({ model.navigation.canStartChat(in: $0) }) == false
+                ? nil : workspaceDirectory.map { directory in { startChat(in: directory) } },
+            closeTab: {
+                guard let directory = tabsDirectory,
+                      stripTabs(in: directory).contains(where: { $0.id == selectedTabID && $0.canHide }) else { return }
+                model.hideTab(selectedTabID, in: directory)
+            },
+            lastTab: {
+                if let tab = tabsDirectory.flatMap({ stripTabs(in: $0).last }) { showTab(tab.id) }
+            },
+            stepRecentChat: { step in
+                guard let directory = tabsDirectory,
+                      let key = TabHistory.flip(
+                        history: model.navigation.tabHistory[directory] ?? [],
+                        open: model.navigation.tabs[directory]?.open ?? [], current: selectedTabID, step: step
+                      ) else { return }
+                // Cycling must keep history order, or repeated presses only toggle two chats.
+                showTab(key, recordingHistory: false)
+            },
+            recentlyClosed: {
+                guard !showingClosedChats else { return }
+                closedChats = nil
+                showingClosedChats = true
+            },
             newWorkspace: newWorkspaceInCurrentProject,
             newProject: { createSheet = .addProject },
             stepWorkspace: { delta in
@@ -1001,12 +1754,12 @@ private struct SessionsWindow: View {
 
     /// ⌘N's fallback lists the projects; ⇧⌘N's sheet has only the two project buttons.
     private func createSheetView(_ sheet: CreateSheet) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             Text(sheet == .pickProject ? "New workspace" : "Add project").font(.title2)
             if sheet == .pickProject {
                 Text("Choose a project").foregroundStyle(.secondary)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.m) {
+                    VStack(alignment: .leading, spacing: tokens.spacing.m) {
                         ForEach(model.tree.projects) { project in
                             Button(project.name) {
                                 createAction = { newWorkspace(in: project) }
@@ -1028,7 +1781,7 @@ private struct SessionsWindow: View {
                     .keyboardShortcut(.cancelAction)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.sheet, height: DesignTokens.Size.sheetHeight)
     }
 
@@ -1051,9 +1804,11 @@ private struct SessionsWindow: View {
         Task {
             // `git init` inside a bare clone would hide its worktrees behind a nested repository.
             if await Git.isRepository(at: project.path) {
-                actionError = "“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."
+                showAlert(.error("“\(project.name)” is in a git repository that Swarm does not list as a project, such as a bare clone. Import one of its worktrees instead."))
+            } else if !model.shouldAskForGitInit(at: project.path) {
+                showAlert(.plainFolder(project.path))
             } else {
-                gitInitRequest = GitInitRequest(path: project.path, reason: .newWorkspace)
+                showAlert(.gitInit(GitInitRequest(path: project.path, reason: .newWorkspace)))
             }
         }
     }
@@ -1065,7 +1820,7 @@ private struct SessionsWindow: View {
         case .newWorkspace:
             Task {
                 do { newTaskProject = try await model.initializeGit(at: request.path) }
-                catch { actionError = error.localizedDescription }
+                catch { showAlert(.error(error.localizedDescription)) }
             }
         }
     }
@@ -1076,9 +1831,16 @@ private struct SessionsWindow: View {
         SessionDetailView(
             row: row, model: detail,
             agents: active ? model.agents : model.tree.agentsBySession[row.id] ?? [],
+            readOnlyReason: model.workspace(containingChat: row.id)
+                .flatMap { model.navigation.readOnlyReason(in: $0.id) },
             launchedModel: model.launchedModels[row.id],
             launchedTrust: model.launchedTrust[row.id] ?? [],
-            panes: panes, commandSource: active ? model.commandSource : nil,
+            panes: panes,
+            paneWidths: PaneWidths(column: columnWidth, chat: chatWidth, splits: paneSplits),
+            onPaneWidthsChanged: {
+                columnWidth = $0.column; chatWidth = $0.chat; paneSplits = $0.splits
+            },
+            commandSource: active ? model.commandSource : nil,
             onSwitchModel: { currentModel in
                 switchTarget = SwitchTarget(row: row, model: currentModel)
             },
@@ -1090,14 +1852,35 @@ private struct SessionsWindow: View {
                       reportedUsage?.sessionID != row.id || reportedUsage?.usage != usage else { return }
                 reportedUsage = (row.id, usage)
             },
-            onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true }
+            onShowUsage: { storedSidebarMode = WorkspaceSidebarMode.usage.rawValue; sidebarVisible = true },
+            dismissedChildren: model.navigation.dismissedChildren[ChatTitle.key(row)] ?? [],
+            onDismissChildren: { ids in
+                model.navigation.dismissFinishedChildren(ids, in: row, agents: model.agents)
+            },
+            onStopChild: { performChildAction($0, in: row.session, close: false) },
+            onCloseChild: { requestChildClose($0, in: row.session) }
         )
+    }
+
+    private func childActions(in session: SwarmSession) -> ChildAgentActions {
+        ChildAgentActions(bus: SwarmCLIBus(), session: session,
+                          confirm: { showAlert(.closeAgent($0, session)) }, error: {
+            if let message = $0 { showAlert(.error(message)) }
+        })
+    }
+
+    private func requestChildClose(_ id: SwarmAgentID, in session: SwarmSession) {
+        Task { await childActions(in: session).requestChildClose(id) }
+    }
+
+    private func performChildAction(_ id: SwarmAgentID, in session: SwarmSession, close: Bool) {
+        Task { await childActions(in: session).performChildAction(id, close: close) }
     }
 
     /// The workspace whose tabs show: the selected chat's, or the selected pending chat's.
     private var tabsDirectory: String? {
         if let id = model.selectedPendingID { return model.pendingChats[id]?.workspace }
-        return model.selectedSession.flatMap { model.tree.workspaceChats(for: $0.id).first?.workspacePath }
+        return model.selectedWorkspace?.id
     }
 
     /// The tabs of `directory` in strip order: its starts, then its chats. The tab keys use it too.
@@ -1106,17 +1889,34 @@ private struct SessionsWindow: View {
             ?? model.workspaces.first { $0.id == directory }?.chats.first?.id
         let chats = first.map { model.tree.workspaceChats(for: $0) } ?? []
         return ChatTab.tabs(
-            chats, pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
-            now: Int(Date().timeIntervalSince1970)
+            chats, strip: model.navigation.tabs[directory] ?? .init(),
+            pending: model.pendingChats.inWorkspace(directory), closing: model.closing,
+            now: Int(Date().timeIntervalSince1970),
+            navigation: model.navigation, agentsBySession: model.tree.agentsBySession,
+            workspaceFields: model.workspaceFields,
+            branches: Dictionary(model.workspaces.compactMap { entry in entry.workspace.branch.map { (entry.id, $0) } },
+                                 uniquingKeysWith: { first, _ in first }),
+            stepsByChat: tabSteps(in: directory)
         )
+    }
+
+    private func tabSteps(in directory: String) -> [SwarmSessionID: String] {
+        guard let entry = model.workspaces.first(where: { $0.id == directory }) else { return [:] }
+        return RowFields.stepsByChat(in: entry, runs: model.runsByWorkspace[directory] ?? [],
+                                    agentsBySession: model.tree.agentsBySession)
     }
 
     private var selectedTabID: String {
         model.selectedPendingID.flatMap { model.pendingChats[$0]?.tabID }
-            ?? model.selectedSession?.id.rawValue ?? ""
+            ?? model.selectedSession.map(ChatTitle.key) ?? ""
     }
 
-    private func showTab(_ id: String) {
+    private func openChatWindow(_ id: SwarmSessionID) {
+        guard let chat = model.tree.session(id) else { return }
+        openWindow(id: "chat", value: ChatWindowState.id(for: chat))
+    }
+
+    private func showTab(_ id: String, recordingHistory: Bool = true) {
         // Going from one start to another leaves `selectedSessionID` nil, so its onChange does
         // not hide a file preview; hide it here.
         documentVisible = false
@@ -1124,8 +1924,18 @@ private struct SessionsWindow: View {
         if let start = model.pendingChats.items.first(where: { $0.tabID == id }) {
             model.selectPending(start.id)
         } else {
-            model.select(SwarmSessionID(id))
+            model.select(SwarmSessionID(id), recordingHistory: recordingHistory)
         }
+    }
+
+    private func showTabChildren(_ key: String, in directory: String) {
+        guard let tab = stripTabs(in: directory).first(where: { $0.id == key }),
+              let target = tab.waitingChildSelection(in: model.workspaces, agentsBySession: model.tree.agentsBySession) else {
+            showTab(key)
+            return
+        }
+        documentVisible = false
+        sidebarActions.select(target.rowID)
     }
 
     private func workspaceTabs(in directory: String) -> some View {
@@ -1133,24 +1943,85 @@ private struct SessionsWindow: View {
             workspaceTitle: model.selectedWorkspace.map { model.navigation.title(for: $0) },
             tabs: stripTabs(in: directory),
             selectedID: selectedTabID,
+            canStartChat: model.navigation.readOnlyReason(in: directory) == nil
+                && (model.workspaces.first { $0.id == directory }.map { model.navigation.canStartChat(in: $0) } ?? true),
             actions: ChatTabActions(
-                select: showTab,
+                select: { showTab($0) },
+                selectChildren: { showTabChildren($0, in: directory) },
                 newChat: { startChat(in: directory) },
-                close: { id in
+                end: { requestChatEnd(SwarmSessionID($0), archive: false) },
+                hide: { model.hideTab($0, in: directory) },
+                move: { model.navigation.moveTab($0, onto: $1, in: directory) },
+                step: { model.navigation.moveTab($0, toward: $1, in: directory) },
+                archive: { archiveChat(SwarmSessionID($0)) },
+                rename: { beginRenameChat(SwarmSessionID($0)) },
+                group: { model.navigation.groupTab($0, in: directory) },
+                switchModel: { requestModelSwitch(SwarmSessionID($0)) },
+                switchDisabledReason: { modelSwitchState(SwarmSessionID($0)).reason },
+                copySessionID: { key in
+                    if let chat = model.tree.session(SwarmSessionID(key)) { AppClipboard.copy(chat.id.rawValue) }
+                },
+                revealFolder: { id in
+                    if let chat = model.tree.session(SwarmSessionID(id)) { AppFolderActions.reveal(chat.session.cwd) }
+                },
+                openTerminal: { id in
+                    guard let chat = model.tree.session(SwarmSessionID(id)) else { return }
                     Task {
-                        do { try await model.close(SwarmSessionID(id)) }
-                        catch { actionError = String(describing: error) }
+                        do { try await AppFolderActions.openInTerminal(chat.session.cwd) }
+                        catch { showAlert(.error(error.localizedDescription)) }
                     }
                 },
-                archive: { archiveChat(SwarmSessionID($0)) }
+                openInNewWindow: { openChatWindow(SwarmSessionID($0)) }
             )
         )
     }
 
+    private func modelSwitchState(_ id: SwarmSessionID) -> (model: String?, reason: String?) {
+        guard let row = model.tree.session(id) else { return (nil, "This chat is not available.") }
+        let detail = model.detailModels.entries.first { $0.id == row.id }?.model
+        let current = detail?.currentModel ?? model.launchedModels[row.id]
+        let snapshot = detail?.snapshot ?? .waiting
+        let readOnly = model.workspace(containingChat: row.id)
+            .flatMap { model.navigation.readOnlyReason(in: $0.id) }
+        guard let detail, detail.hasLoaded else {
+            return (current, ModelSwitchChoice.tabDisabledReason(
+                readOnlyReason: readOnly, chat: row, agents: model.tree.agentsBySession[row.id] ?? []
+            ))
+        }
+        return (current, ModelSwitchChoice.disabledReason(
+            readOnlyReason: readOnly,
+            waitingForModel: current == nil && (snapshot == .waiting || snapshot == .loading),
+            isSending: detail.isSending(sessionID: row.id.rawValue),
+            isRunning: row.isRunning == true && ChairTurn.isActive(detail.rows)
+        ))
+    }
+
+    private func requestModelSwitch(_ id: SwarmSessionID) {
+        let state = modelSwitchState(id)
+        if let reason = state.reason { showAlert(.error(reason)); return }
+        guard let row = model.tree.session(id) else { return }
+        showTab(ChatTitle.key(row))
+        pendingModelSwitch = row.id
+    }
+
+    private var pendingModelSwitchReady: Bool {
+        guard let id = pendingModelSwitch else { return false }
+        return model.detailModels.entries.first { $0.id == id }?.model.hasLoaded == true
+    }
+
+    private func finishModelSwitchRequest() {
+        guard let id = pendingModelSwitch else { return }
+        pendingModelSwitch = nil
+        let state = modelSwitchState(id)
+        if let reason = state.reason { showAlert(.error(reason)); return }
+        guard let row = model.tree.session(id) else { return }
+        switchTarget = SwitchTarget(row: row, model: state.model)
+    }
+
     private var renameWorkspaceSheet: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("Rename workspace").font(.title2)
-            TextField("Name", text: $workspaceName)
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
+            Text(renameTarget?.heading ?? "Rename").font(.title2)
+            TextField("Name", text: $renameName)
                 .textFieldStyle(.roundedBorder)
             Text("Leave the name blank to use the default name.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -1159,26 +2030,115 @@ private struct SessionsWindow: View {
                 Button("Cancel") { renameTarget = nil }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    if let entry = renameTarget {
-                        let name = workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = renameName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    switch renameTarget {
+                    case .workspace(let entry):
                         let shown = model.navigation.title(for: entry, inProject: !model.navigation.pinned.contains(entry.id))
                         // Saving the default title unchanged must not freeze it as a custom name.
                         let unchanged = model.navigation.names[entry.id] == nil && name == shown
                         model.navigation.names[entry.id] = name.isEmpty || unchanged ? nil : name
+                    case .chat(let chat):
+                        let key = ChatTitle.key(chat)
+                        let unchanged = model.navigation.chatNames[key] == nil && name == ChatTitle.title(chat)
+                        model.navigation.renameChat(chat, to: unchanged ? "" : name)
+                    case .project(let project):
+                        let unchanged = model.navigation.projectNames[project.path] == nil && name == project.name
+                        model.navigation.renameProject(project, to: unchanged ? "" : name)
+                    case nil: break
                     }
                     renameTarget = nil
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(DesignTokens.Spacing.xl)
+        .padding(tokens.spacing.xl)
         .frame(width: DesignTokens.Size.narrowSheet)
     }
 
-    private func archiveChat(_ id: SwarmSessionID) {
+    private func beginRenameChat(_ id: SwarmSessionID) {
+        guard let chat = model.tree.session(id) else { return }
+        renameName = model.navigation.title(for: chat)
+        renameTarget = .chat(chat)
+    }
+
+    private var windowTitle: String {
+        model.selectedSessionID.flatMap { model.tree.windowTitle(for: $0, navigation: model.navigation) } ?? "Swarm"
+    }
+
+    private enum WorkspaceAction: CaseIterable, Identifiable {
+        case archive, delete
+        var id: Self { self }
+        var progress: String {
+            switch self {
+            case .archive: "Archiving workspace…"
+            case .delete: "Deleting workspace…"
+            }
+        }
+    }
+
+    private func requestWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
+        guard workspaceActions[entry.id] == nil, checkingWorkspaces.insert(entry.id).inserted else { return }
         Task {
-            do { try await model.archive(id) }
-            catch { actionError = String(describing: error) }
+            defer { checkingWorkspaces.remove(entry.id) }
+            do {
+                let ignored = action == .delete ? try await Git.ignoredRemovalItems(worktree: entry.id) : nil
+                let confirmation = try await model.workspaceEndConfirmation(entry)
+                switch action {
+                case .delete:
+                    if let ignored { showAlert(.deleteWorkspace(entry, ignored: ignored, confirmation: confirmation)) }
+                case .archive:
+                    if confirmation.required { showAlert(.archiveWorkspace(entry, liveAgents: confirmation.liveAgents)) }
+                    else {
+                        workspaceActions[entry.id] = action
+                        defer { workspaceActions.removeValue(forKey: entry.id) }
+                        try await runWorkspaceAction(entry, action: action)
+                    }
+                }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) {
+        guard workspaceActions[entry.id] == nil, !checkingWorkspaces.contains(entry.id) else { return }
+        workspaceActions[entry.id] = action
+        Task {
+            defer { workspaceActions.removeValue(forKey: entry.id) }
+            do { try await runWorkspaceAction(entry, action: action) }
+            catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func runWorkspaceAction(_ entry: WorkspaceEntry, action: WorkspaceAction) async throws {
+        switch action {
+        case .archive: try await model.archiveWorkspace(entry)
+        case .delete: try await model.deleteWorkspace(entry)
+        }
+    }
+
+    private func archiveChat(_ id: SwarmSessionID) {
+        requestChatEnd(id, archive: true)
+    }
+
+    private func requestChatEnd(_ id: SwarmSessionID, archive: Bool) {
+        Task {
+            do {
+                guard let confirmation = try await model.endConfirmation(id) else { return }
+                if confirmation.required, let chat = model.tree.session(id) {
+                    showAlert(.endChat(id: chat.id, title: model.navigation.title(for: chat),
+                                       confirmation: confirmation, archive: archive))
+                } else {
+                    performChatEnd(id, archive: archive)
+                }
+            } catch { showAlert(.error(error.localizedDescription)) }
+        }
+    }
+
+    private func performChatEnd(_ id: SwarmSessionID, archive: Bool) {
+        Task {
+            do {
+                if archive { try await model.archive(id) }
+                else { try await model.end(id) }
+            } catch { showAlert(.error(error.localizedDescription)) }
         }
     }
 
@@ -1187,6 +2147,33 @@ private struct SessionsWindow: View {
         ownerMoves += 1
         documentVisible = false
         model.newChat(in: directory)
+    }
+
+    private func startChat(in directory: String, profile: String) {
+        ownerMoves += 1
+        documentVisible = false
+        model.newChat(in: directory, profile: profile)
+    }
+
+    private func refreshNewChatProfiles() {
+        Task { await loadNewChatProfiles() }
+    }
+
+    private func loadNewChatProfiles() async {
+        guard !Task.isCancelled, newChatMenu.reserveRead(at: ContinuousClock().now) else { return }
+        var completedAt: ContinuousClock.Instant?
+        defer { newChatMenu.finishRead(at: completedAt) }
+        do {
+            let profiles = try await SwarmProfileCatalog.shared.profiles()
+            guard !Task.isCancelled else { return }
+            newChatMenu.apply(profiles: profiles.profiles)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            newChatMenu.record(error: error.localizedDescription)
+        }
+        completedAt = ContinuousClock().now
     }
 
     /// A folder in a git repository, a linked worktree, or a bare hub joins its repository's
@@ -1199,18 +2186,25 @@ private struct SessionsWindow: View {
         panel.prompt = "Import Project"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            let identity = SwarmSessionDiscovery.identity(
-                for: url.resolvingSymlinksInPath().path, repositoryPathsResolver: Git.repositoryPaths
-            )
-            Task {
-                if case .repository = identity {
-                    performProjectAction(url, .open)
-                } else if await Git.isRepository(at: url.path) {
-                    // A bare clone: adding it as today is safe, `git init` in it is not.
-                    performProjectAction(url, .open)
-                } else {
-                    gitInitRequest = GitInitRequest(path: url.path, reason: .importFolder(url))
-                }
+            importFolder(url)
+        }
+    }
+
+    private func importFolder(_ url: URL) {
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        let identity = SwarmSessionDiscovery.identity(
+            for: url.path, repositoryPathsResolver: Git.repositoryPaths
+        )
+        Task {
+            if case .repository = identity {
+                performProjectAction(url, .open)
+            } else if !model.shouldAskForGitInit(at: url.path) {
+                performProjectAction(url, .open)
+            } else if await Git.isRepository(at: url.path) {
+                // A bare clone: adding it as today is safe, `git init` in it is not.
+                performProjectAction(url, .open)
+            } else {
+                showAlert(.gitInit(GitInitRequest(path: url.path, reason: .importFolder(url))))
             }
         }
     }
@@ -1238,10 +2232,13 @@ private struct SessionsWindow: View {
                     ? model.createProject(at: url)
                     : model.openProject(url, initializeGit: action == .initializeGitAndOpen))
                 guard ownerMoves == moves else { return }
-                // The kept path is the project's launch folder. The tree can still lack the
-                // project when a later refresh overtook this one, so it is not read here.
-                startChat(in: path)
-            } catch { actionError = error.localizedDescription }
+                ownerMoves += 1
+                documentVisible = false
+                model.selectProject(at: path)
+            } catch {
+                let subject = action == .create ? "Could not create the project." : "Could not import the project."
+                showAlert(.error("\(subject) \(error.localizedDescription)"))
+            }
         }
     }
 
@@ -1252,8 +2249,13 @@ private struct WorkspacePanels: View {
     let mode: WorkspaceSidebarMode
     let visible: Bool
     let usage: ChatUsage?
+    let chainUsage: ChainUsage?
     let hasChat: Bool
     let open: (WorkspaceDocument) -> Void
+    let runRequest: StepRunRequest?
+    let openedRun: () -> Void
+    let chatTitles: [String: String]
+    let selectRunChat: (String) -> Void
     @State private var visitedFiles = false
     @State private var visitedRuns = false
     @State private var visitedDetails = false
@@ -1266,12 +2268,13 @@ private struct WorkspacePanels: View {
                     .retainedVisibility(mode == .files)
             }
             if visitedRuns || mode == .runs {
-                StepRunsView(directory: directory, isActive: visible && mode == .runs, open: open)
+                StepRunsView(directory: directory, isActive: visible && mode == .runs, open: open,
+                             request: runRequest, openedRun: openedRun, chatTitles: chatTitles, selectChat: selectRunChat)
                     .retainedVisibility(mode == .runs)
             }
             if visitedDetails || mode.isDetails {
                 WorkspaceDetails(
-                    directory: directory, usage: usage, hasChat: hasChat,
+                    directory: directory, usage: usage, chainUsage: chainUsage, hasChat: hasChat,
                     mode: mode.isDetails ? mode : detailsMode, isActive: visible && mode.isDetails, open: open
                 )
                 .retainedVisibility(mode.isDetails)
@@ -1285,6 +2288,18 @@ private struct WorkspacePanels: View {
     }
 }
 
+private enum RenameTarget {
+    case workspace(WorkspaceEntry), chat(SwarmProjectSession), project(ProjectNode)
+
+    var heading: String {
+        switch self {
+        case .workspace: "Rename workspace"
+        case .chat: "Rename chat"
+        case .project: "Rename Project"
+        }
+    }
+}
+
 private enum ProjectAction { case create, open, initializeGitAndOpen }
 
 private enum CreateSheet: Identifiable {
@@ -1292,62 +2307,67 @@ private enum CreateSheet: Identifiable {
     var id: Self { self }
 }
 
+/// Every alert of the window. On macOS, SwiftUI drops an alert asked for while a different alert is
+/// up, or in the tick one closes, and leaves its state set with nothing on screen; a sheet does not
+/// drop one, the alert waits for it (docs/research/2026-10-08-swiftui-alert-queue.md). So the
+/// window has one `.alert`, a new alert waits in a list, and the next one shows a `Task` hop after
+/// the last one closes.
+private enum WindowAlert {
+    case pathDrift(PathSwarmDrift)
+    case gitInit(GitInitRequest)
+    case plainFolder(String)
+    case removeProject(ProjectNode)
+    case prune(entry: WorkspaceEntry, paths: [String])
+    case archiveWorkspace(WorkspaceEntry, liveAgents: Int)
+    case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems, confirmation: WorkspaceArchive.Confirmation)
+    case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
+    case closeAgent(SwarmAgentID, SwarmSession)
+    case error(String)
+
+    func hasSameTarget(as other: Self) -> Bool {
+        switch (self, other) {
+        case (.pathDrift(let left), .pathDrift(let right)): left.key == right.key
+        case (.gitInit(let left), .gitInit(let right)): left.path == right.path && left.reason == right.reason
+        case (.plainFolder(let left), .plainFolder(let right)): left == right
+        case (.removeProject(let left), .removeProject(let right)): left.path == right.path
+        case (.prune(let left, _), .prune(let right, _)): left.id == right.id
+        case (.archiveWorkspace(let left, _), .archiveWorkspace(let right, _)): left.id == right.id
+        case (.deleteWorkspace(let left, _, _), .deleteWorkspace(let right, _, _)): left.id == right.id
+        case (.endChat(let left, _, _, let leftArchive), .endChat(let right, _, _, let rightArchive)):
+            left == right && leftArchive == rightArchive
+        case (.closeAgent(let left, let leftSession), .closeAgent(let right, let rightSession)):
+            left == right && leftSession.id == rightSession.id
+        case (.error(let left), .error(let right)): left == right
+        default: false
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .pathDrift: "Terminal runs another swarm"
+        case .gitInit(let request): "“\(request.name)” is not a git repository"
+        case .plainFolder: "This project is a plain folder. Workspaces need git."
+        case .removeProject: "Remove Project…"
+        case .prune: "Prune missing worktrees?"
+        case .archiveWorkspace: "Archive workspace?"
+        case .deleteWorkspace: "Delete workspace?"
+        case .endChat(_, let title, _, let archive): "\(archive ? "Archive" : "End") “\(title)”?"
+        case .closeAgent(let id, _): "Close “\(id.rawValue)”?"
+        case .error: "Could not complete action"
+        }
+    }
+}
+
 /// The owner's yes to `git init` in a plain folder, asked before Import or a project's "+".
 private struct GitInitRequest {
-    enum Reason { case importFolder(URL), newWorkspace }
+    enum Reason: Equatable { case importFolder(URL), newWorkspace }
     let path: String
     let reason: Reason
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
 }
 
-private struct NewTaskSheet: View {
-    let project: ProjectNode
-    let create: (String) async throws -> String
-    let onCreated: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var isCreating = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
-            Text("New workspace in \(project.name)").font(.title2)
-            Text(project.path).foregroundStyle(.secondary)
-            TextField("Workspace name", text: $name)
-            Text("This workspace has its own branch and files.")
-                .foregroundStyle(.secondary)
-            Text("To add a chat in the current workspace, press ⌘T.")
-                .font(.callout).foregroundStyle(.secondary)
-            if let error { Text(verbatim: error).foregroundStyle(.red) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(isCreating)
-                Button(isCreating ? "Creating…" : "Create") {
-                    guard !isCreating else { return }
-                    isCreating = true
-                    error = nil
-                    Task {
-                        defer { isCreating = false }
-                        do {
-                            onCreated(try await create(name))
-                            dismiss()
-                        } catch {
-                            self.error = (error as? LocalizedError)?.errorDescription
-                                ?? String(describing: error)
-                        }
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isCreating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(DesignTokens.Spacing.xl)
-        .frame(width: DesignTokens.Size.sheet)
-        .interactiveDismissDisabled(isCreating)
-    }
+enum SwarmWindows {
+    static let sessionsFrameName = "SwarmSessionsWindow"
 }
 
 private struct WindowFrameRestorer: NSViewRepresentable {
@@ -1356,14 +2376,15 @@ private struct WindowFrameRestorer: NSViewRepresentable {
 }
 
 private final class WindowFrameView: NSView {
-    private let frameName = "SwarmSessionsWindow"
+    private let frameName = SwarmWindows.sessionsFrameName
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window, window.frameAutosaveName != frameName else { return }
         window.setFrameAutosaveName(frameName)
         if !window.setFrameUsingName(frameName) {
-            window.setFrame(window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame, display: true)
+            let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
+            window.setFrame(FirstWindowFrame.frame(visibleFrame: visible), display: true)
         }
         let notifications = NotificationCenter.default
         notifications.addObserver(self, selector: #selector(saveFrame), name: NSWindow.didEndLiveResizeNotification, object: window)
@@ -1387,58 +2408,82 @@ private struct SwitchTarget: Identifiable {
 }
 
 struct SwarmApp: App {
+    @State private var model = SessionsTreeModel()
+    @State private var settings = SettingsSelection()
+    private var splitDiff: Binding<Bool> {
+        Binding(get: { settings.prefs.splitDiff }, set: { settings.setSplitDiff($0) })
+    }
     init() {
         SwarmPerformance.event("AppStarted")
-        // Screenshot aid: SWARM_APPEARANCE=dark or light fixes this app's appearance only.
-        switch ProcessInfo.processInfo.environment["SWARM_APPEARANCE"] {
-        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
-        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
-        default: break
-        }
+    }
+
+    private func beginStartup() {
+        let model = model
+        let settings = settings
+        settings.beginSkillsRefresh(after: {
+            do {
+                try await AppLock.hold()
+                model.startNotices(settings: settings)
+                return true
+            } catch {
+                let path = SwarmHome.dataFolder.map { AppRunLock.file(in: $0).path } ?? "an unset Swarm home"
+                settings.setAppError(AppLockFailure.message(for: error, path: path))
+                return false
+            }
+        }, refresh: { try await SwarmCLIBus().refreshSkills() })
     }
 
     var body: some Scene {
         // A fixed id: without one, SwiftUI names the scene by a type address that changes with
         // each build, so a new build restores no window and opens none.
         WindowGroup(id: "sessions") {
-            if SwarmPaneStress.count > 0 { PaneStressWindow() } else { SessionsWindow() }
+            Group {
+                if SwarmPaneStress.count > 0 { PaneStressWindow() }
+                else { SessionsWindow(model: model).modifier(NoticeWindowRouting(model: model)) }
+            }
+            .modifier(AppearancePreferences(prefs: settings.prefs))
+            // Register on the installed state before the window's setup readers start.
+            .onAppear { beginStartup() }
         }
+            .environment(settings)
+            .environment(\.splitDiff, splitDiff)
             .commands {
-                SetupCommands()
-                DebugCommands()
+                SetupCommands(selection: settings)
                 AppKeyCommands()
             }
-        // One window, not a sheet, because the list grows with each trusted folder. It opens only
-        // from the menu, never at launch and never restored from the last run, because each open
-        // reads every managed file.
-        Window("Managed Changes", id: "managed") { ManagedChangesPage() }
-            .defaultLaunchBehavior(.suppressed)
-            .restorationBehavior(.disabled)
+        WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
+            if let sessionID {
+                ChatWindow(sessionID: sessionID, model: model)
+                    .modifier(NoticeWindowRouting(model: model))
+                    .modifier(AppearancePreferences(prefs: settings.prefs))
+            }
+        }
+            .environment(settings)
+            .environment(\.splitDiff, splitDiff)
+            .commandsRemoved()
+        Settings {
+            SettingsWindow().environment(settings).environment(model).environment(\.splitDiff, splitDiff)
+                .modifier(NoticeWindowRouting(model: model))
+                .modifier(AppearancePreferences(prefs: settings.prefs))
+        }
+            .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)
     }
 }
 
 private struct SetupCommands: Commands {
-    @Environment(\.openWindow) private var openWindow
+    let selection: SettingsSelection
+    @Environment(\.openSettings) private var openSettings
 
     var body: some Commands {
         CommandGroup(after: .appSettings) {
             Button("Set Up Swarm…") {
-                NotificationCenter.default.post(name: .showHooksSetup, object: nil)
+                selection.select(.setup)
+                openSettings()
             }
-            Button("Managed Changes…") { openWindow(id: "managed") }
-        }
-    }
-}
-
-private struct DebugCommands: Commands {
-    @AppStorage("showRawData") private var showRawData = false
-    @AppStorage("performanceLogging") private var performanceLogging = false
-
-    var body: some Commands {
-        CommandMenu("Debug") {
-            Toggle("Show Raw Data", isOn: $showRawData)
-                .keyboardShortcut("r", modifiers: [.command, .option])
-            Toggle("Performance Logging", isOn: $performanceLogging)
+            Button("Managed Changes…") {
+                selection.select(.managedChanges)
+                openSettings()
+            }
         }
     }
 }

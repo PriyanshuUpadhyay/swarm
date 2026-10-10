@@ -1,12 +1,10 @@
 import Foundation
 import TranscriptTool
 
-/// One provider session. Costs are cumulative snapshots; context describes the last reported call.
+/// One provider session. Context describes the last reported call.
 public struct ChatUsage: Sendable, Equatable {
     public private(set) var context: TranscriptUsage?
-    public private(set) var cost: TranscriptUsage?
     public private(set) var contextTimestamp = ""
-    public private(set) var costTimestamp = ""
     public private(set) var contextNotice = "No usage report in the loaded transcript."
     private var model: String?
 
@@ -18,9 +16,6 @@ public struct ChatUsage: Sendable, Equatable {
             context = value
             contextTimestamp = meta.timestamp
             contextNotice = value.contextTokens == nil ? "Context tokens were not reported." : ""
-        case .usage(let value, let meta) where value.kind == "cost":
-            cost = value
-            costTimestamp = meta.timestamp
         case .systemMessage(let kind, _, _) where kind == "compaction":
             clearContext("Waiting for a usage report after compaction.")
         case .sessionInfo(let kind, let value, _) where kind == "model":
@@ -58,16 +53,6 @@ public struct ChatUsage: Sendable, Equatable {
             label: tokens.formatted(.number.notation(.compactName).locale(locale)),
             accessibilityLabel: "Context \(tokens.formatted(.number.locale(locale))) tokens"
         )
-    }
-
-    public var costLabel: String? {
-        guard let amount = cost?.costUSD else { return nil }
-        let prefix = switch cost?.costCompleteness {
-        case "complete": "Est."
-        case "partial": "Partial est."
-        default: "Est. (coverage unknown)"
-        }
-        return "\(prefix) " + amount.formatted(.currency(code: "USD"))
     }
 }
 

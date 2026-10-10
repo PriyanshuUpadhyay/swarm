@@ -8,6 +8,7 @@ struct PaneCell: Identifiable, Equatable {
     let role: String
     let model: String
     let status: AgentStatus
+    var stateTooltip: String? = nil
 
     var ended: Bool { status == .ended }
 }
@@ -16,6 +17,7 @@ struct PaneCell: Identifiable, Equatable {
 /// Focus and zoom change with no animation, because keys drive them. The owner drags a column's
 /// trailing edge to size every column and the line in a two-pane column to split it (ADR 0026).
 struct PaneStrip<Chat: View, Pane: View>: View {
+    @Environment(\.designTokens) private var tokens
     let cells: [PaneCell]
     let focusedID: String?
     let zoomedID: String?
@@ -27,31 +29,41 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     let splitScope: String
     let onFocus: (String) -> Void
     let onZoom: (String?) -> Void
+    let onDismiss: ([String]) -> Void
+    let readOnlyReason: String?
+    let onStop: (String) -> Void
+    let onClose: (String) -> Void
+    let widths: PaneWidths
+    let onWidthsChanged: (PaneWidths) -> Void
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let pane: (PaneCell) -> Pane
-
-    /// nil is the default width, a third of the main area.
-    @AppStorage("paneColumnWidth") private var storedColumnWidth: Double?
-    @AppStorage("paneColumnSplits") private var storedSplits = ""
     @State private var main = CGSize.zero
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollOffset = ScrollOffset()
     @State private var widthDragStart: (width: CGFloat, offset: CGFloat)?
     @State private var splitDragStart: Double?
+    @State private var chatDragStart: CGFloat?
 
     var body: some View {
         let hasPanes = !cells.isEmpty
+        let hasFinished = cells.contains(where: \.ended)
         let zoomed = cells.first { $0.id == zoomedID }
-        let preferredWidth = storedColumnWidth.map { CGFloat($0) }
-        let splits = PaneStripLayout.splits(from: storedSplits, scope: splitScope)
+        let preferredWidth = widths.column.map { CGFloat($0) }
+        let splits = PaneStripLayout.splits(from: widths.splits, scope: splitScope)
         ZStack {
             // The chat stays in the scroll view with no panes, so it keeps its identity and state.
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 0) {
                         chat()
+                            .padding(.trailing, hasPanes ? DesignTokens.Size.dragHandle : 0)
                             .containerRelativeFrame([.horizontal, .vertical]) { length, axis in
-                                axis == .horizontal && hasPanes ? PaneStripLayout.widths(main: length).chat : length
+                                axis == .horizontal && hasPanes
+                                    ? PaneStripLayout.widths(main: length, chat: widths.chat.map { CGFloat($0) }).chat
+                                    : length
+                            }
+                            .overlay(alignment: .trailing) {
+                                if hasPanes { chatWidthHandle }
                             }
                             .id(Self.chatID)
                         ForEach(Array(columns.enumerated()), id: \.element[0].id) { index, column in
@@ -83,12 +95,27 @@ struct PaneStrip<Chat: View, Pane: View>: View {
                 paneView(zoomed, showsContent: true)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if hasPanes {
+                HStack {
+                    Spacer()
+                    Button("Clear finished") { onDismiss(cells.filter(\.ended).map(\.id)) }
+                        .buttonStyle(.borderless)
+                        .disabled(!hasFinished)
+                        .opacity(hasFinished ? 1 : 0)
+                        .accessibilityHidden(!hasFinished)
+                }
+                .font(.caption)
+                .padding(tokens.spacing.s)
+                .background(.bar)
+            }
+        }
     }
 
     private static var chatID: String { "pane-strip-chat" }
 
     private var columnWidth: CGFloat {
-        PaneStripLayout.columnWidth(main: main.width, preferred: storedColumnWidth.map { CGFloat($0) })
+        PaneStripLayout.columnWidth(main: main.width, preferred: widths.column.map { CGFloat($0) })
     }
 
     @ViewBuilder
@@ -123,6 +150,29 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         }
     }
 
+    private var chatWidth: CGFloat {
+        PaneStripLayout.widths(main: main.width, chat: widths.chat.map { CGFloat($0) }).chat
+    }
+
+    private var chatWidthHandle: some View {
+        ResizeHandle(axis: .horizontal, label: "Chat page width") { translation in
+            if chatDragStart == nil { chatDragStart = chatWidth }
+            resizeChat(to: (chatDragStart ?? chatWidth) + translation)
+        } onEnd: {
+            chatDragStart = nil
+        } onReset: {
+            resizeChat(to: nil)
+        } onAdjust: { step in
+            resizeChat(to: chatWidth + step * 20)
+        }
+    }
+
+    private func resizeChat(to preferred: CGFloat?) {
+        var updated = widths
+        updated.chat = preferred.map { Double(PaneStripLayout.widths(main: main.width, chat: $0).chat) }
+        onWidthsChanged(updated)
+    }
+
     private func widthHandle(column index: Int) -> some View {
         ResizeHandle(axis: .horizontal, label: "Agent column width") { translation in
             if widthDragStart == nil { widthDragStart = (columnWidth, scrollOffset.x) }
@@ -142,15 +192,19 @@ struct PaneStrip<Chat: View, Pane: View>: View {
     private func resizeColumns(to preferred: CGFloat?, keeping index: Int,
                                from start: (width: CGFloat, offset: CGFloat)) {
         let width = PaneStripLayout.columnWidth(main: main.width, preferred: preferred)
-        storedColumnWidth = preferred.map { _ in Double(width) }
+        var updated = widths
+        updated.column = preferred.map { _ in Double(width) }
+        onWidthsChanged(updated)
         scrollPosition.scrollTo(x: start.offset + CGFloat(index) * (width - start.width))
     }
 
     private func saveSplit(_ split: Double?, column id: String, splits: [String: Double]) {
         var splits = splits
         splits[id] = split
-        storedSplits = PaneStripLayout.text(saving: splits, scope: splitScope,
-                                            keeping: Set(columns.map { $0[0].id }), in: storedSplits)
+        var updated = widths
+        updated.splits = PaneStripLayout.text(saving: splits, scope: splitScope,
+                                             keeping: Set(columns.map { $0[0].id }), in: widths.splits)
+        onWidthsChanged(updated)
     }
 
     private var columns: [[PaneCell]] {
@@ -161,7 +215,10 @@ struct PaneStrip<Chat: View, Pane: View>: View {
         PaneView(
             cell: cell, focused: cell.id == focusedID, zoomed: cell.id == zoomedID,
             onFocus: { onFocus(cell.id) },
-            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) }
+            onZoom: { onZoom(cell.id == zoomedID ? nil : cell.id) },
+            onDismiss: { onDismiss([cell.id]) },
+            readOnlyReason: readOnlyReason,
+            onStop: { onStop(cell.id) }, onClose: { onClose(cell.id) }
         ) {
             // A column shows in one place only; the zoomed copy owns it.
             if showsContent { pane(cell) } else { Color.clear }
@@ -204,11 +261,16 @@ private struct ResizeHandle: View {
 }
 
 private struct PaneView<Content: View>: View {
+    @Environment(\.designTokens) private var tokens
     let cell: PaneCell
     let focused: Bool
     let zoomed: Bool
     let onFocus: () -> Void
     let onZoom: () -> Void
+    let onDismiss: () -> Void
+    let readOnlyReason: String?
+    let onStop: () -> Void
+    let onClose: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -227,29 +289,77 @@ private struct PaneView<Content: View>: View {
         }
     }
 
+    private struct HeaderAction: Identifiable {
+        var id: String { title }
+        let title: String
+        let symbol: String
+        let label: String
+        var help: String?
+        var disabled = false
+        let perform: () -> Void
+    }
+
+    private var headerActions: [HeaderAction] {
+        [
+            HeaderAction(title: "Stop", symbol: "stop.fill", label: "Stop " + cell.title,
+                         help: readOnlyReason, disabled: readOnlyReason != nil || !cell.status.isMidTurn,
+                         perform: onStop),
+            HeaderAction(title: "Close agent…", symbol: "power", label: "Close agent " + cell.title,
+                         help: readOnlyReason ?? "Close agent", disabled: readOnlyReason != nil || cell.ended,
+                         perform: onClose),
+            HeaderAction(title: "Copy id", symbol: "doc.on.doc", label: "Copy id of " + cell.title,
+                         perform: { AppClipboard.copy(cell.id) }),
+            HeaderAction(title: "Copy attach command", symbol: "terminal", label: "Copy attach command for " + cell.title,
+                         perform: { AppClipboard.copy(SwarmAgentID(cell.id).attachCommand) }),
+        ]
+    }
+
     private var header: some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
-            StatusGlyph(status: cell.status)
+        HStack(spacing: tokens.spacing.s) {
+            StatusGlyph(status: cell.status, helpText: cell.stateTooltip)
             Text(cell.title).fontWeight(.semibold)
             Text("\(cell.role) · \(cell.model)").foregroundStyle(.secondary)
             Spacer(minLength: 4)
+            ForEach(headerActions) { action in
+                Button(action: action.perform) { Image(systemName: action.symbol) }
+                    .focusable(false)
+                    .disabled(action.disabled)
+                    .help(action.help ?? action.title)
+                    .accessibilityLabel(action.label)
+            }
             Button(action: onZoom) {
                 Image(systemName: zoomed
                       ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
-            .help(zoomed ? "Return to the strip" : "Zoom pane")
-            // ⌘↩ zooms from the keyboard; this button must not be the window's first key view.
+            .help(zoomed ? "Return to the strip (\(AppKey.zoom.chord.displayText))" : "Zoom pane (\(AppKey.zoom.chord.displayText))")
+            // ⇧⌘↩ zooms from the keyboard; this button must not be the window's first key view.
             .focusable(false)
             .accessibilityLabel(zoomed ? "Unzoom \(cell.title)" : "Zoom \(cell.title)")
+            if cell.ended {
+                Button(action: onDismiss) { Image(systemName: "xmark") }
+                    .help("Dismiss finished agent")
+                    .focusable(false)
+                    .accessibilityLabel("Dismiss \(cell.title)")
+            }
         }
         .buttonStyle(.borderless)
         .font(.caption)
         .lineLimit(1)
-        .padding(.horizontal, DesignTokens.Spacing.s)
+        .padding(.horizontal, tokens.spacing.s)
         .frame(height: DesignTokens.Size.paneHeader)
         .foregroundStyle(focused ? .primary : .secondary)
         .background(Color(nsColor: .windowBackgroundColor))
         .contentShape(Rectangle())
+        // One header focus target gives the keyboard access to its menu.
+        .focusable()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Controls for \(cell.id)")
+        .contextMenu {
+            ForEach(headerActions) { action in
+                Button(action.title, action: action.perform)
+                    .disabled(action.disabled)
+            }
+        }
         .onTapGesture(perform: onFocus)
     }
 }

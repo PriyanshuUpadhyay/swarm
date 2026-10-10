@@ -1,11 +1,12 @@
 import SwiftUI
 import SwarmCore
 
-/// Swarm > Managed Changes…: each item swarm wrote outside its home, one row per writer and file
+/// Settings > Managed Changes: each item swarm wrote outside its home, one row per writer and file
 /// (ADR 0042). A row's switch is its undo: off shows the removal's diff in the hooks setup sheet
 /// before anything is written, and on runs the writer's own plan again. The page holds no write
 /// logic; each write is the CLI behind that sheet (ADR 0036).
 struct ManagedChangesPage: View {
+    @Environment(\.designTokens) private var tokens
     @State private var list: SwarmManagedList?
     /// `list`'s groups and summary, made once per load, not once per body pass.
     @State private var groups: [SwarmManagedList.Group] = []
@@ -15,8 +16,7 @@ struct ManagedChangesPage: View {
     @State private var sheet: Sheet?
     /// The newest load; an older load that answers late writes nothing.
     @State private var loads = 0
-    /// A hooks item the owner removed is not offered again at launch.
-    @AppStorage("hooksSetupDeclined") private var hooksSetupDeclined = false
+    @Environment(SettingsSelection.self) private var selection
     /// Closed group names, joined by newlines; a group is open by default.
     @AppStorage("managed.collapsedGroups") private var collapsedGroups = ""
     @Environment(\.controlActiveState) private var activeState
@@ -24,20 +24,20 @@ struct ManagedChangesPage: View {
     private let bus = SwarmCLIBus()
 
     private enum Sheet: Identifiable {
-        case undo(ids: [String], hooks: Bool)
-        case setUp
+        case undo(ids: [String], groups: Set<SetupGroup>)
+        case setUp(group: SetupGroup)
 
         var id: String {
             switch self {
             case .undo(let ids, _): ids.joined(separator: ",")
-            case .setUp: "setUp"
+            case .setUp(let group): "setUp-" + group.rawValue
             }
         }
     }
 
     var body: some View {
         let collapsed = self.collapsed
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.l) {
+        VStack(alignment: .leading, spacing: tokens.spacing.l) {
             header
             if let error {
                 HStack {
@@ -76,38 +76,54 @@ struct ManagedChangesPage: View {
                 )
             }
         }
-        .padding(DesignTokens.Spacing.xl)
-        .frame(minWidth: DesignTokens.Size.hooksSheet, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(tokens.spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await load() }
         .onChange(of: activeState) { _, state in
             if state == .key { Task { await load() } }
         }
         .sheet(item: $sheet, onDismiss: { Task { await load() } }) { kind in
             switch kind {
-            case .undo(let ids, let hooks):
+            case .undo(let ids, let groups):
                 HooksSetupSheet(
                     loadPlan: { _ in try await bus.managedRevertPlan(ids: ids) },
                     setUp: { digest, _ in
                         try await bus.revertManaged(ids: ids, digest: digest)
-                        if hooks { hooksSetupDeclined = true }
+                        for key in groups.compactMap(\.declineFlagKey) {
+                            UserDefaults.standard.set(true, forKey: key)
+                        }
                     },
                     notNow: { _ in sheet = nil },
                     done: { sheet = nil },
                     copy: .undo
                 )
-            case .setUp:
+            case .setUp(let group):
                 HooksSetupSheet(
-                    loadPlan: { _ in try await bus.hooksPlan() },
-                    setUp: { digest, _ in try await bus.setUpHooks(digest: digest) },
+                    loadPlan: { _ in
+                        if group == .skills {
+                            _ = await selection.waitForSkillsRefresh()
+                        }
+                        return try await group.restorePlan(using: bus)
+                    },
+                    setUp: { digest, _ in
+                        if group == .skills {
+                            _ = await selection.waitForSkillsRefresh()
+                        }
+                        try await group.restore(using: bus, digest: digest)
+                        if group == .skills, let key = group.declineFlagKey {
+                            UserDefaults.standard.set(false, forKey: key)
+                        }
+                    },
                     notNow: { _ in sheet = nil },
-                    done: { sheet = nil }
+                    done: { sheet = nil },
+                    copy: group == .skills ? .skills : .hooks
                 )
             }
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             HStack {
                 Text("Managed Changes").font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
@@ -140,7 +156,7 @@ struct ManagedChangesPage: View {
             Button {
                 withAnimation(reduceMotion ? nil : DesignTokens.spring) { toggle(group.name) }
             } label: {
-                HStack(spacing: DesignTokens.Spacing.xs) {
+                HStack(spacing: tokens.spacing.xs) {
                     Image(systemName: isOpen ? "chevron.down" : "chevron.forward")
                         .frame(width: DesignTokens.Size.glyphSlot)
                     Text(group.name).font(.subheadline.weight(.semibold))
@@ -149,7 +165,7 @@ struct ManagedChangesPage: View {
                     }
                 }
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.row, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: tokens.row, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -165,15 +181,22 @@ struct ManagedChangesPage: View {
 
     private func managedRow(_ row: SwarmManagedList.Row, in group: SwarmManagedList.Group) -> some View {
         let label = "\(group.name), \(Self.short(row.file)), \(row.entry)"
-        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+        return VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
             HStack {
                 Text(verbatim: Self.short(row.file))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(row.file)
-                Text(row.entry).foregroundStyle(.secondary)
+                if row.writer != "skills" { Text(row.entry).foregroundStyle(.secondary) }
                 Spacer()
                 stateControl(row, label: label)
+            }
+            if row.writer == "skills" {
+                Text(verbatim: row.entry)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
             if case .changed(let found, let wrote) = row.state {
                 Text(verbatim: "Found: \(found) · Swarm wrote: \(wrote) · Swarm leaves it.")
@@ -201,18 +224,18 @@ struct ManagedChangesPage: View {
                 Text("Matches swarm's text exactly; written before swarm kept a list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if row.state == .off, !row.isHooks {
+            } else if row.state == .off, row.restoreGroup == nil {
                 Text("Swarm adds it again the next time it needs it, after you agree.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.xs)
-        .frame(minHeight: DesignTokens.Size.row)
+        .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.xs)
+        .frame(minHeight: tokens.row)
         .accessibilityElement(children: .contain)
     }
 
-    /// A switch while the row can be turned off or, for hooks, on again; else its state.
+    /// A switch while the row can be turned off or its writer can restore it; else its state.
     @ViewBuilder
     private func stateControl(_ row: SwarmManagedList.Row, label: String) -> some View {
         let on = switch row.state {
@@ -225,12 +248,12 @@ struct ManagedChangesPage: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .disabled(true)
-        } else if on || (row.state == .off && row.isHooks) {
+        } else if on || (row.state == .off && row.restoreGroup != nil) {
             Toggle(label, isOn: Binding(
                 get: { on },
                 set: { on in
                     if on {
-                        sheet = .setUp
+                        if let group = row.restoreGroup { sheet = .setUp(group: group) }
                     } else {
                         undo(row.presentIDs, in: row.entries)
                     }
@@ -263,8 +286,9 @@ struct ManagedChangesPage: View {
 
     private func undo(_ ids: [String], in entries: [SwarmManagedList.Entry]) {
         guard !ids.isEmpty else { return }
-        let hooks = entries.contains { ids.contains($0.id) && $0.isHooks }
-        sheet = .undo(ids: ids, hooks: hooks)
+        let selected = SwarmManagedList(entries: entries.filter { ids.contains($0.id) })
+        let groups = Set(selected.groups.flatMap(\.rows).compactMap(\.restoreGroup))
+        sheet = .undo(ids: ids, groups: groups)
     }
 
     /// `retry`: the owner pressed Retry, so a failure is announced even when its text is the same.

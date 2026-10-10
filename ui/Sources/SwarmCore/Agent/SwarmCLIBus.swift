@@ -17,12 +17,12 @@ public struct SwarmCLIBus: SwarmBus {
             environment: Self.appEnvironment(),
             resolveExecutable: { Shell.which($0) },
             run: { executable, arguments, cwd, environment, stdin, timeout in
-                let inherited = ChildProcessEnvironment.removingInheritedAgentIdentity(
-                    from: Shell.environment()
+                let childEnvironment = ChildProcessEnvironment.swarmCall(
+                    overrides: environment, inherited: Shell.environment()
                 )
                 return try await Shell.run(
                     executable, arguments, cwd: cwd,
-                    replacingEnvironment: inherited.merging(environment) { _, requested in requested },
+                    replacingEnvironment: childEnvironment,
                     stdin: stdin, timeout: timeout
                 )
             }
@@ -39,6 +39,20 @@ public struct SwarmCLIBus: SwarmBus {
         self.cwd = cwd
         self.resolveExecutable = resolveExecutable
         self.run = run
+    }
+
+    public func profileAction(_ action: ProfileAction, revision: String) async throws -> String {
+        try await read(
+            ["roles"] + action.arguments + ["--revision", revision], as: ProfileActionRevision.self
+        ).revision
+    }
+
+    public func initializeHome() async throws {
+        _ = try await call(["init"])
+    }
+
+    public func refreshSkills() async throws {
+        _ = try await call(["skills", "refresh"], timeout: .seconds(120))
     }
 
     public func startChairSession(
@@ -132,6 +146,16 @@ public struct SwarmCLIBus: SwarmBus {
     public func archive(_ sessions: [SwarmSessionID]) async throws {
         guard !sessions.isEmpty else { return }
         _ = try await call(["session", "archive"] + sessions.map(\.rawValue))
+    }
+
+    public func archivedSessions() async throws -> [SwarmSession] {
+        try await read(["sessions", "--json", "--archived"], as: SwarmSessionList.self)
+            .sessions.filter { $0.archivedAt != nil }
+    }
+
+    public func unarchive(_ sessions: [SwarmSessionID]) async throws {
+        guard !sessions.isEmpty else { return }
+        _ = try await call(["session", "unarchive"] + sessions.map(\.rawValue))
     }
 
     public func linkChat(_ newSession: SwarmSessionID, after oldSession: SwarmSessionID) async throws {
@@ -285,6 +309,10 @@ public struct SwarmCLIBus: SwarmBus {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }
+}
+
+private struct ProfileActionRevision: Decodable {
+    var revision: String
 }
 
 extension SwarmCLIBus {

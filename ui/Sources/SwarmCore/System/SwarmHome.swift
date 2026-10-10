@@ -7,6 +7,15 @@ import Foundation
 /// An empty SWARM_HOME is kept, not read as unset: `paths::home` refuses it ("SWARM_HOME is set
 /// but empty"), so every `swarm` the app starts fails with that message instead of guessing a home.
 public enum SwarmHome {
+    public static var dataFolder: URL? {
+        dataFolder(home: current(environment: ProcessInfo.processInfo.environment))
+    }
+
+    public static func dataFolder(home: String) -> URL? {
+        guard !home.isEmpty else { return nil }
+        return URL(fileURLWithPath: home).appendingPathComponent(".swarm", isDirectory: true)
+    }
+
     public static func resolve(swarmHome: String?, home: () -> String, branch: String) -> String {
         if let swarmHome { return swarmHome }
         let home = home()

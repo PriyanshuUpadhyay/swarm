@@ -1,0 +1,93 @@
+import Foundation
+
+public struct Prefs: Codable, Sendable, Hashable {
+    public var settingsPage: String?
+    public var skillsCheckout: String?
+    public var splitDiff: Bool
+    public var theme: Theme
+    public var textSize: TextSize
+    public var density: Density
+    public var sendKey: SendKey
+    public var notices: NoticePrefs
+
+    public init(
+        settingsPage: String? = nil, skillsCheckout: String? = nil, splitDiff: Bool = false, theme: Theme = .system,
+        textSize: TextSize = .default, density: Density = .comfortable, sendKey: SendKey = .return,
+        notices: NoticePrefs = NoticePrefs()
+    ) {
+        self.settingsPage = settingsPage
+        self.skillsCheckout = skillsCheckout
+        self.splitDiff = splitDiff
+        self.theme = theme
+        self.textSize = textSize
+        self.density = density
+        self.sendKey = sendKey
+        self.notices = notices
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settingsPage = try container.decodeIfPresent(String.self, forKey: .settingsPage)
+        skillsCheckout = try container.decodeIfPresent(String.self, forKey: .skillsCheckout)
+        splitDiff = try container.decodeIfPresent(Bool.self, forKey: .splitDiff) ?? false
+        theme = (try? container.decode(Theme.self, forKey: .theme)) ?? .system
+        textSize = (try? container.decode(TextSize.self, forKey: .textSize)) ?? .default
+        density = (try? container.decode(Density.self, forKey: .density)) ?? .comfortable
+        sendKey = (try? container.decode(SendKey.self, forKey: .sendKey)) ?? .return
+        notices = try container.decodeIfPresent(NoticePrefs.self, forKey: .notices) ?? NoticePrefs()
+    }
+}
+
+public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable {
+    case profiles, skills, accounts, setup, guards, managedChanges, appearance, notifications, keys, advanced
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .profiles: "Profiles"
+        case .skills: "Skills"
+        case .accounts: "Accounts"
+        case .setup: "Setup"
+        case .guards: "Guards"
+        case .managedChanges: "Managed Changes"
+        case .appearance: "Appearance"
+        case .notifications: "Notifications"
+        case .keys: "Keys"
+        case .advanced: "Advanced"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .profiles: "person.crop.rectangle"
+        case .skills: "book"
+        case .accounts: "person.crop.circle"
+        case .setup: "wrench.and.screwdriver"
+        case .guards: "shield"
+        case .managedChanges: "doc.badge.gearshape"
+        case .appearance: "paintpalette"
+        case .notifications: "bell"
+        case .keys: "keyboard"
+        case .advanced: "gearshape.2"
+        }
+    }
+
+    public var placeholder: String? {
+        switch self {
+        case .skills: nil
+        case .accounts: nil
+        case .notifications, .keys: nil
+        case .profiles, .setup, .guards, .managedChanges, .appearance, .advanced: nil
+        }
+    }
+
+    public static let paletteItems: [PaletteItem] = [Self.setup, .managedChanges, .profiles].map {
+        PaletteItem(id: "settings:" + $0.rawValue, title: $0.title, group: .action)
+    }
+
+    public static func openable(from palette: PaletteItem) -> Self? {
+        guard palette.group == .action, palette.id.hasPrefix("settings:") else { return nil }
+        return Self(rawValue: String(palette.id.dropFirst("settings:".count)))
+    }
+}

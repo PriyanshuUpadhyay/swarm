@@ -2,7 +2,7 @@ import Foundation
 
 /// Reads the profiles, providers, accounts and usage that the `swarm` CLI owns.
 public struct SwarmCLIProfileSource: SwarmProfileSource {
-    typealias Runner = @Sendable (String, [String], String) async throws -> ShellResult
+    typealias Runner = @Sendable (String, [String], String, [String: String]) async throws -> ShellResult
 
     private let executable: String
     private let cwd: String?
@@ -11,10 +11,15 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
     public init() {
         self.init(
             environment: SwarmCLIBus.appEnvironment(),
-            run: { executable, arguments, cwd in
-                // Usage can wait on a network quota read, so it gets the same bounded wait as
-                // sibling CLI reads instead of leaving a menu bar refresh alive forever.
-                try await Shell.run(executable, arguments, cwd: cwd, timeout: .seconds(20))
+            run: { executable, arguments, cwd, environment in
+                // Rust main::NATIVE_READ_TIMEOUT_SECONDS ends quota reads at 18 seconds,
+                // leaving time to return the CLI result before this 20-second process limit.
+                try await Shell.run(
+                    executable, arguments, cwd: cwd,
+                    replacingEnvironment: ChildProcessEnvironment.swarmCall(
+                        overrides: environment, inherited: Shell.environment()
+                    ), timeout: .seconds(20)
+                )
             }
         )
     }
@@ -63,8 +68,36 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         try await read(["usage", "--json"], as: SwarmUsage.self).meters
     }
 
-    private func read<Value: Decodable>(_ arguments: [String], as type: Value.Type) async throws -> Value {
-        try decode(try await call(arguments), as: type)
+    public func refreshUsage(provider: String) async throws -> SwarmUsage {
+        try await read(["usage", "--refresh", "--provider", provider, "--json"], as: SwarmUsage.self)
+    }
+
+    public func openLogin(_ request: SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult {
+        guard ["claude", "codex"].contains(request.provider), SwarmAccountLoginRequest.validName(request.name) else {
+            throw SwarmProfileError.failed("Use a valid account name and a supported provider")
+        }
+        var arguments = ["accounts", "login", "--provider", request.provider, "--name", request.name,
+                         "--revision", request.revision]
+        if let directory = request.directory {
+            guard directory.hasPrefix("/"), !directory.contains("\0") else {
+                throw SwarmProfileError.failed("Use an absolute directory for the login pane")
+            }
+            arguments += ["--cwd", directory]
+        }
+        return try await read(
+            arguments + ["--json"], environment: ["SWARM_ADAPTER": SwarmSessionInteraction.defaultAdapter],
+            as: SwarmAccountLoginResult.self
+        )
+    }
+
+    public func resetAccounts(revision: String) async throws -> SwarmAccountMetadataAction {
+        try await read(["accounts", "reset", "--revision", revision, "--json"], as: SwarmAccountMetadataAction.self)
+    }
+
+    private func read<Value: Decodable>(
+        _ arguments: [String], environment: [String: String] = [:], as type: Value.Type
+    ) async throws -> Value {
+        try decode(try await call(arguments, environment: environment), as: type)
     }
 
     private func decode<Value: Decodable>(_ result: ShellResult, as type: Value.Type) throws -> Value {
@@ -77,12 +110,12 @@ public struct SwarmCLIProfileSource: SwarmProfileSource {
         }
     }
 
-    private func call(_ arguments: [String]) async throws -> ShellResult {
+    private func call(_ arguments: [String], environment: [String: String]) async throws -> ShellResult {
         let result: ShellResult
         do {
             // swarm needs no project, and remaking the temporary folder per call also survives
             // macOS reaping it while Swarm stays open.
-            result = try await run(executable, arguments, cwd ?? AgentScratchDirectory.current())
+            result = try await run(executable, arguments, cwd ?? AgentScratchDirectory.current(), environment)
         } catch let error as CancellationError {
             throw error
         } catch let error as ShellError where error.status == 127 {

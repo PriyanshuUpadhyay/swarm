@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 /// The one app-facing entry point for message composition.
 struct ComposerView: View {
+    @Environment(\.designTokens) private var tokens
+    @Environment(\.sendKey) private var sendKey
     let sessionID: String
     var isActive = true
     var draft: Binding<String>
@@ -60,7 +62,7 @@ struct ComposerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+        VStack(alignment: .leading, spacing: tokens.spacing.s) {
             if menuVisible { completionMenu }
             VStack(alignment: .leading, spacing: 0) {
                 if !queued.isEmpty { queuedRows }
@@ -177,11 +179,11 @@ struct ComposerView: View {
             }
             .lineLimit(1...8)
             .textFieldStyle(.plain)
-            .font(DesignTokens.body)
+            .font(tokens.body)
             .focused(focus)
-            .padding(.horizontal, DesignTokens.Spacing.m)
-            .padding(.top, DesignTokens.Spacing.m)
-            .padding(.bottom, DesignTokens.Spacing.s)
+            .padding(.horizontal, tokens.spacing.m)
+            .padding(.top, tokens.spacing.m)
+            .padding(.bottom, tokens.spacing.s)
             .simultaneousGesture(TapGesture().onEnded {
                 dismissMenu()
                 focus.wrappedValue = true
@@ -192,15 +194,21 @@ struct ComposerView: View {
             .onKeyPress(.tab) { handle(.tab) }
             .onKeyPress(.escape) { handle(.escape) }
             .onKeyPress(.return, phases: .down) { press in
-                handle(press.modifiers.contains(.shift) ? .shiftReturn : .return)
+                var modifiers: KeyChord.Modifiers = []
+                if press.modifiers.contains(.command) { modifiers.insert(.command) }
+                if press.modifiers.contains(.shift) { modifiers.insert(.shift) }
+                if press.modifiers.contains(.option) { modifiers.insert(.option) }
+                if press.modifiers.contains(.control) { modifiers.insert(.control) }
+                let sends = SendKeyRule.sends(press: KeyChord(.returnKey, modifiers), sendKey: sendKey)
+                return handle(sends ? .return : .shiftReturn)
             }
     }
 
     private var footer: some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             if let selectModel {
                 Button(action: selectModel) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Text(modelLabel).lineLimit(1).truncationMode(.middle)
                         Image(systemName: "chevron.down").font(.caption2)
                     }
@@ -213,7 +221,7 @@ struct ComposerView: View {
             }
             if let showUsage {
                 Button(action: showUsage) {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         if let remaining = contextMeter?.remainingPercent {
                             // The capacity style draws at 58 pt on macOS and has no size option.
                             Gauge(value: Double(100 - remaining), in: 0...100) {}
@@ -261,17 +269,17 @@ struct ComposerView: View {
                 .buttonStyle(.plain)
                 .disabled(Composer.outgoing(draft.wrappedValue) == nil || isSending || isSubmitting
                     || isPullingBack || pendingAttachments > 0 || sendDisabledReason != nil)
-                .help("Send (Return)")
+                .help(sendKey == .return ? "Send (Return)" : "Send (⌘Return)")
             }
         }
-        .padding(.horizontal, DesignTokens.Spacing.m)
-        .padding(.bottom, DesignTokens.Spacing.s)
+        .padding(.horizontal, tokens.spacing.m)
+        .padding(.bottom, tokens.spacing.s)
     }
 
     private var queuedRows: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             ForEach(queued) { row in
-                HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+                HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                     Text(verbatim: row.text)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -291,19 +299,19 @@ struct ComposerView: View {
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel("Press Up to edit queued messages")
             }
-            Divider().padding(.top, DesignTokens.Spacing.xs)
+            Divider().padding(.top, tokens.spacing.xs)
         }
-        .font(DesignTokens.body)
-        .padding(.horizontal, DesignTokens.Spacing.m)
-        .padding(.top, DesignTokens.Spacing.m)
+        .font(tokens.body)
+        .padding(.horizontal, tokens.spacing.m)
+        .padding(.top, tokens.spacing.m)
         .transition(.opacity)
     }
 
     private var attachmentRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: DesignTokens.Spacing.s) {
+            HStack(spacing: tokens.spacing.s) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: tokens.spacing.xs) {
                         Image(systemName: ComposerAttachmentStore.isImage(
                             pathExtension: (attachment.path as NSString).pathExtension
                         ) ? "photo" : "doc")
@@ -319,13 +327,13 @@ struct ComposerView: View {
                         .accessibilityLabel("Remove \(attachment.name)")
                     }
                     .font(.caption)
-                    .padding(.horizontal, DesignTokens.Spacing.s)
-                    .padding(.vertical, DesignTokens.Spacing.xs)
+                    .padding(.horizontal, tokens.spacing.s)
+                    .padding(.vertical, tokens.spacing.xs)
                     .background(.quaternary, in: Capsule())
                 }
             }
-            .padding(.horizontal, DesignTokens.Spacing.m)
-            .padding(.top, DesignTokens.Spacing.s)
+            .padding(.horizontal, tokens.spacing.m)
+            .padding(.top, tokens.spacing.s)
         }
     }
 
@@ -336,13 +344,13 @@ struct ComposerView: View {
                 Text(emptyMenuText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(DesignTokens.Spacing.m)
+                    .padding(tokens.spacing.m)
             } else {
                 ForEach(0..<completionCount, id: \.self) { index in
                     Button { pick(index) } label: {
                         completionRow(index)
-                            .padding(.horizontal, DesignTokens.Spacing.m)
-                            .padding(.vertical, DesignTokens.Spacing.s)
+                            .padding(.horizontal, tokens.spacing.m)
+                            .padding(.vertical, tokens.spacing.s)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(index == selectedIndex ? DesignTokens.currentMatchFill : .clear)
                     }
@@ -355,8 +363,8 @@ struct ComposerView: View {
     }
 
     private func completionRow(_ index: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
-            Text(verbatim: completionName(index)).font(DesignTokens.mono)
+        HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
+            Text(verbatim: completionName(index)).font(tokens.mono)
             Text(verbatim: completionDetail(index))
                 .font(.caption)
                 .foregroundStyle(.secondary)

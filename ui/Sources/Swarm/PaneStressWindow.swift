@@ -6,8 +6,9 @@ private let stressStatuses: [AgentStatus] = [.working, .waiting, .done, .failed,
 
 struct PaneStressWindow: View {
     @State private var panes = AgentPaneStore()
+    @State private var paneWidths = PaneWidths()
     @State private var lastWindowAction = "none"
-    private let cells = (0..<SwarmPaneStress.count).map {
+    @State private var cells = (0..<SwarmPaneStress.count).map {
         PaneCell(id: "stress-\($0)", title: "stress-\($0)", role: "stress", model: "sh", status: stressStatuses[$0 % stressStatuses.count])
     }
 
@@ -20,7 +21,13 @@ struct PaneStressWindow: View {
             revealCount: panes.revealCount,
             splitScope: "pane-stress",
             onFocus: { panes.focus(key: $0) },
-            onZoom: { panes.toggleZoom(key: $0) }
+            onZoom: { panes.toggleZoom(key: $0) },
+            onDismiss: { ids in
+                cells.removeAll { $0.ended && ids.contains($0.id) }
+                panes.revealChat()
+            },
+            readOnlyReason: nil, onStop: { _ in }, onClose: { _ in },
+            widths: paneWidths, onWidthsChanged: { paneWidths = $0 }
         ) {
             Text("Pane stress: \(cells.count) panes")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,6 +48,10 @@ struct PaneStressWindow: View {
         // The stress window has no chats or sidebar; these record that the menu reached them.
         .focusedSceneValue(\.windowKeyActions, WindowKeyActions(
             newChat: { lastWindowAction = "newChat" },
+            closeTab: { lastWindowAction = "closeTab" },
+            lastTab: { lastWindowAction = "lastTab" },
+            stepRecentChat: { lastWindowAction = "stepRecentChat(\($0))" },
+            recentlyClosed: { lastWindowAction = "recentlyClosed" },
             newWorkspace: { lastWindowAction = "newWorkspace" },
             newProject: { lastWindowAction = "newProject" },
             stepWorkspace: { lastWindowAction = "stepWorkspace(\($0))" },
@@ -113,6 +124,7 @@ extension PaneStressWindow {
         let code: UInt16
         switch chord.key {
         case .returnKey: code = 36
+        case .tab: code = 48
         case .escape: code = 53
         case .left: code = 123
         case .right: code = 124

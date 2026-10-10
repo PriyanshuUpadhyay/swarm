@@ -4,6 +4,21 @@ import Testing
 
 @Suite("Pending chats")
 struct PendingChatsTests {
+    @Test("Retry keeps the chosen profile and the one-click account behavior")
+    func retryProfile() throws {
+        var pending = PendingChats()
+        let picked = pending.add(directory: "/api", workspace: "/api", previous: nil, profile: "code.complex")
+        let defaultChat = pending.add(directory: "/api", workspace: "/api", previous: nil)
+        let failure = LaunchFailure(message: "not signed in")
+        pending.update(picked) { $0.state = .failed(failure); $0.session = SwarmSessionID("failed-session") }
+        let pickedPlan = try #require(pending[picked]?.launchPlan)
+        #expect(pickedPlan == SwarmChatLaunchPlan(profile: "code.complex", in: "/api"))
+        #expect(pickedPlan.account == "auto")
+        #expect(pending[defaultChat]?.launchPlan == SwarmChatLaunchPlan(profileIn: "/api"))
+        #expect(pending[defaultChat]?.launchPlan?.account == "auto")
+        #expect(pending[picked]?.session == SwarmSessionID("failed-session"))
+    }
+
     // The text `swarm launch` prints when no runner can run (`resolve_role` in `src/main.rs`).
     private let noCLI = """
         swarm: chat: no runner can run
@@ -37,7 +52,7 @@ struct PendingChatsTests {
         #expect(pending.inWorkspace("/docs").isEmpty)
         #expect(pending[first]?.previous == .session(SwarmSessionID("old-chat")))
         #expect(pending[second]?.previous == .pending(first))
-        let tabs = ChatTab.tabs([], pending: pending.items, closing: [], now: 0)
+        let tabs = ChatTab.tabs([], strip: .init(), pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.title) == ["New chat", "New chat"])
         // Newest first, as the tree lists chats, so a started chat keeps its tab's place.
         #expect(tabs.map(\.id) == [pending[second]!.tabID, pending[first]!.tabID])
@@ -93,11 +108,11 @@ struct PendingChatsTests {
             $0.session = made.id
             $0.state = .failed(LaunchFailure(message: "not signed in"))
         }
-        let tabs = ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)
+        let tabs = ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), pending: pending.items, closing: [], now: 0)
         #expect(tabs.map(\.id) == [pending.items[0].tabID])
         #expect(tabs[0].pending == .failed)
         pending.update(id) { $0.state = .closing(LaunchFailure(message: "not signed in")) }
-        #expect(ChatTab.tabs(chats, pending: pending.items, closing: [], now: 0)[0].pending == .closing)
+        #expect(ChatTab.tabs(chats, strip: .init(open: chats.map { ChatTitle.key($0.session) }), pending: pending.items, closing: [], now: 0)[0].pending == .closing)
     }
 
     @Test("A start in a folder inside a workspace shows in that workspace's strip")
