@@ -1026,12 +1026,12 @@ private struct SessionsWindow: View {
         .sheet(isPresented: $showingHooksSetup) {
             HooksSetupSheet(
                 loadPlan: {
-                    let choice = try await settings.setupChoice($0)
-                    return try await SwarmCLIBus().setupPlan(choice)
+                    _ = await settings.waitForSkillsRefresh()
+                    return try await SwarmCLIBus().setupPlan($0)
                 },
                 setUp: { digest, choice in
-                    let planned = try await settings.setupChoice(choice)
-                    try await SwarmCLIBus().setUp(digest: digest, choice: planned)
+                    _ = await settings.waitForSkillsRefresh()
+                    try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                     // A group left unchecked is that group's "Not now".
                     decline(choice.unchecked)
                 },
@@ -1042,7 +1042,6 @@ private struct SessionsWindow: View {
                 done: { showingHooksSetup = false },
                 copy: .setupSheet
             )
-            .id(settings.skillsReady)
         }
         .onDisappear {
             panes.stopAll()
@@ -1365,11 +1364,9 @@ private struct SessionsWindow: View {
     /// Asked once, on the owner's first run with swarm's hooks not set up.
     private func askForSetup() async {
         _ = await settings.waitForSkillsRefresh()
-        var declined = SetupGroup.declined(read: UserDefaults.standard.bool(forKey:))
-        if settings.skillsRefreshError != nil { declined.insert(.skills) }
         guard !setupDeclined,
               let status = try? await SwarmCLIBus().setupStatus(),
-              status.needsSheet(declined: declined) else { return }
+              status.needsSheet(declined: SetupGroup.declined(read: UserDefaults.standard.bool(forKey:))) else { return }
         showingHooksSetup = true
     }
 

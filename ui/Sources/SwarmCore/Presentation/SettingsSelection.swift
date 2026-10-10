@@ -18,7 +18,6 @@ public final class SettingsSelection {
     public private(set) var skillsReady = false
     public private(set) var skillsRefreshing = false
     @ObservationIgnored private var skillsRefreshTask: Task<Bool, Never>?
-    @ObservationIgnored private var skillsRefreshWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var skillsRefreshOperation: (@Sendable () async throws -> Void)?
     @ObservationIgnored private var skillsStartupReady = false
     public private(set) var appErrorRevision = 0
@@ -94,30 +93,10 @@ public final class SettingsSelection {
             skillsStartupReady = true
             return await performSkillsRefresh(refresh)
         }
-        let waiters = skillsRefreshWaiters
-        skillsRefreshWaiters.removeAll()
-        for waiter in waiters { waiter.resume() }
     }
 
     public func waitForSkillsRefresh() async -> Bool {
-        if skillsRefreshTask == nil {
-            await withCheckedContinuation { skillsRefreshWaiters.append($0) }
-        }
-        return await skillsRefreshTask?.value ?? false
-    }
-
-    /// A failed copy refresh leaves other setup groups usable and its error on Setup.
-    public func setupChoice(_ choice: SwarmSetupChoice) async throws -> SwarmSetupChoice {
-        if await waitForSkillsRefresh() { return choice }
-        try Task.checkCancellation()
-        guard let skillsRefreshError else { throw CancellationError() }
-        var choice = choice
-        if choice.groups.isEmpty { choice.groups = SetupGroup.allCases.map(\.rawValue) }
-        if choice.checked == [SetupGroup.skills.rawValue] {
-            throw SwarmProfileError.failed(skillsRefreshError)
-        }
-        choice.unchecked.insert(SetupGroup.skills.rawValue)
-        return choice
+        await skillsRefreshTask?.value ?? false
     }
 
     public func retrySkillsRefresh() async -> Bool {
