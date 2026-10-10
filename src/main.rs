@@ -271,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --refresh --provider codex --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -544,47 +544,6 @@ fn run_tool(
         .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
 }
 
-/// `run_tool` that stops the tool after `limit`, for a read that a launch waits on.
-fn run_tool_within(
-    executable: &str,
-    args: &[&str],
-    limit: std::time::Duration,
-) -> Result<std::process::Output, Box<dyn std::error::Error>> {
-    let mut child = std::process::Command::new(executable)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("swarm: cannot run {executable}: {error}"))?;
-    let stdout = read_within(child.stdout.take().ok_or("no stdout")?, limit);
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-    let status = match stdout.as_ref().map(|_| child.try_wait()) {
-        Some(Ok(Some(status))) => Some(status),
-        // stdout closed, so the tool is exiting; a short wait lets it finish.
-        Some(_) => {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            child.try_wait().ok().flatten()
-        }
-        None => None,
-    };
-    let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "swarm: {executable} did not answer within {} s",
-            limit.as_secs()
-        )
-        .into());
-    };
-    let stderr = read_within(stderr, std::time::Duration::from_millis(100)).unwrap_or_default();
-    Ok(std::process::Output {
-        status,
-        stdout: stdout.unwrap_or_default().into_bytes(),
-        stderr: stderr.into_bytes(),
-    })
-}
-
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     checked_stdout(executable, run_tool(executable, args)?)
 }
@@ -604,23 +563,22 @@ fn checked_stdout(
         .map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
 }
 
-fn yelo_command() -> String {
-    env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
-}
-
 /// Whether each runner can start now (ADR 0032). Each provider's accounts are read at most once.
 struct Probe {
+    deadline: std::time::Instant,
     min_usage_left_pct: u8,
     /// `--account <name>`: only that account counts. None or `auto` counts every account.
     account: Option<String>,
     accounts: std::cell::RefCell<
-        std::collections::HashMap<Provider, Option<Vec<swarm::config::AccountState>>>,
+        std::collections::HashMap<Provider, Result<swarm::profiles::AccountList, String>>,
     >,
 }
 
 impl Probe {
     fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
+        // Account selection starts its budget after launch has checked the host and opened the store.
         Probe {
+            deadline: swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -641,7 +599,11 @@ impl Probe {
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
-            .or_insert_with(|| read_accounts(provider, self.account.as_deref()));
+            .or_insert_with(|| swarm::profiles::native::load(provider, self.deadline));
+        let accounts = accounts
+            .as_ref()
+            .ok()
+            .and_then(|list| account_states(list, self.account.as_deref()));
         // A named account belongs to one provider; another provider's runner cannot use it.
         if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
             return Some((
@@ -653,37 +615,30 @@ impl Probe {
     }
 }
 
-/// yelo's accounts for `provider`, or None when yelo is missing, fails, or takes over 2 s. The
-/// read took 0.08 s on the owner's Mac; a launch must not wait on a stuck one.
-fn read_accounts(
-    provider: Provider,
+/// Native authentication uncertainty remains a read failure for ADR 0032.
+fn account_states(
+    list: &swarm::profiles::AccountList,
     only: Option<&str>,
 ) -> Option<Vec<swarm::config::AccountState>> {
-    let mut child = std::process::Command::new(yelo_command())
-        .args([
-            "profile",
-            "list",
-            "--cli",
-            provider.id(),
-            "--usage",
-            "--json",
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let text = read_within(child.stdout.take()?, std::time::Duration::from_secs(2));
-    let _ = child.kill();
-    let _ = child.wait();
-    let list = swarm::profiles::translate_accounts(provider.id(), &text?, None).ok()?;
+    let rows: Vec<_> = list
+        .accounts
+        .iter()
+        .filter(|account| !account.invalid_home())
+        .filter(|account| only.is_none_or(|name| account.name == name))
+        .collect();
+    if rows
+        .iter()
+        .any(|account| account.auth_state == swarm::profiles::AuthState::Unavailable)
+    {
+        return None;
+    }
     Some(
-        list.accounts
-            .iter()
-            .filter(|account| only.is_none_or(|name| account.name == name))
+        rows.into_iter()
             .map(|account| swarm::config::AccountState {
-                signed_in: account.signed_in,
-                remaining_pct: account.remaining_pct,
+                signed_in: account.auth_state == swarm::profiles::AuthState::SignedIn,
+                remaining_pct: (account.usage_state == "fresh")
+                    .then_some(account.remaining_pct)
+                    .flatten(),
             })
             .collect(),
     )
@@ -696,7 +651,7 @@ fn resolve_role(
     provider: Option<&str>,
     account: Option<&str>,
     running: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, Probe), String> {
     let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
     let profile = config
         .profile(role)
@@ -763,7 +718,7 @@ fn resolve_role(
         "skipped".into(),
         serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
     );
-    Ok(value)
+    Ok((value, probe))
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that
@@ -780,42 +735,134 @@ fn installed(provider: &str) -> bool {
 
 fn load_accounts(
     provider: &str,
-    with_pick: bool,
+    deadline: std::time::Instant,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    match Provider::parse(provider) {
-        None => return Err(format!("swarm: unknown provider {provider}").into()),
-        Some(kind) if !kind.has_accounts() => {
-            return Ok(swarm::profiles::empty_accounts(provider));
-        }
-        Some(_) => {}
-    }
-    // A launch waits on these reads, so a stuck yelo fails them rather than the launch hanging.
-    let limit = std::time::Duration::from_secs(2);
-    let command = yelo_command();
-    let list = checked_stdout(
-        &command,
-        run_tool_within(
-            &command,
-            &["profile", "list", "--cli", provider, "--usage", "--json"],
-            limit,
-        )?,
-    )?;
-    let pick_json = if with_pick {
-        let pick = run_tool_within(
-            &command,
-            &["profile", "pick", "--cli", provider, "--json"],
-            limit,
-        )?;
-        pick.status
-            .success()
-            .then(|| String::from_utf8(pick.stdout))
-            .transpose()
-            .map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?
-    } else {
-        None
-    };
-    swarm::profiles::translate_accounts(provider, &list, pick_json.as_deref())
+    let provider =
+        Provider::parse(provider).ok_or_else(|| format!("swarm: unknown provider {provider}"))?;
+    swarm::profiles::native::load(provider, deadline)
         .map_err(|error| format!("swarm: {error}").into())
+}
+
+fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if swarm::host::is_worker(|name| env::var(name).ok()) {
+        return Err("swarm: only the owner or orchestrator can open a login pane".into());
+    }
+    let mut options = std::collections::BTreeMap::new();
+    let mut json = false;
+    let mut arguments = args.iter();
+    while let Some(flag) = arguments.next() {
+        if flag == "--json" && !json {
+            json = true;
+            continue;
+        }
+        if !["--provider", "--name", "--revision", "--cwd"].contains(&flag.as_str()) {
+            return Err("swarm: invalid accounts login option".into());
+        }
+        let value = arguments
+            .next()
+            .ok_or("swarm: missing accounts login value")?;
+        if options.insert(flag.as_str(), value.as_str()).is_some() {
+            return Err("swarm: duplicate accounts login option".into());
+        }
+    }
+    if !json {
+        return Err("swarm: accounts login requires --json".into());
+    }
+    let provider = options
+        .get("--provider")
+        .and_then(|name| Provider::parse(name))
+        .filter(|provider| provider.has_accounts())
+        .ok_or("swarm: login needs claude or codex")?;
+    let name = options.get("--name").ok_or("swarm: login needs --name")?;
+    let expected = options
+        .get("--revision")
+        .ok_or("swarm: login needs --revision")?;
+    let cwd = options
+        .get("--cwd")
+        .map_or_else(env::current_dir, |value| {
+            Ok(std::path::PathBuf::from(value))
+        })?;
+    if !cwd.is_absolute() || !cwd.is_dir() {
+        return Err("swarm: --cwd must be an existing absolute directory".into());
+    }
+    let cwd = std::fs::canonicalize(cwd).map_err(|_| "swarm: --cwd is unavailable")?;
+    let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+    let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
+    let root = swarm::paths::root_dir()?;
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(deadline),
+        ..swarm::adapter::load(&root, &adapter_name())
+            .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
+    };
+    env::set_current_dir(cwd)?;
+    // Eight label characters and a UUID suffix keep the unique attempt ID below 40 bytes.
+    let label: String = name
+        .chars()
+        .take(8)
+        .map(|ch| if matches!(ch, '.' | '_') { '-' } else { ch })
+        .collect();
+    let attempt = uuid::Uuid::now_v7().simple().to_string();
+    let pane_name = format!("login-{}-{label}-{}", provider.id(), &attempt[16..]);
+    let session = env::var("SWARM_SESSION_ID").unwrap_or_default();
+    let home = swarm::paths::home()?;
+    let pane = adapter
+        .run(
+            "spawn",
+            &[
+                ("agent_id", &pane_name),
+                ("session_id", &session),
+                ("home", &home),
+                ("adapter", &adapter.name),
+            ],
+        )
+        .map_err(|_| "swarm: account registered; cannot open login pane")?;
+    if pane.is_empty() || pane.chars().any(|ch| ch.is_whitespace() || ch.is_control()) {
+        return Err("swarm: account registered; login pane has no valid ID".into());
+    }
+    let native_env = provider.account_env(name, &entry.home.to_string_lossy(), |variable| {
+        env::var_os(variable)
+    });
+    let mut command = vec!["env".to_string()];
+    for key in provider.account_env_keys() {
+        command.extend(["-u".into(), key.to_string()]);
+    }
+    command.push("--".into());
+    command.extend(
+        native_env
+            .iter()
+            .map(|(key, value)| format!("{key}={value}")),
+    );
+    command.extend(
+        provider
+            .login_argv()
+            .ok_or("swarm: native login is unavailable")?
+            .iter()
+            .map(|arg| arg.to_string()),
+    );
+    // Keep a failed login and its error text visible; a successful login closes the shell.
+    let text = format!("{} && exit", swarm::adapter::shell_line(&command));
+    if adapter
+        .run("ring", &[("pane", &pane), ("text", &text)])
+        .is_err()
+    {
+        // Cleanup also runs after ring exhausts its budget, within the Swift process limit.
+        let closer = swarm::adapter::Adapter {
+            deadline: Some(swarm::profiles::native::deadline(
+                LOGIN_PANE_CLOSE_TIMEOUT_SECONDS,
+            )),
+            ..adapter
+        };
+        if closer.run("close", &[("pane", &pane)]).is_err() {
+            return Err(format!(
+                "swarm: account registered; cannot start native login; pane {pane} stayed open because close failed"
+            )
+            .into());
+        }
+        return Err("swarm: account registered; cannot start native login in pane".into());
+    }
+    print_json(
+        &serde_json::json!({"provider":provider.id(), "account":entry.name, "pane":pane, "state":"opened", "revision":revision}),
+    )
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), Box<dyn std::error::Error>> {
@@ -1941,6 +1988,7 @@ fn resolved_agent_log(log: String) -> String {
 struct SpawnOptions<'a> {
     provider: Option<&'a str>,
     account: Option<&'a str>,
+    resolved_account: Option<&'a swarm::profiles::Account>,
     command: &'a [String],
     runner: Option<&'a swarm::config::Runner>,
 }
@@ -1955,6 +2003,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
                 return Ok(SpawnOptions {
                     provider,
                     account,
+                    resolved_account: None,
                     command: &args[index + 1..],
                     runner: None,
                 });
@@ -1976,6 +2025,7 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     Ok(SpawnOptions {
         provider,
         account,
+        resolved_account: None,
         command: &[],
         runner: None,
     })
@@ -2228,12 +2278,15 @@ fn spawn_agent(
     agent_id: &str,
     role: &str,
     options: SpawnOptions<'_>,
+    account_deadline: std::time::Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Before any pane, file, or bus work: the id names a pane, a bus row, and a run script.
     if !swarm::bus::valid_agent_id(agent_id) {
         return Err(format!("swarm: bad agent id {agent_id}").into());
     }
-    let account = if let Some(requested) = options.account {
+    let account = if let Some(account) = options.resolved_account {
+        Some(account.clone())
+    } else if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
             None => swarm::config::load()
@@ -2244,7 +2297,7 @@ fn spawn_agent(
                 })
                 .map_err(|error| format!("swarm: {error}"))?,
         };
-        let accounts = load_accounts(&provider, true)?;
+        let accounts = load_accounts(&provider, account_deadline)?;
         Some(
             swarm::profiles::resolve_account(&accounts, requested)
                 .map_err(|error| format!("swarm: {error}"))?
@@ -2311,7 +2364,13 @@ fn spawn_agent(
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
-            let mut args = vec!["env".to_string(), "--".to_string()];
+            let mut args = vec!["env".to_string()];
+            if let Some(provider) = provider {
+                for key in provider.account_env_keys() {
+                    args.extend(["-u".into(), key.to_string()]);
+                }
+            }
+            args.push("--".into());
             args.extend(
                 account
                     .env
@@ -3125,6 +3184,12 @@ fn all_agent_listings(
     Ok(listings)
 }
 
+const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
+// Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
+const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
@@ -3235,7 +3300,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let resolved = resolve_role(role, provider, None, false)?;
+        let (resolved, _) = resolve_role(role, provider, None, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
@@ -3315,30 +3380,54 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return print_json(&list_models(provider)?);
     }
+    if let [cmd, sub, rest @ ..] = args
+        && cmd == "accounts"
+        && sub == "login"
+    {
+        return account_login(rest);
+    }
+    if let [cmd, sub, revision_flag, revision, json] = args
+        && cmd == "accounts"
+        && sub == "reset"
+        && revision_flag == "--revision"
+        && json == "--json"
+    {
+        return print_json(&serde_json::json!({"revision":swarm::accounts::reset(revision)?}));
+    }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "accounts"
         && provider_flag == "--provider"
         && json == "--json"
     {
-        return print_json(&load_accounts(provider, true)?);
+        let provider = Provider::parse(provider).ok_or("swarm: unknown provider")?;
+        return print_json(&swarm::profiles::native::load(
+            provider,
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
+        )?);
     }
     if let [cmd, json] = args
         && cmd == "usage"
         && json == "--json"
     {
-        let command = yelo_command();
-        let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = Provider::ALL
-            .into_iter()
-            .filter(|provider| provider.has_accounts())
-            .map(|provider| load_accounts(provider.id(), false))
-            .collect::<Result<Vec<_>, _>>()?;
-        let (usage, skipped) = swarm::profiles::translate_usage(&json, &accounts)
-            .map_err(|error| format!("swarm: {error}"))?;
-        for reason in skipped {
-            eprintln!("swarm: skipped usage row: {reason}");
+        return print_json(&swarm::usage::read(swarm::profiles::native::deadline(
+            NATIVE_READ_TIMEOUT_SECONDS,
+        ))?);
+    }
+    if let [cmd, refresh, provider_flag, provider, json] = args
+        && cmd == "usage"
+        && refresh == "--refresh"
+        && provider_flag == "--provider"
+        && json == "--json"
+    {
+        if provider != "codex" {
+            return Err(
+                "swarm: only Codex supports native usage refresh; refresh Claude in the yelo HUD"
+                    .into(),
+            );
         }
-        return print_json(&usage);
+        return print_json(&swarm::usage::refresh_codex(
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
+        )?);
     }
     let root = swarm::paths::root_dir()?;
     if let [cmd, sub, name] = args
@@ -3576,7 +3665,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved: swarm::bus::ResolvedRole = match requested_model {
+        let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
             Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
@@ -3589,11 +3678,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
                 let runner = swarm::config::one_off(&config.profiles[0], provider, model)
                     .map_err(|error| format!("swarm: {error}"))?;
-                serde_json::from_value(serde_json::to_value(runner)?)?
+                (
+                    serde_json::from_value(serde_json::to_value(runner)?)?,
+                    Probe::new(&config, account),
+                )
             }
-            None => serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
-                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
+            None => {
+                let (value, probe) = resolve_role(role, requested_provider, account, true)?;
+                let resolved = serde_json::from_value(value)
+                    .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
+                (resolved, probe)
+            }
         };
+        let account_deadline = probe.deadline;
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
@@ -3613,25 +3710,30 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             permission: resolved.permission.clone(),
         };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
-        // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
-        // both use this one answer.
+        // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => match load_accounts(kind.id(), true)
-                .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
-                .and_then(|accounts| {
-                    swarm::profiles::resolve_account(&accounts, requested).cloned()
-                }) {
-                Ok(account) => Some(account),
-                // `auto` is a preference. With no yelo or no automatic account the CLI's own
-                // login runs, as the probe already counts a missing yelo as can run (ADR 0032).
-                Err(error) if requested == "auto" => {
-                    eprintln!("swarm: {error}; {} uses its own login", kind.id());
-                    None
+            (Some(requested), true) => {
+                let mut cache = probe.accounts.borrow_mut();
+                let accounts = cache
+                    .entry(kind)
+                    .or_insert_with(|| swarm::profiles::native::load(kind, account_deadline));
+                match accounts
+                    .as_ref()
+                    .map_err(Clone::clone)
+                    .and_then(|accounts| {
+                        swarm::profiles::resolve_account(accounts, requested).cloned()
+                    }) {
+                    Ok(account) => Some(account),
+                    // Auto without a known native account retains the CLI login (ADR 0032).
+                    Err(error) if requested == "auto" => {
+                        eprintln!("swarm: {error}; {} uses its own login", kind.id());
+                        None
+                    }
+                    Err(error) => return Err(format!("swarm: {error}").into()),
                 }
-                Err(error) => return Err(format!("swarm: {error}").into()),
-            },
+            }
             _ => None,
         };
         let mut pane_dir = cwd.clone();
@@ -3721,7 +3823,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     // yelo's `claude` in the pane points that at the profile it picks, and a pane
                     // with no yelo reads ~/.claude.json, so each of them needs the entry.
                     let configs = if let Some(account) = &picked {
-                        vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        if account.env.is_empty() {
+                            vec![user_home.join(".claude.json")]
+                        } else {
+                            vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        }
                     } else {
                         claude_configs(&user_home)
                     };
@@ -3745,9 +3851,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             SpawnOptions {
                 provider: provider.as_deref(),
                 account: picked.as_ref().map(|picked| picked.name.as_str()),
+                resolved_account: picked.as_ref(),
                 command: &command,
                 runner: Some(&runner),
             },
+            account_deadline,
         );
     }
     if let [cmd, agent_id, role, rest @ ..] = args
@@ -3760,7 +3868,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Err(reason.into());
         }
         let options = parse_spawn_options(rest)?;
-        return spawn_agent(&connection, &root, agent_id, role, options);
+        return spawn_agent(
+            &connection,
+            &root,
+            agent_id,
+            role,
+            options,
+            swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        );
     }
     if let [cmd] = args
         && cmd == "drain"
@@ -4086,6 +4201,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_adapter_returns_before_the_swift_process_limit() {
+        let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+        assert!(
+            deadline.duration_since(std::time::Instant::now())
+                <= std::time::Duration::from_secs(18)
+        );
+    }
 
     #[test]
     fn rering_finishes_after_the_session_deadline() {

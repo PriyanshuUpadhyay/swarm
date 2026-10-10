@@ -133,13 +133,33 @@ impl Provider {
         }
     }
 
-    /// Whether yelo keeps signed-in accounts and usage for this provider. AGY has no source yet
-    /// and launches on its CLI's own login.
+    /// AGY has no native account adapter and uses its CLI login.
     pub fn has_accounts(self) -> bool {
         !matches!(self, Provider::Agy)
     }
 
-    /// The same variables yelo writes into `~/.local/bin/<cli>-<account>`.
+    pub fn login_argv(self) -> Option<&'static [&'static str]> {
+        match self {
+            Provider::Codex => Some(&["codex", "login"]),
+            Provider::Claude => Some(&["claude", "auth", "login"]),
+            Provider::Agy => None,
+        }
+    }
+
+    /// Clear inherited keys before applying an account, including the native default.
+    pub fn account_env_keys(self) -> &'static [&'static str] {
+        match self {
+            Provider::Claude => &[
+                "CLAUDE_CONFIG_DIR",
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                "AGENT_PROFILE_LABEL",
+            ],
+            Provider::Codex => &["CODEX_HOME"],
+            Provider::Agy => &[],
+        }
+    }
+
+    /// Default Claude returns no overrides, so its native store stays under HOME.
     ///
     /// `CLAUDE_CONFIG_DIR` alone is not enough: Claude Code keeps the credentials in a second tree,
     /// so a pane that gets only the config dir starts at "Not logged in · Run /login".
@@ -150,6 +170,7 @@ impl Provider {
         env_var: impl FnOnce(&str) -> Option<std::ffi::OsString>,
     ) -> BTreeMap<String, String> {
         match self {
+            Provider::Claude if name == "default" => BTreeMap::new(),
             Provider::Claude => {
                 let home = std::path::PathBuf::from(env_var("HOME").unwrap_or_default());
                 BTreeMap::from([
@@ -376,6 +397,14 @@ mod tests {
             "/login-home/.claude-work"
         );
         assert_eq!(*requested.borrow(), ["HOME"]);
+    }
+
+    #[test]
+    fn claude_default_uses_the_native_store_without_profile_overrides() {
+        let environment = Provider::Claude.account_env("default", "/native-home/.claude", |_| {
+            Some("/native-home".into())
+        });
+        assert!(environment.is_empty());
     }
 
     #[test]

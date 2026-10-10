@@ -166,7 +166,8 @@ final class SwitchModelModel {
         launch: (SwarmChatLaunchPlan, @escaping @Sendable (ChatSwitchPhase) async -> Void) async throws -> SwarmSessionID
     ) async -> SwarmSessionID? {
         guard canSwitch, let plan = SwarmChatLaunchPlan(
-            directory: directory, provider: provider, model: selectedModel, account: accountSelection
+            directory: directory, provider: provider, model: selectedModel,
+            account: SwarmAccountOption.launchSelection(for: accountSelection, in: accountOptions)
         ) else { return nil }
         isStarting = true
         phase = .preparing

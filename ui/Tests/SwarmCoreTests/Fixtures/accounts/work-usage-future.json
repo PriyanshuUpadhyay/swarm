@@ -1,0 +1,1 @@
+{"meters": [{"provider": "codex", "account": "work", "label": "work", "window": "primary", "window_minutes": 300, "used_pct": null, "reset_time_seconds": 1791540000, "state": "future", "source": "codex_app_server", "reason": null, "as_of_seconds": 1791530000}]}

@@ -18,7 +18,7 @@ let package = Package(
             resources: [.copy("Resources/DiffViewer")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
-        .testTarget(name: "SwarmCoreTests", dependencies: ["SwarmCore"], exclude: ["Fixtures/Skills"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "SwarmCoreTests", dependencies: ["SwarmCore"], resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "TranscriptToolTests", dependencies: ["TranscriptTool"], swiftSettings: [.swiftLanguageMode(.v6)]),
     ]
 )
