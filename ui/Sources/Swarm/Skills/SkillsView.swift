@@ -10,6 +10,7 @@ struct SkillsView: View {
     @State private var confirmRemoval = false
     @State private var resolvingNavigation = false
     @State private var leaveAction: (() -> Void)?
+    @State private var footerHeight: CGFloat = 0
     @FocusState private var focus: Field?
     let mode: String
     let keepOpen: () -> Void
@@ -157,17 +158,21 @@ struct SkillsView: View {
                 .padding(tokens.spacing.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Divider()
-            HStack {
-                Button("Save") { Task { _ = await model.save() } }
-                    .keyboardShortcut("s", modifiers: .command)
-                    .disabled(!model.canSave || !isActive)
-                Button("Discard", role: .destructive) { Task { await model.requestDiscard() } }.disabled(!model.isDirty || model.busy)
-                if model.busy { DelayedProgress("Saving or reading…") }
-            }.padding(tokens.spacing.m)
-            if let notice = model.notice {
-                Text(notice).font(.caption).padding([.horizontal, .bottom], tokens.spacing.m)
+            .contentMargins(.bottom, footerHeight, for: .scrollContent)
+            VStack(alignment: .leading, spacing: 0) {
+                Divider()
+                HStack {
+                    Button("Save") { Task { _ = await model.save() } }
+                        .keyboardShortcut("s", modifiers: .command)
+                        .disabled(!model.canSave || !isActive)
+                    Button("Discard", role: .destructive) { Task { await model.requestDiscard() } }.disabled(!model.isDirty || model.busy)
+                    if model.busy { DelayedProgress("Saving or reading…") }
+                }.padding(tokens.spacing.m)
+                if let notice = model.notice {
+                    Text(notice).font(.caption).padding([.horizontal, .bottom], tokens.spacing.m)
+                }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
         }
     }
 
@@ -215,8 +220,14 @@ struct SkillsView: View {
                                     action: { model.select(id) }) {
                         VStack(alignment: .leading, spacing: tokens.spacing.xs) {
                             Text(verbatim: step.stem).font(.callout.weight(.medium))
-                            if !step.holds.isEmpty { Text(verbatim: step.holds).font(.caption).foregroundStyle(.secondary).lineLimit(4) }
+                                .lineLimit(1).truncationMode(.tail)
+                            if !step.holds.isEmpty {
+                                Text(verbatim: step.holds).font(.caption).foregroundStyle(.secondary)
+                                    .lineLimit(4).truncationMode(.tail)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        .frame(width: DesignTokens.Size.skillNode - 2 * tokens.spacing.s, alignment: .leading)
                     }
                     .frame(width: DesignTokens.Size.skillNode)
                     .focused($focus, equals: .node(id))
@@ -226,7 +237,10 @@ struct SkillsView: View {
                     .accessibilityAddTraits(model.selectedID == id ? .isSelected : [])
                 }
             }
+            .fixedSize(horizontal: true, vertical: true)
         }
+        .scrollIndicators(.visible)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var inspector: some View {
