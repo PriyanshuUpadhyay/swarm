@@ -455,7 +455,7 @@ private struct ProfileRow: View {
                 .lineLimit(1)
                 .frame(width: DesignTokens.Size.profileName, alignment: .leading)
             RunnerChain(runners: profile.runners, check: check, providers: providers, onSelect: onEdit)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             // Always shown, so a keyboard user can Tab to it; hover only darkens it.
             Button { onEdit(nil) } label: { Image(systemName: "pencil") }
                 .buttonStyle(.borderless)
@@ -463,7 +463,8 @@ private struct ProfileRow: View {
                 .help("Edit \(profile.name)")
                 .accessibilityLabel("Edit \(profile.name)")
             ProfileHealthPill(status: status)
-                .frame(width: DesignTokens.Size.healthPill, alignment: .leading)
+                .frame(width: DesignTokens.Size.healthPill, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, tokens.spacing.s)
         .frame(minHeight: tokens.row + tokens.spacing.xs)

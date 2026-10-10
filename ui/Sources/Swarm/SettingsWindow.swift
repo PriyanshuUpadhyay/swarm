@@ -13,7 +13,6 @@ struct SettingsWindow: View {
     @State private var drift: PathSwarmDrift?
     @State private var dependencies: [DependencyRow] = []
     @State private var setupError: String?
-    @State private var guardsError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -66,7 +65,6 @@ struct SettingsWindow: View {
         .frame(minWidth: DesignTokens.Size.settingsWidth, minHeight: DesignTokens.Size.settingsHeight)
         .onAppear {
             setupError = nil
-            guardsError = nil
             selection.setPageError(nil, on: .setup)
         }
         .task { selection.reload() }
@@ -85,35 +83,15 @@ struct SettingsWindow: View {
         .onChange(of: selection.page) { _, page in
             if page != .setup {
                 setupError = nil
-                guardsError = nil
             }
         }
         .onChange(of: selection.prefs.notices) { _, _ in model.updateDockBadge() }
     }
 
-    private var setupErrorMessage: String? {
-        ErrorAnnouncement.joined([guardsError, setupError])
-    }
-
     private func setSetupError(_ message: String?) {
-        let previous = setupErrorMessage
         setupError = message
-        if message != nil, let joined = setupErrorMessage {
-            selection.reportPageError(joined, on: .setup)
-        } else if setupErrorMessage != previous {
-            selection.setPageError(setupErrorMessage, on: .setup)
-        }
-    }
-
-    private func setGuardsError(_ message: String?) {
-        let previous = setupErrorMessage
-        guardsError = message
-        if setupErrorMessage != previous { selection.setPageError(setupErrorMessage, on: .setup) }
-    }
-
-    private func reportGuardsError(_ message: String) {
-        guardsError = message
-        if let joined = setupErrorMessage { selection.reportPageError(joined, on: .setup) }
+        if let message { selection.reportPageError(message, on: .setup) }
+        else { selection.setPageError(nil, on: .setup) }
     }
 
     @ViewBuilder
@@ -206,6 +184,12 @@ struct SettingsWindow: View {
                         canAnnounceSummary: { setupError == nil }
                     )
                     .id(selection.skillsReady)
+                }
+            }
+        case .guards:
+            ScrollView {
+                VStack(alignment: .leading, spacing: tokens.spacing.m) {
+                    Text("Guards").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                     GuardsPage(
                         load: {
                             do {
@@ -217,11 +201,11 @@ struct SettingsWindow: View {
                         save: { editor in
                             try editor.save(to: GuardRules.fileURL(environment: ProcessInfo.processInfo.environment))
                         },
-                        onError: setGuardsError,
-                        reportError: reportGuardsError
+                        onError: { selection.setPageError($0, on: .guards) },
+                        reportError: { selection.reportPageError($0, on: .guards) }
                     )
-                    .padding([.horizontal, .bottom], tokens.spacing.xl)
                 }
+                .padding(tokens.spacing.xl)
             }
         case .advanced:
             AdvancedSettingsPage(
@@ -277,12 +261,16 @@ struct SettingsWindow: View {
                     Text("Comfortable").tag(Density.comfortable)
                     Text("Compact").tag(Density.compact)
                 }
-                Picker("Diff layout", selection: splitDiff) {
-                    Text("Unified").tag(false)
-                    Text("Split").tag(true)
+                HStack(spacing: tokens.spacing.m) {
+                    Text("Diff layout").fixedSize()
+                    Picker("Diff layout", selection: splitDiff) {
+                        Text("Unified").tag(false)
+                        Text("Split").tag(true)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: DesignTokens.Size.segmentedPicker)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: DesignTokens.Size.segmentedPicker)
                 Picker("Send with", selection: Binding(get: { selection.prefs.sendKey }, set: selection.setSendKey)) {
                     Text("Return").tag(SendKey.return)
                     Text("⌘Return").tag(SendKey.commandReturn)

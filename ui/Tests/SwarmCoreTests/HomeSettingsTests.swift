@@ -32,10 +32,11 @@ struct HomeSettingsTests {
     @Test("Settings pages and palette entries keep their specified order")
     func settingsPages() {
         #expect(SettingsPage.allCases.map(\.title) == [
-            "Profiles", "Skills", "Accounts", "Setup", "Managed Changes", "Appearance",
+            "Profiles", "Skills", "Accounts", "Setup", "Guards", "Managed Changes", "Appearance",
             "Notifications", "Keys", "Advanced",
         ])
         #expect(SettingsPage.allCases.allSatisfy { !$0.symbol.isEmpty })
+        #expect(SettingsPage(rawValue: "guards")?.symbol == "shield")
         #expect(SettingsPage.skills.placeholder == nil)
         #expect(SettingsPage.accounts.placeholder == nil)
         #expect(SettingsPage.appearance.placeholder == nil)

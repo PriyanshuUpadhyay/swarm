@@ -39,7 +39,7 @@ public struct Prefs: Codable, Sendable, Hashable {
 }
 
 public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable {
-    case profiles, skills, accounts, setup, managedChanges, appearance, notifications, keys, advanced
+    case profiles, skills, accounts, setup, guards, managedChanges, appearance, notifications, keys, advanced
 
     public var id: String { rawValue }
 
@@ -49,6 +49,7 @@ public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable
         case .skills: "Skills"
         case .accounts: "Accounts"
         case .setup: "Setup"
+        case .guards: "Guards"
         case .managedChanges: "Managed Changes"
         case .appearance: "Appearance"
         case .notifications: "Notifications"
@@ -63,6 +64,7 @@ public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable
         case .skills: "book"
         case .accounts: "person.crop.circle"
         case .setup: "wrench.and.screwdriver"
+        case .guards: "shield"
         case .managedChanges: "doc.badge.gearshape"
         case .appearance: "paintpalette"
         case .notifications: "bell"
@@ -76,7 +78,7 @@ public enum SettingsPage: String, CaseIterable, Sendable, Hashable, Identifiable
         case .skills: nil
         case .accounts: nil
         case .notifications, .keys: nil
-        case .profiles, .setup, .managedChanges, .appearance, .advanced: nil
+        case .profiles, .setup, .guards, .managedChanges, .appearance, .advanced: nil
         }
     }
 

@@ -82,10 +82,11 @@ struct RunnerChain: View {
             ForEach(Array(stride(from: runners.count, through: 1, by: -1)), id: \.self) { limit in
                 chain(ChainFit(count: runners.count, pick: check?.pick, limit: limit), states: states)
             }
+            chain(ChainFit(count: runners.count, pick: check?.pick, limit: 1), states: states, truncate: true)
         }
     }
 
-    private func chain(_ fit: ChainFit, states: [RunnerChipState]) -> some View {
+    private func chain(_ fit: ChainFit, states: [RunnerChipState], truncate: Bool = false) -> some View {
         HStack(spacing: tokens.spacing.xs) {
             if fit.leadingCut {
                 Text("…").foregroundStyle(.secondary)
@@ -105,7 +106,7 @@ struct RunnerChain: View {
                     .accessibilityLabel("\(rest.count) more: \(hiddenList(rest))")
             }
         }
-        .fixedSize()
+        .fixedSize(horizontal: !truncate, vertical: true)
     }
 
     @ViewBuilder
@@ -153,6 +154,8 @@ private struct ChipContent: View {
             ProviderMark(provider: runner.provider)
             Text("\(runner.model)·\(Self.effort(runner.effort))")
                 .font(tokens.mono)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .strikethrough(isSkipped)
             if case .skipped(let short, _) = state {
                 Text("(\(short))").font(.caption)
