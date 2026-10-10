@@ -101,13 +101,13 @@ struct ManagedChangesPage: View {
                 HooksSetupSheet(
                     loadPlan: { _ in
                         if group == .skills {
-                            _ = await selection.waitForSkillsRefresh()
+                            _ = try await selection.setupChoice(.skillsOnly())
                         }
                         return try await group.restorePlan(using: bus)
                     },
                     setUp: { digest, _ in
                         if group == .skills {
-                            _ = await selection.waitForSkillsRefresh()
+                            _ = try await selection.setupChoice(.skillsOnly())
                         }
                         try await group.restore(using: bus, digest: digest)
                         if group == .skills, let key = group.declineFlagKey {

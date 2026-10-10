@@ -172,11 +172,11 @@ struct SettingsWindow: View {
                         }
                     HooksSetupSheet(
                         loadPlan: {
-                            _ = await selection.waitForSkillsRefresh()
-                            return try await SwarmCLIBus().setupPlan($0)
+                            let choice = try await selection.setupChoice($0)
+                            return try await SwarmCLIBus().setupPlan(choice)
                         },
                         setUp: { digest, choice in
-                            _ = await selection.waitForSkillsRefresh()
+                            let choice = try await selection.setupChoice(choice)
                             try await SwarmCLIBus().setUp(digest: digest, choice: choice)
                         },
                         notNow: { _ in }, done: {}, copy: .setup,
