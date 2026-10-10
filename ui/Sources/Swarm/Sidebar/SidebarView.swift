@@ -122,10 +122,6 @@ struct SidebarView<Details: View>: View {
                 if loaded { emptyList } else { Spacer() }
             } else {
                 List(selection: Binding(get: { selectedID }, set: { $0.map(actions.select) })) {
-                    if !showingArchive, !sections.contains(where: { $0.kind == .pinned }) {
-                        // The empty header remains a target for the first workspace pin.
-                        Section {} header: { pinnedHeader(status: nil, hasRows: false) }
-                    }
                     ForEach(sections) { section in
                         if case .project = section.kind {
                             // The archive view lists every archived row, with no collapse.
@@ -229,28 +225,22 @@ struct SidebarView<Details: View>: View {
         }
     }
 
-    private func pinnedHeader(status: AgentStatus?, hasRows: Bool = true) -> some View {
+    private func pinnedHeader(status: AgentStatus?) -> some View {
         let expanded = !collapsed.contains("pinned")
         return HStack(spacing: tokens.spacing.xs) {
-            if hasRows {
-                Button { actions.toggleCollapsed("pinned") } label: {
-                    HStack(spacing: tokens.spacing.xs) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.forward")
-                            .font(.caption2.weight(.semibold))
-                            .frame(width: DesignTokens.Size.glyphSlot)
-                        Text("Pinned")
-                        if !expanded, let status { StatusGlyph(status: status) }
-                    }
+            Button { actions.toggleCollapsed("pinned") } label: {
+                HStack(spacing: tokens.spacing.xs) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                        .font(.caption2.weight(.semibold))
+                        .frame(width: DesignTokens.Size.glyphSlot)
+                    Text("Pinned")
+                    if !expanded, let status { StatusGlyph(status: status) }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Pinned")
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityValue(expanded ? "expanded" : "collapsed")
-            } else {
-                Text("Pinned")
-                    .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.xs)
-                    .accessibilityAddTraits(.isHeader)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Pinned")
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(expanded ? "expanded" : "collapsed")
             Spacer(minLength: tokens.spacing.xs)
         }
         .contentShape(Rectangle())

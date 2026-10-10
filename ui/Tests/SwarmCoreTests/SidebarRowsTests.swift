@@ -123,6 +123,27 @@ struct SidebarRowsTests {
         #expect(workspace.status == .working)
     }
 
+    @Test("The Pinned section exists only when it has a workspace row")
+    func pinnedSectionVisibility() {
+        let project = project([])
+        let entries = WorkspaceEntry.list(in: SessionsTree(projects: [project]))
+        var navigation = WorkspaceNavigation()
+        func sections() -> [SidebarSection] {
+            SidebarRows.sections(projects: [project], workspaces: entries, navigation: navigation,
+                                 search: "", showingArchive: false, now: 100)
+        }
+        #expect(!sections().contains { $0.kind == .pinned })
+        #expect(sections().flatMap(\.rows).map(\.id) == ["/repo"])
+        navigation.pinned = ["/repo"]
+        #expect(sections().first?.kind == .pinned)
+        #expect(sections().first?.rows.map(\.id) == ["/repo"])
+        navigation.archived = ["/repo"]
+        #expect(!sections().contains { $0.kind == .pinned })
+        navigation.archived = []
+        navigation.pinned = ["/missing"]
+        #expect(!sections().contains { $0.kind == .pinned })
+    }
+
     @Test("Pinned and archived workspaces keep their chat rows; empty workspaces stay")
     func pinnedAndArchive() {
         let project = project([SwarmProjectSession(sessions: [session("one", time: 1)], title: "One")])
