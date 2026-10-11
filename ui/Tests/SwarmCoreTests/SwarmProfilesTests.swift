@@ -76,7 +76,7 @@ struct SwarmProfilesTests {
         let profile = SwarmProfile(name: "code.complex", runners: [
             SwarmRunner(provider: "claude", model: "opus", effort: "high", permission: "auto"),
         ])
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _, _ in
             #expect(arguments.count == 5)
             #expect(Array(arguments.prefix(4)) == ["roles", "save", "--revision", "a1b2c3d4e5f6"])
             let sent = try JSONDecoder().decode(SwarmProfile.self, from: Data(arguments[4].utf8))
@@ -90,7 +90,7 @@ struct SwarmProfilesTests {
 
     @Test("a refused save keeps every broken rule")
     func failedSave() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             ShellResult(status: 1, stdout: "", stderr: "swarm: chat: runner 1 has no model\nchat: runner 2 has no effort\n")
         }
 
@@ -99,63 +99,34 @@ struct SwarmProfilesTests {
         }
     }
 
-    @Test("decodes the Claude accounts contract")
-    func decodesClaudeAccounts() async throws {
-        let source = source(
-            expectedArguments: ["accounts", "--provider", "claude", "--json"],
-            stdout: #"{"provider":"claude","source":"yelo","accounts":[{"name":"sid","email":"someone@example.com","home":"/Users/me/.claude/.profiles/sid","env":{"CLAUDE_CONFIG_DIR":"/Users/me/.claude/.profiles/sid"},"signed_in":true,"remaining_pct":52,"summary":"5h 98% left · 7d 52% left"}],"auto":"sid"}"#
-        )
-
-        let accounts = try await source.accounts(provider: "claude")
-
-        #expect(accounts == SwarmAccountList(
-            provider: "claude", source: "yelo",
-            accounts: [SwarmAccount(
-                name: "sid", email: "someone@example.com", home: "/Users/me/.claude/.profiles/sid",
-                env: ["CLAUDE_CONFIG_DIR": "/Users/me/.claude/.profiles/sid"], signedIn: true,
-                remainingPct: 52, summary: "5h 98% left · 7d 52% left"
-            )],
-            auto: "sid"
-        ))
+    @Test("decodes native accounts through the CLI source")
+    func decodesAccounts() async throws {
+        let source = source(expectedArguments: ["accounts", "--provider", "codex", "--json"],
+                            stdout: try fixture("work"))
+        let accounts = try await source.accounts(provider: "codex")
+        #expect(accounts.accounts.first?.authState == .signedIn)
+        #expect(accounts.auto == "work")
+        #expect(accounts.source == "swarm")
     }
 
-    @Test("decodes the empty AGY accounts contract")
-    func decodesAGYAccounts() async throws {
-        let source = source(
-            expectedArguments: ["accounts", "--provider", "agy", "--json"],
-            stdout: #"{"provider":"agy","source":null,"accounts":[],"auto":null}"#
-        )
-
-        let accounts = try await source.accounts(provider: "agy")
-
-        #expect(accounts == SwarmAccountList(provider: "agy", source: nil, accounts: [], auto: nil))
-    }
-
-    @Test("decodes every usage contract row")
+    @Test("decodes usage through the CLI source")
     func decodesUsage() async throws {
-        let source = source(
-            expectedArguments: ["usage", "--json"],
-            stdout: #"{"meters":[{"provider":"claude","account":"work","label":"cl·work@example.com","window":"7d","used_pct":10,"resets_in":"4d22h","state":"ok","reason":null,"as_of":1789576942},{"provider":"claude","account":"sid","label":"cl·sid","window":null,"used_pct":null,"resets_in":null,"state":"logged_out","reason":"logged out","as_of":null}]}"#
-        )
-
+        let source = source(expectedArguments: ["usage", "--json"], stdout: try fixture("work-usage"))
         let meters = try await source.usage()
+        #expect(meters.first?.state == .fresh)
+        #expect(meters.first?.asOfSeconds == 1_791_530_000)
+        #expect(meters.first?.windowMinutes == 300)
+    }
 
-        #expect(meters == [
-            SwarmUsageMeter(
-                provider: "claude", account: "work", label: "cl·work@example.com",
-                window: "7d", usedPct: 10, resetsIn: "4d22h", state: "ok", reason: nil,
-                asOf: 1_789_576_942
-            ),
-            SwarmUsageMeter(
-                provider: "claude", account: "sid", label: "cl·sid", window: nil,
-                usedPct: nil, resetsIn: nil, state: "logged_out", reason: "logged out", asOf: nil
-            ),
-        ])
+    private func fixture(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/accounts/\(name).json")
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     @Test("uses a fresh scratch directory when no working directory is injected")
     func usesFreshScratchDirectory() async throws {
-        let source = SwarmCLIProfileSource(environment: [:]) { _, arguments, cwd in
+        let source = SwarmCLIProfileSource(environment: [:]) { _, arguments, cwd, _ in
             #expect(arguments == ["roles", "--json"])
             #expect(cwd == AgentScratchDirectory.current())
             #expect(cwd != NSHomeDirectory())
@@ -170,11 +141,11 @@ struct SwarmProfilesTests {
     func usesConfiguredBinary() async throws {
         let source = SwarmCLIProfileSource(
             environment: ["SWARM_BIN": "/custom/swarm"], cwd: "/tmp/profile-test"
-        ) { executable, arguments, cwd in
+        ) { executable, arguments, cwd, _ in
             #expect(executable == "/custom/swarm")
             #expect(arguments == ["accounts", "--provider", "codex", "--json"])
             #expect(cwd == "/tmp/profile-test")
-            return ShellResult(status: 0, stdout: #"{"provider":"codex","source":null,"accounts":[],"auto":null}"#, stderr: "")
+            return ShellResult(status: 0, stdout: #"{"provider":"codex","source":null,"state":"ready","revision":"opaque","modified":false,"accounts":[],"auto":null}"#, stderr: "")
         }
 
         _ = try await source.accounts(provider: "codex")
@@ -196,7 +167,7 @@ struct SwarmProfilesTests {
 
     @Test("maps a missing swarm binary to unavailable")
     func mapsMissingBinary() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { executable, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { executable, _, _, _ in
             throw ShellError(command: executable, status: 127, stderr: "swarm not found on PATH")
         }
 
@@ -240,7 +211,7 @@ struct SwarmProfilesTests {
 
     @Test("preserves cancellation")
     func preservesCancellation() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             throw CancellationError()
         }
 
@@ -251,7 +222,7 @@ struct SwarmProfilesTests {
 
     @Test("maps another runner error to failed")
     func mapsRunnerError() async {
-        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _ in
+        let source = SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, _, _, _ in
             throw RunnerFailure.lost
         }
 
@@ -272,7 +243,7 @@ struct SwarmProfilesTests {
     private func source(
         expectedArguments: [String], status: Int32 = 0, stdout: String = "", stderr: String = ""
     ) -> SwarmCLIProfileSource {
-        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _ in
+        SwarmCLIProfileSource(environment: [:], cwd: "/tmp") { _, arguments, _, _ in
             #expect(arguments == expectedArguments)
             return ShellResult(status: status, stdout: stdout, stderr: stderr)
         }

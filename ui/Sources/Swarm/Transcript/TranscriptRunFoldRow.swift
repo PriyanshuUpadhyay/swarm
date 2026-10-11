@@ -5,13 +5,14 @@ import SwarmCore
 /// step counts, failures in the failed color, the waiting step while one runs, and the total time.
 /// Open, the transcript list draws each step's own row under the line (`ToolRunFold.lines`).
 struct TranscriptRunFoldRow: View {
+    @Environment(\.designTokens) private var tokens
     let rows: [TranscriptRow]
     @Binding var expanded: Bool
 
     var body: some View {
         let summary = ToolRunFold.summary(of: rows)
         Button { expanded.toggle() } label: {
-            HStack(spacing: DesignTokens.Spacing.s) {
+            HStack(spacing: tokens.spacing.s) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -30,14 +31,14 @@ struct TranscriptRunFoldRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                Spacer(minLength: DesignTokens.Spacing.s)
+                Spacer(minLength: tokens.spacing.s)
                 if let duration = summary.duration {
                     Text(verbatim: TranscriptToolActivity.durationLabel(duration))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, DesignTokens.Spacing.xs)
+            .padding(.vertical, tokens.spacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -27,10 +27,11 @@ public struct PaletteItem: Sendable, Hashable, Identifiable {
     public let status: AgentStatus?
     /// Last use or activity in seconds since 1970; nil for never.
     public let recency: Int?
+    public let disabledReason: String?
 
     public init(
         id: String, title: String, subtitle: String? = nil, group: Group,
-        shortcut: String? = nil, status: AgentStatus? = nil, recency: Int? = nil
+        shortcut: String? = nil, status: AgentStatus? = nil, recency: Int? = nil, disabledReason: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -39,6 +40,7 @@ public struct PaletteItem: Sendable, Hashable, Identifiable {
         self.shortcut = shortcut
         self.status = status
         self.recency = recency
+        self.disabledReason = disabledReason
     }
 }
 
@@ -111,6 +113,21 @@ public enum PaletteSource {
 }
 
 extension PaletteSource {
+    public static func agents(
+        _ entries: [WorkspaceEntry], agentsBySession: [SwarmSessionID: [SwarmAgent]],
+        navigation: WorkspaceNavigation
+    ) -> [Agent] {
+        entries.flatMap { entry in
+            entry.chats.flatMap { chat in
+                SwarmPanePolicy.liveCells(session: chat.session, agents: agentsBySession[chat.id] ?? []).map {
+                    Agent(id: SidebarRows.childID(chat: chat, agent: $0.agent),
+                          name: $0.agent.id.rawValue,
+                          role: $0.agent.role + " · " + navigation.title(for: chat), status: $0.agent.status)
+                }
+            }
+        }
+    }
+
     /// Workspaces and their chats, pinned first, then by activity, archived ones last with "Archived" in their
     /// detail, so the palette finds them from any sidebar view.
     public static func workspaces(
@@ -119,9 +136,12 @@ extension PaletteSource {
         // Pinned, the rest by activity, then archived, with full "project / folder" titles: the
         // palette has no project headers to name the project.
         let idsByTitle = navigation.idsByTitle(entries)
-        let pinned = entries.filter { navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
-        let others = entries.filter { !navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
-        let archived = entries.filter { navigation.archived.contains($0.id) }
+        let byActivity = entries.sorted {
+            $0.lastActivity == $1.lastActivity ? $0.id < $1.id : $0.lastActivity > $1.lastActivity
+        }
+        let pinned = byActivity.filter { navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
+        let others = byActivity.filter { !navigation.pinned.contains($0.id) && !navigation.archived.contains($0.id) }
+        let archived = byActivity.filter { navigation.archived.contains($0.id) }
         var workspaces: [Workspace] = []
         var chats: [Chat] = []
         for entry in pinned + others + archived {
@@ -132,10 +152,45 @@ extension PaletteSource {
                 lastActivity: entry.lastActivity > 0 ? entry.lastActivity : nil
             ))
             chats += entry.chats.map {
-                Chat(id: $0.id.rawValue, title: $0.title, workspace: row.title, status: $0.status, lastActivity: $0.lastActivity)
+                Chat(id: $0.id.rawValue, title: navigation.title(for: $0),
+                     workspace: row.title, status: $0.status, lastActivity: $0.lastActivity)
             }
         }
         return (workspaces, chats)
+    }
+}
+
+public enum PaletteChatAction: String, Sendable, CaseIterable {
+    case closeTab, endChat, archiveChat, renameChat, reopenChat, openInNewWindow, switchModel
+
+    public var title: String {
+        switch self {
+        case .closeTab: "Close Tab"
+        case .endChat: "End chat"
+        case .archiveChat: "Archive chat"
+        case .renameChat: "Rename chat"
+        case .reopenChat: "Reopen closed chat"
+        case .openInNewWindow: "Open in New Window"
+        case .switchModel: "Switch model"
+        }
+    }
+
+    public static func offered(selectedChat: Bool) -> [Self] {
+        selectedChat ? allCases : [.reopenChat]
+    }
+}
+
+/// Stored separately from workspace navigation because action recency belongs to the palette.
+public enum PaletteRecentActions {
+    public static let key = "palette.recentActions"
+
+    public static func load(defaults: UserDefaults = .standard) -> [String: Int] {
+        guard let data = defaults.data(forKey: key) else { return [:] }
+        return (try? JSONDecoder().decode([String: Int].self, from: data)) ?? [:]
+    }
+
+    public static func save(_ values: [String: Int], defaults: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(values) { defaults.set(data, forKey: key) }
     }
 }
 
@@ -145,18 +200,27 @@ public enum PaletteItems {
     public static let actions: [AppKey] = [
         .newWorkspace, .newChat, .newProject, .nextWorkspace, .previousWorkspace, .nextTab, .previousTab,
         .zoom, .focusComposer, .toggleSidebar, .moveSidebar,
-    ] + (1...6).map(AppKey.sidebarView) + [.showChanges, .find, .stop]
+    ] + (1...7).map(AppKey.sidebarView) + [.showChanges, .find, .stop]
 
     /// Item ids carry their group, so a workspace and a chat with the same id stay apart.
     public static func build(
         actions: [AppKey] = actions, sidebarViews: [String],
         workspaces: [PaletteSource.Workspace], chats: [PaletteSource.Chat],
-        agents: [PaletteSource.Agent], recentActions: [AppKey: Int] = [:]
+        agents: [PaletteSource.Agent], recentActions: [String: Int] = [:],
+        selectedChat: Bool = false, switchModelDisabledReason: String? = nil
     ) -> [PaletteItem] {
         actions.map { key in
             PaletteItem(
                 id: "action:\(key)", title: key.title(sidebarViews: sidebarViews), group: .action,
-                shortcut: key.chord.displayText, recency: recentActions[key]
+                shortcut: key.chord.displayText, recency: recentActions["action:\(key)"]
+            )
+        }
+        + PaletteChatAction.offered(selectedChat: selectedChat).map { action in
+            PaletteItem(
+                id: "chatAction:" + action.rawValue, title: action.title, group: .action,
+                shortcut: action == .reopenChat ? AppKey.recentlyClosed.chord.displayText : nil,
+                recency: recentActions["chatAction:" + action.rawValue],
+                disabledReason: action == .switchModel ? switchModelDisabledReason : nil
             )
         }
         + workspaces.map {
@@ -182,11 +246,17 @@ extension AppKey {
     public func title(sidebarViews: [String]) -> String {
         switch self {
         case .newChat: "New Chat"
+        case .recentlyClosed: "Recently closed…"
         case .newWorkspace: "New Workspace"
         case .newProject: "New Project…"
         case .nextWorkspace: "Next Workspace"
         case .previousWorkspace: "Previous Workspace"
         case .selectTab(let number): "Chat \(number)"
+        case .closeTab: "Close Tab"
+        case .closeWindow: "Close Window"
+        case .previousRecentChat: "Previous Recent Chat"
+        case .nextRecentChat: "Next Recent Chat"
+        case .lastTab: "Last Chat"
         case .nextTab: "Next Chat"
         case .previousTab: "Previous Chat"
         case .moveFocus(let direction): "Focus \(String(describing: direction).capitalized)"
@@ -217,6 +287,7 @@ extension KeyChord {
         switch key {
         case .character(let character): text += String(character).uppercased()
         case .returnKey: text += "↩"
+        case .tab: text += "Tab"
         case .escape: text += "⎋"
         case .left: text += "←"
         case .right: text += "→"

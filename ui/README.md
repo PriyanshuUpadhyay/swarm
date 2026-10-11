@@ -70,9 +70,10 @@ of every column, or the line inside a two-pane column to split it; a double-clic
 The width and splits survive restarts.
 
 Every app key is a menu command, so it works while an agent pane has focus. ⌘N makes a workspace
-in the current project, ⌘T starts a chat in the workspace, and ⇧⌘N makes or imports a project. ⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘9 pick
-a chat tab, and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat
-and the panes, and the strip scrolls to the focused pane. ⌘↩ zooms the focused pane and returns
+in the current project, ⌘T starts a chat in the workspace, and ⇧⌘N makes or imports a project.
+⌃⌘↓ and ⌃⌘↑ move between workspaces. ⌘1 to ⌘8 pick a chat tab, ⌘9 picks the last chat tab,
+and ⇧⌘] and ⇧⌘[ step through them. ⌥⌘ with an arrow moves focus between the chat and the panes,
+and the strip scrolls to the focused pane. ⇧⌘↩ zooms the focused pane and returns
 it. ⌘L focuses the composer. ⌘K opens the command palette, which finds actions, workspaces,
 chats, and agents; every query word must match. ⌘F, ⌘G, and ⇧⌘G find in the chat or in the
 focused pane. A pane gets every key without ⌘, including all ⌃ and ⌥ keys and Esc. In a pane,

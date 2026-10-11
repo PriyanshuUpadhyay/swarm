@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "workflow_kind": "ink",
+  "required_operations": [
+    "resolve_roles",
+    "validate_host_capabilities",
+    "create_owned_visible_leaves",
+    "dispatch",
+    "accept_durable_results",
+    "report_degradation",
+    "close_owned_leaves"
+  ],
+  "roles": [
+    "ink.build",
+    "review.visual"
+  ],
+  "seat_template": {
+    "isolation": "one seat per step; the builder works only in the piece folder, and the critic only reads it",
+    "visibility": "host-visible owned leaf",
+    "permission": "ink.build edits only the piece folder and the step file it was given, with no commits; review.visual reads the piece folder and writes only its score file",
+    "artifact": "the step file under <piece>/ink/, with line 1 set to done, skipped, or blocked",
+    "deadline": "bounded by the chair"
+  },
+  "refusals": [
+    {
+      "condition": "runtime-adapter-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "host-capability-unavailable",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "role-unresolved",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "degrade-and-report"
+    },
+    {
+      "condition": "route-capability-mismatch",
+      "detectable": "pre-dispatch",
+      "side_effects_may_have_occurred": false,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "completion-artifact-invalid",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "refuse"
+    },
+    {
+      "condition": "teardown-target-unowned",
+      "detectable": "post-dispatch",
+      "side_effects_may_have_occurred": true,
+      "disposition": "quarantine-and-escalate"
+    }
+  ],
+  "result_routing": {
+    "step_file": "the chair inspects the rendered frames itself, then keeps the step done or reopens it",
+    "reference_scores": "the builder's next round and the step file's reference-match table",
+    "blocked_question": "the user, through the chair"
+  },
+  "trace_cases": [
+    {
+      "id": "happy-path",
+      "events": [
+        "status-lines-read",
+        "first-ready-step:04-style-frames",
+        "build-dispatched:ink.build",
+        "frames-rendered",
+        "critic-dispatched:review.visual",
+        "scores-returned",
+        "step-done:04-style-frames"
+      ]
+    },
+    {
+      "id": "resume-in-new-chat",
+      "events": [
+        "status-lines-read",
+        "stale-check",
+        "first-ready-step:05-animatic",
+        "build-dispatched:ink.build"
+      ]
+    }
+  ]
+}

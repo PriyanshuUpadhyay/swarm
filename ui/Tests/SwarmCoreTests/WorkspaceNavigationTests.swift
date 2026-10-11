@@ -61,13 +61,16 @@ struct WorkspaceNavigationTests {
         navigation.select(entry, chat: .init("two"))
         navigation.pinned.insert(entry.id)
         navigation.names[entry.id] = "Landing page copy"
-        let store = WorkspaceNavigationStore(defaults: defaults)
+        navigation.dismissedChildren = ["one": ["finished-child"]]
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         store.save(navigation)
-        #expect(WorkspaceNavigationStore(defaults: defaults).load() == navigation)
+        #expect(WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load() == navigation)
         navigation.archive(entry.id)
         #expect(navigation.selectedWorkspace == nil)
         store.save(navigation)
-        var restored = WorkspaceNavigationStore(defaults: defaults).load()
+        var restored = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder)).load()
         #expect(restored.archived.contains(entry.id))
         restored.archived.remove(entry.id)
         restored.select(entry)
@@ -75,6 +78,24 @@ struct WorkspaceNavigationTests {
         #expect(restored.title(for: entry) == "Landing page copy")
         #expect(restored.pinned.contains(entry.id))
         #expect(entry.chats.count == 2)
+        #expect(restored.dismissedChildren == ["one": ["finished-child"]])
+        let viewData = try #require(defaults.data(forKey: "workspaces.navigation"))
+        #expect(try JSONDecoder().decode(WorkspaceNavigation.self, from: viewData).dismissedChildren
+            == ["one": ["finished-child"]])
+    }
+
+    @Test("Dismissed children use the stable chat key and prune only chats that no longer list")
+    func pruneDismissedChildren() {
+        let root = session("root", path: "/repo/main")
+        var current = session("current", path: "/repo/main")
+        current.createdAt = 2
+        let chat = SwarmProjectSession(sessions: [current, root], title: "Continued")
+        var navigation = WorkspaceNavigation()
+        navigation.dismissedChildren = ["root": ["finished-child"], "gone-chat": ["old-child"]]
+        navigation.recordFirstSight([chat])
+        #expect(navigation.dismissedChildren == ["root": ["finished-child"]])
+        navigation.recordFirstSight([])
+        #expect(navigation.dismissedChildren.isEmpty)
     }
 
     @Test("Search finds project, branch, saved name and chat text")
@@ -172,7 +193,7 @@ struct WorkspaceNavigationTests {
         SwarmSession(id: .init(id), talkMode: "lane", adapter: "tmux-solo", cwd: path, createdAt: 1, chairLog: nil, agents: 1, messages: 0, lastMessageAt: nil)
     }
 
-    @Test("A value saved before collapsed projects existed keeps its pins, names, and archive marks")
+    @Test("Old defaults keep view state and do not migrate choices")
     func loadsOlderValue() throws {
         let suite = "WorkspaceNavigationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -180,16 +201,19 @@ struct WorkspaceNavigationTests {
         let saved = #"{"selectedWorkspace":"/repo/main","selectedChats":{"/repo/main":"one"},"pinned":["/repo/main"],"archived":["/repo/old"],"names":{"/repo/main":"Fix login"}}"#
         defaults.set(Data(saved.utf8), forKey: "workspaces.navigation")
 
-        let store = WorkspaceNavigationStore(defaults: defaults)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = WorkspaceNavigationStore(defaults: defaults, choicesFolder: try claimedChoicesFolder(folder))
         var navigation = store.load()
         #expect(navigation.selectedWorkspace == "/repo/main")
         #expect(navigation.selectedChats == ["/repo/main": "one"])
-        #expect(navigation.pinned == ["/repo/main"])
-        #expect(navigation.archived == ["/repo/old"])
-        #expect(navigation.names == ["/repo/main": "Fix login"])
+        #expect(navigation.pinned.isEmpty)
+        #expect(navigation.archived.isEmpty)
+        #expect(navigation.names.isEmpty)
         #expect(navigation.collapsed.isEmpty)
+        #expect(navigation.dismissedChildren.isEmpty)
 
-        navigation.collapsed = ["/repo"]
+        navigation.collapsed = [WorkspaceNavigation.projectCollapseID("/repo")]
         store.save(navigation)
         #expect(store.load() == navigation)
     }
@@ -201,4 +225,48 @@ struct WorkspaceNavigationTests {
         #expect(WorkspaceNavigation.titleKey("Docs") == WorkspaceNavigation.titleKey("docs"))
         #expect(WorkspaceNavigation.titleKey("docs") != WorkspaceNavigation.titleKey("dogs"))
     }
+    @Test("Project and main workspace folds use separate saved keys")
+    func independentFolds() {
+        var navigation = WorkspaceNavigation()
+        navigation.toggleCollapsed("/repo")
+        #expect(navigation.collapsed.contains("workspace:/repo"))
+        #expect(!navigation.collapsed.contains("/repo"))
+        navigation.toggleCollapsed("project:/repo")
+        #expect(navigation.isCollapsed("/repo"))
+        #expect(navigation.isCollapsed("project:/repo"))
+        navigation.toggleCollapsed("project:/repo")
+        #expect(navigation.isCollapsed("/repo"))
+        #expect(!navigation.isCollapsed("project:/repo"))
+        navigation.toggleCollapsed("/repo")
+        #expect(navigation.collapsed.isEmpty)
+    }
+
+    @Test("Palette query results use activity order while the sidebar keeps workspace order")
+    func paletteActivityOrder() {
+        var older = session("older", path: "/repo/alpha")
+        older.createdAt = 10
+        var newer = session("newer", path: "/repo/zeta")
+        newer.createdAt = 100
+        let tree = SessionsTree.build(
+            sessions: [older, newer],
+            repositoryPathsResolver: { _ in GitRepositoryPaths(gitDirectory: "/repo/.git", commonDirectory: "/repo/.git") },
+            worktreeLister: { _ in [WorktreeEntry(path: "/repo/alpha", branch: "alpha"), WorktreeEntry(path: "/repo/zeta", branch: "zeta")] }
+        )
+        let entries = WorkspaceEntry.list(in: tree)
+        #expect(entries.map(\.id) == ["/repo/alpha", "/repo/zeta"])
+        var navigation = WorkspaceNavigation()
+        let source = PaletteSource.workspaces(entries, navigation: navigation, now: 200)
+        let items = PaletteItems.build(sidebarViews: [], workspaces: source.workspaces, chats: source.chats, agents: [])
+        #expect(PaletteSearch.rank(items: items, query: "repo").filter { $0.group == .workspace }.map(\.id)
+            == ["workspace:/repo/zeta", "workspace:/repo/alpha"])
+        #expect(source.chats.map(\.id) == ["newer", "older"])
+        navigation.pinned = ["/repo/alpha"]
+        #expect(PaletteSource.workspaces(entries, navigation: navigation, now: 200).workspaces.map(\.id)
+            == ["/repo/alpha", "/repo/zeta"])
+        navigation.pinned = []
+        navigation.archived = ["/repo/zeta"]
+        #expect(PaletteSource.workspaces(entries, navigation: navigation, now: 200).workspaces.map(\.id)
+            == ["/repo/alpha", "/repo/zeta"])
+    }
+
 }

@@ -5,28 +5,20 @@ import TranscriptTool
 
 @Suite("Reported chat usage")
 struct ChatUsageTests {
-    @Test("Snapshots do not add costs, and context resets do not erase session cost")
-    func snapshotsAndScope() {
+    @Test("Context clears after compaction and model changes")
+    func contextResets() {
         var usage = ChatUsage()
         #expect(usage.remainingPercent == nil)
-        #expect(usage.costLabel == nil)
         usage.ingest(.decode(line: #"{"type":"session_info","kind":"model","value":"one"}"#))
         let context = TranscriptEvent.decode(line: #"{"type":"usage","source":"codex","kind":"context","context_tokens":80,"context_capacity_tokens":100,"input_tokens":70,"cache_read_tokens":60,"output_tokens":10}"#)
         usage.ingest(context)
         #expect(usage.remainingPercent == 20)
-        let cost = TranscriptEvent.decode(line: #"{"type":"usage","source":"claude","kind":"cost","cost_usd":4.5,"cost_completeness":"partial"}"#)
-        usage.ingest(cost)
-        usage.ingest(cost)
-        #expect(usage.cost?.costUSD == 4.5)
-        #expect(usage.costLabel?.hasPrefix("Partial est.") == true)
         usage.ingest(.decode(line: #"{"type":"system_message","kind":"compaction","text":"summary"}"#))
         #expect(usage.context == nil)
         #expect(usage.contextNotice.contains("compaction"))
-        #expect(usage.cost?.costUSD == 4.5)
         usage.ingest(context)
         usage.ingest(.decode(line: #"{"type":"session_info","kind":"model","value":"two"}"#))
         #expect(usage.context == nil)
-        #expect(ChatUsage().cost == nil)
     }
 
     @Test("Missing, invalid and reported zero values remain distinct")
@@ -38,11 +30,6 @@ struct ChatUsageTests {
         usage.ingest(.decode(line: #"{"type":"usage","source":"codex","kind":"context","context_tokens":-1,"context_capacity_tokens":0}"#))
         #expect(usage.context?.contextTokens == nil)
         #expect(usage.remainingPercent == nil)
-        usage.ingest(.decode(line: #"{"type":"usage","source":"claude","kind":"cost","cost_usd":0,"cost_completeness":"complete"}"#))
-        #expect(usage.cost?.costUSD == 0)
-        #expect(usage.costLabel?.hasPrefix("Est.") == true)
-        usage.ingest(.decode(line: #"{"type":"usage","source":"claude","kind":"cost","cost_usd":-1}"#))
-        #expect(usage.costLabel == nil)
     }
 
     @Test("The composer meter shows percent left when capacity is known, else a compact count")

@@ -1,12 +1,22 @@
 import SwiftUI
 import SwarmCore
 
+struct StepRunRequest {
+    let id = UUID()
+    let run: StepRun
+}
+
 /// The Runs sidebar view: the step runs under `<workspace>/tmp/<skill>/`, and one run as a
 /// top-down graph (ADR 0046). It reads files only; a node opens its step file in the preview.
 struct StepRunsView: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     var isActive = true
     let open: (WorkspaceDocument) -> Void
+    var request: StepRunRequest? = nil
+    var openedRun: () -> Void = {}
+    var chatTitles: [String: String] = [:]
+    var selectChat: (String) -> Void = { _ in }
     @State private var runs: [StepRun]?
     @State private var error: String?
     @State private var notice: String?
@@ -17,6 +27,7 @@ struct StepRunsView: View {
     @State private var chosen: StepRun?
     @State private var showClosed = false
     @State private var retryID = 0
+    @State private var graphFocusRequest: UUID?
 
     private struct Request: Equatable {
         let directory: String
@@ -29,16 +40,18 @@ struct StepRunsView: View {
         Group {
             if let chosen {
                 StepRunGraph(directory: directory, run: chosen, error: error, notice: graphNotice, open: open,
-                             retry: { retryID += 1 }, back: { choose(nil) })
+                             retry: { retryID += 1 }, back: { choose(nil) }, chatTitles: chatTitles, selectChat: selectChat,
+                             focusRequest: isActive ? graphFocusRequest : nil, focusedTitle: { graphFocusRequest = nil })
             } else {
                 list
             }
         }
         .onAppear {
-            chosen = ChosenRun.byDirectory[directory]
+            if request != nil { openRequest() } else { chosen = ChosenRun.byDirectory[directory] }
             // A chosen closed run shows only while the Closed group is read.
             if chosen?.closed == true { showClosed = true }
         }
+        .onChange(of: request?.id) { _, _ in openRequest() }
         // The error and Retry appear in place, so VoiceOver hears them only if they are said, as SwitchModelSheet.
         .onChange(of: error) { _, text in
             if let text { AccessibilityNotification.Announcement(text).post() }
@@ -98,22 +111,31 @@ struct StepRunsView: View {
         notice = nil
     }
 
+    private func openRequest() {
+        guard let request else { return }
+        choose(request.run)
+        if request.run.closed { showClosed = true }
+        graphFocusRequest = request.id
+        AccessibilityNotification.Announcement("Opened run, \(request.run.name)").post()
+        openedRun()
+    }
+
     @ViewBuilder
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Runs").font(.headline).padding(DesignTokens.Spacing.m).accessibilityAddTraits(.isHeader)
+            Text("Runs").font(.headline).padding(tokens.spacing.m).accessibilityAddTraits(.isHeader)
             Divider()
             if let error {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.s) {
+                VStack(alignment: .leading, spacing: tokens.spacing.s) {
                     Text(verbatim: error).foregroundStyle(.red).textSelection(.enabled)
                     Button("Retry") { retryID += 1 }
-                }.padding(DesignTokens.Spacing.m)
+                }.padding(tokens.spacing.m)
             }
             if let notice {
-                Text(notice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
+                Text(notice).font(.caption).foregroundStyle(.secondary).padding(tokens.spacing.m)
             }
             if let scanNotice {
-                Text(verbatim: scanNotice).font(.caption).foregroundStyle(.secondary).padding(DesignTokens.Spacing.m)
+                Text(verbatim: scanNotice).font(.caption).foregroundStyle(.secondary).padding(tokens.spacing.m)
             }
             if let runs {
                 let open = runs.filter { !$0.closed }
@@ -124,10 +146,10 @@ struct StepRunsView: View {
                     )
                 }
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    LazyVStack(alignment: .leading, spacing: tokens.spacing.xs) {
                         ForEach(Dictionary(grouping: open, by: \.skill).sorted { $0.key < $1.key }, id: \.key) { skill, runs in
                             Text(verbatim: skill.uppercased()).font(.caption).foregroundStyle(.secondary)
-                                .padding(.top, DesignTokens.Spacing.s)
+                                .padding(.top, tokens.spacing.s)
                                 .accessibilityAddTraits(.isHeader)
                             ForEach(runs) { run in StepRunRow(run: run) { choose(run) } }
                         }
@@ -141,12 +163,12 @@ struct StepRunsView: View {
                             ForEach(closed) { run in StepRunRow(run: run) { choose(run) } }
                         }
                         .foregroundStyle(.secondary)
-                        .padding(.top, DesignTokens.Spacing.s)
+                        .padding(.top, tokens.spacing.s)
                     }
-                    .padding(DesignTokens.Spacing.m)
+                    .padding(tokens.spacing.m)
                 }
             } else if error == nil {
-                DelayedProgress("Reading runs…").padding(DesignTokens.Spacing.m)
+                DelayedProgress("Reading runs…").padding(tokens.spacing.m)
             }
             Spacer(minLength: 0)
         }
@@ -160,21 +182,22 @@ private enum ChosenRun {
 }
 
 private struct StepRunRow: View {
+    @Environment(\.designTokens) private var tokens
     let run: StepRun
     let choose: () -> Void
 
     var body: some View {
         Button(action: choose) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
                 UrgencyGlyph(urgency: run.urgency).frame(width: DesignTokens.Size.glyphSlot)
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                     Text(verbatim: run.name).lineLimit(1).truncationMode(.middle)
                     Text(verbatim: summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).padding(.vertical, DesignTokens.Spacing.xxs)
+        .buttonStyle(.plain).padding(.vertical, tokens.spacing.xxs)
         .help(run.id)
         .accessibilityLabel(run.spokenLabel)
     }
@@ -202,6 +225,7 @@ private struct UrgencyGlyph: View {
 }
 
 private struct StepRunGraph: View {
+    @Environment(\.designTokens) private var tokens
     let directory: String
     let run: StepRun
     let error: String?
@@ -210,10 +234,20 @@ private struct StepRunGraph: View {
     let open: (WorkspaceDocument) -> Void
     let retry: () -> Void
     let back: () -> Void
+    let chatTitles: [String: String]
+    let selectChat: (String) -> Void
+    let focusRequest: UUID?
+    let focusedTitle: () -> Void
+    @AccessibilityFocusState(for: .voiceOver) private var titleFocused: Bool
 
-    private struct Edge: Identifiable {
-        let from: String, to: String, dashed: Bool, stale: Bool
-        var id: String { from + ">" + to }
+    private func focusTitle() async {
+        // A cleared request acknowledges focus; it must not clear the title focus again.
+        guard focusRequest != nil else { return }
+        titleFocused = false
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        titleFocused = true
+        focusedTitle()
     }
 
     var body: some View {
@@ -222,18 +256,20 @@ private struct StepRunGraph: View {
         let byID = Dictionary(run.steps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // An edge goes down only; one that closes a cycle (a hand edit) is not drawn.
         let edges = run.steps.flatMap { step in
-            step.needs.compactMap { need -> Edge? in
+            step.needs.compactMap { need -> GraphEdge? in
                 guard let from = layerOf[need], let to = layerOf[step.id], from < to else { return nil }
                 let skipped = if case .skipped = step.state { true } else { false }
-                return Edge(from: need, to: step.id, dashed: step.needsAssumed || skipped, stale: step.stale.contains(need))
+                return GraphEdge(from: need, to: step.id, dashed: step.needsAssumed || skipped, stale: step.stale.contains(need))
             }
         }
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                 Button("Runs", systemImage: "chevron.backward", action: back).buttonStyle(.borderless)
                 Text(verbatim: run.skill).font(.caption).foregroundStyle(.secondary)
                 Text(verbatim: run.name).font(.headline).lineLimit(2).truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityFocused($titleFocused)
+                    .task(id: focusRequest) { await focusTitle() }
                 Text(verbatim: headline).font(.caption).foregroundStyle(.secondary)
                 if let error {
                     Text(verbatim: "Showing the last read. \(error)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
@@ -241,41 +277,25 @@ private struct StepRunGraph: View {
                 }
                 if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.secondary) }
             }
-            .padding(DesignTokens.Spacing.m)
+            .padding(tokens.spacing.m)
             Divider()
             ScrollView {
-                VStack(spacing: DesignTokens.Spacing.xl) {
-                    ForEach(Array(layers.enumerated()), id: \.element) { _, ids in
-                        HStack(alignment: .top, spacing: DesignTokens.Spacing.s) {
-                            ForEach(ids, id: \.self) { id in
-                                if let step = byID[id] {
-                                    StepNodeView(step: step) { preview(step) }
-                                        .anchorPreference(key: NodeBounds.self, value: .bounds) { [id: $0] }
+                StepGraph(layers: layers, edges: edges) { id in
+                    if let step = byID[id] {
+                        VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
+                            StepNodeView(step: step) { preview(step) }
+                            if case .active = step.state, let title = chatTitles[step.path] {
+                                Button { selectChat(step.path) } label: {
+                                    Label(title, systemImage: "bubble.left").lineLimit(1)
                                 }
+                                .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                                .help("Show chat \(title)")
+                                .accessibilityLabel("Show chat, \(title)")
                             }
                         }
                     }
                 }
-                // A gutter on the left carries the edges that skip a layer, so no edge crosses a node.
-                .padding(.leading, DesignTokens.Spacing.l)
-                .backgroundPreferenceValue(NodeBounds.self) { bounds in
-                    GeometryReader { proxy in
-                        ForEach(edges) { edge in
-                            if let from = bounds[edge.from].map({ proxy[$0] }), let to = bounds[edge.to].map({ proxy[$0] }) {
-                                path(from: from, to: to, long: (layerOf[edge.to] ?? 0) - (layerOf[edge.from] ?? 0) > 1)
-                                    .stroke(
-                                        edge.stale ? Color.orange : Color.secondary,
-                                        style: StrokeStyle(
-                                            lineWidth: DesignTokens.Size.hairline,
-                                            dash: edge.dashed || edge.stale ? [DesignTokens.Spacing.xs, DesignTokens.Spacing.xs] : []
-                                        )
-                                    )
-                            }
-                        }
-                    }
-                    .accessibilityHidden(true)
-                }
-                .padding(DesignTokens.Spacing.m)
+                .padding(tokens.spacing.m)
             }
         }
     }
@@ -284,21 +304,6 @@ private struct StepRunGraph: View {
         let waiting = run.steps.count { if case .waiting = $0.state { true } else { false } }
         let done = "\(run.doneCount) of \(run.steps.count) done"
         return waiting > 0 ? "\(done) · \(waiting) waiting" : done
-    }
-
-    private func path(from: CGRect, to: CGRect, long: Bool) -> Path {
-        Path { path in
-            if long {
-                let gutter = min(from.minX, to.minX) - DesignTokens.Spacing.s
-                path.move(to: CGPoint(x: from.minX, y: from.midY))
-                path.addLine(to: CGPoint(x: gutter, y: from.midY))
-                path.addLine(to: CGPoint(x: gutter, y: to.midY))
-                path.addLine(to: CGPoint(x: to.minX, y: to.midY))
-            } else {
-                path.move(to: CGPoint(x: from.midX, y: from.maxY))
-                path.addLine(to: CGPoint(x: to.midX, y: to.minY))
-            }
-        }
     }
 
     private func preview(_ step: StepNode) {
@@ -311,25 +316,19 @@ private struct StepRunGraph: View {
     }
 }
 
-private struct NodeBounds: PreferenceKey {
-    static let defaultValue: [String: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue()) { first, _ in first }
-    }
-}
-
 private struct StepNodeView: View {
+    @Environment(\.designTokens) private var tokens
     let step: StepNode
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
+        GraphNodeButton(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.xs) {
                 glyph.frame(width: DesignTokens.Size.glyphSlot)
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: tokens.spacing.xxs) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(verbatim: step.title).font(.callout.weight(.medium)).lineLimit(1)
-                        Spacer(minLength: DesignTokens.Spacing.xs)
+                        Spacer(minLength: tokens.spacing.xs)
                         if let todo = step.todo {
                             Text(verbatim: "\(todo.checked)/\(todo.total)").font(.caption).monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -348,16 +347,7 @@ private struct StepNodeView: View {
                     }
                 }
             }
-            .padding(DesignTokens.Spacing.s)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
-                    .strokeBorder(Color.secondary.opacity(DesignTokens.endedPaneOpacity), lineWidth: DesignTokens.Size.hairline)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .opacity(dimmed ? DesignTokens.endedPaneOpacity : 1)
         .help(help)
         .accessibilityLabel(step.spokenLabel)

@@ -13,6 +13,7 @@ extension KeyChord {
         if flags.contains(.control) { modifiers.insert(.control) }
         switch event.keyCode {
         case 36, 76: self.init(.returnKey, modifiers)
+        case 48: self.init(.tab, modifiers)
         case 53: self.init(.escape, modifiers)
         case 123: self.init(.left, modifiers)
         case 124: self.init(.right, modifiers)
@@ -31,6 +32,7 @@ extension KeyChord {
         let equivalent: KeyEquivalent = switch key {
         case .character(let character): KeyEquivalent(character)
         case .returnKey: .return
+        case .tab: .tab
         case .escape: .escape
         case .left: .leftArrow
         case .right: .rightArrow
@@ -49,6 +51,10 @@ extension KeyChord {
 /// Window actions for the menu. A window publishes them with `focusedSceneValue`.
 struct WindowKeyActions {
     var newChat: (() -> Void)?
+    var closeTab: () -> Void
+    var lastTab: () -> Void
+    var stepRecentChat: (Int) -> Void
+    var recentlyClosed: () -> Void
     var newWorkspace: () -> Void
     var newProject: () -> Void
     var stepWorkspace: (Int) -> Void
@@ -84,6 +90,8 @@ struct AppKeyTarget {
 
     func canPerform(_ key: AppKey) -> Bool {
         switch key {
+        case .closeTab: window != nil || NSApp.keyWindow != nil
+        case .closeWindow: NSApp.keyWindow != nil
         case .find, .findNext, .findPrevious, .moveFocus, .zoom, .focusComposer, .stop: chat != nil
         default: window != nil
         }
@@ -96,10 +104,18 @@ struct AppKeyTarget {
         case .newChat:
             let repeated = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
             if !repeated { window?.newChat?() }
+        case .recentlyClosed: window?.recentlyClosed()
         case .newWorkspace: window?.newWorkspace()
         case .newProject: window?.newProject()
         case .nextWorkspace: window?.stepWorkspace(1)
         case .previousWorkspace: window?.stepWorkspace(-1)
+        case .closeTab:
+            if let window { window.closeTab() }
+            else { NSApp.keyWindow?.performClose(nil) }
+        case .closeWindow: NSApp.keyWindow?.performClose(nil)
+        case .previousRecentChat: window?.stepRecentChat(-1)
+        case .nextRecentChat: window?.stepRecentChat(1)
+        case .lastTab: window?.lastTab()
         case .selectTab(let number): window?.selectTab(number)
         case .nextTab: window?.stepTab(1)
         case .previousTab: window?.stepTab(-1)
@@ -139,6 +155,11 @@ struct AppKeyCommands: Commands {
             item("New Workspace", .newWorkspace)
             item("New Chat", .newChat)
             item("New Project…", .newProject)
+            item("Recently closed…", .recentlyClosed)
+        }
+        CommandGroup(replacing: .saveItem) {
+            item("Close Tab", .closeTab)
+            item("Close Window", .closeWindow)
         }
         CommandGroup(after: .textEditing) {
             Divider()
@@ -165,10 +186,13 @@ struct AppKeyCommands: Commands {
             Divider()
             item("Next Chat", .nextTab)
             item("Previous Chat", .previousTab)
-            ForEach(1...9, id: \.self) { index in
+            item("Previous Recent Chat", .previousRecentChat)
+            item("Next Recent Chat", .nextRecentChat)
+            ForEach(1...8, id: \.self) { index in
                 item("Chat \(index)", .selectTab(index))
             }
             Divider()
+            item("Last Chat", .lastTab)
             item("Focus Composer", .focusComposer)
             item("Focus Left", .moveFocus(.left))
             item("Focus Right", .moveFocus(.right))

@@ -4,6 +4,7 @@ import SwarmCore
 /// The command palette: one search field over grouped results. ↑ and ↓ move, Return runs, Esc
 /// closes. Keys open and close it, so it appears and goes with no animation.
 struct CommandPalette: View {
+    @Environment(\.designTokens) private var tokens
     let items: [PaletteItem]
     let run: (PaletteItem) -> Void
     let close: () -> Void
@@ -34,7 +35,7 @@ struct CommandPalette: View {
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .focused($fieldFocused)
-                .padding(DesignTokens.Spacing.l)
+                .padding(tokens.spacing.l)
                 .onSubmit { runSelected(in: results) }
                 .onKeyPress(.upArrow) { move(-1, in: results) }
                 .onKeyPress(.downArrow) { move(1, in: results) }
@@ -53,19 +54,24 @@ struct CommandPalette: View {
                                     Text(section.title)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.secondary)
-                                        .padding(.horizontal, DesignTokens.Spacing.l)
-                                        .padding(.top, DesignTokens.Spacing.s)
-                                        .padding(.bottom, DesignTokens.Spacing.xs)
+                                        .padding(.horizontal, tokens.spacing.l)
+                                        .padding(.top, tokens.spacing.s)
+                                        .padding(.bottom, tokens.spacing.xs)
                                         .accessibilityAddTraits(.isHeader)
                                     ForEach(rows) { item in
-                                        PaletteRow(item: item, selected: item.id == currentID(in: results))
+                                        Button { run(item) } label: {
+                                            PaletteRow(item: item, selected: item.id == currentID(in: results))
+                                        }
+                                            .buttonStyle(.plain)
+                                            .disabled(item.disabledReason != nil)
                                             .id(item.id)
-                                            .onTapGesture { run(item) }
+                                            .opacity(item.disabledReason == nil ? 1 : DesignTokens.endedPaneOpacity)
+                                            .help(item.disabledReason ?? item.title)
                                     }
                                 }
                             }
                         }
-                        .padding(.bottom, DesignTokens.Spacing.s)
+                        .padding(.bottom, tokens.spacing.s)
                     }
                     .frame(maxHeight: DesignTokens.Size.paletteResults)
                     .onChange(of: selectedID) { _, id in
@@ -76,7 +82,7 @@ struct CommandPalette: View {
                 Divider()
                 Text("No matches")
                     .foregroundStyle(.secondary)
-                    .padding(DesignTokens.Spacing.l)
+                    .padding(tokens.spacing.l)
             }
         }
         .frame(width: DesignTokens.Size.palette)
@@ -101,16 +107,17 @@ struct CommandPalette: View {
 
     private func runSelected(in results: [PaletteItem]) {
         guard let id = currentID(in: results), let item = results.first(where: { $0.id == id }) else { return }
-        run(item)
+        if item.disabledReason == nil { run(item) }
     }
 }
 
 private struct PaletteRow: View {
+    @Environment(\.designTokens) private var tokens
     let item: PaletteItem
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.s) {
+        HStack(spacing: tokens.spacing.s) {
             Group {
                 if let status = item.status { StatusGlyph(status: status) }
             }
@@ -119,19 +126,19 @@ private struct PaletteRow: View {
             if let subtitle = item.subtitle {
                 Text(subtitle).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
-            Spacer(minLength: DesignTokens.Spacing.s)
+            Spacer(minLength: tokens.spacing.s)
             if let shortcut = item.shortcut {
                 Text(shortcut).font(.callout.monospaced()).foregroundStyle(.secondary)
             }
         }
-        .frame(minHeight: DesignTokens.Size.row)
-        .padding(.horizontal, DesignTokens.Spacing.m)
+        .frame(minHeight: tokens.row)
+        .padding(.horizontal, tokens.spacing.m)
         .background(selected ? DesignTokens.selectionAccentFill : .clear,
                     in: .rect(cornerRadius: DesignTokens.Radius.control))
-        .padding(.horizontal, DesignTokens.Spacing.xs)
+        .padding(.horizontal, tokens.spacing.xs)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([item.title, item.subtitle, item.status.map(StatusGlyph.title)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([item.title, item.subtitle, item.disabledReason, item.status.map(StatusGlyph.title)].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(item.shortcut ?? "")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }

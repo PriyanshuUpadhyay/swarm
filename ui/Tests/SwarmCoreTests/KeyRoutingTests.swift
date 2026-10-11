@@ -3,23 +3,33 @@ import Testing
 
 @Suite("Key routing")
 struct KeyRoutingTests {
+    @Test("Choice seven opens Skills with Command-Option-7")
+    func skillsChoice() {
+        #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == .sidebarView(7))
+    }
+
     @Test("Each app key has one chord")
     func table() {
         let appKeys: [(KeyChord, AppKey)] = [
             (KeyChord("n", .command), .newWorkspace),
             (KeyChord("t", .command), .newChat),
+            (KeyChord("t", [.shift, .command]), .recentlyClosed),
             (KeyChord("n", [.command, .shift]), .newProject),
             (KeyChord(.down, [.control, .command]), .nextWorkspace),
             (KeyChord(.up, [.control, .command]), .previousWorkspace),
             (KeyChord("1", .command), .selectTab(1)),
-            (KeyChord("9", .command), .selectTab(9)),
+            (KeyChord("9", .command), .lastTab),
+            (KeyChord("w", .command), .closeTab),
+            (KeyChord("w", [.shift, .command]), .closeWindow),
+            (KeyChord(.tab, .control), .previousRecentChat),
+            (KeyChord(.tab, [.control, .shift]), .nextRecentChat),
             (KeyChord("]", [.command, .shift]), .nextTab),
             (KeyChord("[", [.command, .shift]), .previousTab),
             (KeyChord(.left, [.option, .command]), .moveFocus(.left)),
             (KeyChord(.right, [.option, .command]), .moveFocus(.right)),
             (KeyChord(.up, [.option, .command]), .moveFocus(.up)),
             (KeyChord(.down, [.option, .command]), .moveFocus(.down)),
-            (KeyChord(.returnKey, .command), .zoom),
+            (KeyChord(.returnKey, [.shift, .command]), .zoom),
             (KeyChord("l", .command), .focusComposer),
             (KeyChord("b", .command), .toggleSidebar),
             (KeyChord("b", [.command, .shift]), .moveSidebar),
@@ -37,7 +47,8 @@ struct KeyRoutingTests {
             #expect(AppKey.action(for: chord) == action)
             #expect(action.chord == chord)
         }
-        #expect(AppKey.action(for: KeyChord("7", [.option, .command])) == nil)
+        #expect(AppKey.action(for: KeyChord("8", [.option, .command])) == nil)
+        #expect(AppKey.action(for: KeyChord(.returnKey, .command)) == nil)
         #expect(Set(AppKey.table.map(\.1)).count == AppKey.table.count)
     }
 
@@ -45,6 +56,8 @@ struct KeyRoutingTests {
     func script() {
         #expect(KeyChord(script: "opt+cmd+right") == KeyChord(.right, [.option, .command]))
         #expect(KeyChord(script: "cmd+1") == KeyChord("1", .command))
+        #expect(KeyChord(script: "ctrl+tab") == KeyChord(.tab, .control))
+        #expect(KeyChord(script: "ctrl+shift+tab") == KeyChord(.tab, [.control, .shift]))
         #expect(KeyChord(script: "cmd+return") == KeyChord(.returnKey, .command))
         #expect(KeyChord(script: "cmd") == nil)
         #expect(KeyChord(script: "hyper+x") == nil)

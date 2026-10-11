@@ -1,0 +1,1 @@
+{"provider":"claude","source":"swarm","state":"ready","revision":"opaque","modified":false,"auto":"default","accounts":[{"name":"default","email":"owner@example.test","home":"/tmp/demo/.claude","env":{},"auth_state":"signed_in","remaining_pct":null,"usage_state":"missing","usage_source":"yelo","summary":null}]}

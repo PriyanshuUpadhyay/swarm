@@ -271,7 +271,7 @@ fn init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-const USAGE: &str = "usage: swarm --version | init | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | sessions --json | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | usage --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
+const USAGE: &str = "usage: swarm --version | init | skills refresh | skills manifest <source> <out> | setup status --json | setup [--plan [--json] | --digest <digest>] [--cwd <dir>] [--only <hooks|trust|herdr|skills>,...] [--consent <standing|ask>] [--resume] | hooks status --json | hooks setup [--plan [--json] | --digest <digest>] | managed list [--json] | managed revert (<id>... | --all) [--plan [--json] | --digest <digest>] | adapter check <name> | session new <talk_mode> [--chair <claude|codex>:<id>] (cwd: pwd -P) | session chair <claude|codex>:<id> | session continue <new_id> <old_id> | session archive <id>... | session unarchive <id>... | sessions --json [--archived] | agent add <agent_id> <role> | herdr-split | notify <title> [--body <text>] | host-context --provider <claude|codex|agy> | hook <claude|codex|agy> [event] | guard <claude|codex|agy> PreToolUse | roles --json | roles get <role> [--provider <claude|codex|agy>] | roles check --json | roles save --revision <revision> <profile-json> | roles new <name> --revision <revision> | roles rename <old> <new> --revision <revision> | roles copy <from> <to> --revision <revision> | roles delete <name> --revision <revision> | roles reset --revision <revision> | roles set-min-usage <pct> --revision <revision> | providers --json | models --provider <claude|codex|agy> --json | accounts --provider <claude|codex|agy> --json | accounts login --provider <claude|codex> --name <name> --revision <revision> --json [--cwd <dir>] | accounts reset --revision <revision> --json | usage --json | usage --refresh --provider codex --json | agents --json [--all] | messages --json [--after <seq>] | launch <agent_id> <role> [--provider <claude|codex|agy>] [--model <model> for chat] [--account <auto|name>] [--cwd <dir>] [-- <provider args>...] | spawn <agent_id> <role> [--provider <p>] [--account <auto|name>] [-- <cmd>...] | type <agent_id> | answer <agent_id> <prompt_id> <choice> | interrupt <agent_id> | key <agent_id> <Up|C-u> | attach <agent_id> | close <agent_id> | send <recipient> <kind> | finish | exited | sweep [--every <secs>] | drain | inbox | ack <seq>";
 
 fn env_var(name: &str) -> Result<String, String> {
     env::var(name).map_err(|_| format!("swarm: {name} not set"))
@@ -309,6 +309,7 @@ struct HookReport {
     agent: String,
     state: Option<(&'static str, Option<String>)>,
     log: Option<std::path::PathBuf>,
+    usage_provider: Option<String>,
 }
 
 /// The chat log a hook payload names, only when it is an absolute path to an existing `.jsonl`
@@ -358,11 +359,15 @@ fn hook_report(
     if state.is_none() && log.is_none() {
         return Ok(None);
     }
+    let usage_provider =
+        (event == "Stop" && state.is_some() && matches!(provider.as_str(), "claude" | "codex"))
+            .then(|| provider.clone());
     Ok(Some(HookReport {
         session: valid_session_id(&session)?,
         agent,
         state,
         log,
+        usage_provider,
     }))
 }
 
@@ -419,6 +424,10 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     else {
         return Ok(());
     };
+    if let Some(provider) = &report.usage_provider {
+        // Store the state before a usage read can wait on the log or bus.
+        let _ = swarm::store::update_usage(&connection, &report.session, &report.agent, provider);
+    }
     if let Some((title, body)) = waiting_notice(
         &connection,
         &report.session,
@@ -469,6 +478,9 @@ fn send_notice(
     title: &str,
     body: &str,
 ) {
+    if swarm::paths::root_dir().is_ok_and(|root| app_is_running(&root)) {
+        return;
+    }
     let adapter = swarm::adapter::Adapter {
         deadline: Some(deadline),
         ..adapter.clone()
@@ -476,6 +488,20 @@ fn send_notice(
     if let Err(error) = adapter.run("notify", &[("title", title), ("body", body)]) {
         eprintln!("swarm: {error}");
     }
+}
+
+/// ADR 0058: only a held kernel lock means the app owns notices. The pid is informational.
+fn app_is_running(root: &std::path::Path) -> bool {
+    use std::os::fd::AsRawFd;
+    let Ok(file) = std::fs::File::open(root.join(swarm::paths::APP_LOCK)) else {
+        return false;
+    };
+    unsafe extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    // SAFETY: file owns this open descriptor; 1 | 4 is LOCK_SH | LOCK_NB on supported Unix hosts.
+    let result = unsafe { flock(file.as_raw_fd(), 1 | 4) };
+    result != 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock
 }
 
 fn adapter_name() -> String {
@@ -518,47 +544,6 @@ fn run_tool(
         .map_err(|error| format!("swarm: cannot run {executable}: {error}").into())
 }
 
-/// `run_tool` that stops the tool after `limit`, for a read that a launch waits on.
-fn run_tool_within(
-    executable: &str,
-    args: &[&str],
-    limit: std::time::Duration,
-) -> Result<std::process::Output, Box<dyn std::error::Error>> {
-    let mut child = std::process::Command::new(executable)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("swarm: cannot run {executable}: {error}"))?;
-    let stdout = read_within(child.stdout.take().ok_or("no stdout")?, limit);
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-    let status = match stdout.as_ref().map(|_| child.try_wait()) {
-        Some(Ok(Some(status))) => Some(status),
-        // stdout closed, so the tool is exiting; a short wait lets it finish.
-        Some(_) => {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            child.try_wait().ok().flatten()
-        }
-        None => None,
-    };
-    let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "swarm: {executable} did not answer within {} s",
-            limit.as_secs()
-        )
-        .into());
-    };
-    let stderr = read_within(stderr, std::time::Duration::from_millis(100)).unwrap_or_default();
-    Ok(std::process::Output {
-        status,
-        stdout: stdout.unwrap_or_default().into_bytes(),
-        stderr: stderr.into_bytes(),
-    })
-}
-
 fn tool_stdout(executable: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     checked_stdout(executable, run_tool(executable, args)?)
 }
@@ -578,23 +563,22 @@ fn checked_stdout(
         .map_err(|error| format!("swarm: {executable} printed non-UTF-8 output: {error}").into())
 }
 
-fn yelo_command() -> String {
-    env::var("SWARM_YELO_CMD").unwrap_or_else(|_| "yelo".to_string())
-}
-
 /// Whether each runner can start now (ADR 0032). Each provider's accounts are read at most once.
 struct Probe {
+    deadline: std::time::Instant,
     min_usage_left_pct: u8,
     /// `--account <name>`: only that account counts. None or `auto` counts every account.
     account: Option<String>,
     accounts: std::cell::RefCell<
-        std::collections::HashMap<Provider, Option<Vec<swarm::config::AccountState>>>,
+        std::collections::HashMap<Provider, Result<swarm::profiles::AccountList, String>>,
     >,
 }
 
 impl Probe {
     fn new(config: &swarm::config::Config, account: Option<&str>) -> Probe {
+        // Account selection starts its budget after launch has checked the host and opened the store.
         Probe {
+            deadline: swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
             min_usage_left_pct: config.min_usage_left_pct,
             account: account.filter(|name| *name != "auto").map(str::to_string),
             accounts: Default::default(),
@@ -615,7 +599,11 @@ impl Probe {
         let mut cache = self.accounts.borrow_mut();
         let accounts = cache
             .entry(provider)
-            .or_insert_with(|| read_accounts(provider, self.account.as_deref()));
+            .or_insert_with(|| swarm::profiles::native::load(provider, self.deadline));
+        let accounts = accounts
+            .as_ref()
+            .ok()
+            .and_then(|list| account_states(list, self.account.as_deref()));
         // A named account belongs to one provider; another provider's runner cannot use it.
         if let (Some(name), Some([])) = (&self.account, accounts.as_deref()) {
             return Some((
@@ -627,37 +615,30 @@ impl Probe {
     }
 }
 
-/// yelo's accounts for `provider`, or None when yelo is missing, fails, or takes over 2 s. The
-/// read took 0.08 s on the owner's Mac; a launch must not wait on a stuck one.
-fn read_accounts(
-    provider: Provider,
+/// Native authentication uncertainty remains a read failure for ADR 0032.
+fn account_states(
+    list: &swarm::profiles::AccountList,
     only: Option<&str>,
 ) -> Option<Vec<swarm::config::AccountState>> {
-    let mut child = std::process::Command::new(yelo_command())
-        .args([
-            "profile",
-            "list",
-            "--cli",
-            provider.id(),
-            "--usage",
-            "--json",
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let text = read_within(child.stdout.take()?, std::time::Duration::from_secs(2));
-    let _ = child.kill();
-    let _ = child.wait();
-    let list = swarm::profiles::translate_accounts(provider.id(), &text?, None).ok()?;
+    let rows: Vec<_> = list
+        .accounts
+        .iter()
+        .filter(|account| !account.invalid_home())
+        .filter(|account| only.is_none_or(|name| account.name == name))
+        .collect();
+    if rows
+        .iter()
+        .any(|account| account.auth_state == swarm::profiles::AuthState::Unavailable)
+    {
+        return None;
+    }
     Some(
-        list.accounts
-            .iter()
-            .filter(|account| only.is_none_or(|name| account.name == name))
+        rows.into_iter()
             .map(|account| swarm::config::AccountState {
-                signed_in: account.signed_in,
-                remaining_pct: account.remaining_pct,
+                signed_in: account.auth_state == swarm::profiles::AuthState::SignedIn,
+                remaining_pct: (account.usage_state == "fresh")
+                    .then_some(account.remaining_pct)
+                    .flatten(),
             })
             .collect(),
     )
@@ -670,7 +651,7 @@ fn resolve_role(
     provider: Option<&str>,
     account: Option<&str>,
     running: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, Probe), String> {
     let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
     let profile = config
         .profile(role)
@@ -737,7 +718,7 @@ fn resolve_role(
         "skipped".into(),
         serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
     );
-    Ok(value)
+    Ok((value, probe))
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that
@@ -754,42 +735,134 @@ fn installed(provider: &str) -> bool {
 
 fn load_accounts(
     provider: &str,
-    with_pick: bool,
+    deadline: std::time::Instant,
 ) -> Result<swarm::profiles::AccountList, Box<dyn std::error::Error>> {
-    match Provider::parse(provider) {
-        None => return Err(format!("swarm: unknown provider {provider}").into()),
-        Some(kind) if !kind.has_accounts() => {
-            return Ok(swarm::profiles::empty_accounts(provider));
-        }
-        Some(_) => {}
-    }
-    // A launch waits on these reads, so a stuck yelo fails them rather than the launch hanging.
-    let limit = std::time::Duration::from_secs(2);
-    let command = yelo_command();
-    let list = checked_stdout(
-        &command,
-        run_tool_within(
-            &command,
-            &["profile", "list", "--cli", provider, "--usage", "--json"],
-            limit,
-        )?,
-    )?;
-    let pick_json = if with_pick {
-        let pick = run_tool_within(
-            &command,
-            &["profile", "pick", "--cli", provider, "--json"],
-            limit,
-        )?;
-        pick.status
-            .success()
-            .then(|| String::from_utf8(pick.stdout))
-            .transpose()
-            .map_err(|error| format!("swarm: {command} printed non-UTF-8 output: {error}"))?
-    } else {
-        None
-    };
-    swarm::profiles::translate_accounts(provider, &list, pick_json.as_deref())
+    let provider =
+        Provider::parse(provider).ok_or_else(|| format!("swarm: unknown provider {provider}"))?;
+    swarm::profiles::native::load(provider, deadline)
         .map_err(|error| format!("swarm: {error}").into())
+}
+
+fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if swarm::host::is_worker(|name| env::var(name).ok()) {
+        return Err("swarm: only the owner or orchestrator can open a login pane".into());
+    }
+    let mut options = std::collections::BTreeMap::new();
+    let mut json = false;
+    let mut arguments = args.iter();
+    while let Some(flag) = arguments.next() {
+        if flag == "--json" && !json {
+            json = true;
+            continue;
+        }
+        if !["--provider", "--name", "--revision", "--cwd"].contains(&flag.as_str()) {
+            return Err("swarm: invalid accounts login option".into());
+        }
+        let value = arguments
+            .next()
+            .ok_or("swarm: missing accounts login value")?;
+        if options.insert(flag.as_str(), value.as_str()).is_some() {
+            return Err("swarm: duplicate accounts login option".into());
+        }
+    }
+    if !json {
+        return Err("swarm: accounts login requires --json".into());
+    }
+    let provider = options
+        .get("--provider")
+        .and_then(|name| Provider::parse(name))
+        .filter(|provider| provider.has_accounts())
+        .ok_or("swarm: login needs claude or codex")?;
+    let name = options.get("--name").ok_or("swarm: login needs --name")?;
+    let expected = options
+        .get("--revision")
+        .ok_or("swarm: login needs --revision")?;
+    let cwd = options
+        .get("--cwd")
+        .map_or_else(env::current_dir, |value| {
+            Ok(std::path::PathBuf::from(value))
+        })?;
+    if !cwd.is_absolute() || !cwd.is_dir() {
+        return Err("swarm: --cwd must be an existing absolute directory".into());
+    }
+    let cwd = std::fs::canonicalize(cwd).map_err(|_| "swarm: --cwd is unavailable")?;
+    let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+    let (entry, revision) = swarm::accounts::register(provider, name, expected)?;
+    let root = swarm::paths::root_dir()?;
+    let adapter = swarm::adapter::Adapter {
+        deadline: Some(deadline),
+        ..swarm::adapter::load(&root, &adapter_name())
+            .map_err(|_| "swarm: account registered; login pane adapter is unavailable")?
+    };
+    env::set_current_dir(cwd)?;
+    // Eight label characters and a UUID suffix keep the unique attempt ID below 40 bytes.
+    let label: String = name
+        .chars()
+        .take(8)
+        .map(|ch| if matches!(ch, '.' | '_') { '-' } else { ch })
+        .collect();
+    let attempt = uuid::Uuid::now_v7().simple().to_string();
+    let pane_name = format!("login-{}-{label}-{}", provider.id(), &attempt[16..]);
+    let session = env::var("SWARM_SESSION_ID").unwrap_or_default();
+    let home = swarm::paths::home()?;
+    let pane = adapter
+        .run(
+            "spawn",
+            &[
+                ("agent_id", &pane_name),
+                ("session_id", &session),
+                ("home", &home),
+                ("adapter", &adapter.name),
+            ],
+        )
+        .map_err(|_| "swarm: account registered; cannot open login pane")?;
+    if pane.is_empty() || pane.chars().any(|ch| ch.is_whitespace() || ch.is_control()) {
+        return Err("swarm: account registered; login pane has no valid ID".into());
+    }
+    let native_env = provider.account_env(name, &entry.home.to_string_lossy(), |variable| {
+        env::var_os(variable)
+    });
+    let mut command = vec!["env".to_string()];
+    for key in provider.account_env_keys() {
+        command.extend(["-u".into(), key.to_string()]);
+    }
+    command.push("--".into());
+    command.extend(
+        native_env
+            .iter()
+            .map(|(key, value)| format!("{key}={value}")),
+    );
+    command.extend(
+        provider
+            .login_argv()
+            .ok_or("swarm: native login is unavailable")?
+            .iter()
+            .map(|arg| arg.to_string()),
+    );
+    // Keep a failed login and its error text visible; a successful login closes the shell.
+    let text = format!("{} && exit", swarm::adapter::shell_line(&command));
+    if adapter
+        .run("ring", &[("pane", &pane), ("text", &text)])
+        .is_err()
+    {
+        // Cleanup also runs after ring exhausts its budget, within the Swift process limit.
+        let closer = swarm::adapter::Adapter {
+            deadline: Some(swarm::profiles::native::deadline(
+                LOGIN_PANE_CLOSE_TIMEOUT_SECONDS,
+            )),
+            ..adapter
+        };
+        if closer.run("close", &[("pane", &pane)]).is_err() {
+            return Err(format!(
+                "swarm: account registered; cannot start native login; pane {pane} stayed open because close failed"
+            )
+            .into());
+        }
+        return Err("swarm: account registered; cannot start native login in pane".into());
+    }
+    print_json(
+        &serde_json::json!({"provider":provider.id(), "account":entry.name, "pane":pane, "state":"opened", "revision":revision}),
+    )
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), Box<dyn std::error::Error>> {
@@ -876,7 +949,12 @@ fn hooks(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // with no list never gets a hook that would block every call.
     let has_list = swarm::paths::guards_file()?.exists();
     let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
-    let plan = || hook_plans(&files, has_list);
+    let plan = || {
+        hook_plans(&files, has_list)
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<swarm::managed::Plan>>()
+    };
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["status", "--json"] => print_json(&serde_json::json!({
@@ -1155,12 +1233,14 @@ fn hook_plans(files: &HookFiles, has_list: bool) -> Vec<swarm::managed::FilePlan
 
 /// The groups of `swarm setup`, in plan order (ADR 0043). The list may grow, so the app shows a
 /// group it does not know by its name.
-const SETUP_GROUPS: [&str; 3] = ["hooks", "trust", "herdr"];
+const SETUP_GROUPS: [&str; 4] = ["hooks", "trust", "herdr", "skills"];
 
 /// One `swarm setup` plan: each file's plan in apply order, the group of each, and each group
 /// part that was left out with its reason.
 struct SetupPlan {
-    plans: Vec<swarm::managed::FilePlan>,
+    plans: Vec<swarm::managed::Plan>,
+    selected: Vec<String>,
+    skills_content: Option<String>,
     groups: Vec<&'static str>,
     /// For each trust plan, how to plan that one file again when it is written (L-4), so a write
     /// under the trust lock reads no other file and runs no `git` (L-1).
@@ -1186,6 +1266,8 @@ impl SetupPlan {
         let files = HookFiles::of(&user_home)?;
         let mut setup = Self {
             plans: Vec::new(),
+            selected: groups.iter().map(|group| group.to_string()).collect(),
+            skills_content: None,
             groups: Vec::new(),
             replans: Vec::new(),
             skipped: Vec::new(),
@@ -1217,6 +1299,10 @@ impl SetupPlan {
                             .plans
                             .iter()
                             .rev()
+                            .filter_map(|plan| match plan {
+                                swarm::managed::Plan::File(plan) => Some(plan),
+                                _ => None,
+                            })
                             .find(|plan| canonical(&plan.path) == canonical(path));
                         // A file the earlier plan cannot edit has no planned text to build on.
                         if let Some(conflict) = earlier.and_then(|plan| plan.conflicts.first()) {
@@ -1275,12 +1361,52 @@ impl SetupPlan {
         }
         // Hook point for the `herdr` group: swarm-notify's Herdr toast and sound writer (its ADR,
         // PR #30) adds its plans here; this build has none, so the group is always set up.
+        if groups.contains(&"skills") {
+            match skills_setup_plans() {
+                Ok((plans, content_id)) => {
+                    setup.skills_content = content_id;
+                    for plan in plans {
+                        setup.push("skills", plan);
+                    }
+                }
+                Err(error) => {
+                    let home = swarm::paths::home().map(std::path::PathBuf::from);
+                    let plan = match home {
+                        Ok(home) if home.is_absolute() => {
+                            let store = home.join(".swarm/swarm.db");
+                            let mut plan = FilePlan::unreadable(store.clone(), error.to_string());
+                            plan.conflicts[0].entry = "the managed skills records".into();
+                            plan.conflicts[0].wanted =
+                                "a readable swarm store with valid managed skills records".into();
+                            plan.conflicts[0].fix = format!(
+                                "repair the swarm store {}, then check the Skills plan again",
+                                store.display()
+                            );
+                            plan
+                        }
+                        home => {
+                            let path = home.unwrap_or_else(|_| {
+                                std::env::var_os("SWARM_HOME")
+                                    .map(std::path::PathBuf::from)
+                                    .unwrap_or_else(|| "SWARM_HOME".into())
+                            });
+                            let mut plan = FilePlan::unreadable(path, error.to_string());
+                            plan.conflicts[0].entry = "the swarm home".into();
+                            plan.conflicts[0].wanted = "an absolute swarm home path".into();
+                            plan.conflicts[0].fix = "set SWARM_HOME to an absolute path, then check the Skills plan again".into();
+                            plan
+                        }
+                    };
+                    setup.push("skills", plan);
+                }
+            }
+        }
         Ok(setup)
     }
 
-    fn push(&mut self, group: &'static str, plan: swarm::managed::FilePlan) {
+    fn push(&mut self, group: &'static str, plan: impl Into<swarm::managed::Plan>) {
         self.groups.push(group);
-        self.plans.push(plan);
+        self.plans.push(plan.into());
         self.replans.push(None);
     }
 
@@ -1290,7 +1416,7 @@ impl SetupPlan {
     }
 
     /// Each plan with its group.
-    fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::FilePlan)> {
+    fn grouped(&self) -> impl Iterator<Item = (&'static str, &swarm::managed::Plan)> {
         self.groups.iter().copied().zip(&self.plans)
     }
 
@@ -1301,14 +1427,22 @@ impl SetupPlan {
     fn digest(&self) -> String {
         use sha2::Digest;
         let mut digest = sha2::Sha256::new();
+        digest.update(serde_json::to_vec(&self.selected).unwrap());
+        digest.update([0]);
+        digest.update(serde_json::to_vec(&self.skills_content).unwrap());
+        digest.update([0]);
         for (group, plan) in self.grouped() {
-            let mut parts = vec![plan.path.to_string_lossy().into_owned()];
-            if group != "trust" {
-                parts.extend([plan.before.clone(), plan.after.clone()]);
-            }
-            for edit in plan.edits.iter().filter(|_| group == "trust") {
-                let before = edit.before.as_ref().map(serde_json::Value::to_string);
-                parts.extend([edit.id(), edit.wrote.to_string(), format!("{before:?}")]);
+            let mut parts = vec![
+                group.to_string(),
+                plan.path().to_string_lossy().into_owned(),
+            ];
+            if group == "trust" {
+                for edit in plan.edits() {
+                    let before = edit.before.as_ref().map(serde_json::Value::to_string);
+                    parts.extend([edit.id(), edit.wrote.to_string(), format!("{before:?}")]);
+                }
+            } else {
+                parts.push(swarm::managed::digest(std::slice::from_ref(plan)));
             }
             for part in parts {
                 digest.update(part.as_bytes());
@@ -1321,6 +1455,60 @@ impl SetupPlan {
             .map(|byte| format!("{byte:02x}"))
             .collect()
     }
+}
+
+/// Read managed ownership without creating a database or changing its schema.
+fn skills_setup_plans()
+-> Result<(Vec<swarm::managed::Plan>, Option<String>), Box<dyn std::error::Error>> {
+    use swarm::managed::{FilePlan, LinkPlan};
+    let home = std::path::PathBuf::from(env_var("HOME")?);
+    let swarm_home = std::path::PathBuf::from(swarm::paths::home()?);
+    if !swarm_home.is_absolute() {
+        return Err("swarm: SWARM_HOME must be an absolute path".into());
+    }
+    let root = swarm_home.join(".swarm");
+    let copy = root.join("skills");
+    let manifest = match swarm::skills::Manifest::read(&copy) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            let mut plan = FilePlan::unreadable(copy, error.to_string());
+            plan.conflicts[0].entry = "the default skills copy".into();
+            plan.conflicts[0].wanted = "a complete default skills copy".into();
+            plan.conflicts[0].fix =
+                "run `swarm skills refresh`, then check the Skills plan again".into();
+            return Ok((vec![plan.into()], None));
+        }
+    };
+    let database = root.join("swarm.db");
+    let store = if database.try_exists()? {
+        rusqlite::Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?
+    } else {
+        swarm::store::open(std::path::Path::new(":memory:"))?
+    };
+    let mut plans = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for cli_root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
+        for link in &manifest.catalog {
+            let plan = LinkPlan::create(
+                &store,
+                home.join(cli_root).join(&link.name),
+                copy.join(&link.path),
+            )?;
+            if seen.insert(plan.edits[0].file.clone()) {
+                plans.push(plan.into());
+            }
+        }
+    }
+    Ok((plans, Some(manifest.content_id)))
+}
+
+fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
+    skills_setup_plans().map(|(plans, content)| {
+        content.is_some()
+            && plans
+                .iter()
+                .all(|plan| !plan.changes() && plan.conflicts().is_empty())
+    })
 }
 
 /// The key of `~/.swarm/consent.json` that holds the owner's answer for launch folder trust, and
@@ -1388,20 +1576,26 @@ fn consent_plan(answer: &str) -> Result<swarm::managed::FilePlan, Box<dyn std::e
 /// its home, in one plan with one digest (ADR 0043). The groups are `hooks`, as `hooks setup`
 /// writes them, `trust`, the launch consent (`--consent`, by default the recorded answer, else
 /// standing) and the trust entries a launch in `--cwd` would write, for a resuming seat with
-/// `--resume`, and `herdr`. Running it, or applying the plan's digest, is the owner's consent, as
+/// `--resume`, and `herdr`, followed by `skills`. Running it, or applying the plan's digest, is the owner's consent, as
 /// for `hooks setup`, so a child pane may plan but not apply.
 fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if args == ["status", "--json"] {
         let files = HookFiles::of(&std::path::PathBuf::from(env_var("HOME")?))?;
         let has_list = swarm::paths::guards_file()?.exists();
-        return print_json(&serde_json::json!({
+        let skills = skills_setup_status();
+        let mut status = serde_json::json!({
             "hooks": files.hooks_status(),
             "guard": files.guard_status(has_list),
             // The owner answered, standing or ask, so the app does not ask again.
             "trust": trust_answer().is_some(),
             "herdr": true,
-        }));
+            "skills": skills.as_ref().is_ok_and(|ready| *ready),
+        });
+        if let Err(error) = skills {
+            status["skills_error"] = error.to_string().into();
+        }
+        return print_json(&status);
     }
     let (mut plan, mut json, mut digest, mut cwd, mut only) = (false, false, None, None, None);
     let (mut consent, mut resume) = (None, false);
@@ -1461,15 +1655,15 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 "digest": plan_digest,
                 "consent": answer,
                 "files": setup.grouped()
-                    .filter(|(_, plan)| plan.after != plan.before)
+                    .filter(|(_, plan)| plan.changes())
                     .map(|(group, plan)| serde_json::json!({
                         "group": group,
-                        "path": plan.path.to_string_lossy(),
+                        "path": plan.path().to_string_lossy(),
                         "diff": swarm::managed::diff(plan),
                     }))
                     .collect::<Vec<_>>(),
                 "conflicts": setup.grouped()
-                    .flat_map(|(group, plan)| plan.conflicts.iter().map(move |conflict| (group, conflict)))
+                    .flat_map(|(group, plan)| plan.conflicts().iter().map(move |conflict| (group, conflict)))
                     .map(|(group, conflict)| group_of(serde_json::json!(conflict), group))
                     .collect::<Vec<_>>(),
                 "skipped": setup.skipped.iter()
@@ -1518,7 +1712,7 @@ fn setup(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // A retry after a timeout finds nothing to do, and that is not a failure.
         if plans
             .iter()
-            .all(|plan| plan.after == plan.before && plan.conflicts.is_empty())
+            .all(|plan| !plan.changes() && plan.conflicts().is_empty())
         {
             println!("swarm: already set up. No file changes.");
             return Ok(());
@@ -1648,7 +1842,7 @@ impl LaunchTrust<'_> {
             let mut diffs = String::new();
             for file in files {
                 match plan(file, dir) {
-                    Ok(plan) => diffs += &swarm::managed::diff(&plan),
+                    Ok(plan) => diffs += &swarm::managed::diff(&plan.into()),
                     Err(error) => eprintln!("swarm: skipped {}: {error}", file.display()),
                 }
             }
@@ -1683,7 +1877,7 @@ impl LaunchTrust<'_> {
         }
         for plan in &written {
             if self.consent == TrustConsent::Picked {
-                eprint!("{}", swarm::managed::diff(plan));
+                eprint!("{}", swarm::managed::diff(&plan.clone().into()));
             }
             eprintln!(
                 "swarm: trusted {} for {provider} in {}",
@@ -1794,7 +1988,9 @@ fn resolved_agent_log(log: String) -> String {
 struct SpawnOptions<'a> {
     provider: Option<&'a str>,
     account: Option<&'a str>,
+    resolved_account: Option<&'a swarm::profiles::Account>,
     command: &'a [String],
+    runner: Option<&'a swarm::config::Runner>,
 }
 
 fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
@@ -1807,7 +2003,9 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
                 return Ok(SpawnOptions {
                     provider,
                     account,
+                    resolved_account: None,
                     command: &args[index + 1..],
+                    runner: None,
                 });
             }
             "--provider" if provider.is_none() && index + 1 < args.len() => {
@@ -1827,7 +2025,9 @@ fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
     Ok(SpawnOptions {
         provider,
         account,
+        resolved_account: None,
         command: &[],
+        runner: None,
     })
 }
 
@@ -2003,6 +2203,7 @@ fn register_spawned_pane(
     role: &str,
     provider: Option<&str>,
     vars: &[(&str, &str)],
+    launch: Option<(&swarm::config::Runner, Option<&str>)>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     swarm::store::add_agent(connection, session_id, agent_id, role)?;
     if let Some(provider) = provider {
@@ -2016,6 +2217,9 @@ fn register_spawned_pane(
         }
     };
     swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
+    if let Some((runner, account)) = launch {
+        swarm::store::set_launch(connection, session_id, agent_id, role, runner, account)?;
+    }
     Ok(pane)
 }
 
@@ -2074,12 +2278,15 @@ fn spawn_agent(
     agent_id: &str,
     role: &str,
     options: SpawnOptions<'_>,
+    account_deadline: std::time::Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Before any pane, file, or bus work: the id names a pane, a bus row, and a run script.
     if !swarm::bus::valid_agent_id(agent_id) {
         return Err(format!("swarm: bad agent id {agent_id}").into());
     }
-    let account = if let Some(requested) = options.account {
+    let account = if let Some(account) = options.resolved_account {
+        Some(account.clone())
+    } else if let Some(requested) = options.account {
         let provider = match options.provider {
             Some(provider) => provider.to_string(),
             None => swarm::config::load()
@@ -2090,7 +2297,7 @@ fn spawn_agent(
                 })
                 .map_err(|error| format!("swarm: {error}"))?,
         };
-        let accounts = load_accounts(&provider, true)?;
+        let accounts = load_accounts(&provider, account_deadline)?;
         Some(
             swarm::profiles::resolve_account(&accounts, requested)
                 .map_err(|error| format!("swarm: {error}"))?
@@ -2139,6 +2346,7 @@ fn spawn_agent(
         role,
         provider.map(Provider::id),
         &vars,
+        options.runner.map(|runner| (runner, options.account)),
     )?;
     if !options.command.is_empty() {
         // When run through the pane's `runs/<session>/bin/swarm` link, current_exe is that link,
@@ -2156,7 +2364,13 @@ fn spawn_agent(
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe, "exited".into()]);
         let child = if let Some(account) = &account {
-            let mut args = vec!["env".to_string(), "--".to_string()];
+            let mut args = vec!["env".to_string()];
+            if let Some(provider) = provider {
+                for key in provider.account_env_keys() {
+                    args.extend(["-u".into(), key.to_string()]);
+                }
+            }
+            args.push("--".into());
             args.extend(
                 account
                     .env
@@ -2887,6 +3101,13 @@ fn list_agents(
             state_detail: row.state_detail,
             log: row.log.map(resolved_agent_log),
             prompt,
+            profile: row.profile,
+            runner: row.runner,
+            model: row.model,
+            effort: row.effort,
+            account: row.account,
+            cost_usd: row.cost_usd,
+            tokens: row.tokens,
         });
     }
     // The app runs no `swarm sweep`, so its listing also settles rings and reports lost messages
@@ -2963,6 +3184,12 @@ fn all_agent_listings(
     Ok(listings)
 }
 
+const ACCOUNT_PICK_TIMEOUT_SECONDS: u64 = 2;
+// Leave time for CLI output before SwarmCLIProfileSource kills its process at 20 seconds.
+const NATIVE_READ_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_ADAPTER_TIMEOUT_SECONDS: u64 = 18;
+const LOGIN_PANE_CLOSE_TIMEOUT_SECONDS: u64 = 1;
+
 fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The commit this binary was built from, which is the only way a machine can tell the bus it
     // runs from the bus the repository states. `build.rs` stamps it. See `ui/Tools/build.sh`.
@@ -2979,6 +3206,17 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().map(String::as_str) == Some("init") {
         return init();
+    }
+    if args.first().map(String::as_str) == Some("skills") {
+        let rest: Vec<_> = args[1..].iter().map(String::as_str).collect();
+        return match rest.as_slice() {
+            ["refresh"] => swarm::skills::refresh().map(|_| ()),
+            ["manifest", source, out] => swarm::skills::write_manifest(
+                std::path::Path::new(source),
+                std::path::Path::new(out),
+            ),
+            _ => Err("usage: swarm skills refresh | manifest <source> <out>".into()),
+        };
     }
     if args.first().map(String::as_str) == Some("setup") {
         return setup(&args[1..]);
@@ -3013,9 +3251,13 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .into(),
             );
         }
+        let root = swarm::paths::root_dir()?;
+        if app_is_running(&root) {
+            return Ok(());
+        }
         let adapter = swarm::adapter::Adapter {
             deadline: Some(std::time::Instant::now() + NOTIFY_TIMEOUT),
-            ..swarm::adapter::load(&swarm::paths::root_dir()?, &adapter_name())?
+            ..swarm::adapter::load(&root, &adapter_name())?
         };
         adapter.run("notify", &[("title", title), ("body", body)])?;
         return Ok(());
@@ -3058,7 +3300,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let resolved = resolve_role(role, provider, None, false)?;
+        let (resolved, _) = resolve_role(role, provider, None, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(());
     }
@@ -3090,6 +3332,41 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             swarm::config::save(profile, revision).map_err(|error| format!("swarm: {error}"))?;
         return print_json(&serde_json::json!({ "revision": revision }));
     }
+    if let [cmd, sub, rest @ ..] = args
+        && cmd == "roles"
+        && matches!(
+            sub.as_str(),
+            "new" | "rename" | "copy" | "delete" | "reset" | "set-min-usage"
+        )
+    {
+        use swarm::config::ProfileAction;
+        let (action, revision) = match (sub.as_str(), rest) {
+            ("new", [name, flag, revision]) if flag == "--revision" => {
+                (ProfileAction::New(name), revision)
+            }
+            ("rename", [from, to, flag, revision]) if flag == "--revision" => {
+                (ProfileAction::Rename(from, to), revision)
+            }
+            ("copy", [from, to, flag, revision]) if flag == "--revision" => {
+                (ProfileAction::Copy(from, to), revision)
+            }
+            ("delete", [name, flag, revision]) if flag == "--revision" => {
+                (ProfileAction::Delete(name), revision)
+            }
+            ("reset", [flag, revision]) if flag == "--revision" => (ProfileAction::Reset, revision),
+            ("set-min-usage", [pct, flag, revision]) if flag == "--revision" => (
+                ProfileAction::SetMinUsage(
+                    pct.parse()
+                        .map_err(|_| "swarm: min_usage_left_pct must be 0 to 100.")?,
+                ),
+                revision,
+            ),
+            _ => return Err(USAGE.into()),
+        };
+        let revision = swarm::config::profile_action(action, revision)
+            .map_err(|error| format!("swarm: {error}"))?;
+        return print_json(&serde_json::json!({ "revision": revision }));
+    }
     if let [cmd, json] = args
         && cmd == "providers"
         && json == "--json"
@@ -3103,30 +3380,54 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return print_json(&list_models(provider)?);
     }
+    if let [cmd, sub, rest @ ..] = args
+        && cmd == "accounts"
+        && sub == "login"
+    {
+        return account_login(rest);
+    }
+    if let [cmd, sub, revision_flag, revision, json] = args
+        && cmd == "accounts"
+        && sub == "reset"
+        && revision_flag == "--revision"
+        && json == "--json"
+    {
+        return print_json(&serde_json::json!({"revision":swarm::accounts::reset(revision)?}));
+    }
     if let [cmd, provider_flag, provider, json] = args
         && cmd == "accounts"
         && provider_flag == "--provider"
         && json == "--json"
     {
-        return print_json(&load_accounts(provider, true)?);
+        let provider = Provider::parse(provider).ok_or("swarm: unknown provider")?;
+        return print_json(&swarm::profiles::native::load(
+            provider,
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
+        )?);
     }
     if let [cmd, json] = args
         && cmd == "usage"
         && json == "--json"
     {
-        let command = yelo_command();
-        let json = tool_stdout(&command, &["usage", "show", "--json"])?;
-        let accounts = Provider::ALL
-            .into_iter()
-            .filter(|provider| provider.has_accounts())
-            .map(|provider| load_accounts(provider.id(), false))
-            .collect::<Result<Vec<_>, _>>()?;
-        let (usage, skipped) = swarm::profiles::translate_usage(&json, &accounts)
-            .map_err(|error| format!("swarm: {error}"))?;
-        for reason in skipped {
-            eprintln!("swarm: skipped usage row: {reason}");
+        return print_json(&swarm::usage::read(swarm::profiles::native::deadline(
+            NATIVE_READ_TIMEOUT_SECONDS,
+        ))?);
+    }
+    if let [cmd, refresh, provider_flag, provider, json] = args
+        && cmd == "usage"
+        && refresh == "--refresh"
+        && provider_flag == "--provider"
+        && json == "--json"
+    {
+        if provider != "codex" {
+            return Err(
+                "swarm: only Codex supports native usage refresh; refresh Claude in the yelo HUD"
+                    .into(),
+            );
         }
-        return print_json(&usage);
+        return print_json(&swarm::usage::refresh_codex(
+            swarm::profiles::native::deadline(NATIVE_READ_TIMEOUT_SECONDS),
+        )?);
     }
     let root = swarm::paths::root_dir()?;
     if let [cmd, sub, name] = args
@@ -3221,7 +3522,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let [cmd, sub, ids @ ..] = args
         && cmd == "session"
-        && sub == "archive"
+        && matches!(sub.as_str(), "archive" | "unarchive")
         && !ids.is_empty()
     {
         let ids = ids
@@ -3234,15 +3535,20 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(id.to_string())
             })
             .collect::<Result<Vec<_>, &str>>()?;
-        swarm::store::archive_sessions(&mut connection, &ids)?;
+        if sub == "archive" {
+            swarm::store::archive_sessions(&mut connection, &ids)?;
+        } else {
+            swarm::store::unarchive_sessions(&mut connection, &ids)?;
+        }
         return Ok(());
     }
-    if let [cmd, json] = args
+    if let [cmd, json, flags @ ..] = args
         && cmd == "sessions"
         && json == "--json"
+        && (flags.is_empty() || matches!(flags, [flag] if flag == "--archived"))
     {
         let mut sessions = Vec::new();
-        for row in swarm::store::sessions(&connection)? {
+        for row in swarm::store::sessions_with_archived(&connection, !flags.is_empty())? {
             let chair_log = resolved_chair_log(&row);
             if let Some(path) = &chair_log {
                 let path_text = path.to_string_lossy();
@@ -3263,6 +3569,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 agents: row.agents,
                 messages: row.messages,
                 last_message_at: row.last_message_at,
+                archived_at_s: row.archived_at,
             });
         }
         return print_json(&swarm::bus::SessionList { sessions });
@@ -3358,7 +3665,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let resolved: swarm::bus::ResolvedRole = match requested_model {
+        let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
             Some(_) if role != "chat" => {
                 return Err("swarm: --model requires the chat role".into());
             }
@@ -3371,11 +3678,19 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
                 let runner = swarm::config::one_off(&config.profiles[0], provider, model)
                     .map_err(|error| format!("swarm: {error}"))?;
-                serde_json::from_value(serde_json::to_value(runner)?)?
+                (
+                    serde_json::from_value(serde_json::to_value(runner)?)?,
+                    Probe::new(&config, account),
+                )
             }
-            None => serde_json::from_value(resolve_role(role, requested_provider, account, true)?)
-                .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?,
+            None => {
+                let (value, probe) = resolve_role(role, requested_provider, account, true)?;
+                let resolved = serde_json::from_value(value)
+                    .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
+                (resolved, probe)
+            }
         };
+        let account_deadline = probe.deadline;
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
             return Err(reason.into());
         }
@@ -3383,26 +3698,42 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut command = swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?)?;
         let kind = Provider::parse(provider.as_deref().unwrap_or_default())
             .ok_or("swarm: launch has no known provider")?;
+        let runner = swarm::config::Runner {
+            provider: kind,
+            model: resolved.model.clone().ok_or("swarm: launch has no model")?,
+            effort: resolved
+                .effort
+                .clone()
+                .ok_or("swarm: launch has no effort")?,
+            sandbox: resolved.sandbox.clone(),
+            approval: resolved.approval.clone(),
+            permission: resolved.permission.clone(),
+        };
         let mut extra = swarm::bus::extra_args(kind, extra)?;
-        // yelo's pick for `auto` can change between two calls, so the trust entry and the pane
-        // both use this one answer.
+        // Trust and pane environment must use the same native pick.
         // A provider with no account source launches on its CLI's own login, so `auto` means
         // nothing there; the chat profile passes it whichever runner starts.
         let picked = match (account, kind.has_accounts()) {
-            (Some(requested), true) => match load_accounts(kind.id(), true)
-                .map_err(|error| error.to_string().trim_start_matches("swarm: ").to_string())
-                .and_then(|accounts| {
-                    swarm::profiles::resolve_account(&accounts, requested).cloned()
-                }) {
-                Ok(account) => Some(account),
-                // `auto` is a preference. With no yelo or no automatic account the CLI's own
-                // login runs, as the probe already counts a missing yelo as can run (ADR 0032).
-                Err(error) if requested == "auto" => {
-                    eprintln!("swarm: {error}; {} uses its own login", kind.id());
-                    None
+            (Some(requested), true) => {
+                let mut cache = probe.accounts.borrow_mut();
+                let accounts = cache
+                    .entry(kind)
+                    .or_insert_with(|| swarm::profiles::native::load(kind, account_deadline));
+                match accounts
+                    .as_ref()
+                    .map_err(Clone::clone)
+                    .and_then(|accounts| {
+                        swarm::profiles::resolve_account(accounts, requested).cloned()
+                    }) {
+                    Ok(account) => Some(account),
+                    // Auto without a known native account retains the CLI login (ADR 0032).
+                    Err(error) if requested == "auto" => {
+                        eprintln!("swarm: {error}; {} uses its own login", kind.id());
+                        None
+                    }
+                    Err(error) => return Err(format!("swarm: {error}").into()),
                 }
-                Err(error) => return Err(format!("swarm: {error}").into()),
-            },
+            }
             _ => None,
         };
         let mut pane_dir = cwd.clone();
@@ -3492,7 +3823,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     // yelo's `claude` in the pane points that at the profile it picks, and a pane
                     // with no yelo reads ~/.claude.json, so each of them needs the entry.
                     let configs = if let Some(account) = &picked {
-                        vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        if account.env.is_empty() {
+                            vec![user_home.join(".claude.json")]
+                        } else {
+                            vec![std::path::PathBuf::from(&account.home).join(".claude.json")]
+                        }
                     } else {
                         claude_configs(&user_home)
                     };
@@ -3516,8 +3851,11 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             SpawnOptions {
                 provider: provider.as_deref(),
                 account: picked.as_ref().map(|picked| picked.name.as_str()),
+                resolved_account: picked.as_ref(),
                 command: &command,
+                runner: Some(&runner),
             },
+            account_deadline,
         );
     }
     if let [cmd, agent_id, role, rest @ ..] = args
@@ -3530,7 +3868,14 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Err(reason.into());
         }
         let options = parse_spawn_options(rest)?;
-        return spawn_agent(&connection, &root, agent_id, role, options);
+        return spawn_agent(
+            &connection,
+            &root,
+            agent_id,
+            role,
+            options,
+            swarm::profiles::native::deadline(ACCOUNT_PICK_TIMEOUT_SECONDS),
+        );
     }
     if let [cmd] = args
         && cmd == "drain"
@@ -3856,6 +4201,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_adapter_returns_before_the_swift_process_limit() {
+        let deadline = swarm::profiles::native::deadline(LOGIN_ADAPTER_TIMEOUT_SECONDS);
+        assert!(
+            deadline.duration_since(std::time::Instant::now())
+                <= std::time::Duration::from_secs(18)
+        );
+    }
 
     #[test]
     fn rering_finishes_after_the_session_deadline() {
@@ -4240,6 +4594,7 @@ mod tests {
                 agent: CODER.to_string(),
                 state,
                 log,
+                usage_provider: None,
             })
         };
         assert_eq!(
@@ -6001,6 +6356,431 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&shell.stdout), "ran\nafter\n");
     }
 
+    fn session_command(home: &std::path::Path, args: &[&str]) -> std::process::Output {
+        let exe = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("swarm{}", std::env::consts::EXE_SUFFIX));
+        std::process::Command::new(exe)
+            .env_clear()
+            .env("HOME", home)
+            .env("SWARM_HOME", home)
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn session_archive_can_be_listed_and_reversed() {
+        let (home, connection, first) = stop_fixture("archive-list", None);
+        let second = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let active = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let archived = session_command(&home, &["session", "archive", &first, &second]);
+        assert!(archived.status.success());
+        let normal = session_command(&home, &["sessions", "--json"]);
+        assert!(normal.status.success());
+        let normal: serde_json::Value = serde_json::from_slice(&normal.stdout).unwrap();
+        assert_eq!(normal["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(normal["sessions"][0]["id"], active);
+        assert!(normal["sessions"][0].get("archivedAt").is_none());
+        let all = session_command(&home, &["sessions", "--json", "--archived"]);
+        assert!(
+            all.status.success(),
+            "{}",
+            String::from_utf8_lossy(&all.stderr)
+        );
+        let all: serde_json::Value = serde_json::from_slice(&all.stdout).unwrap();
+        let rows = all["sessions"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        for id in [&first, &second] {
+            let row = rows.iter().find(|row| row["id"] == *id).unwrap();
+            let stored: i64 = connection
+                .query_row(
+                    "SELECT archived_at FROM session WHERE id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(stored > 0);
+            assert_eq!(row["archivedAt"], stored);
+        }
+        let restored = session_command(&home, &["session", "unarchive", &first, &second]);
+        assert!(
+            restored.status.success(),
+            "{}",
+            String::from_utf8_lossy(&restored.stderr)
+        );
+        let normal = session_command(&home, &["sessions", "--json"]);
+        let normal: serde_json::Value = serde_json::from_slice(&normal.stdout).unwrap();
+        assert_eq!(normal["sessions"].as_array().unwrap().len(), 3);
+        for row in normal["sessions"].as_array().unwrap() {
+            assert!(row.get("archivedAt").is_none());
+            let stored: Option<i64> = connection
+                .query_row(
+                    "SELECT archived_at FROM session WHERE id = ?1",
+                    [row["id"].as_str().unwrap()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, None);
+        }
+        assert!(
+            session_command(&home, &["session", "unarchive", &first])
+                .status
+                .success()
+        );
+    }
+
+    #[test]
+    fn session_archived_listing_keeps_active_rows_and_limits_archives_in_archive_order() {
+        let (home, connection, first_active) = stop_fixture("archive-limit", None);
+        let second_active =
+            swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        let mut archived_ids = Vec::new();
+        for index in 0..55 {
+            let id = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+            connection
+                .execute(
+                    "UPDATE session SET archived_at = ?1, created_at = ?2 WHERE id = ?3",
+                    (10000 + index, 20000 - index, &id),
+                )
+                .unwrap();
+            archived_ids.push(id);
+        }
+        let all = session_command(&home, &["sessions", "--json", "--archived"]);
+        assert!(
+            all.status.success(),
+            "{}",
+            String::from_utf8_lossy(&all.stderr)
+        );
+        let all: serde_json::Value = serde_json::from_slice(&all.stdout).unwrap();
+        let rows = all["sessions"].as_array().unwrap();
+        assert_eq!(rows.len(), 52);
+        assert!(rows[..2].iter().all(|row| row.get("archivedAt").is_none()));
+        assert!(rows[..2].iter().any(|row| row["id"] == first_active));
+        assert!(rows[..2].iter().any(|row| row["id"] == second_active));
+        for (row, id) in rows[2..].iter().zip(archived_ids[5..].iter().rev()) {
+            assert_eq!(row["id"], *id);
+        }
+        assert_eq!(rows[2]["archivedAt"], 10054);
+        assert_eq!(rows.last().unwrap()["archivedAt"], 10005);
+        drop(connection);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn session_unarchive_names_unknown_id_and_rolls_back() {
+        let (home, mut connection, known) = stop_fixture("unarchive-unknown", None);
+        swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&known)).unwrap();
+        let unknown = uuid::Uuid::now_v7().to_string();
+        let output = session_command(&home, &["session", "unarchive", &known, &unknown]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains(&format!("swarm: no session {unknown}"))
+        );
+        let archived: Option<i64> = connection
+            .query_row(
+                "SELECT archived_at FROM session WHERE id = ?1",
+                [&known],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(archived.is_some());
+    }
+
+    fn stop_fixture(
+        tag: &str,
+        log: Option<&str>,
+    ) -> (std::path::PathBuf, rusqlite::Connection, String) {
+        let home = std::env::temp_dir().join(format!("swarm-stop-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".swarm")).unwrap();
+        let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+        let session = swarm::store::create_session(&connection, "lane", &home, None, None).unwrap();
+        swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
+        if let Some(text) = log {
+            let path = home.join("chat.jsonl");
+            std::fs::write(&path, text).unwrap();
+            swarm::store::set_log(&connection, &session, CODER, &path).unwrap();
+        }
+        (home, connection, session)
+    }
+
+    fn run_stop_hook(
+        home: &std::path::Path,
+        session: &str,
+        provider: &str,
+        event: &str,
+        payload: &str,
+    ) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        // Cargo builds this executable for the integration tests in the same test run.
+        let exe = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("swarm{}", std::env::consts::EXE_SUFFIX));
+        let mut child = Command::new(exe)
+            .env_clear()
+            .env("HOME", home)
+            .env("SWARM_HOME", home)
+            .env("SWARM_SESSION_ID", session)
+            .env("SWARM_AGENT_ID", CODER)
+            .args(["hook", provider, event])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"{}\n");
+        assert!(
+            output.stderr.is_empty(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn stop_hook_claude_replaces_cumulative_cost_and_model() {
+        let log = format!(
+            "{}\n{}\n{}\n{}\n",
+            include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+            r#"{"type":"cost-state","totalCostUSD":1.25,"hasUnknownModelCost":false}"#,
+            r#"{"type":"assistant","message":{"model":"claude-new"}}"#,
+            r#"{"type":"cost-state","totalCostUSD":2.5,"hasUnknownModelCost":false}"#
+        );
+        let (home, connection, session) = stop_fixture("claude", Some(&log));
+        for _ in 0..2 {
+            run_stop_hook(&home, &session, "claude", "Stop", "{}");
+            let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+            assert_eq!(agent.cost_usd, Some(2.5));
+            assert_eq!(agent.model.as_deref(), Some("claude-new"));
+            assert_eq!(agent.tokens, None);
+        }
+        std::fs::write(
+            home.join("chat.jsonl"),
+            r#"{"type":"cost-state","totalCostUSD":0,"hasUnknownModelCost":false}"#,
+        )
+        .unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.cost_usd, Some(0.0));
+        assert_eq!(agent.model.as_deref(), Some("claude-new"));
+    }
+
+    #[test]
+    fn stop_hook_commits_done_state_before_usage() {
+        let log = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":1,"output_tokens":2}}}"#;
+        let (home, connection, session) = stop_fixture("state-before-usage", Some(log));
+        swarm::store::set_state(&connection, &session, CODER, "working", "hook", None, 1).unwrap();
+        // Reject a usage write unless the done state is already stored in the same row.
+        connection.execute_batch("CREATE TRIGGER usage_requires_done BEFORE UPDATE OF usage_state ON agent WHEN NEW.state IS NOT 'done' BEGIN SELECT RAISE(ABORT, 'usage before done'); END;").unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.state.as_deref(), Some("done"));
+        assert_eq!(agent.tokens, Some(3));
+    }
+
+    #[test]
+    fn stop_hook_claude_adds_only_new_messages_in_a_growing_fixture() {
+        use std::io::Write;
+        let first = r#"{"type":"assistant","message":{"id":"m1","model":"claude","usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":4}}}"#;
+        let second = first.replace("m1", "m2");
+        let log = format!(
+            "{}\n{first}\n{first}\n",
+            include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+        );
+        let (home, connection, session) = stop_fixture("claude-growing", Some(&log));
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].tokens,
+            Some(64)
+        );
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(home.join("chat.jsonl"))
+            .unwrap();
+        writeln!(file, "{second}\n{first}\n{second}").unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.tokens, Some(128));
+        assert_eq!(agent.cost_usd, None);
+        assert_eq!(agent.state.as_deref(), Some("done"));
+    }
+
+    #[test]
+    fn stop_hook_codex_uses_total_tokens_and_latest_model() {
+        let log = format!(
+            "{}\n{}\n{}\n{}\n",
+            include_str!("../packages/transcript/src/fixtures/codex-chair-run.jsonl"),
+            r#"{"type":"turn_context","payload":{"model":"gpt-old"}}"#,
+            r#"{"type":"turn_context","payload":{"model":"gpt-new"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":12},"total_token_usage":{"input_tokens":90,"output_tokens":10,"total_tokens":100}}}}"#
+        );
+        let (home, connection, session) = stop_fixture("codex", Some(&log));
+        run_stop_hook(&home, &session, "codex", "Stop", "{}");
+        let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+        assert_eq!(agent.tokens, Some(100));
+        assert_eq!(agent.model.as_deref(), Some("gpt-new"));
+        assert_eq!(agent.cost_usd, None);
+    }
+
+    #[test]
+    fn stop_hook_claude_reads_past_a_mebibyte_and_keeps_cost_without_a_complete_record() {
+        let snapshot = r#"{"type":"cost-state","totalCostUSD":4,"hasUnknownModelCost":false}"#;
+        let log = format!(
+            "{snapshot}\n{}\n{snapshot}\n",
+            "x".repeat(1024 * 1024 + 100)
+        );
+        let (home, connection, session) = stop_fixture("tail", Some(&log));
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+            Some(4.0)
+        );
+        // A cost record without a completeness flag does not replace a reported cost.
+        std::fs::write(
+            home.join("chat.jsonl"),
+            format!(
+                "{{\"type\":\"cost-state\",\"totalCostUSD\":9}}\n{}",
+                "x".repeat(1024 * 1024 + 100)
+            ),
+        )
+        .unwrap();
+        run_stop_hook(&home, &session, "claude", "Stop", "{}");
+        assert_eq!(
+            swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+            Some(4.0)
+        );
+    }
+
+    #[test]
+    fn stop_hook_missing_unreadable_or_snapshot_free_log_keeps_values() {
+        let (home, connection, session) = stop_fixture("no-snapshot", Some("not json\n{}\n"));
+        connection
+            .execute(
+                "UPDATE agent SET model = 'kept', cost_usd = 3, tokens = 5 WHERE session_id = ?1 AND id = ?2",
+                (&session, CODER),
+            )
+            .unwrap();
+        for mode in ["no-snapshot", "missing", "unreadable"] {
+            if mode == "missing" {
+                std::fs::remove_file(home.join("chat.jsonl")).unwrap();
+            } else if mode == "unreadable" {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::write(
+                    home.join("chat.jsonl"),
+                    r#"{"type":"cost-state","totalCostUSD":9}"#,
+                )
+                .unwrap();
+                std::fs::set_permissions(
+                    home.join("chat.jsonl"),
+                    std::fs::Permissions::from_mode(0o000),
+                )
+                .unwrap();
+                assert!(std::fs::File::open(home.join("chat.jsonl")).is_err());
+            }
+            run_stop_hook(&home, &session, "claude", "Stop", "{}");
+            let agent = &swarm::store::agents(&connection, &session).unwrap()[0];
+            assert_eq!(agent.model.as_deref(), Some("kept"));
+            assert_eq!(agent.cost_usd, Some(3.0));
+            assert_eq!(agent.tokens, Some(5));
+            assert_eq!(agent.state.as_deref(), Some("done"));
+        }
+    }
+
+    #[test]
+    fn stop_hook_other_provider_interrupt_and_subagent_keep_usage() {
+        let log = r#"{"type":"cost-state","totalCostUSD":9}"#;
+        let (home, connection, session) = stop_fixture("other-provider", Some(log));
+        connection
+            .execute(
+                "UPDATE agent SET cost_usd = 3 WHERE session_id = ?1 AND id = ?2",
+                (&session, CODER),
+            )
+            .unwrap();
+        for (provider, event, payload) in [
+            ("agy", "Stop", "{}"),
+            ("codex", "Interrupt", "{}"),
+            ("claude", "Stop", r#"{"agent_id":"subagent"}"#),
+        ] {
+            run_stop_hook(&home, &session, provider, event, payload);
+            assert_eq!(
+                swarm::store::agents(&connection, &session).unwrap()[0].cost_usd,
+                Some(3.0)
+            );
+        }
+    }
+
+    #[test]
+    fn launch_fields_survive_a_fresh_connection_and_listing() {
+        let root = std::env::temp_dir().join(format!("swarm-runner-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("bus.sqlite");
+        let connection = swarm::store::open(&db).unwrap();
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            None,
+            None,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::parse("fake", "self = true\nspawn = printf '%s' '%2'\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();
+        let runner = swarm::config::Runner {
+            provider: Provider::Codex,
+            model: "gpt-6".into(),
+            effort: "high".into(),
+            sandbox: None,
+            approval: None,
+            permission: None,
+        };
+        register_spawned_pane(
+            &connection,
+            &adapter,
+            &session,
+            CODER,
+            "code.complex",
+            Some("codex"),
+            &[],
+            Some((&runner, Some("work"))),
+        )
+        .unwrap();
+        let profile: String = connection
+            .query_row("SELECT profile FROM agent WHERE id = ?1", [CODER], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(profile, "code.complex");
+        drop(connection);
+        let mut fresh = swarm::store::open(&db).unwrap();
+        let output =
+            serde_json::to_value(list_agents(&mut fresh, &root, &session, &adapter).unwrap())
+                .unwrap();
+        let agent = &output["agents"][0];
+        assert_eq!(agent["profile"], "code.complex");
+        assert_eq!(agent["runner"], "codex/gpt-6/high");
+        assert_eq!(agent["model"], "gpt-6");
+        assert_eq!(agent["effort"], "high");
+        assert_eq!(agent["account"], "work");
+        assert!(agent.get("costUsd").is_none());
+        assert!(agent.get("tokens").is_none());
+    }
+
     #[test]
     fn a_failed_adapter_spawn_rolls_back_the_agent() {
         let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
@@ -6019,8 +6799,17 @@ mod tests {
         .unwrap();
 
         assert!(
-            register_spawned_pane(&connection, &failed, &session, CODER, "coder", None, &[])
-                .is_err()
+            register_spawned_pane(
+                &connection,
+                &failed,
+                &session,
+                CODER,
+                "coder",
+                None,
+                &[],
+                None
+            )
+            .is_err()
         );
         assert!(
             swarm::store::agents(&connection, &session)
@@ -6034,8 +6823,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            register_spawned_pane(&connection, &working, &session, CODER, "coder", None, &[])
-                .unwrap(),
+            register_spawned_pane(
+                &connection,
+                &working,
+                &session,
+                CODER,
+                "coder",
+                None,
+                &[],
+                None
+            )
+            .unwrap(),
             "%2"
         );
     }

@@ -56,6 +56,7 @@ struct StepRunsTests {
         #expect(runs.first?.doneCount == 4)
         #expect(runs.first?.firstQuestion == "Pick A or B?")
         #expect(StepRuns.layers(steps) == [["01-frame"], ["02-design", "03-contracts"], ["04-impact"], ["05-build"], ["06-review"], ["07-close"]])
+        #expect(GraphLayers.layers(steps.map { (id: $0.id, needs: $0.needs) }) == StepRuns.layers(steps))
 
         try "next".write(to: workspace.appendingPathComponent("next.txt"), atomically: true, encoding: .utf8)
         try await commit(workspace, "next")
@@ -151,6 +152,7 @@ struct StepRunsTests {
         #expect(steps[3].state == .other(word: "thinking", rest: "about it"), "a new status word shows as text")
         #expect(steps[3].ready == false)
         #expect(StepRuns.layers(steps) == [["01-question", "05-binary"], ["02-local", "03-web"], ["04-report"]])
+        #expect(GraphLayers.layers(steps.map { (id: $0.id, needs: $0.needs) }) == StepRuns.layers(steps))
     }
 
     @Test("A step file read while an agent rewrites it (empty) is read once more before it counts as an error")
@@ -273,6 +275,7 @@ struct StepRunsTests {
         }
         let steps = [node("01-a", ["03-c"]), node("02-b", ["01-a", "09-gone"]), node("03-c", ["02-b"])]
         #expect(StepRuns.layers(steps) == [["01-a"], ["02-b"], ["03-c"]])
+        #expect(GraphLayers.layers(steps.map { (id: $0.id, needs: $0.needs) }) == StepRuns.layers(steps))
     }
 
     @Test("A file name listed twice while an agent renames it is one step, so the graph never sees a repeated id")

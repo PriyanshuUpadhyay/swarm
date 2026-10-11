@@ -606,6 +606,10 @@ fn swarm_guards_names_the_rule_list() {
 fn setup(home: &Path, args: &[&str]) -> Output {
     let mut command = clean(Path::new(env!("CARGO_BIN_EXE_swarm")), home);
     command.current_dir(home).arg("setup").args(args);
+    // These fixtures cover the original groups without requiring a bundled skills copy.
+    if args.first() != Some(&"status") && !args.contains(&"--only") {
+        command.args(["--only", "hooks,trust,herdr"]);
+    }
     piped(command, "")
 }
 
@@ -640,7 +644,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     };
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true})
+        serde_json::json!({"hooks": false, "guard": true, "trust": false, "herdr": true, "skills": false})
     );
 
     let plan = setup(&home, &["--plan", "--json", "--cwd", &cwd]);
@@ -699,7 +703,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let digest = plan["digest"].as_str().unwrap();
     assert!(
         text.ends_with(&format!(
-            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}'` to apply.\n"
+            "Plan only. No file written. Run `swarm setup --digest {digest} --cwd '{cwd}' --only hooks,trust,herdr` to apply.\n"
         )),
         "{text}"
     );
@@ -708,7 +712,7 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     assert!(applied.status.success(), "{applied:?}");
     assert_eq!(
         status(),
-        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true})
+        serde_json::json!({"hooks": true, "guard": true, "trust": true, "herdr": true, "skills": false})
     );
     let config = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
     assert!(config.contains("[hooks.state.") && config.contains(&format!("[projects.\"{cwd}\"]")));
@@ -1285,6 +1289,71 @@ fn swarm_notify_refuses_a_worker() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
+fn hold_app_lock(path: &Path) -> std::fs::File {
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    let file = std::fs::File::create(path).unwrap();
+    // SAFETY: the descriptor stays open in the returned file; 2 | 4 is LOCK_EX | LOCK_NB.
+    assert_eq!(unsafe { flock(file.as_raw_fd(), 2 | 4) }, 0);
+    file
+}
+
+#[test]
+fn swarm_notify_skips_a_held_app_lock_and_sends_after_release() {
+    let home = scratch("notify-app-held");
+    assert!(swarm(&home, &[], &["init"], "").status.success());
+    let sent_to = stand_in_notify(&home);
+    let app_lock = home.join(".swarm/app.lock");
+    let held = hold_app_lock(&app_lock);
+    std::fs::write(&app_lock, std::process::id().to_string()).unwrap();
+    let skipped = swarm(
+        &home,
+        &[],
+        &["notify", "Swarm — chat", "--body", "done"],
+        "",
+    );
+    assert!(skipped.status.success(), "{skipped:?}");
+    assert!(skipped.stdout.is_empty() && skipped.stderr.is_empty());
+    assert_eq!(notices(&sent_to), "");
+    drop(held);
+    let sent = swarm(
+        &home,
+        &[],
+        &["notify", "Swarm — chat", "--body", "done"],
+        "",
+    );
+    assert!(sent.status.success(), "{sent:?}");
+    assert_eq!(notices(&sent_to), "Swarm — chat|done\n");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[test]
+fn swarm_notify_sends_for_missing_and_unlocked_pid_files() {
+    for (role, content) in [
+        ("missing", None),
+        ("recycled-live-pid", Some(std::process::id().to_string())),
+        ("garbage", Some("not a pid".into())),
+    ] {
+        let home = scratch(&format!("notify-app-{role}"));
+        assert!(swarm(&home, &[], &["init"], "").status.success());
+        let sent_to = stand_in_notify(&home);
+        if let Some(content) = content {
+            std::fs::write(home.join(".swarm/app.lock"), content).unwrap();
+        }
+        let output = swarm(
+            &home,
+            &[],
+            &["notify", "Swarm — chat", "--body", "done"],
+            "",
+        );
+        assert!(output.status.success(), "{role}: {output:?}");
+        assert_eq!(notices(&sent_to), "Swarm — chat|done\n", "{role}");
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+}
+
 #[test]
 fn swarm_notify_names_the_missing_verb() {
     let home = scratch("notify-no-verb");
@@ -1389,6 +1458,16 @@ fn a_change_to_waiting_sends_one_notice_and_a_repeat_sends_none() {
     hook(r#"{"hook_event_name":"PreToolUse"}"#);
     hook(r#"{"hook_event_name":"PermissionRequest"}"#);
     assert_eq!(notices(&sent_to), notice.repeat(2));
+
+    let app_lock = home.join(".swarm/app.lock");
+    let held = hold_app_lock(&app_lock);
+    hook(r#"{"hook_event_name":"PreToolUse"}"#);
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice.repeat(2));
+    drop(held);
+    hook(r#"{"hook_event_name":"PreToolUse"}"#);
+    hook(r#"{"hook_event_name":"PermissionRequest"}"#);
+    assert_eq!(notices(&sent_to), notice.repeat(3));
     std::fs::remove_dir_all(&home).unwrap();
 }
 

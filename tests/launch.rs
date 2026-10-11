@@ -84,28 +84,22 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     let home = scratch("trust");
     // The owner gave standing consent for folder trust (ADR 0043).
     std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
-    let profiles = ["a", "b"].map(|name| home.join(".claude/.profiles").join(name));
+    let profiles = ["work", "personal"].map(|name| home.join(".claude/.profiles").join(name));
     for dir in &profiles {
         std::fs::create_dir_all(dir).unwrap();
     }
-    // yelo keeps its own data next to the profiles, in hidden dirs that no pane reads.
     let hidden = home.join(".claude/.profiles/.session-map");
     std::fs::create_dir_all(&hidden).unwrap();
-    let rows: Vec<_> = profiles
-        .iter()
-        .zip(["a", "b"])
-        .map(|(dir, name)| {
-            serde_json::json!({"name": name, "dir": dir, "signed_in": true, "remaining": 50})
-        })
-        .collect();
-    let list = serde_json::Value::from(rows);
+    tool(
+        &home,
+        "claude",
+        r#"if [ "$*" = 'auth status' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
+    );
     tool(
         &home,
         "yelo",
-        &format!("case \"$*\" in *pick*) echo '{{\"name\":\"a\"}}' ;; *) echo '{list}' ;; esac"),
+        r#"echo '[{"provider":"claude","label":"cl·work","pct":30,"state":"ok","asOf":'"$(/bin/date +%s)"'},{"provider":"claude","label":"cl·personal","pct":75,"state":"ok","asOf":'"$(/bin/date +%s)"'}]'"#,
     );
-    // Launch starts only a runner whose CLI is on PATH (ADR 0032).
-    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".config/agent-routing")).unwrap();
     std::fs::write(
         home.join(".config/agent-routing/roles.json"),
@@ -155,22 +149,32 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         );
     }
 
-    // --account b: the pane gets b's CLAUDE_CONFIG_DIR, so only b's config needs the entry.
-    let only_b = launch("seat-b", "only-b", Some("b"));
+    // A named account trusts only the config that its pane reads.
+    let only_b = launch("seat-personal", "only-personal", Some("personal"));
     assert!(trusted(&profiles[1].join(".claude.json"), &only_b));
     assert!(!trusted(&profiles[0].join(".claude.json"), &only_b));
     assert!(!trusted(&home.join(".claude.json"), &only_b));
 
-    // --account auto: yelo picks a, then b on every later call, as when usage moves in between.
-    // The pane must get the account whose config got the entry.
-    tool(
-        &home,
-        "yelo",
-        &format!(
-            "case \"$*\" in *pick*) if [ -e \"$HOME/picked\" ]; then echo '{{\"name\":\"b\"}}'; \
-             else touch \"$HOME/picked\"; echo '{{\"name\":\"a\"}}'; fi ;; *) echo '{list}' ;; esac"
-        ),
+    let native_default = launch("seat-default", "only-default", Some("default"));
+    assert!(trusted(&home.join(".claude.json"), &native_default));
+    assert!(!trusted(
+        &home.join(".claude/.claude.json"),
+        &native_default
+    ));
+    let default_script =
+        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-default.sh")))
+            .unwrap();
+    assert!(
+        default_script.contains("'-u' 'CLAUDE_CONFIG_DIR'"),
+        "{default_script}"
     );
+    assert!(
+        !default_script.contains("CLAUDE_CONFIG_DIR="),
+        "{default_script}"
+    );
+
+    // Auto and the pane use the same native account home.
+    std::fs::write(home.join("native-reads"), "").unwrap();
     let cwd = git_repo(&home, "auto");
     let output = swarm(
         &home,
@@ -186,7 +190,17 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         ],
     );
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stderr(&output).contains("account a"), "{}", stderr(&output));
+    let native_reads = std::fs::read_to_string(home.join("native-reads")).unwrap();
+    assert_eq!(
+        native_reads.lines().count(),
+        3,
+        "the role probe, Auto and pane must share one native account read"
+    );
+    assert!(
+        stderr(&output).contains("account work"),
+        "{}",
+        stderr(&output)
+    );
     // The app shows the role's model before the chair writes its first log.
     assert!(
         stderr(&output).contains("model opus"),
@@ -1024,8 +1038,12 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(stderr(&no_yelo).contains("claude uses its own login"));
     assert!(script("chat-no-yelo").contains("'--model' 'opus' '--effort' 'high'"));
 
-    // A stuck yelo costs `auto` its 2 s read limit, not the whole launch.
-    tool(&home, "yelo", "sleep 8");
+    // An unavailable native read keeps the scheduler fail-open and Auto on the CLI login.
+    tool(
+        &home,
+        "claude",
+        "if [ \"$*\" = 'auth status' ]; then exec /bin/sleep 8; fi",
+    );
     let started = std::time::Instant::now();
     let stuck = swarm(
         &home,
@@ -1043,7 +1061,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     assert!(stuck.status.success(), "{}", stderr(&stuck));
     assert!(started.elapsed() < std::time::Duration::from_secs(8));
     assert!(
-        stderr(&stuck).contains("yelo did not answer within 2 s; claude uses its own login"),
+        stderr(&stuck).contains("no automatic account for claude; claude uses its own login"),
         "{}",
         stderr(&stuck)
     );
@@ -1513,4 +1531,299 @@ fn a_resumed_claude_seats_approve_command_plans_the_folder_it_reports() {
 
     let err = launch("seat-2");
     assert!(!err.contains("trust-pending claude"), "{err}");
+}
+
+#[test]
+fn invalid_codex_home_does_not_disable_signed_out_or_named_launch_skips() {
+    let home = scratch("personal-invalid-home");
+    let env = trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-personal")).unwrap();
+    std::fs::create_dir_all(home.join(".codex-Spare")).unwrap();
+    tool(
+        &home,
+        "codex",
+        &include_str!("fixtures/accounts/work-app-server.sh")
+            .replace("*/.codex-personal)", "*/.codex-personal|*/.codex)"),
+    );
+    let env: Vec<_> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    for (seat, account, reason) in [
+        ("personal", None, "no codex account is signed in"),
+        ("spare", Some("Spare"), "no codex account named Spare"),
+    ] {
+        let mut args = vec!["launch", seat, "review.deep"];
+        if let Some(account) = account {
+            args.extend(["--account", account]);
+        }
+        let output = swarm(&home, &env, &args);
+        let text = stderr(&output);
+        assert!(!output.status.success(), "{text}");
+        assert!(text.contains(reason), "{text}");
+        assert!(text.contains("no runner can run"), "{text}");
+        assert!(!text.contains("running"), "{text}");
+    }
+}
+
+#[test]
+fn invalid_codex_home_keeps_real_auth_read_failure_fail_open() {
+    let home = scratch("work-invalid-home-read-failure");
+    trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-Work")).unwrap();
+    tool(&home, "codex", "exit 1");
+    let output = swarm(&home, &[], &["roles", "get", "review.deep"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["runnerId"], "review.deep#1");
+    assert_eq!(resolved["skipped"], serde_json::json!([]));
+}
+
+#[test]
+fn cached_api_key_no_source_keeps_real_auth_read_failure_fail_open() {
+    let home = scratch("personal-cached-auth-read-failure");
+    let env = trust_session(&home);
+    std::fs::create_dir_all(home.join(".codex-personal")).unwrap();
+    std::fs::create_dir_all(home.join(".codex-work")).unwrap();
+    let cli = include_str!("fixtures/accounts/work-usage-app-server.sh")
+        .replace("*/.codex-work)", "*/.codex-spare)");
+    tool(&home, "codex", &cli);
+    let refresh = swarm(
+        &home,
+        &[],
+        &["usage", "--refresh", "--provider", "codex", "--json"],
+    );
+    assert!(refresh.status.success(), "{}", stderr(&refresh));
+    tool(
+        &home,
+        "codex",
+        &cli.replace(
+            "echo '{\"id\":2,\"result\":{\"account\":{\"type\":\"apiKey\"}}}'",
+            "exit 1",
+        ),
+    );
+    let accounts = swarm(&home, &[], &["accounts", "--provider", "codex", "--json"]);
+    assert!(accounts.status.success(), "{}", stderr(&accounts));
+    let list: serde_json::Value = serde_json::from_slice(&accounts.stdout).unwrap();
+    let rows = list["accounts"].as_array().unwrap();
+    let personal = rows.iter().find(|row| row["name"] == "personal").unwrap();
+    assert_eq!(personal["auth_state"], "unavailable");
+    assert_eq!(personal["usage_state"], "no_source");
+    let work = rows.iter().find(|row| row["name"] == "work").unwrap();
+    assert_eq!(work["auth_state"], "signed_out");
+    assert!(rows.iter().all(|row| row.get("invalid_home").is_none()));
+    let env: Vec<_> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let output = swarm(&home, &env, &["launch", "personal", "review.deep"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("swarm: review.deep: running codex/gpt-6-luna/high"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!stderr(&output).contains("no codex account is signed in"));
+}
+
+#[test]
+fn named_launch_reuses_the_role_probe_deadline() {
+    let home = scratch("work-account-deadline");
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    tool(
+        &home,
+        "claude",
+        "echo probe >> \"$HOME/native-reads\"; exec /bin/sleep 25",
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/fake.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    ).unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let start = std::time::Instant::now();
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("authentication is unavailable"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(3),
+        "{:?}",
+        start.elapsed()
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("native-reads"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}
+
+fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
+    let home = scratch(role);
+    std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
+    std::fs::write(home.join(".swarm/consent.json"), r#"{"trust":"standing"}"#).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true}'"#,
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = printf chair\nspawn = printf pane-work\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();
+    let session = swarm(
+        &home,
+        &[("SWARM_ADAPTER", "fake")],
+        &["session", "new", "lane"],
+    );
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let cwd = git_repo(&home, "work-project")
+        .to_string_lossy()
+        .into_owned();
+    (home, session, cwd)
+}
+
+#[test]
+fn slow_working_auth_is_read_once_by_role_and_named_launch() {
+    let (home, session, cwd) = account_launch_fixture("work-slow-probe");
+    std::fs::create_dir_all(home.join(".claude/.profiles/personal")).unwrap();
+    tool(
+        &home,
+        "claude",
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.1; echo '{"loggedIn":true}'"#,
+    );
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
+    assert_eq!(
+        std::fs::read_to_string(home.join("native-reads"))
+            .unwrap()
+            .lines()
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn account_budget_starts_after_the_herdr_check() {
+    let (home, session, cwd) = account_launch_fixture("personal-herdr-budget");
+    let adapter = std::fs::read(home.join(".swarm/adapters/fake.conf")).unwrap();
+    std::fs::write(home.join(".swarm/adapters/herdr.conf"), adapter).unwrap();
+    tool(
+        &home,
+        "herdr",
+        "test \"$*\" = status || exit 8; /bin/sleep 2.2",
+    );
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "herdr"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "chat",
+            "--model",
+            "opus",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
+}
+
+#[test]
+fn account_budget_starts_after_a_waiting_store_open() {
+    let (home, session, cwd) = account_launch_fixture("spare-store-budget");
+    let connection = rusqlite::Connection::open(home.join(".swarm/swarm.db")).unwrap();
+    connection
+        .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        connection.execute_batch("COMMIT;").unwrap();
+    });
+    let started = std::time::Instant::now();
+    let output = swarm(
+        &home,
+        &[
+            ("SWARM_ADAPTER", "fake"),
+            ("SWARM_SESSION_ID", &session),
+            ("SWARM_AGENT_ID", "orchestrator"),
+        ],
+        &[
+            "launch",
+            "seat",
+            "chat",
+            "--model",
+            "opus",
+            "--provider",
+            "claude",
+            "--account",
+            "work",
+            "--cwd",
+            &cwd,
+        ],
+    );
+    release.join().unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).contains("account work"));
 }

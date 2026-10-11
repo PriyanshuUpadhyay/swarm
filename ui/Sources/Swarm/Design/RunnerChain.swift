@@ -1,25 +1,22 @@
 import SwiftUI
 import SwarmCore
 
-/// A provider as a round letter mark. The repo ships no provider logos.
+/// A provider symbol, with a letter for a provider the app does not know.
 struct ProviderMark: View {
     let provider: String
+    var fallback: String?
 
     var body: some View {
-        Text(Self.letter(provider))
-            .font(.caption2.weight(.bold))
-            .frame(width: DesignTokens.Size.providerMark, height: DesignTokens.Size.providerMark)
-            .overlay(Circle().strokeBorder(.secondary, lineWidth: DesignTokens.Size.hairline))
-            .accessibilityHidden(true)
-    }
-
-    static func letter(_ provider: String) -> String {
-        switch provider {
-        // Codex takes X so it does not read as a second Claude.
-        case "codex": "X"
-        case "agy": "G"
-        default: String(provider.prefix(1)).uppercased()
+        Group {
+            if let symbol = ProviderGlyph.symbol(provider: provider) {
+                Image(systemName: symbol)
+            } else {
+                Text(fallback ?? ChatTab.badge(provider))
+            }
         }
+        .font(.caption2.weight(.bold))
+        .frame(width: DesignTokens.Size.providerMark, height: DesignTokens.Size.providerMark)
+        .accessibilityLabel(provider)
     }
 }
 
@@ -72,6 +69,7 @@ extension ProfileStatus {
 /// A profile's runners in order as chips, marked from the last launch check. It shows as many
 /// chips as the width allows, then "+N"; the chip the next launch takes always stays.
 struct RunnerChain: View {
+    @Environment(\.designTokens) private var tokens
     let runners: [SwarmRunner]
     let check: SwarmProfileCheck?
     var providers: [SwarmProvider] = []
@@ -84,11 +82,12 @@ struct RunnerChain: View {
             ForEach(Array(stride(from: runners.count, through: 1, by: -1)), id: \.self) { limit in
                 chain(ChainFit(count: runners.count, pick: check?.pick, limit: limit), states: states)
             }
+            chain(ChainFit(count: runners.count, pick: check?.pick, limit: 1), states: states, truncate: true)
         }
     }
 
-    private func chain(_ fit: ChainFit, states: [RunnerChipState]) -> some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+    private func chain(_ fit: ChainFit, states: [RunnerChipState], truncate: Bool = false) -> some View {
+        HStack(spacing: tokens.spacing.xs) {
             if fit.leadingCut {
                 Text("…").foregroundStyle(.secondary)
                     .help(hiddenList(0..<(fit.shown.first ?? 0)))
@@ -107,7 +106,7 @@ struct RunnerChain: View {
                     .accessibilityLabel("\(rest.count) more: \(hiddenList(rest))")
             }
         }
-        .fixedSize()
+        .fixedSize(horizontal: !truncate, vertical: true)
     }
 
     @ViewBuilder
@@ -146,22 +145,25 @@ struct RunnerChain: View {
 }
 
 private struct ChipContent: View {
+    @Environment(\.designTokens) private var tokens
     let runner: SwarmRunner
     let state: RunnerChipState
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: tokens.spacing.xs) {
             ProviderMark(provider: runner.provider)
             Text("\(runner.model)·\(Self.effort(runner.effort))")
-                .font(DesignTokens.mono)
+                .font(tokens.mono)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .strikethrough(isSkipped)
             if case .skipped(let short, _) = state {
                 Text("(\(short))").font(.caption)
             }
         }
         .foregroundStyle(isSkipped ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-        .padding(.horizontal, DesignTokens.Spacing.xs)
-        .padding(.vertical, DesignTokens.Spacing.xxs)
+        .padding(.horizontal, tokens.spacing.xs)
+        .padding(.vertical, tokens.spacing.xxs)
         .background {
             if state == .next {
                 RoundedRectangle(cornerRadius: DesignTokens.Radius.control)

@@ -12,6 +12,10 @@ public enum ChildProcessEnvironment {
         "TMUX_PANE",
     ]
 
+    static func swarmCall(overrides: [String: String], inherited: [String: String]) -> [String: String] {
+        removingInheritedAgentIdentity(from: inherited).merging(overrides) { _, requested in requested }
+    }
+
     public static func removingInheritedAgentIdentity(
         from environment: [String: String]
     ) -> [String: String] {

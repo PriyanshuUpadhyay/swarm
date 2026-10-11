@@ -4,6 +4,7 @@ import Foundation
 public enum PaneStripLayout {
     /// About 60 terminal columns at 12 pt.
     public static let minimumColumnWidth: CGFloat = 440
+    public static let minimumChatWidth: CGFloat = 400
 
     /// Pane indexes per column. An odd count starts with one full-height pane; the rest pair up.
     public static func columns(count: Int) -> [[Int]] {
@@ -39,9 +40,11 @@ public enum PaneStripLayout {
         }
     }
 
-    /// The chat page leaves the last 10% of the main area to the first agent column.
-    public static func widths(main: CGFloat) -> (chat: CGFloat, column: CGFloat) {
-        (main * 0.9, columnWidth(main: main, preferred: nil))
+    /// With no drag the chat keeps its 90% default. A drag leaves 440 pt for the first column.
+    /// Below 840 pt the 400 pt chat minimum wins and the strip scrolls (ADR 0054).
+    public static func widths(main: CGFloat, chat: CGFloat? = nil) -> (chat: CGFloat, column: CGFloat) {
+        let width = chat.map { min(max($0, minimumChatWidth), max(minimumChatWidth, main - minimumColumnWidth)) } ?? main * 0.9
+        return (width, columnWidth(main: main, preferred: nil))
     }
 
     /// The owner's dragged column width, kept between 440 pt and 90% of the main area (ADR 0026).

@@ -8,6 +8,7 @@ struct StatusGlyph: View {
     /// The word for the tooltip and VoiceOver when the caller's state is not an agent status, such as
     /// "Open" for a step drawn with the `.ended` ring.
     var title: String?
+    var helpText: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var spins: Bool { status == .working && !reduceMotion }
@@ -23,7 +24,7 @@ struct StatusGlyph: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(title ?? Self.title(status))
-            .help(title ?? Self.title(status))
+            .help(helpText ?? title ?? Self.title(status))
     }
 
     static func symbol(_ status: AgentStatus) -> String {

@@ -4,6 +4,7 @@ import Foundation
 public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     public var sessions: [SwarmSession]
     public var title: String
+    public var cliName: String?
     public var isRunning: Bool?
     public var liveAgents: Int?
     public var totalAgents: Int
@@ -13,20 +14,33 @@ public struct SwarmProjectSession: Sendable, Hashable, Identifiable {
     /// How many of the current session's agents are in each status.
     public var statusCounts: [AgentStatus: Int]
 
+    private let chairLogActivity: Int?
+
     public var session: SwarmSession { sessions[0] }
     public var id: SwarmSessionID { session.id }
     public var lastActivity: Int {
-        sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
+        let bus = sessions.map(SwarmSessionInteraction.lastActivity).max() ?? session.createdAt
+        return max(bus, chairLogActivity ?? bus)
     }
 
     public init(
         sessions: [SwarmSession], title: String,
         isRunning: Bool? = nil, liveAgents: Int? = nil, totalAgents: Int? = nil,
-        provider: String? = nil, status: AgentStatus? = nil, statusCounts: [AgentStatus: Int] = [:]
+        provider: String? = nil, status: AgentStatus? = nil, statusCounts: [AgentStatus: Int] = [:],
+        cliName: String? = nil, resolvedChairLog: String? = nil
     ) {
         precondition(!sessions.isEmpty)
+        // Snapshot one stat per chat, so sorting and rendering use the same activity value.
+        if let path = resolvedChairLog ?? sessions[0].chairLog,
+           let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+           let modified = attributes[.modificationDate] as? Date {
+            chairLogActivity = Int(modified.timeIntervalSince1970)
+        } else {
+            chairLogActivity = nil
+        }
         self.sessions = sessions
         self.title = title
+        self.cliName = cliName
         self.isRunning = isRunning
         self.liveAgents = liveAgents
         self.totalAgents = totalAgents ?? sessions.reduce(0) { $0 + $1.agents }
@@ -279,8 +293,13 @@ public actor SwarmSessionDiscovery {
     private var locations: [String: SwarmPathIdentity] = [:]
     private var titles: [SwarmSessionID: String] = [:]
     private var titleLogs: [SwarmSessionID: String] = [:]
+    var resolvedChairLogs: [SwarmSessionID: String] { titleLogs }
     private var titleMisses: [SwarmSessionID: Date] = [:]
     private var titleSearches: [SwarmSessionID: (provider: String?, chairID: SwarmChairID?, at: Date)] = [:]
+    private var cliHomes: (homes: [URL], at: Date)?
+    private var cliNameFiles: [String: (stamp: [CLINameFileStamp?], names: [String: String])] = [:]
+    private var claudeNameReaders: [String: ClaudeNameReader] = [:]
+    private var codexIDs: [String: (stamp: CLINameFileStamp?, id: String?)] = [:]
     private var worktreeListings: [String: (entries: [WorktreeEntry], at: Date)] = [:]
     private var worktreeGenerations: [String: UInt64] = [:]
     private let profiles: any SwarmProfileSource
@@ -316,8 +335,14 @@ public actor SwarmSessionDiscovery {
         )
         return grouped.mapValues { matches in
             SwarmSessionListing.chatGroups(matches).map { group in
-                SwarmProjectSession(sessions: group, title: title(for: group[0]))
+                SwarmProjectSession(sessions: group, title: title(for: group[0]), resolvedChairLog: titleLogs[group[0].id])
             }
+        }
+    }
+
+    public func archivedChats(_ sessions: [SwarmSession]) -> [SwarmProjectSession] {
+        SwarmSessionListing.chatGroups(sessions.filter { $0.archivedAt != nil }).map { group in
+            SwarmProjectSession(sessions: group, title: title(for: group[0]))
         }
     }
 
@@ -431,6 +456,69 @@ public actor SwarmSessionDiscovery {
         return titles
     }
 
+    func resolvedCLINames(
+        sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]], now: Date = .now
+    ) async -> [SwarmSessionID: String] {
+        var result: [SwarmSessionID: String] = [:]
+        var listedLogs: Set<String> = []
+        var activeCodexLogs: Set<String> = []
+        for session in sessions where session.archivedAt == nil {
+            let provider = session.chairProvider ?? agentsBySession[session.id]?
+                .first(where: { $0.id == SwarmPanePolicy.chair })?.provider
+            let log = titleLogs[session.id] ?? session.chairLog
+            if let log { listedLogs.insert(log) }
+            if provider == "claude", let log {
+                var reader = claudeNameReaders[log] ?? ClaudeNameReader()
+                result[session.id] = reader.name(path: log)
+                claudeNameReaders[log] = reader
+            } else if provider == "codex" {
+                if let log { activeCodexLogs.insert(log) }
+                if cliHomes == nil || now.timeIntervalSince(cliHomes!.at) >= 60 {
+                    let accounts = try? await profiles.accounts(provider: "codex")
+                    cliHomes = (ChairLogDiscovery.homes(
+                        provider: "codex", accountHomes: accounts?.accounts.map(\.home) ?? [], userHome: home
+                    ), now)
+                }
+                // The log's owning account wins; never use another account's duplicate thread id.
+                let homes = cliHomes!.homes
+                let owner = log.flatMap { log in homes.filter { log.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count } }
+                let id = session.chairID?.rawValue ?? log.flatMap(cachedCodexID)
+                guard let id else { continue }
+                for root in owner.map({ [$0] }) ?? homes {
+                    let names = cachedCLINames(files: [root.appendingPathComponent("session_index.jsonl")]) {
+                        ChairLogTitle.codexNames(home: root)
+                    }
+                    if let name = names[id] { result[session.id] = name; break }
+                }
+            }
+        }
+        claudeNameReaders = claudeNameReaders.filter { listedLogs.contains($0.key) }
+        codexIDs = codexIDs.filter { activeCodexLogs.contains($0.key) }
+        return result
+    }
+
+    private func cachedCodexID(path: String) -> String? {
+        let stamp = CLINameFileStamp(path: path)
+        if let cached = codexIDs[path] {
+            // The first-line ID is immutable; appends change size and mtime, but not the file.
+            if let id = cached.id, let number = stamp?.fileNumber,
+               cached.stamp?.fileNumber == number { return id }
+            if cached.stamp == stamp { return cached.id }
+        }
+        let id = ChairLogTitle.codexID(path: path)
+        codexIDs[path] = (stamp, id)
+        return id
+    }
+
+    private func cachedCLINames(files: [URL], read: () -> [String: String]) -> [String: String] {
+        let key = files[0].path
+        let stamp = files.map { CLINameFileStamp(path: $0.path) }
+        if let cached = cliNameFiles[key], cached.stamp == stamp { return cached.names }
+        let names = read()
+        cliNameFiles[key] = (stamp, names)
+        return names
+    }
+
     public static func identity(
         for path: String, repositoryPathsResolver: (String) -> GitRepositoryPaths?
     ) -> SwarmPathIdentity {
@@ -454,5 +542,19 @@ public actor SwarmSessionDiscovery {
         let title = SwarmSessionTitle.make(sessionID: session.id, firstUserPrompt: prompt)
         titles[session.id] = title
         return title
+    }
+}
+
+struct CLINameFileStamp: Equatable {
+    let size: UInt64
+    let modified: Date
+    let fileNumber: UInt64?
+
+    init?(path: String) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber, let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.size = size.uint64Value
+        self.modified = modified
+        self.fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
     }
 }

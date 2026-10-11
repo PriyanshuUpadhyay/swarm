@@ -4,6 +4,8 @@ const SWARM_DB: &str = "swarm.db";
 const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
+/// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
+pub const APP_LOCK: &str = "app.lock";
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
 /// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
@@ -77,6 +79,10 @@ pub fn root_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(home()?).join(SWARM_DIR);
     claim(&root)?;
     Ok(root)
+}
+
+pub fn skills_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(root_dir()?.join("skills"))
 }
 
 /// Prove that swarm owns `root` before anything writes there (ADR 0036). A missing or empty
@@ -160,6 +166,60 @@ pub fn sqlite_db() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::{branch_folder, branch_home};
+
+    #[test]
+    fn settings_paths_match_the_shared_swift_vectors() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/settings-paths.json")).unwrap();
+        for vector in vectors.as_array().unwrap() {
+            let home = vector["explicit"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    branch_home(
+                        vector["home"].as_str().unwrap(),
+                        vector["branch"].as_str().unwrap(),
+                    )
+                });
+            let lock = std::path::Path::new(&home)
+                .join(super::SWARM_DIR)
+                .join(super::APP_LOCK);
+            assert_eq!(lock.to_str().unwrap(), vector["lock"].as_str().unwrap());
+            let mut probe = std::process::Command::new(std::env::current_exe().unwrap());
+            probe
+                .env_clear()
+                .env("HOME", vector["home"].as_str().unwrap())
+                .env(
+                    "SWARM_TEST_GUARDS_EXPECTED",
+                    vector["guards"].as_str().unwrap(),
+                )
+                .args(["--exact", "paths::tests::guards_path_probe"]);
+            if let Some(explicit) = vector["explicit"].as_str() {
+                probe.env("SWARM_HOME", explicit);
+            }
+            if let Some(guards) = vector["guardsOverride"].as_str() {
+                probe.env("SWARM_GUARDS", guards);
+            }
+            let output = probe.output().unwrap();
+            assert!(output.status.success(), "{vector}: {output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "guard path probe did not run: {vector}: {output:?}"
+            );
+        }
+    }
+
+    // A subprocess keeps each vector's environment separate from concurrent tests.
+    #[test]
+    fn guards_path_probe() {
+        let Ok(expected) = std::env::var("SWARM_TEST_GUARDS_EXPECTED") else {
+            return;
+        };
+        assert_eq!(
+            super::guards_file().unwrap(),
+            std::path::PathBuf::from(expected)
+        );
+    }
 
     /// Shared with `ui/Tests/SwarmCoreTests/SwarmHomeTests.swift`; keep both lists the same.
     const VECTORS: [(&str, Option<&str>); 15] = [

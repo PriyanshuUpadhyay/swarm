@@ -4,6 +4,7 @@ import SwarmCore
 /// A `!` command the owner ran in Claude Code's shell mode: `$ command` on one line, and its output
 /// under it in a mono box folded at 50 lines.
 struct TranscriptShellRow: View {
+    @Environment(\.designTokens) private var tokens
     let run: TranscriptShellRun
     var revealForSearch = false
     @State private var showAll = false
@@ -16,21 +17,21 @@ struct TranscriptShellRow: View {
         // preview, the only cost is one byte scan of the output for its line count.
         let preview = TranscriptTextPreview(run.output, lineLimit: Self.foldLineLimit)
         let expanded = showAll || revealForSearch
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
             if let command = run.command {
-                HStack(spacing: DesignTokens.Spacing.s) {
+                HStack(spacing: tokens.spacing.s) {
                     if let exitCode = run.exitCode {
                         TranscriptStatusGlyph(state: exitCode == 0 ? .finished : .failed)
                     } else {
                         Text(verbatim: "$")
-                            .font(DesignTokens.mono)
+                            .font(tokens.mono)
                             .foregroundStyle(.secondary)
                             .frame(width: DesignTokens.Size.glyphSlot)
                     }
                     Text(verbatim: command)
-                        .font(DesignTokens.mono)
+                        .font(tokens.mono)
                         .textSelection(.enabled)
-                    Spacer(minLength: DesignTokens.Spacing.s)
+                    Spacer(minLength: tokens.spacing.s)
                     Text(verbatim: note(lineCount: preview.lineCount))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(noteColor)
@@ -43,7 +44,7 @@ struct TranscriptShellRow: View {
                     TranscriptBoundedTextView(text: expanded ? run.output : preview.text)
                     if preview.isTruncated, !revealForSearch {
                         TranscriptShowAllButton(showAll: $showAll, hiddenLineCount: preview.hiddenLineCount)
-                            .padding([.horizontal, .bottom], DesignTokens.Spacing.s)
+                            .padding([.horizontal, .bottom], tokens.spacing.s)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,7 +53,7 @@ struct TranscriptShellRow: View {
                     RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
                         .strokeBorder(.quaternary, lineWidth: DesignTokens.Size.hairline)
                 )
-                .padding(.leading, DesignTokens.Size.glyphSlot + DesignTokens.Spacing.s)
+                .padding(.leading, DesignTokens.Size.glyphSlot + tokens.spacing.s)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Shell output")
             }

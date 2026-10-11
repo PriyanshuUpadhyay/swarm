@@ -27,6 +27,24 @@ struct PaneStripLayoutTests {
         #expect(narrow.column == 440)
     }
 
+    @Test("A dragged chat leaves 440 pt for the first column and stays at least 400 pt")
+    func draggedChatWidth() {
+        func width(main: CGFloat, chat: CGFloat?) -> CGFloat {
+            PaneStripLayout.widths(main: main, chat: chat).chat
+        }
+        #expect(width(main: 1500, chat: 700) == 700)
+        #expect(width(main: 1500, chat: 100) == 400)
+        #expect(width(main: 1500, chat: 2000) == 1060)
+        #expect(width(main: 900, chat: 600) == 460)
+        #expect(width(main: 840, chat: 600) == 400)
+        #expect(width(main: 680, chat: 600) == 400)
+        #expect(width(main: 400, chat: 100) == 400)
+        // Reset drops the preferred width and restores the existing default.
+        #expect(width(main: 1500, chat: nil) == 1350)
+        #expect(width(main: 900, chat: nil) == 810)
+        #expect(PaneStripLayout.widths(main: 1500, chat: 700).column == 500)
+    }
+
     @Test("A dragged column width stays between 440 pt and 90% of the main area")
     func columnWidth() {
         func width(_ main: CGFloat, _ preferred: CGFloat?) -> CGFloat {

@@ -4,25 +4,26 @@ import SwarmCore
 /// A slash command the owner typed: a mono capsule with its name, then its arguments, a closed
 /// skill body, and the command's local output. It is drawn inside the user's bubble.
 struct TranscriptCommandChipView: View {
+    @Environment(\.designTokens) private var tokens
     let chip: TranscriptCommandChip
     var revealForSearch = false
     @State private var skillExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.s) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
+        VStack(alignment: .leading, spacing: tokens.spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: tokens.spacing.s) {
+                HStack(spacing: tokens.spacing.xs) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
                     Text(verbatim: chip.name)
                 }
-                .font(DesignTokens.mono)
-                .padding(.horizontal, DesignTokens.Spacing.s)
-                .padding(.vertical, DesignTokens.Spacing.xxs)
+                .font(tokens.mono)
+                .padding(.horizontal, tokens.spacing.s)
+                .padding(.vertical, tokens.spacing.xxs)
                 .background(DesignTokens.userMessageFill, in: Capsule())
                 .overlay(Capsule().strokeBorder(.quaternary, lineWidth: DesignTokens.Size.hairline))
                 if !chip.arguments.isEmpty {
                     Text(verbatim: chip.arguments)
-                        .font(DesignTokens.mono)
+                        .font(tokens.mono)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }

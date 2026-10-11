@@ -23,7 +23,7 @@ enum DesignTokens {
 
     enum Size {
         /// A one-line sidebar row.
-        static let row: CGFloat = 28
+        static func row(density: Density) -> CGFloat { AppearanceScale.rowHeight(density: density) }
         /// A pane header.
         static let paneHeader: CGFloat = 24
         static let tabMinWidth: CGFloat = 120
@@ -41,15 +41,19 @@ enum DesignTokens {
         static let profileSheet: CGFloat = 680
         /// The hooks setup sheet: wide enough for a split diff, as the profile editor is.
         static let hooksSheet: CGFloat = 680
+        static let settingsWidth: CGFloat = 760
+        static let settingsHeight: CGFloat = 520
+        static let settingsSidebar: CGFloat = 180
         /// The hooks setup conflicts stop growing here and scroll.
         static let conflictList: CGFloat = 180
         /// The setup sheet's group list scrolls past this, so its buttons stay on a 13-inch screen.
         static let setupGroupList: CGFloat = 420
         /// The profile name column on the Agent profiles page.
         static let profileName: CGFloat = 150
+        static let usagePctField: CGFloat = 48
         /// The health pill column, so every row's chain ends at the same place.
         static let healthPill: CGFloat = 110
-        /// The round letter mark of a provider in a runner chip.
+        /// The provider symbol or fallback letter in a row or runner chip.
         static let providerMark: CGFloat = 15
         /// One runner card's height before it is measured, and the card list's least height.
         static let runnerCard: CGFloat = 104
@@ -73,12 +77,20 @@ enum DesignTokens {
         static let paletteTop: CGFloat = 72
         static let focusRing: CGFloat = 2
         static let hairline: CGFloat = 1
+        static let skillNode: CGFloat = 180
+        static let skillText: CGFloat = 150
     }
 
     /// Body text is 13 pt; this spacing gives it about 1.45 line height.
-    static let body = Font.system(size: 13)
-    static let bodyLineSpacing: CGFloat = 5.5
-    static let mono = Font.system(size: 12, design: .monospaced)
+    static func body(textSize: TextSize) -> Font {
+        Font.system(size: AppearanceScale.fonts(textSize: textSize).body)
+    }
+    static func bodyLineSpacing(textSize: TextSize) -> CGFloat {
+        5.5 * AppearanceScale.fonts(textSize: textSize).body / 13
+    }
+    static func mono(textSize: TextSize) -> Font {
+        Font.system(size: AppearanceScale.fonts(textSize: textSize).mono, design: .monospaced)
+    }
 
     /// Quiet fills: a selected row, a user message, a match highlight.
     static let selectionFill = Color.primary.opacity(0.08)

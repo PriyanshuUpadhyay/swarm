@@ -11,20 +11,22 @@ public struct SessionRowPresentation: Sendable, Hashable {
 
     public static func make(_ row: ChatRow, now: Int) -> SessionRowPresentation {
         let state = state(of: row.session)
-        let age = max(0, now - row.session.lastActivity)
-        let ageText: String
-        if age < 60 { ageText = "\(age)s" }
-        else if age < 3_600 { ageText = "\(age / 60)m" }
-        else if age < 86_400 { ageText = "\(age / 3_600)h" }
-        else { ageText = "\(age / 86_400)d" }
+        let ageText = ageText(since: row.session.lastActivity, now: now)
 
-        let fallback = "\(row.session.provider ?? "Chat") \(row.id.rawValue.prefix(8))"
-        let title = row.session.title.isEmpty ? fallback : row.session.title
+        let title = ChatTitle.title(row.session)
         let status = state == .ended ? "ended" : row.session.provider ?? "no chair"
         return SessionRowPresentation(
             title: title, caption: "\(row.workspace) · \(status)", age: ageText,
             state: state, provider: row.session.provider
         )
+    }
+
+    public static func ageText(since timestamp: Int, now: Int) -> String {
+        let age = max(0, now - timestamp)
+        if age < 60 { return "\(age)s" }
+        if age < 3_600 { return "\(age / 60)m" }
+        if age < 86_400 { return "\(age / 3_600)h" }
+        return "\(age / 86_400)d"
     }
 
     fileprivate static func state(of row: SwarmProjectSession) -> State {
@@ -48,20 +50,30 @@ public struct ChatRow: Sendable, Hashable, Identifiable {
 }
 
 public struct WorkspaceNode: Sendable, Hashable, Identifiable {
+    public enum Mark: String, Sendable, Hashable { case locked, detached }
+
+    public static func removedPath(for projectPath: String) -> String { projectPath + "#removed" }
+
     public var id: String { path }
     public let path: String
     public let name: String
     public let branch: String?
-    public let sessions: [SwarmProjectSession]
-    public var current: SwarmProjectSession? { sessions.first }
-    public var state: SessionRowPresentation.State? {
-        current.map(SessionRowPresentation.state)
-    }
+    public let missing: Bool
+    public let mark: Mark?
+    public let isRemoved: Bool
+    public var canStartChat: Bool { !missing && !isRemoved }
+    public var sessions: [SwarmProjectSession]
 
-    public init(path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil) {
+    public init(
+        path: String, name: String, sessions: [SwarmProjectSession], branch: String? = nil,
+        missing: Bool = false, mark: Mark? = nil, isRemoved: Bool = false
+    ) {
         self.path = path
         self.name = name
         self.branch = branch
+        self.missing = missing
+        self.mark = mark
+        self.isRemoved = isRemoved
         self.sessions = sessions
     }
 }
@@ -73,6 +85,27 @@ public struct ProjectNode: Sendable, Hashable, Identifiable {
     public let workspaces: [WorkspaceNode]
 
     public var name: String { URL(fileURLWithPath: path).lastPathComponent }
+
+    public static func projectPath(for identity: SwarmPathIdentity) -> String {
+        switch identity {
+        case .folder(let path): return path
+        case .repository(let commonDirectory):
+            return [".git", ".bare"].contains(URL(fileURLWithPath: commonDirectory).lastPathComponent)
+                ? URL(fileURLWithPath: commonDirectory).deletingLastPathComponent().path
+                : commonDirectory
+        }
+    }
+    public var mainWorkspacePath: String? { Self.mainWorkspacePath(id, workspaces: workspaces) }
+
+    static func mainWorkspacePath(_ identity: SwarmPathIdentity, workspaces: [WorkspaceNode]) -> String? {
+        let path = projectPath(for: identity)
+        if case .repository(let common) = identity, common != path + "/.git" {
+            return workspaces.first { $0.branch == "main" }?.path
+                ?? workspaces.first { $0.branch == "master" }?.path
+        }
+        return path
+    }
+
     public var chats: [ChatRow] {
         SessionsTree.ordered(workspaces.flatMap { workspace in
             workspace.sessions.compactMap { session in
@@ -110,8 +143,11 @@ public struct SessionsTree: Sendable, Hashable {
     public static func build(
         sessions: [SwarmSession],
         projectPaths: [String] = [],
+        removed: Set<String> = [],
         agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:],
         titles: [SwarmSessionID: String] = [:],
+        cliNames: [SwarmSessionID: String] = [:],
+        chairLogs: [SwarmSessionID: String] = [:],
         repositoryPathsResolver: (String) -> GitRepositoryPaths?,
         worktreeLister: (String) -> [WorktreeEntry]
     ) -> SessionsTree {
@@ -140,7 +176,7 @@ public struct SessionsTree: Sendable, Hashable {
                     id: identity, path: path, launchDirectory: path,
                     workspaces: [WorkspaceNode(
                         path: path, name: URL(fileURLWithPath: path).lastPathComponent,
-                        sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles)
+                        sessions: rows(sessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: chairLogs)
                     )]
                 )
             case .repository(let commonDirectory):
@@ -148,26 +184,36 @@ public struct SessionsTree: Sendable, Hashable {
                 var workspaces = listed.compactMap { entry -> WorkspaceNode? in
                     guard !entry.isBare else { return nil }
                     let matches = sessions.filter { contains($0.cwd, in: entry.path) }
-                    guard !matches.isEmpty || openedProjects[identity] != nil else { return nil }
+                    guard !matches.isEmpty || entry.isPrunable || openedProjects[identity] != nil else { return nil }
                     return WorkspaceNode(
                         path: entry.path,
                         name: entry.branch ?? URL(fileURLWithPath: entry.path).lastPathComponent,
-                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles),
-                        branch: entry.branch
+                        sessions: rows(matches, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: chairLogs),
+                        branch: entry.branch, missing: entry.isPrunable,
+                        mark: entry.isLocked ? .locked : entry.isDetached ? .detached : nil
                     )
                 }
-                let hubSessions = sessions.filter { session in
+                let unmatched = sessions.filter { session in
                     !listed.contains { !$0.isBare && contains(session.cwd, in: $0.path) }
                 }
-                let path = [".git", ".bare"].contains(URL(fileURLWithPath: commonDirectory).lastPathComponent)
-                    ? URL(fileURLWithPath: commonDirectory).deletingLastPathComponent().path
-                    : commonDirectory
-                if !hubSessions.isEmpty {
-                    let hubPath = URL(fileURLWithPath: commonDirectory).lastPathComponent == ".bare"
-                        ? commonDirectory : path
+                let path = ProjectNode.projectPath(for: identity)
+                let removedSessions = unmatched.filter { session in
+                    let cwd = URL(fileURLWithPath: session.cwd).standardized.path
+                    return cwd != path && cwd != commonDirectory && !FileManager.default.fileExists(atPath: cwd)
+                }
+                let removedIDs = Set(removedSessions.map(\.id))
+                let hubSessions = unmatched.filter { !removedIDs.contains($0.id) }
+                if !removedSessions.isEmpty {
                     workspaces.append(WorkspaceNode(
-                        path: hubPath, name: URL(fileURLWithPath: hubPath).lastPathComponent,
-                        sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles)
+                        path: WorkspaceNode.removedPath(for: path), name: "Removed worktrees",
+                        sessions: rows(removedSessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: chairLogs),
+                        isRemoved: true
+                    ))
+                }
+                if !hubSessions.isEmpty {
+                    workspaces.append(WorkspaceNode(
+                        path: path, name: URL(fileURLWithPath: path).lastPathComponent,
+                        sessions: rows(hubSessions, agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: chairLogs)
                     ))
                 }
                 guard !workspaces.isEmpty || openedProjects[identity] != nil else { return nil }
@@ -176,10 +222,10 @@ public struct SessionsTree: Sendable, Hashable {
                     ?? listed.first { !$0.isBare }?.path ?? path
                 return ProjectNode(
                     id: identity, path: path, launchDirectory: launchDirectory,
-                    workspaces: ordered(workspaces)
+                    workspaces: ordered(workspaces, mainPath: ProjectNode.mainWorkspacePath(identity, workspaces: workspaces), hubPath: path)
                 )
             }
-        }.filter { !$0.chats.isEmpty || openedProjects[$0.id] != nil }
+        }.filter { !removed.contains($0.path) && (!$0.chats.isEmpty || openedProjects[$0.id] != nil) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return SessionsTree(projects: projects, agentsBySession: agentsBySession)
     }
@@ -197,12 +243,13 @@ public struct SessionsTree: Sendable, Hashable {
         return chat(id)?.id
     }
 
-    public func windowTitle(for id: SwarmSessionID) -> String? {
+    public func windowTitle(for id: SwarmSessionID, navigation: WorkspaceNavigation) -> String? {
         for project in projects {
             guard let row = project.chats.first(where: {
                 $0.session.sessions.contains { $0.id == id }
             }) else { continue }
-            return "\(project.name) · \(row.session.title)"
+            let title = navigation.title(for: row.session)
+            return "\(navigation.projectTitle(for: project)) · \(title)"
         }
         return nil
     }
@@ -258,21 +305,29 @@ public struct SessionsTree: Sendable, Hashable {
         }
     }
 
-    public static func ordered(_ workspaces: [WorkspaceNode]) -> [WorkspaceNode] {
-        workspaces.sorted { lhs, rhs in
-            let left = lhs.state.map(order) ?? 3
-            let right = rhs.state.map(order) ?? 3
+    /// Stored paths lead; other rows keep a fixed name order. Hub and removed rows follow checkouts.
+    public static func ordered(
+        _ workspaces: [WorkspaceNode], order: [String] = [], mainPath: String? = nil, hubPath: String? = nil
+    ) -> [WorkspaceNode] {
+        let positions = Dictionary(order.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: min)
+        func group(_ workspace: WorkspaceNode) -> Int {
+            if workspace.isRemoved { return 2 }
+            return workspace.path == hubPath && workspace.path != mainPath ? 1 : 0
+        }
+        return workspaces.sorted { lhs, rhs in
+            let left = positions[lhs.path] ?? Int.max
+            let right = positions[rhs.path] ?? Int.max
             if left != right { return left < right }
-            let leftActivity = lhs.current?.lastActivity ?? 0
-            let rightActivity = rhs.current?.lastActivity ?? 0
-            if leftActivity != rightActivity { return leftActivity > rightActivity }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            if group(lhs) != group(rhs) { return group(lhs) < group(rhs) }
+            if (lhs.path == mainPath) != (rhs.path == mainPath) { return lhs.path == mainPath }
+            let nameOrder = lhs.name.localizedStandardCompare(rhs.name)
+            return nameOrder == .orderedSame ? lhs.path < rhs.path : nameOrder == .orderedAscending
         }
     }
 
     private static func rows(
         _ sessions: [SwarmSession], agentsBySession: [SwarmSessionID: [SwarmAgent]],
-        titles: [SwarmSessionID: String]
+        titles: [SwarmSessionID: String], cliNames: [SwarmSessionID: String], chairLogs: [SwarmSessionID: String]
     ) -> [SwarmProjectSession] {
         ordered(SwarmSessionListing.chatGroups(sessions).map {
             let known = $0.allSatisfy { agentsBySession[$0.id] != nil }
@@ -284,12 +339,17 @@ public struct SessionsTree: Sendable, Hashable {
                 ?? agents.first(where: { $0.id == SwarmPanePolicy.chair })?.provider
                 ?? agents.first?.provider
             return SwarmProjectSession(
-                sessions: $0, title: $0.reversed().lazy.compactMap { titles[$0.id] }.first ?? "Chat",
+                sessions: $0, title: ChatTitle.resolve(
+                    appName: nil, cliName: nil,
+                    firstLine: $0.reversed().lazy.compactMap { titles[$0.id] }.first,
+                    provider: provider, id: $0[0].id
+                ),
                 isRunning: running,
                 liveAgents: known ? agents.filter { $0.alive == true }.count : nil,
                 totalAgents: known ? agents.count : nil, provider: provider,
                 status: agentsBySession[$0[0].id].flatMap { AgentStatus.aggregate($0.map(\.status)) },
-                statusCounts: agentsBySession[$0[0].id].map { Dictionary($0.map { ($0.status, 1) }, uniquingKeysWith: +) } ?? [:]
+                statusCounts: agentsBySession[$0[0].id].map { Dictionary($0.map { ($0.status, 1) }, uniquingKeysWith: +) } ?? [:],
+                cliName: $0.lazy.compactMap { cliNames[$0.id] }.first, resolvedChairLog: chairLogs[$0[0].id]
             )
         })
     }
@@ -317,7 +377,7 @@ public struct SessionsTree: Sendable, Hashable {
 
 extension SwarmSessionDiscovery {
     public func tree(
-        sessions: [SwarmSession], projectPaths: [String] = [], bus: any SwarmBus
+        sessions: [SwarmSession], projectPaths: [String] = [], removed: Set<String> = [], bus: any SwarmBus
     ) async throws -> SessionsTree {
         var listings: [String: [WorktreeEntry]] = [:]
         var agentsBySession: [SwarmSessionID: [SwarmAgent]] = [:]
@@ -355,11 +415,12 @@ extension SwarmSessionDiscovery {
         }
         let titleTiming = SwarmPerformance.begin("TitleResolution")
         let titles = await resolvedTitles(sessions: sessions, agentsBySession: agentsBySession)
+        let cliNames = await resolvedCLINames(sessions: sessions, agentsBySession: agentsBySession)
         titleTiming.end(count: titles.count)
         let buildTiming = SwarmPerformance.begin("TreeBuild")
         let tree = SessionsTree.build(
-            sessions: sessions, projectPaths: projectPaths,
-            agentsBySession: agentsBySession, titles: titles,
+            sessions: sessions, projectPaths: projectPaths, removed: removed,
+            agentsBySession: agentsBySession, titles: titles, cliNames: cliNames, chairLogs: resolvedChairLogs,
             repositoryPathsResolver: Git.repositoryPaths,
             worktreeLister: { listings[$0] ?? [] }
         )
