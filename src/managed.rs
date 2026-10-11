@@ -303,9 +303,9 @@ fn validate_link(store: &rusqlite::Connection, plan: &LinkPlan, off: bool) -> Re
         _ => return Err(invalid()),
     };
     if let Some(expected) = expected_record
-        && !recorded
+        && recorded
             .as_ref()
-            .is_some_and(|stored| stored.as_os_str() == expected.as_os_str())
+            .is_none_or(|stored| stored.as_os_str() != expected.as_os_str())
     {
         return Err(format!(
             "swarm: {} is not the recorded link; swarm leaves it",
