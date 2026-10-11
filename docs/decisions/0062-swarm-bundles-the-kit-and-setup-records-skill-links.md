@@ -56,6 +56,11 @@ swarm home, and managed links from each CLI root. The owner settled this choice 
 - Kit paths under ~/.claude/references, ~/.claude/scripts and private ~/.flow stay with dotfiles.
   Bundling the kit does not promise that every workflow runs on a fresh Mac without those inputs.
 
+Amended 2026-10-11: the owner chose to leave existing unrecorded skill entries alone, including
+identical or broken links. Setup lists them as skipped, so they do not block setup or count
+against Skills readiness. Swarm adds only missing links and never claims the owner's entries.
+Changed or unreadable entries remain conflicts. This replaces the handover requirement above.
+
 The chair settled three added details in answer 1648, with the owner free to overturn them here.
 Use the kit README's vendor install set (taste-skill, animate and break-ui); keep other vendor
 files bundled and unlinked. Add swarm skills refresh with no flags, so one tested writer reads the
@@ -71,5 +76,5 @@ app lock, notices, chats or other setup groups (chair answer 1651, Phase 4's err
 - Good: one app carries the kit, each link is visible and reversible, and kit history remains available.
 - Good: app replacement does not break skill targets, and branch refreshes do not change the release copy.
 - Bad: a release refresh discards direct changes to the bundled copy; owner editing waits for slice 4.
-- Bad: foreign or another-build links need an owner handover before setup can use their destinations.
+- Good: setup leaves the owner's existing skill entries alone and adds only missing links.
 - Bad: the app carries vendor files, and hard-coded dotfiles support paths still limit fresh-Mac workflows.

@@ -1363,8 +1363,9 @@ impl SetupPlan {
         // PR #30) adds its plans here; this build has none, so the group is always set up.
         if groups.contains(&"skills") {
             match skills_setup_plans() {
-                Ok((plans, content_id)) => {
+                Ok((plans, content_id, skipped)) => {
                     setup.skills_content = content_id;
+                    setup.skipped.extend(skipped);
                     for plan in plans {
                         setup.push("skills", plan);
                     }
@@ -1458,9 +1459,19 @@ impl SetupPlan {
 }
 
 /// Read managed ownership without creating a database or changing its schema.
-fn skills_setup_plans()
--> Result<(Vec<swarm::managed::Plan>, Option<String>), Box<dyn std::error::Error>> {
-    use swarm::managed::{FilePlan, LinkPlan};
+#[expect(
+    clippy::type_complexity,
+    reason = "Keep the existing setup skipped shape without a new plan type."
+)]
+fn skills_setup_plans() -> Result<
+    (
+        Vec<swarm::managed::Plan>,
+        Option<String>,
+        Vec<(&'static str, String)>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    use swarm::managed::{ConflictKind, FilePlan, LinkPlan};
     let home = std::path::PathBuf::from(env_var("HOME")?);
     let swarm_home = std::path::PathBuf::from(swarm::paths::home()?);
     if !swarm_home.is_absolute() {
@@ -1476,7 +1487,7 @@ fn skills_setup_plans()
             plan.conflicts[0].wanted = "a complete default skills copy".into();
             plan.conflicts[0].fix =
                 "run `swarm skills refresh`, then check the Skills plan again".into();
-            return Ok((vec![plan.into()], None));
+            return Ok((vec![plan.into()], None, Vec::new()));
         }
     };
     let database = root.join("swarm.db");
@@ -1486,6 +1497,7 @@ fn skills_setup_plans()
         swarm::store::open(std::path::Path::new(":memory:"))?
     };
     let mut plans = Vec::new();
+    let mut skipped = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for cli_root in [".claude/skills", ".agents/skills", ".gemini/config/skills"] {
         for link in &manifest.catalog {
@@ -1495,15 +1507,28 @@ fn skills_setup_plans()
                 copy.join(&link.path),
             )?;
             if seen.insert(plan.edits[0].file.clone()) {
-                plans.push(plan.into());
+                if let [conflict] = plan.conflicts.as_slice()
+                    && conflict.kind == ConflictKind::Taken
+                {
+                    skipped.push((
+                        "skills",
+                        format!(
+                            "{} is yours ({}); swarm leaves it",
+                            plan.path.display(),
+                            conflict.found
+                        ),
+                    ));
+                } else {
+                    plans.push(plan.into());
+                }
             }
         }
     }
-    Ok((plans, Some(manifest.content_id)))
+    Ok((plans, Some(manifest.content_id), skipped))
 }
 
 fn skills_setup_status() -> Result<bool, Box<dyn std::error::Error>> {
-    skills_setup_plans().map(|(plans, content)| {
+    skills_setup_plans().map(|(plans, content, _)| {
         content.is_some()
             && plans
                 .iter()
