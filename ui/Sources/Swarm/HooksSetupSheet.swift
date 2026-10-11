@@ -175,12 +175,22 @@ struct HooksSetupSheet: View {
                 } else if !plan.files.isEmpty {
                     fileList(plan)
                 }
-                ForEach(plan.skippedLines, id: \.self) { line in
-                    Label(line, systemImage: "minus.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                if !plan.skippedLines.isEmpty {
+                    DisclosureGroup("Swarm leaves \(plan.skippedLines.count) of these as they are") {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: tokens.spacing.s) {
+                                ForEach(plan.skippedLines, id: \.self) { line in
+                                    Label(line, systemImage: "minus.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: DesignTokens.Size.conflictList)
+                    }
                 }
                 if let failure {
                     Text(verbatim: failure)
