@@ -74,7 +74,7 @@ struct SidebarView<Details: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Sidebar view", selection: Binding(get: { mode }, set: actions.selectMode)) {
+            Picker("Sidebar view", selection: Binding(get: { mode }, set: { actions.selectMode($0) })) {
                 ForEach(WorkspaceSidebarMode.allCases, id: \.self) { mode in
                     Label(mode.rawValue, systemImage: mode.symbol)
                         .labelStyle(.iconOnly)

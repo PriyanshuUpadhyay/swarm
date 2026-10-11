@@ -248,7 +248,7 @@ struct SkillsView: View {
             VStack(alignment: .leading, spacing: tokens.spacing.s) {
                 Text(verbatim: step.stem).font(.headline).accessibilityAddTraits(.isHeader)
                 Text("Name").font(.caption)
-                TextField("Name", text: Binding(get: { model.nameText }, set: model.setName))
+                TextField("Name", text: Binding(get: { model.nameText }, set: { model.setName($0) }))
                     .textFieldStyle(.roundedBorder).disabled(!model.canChangeStructure).focused($focus, equals: .name)
                 Text("Needs").font(.caption)
                 Toggle("None", isOn: Binding(get: { step.needs.isEmpty }, set: { if $0 { model.clearNeeds() } }))
@@ -261,12 +261,12 @@ struct SkillsView: View {
                         .help(allowed ? "" : "This dependency cannot be selected. It can create a cycle or an ambiguous name.")
                 }
                 Text("Holds").font(.caption)
-                TextField("Holds", text: Binding(get: { model.holdsText }, set: model.setHolds))
+                TextField("Holds", text: Binding(get: { model.holdsText }, set: { model.setHolds($0) }))
                     .textFieldStyle(.roundedBorder).disabled(!model.canEdit)
                 Text("Step text").font(.caption)
                 if step.body != nil {
                     Text(verbatim: "## \(step.stem)").font(.caption.monospaced()).foregroundStyle(.secondary)
-                    TextEditor(text: Binding(get: { model.bodyText }, set: model.setBody))
+                    TextEditor(text: Binding(get: { model.bodyText }, set: { model.setBody($0) }))
                         .font(.body.monospaced()).frame(minHeight: DesignTokens.Size.skillText)
                         .disabled(!model.canEdit).accessibilityLabel("Step text")
                 } else {

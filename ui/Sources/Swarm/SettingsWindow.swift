@@ -247,17 +247,17 @@ struct SettingsWindow: View {
         case .appearance:
             VStack(alignment: .leading, spacing: tokens.spacing.m) {
                 Text("Appearance").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                Picker("Theme", selection: Binding(get: { selection.prefs.theme }, set: selection.setTheme)) {
+                Picker("Theme", selection: Binding(get: { selection.prefs.theme }, set: { selection.setTheme($0) })) {
                     Text("System").tag(Theme.system)
                     Text("Light").tag(Theme.light)
                     Text("Dark").tag(Theme.dark)
                 }
-                Picker("Text size", selection: Binding(get: { selection.prefs.textSize }, set: selection.setTextSize)) {
+                Picker("Text size", selection: Binding(get: { selection.prefs.textSize }, set: { selection.setTextSize($0) })) {
                     Text("Small").tag(TextSize.small)
                     Text("Default").tag(TextSize.default)
                     Text("Large").tag(TextSize.large)
                 }
-                Picker("Density", selection: Binding(get: { selection.prefs.density }, set: selection.setDensity)) {
+                Picker("Density", selection: Binding(get: { selection.prefs.density }, set: { selection.setDensity($0) })) {
                     Text("Comfortable").tag(Density.comfortable)
                     Text("Compact").tag(Density.compact)
                 }
@@ -271,7 +271,7 @@ struct SettingsWindow: View {
                     .pickerStyle(.segmented)
                     .frame(width: DesignTokens.Size.segmentedPicker)
                 }
-                Picker("Send with", selection: Binding(get: { selection.prefs.sendKey }, set: selection.setSendKey)) {
+                Picker("Send with", selection: Binding(get: { selection.prefs.sendKey }, set: { selection.setSendKey($0) })) {
                     Text("Return").tag(SendKey.return)
                     Text("⌘Return").tag(SendKey.commandReturn)
                 }
