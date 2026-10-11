@@ -115,27 +115,27 @@ public struct SkillDraft: Sendable {
     }
 
     public mutating func setNeeds(id: String, needs: [String]) throws {
-        let index = try index(of: id)
-        try change { $0.steps[index].needs = needs }
+        let position = try index(of: id)
+        try change { $0.steps[position].needs = needs }
     }
 
     public mutating func setHolds(id: String, holds: String) throws {
-        let index = try index(of: id)
+        let position = try index(of: id)
         guard !holds.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || $0 == "\u{2028}" || $0 == "\u{2029}" }) else {
-            throw SkillDraftIssue.invalidHolds(id: steps[index].stem)
+            throw SkillDraftIssue.invalidHolds(id: steps[position].stem)
         }
         var normalized = holds.trimmingCharacters(in: .whitespaces)
         if normalized.count >= 2, normalized.hasPrefix("`"), normalized.hasSuffix("`") {
             normalized = String(normalized.dropFirst().dropLast())
         }
-        try change { $0.steps[index].holds = normalized }
+        try change { $0.steps[position].holds = normalized }
     }
 
     public mutating func setBody(id: String, body: String) throws {
-        let index = try index(of: id)
-        guard steps[index].body != nil else { throw SkillDraftIssue.missingSection(id: steps[index].stem) }
+        let position = try index(of: id)
+        guard steps[position].body != nil else { throw SkillDraftIssue.missingSection(id: steps[position].stem) }
         let normalized = body.normalizedLineEndings(ending: document.lineEnding)
-        try change { $0.steps[index].body = normalized }
+        try change { $0.steps[position].body = normalized }
     }
 
     public func validate() -> [SkillDraftIssue] {

@@ -220,7 +220,7 @@ public enum SidebarRows {
         for project in projects {
             let members = workspaces.filter { $0.project.id == project.id }
             let idsByTitle = navigation.idsByTitle(members, inProject: true)
-            let rows = visible.filter { entry in
+            let projectRows = visible.filter { entry in
                 entry.project.id == project.id && (showingArchive
                     ? navigation.archived.contains(entry.id)
                     : !navigation.pinned.contains(entry.id) && !navigation.archived.contains(entry.id))
@@ -228,13 +228,13 @@ public enum SidebarRows {
                 rows($0, idsByTitle: idsByTitle, navigation: navigation, now: now, inProject: true,
                      agentsBySession: agentsBySession, expandedLists: expandedLists, runs: runsByWorkspace[$0.id] ?? [])
             }
-            if rows.isEmpty, showingArchive || !search.isEmpty { continue }
+            if projectRows.isEmpty, showingArchive || !search.isEmpty { continue }
             let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().lastPathComponent
             let name = navigation.projectTitle(for: project)
             let title = names[name, default: 0] > 1 && !parent.isEmpty
                 ? "\(name) — \(parent)" : name
             sections.append(SidebarSection(
-                kind: .project(path: project.path), id: SidebarSection.id(of: project), title: title, rows: rows
+                kind: .project(path: project.path), id: SidebarSection.id(of: project), title: title, rows: projectRows
             ))
         }
         let entriesByPath = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
