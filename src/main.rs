@@ -298,14 +298,13 @@ fn in_agent_pane() -> bool {
         .any(|name| env::var_os(name).is_some())
 }
 
-/// (session, agent, state, detail)
-/// What one hook call reports: the session and agent, the state with its detail, and the chat log
-/// path from the payload.
+/// What one hook call reports: the session and agent, the state with its detail and wait kind,
+/// and the chat log path from the payload.
 #[derive(Debug, PartialEq)]
 struct HookReport {
     session: String,
     agent: String,
-    state: Option<(&'static str, Option<String>)>,
+    state: Option<swarm::host::HookState>,
     log: Option<std::path::PathBuf>,
     usage_provider: Option<String>,
 }
@@ -402,7 +401,12 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(log) = &report.log {
         swarm::store::set_log(&connection, &report.session, &report.agent, log)?;
     }
-    let Some((state, detail)) = report.state else {
+    let Some(swarm::host::HookState {
+        state,
+        detail,
+        kind,
+    }) = report.state
+    else {
         return Ok(());
     };
     let now = std::time::SystemTime::now()
@@ -416,7 +420,7 @@ fn hook(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         state,
         "hook",
         detail.as_deref(),
-        None,
+        kind,
         now,
     )?
     else {
@@ -4620,7 +4624,14 @@ mod tests {
         };
         assert_eq!(
             hook_report(&claude, waiting, coder).unwrap(),
-            report(Some(("waiting", None)), None)
+            report(
+                Some(swarm::host::HookState {
+                    state: "waiting",
+                    detail: None,
+                    kind: Some("permission"),
+                }),
+                None
+            )
         );
         assert!(
             hook_report(&claude, r#"{"hook_event_name":"SessionStart"}"#, coder)
@@ -4631,7 +4642,14 @@ mod tests {
         let agy_stop = ["agy".to_string(), "Stop".to_string()];
         assert_eq!(
             hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
-            report(Some(("failed", Some("quota".to_string()))), None)
+            report(
+                Some(swarm::host::HookState {
+                    state: "failed",
+                    detail: Some("quota".to_string()),
+                    kind: None,
+                }),
+                None
+            )
         );
         assert!(hook_report(&["gemini".to_string()], waiting, coder).is_err());
     }
@@ -4670,7 +4688,14 @@ mod tests {
         let codex = reported(&["codex"], codex).unwrap();
         assert_eq!(
             (codex.state, codex.log),
-            (Some(("waiting", None)), Some(log.clone()))
+            (
+                Some(swarm::host::HookState {
+                    state: "waiting",
+                    detail: None,
+                    kind: Some("permission"),
+                }),
+                Some(log.clone())
+            )
         );
         let agy = reported(
             &["agy", "PreInvocation"],

@@ -163,36 +163,52 @@ pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
     let _ = child.wait();
 }
 
-/// The agent state one provider hook event reports, with its detail, or None when the event says
-/// nothing about state. `swarm hook` calls this; see ADR 0021 for the table. AGY puts no event
+#[derive(Debug, PartialEq)]
+pub struct HookState {
+    pub state: &'static str,
+    pub detail: Option<String>,
+    pub kind: Option<&'static str>,
+}
+
+/// The agent state one provider hook event reports, with its detail and wait kind, or None when
+/// the event says nothing about state. `swarm hook` calls this; see ADR 0021 for the table. AGY puts no event
 /// name in its payload, so the caller passes it; Claude and Codex send `hook_event_name`.
-pub fn hook_state(
-    provider: &str,
-    event: &str,
-    payload: &serde_json::Value,
-) -> Option<(&'static str, Option<String>)> {
+pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> Option<HookState> {
     let text = |name: &str| payload.get(name).and_then(serde_json::Value::as_str);
     let error = text("error").filter(|error| !error.is_empty());
-    let state = match (provider, event) {
+    let (state, kind) = match (provider, event) {
         // An in-process Claude subagent's events are not the pane's state.
         ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
-        ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => "working",
-        ("claude" | "codex", "PermissionRequest") | ("claude", "Elicitation") => "waiting",
-        ("claude" | "codex", "Stop") | ("codex", "Interrupt") => "done",
-        ("claude", "StopFailure") => return Some(("failed", error.map(str::to_string))),
+        ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
+            ("working", None)
+        }
+        ("claude" | "codex", "PermissionRequest") => ("waiting", Some("permission")),
+        ("claude", "Elicitation") => ("waiting", Some("question")),
+        ("claude" | "codex", "Stop") | ("codex", "Interrupt") => ("done", None),
+        ("claude", "StopFailure") => ("failed", None),
         ("claude", "Notification") => match text("notification_type")? {
-            "permission_prompt" | "elicitation_dialog" | "agent_needs_input" => "waiting",
-            "idle_prompt" => "done",
+            "permission_prompt" => ("waiting", Some("permission")),
+            "elicitation_dialog" => ("waiting", Some("question")),
+            "agent_needs_input" => ("waiting", None),
+            "idle_prompt" => ("done", None),
             _ => return None,
         },
-        ("agy", "PreInvocation" | "PostToolUse") => "working",
+        ("agy", "PreInvocation" | "PostToolUse") => ("working", None),
         ("agy", "Stop") => match error {
-            Some(error) => return Some(("failed", Some(error.to_string()))),
-            None => "done",
+            Some(_) => ("failed", None),
+            None => ("done", None),
         },
         _ => return None,
     };
-    Some((state, None))
+    Some(HookState {
+        state,
+        detail: if state == "failed" {
+            error.map(str::to_string)
+        } else {
+            None
+        },
+        kind,
+    })
 }
 
 /// The newest model and cumulative cost in a provider log; None means no source for that field.
@@ -622,6 +638,44 @@ mod tests {
     }
 
     #[test]
+    fn hook_waits_carry_the_permission_or_question_kind() {
+        use serde_json::json;
+        for (provider, event, payload, expected) in [
+            ("claude", "PermissionRequest", json!({}), Some("permission")),
+            ("codex", "PermissionRequest", json!({}), Some("permission")),
+            ("claude", "Elicitation", json!({}), Some("question")),
+            (
+                "claude",
+                "Notification",
+                json!({"notification_type": "permission_prompt"}),
+                Some("permission"),
+            ),
+            (
+                "claude",
+                "Notification",
+                json!({"notification_type": "elicitation_dialog"}),
+                Some("question"),
+            ),
+            (
+                "claude",
+                "Notification",
+                json!({"notification_type": "agent_needs_input"}),
+                None,
+            ),
+            ("claude", "PreToolUse", json!({}), None),
+            ("codex", "Stop", json!({}), None),
+            ("claude", "StopFailure", json!({"error": "quota"}), None),
+            ("agy", "Stop", json!({"error": "quota"}), None),
+        ] {
+            let report = hook_state(provider, event, &payload).unwrap();
+            assert_eq!(report.kind, expected, "{provider} {event} {payload}");
+            if expected.is_some() {
+                assert_eq!(report.state, "waiting");
+            }
+        }
+    }
+
+    #[test]
     fn maps_every_hook_event_in_the_state_table() {
         use serde_json::json;
         let empty = json!({});
@@ -761,7 +815,7 @@ mod tests {
             let got = hook_state(provider, event, payload);
             let got = got
                 .as_ref()
-                .map(|(state, detail)| (*state, detail.as_deref()));
+                .map(|report| (report.state, report.detail.as_deref()));
             assert_eq!(got, *expected, "{provider} {event} {payload}");
         }
     }
