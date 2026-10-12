@@ -25,7 +25,7 @@ A skill with a step table makes its folder with the kit's `references/step_run.p
 names its own script. `start <folder> <SKILL.md>` writes one file per table row, with a todo for what
 the row holds and a `## Result` section. `take <folder> <step> <agent>` marks a step active and fills
 its `Uses:` line. `done <folder> <step>` sets the step done only when every todo is checked with its
-evidence after the colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
+evidence after the last colon. `done` accepts no `--force`. `status <folder>` also names each stale step.
 Never set a step done by hand.
 `take` refuses a step active for another agent; use `--force` after confirming that run is gone.
 A dead run holds no lock; `--force` only overrides a stale `Status: active <agent>` line.

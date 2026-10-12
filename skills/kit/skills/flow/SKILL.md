@@ -35,19 +35,24 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
 2. Run the script from the repo root. `F=<skill-dir>/scripts/flow_run.py`.
 
    ```sh
-   python3 $F start                          # makes the folder and step files, writes each step's skills into its file in full
+   python3 $F start [--profile <name>]       # makes the folder and step files, writes each step's skills and blocks into its file in full
    python3 $F status [<folder>]              # each step's status, which open step is ready, and which is stale
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full
    python3 $F done <folder> <step>           # sets the step done, only when every todo has its evidence
    python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
    ```
 
+   A catalog step line may also name `block:<id>`, a block or an alias in the kit's `blocks/`
+   folder; `start --profile <name>` packs them, and the repo's `.blocks.toml` configures them.
+   `blocks/blocks.toml` owns the block format, what each check line becomes, and the
+   `.blocks.toml` tables.
+
 3. Read `01-frame.md`. If `Worktree:` or `Branch:` is not the current worktree and branch, stop and
    tell the user. If two open folders exist for one branch, stop and tell the user.
 4. Pick up a step as `references/step-run.md` says, and take it with `take`. The step file holds the
    full text of the skills that the catalog gives the step (the `any` section, each profile domain,
    and the repo rules) under `## Rules for this step`, and a todo list. Apply the rules, check each
-   todo with its evidence after the colon, write the result under `## Result`, and close the step
+   todo with its evidence after the last colon, write the result under `## Result`, and close the step
    with `done`. Never set a step done or skipped by hand. When a tool
    that the profile names is missing, set the status to `unavailable <tool>` and tell the user.
 5. Write only your step's file. Line 1 is the status.

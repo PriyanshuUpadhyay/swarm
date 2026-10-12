@@ -23,7 +23,23 @@ from contextlib import contextmanager
 from pathlib import Path
 
 TODO_HEAD = "## Todo (check a box only with its evidence after the colon; `done` refuses an empty one)"
+# Parse by this prefix, so a step file written under an older head wording still has its todos checked.
+TODO_MARK = "## Todo ("
 RESULT_HEAD = "## Result"
+
+
+def todo_scan(text, ends=(RESULT_HEAD,)):
+    """(head, end, cut) of the step's own todo list. Walk the TODO_MARK lines in order, each up to its next
+    `## ` line. The first one ended by a line in `ends` is the list. One with no `- [` item is rules text and
+    is skipped. One with an item but another end gives (its start, -1, that line), since a `## ` line pasted
+    into the evidence would hand the list to a later head. No list at all gives (-1, -1, None). done
+    refuses an end of -1; the head still marks where the rules text stops."""
+    for head in re.finditer(rf"^(?={re.escape(TODO_MARK)}.*\n(?:(?!## ).*\n)*(## .*)$)", text, re.M):
+        if head[1] in ends:
+            return head.start(), head.start(1), None
+        if re.search(r"^- \[", text[head.start():head.start(1)], re.M):
+            return head.start(), -1, head[1]
+    return -1, -1, None
 
 
 def plain(text, *, keep_newlines=False):
@@ -164,13 +180,20 @@ def take(folder, step, who, need=None, rev=revision, force=False, on_claim=None)
     print(text)
 
 
-def done(folder, step, rev=None):
+def done(folder, step, rev=None, ends=(RESULT_HEAD,)):
     with step_lock(folder, step, command="done"):
         file = Path(folder) / f"{step}.md"
         text = file.read_text(encoding="utf-8")
-        todo = text.split(TODO_HEAD, 1)[1].split(RESULT_HEAD, 1)[0] if TODO_HEAD in text else ""
-        open_items = [l for l in todo.splitlines() if l.startswith("- [ ]")]
-        empty = [l for l in todo.splitlines() if l.startswith("- [x]") and not l.split(":", 1)[-1].strip()]
+        start, end, cut = todo_scan(text, ends)
+        if cut:
+            raise SystemExit(f"{step} is not done: no todo list: the line {cut!r} inside the list ends it; "
+                             "indent it or remove the leading '## '")
+        if end < 0:
+            raise SystemExit(f"{step} is not done: no todo list ({TODO_MARK}... head, its items, then {RESULT_HEAD}) found")
+        todo = text[start:end]
+        # Only `- [x]` counts as checked; `- [X]` is named as open, so it is never passed unread.
+        open_items = [l for l in todo.splitlines() if l.startswith(("- [ ]", "- [X]"))]
+        empty = [l for l in todo.splitlines() if l.startswith("- [x]") and not (":" in l[5:] and l.rsplit(":", 1)[-1].strip())]
         if open_items or empty:
             raise SystemExit(f"{step} is not done:\n" + "\n".join(open_items + [f"no evidence: {l}" for l in empty]))
         rev = rev or revision(folder, step)
