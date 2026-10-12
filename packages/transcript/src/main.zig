@@ -11,12 +11,13 @@ fn fail(init: std.process.Init, message: []const u8) noreturn {
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    const usage = "usage: transcript [--follow] [--format claude|codex|agy] [--tail N] [--before OFFSET] <file.jsonl>\n";
+    const usage = "usage: transcript [--follow] [--format claude|codex|agy] [--tail N] [--before OFFSET] [--from OFFSET] <file.jsonl>\n";
     var follow = false;
     var format: transcript.Format = .claude;
     var has_format = false;
     var tail: ?u64 = null;
     var before: ?u64 = null;
+    var from: ?u64 = null;
     var index: usize = 1;
     while (index < args.len) {
         if (std.mem.eql(u8, args[index], "--follow")) {
@@ -47,12 +48,17 @@ pub fn main(init: std.process.Init) !void {
             if (before != null or index + 1 >= args.len) fail(init, usage);
             before = std.fmt.parseUnsigned(u64, args[index + 1], 10) catch fail(init, usage);
             index += 2;
+        } else if (std.mem.eql(u8, args[index], "--from")) {
+            if (from != null or index + 1 >= args.len) fail(init, usage);
+            from = std.fmt.parseUnsigned(u64, args[index + 1], 10) catch fail(init, usage);
+            index += 2;
         } else {
             break;
         }
     }
     if (index + 1 != args.len or std.mem.startsWith(u8, args[index], "-")) fail(init, usage);
     if ((before != null and tail == null) or (before != null and follow)) fail(init, usage);
+    if (from != null and (!follow or tail != null or before != null)) fail(init, usage);
     const path = args[index];
     const session_id = if (format == .agy) transcript.agySessionIdFromPath(path) else "";
 
@@ -65,7 +71,10 @@ pub fn main(init: std.process.Init) !void {
     var error_buffer: [4096]u8 = undefined;
     var error_writer: std.Io.File.Writer = .initStreaming(.stderr(), init.io, &error_buffer);
 
-    if (tail) |line_count| {
+    if (from) |offset| {
+        transcript.translateFollowFromWithLog(init.gpa, format, session_id, file, init.io, offset, &file_writer.interface, &error_writer.interface) catch
+            fail(init, "error: failed to translate input file\n");
+    } else if (tail) |line_count| {
         const file_size = (file.stat(init.io) catch fail(init, "error: failed to translate input file\n")).size;
         const end_offset = @min(before orelse file_size, file_size);
         var scan_buffer: [64 * 1024]u8 = undefined;

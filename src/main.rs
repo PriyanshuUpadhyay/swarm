@@ -2,6 +2,9 @@ use std::env;
 use std::os::unix::process::ExitStatusExt;
 use swarm::providers::Provider;
 
+#[cfg(feature = "serve")]
+mod serve;
+
 const RERING_UNSEEN_AFTER_SECS: i64 = 60;
 
 /// The ring is typed into the recipient's prompt, so it names the next step. An agent that did
@@ -3367,6 +3370,10 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return run_cli(rest);
     }
 
+    #[cfg(feature = "serve")]
+    if args.first().map(String::as_str) == Some("serve") {
+        return serve::run(&args[1..]);
+    }
     if let [cmd, session_id, agent_id] = args
         && cmd == "focus"
     {

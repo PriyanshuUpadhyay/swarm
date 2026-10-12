@@ -692,6 +692,7 @@ const Translator = struct {
     owned_session_id: ?[]u8 = null,
     offset: u64 = 0,
     unknown_log: ?*std.Io.Writer = null,
+    progress_pages: bool = false,
 
     fn init(gpa: std.mem.Allocator, format: Format, session_id: []const u8) Translator {
         return .{
@@ -758,6 +759,11 @@ const Translator = struct {
             try writer.flush();
             translator.offset += translator.line_buffer.written().len + @intFromBool(!at_end);
             translator.line_buffer.clearRetainingCapacity();
+            if (translator.progress_pages and !at_end) {
+                try writePageJson(writer, translator.offset, translator.offset);
+                try writer.writeByte('\n');
+                try writer.flush();
+            }
             if (at_end) return;
         }
     }
@@ -913,9 +919,44 @@ pub fn translateFollowWindowWithLog(
     try writePageJson(writer, end_offset, end_offset);
     try writer.writeByte('\n');
     try writer.flush();
+    try followReads(&translator, file, io, end_offset, writer, &input_buffer);
+}
+
+/// Clamps `from` to file size, holds incomplete lines, and emits pages at complete-line offsets.
+pub fn translateFollowFromWithLog(
+    gpa: std.mem.Allocator,
+    format: Format,
+    session_id: []const u8,
+    file: std.Io.File,
+    io: std.Io,
+    from: u64,
+    writer: *std.Io.Writer,
+    unknown_log: ?*std.Io.Writer,
+) !void {
+    var translator: Translator = .init(gpa, format, session_id);
+    defer translator.deinit();
+    translator.unknown_log = unknown_log;
+    var input_buffer: [64 * 1024]u8 = undefined;
+    const end_offset = try fromWindow(&translator, file, io, from, writer, &input_buffer);
+    try followReads(&translator, file, io, end_offset, writer, &input_buffer);
+}
+
+fn fromWindow(translator: *Translator, file: std.Io.File, io: std.Io, from: u64, writer: *std.Io.Writer, input_buffer: []u8) !u64 {
+    const end_offset = (try file.stat(io)).size;
+    const start_offset = @min(from, end_offset);
+    translator.offset = start_offset;
+    translator.progress_pages = true;
+    try writePageJson(writer, start_offset, end_offset);
+    try writer.writeByte('\n');
+    try writer.flush();
+    try translateFileRange(translator, file, io, start_offset, end_offset, writer, input_buffer, false);
+    return end_offset;
+}
+
+fn followReads(translator: *Translator, file: std.Io.File, io: std.Io, end_offset: u64, writer: *std.Io.Writer, input_buffer: []u8) !void {
     var offset = end_offset;
     while (true) {
-        const read_len = try file.readPositionalAll(io, &input_buffer, offset);
+        const read_len = try file.readPositionalAll(io, input_buffer, offset);
         if (read_len == 0) {
             if (std.posix.getppid() == 1) return;
             try std.Io.sleep(io, .fromMilliseconds(200), .awake);
@@ -925,6 +966,69 @@ pub fn translateFollowWindowWithLog(
         var reader = std.Io.Reader.fixed(input_buffer[0..read_len]);
         try translator.translateAvailable(&reader, writer, false);
     }
+}
+
+test "from window emits only later fixture events and clamps beyond the end" {
+    const fixture = @embedFile("fixtures/claude-chair-run.jsonl");
+    const start = std.mem.lastIndexOfScalar(u8, fixture[0 .. fixture.len / 2], '\n').? + 1;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const file = try tmp.dir.createFile(std.testing.io, "input.jsonl", .{ .read = true });
+    defer file.close(std.testing.io);
+    var write_buffer: [128]u8 = undefined;
+    var file_writer: std.Io.File.Writer = .init(file, std.testing.io, &write_buffer);
+    try file_writer.interface.writeAll(fixture);
+    try file_writer.interface.flush();
+    var expected: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer expected.deinit();
+    try translateWindow(std.testing.allocator, .claude, "", file, std.testing.io, start, fixture.len, &expected.writer);
+
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    var translator: Translator = .init(std.testing.allocator, .claude, "");
+    defer translator.deinit();
+    var buffer: [128]u8 = undefined;
+    try std.testing.expectEqual(fixture.len, try fromWindow(&translator, file, std.testing.io, start, &output.writer, &buffer));
+    var events: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer events.deinit();
+    var lines = std.mem.splitScalar(u8, output.written(), '\n');
+    const first = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, lines.next().?, .{});
+    defer first.deinit();
+    try std.testing.expectEqual(@as(i64, @intCast(start)), first.value.object.get("start_offset").?.integer);
+    try std.testing.expectEqual(@as(i64, @intCast(fixture.len)), first.value.object.get("end_offset").?.integer);
+    while (lines.next()) |line| {
+        if (line.len == 0 or std.mem.startsWith(u8, line, "{\"type\":\"page\"")) continue;
+        try events.writer.writeAll(line);
+        try events.writer.writeByte('\n');
+    }
+    try std.testing.expectEqualStrings(expected.written(), events.written());
+    try std.testing.expect(events.written().len > 0);
+    output.clearRetainingCapacity();
+    var past: Translator = .init(std.testing.allocator, .claude, "");
+    defer past.deinit();
+    _ = try fromWindow(&past, file, std.testing.io, fixture.len + 1000, &output.writer, &buffer);
+    try std.testing.expectEqual(1, std.mem.count(u8, output.written(), "\n"));
+    const page = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, std.mem.trimEnd(u8, output.written(), "\n"), .{});
+    defer page.deinit();
+    try std.testing.expectEqual(@as(i64, @intCast(fixture.len)), page.value.object.get("start_offset").?.integer);
+    try std.testing.expectEqual(@as(i64, @intCast(fixture.len)), page.value.object.get("end_offset").?.integer);
+}
+
+test "from progress advances only past complete lines" {
+    const complete = "{\"type\":\"user\",\"message\":{\"content\":\"first\"}}\n";
+    var translator: Translator = .init(std.testing.allocator, .claude, "");
+    defer translator.deinit();
+    translator.offset = 10;
+    translator.progress_pages = true;
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    var first = std.Io.Reader.fixed(complete ++ "{\"type\":\"user\"");
+    try translator.translateAvailable(&first, &output.writer, false);
+    try std.testing.expectEqual(10 + complete.len, translator.offset);
+    try std.testing.expectEqual(1, std.mem.count(u8, output.written(), "\"type\":\"page\""));
+    var second = std.Io.Reader.fixed(",\"message\":{\"content\":\"second\"}}\n");
+    try translator.translateAvailable(&second, &output.writer, false);
+    try std.testing.expectEqual(2, std.mem.count(u8, output.written(), "\"type\":\"page\""));
 }
 
 fn expectTailStart(content: []const u8, end_offset: u64, line_count: u64, chunk_size: usize, expected: u64) !void {
