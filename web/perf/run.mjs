@@ -88,10 +88,23 @@ async function openChat(page, index) {
   await page.getByTestId("sidebar").focus();
   await page.keyboard.press("Home");
   for (let i = 0; i < index; i++) await page.keyboard.press("j");
-  const before = await page.evaluate(() => (window.__swarmPerf ?? []).filter((r) => r.kind !== "key").length);
+  // The app keeps only its newest records, so match this Enter by time, not by count.
+  const before = await page.evaluate(() => performance.now());
   await page.keyboard.press("Enter");
   // Done when the app records the paint of this open or switch, not when old rows are on screen.
-  await page.waitForFunction((n) => (window.__swarmPerf ?? []).filter((r) => r.kind !== "key").length > n, before, { timeout: 30000 });
+  try {
+    await page.waitForFunction((t) => (window.__swarmPerf ?? []).some((r) => r.kind !== "key" && r.start >= t), before, { timeout: 30000 });
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      selected: document.querySelector('[data-testid="tree-row"][aria-selected="true"]')?.outerHTML.slice(0, 300),
+      open: document.querySelector('[data-testid="transcript"]')?.getAttribute("data-chat"),
+      state: document.querySelector('[data-testid="transcript"]')?.getAttribute("data-state"),
+      rows: document.querySelectorAll('[data-testid="tree-row"]').length,
+      last: (window.__swarmPerf ?? []).slice(-3),
+    }));
+    log("openChat timeout", index, JSON.stringify(state));
+    throw error;
+  }
 }
 
 async function suite(browserName, app, url) {
@@ -190,19 +203,25 @@ async function suite(browserName, app, url) {
 
   log(browserName, app, "soak");
   // Memory soak: switch chats for `soakMinutes`; compare the heap at 20% of the run with the end.
+  // Samples are taken only after a full cycle of chats, so the 4-chat LRU holds the same chats each
+  // time; the ~9 MB giant output is in the LRU for 4 of 12 positions and would swing the heap.
   if (cdp && soakMinutes > 0) {
     await open();
-    const end = Date.now() + soakMinutes * 60000;
-    const mark = Date.now() + soakMinutes * 60000 * 0.2;
-    let early = NaN;
+    const start = Date.now();
+    const end = start + soakMinutes * 60000;
+    const samples = [];
     let k = 0;
-    while (Date.now() < end) {
+    while (Date.now() < end || k % chatRows.length) {
       await openChat(page, chatRows[k++ % chatRows.length]);
-      if (Number.isNaN(early) && Date.now() > mark) early = await heap(page, cdp);
+      if (k % chatRows.length === 0 && Date.now() >= start + samples.length * 60000)
+        samples.push({ k, min: (Date.now() - start) / 60000, mb: (await heap(page, cdp)) / 1e6 });
     }
-    const late = await heap(page, cdp);
+    if (samples.at(-1)?.k !== k) samples.push({ k, min: (Date.now() - start) / 60000, mb: (await heap(page, cdp)) / 1e6 });
+    const early = samples.find((s) => s.min >= soakMinutes * 0.2).mb;
+    const late = samples.at(-1).mb;
     result.heap_growth = (late - early) / early;
-    result.heap_mb = late / 1e6;
+    result.heap_mb = late;
+    result.heap_samples = samples;
   } else {
     result.heap_growth = NaN;
   }
@@ -246,6 +265,8 @@ out += `rows in DOM after scroll: ${results.map((r) => `${r.app} ${r.browser} ${
 out += `older 200-line pages fetched while scrolling (50 = 10k lines): ${results.map((r) => `${r.app} ${r.browser} ${r.scroll_older_pages}`).join(", ")}\n`;
 out += `rows appended to the open chat during live load: ${results.map((r) => `${r.app} ${r.browser} ${r.live_rows_added}`).join(", ")}\n`;
 out += `live worst frame: ${results.map((r) => `${r.app} ${r.browser} ${fmt(r.live_worst_ms, "ms")}`).join(", ")}\n`;
+for (const r of results.filter((r) => r.heap_samples))
+  out += `heap MB per minute, ${r.app} ${r.browser}: ${r.heap_samples.map((s) => `${s.min.toFixed(1)}m ${s.mb.toFixed(2)}`).join(", ")}\n`;
 console.log(out);
 fs.writeFileSync(path.join(repo, "tmp/web-pilot/perf-result.md"), out);
 fs.writeFileSync(path.join(repo, "tmp/web-pilot/perf-result.json"), JSON.stringify(results, null, 2));

@@ -20,9 +20,14 @@ export function whenPainted(ready: () => boolean, done: () => void) {
   requestAnimationFrame(tick);
 }
 
+// Every key press adds a record, so an app left open must keep only the newest ones.
+export const MAX_RECORDS = 1000;
+
 /** `start` is the KeyboardEvent.timeStamp; `painted` is performance.now() in that frame. */
 export function measure(kind: PerfKind, target: string, start: number, ready: () => boolean) {
   whenPainted(ready, () => {
-    (window.__swarmPerf ??= []).push({ kind, target, start, painted: performance.now() });
+    const records = (window.__swarmPerf ??= []);
+    records.push({ kind, target, start, painted: performance.now() });
+    if (records.length > MAX_RECORDS) records.splice(0, records.length - MAX_RECORDS);
   });
 }

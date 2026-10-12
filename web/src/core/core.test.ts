@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { takeToken, type Snapshot } from "./api";
+import { takeToken, type Api, type Snapshot } from "./api";
+import { App } from "./app";
 import { eventKey, parseChord, Registry, search } from "./commands";
 import { renderMarkdown } from "./markdown";
+import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
 import { blocks, items, preview, Transcript } from "./transcript";
 import { buildTree, flatten, rollUp } from "./tree";
@@ -245,5 +247,62 @@ describe("markdown", () => {
 
   it("does not load images", () => {
     expect(renderMarkdown("![x](https://example.com/a.png)")).not.toContain("<img");
+  });
+});
+
+describe("chat LRU", () => {
+  it("drops the render caches and older pages of the least recent chat when a fifth chat opens", async () => {
+    const fetched: string[] = [];
+    const api = {
+      transcript: async (session: string, _agent: string, _tail: number, before?: number) => {
+        fetched.push(before === undefined ? `${session} tail` : `${session} before ${before}`);
+        if (before !== undefined) return { page: { start_offset: 0, end_offset: 100 }, events: [{ type: "agent_message_chunk", text: "old", meta: meta(`${session}-old`) }] };
+        return {
+          page: { start_offset: 100, end_offset: 200 },
+          events: [
+            { type: "tool_call", tool_call_id: `${session}-cat`, name: "Bash", input: {}, status: "pending", meta: meta(`${session}-call`) },
+            { type: "tool_call_update", tool_call_id: `${session}-cat`, status: "completed", content: "output", meta: meta(`${session}-result`) },
+          ],
+        };
+      },
+    } as unknown as Api;
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    const app = new App(api);
+    app.openChat("first");
+    await settle();
+    await app.loadOlder();
+    app.toggleOutput("t:first-cat");
+    const firstMarkdown = app.view.md;
+    expect(app.view.items.map((i) => i.kind)).toEqual(["agent", "tool", "block"]);
+
+    for (const id of ["second", "third", "fourth", "fifth"]) {
+      app.openChat(id);
+      await settle();
+    }
+    app.openChat("first");
+    await settle();
+
+    expect(fetched.filter((f) => f.startsWith("first"))).toEqual(["first tail", "first before 100", "first tail"]);
+    expect(app.view.items.map((i) => i.kind)).toEqual(["tool"]);
+    expect(app.view.expanded.size).toBe(0);
+    expect(app.view.md).not.toBe(firstMarkdown);
+  });
+});
+
+describe("perf records", () => {
+  it("keeps only the newest records", () => {
+    const g = globalThis as unknown as { window?: unknown; requestAnimationFrame?: unknown };
+    g.window = { __swarmPerf: [] };
+    g.requestAnimationFrame = (fn: () => void) => fn();
+    try {
+      for (let i = 0; i < MAX_RECORDS + 5; i++) measure("key", `row-${i}`, i, () => true);
+      const records = (g.window as Window).__swarmPerf;
+      expect(records).toHaveLength(MAX_RECORDS);
+      expect(records[0].target).toBe("row-5");
+      expect(records.at(-1)!.target).toBe(`row-${MAX_RECORDS + 4}`);
+    } finally {
+      delete g.window;
+      delete g.requestAnimationFrame;
+    }
   });
 });
