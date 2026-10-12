@@ -1601,6 +1601,7 @@ fn cached_api_key_no_source_keeps_real_auth_read_failure_fail_open() {
     let accounts = swarm(&home, &[], &["accounts", "--provider", "codex", "--json"]);
     assert!(accounts.status.success(), "{}", stderr(&accounts));
     let list: serde_json::Value = serde_json::from_slice(&accounts.stdout).unwrap();
+    assert_eq!(list["schema"], "swarm.accounts.v1");
     let rows = list["accounts"].as_array().unwrap();
     let personal = rows.iter().find(|row| row["name"] == "personal").unwrap();
     assert_eq!(personal["auth_state"], "unavailable");
@@ -1807,7 +1808,7 @@ fn renewable_launch_cache(home: &Path, work_used: i64) {
     });
     let default = serde_json::json!({
         "provider":"claude", "account":"default", "label":"default",
-        "state":"failed", "reason":"Token expired"
+        "state":"failed", "reason":"Token expired", "reason_code":"token_expired"
     });
     std::fs::write(
         home.join(".swarm/claude-usage.json"),

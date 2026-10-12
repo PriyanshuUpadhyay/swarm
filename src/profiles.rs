@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The version of the printed account format (`docs/usage-format.md`).
+pub const ACCOUNTS_SCHEMA: &str = "swarm.accounts.v1";
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AccountList {
     pub provider: String,
@@ -154,8 +157,7 @@ fn apply_usage_for_model(list: &mut AccountList, meters: &[UsageMeter], model: O
         account.renewable = list.provider == "claude"
             && account.auth_state == AuthState::SignedIn
             && rows.iter().any(|meter| {
-                meter.state == "failed"
-                    && meter.reason.as_deref() == Some(crate::usage::TOKEN_EXPIRED_REASON)
+                meter.state == "failed" && meter.reason_code == Some(ReasonCode::TokenExpired)
             });
         let rows: Vec<_> = rows
             .into_iter()
@@ -208,7 +210,65 @@ pub struct UsageMeter {
     pub state: String,
     pub source: Option<String>,
     pub reason: Option<String>,
+    /// Set exactly when `reason` is; a reader matches this, never the text.
+    pub reason_code: Option<ReasonCode>,
     pub as_of_seconds: Option<i64>,
+}
+
+impl UsageMeter {
+    /// `text` names the cause in more detail than the code's own text; only `no_source` and
+    /// `read_failed` take one.
+    pub(crate) fn set_reason(&mut self, code: ReasonCode, text: Option<&str>) {
+        self.reason = Some(text.unwrap_or(code.text()).into());
+        self.reason_code = Some(code);
+    }
+
+    pub(crate) fn clear_reason(&mut self) {
+        self.reason = None;
+        self.reason_code = None;
+    }
+}
+
+/// Why a meter has no current reading, with its text (`docs/usage-format.md`). New codes may
+/// appear; a reader shows `reason` for one it does not know.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasonCode {
+    /// The CLI renews the token when a chat starts, so Auto may still pick the account.
+    TokenExpired,
+    ReloginRequired,
+    NoCredentials,
+    RefreshFailed,
+    NoCachedUsage,
+    NoSource,
+    ReadFailed,
+    NoQuotaWindows,
+}
+
+impl ReasonCode {
+    pub const ALL: [ReasonCode; 8] = [
+        ReasonCode::TokenExpired,
+        ReasonCode::ReloginRequired,
+        ReasonCode::NoCredentials,
+        ReasonCode::RefreshFailed,
+        ReasonCode::NoCachedUsage,
+        ReasonCode::NoSource,
+        ReasonCode::ReadFailed,
+        ReasonCode::NoQuotaWindows,
+    ];
+
+    pub fn text(self) -> &'static str {
+        match self {
+            ReasonCode::TokenExpired => "Token expired",
+            ReasonCode::ReloginRequired => "Sign in again",
+            ReasonCode::NoCredentials => "Account is signed out",
+            ReasonCode::RefreshFailed => "Usage refresh failed; old reading",
+            ReasonCode::NoCachedUsage => "No cached usage",
+            ReasonCode::NoSource => "No usage source",
+            ReasonCode::ReadFailed => "Usage read failed",
+            ReasonCode::NoQuotaWindows => "No Codex quota windows",
+        }
+    }
 }
 
 pub fn resolve_account<'a>(
@@ -302,7 +362,7 @@ mod tests {
         );
     }
 
-    fn meter(name: &str, state: &str, used: Option<i64>, reason: Option<&str>) -> UsageMeter {
+    fn meter(name: &str, state: &str, used: Option<i64>, code: Option<ReasonCode>) -> UsageMeter {
         UsageMeter {
             provider: "claude".into(),
             account: Some(name.into()),
@@ -313,7 +373,8 @@ mod tests {
             reset_time_seconds: None,
             state: state.into(),
             source: None,
-            reason: reason.map(str::to_string),
+            reason: code.map(|code| code.text().into()),
+            reason_code: code,
             as_of_seconds: None,
         }
     }
@@ -330,7 +391,7 @@ mod tests {
 
     #[test]
     fn auto_takes_a_renewable_account_only_below_the_threshold_and_never_a_signed_out_one() {
-        let expired = |name| meter(name, "failed", None, Some("Token expired"));
+        let expired = |name| meter(name, "failed", None, Some(ReasonCode::TokenExpired));
         let pick = |list: &AccountList| pick_auto(&list.accounts, None, None, 5).unwrap();
         let list = claude_list(&[meter("alpha", "fresh", Some(60), None), expired("bravo")]);
         assert!(list.accounts[1].renewable);
@@ -344,7 +405,12 @@ mod tests {
         assert_eq!(pick(&list), None);
         apply_usage(&mut list, &[expired("bravo")]);
         assert!(!list.accounts[1].renewable);
-        let list = claude_list(&[meter("bravo", "failed", None, Some("Sign in again"))]);
+        let list = claude_list(&[meter(
+            "bravo",
+            "failed",
+            None,
+            Some(ReasonCode::ReloginRequired),
+        )]);
         assert!(!list.accounts[1].renewable);
         assert_eq!(pick(&list), None);
         let fable = claude_list(&[expired("bravo")]).for_model(Some("fable"));
@@ -353,6 +419,31 @@ mod tests {
             pick_auto(&fable.accounts, None, Some("fable"), 5),
             Ok(Some("bravo".into()))
         );
+    }
+
+    #[test]
+    fn the_spec_lists_each_reason_code_with_its_text_and_no_other() {
+        let spec = include_str!("../docs/usage-format.md");
+        let section = spec.split("## Reason codes").nth(1).unwrap();
+        let section = section.split("\n## ").next().unwrap();
+        let rows: Vec<_> = section
+            .lines()
+            .filter(|line| line.starts_with("| `"))
+            .collect();
+        let expected: Vec<_> = ReasonCode::ALL
+            .iter()
+            .map(|code| {
+                let name = serde_json::to_value(code).unwrap();
+                format!("| `{}` | {} |", name.as_str().unwrap(), code.text())
+            })
+            .collect();
+        assert_eq!(rows.len(), expected.len(), "{rows:#?}");
+        for (row, expected) in rows.iter().zip(&expected) {
+            assert!(
+                row.starts_with(expected.as_str()),
+                "{row} is not {expected}"
+            );
+        }
     }
 
     #[test]
@@ -389,6 +480,7 @@ mod tests {
             state: "fresh".into(),
             source: None,
             reason: None,
+            reason_code: None,
             as_of_seconds: None,
         };
         let fable = UsageMeter {

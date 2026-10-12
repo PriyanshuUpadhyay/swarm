@@ -78,6 +78,7 @@ fn refresh_reads_native_windows_and_caches_only_nonsecret_usage() {
         .find(|row| row["account"] == "personal")
         .unwrap();
     assert_eq!(personal["state"], "no_source");
+    assert_eq!(personal["reason_code"], "no_source");
     assert!(personal["used_pct"].is_null());
     assert!(personal["source"].is_null());
     let cache = std::fs::read_to_string(home.join(".swarm/codex-usage.json")).unwrap();
@@ -164,6 +165,7 @@ fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_cache() {
         assert_eq!(invalid.len(), 1);
         assert_eq!(invalid[0]["state"], "no_source");
         assert_eq!(invalid[0]["reason"], account["summary"]);
+        assert_eq!(invalid[0]["reason_code"], "no_source");
         assert!(invalid[0]["source"].is_null());
         assert!(invalid[0]["used_pct"].is_null());
     }
@@ -270,6 +272,8 @@ fn cached_claude_usage_uses_native_cache_and_missing_sources_never_become_zero()
     assert_eq!(claude["window_minutes"], 10080);
     let agy = rows.iter().find(|row| row["provider"] == "agy").unwrap();
     assert_eq!(agy["state"], "no_source");
+    assert_eq!(agy["reason"], "No Swarm usage source");
+    assert_eq!(agy["reason_code"], "no_source");
     assert!(agy["used_pct"].is_null());
     assert!(
         rows.iter()
@@ -396,7 +400,8 @@ exec /bin/sleep 25"#,
             .iter()
             .all(|row| row["state"] == "failed"
                 && row["used_pct"].is_null()
-                && row["reason"] == "Codex usage read failed")
+                && row["reason"] == "Codex usage read failed"
+                && row["reason_code"] == "read_failed")
     );
     assert_eq!(
         std::fs::read_to_string(home.join("processes"))

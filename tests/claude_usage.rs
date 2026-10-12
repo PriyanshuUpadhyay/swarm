@@ -106,6 +106,7 @@ fn refresh_uses_stdin_headers_and_nonsecret_cache() {
         &["usage", "--refresh", "--provider", "claude", "--json"],
     );
     let value = usage(&output);
+    assert_eq!(value["schema"], "swarm.usage.v1");
     assert_eq!(value["meters"][0]["state"], "fresh");
     assert_eq!(value["meters"][0]["window"], "5h");
     assert_eq!(value["meters"][0]["used_pct"], 13);
@@ -130,6 +131,7 @@ fn refresh_uses_stdin_headers_and_nonsecret_cache() {
             .contains("-s Claude Code-credentials -a test-owner -w")
     );
     let cached = usage(&run(&home, &url, &["usage", "--json"]));
+    assert_eq!(cached["schema"], "swarm.usage.v1");
     assert!(
         cached["meters"]
             .as_array()
@@ -175,6 +177,7 @@ fn auth_failure_clears_old_usage_and_keeps_sign_in_reason() {
         request.join().unwrap();
         assert_eq!(value["meters"][0]["state"], "failed");
         assert_eq!(value["meters"][0]["reason"], "Sign in again");
+        assert_eq!(value["meters"][0]["reason_code"], "relogin_required");
         assert!(value["meters"][0]["used_pct"].is_null());
         let cached = usage(&run(&home, &url, &["usage", "--json"]));
         assert!(
@@ -182,7 +185,9 @@ fn auth_failure_clears_old_usage_and_keeps_sign_in_reason() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|row| row["provider"] == "claude" && row["reason"] == "Sign in again")
+                .any(|row| row["provider"] == "claude"
+                    && row["reason"] == "Sign in again"
+                    && row["reason_code"] == "relogin_required")
         );
         assert!(
             !std::fs::read_to_string(home.join(".swarm/claude-usage.json"))
@@ -215,6 +220,7 @@ fn a_signed_out_account_keeps_its_reason_in_a_cached_read() {
         .unwrap();
     assert_eq!(row["state"], "missing");
     assert_eq!(row["reason"], "Account is signed out");
+    assert_eq!(row["reason_code"], "no_credentials");
 }
 
 #[test]
@@ -347,6 +353,7 @@ fn an_expired_token_makes_no_request_and_keeps_its_reason_in_a_cached_read() {
     assert_eq!(value["meters"].as_array().unwrap().len(), 1);
     assert_eq!(value["meters"][0]["state"], "failed");
     assert_eq!(value["meters"][0]["reason"], "Token expired");
+    assert_eq!(value["meters"][0]["reason_code"], "token_expired");
     assert!(!home.join("curl-args").exists());
     let cached = usage(&run(
         &home,
@@ -358,7 +365,9 @@ fn an_expired_token_makes_no_request_and_keeps_its_reason_in_a_cached_read() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|row| row["provider"] == "claude" && row["reason"] == "Token expired")
+            .any(|row| row["provider"] == "claude"
+                && row["reason"] == "Token expired"
+                && row["reason_code"] == "token_expired")
     );
 }
 
@@ -378,4 +387,108 @@ fn a_rejected_live_token_still_asks_to_sign_in_again() {
     ));
     request.join().unwrap();
     assert_eq!(value["meters"][0]["reason"], "Sign in again");
+}
+
+#[test]
+fn each_reason_on_a_claude_path_carries_its_code_and_a_meter_with_no_reason_has_a_null_code() {
+    let home = fixture("reason-codes");
+    let claude = |value: &serde_json::Value| {
+        value["meters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["provider"] == "claude")
+            .unwrap()
+            .clone()
+    };
+    let cached = usage(&run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--json"],
+    ));
+    let row = claude(&cached);
+    assert_eq!(
+        (&row["state"], &row["reason"], &row["reason_code"]),
+        (
+            &"missing".into(),
+            &"No cached usage".into(),
+            &"no_cached_usage".into()
+        )
+    );
+    let refresh = |status: &str, body: &str| {
+        let (url, request) = server(status, "", body);
+        let value = usage(&run(
+            &home,
+            &url,
+            &["usage", "--refresh", "--provider", "claude", "--json"],
+        ));
+        request.join().unwrap();
+        claude(&value)
+    };
+    let row = refresh("500 Internal Server Error", "");
+    assert_eq!(
+        (&row["state"], &row["reason"], &row["reason_code"]),
+        (
+            &"failed".into(),
+            &"Claude usage read failed".into(),
+            &"read_failed".into()
+        )
+    );
+    let row = refresh("200 OK", r#"{"five_hour":{"utilization":20}}"#);
+    assert_eq!(row["state"], "fresh");
+    assert_eq!(row.get("reason"), Some(&serde_json::Value::Null));
+    assert_eq!(row.get("reason_code"), Some(&serde_json::Value::Null));
+    let row = refresh("500 Internal Server Error", "");
+    assert_eq!(
+        (&row["state"], &row["reason"], &row["reason_code"]),
+        (
+            &"stale".into(),
+            &"Usage refresh failed; old reading".into(),
+            &"refresh_failed".into()
+        )
+    );
+}
+
+#[test]
+fn the_openusage_export_reads_the_cache_only_and_an_unknown_format_fails() {
+    let home = fixture("openusage");
+    let (url, request) = server("200 OK", "", r#"{"five_hour":{"utilization":20}}"#);
+    usage(&run(
+        &home,
+        &url,
+        &["usage", "--refresh", "--provider", "claude", "--json"],
+    ));
+    request.join().unwrap();
+    std::fs::remove_file(home.join("curl-args")).unwrap();
+    let output = run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--format", "openusage"],
+    );
+    let value = usage(&output);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(!text.contains(&*home.to_string_lossy()));
+    assert!(!home.join("curl-args").exists());
+    assert_eq!(value["schema"], "openusage.limits.v1");
+    let generated = value["generatedAt"].as_str().unwrap();
+    assert!(
+        generated.ends_with(".000Z") && generated.len() == 24,
+        "{generated}"
+    );
+    let claude = &value["providers"]["claude"];
+    assert_eq!(claude["displayName"], "Claude");
+    assert_eq!(claude["stale"], false);
+    assert_eq!(claude["resources"]["session"]["used"], 20);
+    assert_eq!(claude["resources"]["session"]["windowSeconds"], 18000);
+    assert_eq!(value["errors"], serde_json::json!([]));
+    let other = run(
+        &home,
+        "http://127.0.0.1:9/unused",
+        &["usage", "--format", "csv"],
+    );
+    assert!(!other.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&other.stderr).trim(),
+        "swarm: unknown usage format csv; the one format is openusage"
+    );
 }

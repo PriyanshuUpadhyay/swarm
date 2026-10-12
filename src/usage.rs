@@ -1,5 +1,5 @@
 use crate::profiles::native::{AppServer, read_json, read_stdout};
-use crate::profiles::{Account, AccountList, AuthState, Usage, UsageMeter};
+use crate::profiles::{Account, AccountList, AuthState, ReasonCode, Usage, UsageMeter};
 use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -10,12 +10,9 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_AGE_SECONDS: i64 = 300;
-const REFRESH_FAILED_REASON: &str = "Usage refresh failed; old reading";
-// The app shows its Open Accounts button for these two texts, so a cached read must keep them.
-const SIGNED_OUT_REASON: &str = "Account is signed out";
-const SIGN_IN_AGAIN_REASON: &str = "Sign in again";
-// The CLI renews an expired token when a chat starts, so Auto may still pick the account.
-pub(crate) const TOKEN_EXPIRED_REASON: &str = "Token expired";
+/// The version of the printed usage format (`docs/usage-format.md`).
+pub const USAGE_SCHEMA: &str = "swarm.usage.v1";
+const OPENUSAGE_SCHEMA: &str = "openusage.limits.v1";
 /// The last second of year 9999. A reset time in text has the same limit.
 const MAX_RESET_SECONDS: i64 = 253_402_300_799;
 
@@ -30,7 +27,7 @@ struct CachedAccount {
     meters: Vec<UsageMeter>,
 }
 
-pub(crate) fn now_seconds() -> i64 {
+pub fn now_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -110,9 +107,10 @@ fn status_meter(
     provider: &str,
     account: Option<&Account>,
     state: &str,
-    reason: &str,
+    code: ReasonCode,
+    text: Option<&str>,
 ) -> UsageMeter {
-    UsageMeter {
+    let mut meter = UsageMeter {
         provider: provider.into(),
         account: account.map(|account| account.name.clone()),
         label: account
@@ -124,9 +122,12 @@ fn status_meter(
         reset_time_seconds: None,
         state: state.into(),
         source: source_for(provider, state),
-        reason: Some(reason.into()),
+        reason: None,
+        reason_code: None,
         as_of_seconds: None,
-    }
+    };
+    meter.set_reason(code, text);
+    meter
 }
 
 /// Read cached quota values; native identity calls share this deadline.
@@ -140,9 +141,139 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
         "agy",
         None,
         "no_source",
-        "No Swarm usage source",
+        ReasonCode::NoSource,
+        Some("No Swarm usage source"),
     ));
     Ok(Usage { meters })
+}
+
+/// `swarm usage --format openusage`: cached meters in the OpenUsage `openusage.limits.v1` shape.
+/// The rules are in `docs/usage-format.md`. The output has no token, home path, or email.
+pub fn openusage(usage: &Usage, now: i64) -> Value {
+    let mut accounts: Vec<(&str, &str)> = Vec::new();
+    for meter in &usage.meters {
+        let account = (
+            meter.provider.as_str(),
+            meter.account.as_deref().unwrap_or(&meter.label),
+        );
+        if !accounts.contains(&account) {
+            accounts.push(account);
+        }
+    }
+    let mut providers = serde_json::Map::new();
+    let mut errors = Vec::new();
+    for (provider, account) in accounts {
+        let Some(info) = Provider::parse(provider).map(Provider::info) else {
+            continue;
+        };
+        let rows: Vec<_> = usage
+            .meters
+            .iter()
+            .filter(|meter| {
+                meter.provider == provider
+                    && meter.account.as_deref().unwrap_or(&meter.label) == account
+            })
+            .collect();
+        // OpenUsage reads the provider family as the text before the first `@`.
+        let (key, display) = if account == "default" {
+            (provider.to_string(), info.label.to_string())
+        } else {
+            (
+                format!("{provider}@{account}"),
+                format!("{} ({account})", info.label),
+            )
+        };
+        if let Some(reason) = rows
+            .iter()
+            .find(|meter| meter.state == "failed")
+            .and_then(|meter| meter.reason.as_deref())
+        {
+            errors.push(json!({"providerId": key, "message": reason}));
+        }
+        let mut resources = serde_json::Map::new();
+        for meter in &rows {
+            let (Some(used), Some(name)) = (meter.used_pct, openusage_resource(meter)) else {
+                continue;
+            };
+            let mut resource = json!({
+                "kind": "consumption",
+                "unit": "percent",
+                "used": used,
+                "limit": 100,
+                "remaining": 100 - used,
+                "utilization": used as f64 / 100.0,
+            });
+            if let Some(reset) = meter.reset_time_seconds {
+                resource["resetsAt"] = iso_time(reset).into();
+            }
+            if let Some(minutes) = meter.window_minutes {
+                resource["windowSeconds"] = (minutes * 60).into();
+            }
+            resources.insert(name.into(), resource);
+        }
+        if resources.is_empty() {
+            continue;
+        }
+        let mut entry = json!({"displayName": display});
+        if let Some(fetched) = rows.iter().filter_map(|meter| meter.as_of_seconds).max() {
+            entry["fetchedAt"] = iso_time(fetched).into();
+            entry["expiresAt"] = iso_time(fetched + MAX_AGE_SECONDS).into();
+        }
+        entry["stale"] = rows.iter().any(|meter| meter.state == "stale").into();
+        entry["resources"] = resources.into();
+        providers.insert(key, entry);
+    }
+    json!({
+        "schema": OPENUSAGE_SCHEMA,
+        "generatedAt": iso_time(now),
+        "providers": providers,
+        "errors": errors,
+    })
+}
+
+/// The OpenUsage resource key of a swarm window, or None for a window its table has no key for.
+fn openusage_resource(meter: &UsageMeter) -> Option<&'static str> {
+    match (meter.provider.as_str(), meter.window.as_deref()?) {
+        ("claude", "5h") => Some("session"),
+        ("claude", "7d") => Some("weekly"),
+        ("claude", "fb") => Some("fable"),
+        // Only the main Codex limit; another limit id, such as `review`, has no OpenUsage key.
+        ("codex", "primary" | "secondary" | "codex:primary" | "codex:secondary") => {
+            match meter.window_minutes? {
+                300 => Some("session"),
+                10080 => Some("weekly"),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `seconds` since 1970 as ISO 8601 in UTC with milliseconds, such as `2026-07-13T01:39:30.000Z`.
+/// The day count to a date is the civil-from-days method of H. Hinnant, the inverse of the one
+/// in `claude_reset_seconds`.
+fn iso_time(seconds: i64) -> String {
+    let (days, second) = (seconds.div_euclid(86400), seconds.rem_euclid(86400));
+    let shifted = days + 719468;
+    let era = shifted.div_euclid(146097);
+    let day_of_era = shifted.rem_euclid(146097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.000Z",
+        second / 3600,
+        second % 3600 / 60,
+        second % 60
+    )
 }
 
 pub(crate) fn for_accounts(list: &AccountList, now: i64) -> Result<Vec<UsageMeter>, String> {
@@ -171,10 +302,11 @@ fn cached_accounts(
                 provider,
                 Some(account),
                 "no_source",
+                ReasonCode::NoSource,
                 if account.invalid_home() {
-                    account.summary.as_deref().unwrap_or("No usage source")
+                    account.summary.as_deref()
                 } else {
-                    "API-key mode has no plan-quota source"
+                    Some("API-key mode has no plan-quota source")
                 },
             ));
             continue;
@@ -198,26 +330,30 @@ fn cached_accounts(
                     provider,
                     Some(account),
                     "missing",
-                    "No cached usage",
+                    ReasonCode::NoCachedUsage,
+                    None,
                 )),
                 None => meters.push(status_meter(
                     provider,
                     Some(account),
                     "missing",
-                    "No cached usage",
+                    ReasonCode::NoCachedUsage,
+                    None,
                 )),
             },
             Ok(None) => meters.push(status_meter(
                 provider,
                 Some(account),
                 "missing",
-                "No cached usage",
+                ReasonCode::NoCachedUsage,
+                None,
             )),
             Err(_) => meters.push(status_meter(
                 provider,
                 Some(account),
                 "failed",
-                "Usage cache is unavailable",
+                ReasonCode::ReadFailed,
+                Some("Usage cache is unavailable"),
             )),
         }
     }
@@ -244,22 +380,20 @@ pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
         meter.window_minutes = meter.window_minutes.filter(|minutes| *minutes > 0);
         meter.reset_time_seconds = None;
         meter.as_of_seconds = None;
-        meter.reason = Some(
-            match meter.state.as_str() {
-                "missing" if stored.reason.as_deref() == Some(SIGNED_OUT_REASON) => {
-                    SIGNED_OUT_REASON
-                }
-                "missing" => "No cached usage",
-                "no_source" => "No usage source",
-                _ if stored.reason.as_deref() == Some(SIGN_IN_AGAIN_REASON) => SIGN_IN_AGAIN_REASON,
-                _ if stored.reason.as_deref() == Some(TOKEN_EXPIRED_REASON) => TOKEN_EXPIRED_REASON,
-                _ => "Usage read failed",
-            }
-            .into(),
-        );
+        // The app acts on these codes, so a cached read must keep them.
+        let code = match (meter.state.as_str(), stored.reason_code) {
+            ("missing", Some(ReasonCode::NoCredentials)) => ReasonCode::NoCredentials,
+            ("missing", _) => ReasonCode::NoCachedUsage,
+            ("no_source", _) => ReasonCode::NoSource,
+            (_, Some(code @ (ReasonCode::ReloginRequired | ReasonCode::TokenExpired))) => code,
+            _ => ReasonCode::ReadFailed,
+        };
+        meter.set_reason(code, None);
         return meter;
     }
-    meter.reason = stored.reason.as_ref().map(|_| REFRESH_FAILED_REASON.into());
+    if stored.reason.is_some() {
+        meter.set_reason(ReasonCode::RefreshFailed, None);
+    }
     if meter
         .as_of_seconds
         .is_none_or(|time| time < 0 || time > now || now - time > MAX_AGE_SECONDS)
@@ -300,7 +434,8 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                 provider.id(),
                 Some(&account),
                 "missing",
-                SIGNED_OUT_REASON,
+                ReasonCode::NoCredentials,
+                None,
             )],
             _ => match if provider == Provider::Codex {
                 fresh_codex(&account, deadline)
@@ -308,14 +443,6 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                 fresh_claude(&account, deadline)
             } {
                 Ok(meters) => meters,
-                Err(reason) if reason == SIGN_IN_AGAIN_REASON || reason == TOKEN_EXPIRED_REASON => {
-                    vec![status_meter(
-                        provider.id(),
-                        Some(&account),
-                        "failed",
-                        &reason,
-                    )]
-                }
                 Err(_) => {
                     let retained: Vec<_> = previous
                         .iter()
@@ -327,7 +454,7 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                             let mut meter = meter.clone();
                             if meter.state != "failed" {
                                 meter.state = "stale".into();
-                                meter.reason = Some(REFRESH_FAILED_REASON.into());
+                                meter.set_reason(ReasonCode::RefreshFailed, None);
                             }
                             meter
                         })
@@ -337,11 +464,12 @@ fn refresh(provider: Provider, deadline: Instant) -> Result<Usage, String> {
                             provider.id(),
                             Some(&account),
                             "failed",
-                            if provider == Provider::Codex {
+                            ReasonCode::ReadFailed,
+                            Some(if provider == Provider::Codex {
                                 "Codex usage read failed"
                             } else {
                                 "Claude usage read failed"
-                            },
+                            }),
                         )]
                     } else {
                         retained
@@ -379,7 +507,8 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
             "claude",
             Some(account),
             "no_source",
-            account.summary.as_deref().unwrap_or("No usage source"),
+            ReasonCode::NoSource,
+            account.summary.as_deref(),
         )]);
     }
     let storage = crate::providers::secure_storage_dir(&account.home, &account.name);
@@ -408,7 +537,13 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
         .and_then(Value::as_i64)
         .is_some_and(|millis| millis < now_seconds().saturating_mul(1000))
     {
-        return Err(TOKEN_EXPIRED_REASON.into());
+        return Ok(vec![status_meter(
+            "claude",
+            Some(account),
+            "failed",
+            ReasonCode::TokenExpired,
+            None,
+        )]);
     }
     let remaining = deadline
         .checked_duration_since(Instant::now())
@@ -459,7 +594,15 @@ fn fresh_claude(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>,
         .rposition(|byte| *byte == b'\n')
         .ok_or("Claude usage response is invalid")?;
     match &bytes[split + 1..] {
-        b"401" | b"403" => return Err(SIGN_IN_AGAIN_REASON.into()),
+        b"401" | b"403" => {
+            return Ok(vec![status_meter(
+                "claude",
+                Some(account),
+                "failed",
+                ReasonCode::ReloginRequired,
+                None,
+            )]);
+        }
         b"200" => (),
         _ => return Err("Claude usage request failed".into()),
     }
@@ -534,7 +677,8 @@ fn claude_windows(account: &Account, payload: &Value, now: i64) -> Result<Vec<Us
             "claude",
             Some(account),
             "failed",
-            "Claude usage window is invalid",
+            ReasonCode::ReadFailed,
+            Some("Claude usage window is invalid"),
         );
         meter.window = Some(window.into());
         meter.window_minutes = Some(minutes);
@@ -543,7 +687,7 @@ fn claude_windows(account: &Account, payload: &Value, now: i64) -> Result<Vec<Us
             meter.reset_time_seconds = reset_time;
             meter.as_of_seconds = Some(now);
             meter.state = "fresh".into();
-            meter.reason = None;
+            meter.clear_reason();
         }
         meters.push(meter);
     }
@@ -627,7 +771,8 @@ fn fresh_codex(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, 
             "codex",
             Some(account),
             "no_source",
-            account.summary.as_deref().unwrap_or("No usage source"),
+            ReasonCode::NoSource,
+            account.summary.as_deref(),
         )]);
     }
     let mut server = AppServer::start(&account.env, deadline)?;
@@ -637,7 +782,8 @@ fn fresh_codex(account: &Account, deadline: Instant) -> Result<Vec<UsageMeter>, 
             "codex",
             Some(account),
             "no_source",
-            "API-key mode has no plan-quota source",
+            ReasonCode::NoSource,
+            Some("API-key mode has no plan-quota source"),
         )]);
     }
     if identity["account"]["type"] != "chatgpt" {
@@ -701,6 +847,7 @@ fn normalize_limits(
                 state: "fresh".into(),
                 source: Some("codex_app_server".into()),
                 reason: None,
+                reason_code: None,
                 as_of_seconds: Some(now),
             });
         }
@@ -710,7 +857,8 @@ fn normalize_limits(
             "codex",
             Some(account),
             "missing",
-            "No Codex quota windows",
+            ReasonCode::NoQuotaWindows,
+            None,
         ));
     }
     Ok(meters)
@@ -823,5 +971,151 @@ mod tests {
         assert_eq!(unknown.state, "failed");
         assert_eq!(unknown.used_pct, None);
         assert!(!unknown.reason.unwrap().contains("private"));
+        assert_eq!(unknown.reason_code, Some(ReasonCode::ReadFailed));
+    }
+
+    #[test]
+    fn iso_time_gives_utc_with_milliseconds() {
+        assert_eq!(iso_time(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(iso_time(951_782_400), "2000-02-29T00:00:00.000Z");
+        assert_eq!(iso_time(1_791_763_200), "2026-10-12T00:00:00.000Z");
+        assert_eq!(iso_time(1_790_990_000), "2026-10-03T01:13:20.000Z");
+    }
+
+    #[test]
+    fn openusage_export_keeps_only_known_windows_and_names_each_failed_account() {
+        let meter =
+            |provider: &str, account: Option<&str>, window: &str, minutes, used, state: &str| {
+                let mut meter = UsageMeter {
+                    provider: provider.into(),
+                    account: account.map(str::to_string),
+                    label: account.unwrap_or(provider).into(),
+                    window: Some(window.into()),
+                    window_minutes: Some(minutes),
+                    used_pct: Some(used),
+                    reset_time_seconds: Some(1_791_003_600),
+                    state: state.into(),
+                    source: None,
+                    reason: None,
+                    reason_code: None,
+                    as_of_seconds: Some(1_791_000_000),
+                };
+                if state == "stale" {
+                    meter.set_reason(ReasonCode::RefreshFailed, None);
+                    meter.as_of_seconds = Some(1_790_990_000);
+                }
+                meter
+            };
+        let mut weekly = meter("claude", Some("default"), "7d", 10080, 10, "fresh");
+        weekly.reset_time_seconds = Some(1_791_604_800);
+        let mut fable = meter("claude", Some("work"), "fb", 10080, 100, "stale");
+        fable.reset_time_seconds = None;
+        let mut codex = meter("codex", Some("default"), "codex:primary", 300, 30, "fresh");
+        codex.as_of_seconds = Some(1_791_000_060);
+        let account = |name: &str| Account {
+            name: name.into(),
+            ..work()
+        };
+        let usage = Usage {
+            meters: vec![
+                meter("claude", Some("default"), "5h", 300, 42, "fresh"),
+                weekly,
+                meter("claude", Some("work"), "5h", 300, 20, "stale"),
+                fable,
+                status_meter(
+                    "claude",
+                    Some(&account("broken")),
+                    "failed",
+                    ReasonCode::ReadFailed,
+                    Some("Claude usage read failed"),
+                ),
+                status_meter(
+                    "claude",
+                    Some(&account("spare")),
+                    "missing",
+                    ReasonCode::NoCachedUsage,
+                    None,
+                ),
+                codex,
+                meter("codex", Some("default"), "review:primary", 60, 80, "fresh"),
+                status_meter("agy", None, "no_source", ReasonCode::NoSource, None),
+            ],
+        };
+        let resource = |used: i64, reset: Option<&str>| {
+            let mut value = json!({
+                "kind": "consumption", "unit": "percent", "used": used, "limit": 100,
+                "remaining": 100 - used, "utilization": used as f64 / 100.0,
+            });
+            if let Some(reset) = reset {
+                value["resetsAt"] = reset.into();
+            }
+            value
+        };
+        let with_window = |mut value: Value, seconds: i64| {
+            value["windowSeconds"] = seconds.into();
+            value
+        };
+        let expected = json!({
+            "schema": "openusage.limits.v1",
+            "generatedAt": "2026-10-03T04:01:40.000Z",
+            "providers": {
+                "claude": {
+                    "displayName": "Claude",
+                    "fetchedAt": "2026-10-03T04:00:00.000Z",
+                    "expiresAt": "2026-10-03T04:05:00.000Z",
+                    "stale": false,
+                    "resources": {
+                        "session": with_window(resource(42, Some("2026-10-03T05:00:00.000Z")), 18000),
+                        "weekly": with_window(resource(10, Some("2026-10-10T04:00:00.000Z")), 604800),
+                    },
+                },
+                "claude@work": {
+                    "displayName": "Claude (work)",
+                    "fetchedAt": "2026-10-03T01:13:20.000Z",
+                    "expiresAt": "2026-10-03T01:18:20.000Z",
+                    "stale": true,
+                    "resources": {
+                        "session": with_window(resource(20, Some("2026-10-03T05:00:00.000Z")), 18000),
+                        "fable": with_window(resource(100, None), 604800),
+                    },
+                },
+                "codex": {
+                    "displayName": "Codex",
+                    "fetchedAt": "2026-10-03T04:01:00.000Z",
+                    "expiresAt": "2026-10-03T04:06:00.000Z",
+                    "stale": false,
+                    "resources": {
+                        "session": with_window(resource(30, Some("2026-10-03T05:00:00.000Z")), 18000),
+                    },
+                },
+            },
+            "errors": [{"providerId": "claude@broken", "message": "Claude usage read failed"}],
+        });
+        assert_eq!(
+            serde_json::to_string(&openusage(&usage, 1_791_000_100)).unwrap(),
+            serde_json::to_string(&expected).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_codex_reply_with_no_window_and_a_cached_read_keep_their_codes() {
+        let empty = normalize_limits(&work(), &json!({"rateLimits":{}}), 1000).unwrap();
+        assert_eq!(
+            (empty[0].reason_code, empty[0].reason.as_deref()),
+            (
+                Some(ReasonCode::NoQuotaWindows),
+                Some("No Codex quota windows")
+            )
+        );
+        for (state, code) in [
+            ("missing", ReasonCode::NoCredentials),
+            ("failed", ReasonCode::ReloginRequired),
+            ("failed", ReasonCode::TokenExpired),
+        ] {
+            let stored = status_meter("claude", Some(&work()), state, code, None);
+            let cached = normalize_meter(&stored, 1000);
+            assert_eq!(cached.reason_code, Some(code));
+            assert_eq!(cached.reason.as_deref(), Some(code.text()));
+        }
     }
 }

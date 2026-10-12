@@ -321,7 +321,8 @@ id. A chair gets both from its pane, which `swarm session new` registers. A chil
 | `providers --json` | any | List each provider with its efforts, default effort, whether it has accounts, and the flags a runner of it takes. |
 | `models --provider <claude\|codex\|agy> --json` | any | List models for a provider. Codex and AGY use their CLI catalogs, and a Codex model lists its efforts; Claude shows its model aliases. |
 | `accounts --provider <claude\|codex\|agy> --json` | any | List accounts for one provider as JSON. |
-| `usage --json` | any | List account use meters as JSON. |
+| `usage --json` | any | List account use meters as JSON, in the `swarm.usage.v1` format of [docs/usage-format.md](docs/usage-format.md). |
+| `usage --format openusage` | any | Print the cached meters in the OpenUsage `openusage.limits.v1` shape, with no provider call. The rules are in [docs/usage-format.md](docs/usage-format.md). |
 | `usage --refresh --provider <claude\|codex> --json` | any | Read that provider's usage again from its source, save it, and list its meters as JSON. A failed read keeps an older reading with state `stale` and a `reason`. With no older reading, or after HTTP 401 or 403, the meter has state `failed`. A failed read never gives zero usage. |
 | `accounts login --provider <claude\|codex> --name <name> --revision <revision> --json [--cwd <dir>]` | any | Open the provider's own login for the account `name` in a pane. A child caller is refused. |
 | `run <claude\|codex> [--account <auto\|name>] [-- <args>...]` | any | Start the provider CLI in this terminal on the picked account, `auto` by default. It needs no session. |
