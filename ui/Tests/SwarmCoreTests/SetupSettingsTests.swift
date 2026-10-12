@@ -270,7 +270,7 @@ struct SetupSettingsTests {
 
     @Test("Each dependency reports its own present and missing state")
     func dependencies() {
-        let names = ["tmux", "claude", "codex", "agy", "gh", "yelo"]
+        let names = ["tmux", "claude", "codex", "agy", "gh"]
         for foundName in names {
             let rows = Dependencies.check { $0 == foundName ? "/tools/\($0)" : nil }
             #expect(rows.map(\.name) == names)

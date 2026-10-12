@@ -58,7 +58,7 @@ struct AccountsPage: View {
                 state.requestLoad(refreshUsage: true)
             }
             .disabled(busy)
-            .help("Read account status and cached Claude usage. Refresh Codex usage.")
+            .help("Read account status, then refresh Claude and Codex usage.")
         }
     }
 
@@ -99,7 +99,7 @@ struct AccountsPage: View {
                 }
             }
             if let source = section.source {
-                Text("Account source: \(sourceLabel(source))").font(.caption).foregroundStyle(.secondary)
+                Text("Account source: \(AccountsPageModel.sourceLabel(source))").font(.caption).foregroundStyle(.secondary)
             }
             if let message = section.message {
                 Text(verbatim: message).foregroundStyle(.secondary)
@@ -138,6 +138,10 @@ struct AccountsPage: View {
             if !accountName.isEmpty && !SwarmAccountLoginRequest.validName(accountName) {
                 Text("Enter a valid account name without spaces or path parts.")
                     .font(.caption).foregroundStyle(.red)
+            }
+            if let note = section.loginNote {
+                Text(verbatim: note).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Button("Open login") { login(section.provider) }
@@ -192,18 +196,10 @@ struct AccountsPage: View {
                     Text("Resets \(date(reset))").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text("Usage source: \(row.source.map(sourceLabel) ?? "Unavailable")")
+            Text("Usage source: \(row.source.map(AccountsPageModel.sourceLabel) ?? "Unavailable")")
                 .font(.caption).foregroundStyle(.secondary)
             Text(row.sampleTimeSeconds.map { "Sample time: \(date($0))" } ?? "Sample time unavailable")
                 .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func sourceLabel(_ source: String) -> String {
-        switch source {
-        case "swarm": "Swarm"
-        case "codex_app_server": "Codex app-server"
-        default: source
         }
     }
 
@@ -229,22 +225,23 @@ struct AccountsPage: View {
             reportError(generation)
         }
         // A cached read completes before explicit refresh, so it cannot overwrite the new sample.
-        if explicitRefresh && !Task.isCancelled && generation == state.generation {
+        let refreshed = explicitRefresh ? AccountsPageModel.usageProviders : []
+        for provider in refreshed where !Task.isCancelled && generation == state.generation {
             do {
-                let usage = try await refreshUsage("codex")
+                let usage = try await refreshUsage(provider)
                 try Task.checkCancellation()
-                state.receiveUsage(usage, generation: generation, provider: "codex")
+                state.receiveUsage(usage, generation: generation, provider: provider)
                 reportError(generation)
             } catch is CancellationError {
                 return
             } catch {
-                state.failUsage(provider: "codex", message: AccountsPageModel.message(error), generation: generation)
+                state.failUsage(provider: provider, message: AccountsPageModel.message(error), generation: generation)
                 reportError(generation)
             }
         }
         _ = await (claude, codex, agy)
-        if explicitRefresh && !Task.isCancelled && generation == state.generation {
-            await readAccounts("codex", generation: generation)
+        for provider in refreshed where !Task.isCancelled && generation == state.generation {
+            await readAccounts(provider, generation: generation)
         }
     }
 

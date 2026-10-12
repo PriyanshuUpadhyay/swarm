@@ -127,7 +127,7 @@ struct AccountsPageModelTests {
         let generation = try start(&model)
         var claude = meter(usedPct: 40)
         claude.provider = "claude"
-        claude.source = "yelo"
+        claude.source = "claude_api"
         model.receiveUsage(SwarmUsage(meters: [meter(usedPct: 30), claude]), generation: generation)
         model.failUsage(provider: "codex", message: "Network read failed", generation: generation)
         let row = model.usageRows(provider: "codex", account: "work", nowSeconds: 1_000)[0]
@@ -216,6 +216,24 @@ struct AccountsPageModelTests {
         #expect(AccountsPageModel.authLabel(.signedIn) == "Signed in")
         #expect(AccountsPageModel.authLabel(.signedOut) == "Not signed in")
         #expect(AccountsPageModel.authLabel(.unavailable) == "Status unavailable")
+    }
+
+    @Test("usage sources have a label and an unknown source shows as its raw text")
+    func sourceLabels() {
+        #expect(AccountsPageModel.sourceLabel("swarm") == "Swarm")
+        #expect(AccountsPageModel.sourceLabel("claude_api") == "Claude API")
+        #expect(AccountsPageModel.sourceLabel("codex_app_server") == "Codex app-server")
+        #expect(AccountsPageModel.sourceLabel("next_source") == "next_source")
+    }
+
+    @Test("Refresh covers Claude and Codex, and only the Claude name form has the login note")
+    func claudeJoinsCodex() {
+        #expect(AccountsPageModel.usageProviders == ["claude", "codex"])
+        let model = AccountsPageModel()
+        #expect(model.section("claude").loginNote
+            == "The login runs in a private folder in the swarm home. Only the Keychain item changes.")
+        #expect(model.section("codex").loginNote == nil)
+        #expect(model.section("agy").loginNote == nil)
     }
 
     @Test("queued and running refreshes coalesce and page exit invalidates both")

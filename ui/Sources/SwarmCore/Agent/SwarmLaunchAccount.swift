@@ -55,7 +55,8 @@ public struct SwarmLaunchAccount: Sendable, Hashable, Codable {
 
     private static func environmentKey(for provider: String) -> String? {
         switch provider {
-        case "claude": "CLAUDE_CONFIG_DIR"
+        // A Claude chat runs in the native home; the Keychain variable alone selects the account.
+        case "claude": "CLAUDE_SECURESTORAGE_CONFIG_DIR"
         case "codex": "CODEX_HOME"
         default: nil
         }

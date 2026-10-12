@@ -24,6 +24,10 @@ public struct AccountsProviderSection: Sendable, Hashable, Identifiable {
     public var usageMessage: String? {
         provider == "agy" ? "No usage source in Swarm. View quota with /usage in the CLI." : nil
     }
+    public var loginNote: String? {
+        provider == "claude"
+            ? "The login runs in a private folder in the swarm home. Only the Keychain item changes." : nil
+    }
 }
 
 public struct AccountsUsageRow: Sendable, Hashable, Identifiable {
@@ -43,6 +47,8 @@ public struct AccountsPageModel: Sendable, Equatable {
     // Matches Rust usage::MAX_AGE_SECONDS for the CLI quota cache.
     private static let maxUsageAgeSeconds = 300
     private static let providers = ["claude", "codex", "agy"]
+    /// The providers that `swarm usage --refresh` can read.
+    public static let usageProviders = ["claude", "codex"]
     public static let resetConfirmation = "Reset to bundled clears Swarm account metadata. CLI accounts stay signed in."
     public private(set) var generation = 0
     public private(set) var isLoading = false
@@ -89,6 +95,16 @@ public struct AccountsPageModel: Sendable, Equatable {
         case "codex": "Codex"
         case "agy": "AGY"
         default: provider
+        }
+    }
+
+    /// A source that this build does not know shows as its raw text.
+    public static func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "swarm": "Swarm"
+        case "claude_api": "Claude API"
+        case "codex_app_server": "Codex app-server"
+        default: source
         }
     }
 
@@ -219,7 +235,7 @@ public struct AccountsPageModel: Sendable, Equatable {
 
     public mutating func failUsage(provider: String?, message: String, generation: Int) {
         guard generation == self.generation else { return }
-        for selected in provider.map({ [$0] }) ?? ["claude", "codex"] {
+        for selected in provider.map({ [$0] }) ?? Self.usageProviders {
             usageErrors[selected] = message
         }
     }
