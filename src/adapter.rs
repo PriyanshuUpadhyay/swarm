@@ -28,10 +28,11 @@ pub struct Adapter {
 /// pane id reached the repository and never reached the machine: `agent add` recorded no pane and
 /// every `type` answered `no pane recorded`. A deployed file is an edit now, and it overrides only
 /// the verbs it names, so one edited verb cannot hold back a fix to any other. See `load`.
-pub const SHIPPED: [(&str, &str); 3] = [
+pub const SHIPPED: [(&str, &str); 4] = [
     ("tmux", include_str!("../adapters/tmux.conf")),
     ("tmux-solo", include_str!("../adapters/tmux-solo.conf")),
     ("herdr", include_str!("../adapters/herdr.conf")),
+    ("superset", include_str!("../adapters/superset.conf")),
 ];
 
 pub fn shipped(name: &str) -> Option<&'static str> {
@@ -413,6 +414,16 @@ mod tests {
             adapter.attach.as_deref(),
             Some("herdr agent attach \"$SWARM_PANE\"")
         );
+    }
+
+    #[test]
+    fn shipped_superset_has_the_required_verbs_and_screen_only() {
+        let adapter = parse("superset", shipped("superset").unwrap()).unwrap();
+        assert!(adapter.attach.is_none());
+        assert!(adapter.interrupt.is_none());
+        assert!(adapter.key.is_none());
+        assert!(adapter.screen.is_some());
+        assert!(adapter.caller.contains("SUPERSET_TERMINAL_ID"));
     }
 
     #[test]
