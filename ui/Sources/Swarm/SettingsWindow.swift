@@ -281,6 +281,13 @@ struct SettingsWindow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: tokens.spacing.l) {
                     Text("Notifications").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                    Toggle("Start Swarm at login", isOn: Binding(
+                        get: { selection.prefs.notices.startAtLogin },
+                        set: {
+                            selection.setNotice(\.startAtLogin, to: $0)
+                            model.updateLoginItem(enabled: selection.prefs.notices.startAtLogin)
+                        }
+                    ))
                     Toggle("Post notices while Swarm runs", isOn: noticeBinding(\.post))
                     Toggle("Play a sound", isOn: noticeBinding(\.sound))
                     Toggle("Notify when a chat is done", isOn: noticeBinding(\.done))

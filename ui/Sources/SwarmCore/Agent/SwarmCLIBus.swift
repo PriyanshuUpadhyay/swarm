@@ -224,6 +224,10 @@ public struct SwarmCLIBus: SwarmBus {
         _ = try await call(["managed", "revert"] + ids + ["--digest", digest])
     }
 
+    public func notices() async throws -> [StoredNotice] {
+        try await read(["notices", "--json"], as: [StoredNotice].self)
+    }
+
     public func focus(_ agent: SwarmAgentID, in session: SwarmSessionID) async throws {
         _ = try await call(["focus", session.rawValue, agent.rawValue])
     }

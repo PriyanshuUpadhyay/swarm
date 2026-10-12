@@ -19,8 +19,8 @@ pub struct Adapter {
     pub screen: Option<String>,
     /// Sends one key name, such as `2`, `Down`, or `Enter`, to a pane (`swarm answer`).
     pub key: Option<String>,
-    /// Shows the owner one notice with `$SWARM_TITLE` and `$SWARM_BODY` (`swarm notify`, ADR 0045).
-    pub notify: Option<String>,
+    /// Prints the pid of the host client, for window activation after focus.
+    pub client: Option<String>,
 }
 
 /// The adapters this binary carries, which are the ones it is tested against.
@@ -100,7 +100,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
         interrupt: verbs.remove("interrupt"),
         screen: verbs.remove("screen"),
         key: verbs.remove("key"),
-        notify: verbs.remove("notify"),
+        client: verbs.remove("client"),
     };
     if let Some(key) = verbs.keys().next() {
         return Err(format!("adapter {name}: unknown key {key}").into());
@@ -172,12 +172,10 @@ impl Adapter {
                     self.name
                 )
             })?,
-            "notify" => self.notify.as_ref().ok_or_else(|| {
-                format!(
-                    "swarm: adapter {} has no notify verb, so it cannot notify the owner",
-                    self.name
-                )
-            })?,
+            "client" => self
+                .client
+                .as_ref()
+                .ok_or_else(|| format!("swarm: {} has no client", self.name))?,
             _ => return Err(format!("adapter: unknown verb {verb}").into()),
         };
         if let Some(deadline) = self.deadline {

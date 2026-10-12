@@ -1,6 +1,7 @@
 import Foundation
 
 public struct NoticePrefs: Codable, Sendable, Hashable {
+    public var startAtLogin = true
     public var post = true
     public var sound = true
     public var done = true
@@ -11,6 +12,7 @@ public struct NoticePrefs: Codable, Sendable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        startAtLogin = try values.decodeIfPresent(Bool.self, forKey: .startAtLogin) ?? startAtLogin
         post = try values.decodeIfPresent(Bool.self, forKey: .post) ?? post
         sound = try values.decodeIfPresent(Bool.self, forKey: .sound) ?? sound
         done = try values.decodeIfPresent(Bool.self, forKey: .done) ?? done
@@ -37,12 +39,42 @@ public struct NoticeEvent: Sendable, Hashable {
 public struct Notice: Sendable, Hashable {
     public let title: String
     public let body: String
-    public let sessionID: SwarmSessionID
+    public let sessionID: SwarmSessionID?
     public let agentID: SwarmAgentID?
     public let sound: Bool
+
+    public init(title: String, body: String, sessionID: SwarmSessionID? = nil,
+                agentID: SwarmAgentID? = nil, sound: Bool = false) {
+        self.title = title
+        self.body = body
+        self.sessionID = sessionID
+        self.agentID = agentID
+        self.sound = sound
+    }
+}
+
+/// One explicit owner notice read and marked posted by `swarm notices --json`.
+public struct StoredNotice: Decodable, Sendable {
+    public let id: Int64
+    public let sessionId: SwarmSessionID?
+    public let agentId: SwarmAgentID?
+    public let title: String
+    public let body: String
 }
 
 public enum NoticeRule {
+    public static func shouldPost(row: StoredNotice, prefs: NoticePrefs, tree: SessionsTree) -> Notice? {
+        let project = tree.projects.first { project in
+            project.chats.contains { chat in chat.session.sessions.contains { $0.id == row.sessionId } }
+        }
+        let state = row.sessionId.flatMap { tree.agentsBySession[$0] }?
+            .first { $0.id == row.agentId }?.state
+        guard prefs.post, project.map({ !prefs.mutedProjects.contains($0.path) }) ?? true,
+              state == "waiting" || prefs.done else { return nil }
+        return Notice(title: row.title, body: row.body, sessionID: row.sessionId,
+                      agentID: row.agentId, sound: prefs.sound)
+    }
+
     public static func shouldPost(event: NoticeEvent, prefs: NoticePrefs, project: ProjectNode, title: String) -> Notice? {
         guard prefs.post, !prefs.mutedProjects.contains(project.path),
               event.kind != .done || prefs.done else { return nil }
