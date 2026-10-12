@@ -66,6 +66,19 @@ public struct UsageHUDSection: Sendable, Equatable, Identifiable {
     public let accounts: [UsageHUDAccount]
 }
 
+/// The one-time question at app start. The answer is `Prefs.usageHUD`.
+public enum UsageHUDPrompt {
+    public static let title = "Add the usage HUD?"
+    public static let message = "Swarm can show Claude and Codex usage in a panel at the top of the screen. Hover over the notch to open it. You can turn it off in Settings › Accounts."
+    public static let acceptTitle = "Add HUD"
+    public static let declineTitle = "Not Now"
+
+    /// The setup sheet goes first, so the two never show together.
+    public static func shouldAsk(answer: Bool?, askedThisRun: Bool, setupSheetOpen: Bool) -> Bool {
+        answer == nil && !askedThisRun && !setupSheetOpen
+    }
+}
+
 /// Sizes and rects of the HUD panel. A rect has its origin at the bottom left, as AppKit has.
 public enum UsageHUDLayout {
     /// The collapsed size on a Mac with no notch.
@@ -173,6 +186,8 @@ public final class UsageHUDModel {
     public private(set) var panelWidth = UsageHUDLayout.minPanelWidth
     /// The most height the card may take, set with its bottom edge. nil fits every account.
     public private(set) var panelHeightLimit: CGFloat?
+    /// False on a screen with no notch. The collapsed panel is then a pill under the menu bar.
+    public var hasNotch = true
     public var notchTopInset = UsageHUDLayout.fallbackNotchSize.height
     public var notchTriggerWidth = UsageHUDLayout.fallbackNotchSize.width
 

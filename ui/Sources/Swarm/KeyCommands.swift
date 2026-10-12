@@ -146,6 +146,9 @@ extension FocusedValues {
 /// or chat is missing: a key does not refresh a menu item's state, so an item disabled by finer
 /// state stayed disabled after that state changed. An action with nothing to act on does nothing.
 struct AppKeyCommands: Commands {
+    let usageHUD: UsageHUDWindow
+    /// The owner's "Show usage HUD" setting. With it off there is no panel to show.
+    let usageHUDEnabled: Bool
     @FocusedValue(\.windowKeyActions) private var window
     @FocusedValue(\.chatKeyActions) private var chat
     @FocusedValue(\.transcriptFindActions) private var transcript
@@ -176,6 +179,9 @@ struct AppKeyCommands: Commands {
             item("Show Changes", .showChanges)
             Divider()
             item("Zoom Pane", .zoom)
+            Divider()
+            Button(usageHUD.isOpen ? "Hide Usage HUD" : "Show Usage HUD") { usageHUD.toggleFromMenu() }
+                .disabled(!usageHUDEnabled)
             Divider()
         }
         CommandMenu("Navigate") {

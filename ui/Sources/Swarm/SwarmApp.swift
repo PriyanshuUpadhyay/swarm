@@ -823,6 +823,7 @@ private struct SessionsWindow: View {
     @Environment(\.designTokens) private var tokens
     let model: SessionsTreeModel
     @Environment(SettingsSelection.self) private var settings
+    @Environment(UsageHUDWindow.self) private var usageHUD
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var panes = AgentPaneStore()
@@ -1020,6 +1021,12 @@ private struct SessionsWindow: View {
             model.attachWindow()
         }
         .task {
+            let settings = settings
+            let showSettings: OpenSettingsAction = openSettings
+            usageHUD.openAccounts = {
+                settings.select(.accounts)
+                showSettings()
+            }
             // A Finder launch finds `swarm` only on the login shell's PATH.
             await LoginShellPath.ready()
             // Switch model and the profiles page then open on these reads instead of waiting.
@@ -1037,7 +1044,7 @@ private struct SessionsWindow: View {
             }
             await askForSetup()
         }
-        .sheet(isPresented: $showingHooksSetup) {
+        .sheet(isPresented: $showingHooksSetup, onDismiss: askForUsageHUD) {
             HooksSetupSheet(
                 loadPlan: {
                     _ = await settings.waitForSkillsRefresh()
@@ -1228,6 +1235,9 @@ private struct SessionsWindow: View {
         case .closeAgent(let agent, let session):
             Button("Close Agent", role: .destructive) { performChildAction(agent, in: session, close: true) }
             Button("Cancel", role: .cancel) {}
+        case .usageHUD:
+            Button(UsageHUDPrompt.acceptTitle) { settings.setUsageHUD(true) }.keyboardShortcut(.defaultAction)
+            Button(UsageHUDPrompt.declineTitle, role: .cancel) { settings.setUsageHUD(false) }
         case .error:
             Button("OK") {}
         }
@@ -1257,6 +1267,8 @@ private struct SessionsWindow: View {
             Text(verbatim: confirmation.message + (archive ? " The chat moves to Recently closed." : ""))
         case .closeAgent(let agent, _):
             Text("“\(agent.rawValue)” is in a turn. Closing the agent stops it.")
+        case .usageHUD:
+            Text(verbatim: UsageHUDPrompt.message)
         case .error(let message):
             Text(verbatim: message)
         }
@@ -1380,8 +1392,19 @@ private struct SessionsWindow: View {
         _ = await settings.waitForSkillsRefresh()
         guard !setupDeclined,
               let status = try? await SwarmCLIBus().setupStatus(),
-              status.needsSheet(declined: SetupGroup.declined(read: UserDefaults.standard.bool(forKey:))) else { return }
+              status.needsSheet(declined: SetupGroup.declined(read: UserDefaults.standard.bool(forKey:))) else {
+            askForUsageHUD()
+            return
+        }
         showingHooksSetup = true
+    }
+
+    /// Asked after the PATH alert and the setup sheet are closed, so the three never show together.
+    private func askForUsageHUD() {
+        guard UsageHUDPrompt.shouldAsk(answer: settings.prefs.usageHUD, askedThisRun: usageHUD.askedThisRun,
+                                       setupSheetOpen: showingHooksSetup) else { return }
+        usageHUD.askedThisRun = true
+        showAlert(.usageHUD)
     }
 
     /// Sets each setup group's own decline flag. Herdr has none, because this build plans no
@@ -2336,6 +2359,7 @@ private enum WindowAlert {
     case deleteWorkspace(WorkspaceEntry, ignored: Git.IgnoredRemovalItems, confirmation: WorkspaceArchive.Confirmation)
     case endChat(id: SwarmSessionID, title: String, confirmation: SwarmSessionCloser.Confirmation, archive: Bool)
     case closeAgent(SwarmAgentID, SwarmSession)
+    case usageHUD
     case error(String)
 
     func hasSameTarget(as other: Self) -> Bool {
@@ -2351,6 +2375,7 @@ private enum WindowAlert {
             left == right && leftArchive == rightArchive
         case (.closeAgent(let left, let leftSession), .closeAgent(let right, let rightSession)):
             left == right && leftSession.id == rightSession.id
+        case (.usageHUD, .usageHUD): true
         case (.error(let left), .error(let right)): left == right
         default: false
         }
@@ -2367,6 +2392,7 @@ private enum WindowAlert {
         case .deleteWorkspace: "Delete workspace?"
         case .endChat(_, let title, _, let archive): "\(archive ? "Archive" : "End") “\(title)”?"
         case .closeAgent(let id, _): "Close “\(id.rawValue)”?"
+        case .usageHUD: UsageHUDPrompt.title
         case .error: "Could not complete action"
         }
     }
@@ -2424,6 +2450,7 @@ private struct SwitchTarget: Identifiable {
 struct SwarmApp: App {
     @State private var model = SessionsTreeModel()
     @State private var settings = SettingsSelection()
+    @State private var usageHUD = UsageHUDWindow()
     private var splitDiff: Binding<Bool> {
         Binding(get: { settings.prefs.splitDiff }, set: { settings.setSplitDiff($0) })
     }
@@ -2458,12 +2485,16 @@ struct SwarmApp: App {
             .modifier(AppearancePreferences(prefs: settings.prefs))
             // Register on the installed state before the window's setup readers start.
             .onAppear { beginStartup() }
+            .onChange(of: settings.prefs.usageHUD, initial: true) { _, shown in
+                usageHUD.setShown(shown == true && SwarmPaneStress.count == 0)
+            }
         }
             .environment(settings)
+            .environment(usageHUD)
             .environment(\.splitDiff, splitDiff)
             .commands {
                 SetupCommands(selection: settings)
-                AppKeyCommands()
+                AppKeyCommands(usageHUD: usageHUD, usageHUDEnabled: settings.prefs.usageHUD == true)
             }
         WindowGroup("Chat", id: "chat", for: SwarmSessionID.self) { $sessionID in
             if let sessionID {
@@ -2475,7 +2506,8 @@ struct SwarmApp: App {
             .environment(\.splitDiff, splitDiff)
             .commandsRemoved()
         Settings {
-            SettingsWindow().environment(settings).environment(model).environment(\.splitDiff, splitDiff)
+            SettingsWindow().environment(settings).environment(model).environment(usageHUD)
+                .environment(\.splitDiff, splitDiff)
                 .modifier(AppearancePreferences(prefs: settings.prefs))
         }
             .defaultSize(width: DesignTokens.Size.settingsWidth, height: DesignTokens.Size.settingsHeight)

@@ -5,6 +5,7 @@ struct SettingsWindow: View {
     @Environment(\.designTokens) private var tokens
     @Environment(SettingsSelection.self) private var selection
     @Environment(SessionsTreeModel.self) private var model
+    @Environment(UsageHUDWindow.self) private var usageHUD
     @Environment(\.splitDiff) private var splitDiff
     @AppStorage("showRawData") private var showRawData = false
     @AppStorage("performanceLogging") private var performanceLogging = false
@@ -139,10 +140,16 @@ struct SettingsWindow: View {
                     await LoginShellPath.ready()
                     return try await SwarmCLIProfileSource().usage()
                 },
-                refreshUsage: { provider in
-                    await LoginShellPath.ready()
-                    return try await SwarmCLIProfileSource().refreshUsage(provider: provider)
+                // The HUD's refresher, so both share the limit of one refresh per 300 seconds.
+                refreshUsage: { [refresher = usageHUD.refresher] provider in
+                    try await refresher.refreshOrCached(provider: provider) {
+                        await LoginShellPath.ready()
+                        return try await SwarmCLIProfileSource().usage()
+                    }
                 },
+                showsUsageHUD: Binding(
+                    get: { selection.prefs.usageHUD == true }, set: { selection.setUsageHUD($0) }
+                ),
                 openLogin: { request in
                     await LoginShellPath.ready()
                     var request = request

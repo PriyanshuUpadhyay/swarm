@@ -72,6 +72,20 @@ struct UsageRefresherTests {
         #expect(await command.providers == ["claude"])
     }
 
+    @Test("the Accounts page gets the new reading, or the cached one inside the 300 seconds")
+    func refreshOrCached() async throws {
+        let clock = UsageTestClock(1_000)
+        let command = RefreshCommand()
+        let refresher = UsageRefresher(now: clock.now) { try await command.run($0) }
+        let cached = [
+            SwarmUsageMeter(provider: "claude", account: "work", label: "work", window: "5h", usedPct: 30, state: .fresh),
+            SwarmUsageMeter(provider: "codex", account: "main", label: "main", window: "primary", usedPct: 40, state: .fresh),
+        ]
+        #expect(try await refresher.refreshOrCached(provider: "claude") { cached } == SwarmUsage(meters: []))
+        #expect(try await refresher.refreshOrCached(provider: "claude") { cached } == SwarmUsage(meters: [cached[0]]))
+        #expect(await command.providers == ["claude"])
+    }
+
     @Test("two callers at the same time share one refresh")
     func sharedRun() async throws {
         let clock = UsageTestClock(1_000)

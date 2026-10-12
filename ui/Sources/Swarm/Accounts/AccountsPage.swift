@@ -7,6 +7,7 @@ struct AccountsPage: View {
     let loadAccounts: (String) async throws -> SwarmAccountList
     let loadUsage: () async throws -> [SwarmUsageMeter]
     let refreshUsage: (String) async throws -> SwarmUsage
+    @Binding var showsUsageHUD: Bool
     let openLogin: (SwarmAccountLoginRequest) async throws -> SwarmAccountLoginResult
     let resetAccounts: (String) async throws -> SwarmAccountMetadataAction
     let onError: (String?) -> Void
@@ -25,6 +26,8 @@ struct AccountsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: tokens.spacing.l) {
                 header
+                Toggle("Show usage HUD", isOn: $showsUsageHUD)
+                    .help("A panel at the top of the screen with Claude and Codex usage. Hover over the notch to open it.")
                 metadataControls
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     VStack(alignment: .leading, spacing: tokens.spacing.l) {

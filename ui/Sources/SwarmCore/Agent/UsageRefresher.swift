@@ -41,4 +41,15 @@ public actor UsageRefresher {
         defer { running[provider] = nil }
         return .refreshed(try await task.value)
     }
+
+    /// For a page that shows one provider's usage: the new reading, or the cached one when the
+    /// limit allows no call.
+    public func refreshOrCached(
+        provider: String, cached: @Sendable () async throws -> [SwarmUsageMeter]
+    ) async throws -> SwarmUsage {
+        switch try await refresh(provider: provider) {
+        case .refreshed(let usage): usage
+        case .cooldown: SwarmUsage(meters: try await cached().filter { $0.provider == provider })
+        }
+    }
 }

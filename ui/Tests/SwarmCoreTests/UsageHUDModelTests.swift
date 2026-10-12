@@ -462,6 +462,35 @@ struct UsageHUDModelTests {
         #expect(wide.panelWidth == 760)
     }
 
+    // MARK: The prompt
+
+    @Test("the prompt asks once per app run, only with no answer and no setup sheet on screen")
+    func promptAsks() {
+        #expect(UsageHUDPrompt.shouldAsk(answer: nil, askedThisRun: false, setupSheetOpen: false))
+        #expect(!UsageHUDPrompt.shouldAsk(answer: nil, askedThisRun: false, setupSheetOpen: true))
+        #expect(!UsageHUDPrompt.shouldAsk(answer: nil, askedThisRun: true, setupSheetOpen: false))
+        #expect(!UsageHUDPrompt.shouldAsk(answer: true, askedThisRun: false, setupSheetOpen: false))
+        #expect(!UsageHUDPrompt.shouldAsk(answer: false, askedThisRun: false, setupSheetOpen: false))
+        #expect(UsageHUDPrompt.title == "Add the usage HUD?")
+        #expect(UsageHUDPrompt.message == "Swarm can show Claude and Codex usage in a panel at the top of the screen. Hover over the notch to open it. You can turn it off in Settings › Accounts.")
+        #expect([UsageHUDPrompt.acceptTitle, UsageHUDPrompt.declineTitle] == ["Add HUD", "Not Now"])
+    }
+
+    @Test("Add HUD saves on, Not Now saves off, and neither answer is asked again", arguments: [true, false])
+    func promptAnswer(accepted: Bool) throws {
+        let folder = try claimedChoicesFolder(
+            FileManager.default.temporaryDirectory.appendingPathComponent("usage-hud-prompt-\(UUID().uuidString)")
+        )
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let selection = SettingsSelection(choices: OwnerChoicesStore(folder: folder))
+        #expect(UsageHUDPrompt.shouldAsk(answer: selection.prefs.usageHUD, askedThisRun: false, setupSheetOpen: false))
+        selection.setUsageHUD(accepted)
+        // A new app run reads the saved answer.
+        let nextRun = SettingsSelection(choices: OwnerChoicesStore(folder: folder))
+        #expect(nextRun.prefs.usageHUD == accepted)
+        #expect(!UsageHUDPrompt.shouldAsk(answer: nextRun.prefs.usageHUD, askedThisRun: false, setupSheetOpen: false))
+    }
+
     // MARK: The owner's answer
 
     @Test("the HUD answer is on, off or absent in choices.json")
